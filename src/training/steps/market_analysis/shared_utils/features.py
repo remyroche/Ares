@@ -132,8 +132,8 @@ def prepare_market_features(
                 optimize_for_15m=True,
                 trade_duration_minutes=(5, 30),
                 enable_feature_selection=True,
-                max_features_per_category=20,
-                total_max_features=80
+                max_features_per_category=30,
+                total_max_features=100
             )
             
             if verbose:
@@ -181,13 +181,46 @@ def prepare_market_features(
                 # Convert regime features to DataFrame
                 if verbose:
                     tprint_success(f"✅ [REGIME_FEATURES] Generated {len(features_dict)} regime features")
-                    tprint(f"📊 [REGIME_FEATURES] Feature categories:", color="blue")
-                    for cat, count in summary['feature_categories'].items():
-                        if count > 0:
-                            tprint(f"   - {cat}: {count} features", color="cyan")
+                    tprint(f"📊 [REGIME_FEATURES] Category quotas:", color="blue")
+                    for cat, info in summary['selection']['category_quota'].items():
+                        tprint(
+                            f"   - {cat}: {info['count']}/{info['max']} features",
+                            color="cyan"
+                        )
                     tprint(f"📊 [REGIME_FEATURES] Quality metrics:", color="blue")
-                    tprint(f"   - Avg persistence: {summary['quality_metrics']['avg_persistence']:.3f}", color="cyan")
-                    tprint(f"   - Avg noise ratio: {summary['quality_metrics']['avg_noise_ratio']:.3f}", color="cyan")
+                    tprint(
+                        f"   - Avg persistence: {summary['quality_metrics']['avg_persistence']:.3f}",
+                        color="cyan"
+                    )
+                    tprint(
+                        f"   - Avg noise ratio: {summary['quality_metrics']['avg_noise_ratio']:.3f}",
+                        color="cyan"
+                    )
+                    tprint(
+                        f"   - Avg stability: {summary['quality_metrics']['avg_temporal_stability']:.3f}",
+                        color="cyan"
+                    )
+                    weights = summary['selection'].get('weights', {})
+                    if weights:
+                        tprint(
+                            f"📐 [REGIME_FEATURES] Composite weights — "
+                            f"persistence: {weights.get('persistence', 0.0):.2f}, "
+                            f"noise penalty: {weights.get('noise_penalty', 0.0):.2f}, "
+                            f"stability: {weights.get('stability', 0.0):.2f}",
+                            color="blue"
+                        )
+                    composite_scores = summary['selection'].get('composite_scores', {})
+                    if composite_scores:
+                        avg_score = float(np.mean(list(composite_scores.values()))) if composite_scores else 0.0
+                        tprint(
+                            f"📈 [REGIME_FEATURES] Avg composite score: {avg_score:.4f}",
+                            color="blue"
+                        )
+                        top_ranked = summary['selection'].get('top_ranked_features', [])
+                        if top_ranked:
+                            tprint(f"🏆 [REGIME_FEATURES] Top ranked features:", color="blue")
+                            for feature_name, score in top_ranked[:5]:
+                                tprint(f"   • {feature_name}: {score:.4f}", color="cyan")
 
                 # Ensure all feature arrays have the same length before stacking
                 feature_lengths = [len(arr) for arr in features_dict.values()]

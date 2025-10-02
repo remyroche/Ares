@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Union, Tuple
 from dataclasses import dataclass
+from collections import defaultdict
 
 from ..core.feature_generator import (
     FeatureGenerator, 
@@ -67,9 +68,14 @@ class RegimeFeatureConfig:
     trade_duration_minutes: Tuple[int, int] = (5, 30)
     
     # Feature selection
-    max_features_per_category: int = 20
-    total_max_features: int = 80
+    max_features_per_category: int = 30
+    total_max_features: int = 100
     enable_feature_selection: bool = True
+
+    # Composite scoring weights (exposed for NAS/TAS tuning)
+    persistence_weight: float = 0.5
+    noise_penalty_weight: float = 0.3
+    stability_weight: float = 0.2
 
 class RegimeFeatureIntegration(VectorizedFeatureGenerator):
     """Unified regime feature generator that excludes trading features."""
@@ -89,12 +95,22 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
                 min_temporal_stability=0.6,
                 optimize_for_15m=True,
                 trade_duration_minutes=(5, 30),
-                max_features_per_category=20,
-                total_max_features=80,
-                enable_feature_selection=True
+                max_features_per_category=30,
+                total_max_features=100,
+                enable_feature_selection=True,
+                persistence_weight=0.5,
+                noise_penalty_weight=0.3,
+                stability_weight=0.2
             )
 
+        self.regime_config = config
         self.config = config
+
+        # Track the most recent selection metadata for downstream reporting
+        self._latest_quality_stats: Dict[str, Dict[str, float]] = {}
+        self._latest_selection_scores: Dict[str, float] = {}
+        self._latest_category_counts: Dict[str, int] = {}
+        self._latest_target_count: int = getattr(config, 'total_max_features', 100)
         
         # Initialize regime-focused feature generators
         self.volatility_generator = RegimeVolatilityFeatureGenerator() if config.include_volatility_regime else None
@@ -150,7 +166,7 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
             optimized_data = data
             
             # Check if matrix optimization is enabled (with fallback for old configs)
-            enable_matrix_opt = getattr(self.config, 'enable_matrix_optimization', True)
+            enable_matrix_opt = getattr(self.regime_config, 'enable_matrix_optimization', True)
             if enable_matrix_opt:
                 optimization_start = time.time()
                 optimized_data = self._optimize_matrix_operations(data)
@@ -171,7 +187,7 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
             # Execute generators (parallel or sequential based on config)
             if generators:
                 # Check if parallel processing is enabled (with fallback for old configs)
-                enable_parallel = getattr(self.config, 'enable_parallel_processing', True)
+                enable_parallel = getattr(self.regime_config, 'enable_parallel_processing', True)
                 if enable_parallel and len(generators) > 1:
                     parallel_results = self._parallel_feature_generation(generators, optimized_data, **kwargs)
                 else:
@@ -186,7 +202,7 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
                         tprint(f"✅ {generator_name}: {len(generator_features)} features")
             
             # Generate enhanced regime quality features (sequential - depends on other features)
-            include_quality_metrics = getattr(self.config, 'include_regime_quality_metrics', False)
+            include_quality_metrics = getattr(self.regime_config, 'include_regime_quality_metrics', False)
             if include_quality_metrics:
                 tprint(f"🔧 Generating regime quality metrics...")
                 quality_start = time.time()
@@ -197,20 +213,46 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
                 feature_names.extend(quality_features.keys())
             
             # OPTIMIZED: Apply quality filters only (no trading feature filter needed - all features are regime-focused)
-            if self.config.enable_feature_selection:
+            if getattr(self.regime_config, 'enable_feature_selection', True):
                 filter_start = time.time()
-                features = self._apply_quality_filters(features, optimized_data)
-                
-                # Ensure we keep exactly 100 features for optimal performance
-                target_features = 100
-                if len(features) > target_features:
-                    tprint(f"🔍 Feature selection: {len(features)} → {target_features} features")
-                    features = self._select_top_features(features, target_features)
-                elif len(features) < target_features:
-                    tprint(f"⚠️ Only {len(features)} features available (target: {target_features})")
+                filtered_features, quality_stats = self._apply_quality_filters(features, optimized_data)
+
+                # Ensure we keep exactly the configured number of features for optimal performance
+                target_features = getattr(self.regime_config, 'total_max_features', 100)
+                self._latest_target_count = target_features
+
+                if len(filtered_features) > target_features:
+                    tprint(f"🔍 Feature selection: {len(filtered_features)} → {target_features} features")
+                    filtered_features, quality_stats = self._select_top_features(
+                        filtered_features,
+                        quality_stats,
+                        target_features
+                    )
+                elif len(filtered_features) < target_features:
+                    tprint(f"⚠️ Only {len(filtered_features)} features available (target: {target_features})")
                 else:
-                    tprint(f"✅ Perfect: {len(features)} features (target: {target_features})")
-                
+                    tprint(f"✅ Perfect: {len(filtered_features)} features (target: {target_features})")
+
+                features = filtered_features
+                # Persist the latest stats aligned with the selected features
+                self._latest_quality_stats = {
+                    name: quality_stats.get(name, {})
+                    for name in features.keys()
+                }
+                if len(filtered_features) <= target_features:
+                    persistence_weight = getattr(self.regime_config, 'persistence_weight', 0.5)
+                    noise_penalty_weight = getattr(self.regime_config, 'noise_penalty_weight', 0.3)
+                    stability_weight = getattr(self.regime_config, 'stability_weight', 0.2)
+                    self._latest_selection_scores = {
+                        name: (
+                            persistence_weight * stats.get('persistence', 0.0)
+                            - noise_penalty_weight * stats.get('noise_ratio', 0.0)
+                            + stability_weight * stats.get('temporal_stability', 0.0)
+                        ) if stats else 0.0
+                        for name, stats in self._latest_quality_stats.items()
+                    }
+                    self._latest_category_counts = self._compute_category_counts(features.keys())
+
                 filter_time = time.time() - filter_start
                 tprint(f"Feature filtering and quality checks completed in {filter_time:.2f}s")
             
@@ -228,7 +270,7 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
         results = {}
         
         # OPTIMIZED: Determine optimal number of workers based on system resources
-        max_workers_config = getattr(self.config, 'max_parallel_workers', 4)
+        max_workers_config = getattr(self.regime_config, 'max_parallel_workers', 4)
         # Use CPU count for optimal parallelization
         import os
         cpu_count = os.cpu_count() or 4
@@ -336,9 +378,10 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
         
         return filtered_features
     
-    def _apply_quality_filters(self, features: Dict[str, np.ndarray], data: pd.DataFrame) -> Dict[str, np.ndarray]:
-        """Apply quality filters to ensure regime-relevant features only."""
-        filtered_features = {}
+    def _apply_quality_filters(self, features: Dict[str, np.ndarray], data: pd.DataFrame) -> Tuple[Dict[str, np.ndarray], Dict[str, Dict[str, float]]]:
+        """Apply quality filters and compute per-feature quality statistics."""
+        filtered_features: Dict[str, np.ndarray] = {}
+        quality_stats: Dict[str, Dict[str, float]] = {}
 
         # Relaxed thresholds for statistical features
         statistical_patterns = ['statistical', 'distribution', 'returns_', 'skewness', 'kurtosis', 'autocorr', 'entropy']
@@ -362,47 +405,170 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
         
         # Process statistical features with relaxed criteria
         for name, feature_array in statistical_features.items():
-            if self._is_high_quality_regime_feature(feature_array, relaxed=True):
+            passed, metrics = self._is_high_quality_regime_feature(feature_array, relaxed=True)
+            if passed:
                 filtered_features[name] = feature_array
-        
+                if metrics:
+                    quality_stats[name] = metrics
+
         # Process other features with standard criteria
         for name, feature_array in other_features.items():
-            if self._is_high_quality_regime_feature(feature_array):
+            passed, metrics = self._is_high_quality_regime_feature(feature_array)
+            if passed:
                 filtered_features[name] = feature_array
+                if metrics:
+                    quality_stats[name] = metrics
 
         tprint(f"📊 Quality filter results: {len(filtered_features)}/{len(features)} features passed")
-        return filtered_features
+        if quality_stats:
+            avg_persistence = np.mean([m['persistence'] for m in quality_stats.values()])
+            avg_noise = np.mean([m['noise_ratio'] for m in quality_stats.values()])
+            avg_stability = np.mean([m['temporal_stability'] for m in quality_stats.values()])
+            tprint(
+                "   ➤ Avg quality metrics — "
+                f"persistence: {avg_persistence:.3f}, "
+                f"noise: {avg_noise:.3f}, "
+                f"stability: {avg_stability:.3f}"
+            )
+
+        self._latest_quality_stats = quality_stats
+        return filtered_features, quality_stats
+
+    def _determine_feature_category(self, feature_name: str) -> str:
+        """Classify feature names into high-level regime categories."""
+        name = feature_name.lower()
+
+        if 'volatility' in name or 'vol_' in name:
+            return 'volatility_regime'
+        if 'volume' in name or 'liquidity' in name:
+            return 'volume_regime'
+        if 'trend' in name or 'structural' in name:
+            return 'structural_trend'
+        if 'statistical' in name or 'distribution' in name or 'entropy' in name:
+            return 'statistical_regime'
+        if 'economic' in name or 'macro' in name:
+            return 'economic_quality'
+        if 'trading' in name or 'position' in name:
+            return 'trading_viability'
+        if 'stability' in name or 'persistence' in name or 'consistency' in name or 'quality' in name:
+            return 'regime_quality'
+
+        return 'other'
+
+    def _compute_category_counts(self, feature_names: List[str]) -> Dict[str, int]:
+        """Compute category counts for reporting."""
+        counts: Dict[str, int] = defaultdict(int)
+        for name in feature_names:
+            counts[self._determine_feature_category(name)] += 1
+        return dict(counts)
     
-    def _select_top_features(self, features: Dict[str, np.ndarray], target_count: int) -> Dict[str, np.ndarray]:
-        """Select top features based on variance and information content."""
+    def _select_top_features(
+        self,
+        features: Dict[str, np.ndarray],
+        quality_stats: Dict[str, Dict[str, float]],
+        target_count: int
+    ) -> Tuple[Dict[str, np.ndarray], Dict[str, Dict[str, float]]]:
+        """Select top features using composite scoring with category caps."""
         try:
-            # Calculate variance for each feature
-            feature_variances = {}
+            if not features:
+                return features, quality_stats
+
+            persistence_weight = getattr(self.regime_config, 'persistence_weight', 0.5)
+            noise_penalty_weight = getattr(self.regime_config, 'noise_penalty_weight', 0.3)
+            stability_weight = getattr(self.regime_config, 'stability_weight', 0.2)
+            max_per_category = getattr(self.regime_config, 'max_features_per_category', target_count)
+
+            composite_scores: Dict[str, float] = {}
+            variances: Dict[str, float] = {}
+
             for name, feature_array in features.items():
-                if feature_array is not None and len(feature_array) > 0:
-                    # Remove NaN values for variance calculation
-                    valid_values = feature_array[~np.isnan(feature_array)]
-                    if len(valid_values) > 1:
-                        feature_variances[name] = np.var(valid_values)
-                    else:
-                        feature_variances[name] = 0.0
+                valid_values = feature_array[~np.isnan(feature_array)] if feature_array is not None else np.array([])
+                if len(valid_values) > 1:
+                    variances[name] = float(np.var(valid_values))
                 else:
-                    feature_variances[name] = 0.0
-            
-            # Sort features by variance (highest first)
-            sorted_features = sorted(feature_variances.items(), key=lambda x: x[1], reverse=True)
-            
-            # Select top N features
-            selected_features = {}
-            for i, (name, variance) in enumerate(sorted_features[:target_count]):
+                    variances[name] = 0.0
+
+                metrics = quality_stats.get(name, {})
+                composite_score = (
+                    persistence_weight * metrics.get('persistence', 0.0)
+                    - noise_penalty_weight * metrics.get('noise_ratio', 0.0)
+                    + stability_weight * metrics.get('temporal_stability', 0.0)
+                )
+
+                # Fallback to variance if metrics are missing (e.g., relaxed filters)
+                if not metrics:
+                    composite_score += variances[name]
+
+                composite_scores[name] = composite_score
+
+            # Sort features by composite score then variance as tie-breaker
+            sorted_feature_names = sorted(
+                features.keys(),
+                key=lambda n: (composite_scores.get(n, float('-inf')), variances.get(n, 0.0)),
+                reverse=True
+            )
+
+            selected_features: Dict[str, np.ndarray] = {}
+            selected_stats: Dict[str, Dict[str, float]] = {}
+            category_counts: Dict[str, int] = defaultdict(int)
+            categories_capped: List[str] = []
+
+            for name in sorted_feature_names:
+                if len(selected_features) >= target_count:
+                    break
+
+                category = self._determine_feature_category(name)
+                if category_counts[category] >= max_per_category:
+                    if category not in categories_capped:
+                        categories_capped.append(category)
+                    continue
+
                 selected_features[name] = features[name]
-            
-            tprint(f"🎯 Selected {len(selected_features)} features with highest variance")
-            return selected_features
-            
+                if name in quality_stats:
+                    selected_stats[name] = quality_stats[name]
+                category_counts[category] += 1
+
+            if len(selected_features) < target_count:
+                tprint(
+                    f"⚠️ Category caps limited selection to {len(selected_features)}/{target_count} features."
+                )
+
+            # Log selection summary for verification
+            tprint(
+                "🎯 Composite feature selection completed: "
+                f"{len(selected_features)}/{target_count} features retained"
+            )
+            tprint(
+                "   ➤ Weights — "
+                f"persistence: {persistence_weight:.2f}, "
+                f"noise penalty: {noise_penalty_weight:.2f}, "
+                f"stability: {stability_weight:.2f}"
+            )
+            if categories_capped:
+                tprint(f"   ➤ Category caps reached for: {', '.join(categories_capped)}")
+
+            preview_count = min(5, len(selected_features))
+            if preview_count:
+                top_preview = list(selected_features.keys())[:preview_count]
+                tprint("   ➤ Top features by composite score:")
+                for feature_name in top_preview:
+                    tprint(
+                        f"      • {feature_name}: "
+                        f"score={composite_scores.get(feature_name, 0.0):.4f}, "
+                        f"variance={variances.get(feature_name, 0.0):.4f}"
+                    )
+
+            self._latest_selection_scores = {
+                name: composite_scores.get(name, 0.0)
+                for name in selected_features.keys()
+            }
+            self._latest_category_counts = dict(category_counts)
+
+            return selected_features, selected_stats
+
         except Exception as e:
             tprint(f"⚠️ Feature selection failed: {e}, returning original features")
-            return features
+            return features, quality_stats
     
     def _generate_regime_quality_features(self, data: pd.DataFrame, **kwargs) -> Dict[str, np.ndarray]:
         """Generate regime quality assessment features."""
@@ -410,11 +576,11 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
         
         try:
             # Economic significance features
-            if self.config.include_economic_significance:
+            if getattr(self.regime_config, 'include_economic_significance', False):
                 features.update(self._generate_economic_significance_features(data))
             
             # Trading viability features  
-            if self.config.include_trading_viability:
+            if getattr(self.regime_config, 'include_trading_viability', False):
                 features.update(self._generate_trading_viability_features(data))
             
             # Regime stability features
@@ -521,14 +687,14 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
         
         return features
     
-    def _is_high_quality_regime_feature(self, feature_array: np.ndarray, relaxed: bool = False) -> bool:
-        """Check if a feature meets quality standards for regime classification."""
+    def _is_high_quality_regime_feature(self, feature_array: np.ndarray, relaxed: bool = False) -> Tuple[bool, Optional[Dict[str, float]]]:
+        """Check if a feature meets quality standards and compute its quality metrics."""
         try:
             # Remove NaN values for analysis
             valid_values = feature_array[~np.isnan(feature_array)]
 
             if len(valid_values) < 5:
-                return False
+                return False, None
 
             # Test 1: Regime persistence (autocorrelation)
             if len(valid_values) > 1:
@@ -556,6 +722,13 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
             else:
                 temporal_stability = 0.0
 
+            metrics = {
+                'persistence': regime_persistence,
+                'noise_ratio': noise_ratio,
+                'temporal_stability': temporal_stability,
+                'valid_length': float(len(valid_values))
+            }
+
             # Apply very lenient quality thresholds to preserve ~100 features
             # Regime features are expected to change with market regimes, so be permissive
             if relaxed:
@@ -565,7 +738,7 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
                          temporal_stability > -1.0 and # Allow negative stability (regime transitions)
                          len(valid_values) >= 3)
                 tprint(f"   Statistical feature: persistence={regime_persistence:.3f}, noise={noise_ratio:.3f}, stability={temporal_stability:.3f}, valid_vals={len(valid_values)}, result={result}")
-                return result
+                return result, metrics
             else:
                 # Very lenient thresholds for ALL regime features
                 # Goal: Keep ~100 features instead of filtering to 37
@@ -574,62 +747,61 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
                          temporal_stability > -0.5 and # Allow negative stability for regime changes
                          len(valid_values) >= 3)
                 tprint(f"   Regime feature: persistence={regime_persistence:.3f}, noise={noise_ratio:.3f}, stability={temporal_stability:.3f}, valid_vals={len(valid_values)}, result={result}")
-                return result
+                return result, metrics
 
         except:
-            return False
+            return False, None
     
-    def get_feature_summary(self, features: Dict[str, np.ndarray]) -> Dict[str, Any]:
-        """Get summary of generated regime features."""
+    def get_feature_summary(
+        self,
+        features: Dict[str, np.ndarray],
+        quality_stats: Optional[Dict[str, Dict[str, float]]] = None
+    ) -> Dict[str, Any]:
+        """Get summary of generated regime features including selection metadata."""
+        stats = quality_stats or self._latest_quality_stats or {}
+        total_features = len(features)
+        category_counts = self._latest_category_counts or self._compute_category_counts(features.keys())
+        max_per_category = getattr(self.regime_config, 'max_features_per_category', total_features or 1)
+
+        if stats:
+            avg_persistence = float(np.mean([m.get('persistence', 0.0) for m in stats.values()]))
+            avg_noise = float(np.mean([m.get('noise_ratio', 0.0) for m in stats.values()]))
+            avg_stability = float(np.mean([m.get('temporal_stability', 0.0) for m in stats.values()]))
+        else:
+            avg_persistence = 0.0
+            avg_noise = 0.0
+            avg_stability = 0.0
+
+        selection_scores = self._latest_selection_scores or {}
+        top_ranked = sorted(selection_scores.items(), key=lambda x: x[1], reverse=True)[:10]
+
         summary = {
-            'total_features': len(features),
-            'feature_categories': {
-                'volatility_regime': 0,
-                'volume_regime': 0,
-                'structural_trend': 0,
-                'statistical_regime': 0
-            },
+            'total_features': total_features,
+            'feature_categories': category_counts,
             'quality_metrics': {
-                'avg_persistence': 0.0,
-                'avg_noise_ratio': 0.0,
-                'avg_temporal_stability': 0.0
+                'avg_persistence': avg_persistence,
+                'avg_noise_ratio': avg_noise,
+                'avg_temporal_stability': avg_stability
+            },
+            'selection': {
+                'target': self._latest_target_count,
+                'weights': {
+                    'persistence': getattr(self.regime_config, 'persistence_weight', 0.5),
+                    'noise_penalty': getattr(self.regime_config, 'noise_penalty_weight', 0.3),
+                    'stability': getattr(self.regime_config, 'stability_weight', 0.2)
+                },
+                'category_quota': {
+                    category: {
+                        'count': count,
+                        'max': max_per_category
+                    }
+                    for category, count in category_counts.items()
+                },
+                'composite_scores': selection_scores,
+                'top_ranked_features': top_ranked
             }
         }
-        
-        for name, feature_array in features.items():
-            name_lower = name.lower()
-            
-            # Categorize features
-            if 'volatility' in name_lower or 'vol_' in name_lower:
-                summary['feature_categories']['volatility_regime'] += 1
-            elif 'volume' in name_lower or 'vol_regime' in name_lower:
-                summary['feature_categories']['volume_regime'] += 1
-            elif 'trend' in name_lower or 'structural' in name_lower:
-                summary['feature_categories']['structural_trend'] += 1
-            elif 'statistical' in name_lower or 'distribution' in name_lower:
-                summary['feature_categories']['statistical_regime'] += 1
-            
-            # Calculate quality metrics
-            if feature_array is not None and len(feature_array) > 0:
-                valid_values = feature_array[~np.isnan(feature_array)]
-                if len(valid_values) > 1:
-                    # Persistence
-                    corr = np.corrcoef(valid_values[:-1], valid_values[1:])[0, 1]
-                    persistence = corr if not np.isnan(corr) else 0.0
-                    summary['quality_metrics']['avg_persistence'] += persistence
-                    
-                    # Noise ratio
-                    mean_val = np.mean(valid_values)
-                    std_val = np.std(valid_values)
-                    noise_ratio = std_val / (abs(mean_val) + 1e-8)
-                    summary['quality_metrics']['avg_noise_ratio'] += noise_ratio
-        
-        # Average quality metrics
-        if summary['total_features'] > 0:
-            summary['quality_metrics']['avg_persistence'] /= summary['total_features']
-            summary['quality_metrics']['avg_noise_ratio'] /= summary['total_features']
-            summary['quality_metrics']['avg_temporal_stability'] = 0.8  # Placeholder
-        
+
         return summary
 
 # Convenience function for easy integration
@@ -650,6 +822,6 @@ def generate_regime_features(data: pd.DataFrame,
     
     generator = RegimeFeatureIntegration(config)
     features = generator.generate_features(data)
-    summary = generator.get_feature_summary(features)
-    
+    summary = generator.get_feature_summary(features, generator._latest_quality_stats)
+
     return features, summary

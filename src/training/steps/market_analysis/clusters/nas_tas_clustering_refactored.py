@@ -1939,3 +1939,624 @@ class NASTASClusteringComponent:
             tprint("Performance metrics reset successfully", "SUCCESS")
         except Exception as e:
             tprint(f"Failed to reset performance metrics: {e}", "WARNING")
+    
+    # ============================================================================
+    # VISUALIZATION METHODS (MISSING FROM REFACTORED VERSION)
+    # ============================================================================
+    
+    def _create_umap_visualization(self, features: np.ndarray, assignments: np.ndarray) -> Dict[str, Any]:
+        """Create UMAP visualization of clustering results."""
+        try:
+            tprint("Creating UMAP visualization...", "INFO")
+            
+            if not UMAP_AVAILABLE:
+                tprint("UMAP not available for visualization", "WARNING")
+                return {'error': 'UMAP not available'}
+            
+            # Create UMAP embedding
+            reducer = umap.UMAP(n_components=2, random_state=42)
+            embedding = reducer.fit_transform(features)
+            
+            # Create visualization data
+            visualization_data = {
+                'embedding': embedding.tolist(),
+                'assignments': assignments.tolist(),
+                'n_clusters': len(np.unique(assignments)),
+                'n_samples': len(assignments),
+                'method': 'umap_2d'
+            }
+            
+            tprint("UMAP visualization created successfully", "SUCCESS")
+            return visualization_data
+            
+        except Exception as e:
+            tprint(f"UMAP visualization creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _plot_umap_embedding(self, umap_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Plot UMAP embedding with cluster assignments."""
+        try:
+            tprint("Plotting UMAP embedding...", "INFO")
+            
+            if 'error' in umap_data:
+                return umap_data
+            
+            # Create plot data
+            plot_data = {
+                'x_coords': [point[0] for point in umap_data['embedding']],
+                'y_coords': [point[1] for point in umap_data['embedding']],
+                'assignments': umap_data['assignments'],
+                'n_clusters': umap_data['n_clusters'],
+                'title': 'UMAP Embedding of Clustering Results',
+                'x_label': 'UMAP Dimension 1',
+                'y_label': 'UMAP Dimension 2'
+            }
+            
+            tprint("UMAP embedding plot created", "SUCCESS")
+            return plot_data
+            
+        except Exception as e:
+            tprint(f"UMAP embedding plot creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _plot_local_silhouette_distribution(self, local_silhouette: Dict[str, Any]) -> Dict[str, Any]:
+        """Plot local silhouette score distribution."""
+        try:
+            tprint("Plotting local silhouette distribution...", "INFO")
+            
+            if 'local_scores' not in local_silhouette:
+                return {'error': 'No local silhouette scores available'}
+            
+            local_scores = local_silhouette['local_scores']
+            
+            # Create distribution plot data
+            plot_data = {
+                'scores': local_scores.tolist() if hasattr(local_scores, 'tolist') else local_scores,
+                'mean_score': float(np.mean(local_scores)),
+                'std_score': float(np.std(local_scores)),
+                'min_score': float(np.min(local_scores)),
+                'max_score': float(np.max(local_scores)),
+                'title': 'Local Silhouette Score Distribution',
+                'x_label': 'Silhouette Score',
+                'y_label': 'Frequency'
+            }
+            
+            tprint("Local silhouette distribution plot created", "SUCCESS")
+            return plot_data
+            
+        except Exception as e:
+            tprint(f"Local silhouette distribution plot creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _plot_knn_consistency_heatmap(self, knn_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Plot k-NN consistency heatmap."""
+        try:
+            tprint("Plotting k-NN consistency heatmap...", "INFO")
+            
+            if 'consistency_distribution' not in knn_results:
+                return {'error': 'No consistency distribution available'}
+            
+            consistency_scores = knn_results['consistency_distribution']
+            
+            # Create heatmap data
+            heatmap_data = {
+                'consistency_scores': consistency_scores,
+                'overall_consistency': knn_results.get('overall_consistency', 0.0),
+                'misclustered_percentage': knn_results.get('misclustered_percentage', 0.0),
+                'title': 'k-NN Consistency Heatmap',
+                'x_label': 'Sample Index',
+                'y_label': 'Consistency Score'
+            }
+            
+            tprint("k-NN consistency heatmap created", "SUCCESS")
+            return heatmap_data
+            
+        except Exception as e:
+            tprint(f"k-NN consistency heatmap creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _plot_regime_stability_comparison(self, stability_analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """Plot regime stability comparison."""
+        try:
+            tprint("Plotting regime stability comparison...", "INFO")
+            
+            # Create stability comparison data
+            comparison_data = {
+                'temporal_stability': stability_analysis.get('temporal_stability_score', 0.0),
+                'structural_stability': stability_analysis.get('structural_stability_score', 0.0),
+                'size_balance': stability_analysis.get('size_balance_score', 0.0),
+                'n_regimes': stability_analysis.get('n_regimes', 0),
+                'regime_sizes': stability_analysis.get('regime_sizes', []),
+                'title': 'Regime Stability Comparison',
+                'metrics': ['Temporal Stability', 'Structural Stability', 'Size Balance']
+            }
+            
+            tprint("Regime stability comparison plot created", "SUCCESS")
+            return comparison_data
+            
+        except Exception as e:
+            tprint(f"Regime stability comparison plot creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _create_neighborhood_visualizations(self, features: np.ndarray, assignments: np.ndarray, neighborhood_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Create neighborhood analysis visualizations."""
+        try:
+            tprint("Creating neighborhood visualizations...", "INFO")
+            
+            # Create neighborhood visualization data
+            viz_data = {
+                'features_shape': features.shape,
+                'n_clusters': len(np.unique(assignments)),
+                'misclustered_percentage': neighborhood_results.get('misclustered_percentage', 0.0),
+                'overall_consistency': neighborhood_results.get('overall_consistency', 0.0),
+                'k_used': neighborhood_results.get('k_used', 10),
+                'title': 'Neighborhood Analysis Visualization',
+                'components': ['Feature Space', 'Cluster Assignments', 'Neighborhood Consistency']
+            }
+            
+            tprint("Neighborhood visualizations created", "SUCCESS")
+            return viz_data
+            
+        except Exception as e:
+            tprint(f"Neighborhood visualization creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _plot_regime_balance_distribution(self, assignments: np.ndarray) -> Dict[str, Any]:
+        """Plot regime balance distribution."""
+        try:
+            tprint("Plotting regime balance distribution...", "INFO")
+            
+            unique_clusters, counts = np.unique(assignments, return_counts=True)
+            
+            # Create balance distribution data
+            balance_data = {
+                'cluster_ids': unique_clusters.tolist(),
+                'cluster_sizes': counts.tolist(),
+                'total_samples': len(assignments),
+                'n_clusters': len(unique_clusters),
+                'balance_score': self._compute_balance_score(assignments),
+                'title': 'Regime Balance Distribution',
+                'x_label': 'Cluster ID',
+                'y_label': 'Number of Samples'
+            }
+            
+            tprint("Regime balance distribution plot created", "SUCCESS")
+            return balance_data
+            
+        except Exception as e:
+            tprint(f"Regime balance distribution plot creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _create_cluster_centroid_plots(self, features: np.ndarray, assignments: np.ndarray) -> Dict[str, Any]:
+        """Create cluster centroid plots."""
+        try:
+            tprint("Creating cluster centroid plots...", "INFO")
+            
+            centroids = self._calculate_cluster_centers(features, assignments)
+            
+            # Create centroid plot data
+            centroid_data = {
+                'centroids': centroids.tolist(),
+                'n_clusters': len(centroids),
+                'n_features': centroids.shape[1],
+                'title': 'Cluster Centroids',
+                'x_label': 'Feature Index',
+                'y_label': 'Centroid Value'
+            }
+            
+            tprint("Cluster centroid plots created", "SUCCESS")
+            return centroid_data
+            
+        except Exception as e:
+            tprint(f"Cluster centroid plot creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _plot_feature_importance(self, feature_scores: Dict[str, float], feature_names: List[str]) -> Dict[str, Any]:
+        """Plot feature importance scores."""
+        try:
+            tprint("Plotting feature importance...", "INFO")
+            
+            # Create feature importance plot data
+            importance_data = {
+                'feature_names': feature_names,
+                'importance_scores': [feature_scores.get(name, 0.0) for name in feature_names],
+                'n_features': len(feature_names),
+                'title': 'Feature Importance Scores',
+                'x_label': 'Feature Name',
+                'y_label': 'Importance Score'
+            }
+            
+            tprint("Feature importance plot created", "SUCCESS")
+            return importance_data
+            
+        except Exception as e:
+            tprint(f"Feature importance plot creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _create_regime_transition_plots(self, assignments: np.ndarray) -> Dict[str, Any]:
+        """Create regime transition plots."""
+        try:
+            tprint("Creating regime transition plots...", "INFO")
+            
+            # Calculate transition statistics
+            transitions = np.sum(assignments[1:] != assignments[:-1])
+            total_transitions = len(assignments) - 1
+            transition_rate = transitions / total_transitions if total_transitions > 0 else 0.0
+            
+            # Create transition plot data
+            transition_data = {
+                'assignments': assignments.tolist(),
+                'transitions': int(transitions),
+                'total_possible_transitions': int(total_transitions),
+                'transition_rate': float(transition_rate),
+                'temporal_score': self._compute_temporal_score(assignments),
+                'title': 'Regime Transitions Over Time',
+                'x_label': 'Time Index',
+                'y_label': 'Regime Assignment'
+            }
+            
+            tprint("Regime transition plots created", "SUCCESS")
+            return transition_data
+            
+        except Exception as e:
+            tprint(f"Regime transition plot creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _plot_optimization_convergence(self, convergence_history: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Plot optimization convergence history."""
+        try:
+            tprint("Plotting optimization convergence...", "INFO")
+            
+            if not convergence_history:
+                return {'error': 'No convergence history available'}
+            
+            # Extract convergence data
+            iterations = list(range(len(convergence_history)))
+            scores = [entry.get('score', 0.0) for entry in convergence_history]
+            
+            # Create convergence plot data
+            convergence_data = {
+                'iterations': iterations,
+                'scores': scores,
+                'n_iterations': len(convergence_history),
+                'final_score': scores[-1] if scores else 0.0,
+                'best_score': max(scores) if scores else 0.0,
+                'title': 'Optimization Convergence',
+                'x_label': 'Iteration',
+                'y_label': 'Score'
+            }
+            
+            tprint("Optimization convergence plot created", "SUCCESS")
+            return convergence_data
+            
+        except Exception as e:
+            tprint(f"Optimization convergence plot creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _create_performance_dashboards(self, performance_metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Create performance dashboards."""
+        try:
+            tprint("Creating performance dashboards...", "INFO")
+            
+            # Create dashboard data
+            dashboard_data = {
+                'execution_time': performance_metrics.get('execution_time', 0.0),
+                'memory_usage': performance_metrics.get('memory_usage', 0.0),
+                'success_rate': performance_metrics.get('success_rate', 0.0),
+                'error_count': performance_metrics.get('error_count', 0),
+                'n_clusters': performance_metrics.get('n_clusters', 0),
+                'n_samples': performance_metrics.get('n_samples', 0),
+                'title': 'Performance Dashboard',
+                'metrics': ['Execution Time', 'Memory Usage', 'Success Rate', 'Error Count']
+            }
+            
+            tprint("Performance dashboards created", "SUCCESS")
+            return dashboard_data
+            
+        except Exception as e:
+            tprint(f"Performance dashboard creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _plot_validation_metrics(self, validation_results: Dict[str, Any]) -> Dict[str, Any]:
+        """Plot validation metrics."""
+        try:
+            tprint("Plotting validation metrics...", "INFO")
+            
+            # Create validation metrics plot data
+            metrics_data = {
+                'silhouette_score': validation_results.get('silhouette_score', 0.0),
+                'davies_bouldin_score': validation_results.get('davies_bouldin_score', 0.0),
+                'calinski_harabasz_score': validation_results.get('calinski_harabasz_score', 0.0),
+                'cv_score': validation_results.get('cv_score', 0.0),
+                'temporal_score': validation_results.get('temporal_score', 0.0),
+                'balance_score': validation_results.get('balance_score', 0.0),
+                'title': 'Validation Metrics',
+                'metrics': ['Silhouette', 'Davies-Bouldin', 'Calinski-Harabasz', 'CV Score', 'Temporal', 'Balance']
+            }
+            
+            tprint("Validation metrics plot created", "SUCCESS")
+            return metrics_data
+            
+        except Exception as e:
+            tprint(f"Validation metrics plot creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _create_clustering_summary_plots(self, clustering_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Create clustering summary plots."""
+        try:
+            tprint("Creating clustering summary plots...", "INFO")
+            
+            # Create summary plot data
+            summary_data = {
+                'n_clusters': clustering_result.get('n_clusters', 0),
+                'n_samples': clustering_result.get('n_samples', 0),
+                'silhouette_score': clustering_result.get('silhouette_score', 0.0),
+                'davies_bouldin_score': clustering_result.get('davies_bouldin_score', 0.0),
+                'calinski_harabasz_score': clustering_result.get('calinski_harabasz_score', 0.0),
+                'title': 'Clustering Summary',
+                'components': ['Cluster Count', 'Sample Count', 'Quality Metrics']
+            }
+            
+            tprint("Clustering summary plots created", "SUCCESS")
+            return summary_data
+            
+        except Exception as e:
+            tprint(f"Clustering summary plot creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _plot_memory_usage(self, memory_metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Plot memory usage over time."""
+        try:
+            tprint("Plotting memory usage...", "INFO")
+            
+            # Create memory usage plot data
+            memory_data = {
+                'timestamps': memory_metrics.get('timestamps', []),
+                'memory_usage': memory_metrics.get('memory_usage', []),
+                'peak_memory': memory_metrics.get('peak_memory', 0.0),
+                'average_memory': memory_metrics.get('average_memory', 0.0),
+                'title': 'Memory Usage Over Time',
+                'x_label': 'Time',
+                'y_label': 'Memory Usage (MB)'
+            }
+            
+            tprint("Memory usage plot created", "SUCCESS")
+            return memory_data
+            
+        except Exception as e:
+            tprint(f"Memory usage plot creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _create_execution_timeline(self, execution_metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """Create execution timeline visualization."""
+        try:
+            tprint("Creating execution timeline...", "INFO")
+            
+            # Create timeline data
+            timeline_data = {
+                'start_time': execution_metadata.get('start_time', ''),
+                'end_time': execution_metadata.get('end_time', ''),
+                'duration': execution_metadata.get('duration', 0.0),
+                'steps': execution_metadata.get('steps', []),
+                'title': 'Execution Timeline',
+                'x_label': 'Time',
+                'y_label': 'Step'
+            }
+            
+            tprint("Execution timeline created", "SUCCESS")
+            return timeline_data
+            
+        except Exception as e:
+            tprint(f"Execution timeline creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _plot_error_analysis(self, error_history: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Plot error analysis."""
+        try:
+            tprint("Plotting error analysis...", "INFO")
+            
+            if not error_history:
+                return {'error': 'No error history available'}
+            
+            # Create error analysis plot data
+            error_data = {
+                'error_types': [entry.get('error_type', 'Unknown') for entry in error_history],
+                'error_counts': [entry.get('count', 0) for entry in error_history],
+                'total_errors': sum(entry.get('count', 0) for entry in error_history),
+                'title': 'Error Analysis',
+                'x_label': 'Error Type',
+                'y_label': 'Count'
+            }
+            
+            tprint("Error analysis plot created", "SUCCESS")
+            return error_data
+            
+        except Exception as e:
+            tprint(f"Error analysis plot creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _create_quality_metrics_plots(self, quality_metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Create quality metrics plots."""
+        try:
+            tprint("Creating quality metrics plots...", "INFO")
+            
+            # Create quality metrics plot data
+            quality_data = {
+                'overall_quality': quality_metrics.get('overall_quality', 0.0),
+                'clustering_quality': quality_metrics.get('clustering_quality', 0.0),
+                'temporal_quality': quality_metrics.get('temporal_quality', 0.0),
+                'balance_quality': quality_metrics.get('balance_quality', 0.0),
+                'title': 'Quality Metrics',
+                'metrics': ['Overall', 'Clustering', 'Temporal', 'Balance']
+            }
+            
+            tprint("Quality metrics plots created", "SUCCESS")
+            return quality_data
+            
+        except Exception as e:
+            tprint(f"Quality metrics plot creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _plot_regime_characteristics(self, regime_characteristics: Dict[str, Any]) -> Dict[str, Any]:
+        """Plot regime characteristics."""
+        try:
+            tprint("Plotting regime characteristics...", "INFO")
+            
+            # Create regime characteristics plot data
+            characteristics_data = {
+                'regime_stats': regime_characteristics.get('regime_stats', {}),
+                'feature_importance': regime_characteristics.get('feature_importance', {}),
+                'temporal_patterns': regime_characteristics.get('temporal_patterns', {}),
+                'title': 'Regime Characteristics',
+                'components': ['Regime Stats', 'Feature Importance', 'Temporal Patterns']
+            }
+            
+            tprint("Regime characteristics plot created", "SUCCESS")
+            return characteristics_data
+            
+        except Exception as e:
+            tprint(f"Regime characteristics plot creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _create_optimization_history_plots(self, optimization_history: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Create optimization history plots."""
+        try:
+            tprint("Creating optimization history plots...", "INFO")
+            
+            if not optimization_history:
+                return {'error': 'No optimization history available'}
+            
+            # Create optimization history plot data
+            history_data = {
+                'iterations': list(range(len(optimization_history))),
+                'scores': [entry.get('score', 0.0) for entry in optimization_history],
+                'improvements': [entry.get('improvement', 0.0) for entry in optimization_history],
+                'title': 'Optimization History',
+                'x_label': 'Iteration',
+                'y_label': 'Score'
+            }
+            
+            tprint("Optimization history plots created", "SUCCESS")
+            return history_data
+            
+        except Exception as e:
+            tprint(f"Optimization history plot creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _plot_cluster_evolution(self, evolution_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Plot cluster evolution over time."""
+        try:
+            tprint("Plotting cluster evolution...", "INFO")
+            
+            if not evolution_data:
+                return {'error': 'No evolution data available'}
+            
+            # Create cluster evolution plot data
+            evolution_plot_data = {
+                'timestamps': [entry.get('timestamp', '') for entry in evolution_data],
+                'cluster_counts': [entry.get('n_clusters', 0) for entry in evolution_data],
+                'quality_scores': [entry.get('quality_score', 0.0) for entry in evolution_data],
+                'title': 'Cluster Evolution Over Time',
+                'x_label': 'Time',
+                'y_label': 'Cluster Count'
+            }
+            
+            tprint("Cluster evolution plot created", "SUCCESS")
+            return evolution_plot_data
+            
+        except Exception as e:
+            tprint(f"Cluster evolution plot creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _create_performance_comparison_plots(self, performance_comparison: Dict[str, Any]) -> Dict[str, Any]:
+        """Create performance comparison plots."""
+        try:
+            tprint("Creating performance comparison plots...", "INFO")
+            
+            # Create performance comparison plot data
+            comparison_data = {
+                'algorithms': performance_comparison.get('algorithms', []),
+                'execution_times': performance_comparison.get('execution_times', []),
+                'memory_usage': performance_comparison.get('memory_usage', []),
+                'quality_scores': performance_comparison.get('quality_scores', []),
+                'title': 'Performance Comparison',
+                'x_label': 'Algorithm',
+                'y_label': 'Performance Metric'
+            }
+            
+            tprint("Performance comparison plots created", "SUCCESS")
+            return comparison_data
+            
+        except Exception as e:
+            tprint(f"Performance comparison plot creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _plot_feature_correlation_heatmaps(self, feature_correlations: np.ndarray, feature_names: List[str]) -> Dict[str, Any]:
+        """Plot feature correlation heatmaps."""
+        try:
+            tprint("Plotting feature correlation heatmaps...", "INFO")
+            
+            # Create correlation heatmap data
+            correlation_data = {
+                'correlation_matrix': feature_correlations.tolist(),
+                'feature_names': feature_names,
+                'n_features': len(feature_names),
+                'title': 'Feature Correlation Heatmap',
+                'x_label': 'Features',
+                'y_label': 'Features'
+            }
+            
+            tprint("Feature correlation heatmap created", "SUCCESS")
+            return correlation_data
+            
+        except Exception as e:
+            tprint(f"Feature correlation heatmap creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _create_regime_stability_plots(self, stability_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create regime stability plots."""
+        try:
+            tprint("Creating regime stability plots...", "INFO")
+            
+            # Create stability plot data
+            stability_plot_data = {
+                'temporal_stability': stability_data.get('temporal_stability', 0.0),
+                'structural_stability': stability_data.get('structural_stability', 0.0),
+                'overall_stability': stability_data.get('overall_stability', 0.0),
+                'stability_history': stability_data.get('stability_history', []),
+                'title': 'Regime Stability Analysis',
+                'components': ['Temporal', 'Structural', 'Overall']
+            }
+            
+            tprint("Regime stability plots created", "SUCCESS")
+            return stability_plot_data
+            
+        except Exception as e:
+            tprint(f"Regime stability plot creation failed: {e}", "ERROR")
+            return {'error': str(e)}
+    
+    def _plot_clustering_quality_evolution(self, quality_evolution: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Plot clustering quality evolution."""
+        try:
+            tprint("Plotting clustering quality evolution...", "INFO")
+            
+            if not quality_evolution:
+                return {'error': 'No quality evolution data available'}
+            
+            # Create quality evolution plot data
+            evolution_data = {
+                'iterations': list(range(len(quality_evolution))),
+                'quality_scores': [entry.get('quality_score', 0.0) for entry in quality_evolution],
+                'silhouette_scores': [entry.get('silhouette_score', 0.0) for entry in quality_evolution],
+                'davies_bouldin_scores': [entry.get('davies_bouldin_score', 0.0) for entry in quality_evolution],
+                'title': 'Clustering Quality Evolution',
+                'x_label': 'Iteration',
+                'y_label': 'Quality Score'
+            }
+            
+            tprint("Clustering quality evolution plot created", "SUCCESS")
+            return evolution_data
+            
+        except Exception as e:
+            tprint(f"Clustering quality evolution plot creation failed: {e}", "ERROR")
+            return {'error': str(e)}

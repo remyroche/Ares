@@ -103,9 +103,14 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
         dm_plus = np.maximum(high - np.roll(high, 1), 0)
         dm_minus = np.maximum(np.roll(low, 1) - low, 0)
 
+        # Convert to pandas Series for rolling operations
+        tr_series = pd.Series(tr)
+        dm_plus_series = pd.Series(dm_plus)
+        dm_minus_series = pd.Series(dm_minus)
+
         # Calculate Directional Indicators
-        di_plus = 100 * (dm_plus.rolling(period).mean() / tr.rolling(period).mean())
-        di_minus = 100 * (dm_minus.rolling(period).mean() / tr.rolling(period).mean())
+        di_plus = 100 * (dm_plus_series.rolling(period).mean() / tr_series.rolling(period).mean())
+        di_minus = 100 * (dm_minus_series.rolling(period).mean() / tr_series.rolling(period).mean())
 
         # Calculate ADX
         dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus)
@@ -214,9 +219,14 @@ class ADXGenerator(FeatureGenerator):
         dm_plus = np.maximum(high - np.roll(high, 1), 0)
         dm_minus = np.maximum(np.roll(low, 1) - low, 0)
 
+        # Convert to pandas Series for rolling operations
+        tr_series = pd.Series(tr)
+        dm_plus_series = pd.Series(dm_plus)
+        dm_minus_series = pd.Series(dm_minus)
+
         # Calculate Directional Indicators
-        di_plus = 100 * (dm_plus.rolling(period).mean() / tr.rolling(period).mean())
-        di_minus = 100 * (dm_minus.rolling(period).mean() / tr.rolling(period).mean())
+        di_plus = 100 * (dm_plus_series.rolling(period).mean() / tr_series.rolling(period).mean())
+        di_minus = 100 * (dm_minus_series.rolling(period).mean() / tr_series.rolling(period).mean())
 
         # Calculate ADX
         dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus)

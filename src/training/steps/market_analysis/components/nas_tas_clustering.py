@@ -300,6 +300,13 @@ class ClusteringContext:
     fusion_metadata: Dict[str, Any] = field(default_factory=dict)
     summary: Dict[str, Any] = field(default_factory=dict)
     memory_optimizer: Optional[Any] = None
+    original_feature_names: Optional[List[str]] = None
+    pre_pca_feature_names: Optional[List[str]] = None
+    optimized_feature_names: Optional[List[str]] = None
+    dropped_feature_names: Optional[List[str]] = None
+    feature_scores: Dict[str, float] = field(default_factory=dict)
+    pca_loading_scores: Dict[str, float] = field(default_factory=dict)
+    pre_pca_feature_count: Optional[int] = None
     
     def __enter__(self):
         """Context manager entry for memory management."""
@@ -1778,12 +1785,142 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         
         if not PID_FEATURE_SELECTION_AVAILABLE:
             tprint("⚠️ PID feature selection not available, using regime feature generator", "WARNING")
-            tprint(f"🔍 REGIME GENERATOR: Using dedicated regime feature generator for {target_n_features} features", color="cyan")
-            return self._regime_feature_generation(features, target_n_features)
-        
-        # Use dedicated regime feature generator instead of PID-based selection
-        tprint(f"🔍 REGIME FEATURES: Using dedicated regime feature generator for {target_n_features} features", color="blue")
-        return self._regime_feature_generation(features, target_n_features)
+            tprint(
+                f"🔍 REGIME GENERATOR: Using dedicated regime feature generator for {target_n_features} features",
+                color="cyan",
+            )
+            base_features, base_names, metadata = self._regime_feature_generation(features, target_n_features)
+        else:
+            tprint(
+                f"🔍 REGIME FEATURES: Using dedicated regime feature generator for {target_n_features} features",
+                color="blue",
+            )
+            base_features, base_names, metadata = self._regime_feature_generation(features, target_n_features)
+
+        if base_features is None or base_features.size == 0:
+            raise ValueError("Regime feature generation returned no features")
+
+        # Attempt to extract interim TAS/NAS assignments for discriminative scoring
+        assignment_sources: List[np.ndarray] = []
+        try:
+            tas_assignments, nas_assignments = self._extract_regime_assignments()
+            if isinstance(tas_assignments, np.ndarray) and len(np.unique(tas_assignments)) > 1:
+                assignment_sources.append(tas_assignments)
+            if isinstance(nas_assignments, np.ndarray) and len(np.unique(nas_assignments)) > 1:
+                assignment_sources.append(nas_assignments)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            tprint_warning(f"⚠️ Unable to extract interim TAS/NAS assignments for feature scoring: {exc}")
+
+        if not assignment_sources:
+            tprint_warning(
+                "⚠️ Interim TAS/NAS assignments unavailable - falling back to variance-based ranking for feature pruning"
+            )
+            scores = np.var(base_features, axis=0)
+            scoring_method = 'variance_proxy'
+        else:
+            scoring_method = 'fisher_ratio'
+            scores = np.zeros(base_features.shape[1], dtype=float)
+            for assignments in assignment_sources:
+                unique_labels = np.unique(assignments)
+                label_scores = np.zeros_like(scores)
+                for feature_idx in range(base_features.shape[1]):
+                    feature_values = base_features[:, feature_idx]
+                    overall_mean = float(np.mean(feature_values))
+                    between_var = 0.0
+                    within_var = 0.0
+                    for label in unique_labels:
+                        label_mask = assignments == label
+                        count = int(np.sum(label_mask))
+                        if count < 2:
+                            continue
+                        label_values = feature_values[label_mask]
+                        prior = count / len(feature_values)
+                        label_mean = float(np.mean(label_values))
+                        label_var = float(np.var(label_values))
+                        between_var += prior * (label_mean - overall_mean) ** 2
+                        within_var += prior * label_var
+
+                    if between_var <= 0.0 and within_var <= 0.0:
+                        label_scores[feature_idx] = 0.0
+                    else:
+                        label_scores[feature_idx] = between_var / (between_var + within_var + 1e-12)
+
+                scores += label_scores
+
+            scores /= max(1, len(assignment_sources))
+
+        # Normalize scores for interpretability
+        if np.all(scores == 0):
+            normalized_scores = scores
+        else:
+            max_score = float(np.max(scores))
+            normalized_scores = scores / (max_score + 1e-12)
+
+        # Determine pruning threshold and retain top-ranked features
+        sorted_indices = np.argsort(scores)[::-1]
+        if sorted_indices.size == 0:
+            raise ValueError("No features available after scoring")
+
+        score_threshold = 0.0
+        if sorted_indices.size > 1:
+            score_threshold = float(max(0.01, np.percentile(scores, 10)))
+
+        candidate_indices = [idx for idx in sorted_indices if scores[idx] >= score_threshold]
+        if not candidate_indices:
+            candidate_indices = sorted_indices.tolist()
+
+        max_allowed = min(target_n_features, len(sorted_indices))
+        selected_indices = candidate_indices[:max_allowed]
+
+        if len(selected_indices) < max_allowed:
+            for idx in sorted_indices:
+                if idx not in selected_indices:
+                    selected_indices.append(idx)
+                if len(selected_indices) >= max_allowed:
+                    break
+        selected_features = base_features[:, selected_indices]
+        selected_feature_names = [base_names[i] for i in selected_indices]
+
+        dropped_indices = sorted(set(range(len(base_names))) - set(selected_indices))
+        dropped_feature_names = [base_names[i] for i in dropped_indices]
+
+        # Persist feature scores for downstream interpretability
+        feature_scores = {name: float(normalized_scores[i]) for i, name in enumerate(base_names)}
+        retained_scores = {name: feature_scores[name] for name in selected_feature_names}
+
+        metadata = metadata or {}
+        metadata.update({
+            'selection_performed': True,
+            'method': f'regime_scoring_{scoring_method}',
+            'original_n_features': int(base_features.shape[1]),
+            'selected_n_features': int(selected_features.shape[1]),
+            'score_threshold': float(score_threshold),
+            'feature_scores': feature_scores,
+            'retained_feature_scores': retained_scores,
+            'dropped_features': dropped_feature_names,
+            'retained_features': selected_feature_names,
+        })
+
+        self.feature_scores = feature_scores
+
+        # Logging summary
+        tprint_info(
+            f"🔎 Feature scoring ({scoring_method}): retained {len(selected_feature_names)} / {len(base_names)} features"
+        )
+        if selected_feature_names:
+            top_preview = selected_feature_names[:5]
+            top_scores = [retained_scores[name] for name in top_preview]
+            tprint_info(
+                "   Top features: "
+                + ", ".join(f"{name} ({score:.3f})" for name, score in zip(top_preview, top_scores))
+            )
+        if dropped_feature_names:
+            tprint_info(
+                f"   Dropped low-score features: {min(5, len(dropped_feature_names))}/{len(dropped_feature_names)} preview -> "
+                + ", ".join(dropped_feature_names[:5])
+            )
+
+        return selected_features, selected_feature_names, metadata
     
     def _regime_feature_generation(
         self, 
@@ -2076,7 +2213,25 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     'optimization_trials': optimization_metadata.get('iterations', 0)
                 }
             }
-            
+
+            refined_feature_names = clustering_result.get('refined_feature_names')
+            if refined_feature_names:
+                artifacts['nas_tas_clustering_result']['refined_feature_names'] = refined_feature_names
+                artifacts['refined_feature_names'] = refined_feature_names
+
+            feature_scores = clustering_result.get('feature_scores')
+            if feature_scores:
+                artifacts['nas_tas_clustering_result']['feature_scores'] = feature_scores
+                artifacts['feature_scores'] = feature_scores
+
+            pca_loading_scores = clustering_result.get('pca_loading_scores')
+            if pca_loading_scores:
+                artifacts['nas_tas_clustering_result']['pca_loading_scores'] = pca_loading_scores
+                artifacts['pca_loading_scores'] = pca_loading_scores
+
+            if clustering_result.get('pre_pca_feature_names'):
+                artifacts['pre_pca_feature_names'] = clustering_result['pre_pca_feature_names']
+
             # Add consensus and disagreement metrics if available
             if 'consensus_metrics' in clustering_metrics:
                 artifacts['consensus_metrics'] = clustering_metrics['consensus_metrics']
@@ -2482,9 +2637,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             tprint("Starting progressive regime optimization...", "INFO")
 
             context = ClusteringContext(
-                original_features=features, 
+                original_features=features,
                 market_data=market_data,
-                memory_optimizer=self.memory_optimizer
+                memory_optimizer=self.memory_optimizer,
+                original_feature_names=getattr(self, 'feature_names', None),
+                feature_scores=getattr(self, 'feature_scores', {}),
             )
 
             # Step 1: Feature selection and dimensionality reduction
@@ -2518,37 +2675,144 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         try:
             tprint("Starting data-driven feature optimization...", "INFO")
 
-            # Step 1: Standardize features (keep standardization as-is)
+            # Step 1: Standardize features with updated feature tracking
             tprint("Step 1: Standardizing features...", "INFO")
             from sklearn.preprocessing import StandardScaler
             scaler = StandardScaler()
+
+            feature_names = context.original_feature_names or [
+                f"feature_{i}" for i in range(context.original_features.shape[1])
+            ]
+            context.original_feature_names = list(feature_names)
+            context.pre_pca_feature_names = list(feature_names)
+            context.pre_pca_feature_count = len(feature_names)
+
             features_scaled = scaler.fit_transform(context.original_features)
             tprint(f"Feature standardization completed: {context.original_features.shape}", "SUCCESS")
 
-            # Step 2: Apply PCA with Minka's MLE for data-driven dimensionality selection
-            tprint("Step 2: Applying PCA with MLE for data-driven dimensionality selection...", "INFO")
+            if context.original_features.shape[1] < 2:
+                tprint_warning("⚠️ Fewer than two features available after pruning - skipping PCA")
+                features_final = self._validate_feature_quality_minimal(features_scaled, context.market_data)
+                context.optimized_features = features_final
+                context.optimized_feature_names = list(feature_names)
+                context.dropped_feature_names = context.dropped_feature_names or []
+                context.pca_loading_scores = {name: 1.0 for name in feature_names}
+                if context.feature_scores:
+                    context.feature_scores = {
+                        name: float(context.feature_scores.get(name, 0.0)) for name in feature_names
+                    }
+
+                tprint(
+                    f"Data-driven feature optimization (PCA skipped): {context.original_features.shape} -> {features_final.shape}",
+                    "SUCCESS",
+                )
+
+                self.optimized_features = features_final
+                self.feature_names = list(feature_names)
+                if hasattr(self, 'feature_scores') and isinstance(self.feature_scores, dict):
+                    self.feature_scores = context.feature_scores
+
+                self._safe_memory_cleanup([features_scaled])
+                return
+
             from sklearn.decomposition import PCA
 
-            # Use PCA with MLE to automatically select number of components
-            # Add fallback for small samples or rank-deficient cases
-            try:
-                pca = PCA(n_components='mle', svd_solver='full')
-                features_pca = pca.fit_transform(features_scaled)
-                tprint(
-                    f"PCA-MLE reduction: {context.original_features.shape[1]} -> {features_pca.shape[1]} features "
-                    f"(explained variance: {pca.explained_variance_ratio_.sum():.3f})",
-                    "SUCCESS"
+            def _fit_pca(data: np.ndarray) -> Tuple[Any, np.ndarray]:
+                try:
+                    model = PCA(n_components='mle', svd_solver='full')
+                    transformed = model.fit_transform(data)
+                    if transformed.shape[1] == 0:
+                        model = PCA(n_components=1, svd_solver='full')
+                        transformed = model.fit_transform(data)
+                    tprint(
+                        f"PCA-MLE reduction: {data.shape[1]} -> {transformed.shape[1]} features "
+                        f"(explained variance: {model.explained_variance_ratio_.sum():.3f})",
+                        "SUCCESS",
+                    )
+                    return model, transformed
+                except Exception as exc:
+                    tprint(f"PCA-MLE failed: {exc}, using fallback PCA with 99% variance")
+                    tprint("PCA-MLE failed, using fallback PCA with 99% variance...", "WARNING")
+                    model = PCA(n_components=0.99, svd_solver='full')
+                    transformed = model.fit_transform(data)
+                    if transformed.shape[1] == 0:
+                        model = PCA(n_components=min(1, data.shape[1]), svd_solver='full')
+                        transformed = model.fit_transform(data)
+                    tprint(
+                        f"PCA fallback: {data.shape[1]} -> {transformed.shape[1]} features "
+                        f"(explained variance: {model.explained_variance_ratio_.sum():.3f})",
+                        "SUCCESS",
+                    )
+                    return model, transformed
+
+            def _compute_loading_scores(pca_model: Any, n_features: int) -> np.ndarray:
+                components = np.abs(getattr(pca_model, 'components_', np.empty((0, 0))))
+                if components.size == 0:
+                    return np.zeros(n_features)
+
+                explained = getattr(pca_model, 'explained_variance_ratio_', None)
+                if explained is None or len(explained) != components.shape[0]:
+                    weights = np.ones(components.shape[0]) / max(1, components.shape[0])
+                else:
+                    weights = np.asarray(explained)
+
+                weighted_components = components.T * weights
+                loading_strength = weighted_components.sum(axis=1)
+                max_strength = float(np.max(loading_strength)) if loading_strength.size else 0.0
+                if max_strength == 0.0:
+                    return np.zeros_like(loading_strength)
+                return loading_strength / (max_strength + 1e-12)
+
+            # Step 2: Apply PCA and prune near-zero contributors using loading scores
+            tprint("Step 2: Applying PCA with MLE for data-driven dimensionality selection...", "INFO")
+            pca, features_pca = _fit_pca(features_scaled)
+            loading_scores = _compute_loading_scores(pca, context.original_features.shape[1])
+
+            loading_threshold = float(max(0.05, np.percentile(loading_scores, 5))) if loading_scores.size else 0.0
+            retained_mask = loading_scores >= loading_threshold
+
+            if loading_scores.size >= 2 and retained_mask.sum() < 2:
+                top_two = np.argsort(loading_scores)[::-1][:2]
+                adjusted_mask = np.zeros_like(retained_mask, dtype=bool)
+                adjusted_mask[top_two] = True
+                retained_mask = adjusted_mask
+
+            if retained_mask.sum() == 0 and loading_scores.size:
+                retained_mask[np.argmax(loading_scores)] = True
+
+            if retained_mask.sum() < loading_scores.size:
+                retained_indices = np.where(retained_mask)[0]
+                dropped_indices = np.where(~retained_mask)[0]
+                dropped_feature_names = [feature_names[idx] for idx in dropped_indices]
+                retained_feature_names = [feature_names[idx] for idx in retained_indices]
+
+                tprint_info(
+                    "🔧 PCA loading pruning: removed "
+                    f"{len(dropped_feature_names)} near-zero contributors (threshold={loading_threshold:.3f})"
                 )
-            except Exception as e:
-                tprint(f"PCA-MLE failed: {e}, using fallback PCA with 99% variance")
-                tprint("PCA-MLE failed, using fallback PCA with 99% variance...", "WARNING")
-                pca = PCA(n_components=0.99, svd_solver='full')
-                features_pca = pca.fit_transform(features_scaled)
-                tprint(
-                    f"PCA fallback: {context.original_features.shape[1]} -> {features_pca.shape[1]} features "
-                    f"(explained variance: {pca.explained_variance_ratio_.sum():.3f})",
-                    "SUCCESS"
-                )
+                if dropped_feature_names:
+                    tprint_info(
+                        "   Dropped features: "
+                        + ", ".join(dropped_feature_names[:5])
+                        + ("..." if len(dropped_feature_names) > 5 else "")
+                    )
+
+                context.dropped_feature_names = dropped_feature_names
+                context.original_features = context.original_features[:, retained_indices]
+                feature_names = retained_feature_names
+                context.original_feature_names = list(feature_names)
+
+                if context.feature_scores:
+                    context.feature_scores = {
+                        name: float(context.feature_scores.get(name, 0.0)) for name in feature_names
+                    }
+
+                scaler = StandardScaler()
+                features_scaled = scaler.fit_transform(context.original_features)
+                pca, features_pca = _fit_pca(features_scaled)
+                loading_scores = _compute_loading_scores(pca, context.original_features.shape[1])
+            else:
+                context.dropped_feature_names = []
 
             # Step 3: Basic quality validation (minimal checks)
             tprint("Step 3: Validating feature quality...", "INFO")
@@ -2557,11 +2821,36 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             tprint(
                 f"Data-driven feature optimization completed: {context.original_features.shape} -> {features_final.shape}",
-                "SUCCESS"
+                "SUCCESS",
             )
 
             context.optimized_features = features_final
+            context.optimized_feature_names = list(feature_names)
+            context.pca_loading_scores = {
+                name: float(loading_scores[idx]) for idx, name in enumerate(feature_names)
+            }
+            if context.feature_scores:
+                context.feature_scores = {
+                    name: float(context.feature_scores.get(name, 0.0)) for name in feature_names
+                }
+
+            if context.pca_loading_scores:
+                top_loadings = sorted(
+                    context.pca_loading_scores.items(), key=lambda item: item[1], reverse=True
+                )[:5]
+                tprint_info(
+                    "📈 PCA loadings summary: "
+                    + ", ".join(f"{name} ({score:.3f})" for name, score in top_loadings)
+                )
+
             self.optimized_features = features_final
+            self.feature_names = list(feature_names)
+            if hasattr(self, 'feature_scores') and isinstance(self.feature_scores, dict):
+                self.feature_scores = context.feature_scores
+
+            if hasattr(self, 'selection_metadata') and isinstance(self.selection_metadata, dict):
+                self.selection_metadata.setdefault('pca_loading_scores', context.pca_loading_scores)
+                self.selection_metadata.setdefault('dropped_features_after_pca', context.dropped_feature_names)
 
             # Memory cleanup after feature optimization using hardware tools
             # Use thread-safe cleanup to avoid race conditions
@@ -2616,8 +2905,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 raise ValueError("All features were invalid (NaN/inf), cannot proceed")
             
             # Validate minimum requirements
-            if features.shape[1] < 2:
-                raise ValueError(f"Insufficient features for clustering: {features.shape[1]} < 2")
+            if features.shape[1] == 0:
+                raise ValueError("Insufficient features for clustering: 0 < 2")
+
+            if features.shape[1] == 1:
+                tprint_warning("⚠️ Only one feature available after optimization - clustering stability may be reduced")
             
             if features.shape[0] < 10:
                 tprint(f"Low sample count: {features.shape[0]} samples", "WARNING")
@@ -4749,6 +5041,27 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         optimal_bic = context.optimal_bic if context.optimal_bic is not None else float('nan')
         k_metadata = context.k_metadata or {}
 
+        pre_pca_count = context.pre_pca_feature_count or (
+            len(context.pre_pca_feature_names) if context.pre_pca_feature_names else context.original_features.shape[1]
+        )
+        post_prune_count = context.original_features.shape[1]
+        optimized_feature_names = context.optimized_feature_names or getattr(
+            self, 'feature_names', [f'feature_{i}' for i in range(post_prune_count)]
+        )
+
+        feature_optimization_metadata = {
+            'method': 'pca_mle',
+            'pre_pca_feature_count': int(pre_pca_count),
+            'post_prune_feature_count': int(post_prune_count),
+            'optimized_feature_count': int(optimized_features.shape[1]),
+            'reduction_ratio': float(optimized_features.shape[1] / max(1, post_prune_count)),
+            'retained_feature_names': optimized_feature_names,
+            'dropped_feature_names': context.dropped_feature_names or [],
+            'feature_scores': context.feature_scores,
+            'pca_loading_scores': context.pca_loading_scores,
+            'pre_pca_feature_names': context.pre_pca_feature_names or optimized_feature_names,
+        }
+
         clustering_result = {
             'n_clusters': len(set(optimized_assignments)),
             'cluster_assignments': np.asarray(optimized_assignments).tolist(),
@@ -4772,16 +5085,16 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 'random_state': 42,
                 'k_selection_metadata': k_metadata,
                 'fusion_metadata': metrics.get('fusion_metadata', {}),
-                'feature_optimization': {
-                    'original_features': context.original_features.shape[1],
-                    'optimized_features': optimized_features.shape[1],
-                    'reduction_ratio': optimized_features.shape[1] / context.original_features.shape[1],
-                    'method': 'pca_mle'
-                },
+                'feature_optimization': feature_optimization_metadata,
                 'original_features': context.original_features,
-                'feature_names': getattr(self, 'feature_names', [f'feature_{i}' for i in range(context.original_features.shape[1])])
+                'feature_names': optimized_feature_names
             }
         }
+
+        clustering_result['refined_feature_names'] = optimized_feature_names
+        clustering_result['feature_scores'] = context.feature_scores
+        clustering_result['pca_loading_scores'] = context.pca_loading_scores
+        clustering_result['pre_pca_feature_names'] = context.pre_pca_feature_names or optimized_feature_names
 
         # ✅ ADD: Create regime assignments DataFrame with features for parquet saving
         try:

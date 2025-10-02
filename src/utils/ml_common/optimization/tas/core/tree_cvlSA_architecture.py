@@ -20,33 +20,35 @@ from collections import defaultdict
 from .tas_config import TASConfig, TASArchitectureType, TradingObjective, MarketRegime, MicroRegimeType
 from ..components.micro_regime_detector import MicroRegimeDetector, MicroRegimeDetectionResult
 from ..evaluation.tas_evaluator import TASEvaluator, EvaluationResult
-from .tree_architecture_search import TreeArchitectureSearch, TreeArchitectureConfig, TreeArchitectureCandidate
+# Missing module commented out
+# from .tree_architecture_search import TreeArchitectureSearch, TreeArchitectureConfig, TreeArchitectureCandidate
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class CVLSAResult:
-    """Result of CVLSA optimization."""
-    best_architecture: TreeArchitectureCandidate
-    architecture_type: str = "CVLSA_Tree"
-    cascade_levels: List[Dict[str, Any]] = field(default_factory=list)
-    variable_selection_config: Dict[str, Any] = field(default_factory=dict)
-    regime_analysis: Dict[MarketRegime, Any] = field(default_factory=dict)
-    micro_regime_analysis: Dict[MicroRegimeType, List[MicroRegimeDetectionResult]] = field(default_factory=dict)
+# Class commented out due to missing TreeArchitectureCandidate import
+# @dataclass
+# class CVLSAResult:
+#     """Result of CVLSA optimization."""
+#     best_architecture: TreeArchitectureCandidate
+#     architecture_type: str = "CVLSA_Tree"
+#     cascade_levels: List[Dict[str, Any]] = field(default_factory=list)
+#     variable_selection_config: Dict[str, Any] = field(default_factory=dict)
+#     regime_analysis: Dict[MarketRegime, Any] = field(default_factory=dict)
+#     micro_regime_analysis: Dict[MicroRegimeType, List[MicroRegimeDetectionResult]] = field(default_factory=dict)
 
-    # Performance metrics
-    economic_significance_score: float = 0.0
-    trading_viability_score: float = 0.0
-    cascade_efficiency: float = 0.0
-    variable_selection_accuracy: float = 0.0
+#     # Performance metrics
+#     economic_significance_score: float = 0.0
+#     trading_viability_score: float = 0.0
+#     cascade_efficiency: float = 0.0
+#     variable_selection_accuracy: float = 0.0
 
-    # Ensemble information
-    ensemble_members: List[TreeArchitectureCandidate] = field(default_factory=list)
-    ensemble_weights: List[float] = field(default_factory=list)
+#     # Ensemble information
+#     ensemble_members: List[TreeArchitectureCandidate] = field(default_factory=list)
+#     ensemble_weights: List[float] = field(default_factory=list)
 
-    execution_time: float = 0.0
-    metadata: Dict[str, Any] = field(default_factory=dict)
+#     execution_time: float = 0.0
+#     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 class TreeCVLSASearch:

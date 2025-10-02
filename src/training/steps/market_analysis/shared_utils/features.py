@@ -195,19 +195,19 @@ def prepare_market_features(
                 include_volume_regime='regime_volume' in feature_config.feature_categories if has_regime_categories else True,
                 include_structural_trend='regime_structural_trend' in feature_config.feature_categories if has_regime_categories else True,
                 include_statistical_regime='regime_statistical' in feature_config.feature_categories if has_regime_categories else True,
-                min_regime_persistence=0.2,     # Relaxed from 0.7 - regimes change!
-                max_feature_noise_ratio=1.2,   # Relaxed from 0.3 - allow variability
-                min_temporal_stability=0.1,    # Relaxed from 0.6 - allow transitions
+                min_regime_persistence=0.1,     # Further relaxed to get more features
+                max_feature_noise_ratio=2.0,   # Much more relaxed to allow more features
+                min_temporal_stability=0.05,   # Much more relaxed to allow more features
                 optimize_for_15m=True,
                 trade_duration_minutes=(5, 30),
-                enable_feature_selection=True,
-                max_features_per_category=30,
-                total_max_features=100
+                enable_feature_selection=False,  # Disable feature selection to get more features
+                max_features_per_category=50,    # Increased from 30 to 50
+                total_max_features=110          # Target 90-110 features for optimal regime detection
             )
             
             if verbose:
                 tprint_debug(f"📊 [SHARED_FEATURES] Extracting regime-focused features for categories: {feature_config.feature_categories}")
-                tprint("🎯 [REGIME_FEATURES] Using RegimeFeatureIntegration with 28 regime-specific features", color="cyan", bold=True)
+                tprint("🎯 [REGIME_FEATURES] Using RegimeFeatureIntegration targeting 90-110 regime-specific features", color="cyan", bold=True)
             
             # Generate regime-focused features
             features_dict, summary = generate_regime_features(
@@ -358,6 +358,10 @@ def prepare_market_features(
         rows_before = len(features_df)
 
         if feature_config.handle_missing_values:
+            # Count NaN values before handling
+            initial_nan_count = np.isnan(features_array).sum()
+            initial_nan_pct = initial_nan_count / (features_array.size) * 100
+
             features_df = features_df.fillna(method='bfill')
 
             # Remove rows with any remaining NaN values
@@ -366,20 +370,31 @@ def prepare_market_features(
             features_array = features_array[valid_rows]
             features_df = features_df.iloc[valid_indices]
             removed_rows = int(len(valid_rows) - valid_rows.sum())
+
+            # Log NaN handling results
+            final_nan_count = np.isnan(features_array).sum()
+            if verbose:
+                tprint_debug(f"📊 [SHARED_FEATURES] NaN handling: {initial_nan_count:,} NaN values ({initial_nan_pct:.2f}%) → {final_nan_count:,} remaining")
+                if removed_rows > 0:
+                    tprint_debug(f"📊 [SHARED_FEATURES] Removed {removed_rows} rows with NaN values")
+
             stage_metadata['operations'].append({
                 'type': 'nan_row_filter',
                 'removed_rows': removed_rows,
+                'initial_nan_count': int(initial_nan_count),
+                'final_nan_count': int(final_nan_count),
             })
 
-
+        rows_after = len(features_df)
         if rows_after == 0:
             if verbose:
                 tprint_debug(f"📊 [SHARED_FEATURES] Removed {removed_rows} rows with NaN values")
+            raise ValueError("No data remaining after NaN filtering")
 
-        if len(features_array) == 0:
-
-            if verbose:
-                tprint_debug(f"📊 [SHARED_FEATURES] Dropped low-variance features: {variance_result.dropped_columns}")
+        # Apply variance filtering
+        variance_result = filter_low_variance(features_df, feature_config.min_variance)
+        if verbose:
+            tprint_debug(f"📊 [SHARED_FEATURES] Dropped low-variance features: {variance_result.dropped_columns}")
         features_df = variance_result.frame
 
         if features_df.empty:
@@ -403,6 +418,15 @@ def prepare_market_features(
             if verbose:
                 tprint_debug("🔧 [SHARED_FEATURES] Removing highly correlated features")
             
+            # Ensure arrays are aligned before correlation analysis
+            if features_array.shape[1] != features_df.shape[1]:
+                if verbose:
+                    tprint_warning(f"⚠️ [SHARED_FEATURES] Array/DataFrame column mismatch: array={features_array.shape[1]}, df={features_df.shape[1]}")
+                # Use the minimum number of columns
+                min_cols = min(features_array.shape[1], features_df.shape[1])
+                features_array = features_array[:, :min_cols]
+                features_df = features_df.iloc[:, :min_cols]
+            
             # Calculate correlation matrix
             corr_matrix = np.corrcoef(features_array.T)
             
@@ -422,8 +446,21 @@ def prepare_market_features(
             # Remove highly correlated features
             if features_to_remove:
                 keep_indices = [i for i in range(features_array.shape[1]) if i not in features_to_remove]
-                features_array = features_array[:, keep_indices]
-                features_df = features_df.iloc[:, keep_indices]
+                # Ensure indices are within bounds for both arrays
+                max_cols_array = features_array.shape[1]
+                max_cols_df = features_df.shape[1]
+                keep_indices = [i for i in keep_indices if i < max_cols_array and i < max_cols_df]
+                
+                if keep_indices:
+                    features_array = features_array[:, keep_indices]
+                    features_df = features_df.iloc[:, keep_indices]
+                else:
+                    # If no features remain, keep the first feature (ensure it exists)
+                    if max_cols_array > 0 and max_cols_df > 0:
+                        features_array = features_array[:, [0]]
+                        features_df = features_df.iloc[:, [0]]
+                    else:
+                        raise ValueError("No features available after correlation filtering")
                 stage_metadata['operations'].append({
                     'type': 'correlation_filter',
                     'removed_features': int(len(features_to_remove)),
@@ -432,8 +469,7 @@ def prepare_market_features(
 
 
                 if verbose:
-                    tprint_debug(f"📊 [SHARED_FEATURES] Dropped correlated features: {corr_result.dropped_columns}")
-            features_df = corr_result.frame
+                    tprint_debug(f"📊 [SHARED_FEATURES] Dropped correlated features: {len(features_to_remove)} features")
 
         if features_df.empty:
             raise ValueError("No features remain after correlation pruning")

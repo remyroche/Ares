@@ -15,6 +15,57 @@ from src.utils.common_utilities import CommonUtilities
 from src.utils.math_validation import safe_divide
 from src.utils.serialization_utils import UniversalSerializer
 
+# Import numpy for type checking
+from .dependency_manager import get_dependency
+np, _ = get_dependency('numpy')
+
+# Utility function to convert int64 to int for dictionary keys
+def convert_int64_to_int(value: Any) -> Any:
+    """Convert int64 values to regular Python int for JSON serialization."""
+    try:
+        if hasattr(value, 'dtype') and value.dtype == 'int64':
+            return int(value)
+        elif isinstance(value, np.int64):
+            return int(value)
+        elif isinstance(value, dict):
+            # Convert both keys and values to handle int64 keys
+            converted_dict = {}
+            for k, v in value.items():
+                # Convert key if it's int64
+                converted_key = k
+                if isinstance(k, np.int64):
+                    converted_key = int(k)
+                elif hasattr(k, 'dtype') and k.dtype == 'int64':
+                    converted_key = int(k)
+
+                # Convert value recursively
+                converted_dict[converted_key] = convert_int64_to_int(v)
+
+            return converted_dict
+        elif isinstance(value, (list, tuple)):
+            # Convert each item in the list/tuple recursively
+            return [convert_int64_to_int(item) for item in value]
+        elif hasattr(value, 'shape') and len(value.shape) > 0:
+            # Handle numpy arrays that might be problematic
+            if value.size > 100:  # Large arrays might cause issues
+                return {
+                    'type': 'numpy_array',
+                    'shape': value.shape,
+                    'dtype': str(value.dtype),
+                    'size': value.size
+                }
+            else:
+                return value.tolist()  # Convert small arrays to lists
+        else:
+            return value
+    except Exception as e:
+        # If conversion fails, return a safe representation
+        return {
+            'conversion_error': str(e),
+            'original_type': type(value).__name__,
+            'safe_representation': 'unconvertible_value'
+        }
+
 # Import modular components
 from .core.optimizer import CoreOptimizer, OptimizationMethod, OptimizationResult
 from .validation.validator import InputValidator, ValidationLevel, ValidationStatus, ValidationSummary
@@ -91,8 +142,8 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         self.start_time: Optional[float] = None
         self.metrics: Optional[OptimizationMetrics] = None
 
-        # Performance monitoring
-        self.performance_monitor = {
+        # Performance monitoring (separate from PerformanceMonitor instance)
+        self.performance_data = {
             'memory_usage': [],
             'cpu_usage': [],
             'execution_times': {},
@@ -180,6 +231,9 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             # Perform feature optimization
             optimization_results = await self._perform_feature_optimization(optimization_data, pipeline_state)
 
+            # Convert int64 values to regular int values for JSON serialization
+            optimization_results = convert_int64_to_int(optimization_results)
+
             # Create optimization metrics
             metrics = self._create_optimization_metrics(optimization_results)
 
@@ -191,14 +245,14 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
 
             result = ComponentResult(
                 success=True,
-                data=optimization_results,
+                artifacts=artifacts,
                 metadata={
                     'optimization_status': 'completed',
                     'total_features_optimized': len(optimization_results.get('feature_results', {})),
                     'validation_summary': validation_summary.__dict__ if validation_summary else None,
-                    'performance_metrics': self.performance_monitor.get_performance_summary()
-                },
-                artifacts=artifacts
+                    'performance_metrics': self.performance_monitor.get_performance_summary(),
+                    'optimization_results': optimization_results
+                }
             )
 
             log_success("Feature lookback optimization completed successfully")
@@ -217,9 +271,8 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         """Create a failed component result."""
         return ComponentResult(
             success=False,
-            data=None,
-            metadata={'optimization_status': 'failed'},
-            artifacts=[]
+            artifacts={},
+            metadata={'optimization_status': 'failed'}
         )
 
     async def _load_market_data(self, data: Any) -> Optional[pd.DataFrame]:
@@ -261,8 +314,13 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
     ) -> Dict[str, Any]:
         """Perform feature optimization using the core optimizer."""
         try:
-            # Get available features
-            feature_columns = [col for col in data.columns if col not in ['open', 'high', 'low', 'close', 'volume', 'timestamp']]
+            # Get available features (exclude OHLCV, timestamp, and categorical columns)
+            excluded_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'symbol', 'open_time', 'close_time']
+            feature_columns = [col for col in data.columns if col not in excluded_columns]
+            
+            # Filter to only numeric columns to avoid aggregation errors
+            numeric_columns = data.select_dtypes(include=['number']).columns.tolist()
+            feature_columns = [col for col in feature_columns if col in numeric_columns]
 
             if not feature_columns:
                 return {'feature_results': {}, 'error': 'No features available for optimization'}
@@ -280,7 +338,14 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                         method=OptimizationMethod.MRMR
                     )
 
-                    feature_results[feature] = result.to_dict()
+                    # Ensure feature name is converted to regular Python type for dictionary key
+                    feature_key = feature
+                    if isinstance(feature, np.int64):
+                        feature_key = int(feature)
+                    elif hasattr(feature, 'dtype') and feature.dtype == 'int64':
+                        feature_key = int(feature)
+
+                    feature_results[feature_key] = result.to_dict()
 
                 except Exception as e:
                     self.error_handler.handle_error(
@@ -343,7 +408,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             if feature_results:
                 # Get best result from features
                 best_feature = max(feature_results.items(), key=lambda x: x[1].get('best_score', 0))
-                best_lookback = best_feature[1].get('best_lookback_period', 10)
+                best_lookback = convert_int64_to_int(best_feature[1].get('best_lookback_period', 10))
                 best_score = best_feature[1].get('best_score', 0.0)
 
             return OptimizationMetrics(
@@ -406,7 +471,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 'symbol': pipeline_state.get('symbol', 'UNKNOWN'),
                 'exchange': pipeline_state.get('exchange', 'UNKNOWN'),
                 'timeframe': pipeline_state.get('timeframe', 'UNKNOWN'),
-                'optimization_results': optimization_results
+                'optimization_results': convert_int64_to_int(optimization_results)
             }
 
             # In a real implementation, this would save to files

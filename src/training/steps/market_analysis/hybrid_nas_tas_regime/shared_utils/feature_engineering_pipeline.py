@@ -239,9 +239,7 @@ class FeatureEngineeringPipeline:
                     'volume': FeatureCategory.VOLUME,
                     'trend': FeatureCategory.TREND,
                     'returns': FeatureCategory.RETURNS,
-                    'oscillator': FeatureCategory.OSCILLATOR,
-                    'time': FeatureCategory.TIME,
-                    'microstructure': FeatureCategory.MICROSTRUCTURE
+                    'oscillator': FeatureCategory.OSCILLATOR
                 }
                 
                 for category_name, category_enum in category_mapping.items():
@@ -271,6 +269,7 @@ class FeatureEngineeringPipeline:
         Returns:
             FeaturePipelineResult with engineered features
         """
+        print(f"🔍 DEBUG: engineer_features called with data shape {data.shape}")
         tprint_info("Starting feature engineering pipeline")
         tprint_debug(f"Input shape: {data.shape}")
         tprint_debug(f"Feature categories: {len(self.config.feature_categories)}")
@@ -386,6 +385,7 @@ class FeatureEngineeringPipeline:
         Returns:
             DataFrame with base features
         """
+        print(f"🔍 DEBUG: _generate_base_features called with data shape {data.shape}")
         try:
             all_features = pd.DataFrame(index=data.index)
             
@@ -434,28 +434,28 @@ class FeatureEngineeringPipeline:
                 return features
             
             # Generate features using all generators for this category
-            for generator in generators:
+            for i, generator in enumerate(generators):
                 try:
-                    self.logger.info(f"🔍 Generating features with generator: {generator.name}")
+                    self.logger.info(f"🔍 Generating features with generator: {generator.config.name}")
                     self.logger.info(f"🔍 Data shape: {data.shape}, columns: {list(data.columns)}")
                     result = generator.generate(data)
-                    self.logger.info(f"🔍 Generator {generator.name} result type: {type(result)}")
+                    self.logger.info(f"🔍 Generator {generator.config.name} result type: {type(result)}")
                     if result:
-                        self.logger.info(f"🔍 Generator {generator.name} result has features: {hasattr(result, 'features')}")
-                        if hasattr(result, 'features'):
-                            self.logger.info(f"🔍 Generator {generator.name} features shape: {result.features.shape if not result.features.empty else 'empty'}")
-                    if result and hasattr(result, 'features') and not result.features.empty:
-                        # Add features with category prefix to avoid naming conflicts
-                        category_features = result.features.copy()
-                        category_features.columns = [f"{category.value}_{col}" for col in category_features.columns]
+                        self.logger.info(f"🔍 Generator {generator.config.name} result has data: {hasattr(result, 'data')}")
+                        if hasattr(result, 'data'):
+                            self.logger.info(f"🔍 Generator {generator.config.name} data shape: {result.data.shape if not result.data.empty else 'empty'}")
+                    if result and hasattr(result, 'data') and not result.data.empty:
+                        # Convert Series to DataFrame and add features with category prefix to avoid naming conflicts
+                        feature_name = f"{category.value}_{result.name}"
+                        category_features = pd.DataFrame({feature_name: result.data})
                         features = pd.concat([features, category_features], axis=1)
-                        self.logger.info(f"✅ Generated {len(category_features.columns)} {category.value} features")
+                        self.logger.info(f"✅ Generated 1 {category.value} feature: {feature_name}")
                     else:
-                        self.logger.warning(f"⚠️ Generator {generator.name} returned empty result")
+                        self.logger.warning(f"⚠️ Generator {generator.config.name} returned empty result")
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Generator {generator.name} failed for {category}: {e}")
+                    self.logger.warning(f"⚠️ Generator {generator.config.name} failed for {category}: {e}")
                     import traceback
-                    self.logger.warning(f"⚠️ Generator {generator.name} traceback: {traceback.format_exc()}")
+                    self.logger.warning(f"⚠️ Generator {generator.config.name} traceback: {traceback.format_exc()}")
                     continue
             
             return features
@@ -658,61 +658,6 @@ class FeatureEngineeringPipeline:
             self.logger.warning(f"⚠️ Oscillator feature generation failed: {e}")
             return pd.DataFrame()
     
-    def _generate_time_features(self, data: pd.DataFrame, calculator: Any) -> pd.DataFrame:
-        """Generate time-based features."""
-        try:
-            features = pd.DataFrame(index=data.index)
-            
-            if hasattr(data.index, 'hour'):
-                features['hour'] = data.index.hour
-                features['day_of_week'] = data.index.dayofweek
-                features['day_of_month'] = data.index.day
-                features['month'] = data.index.month
-                features['quarter'] = data.index.quarter
-                
-                # Cyclical encoding
-                features['hour_sin'] = np.sin(2 * np.pi * data.index.hour / 24)
-                features['hour_cos'] = np.cos(2 * np.pi * data.index.hour / 24)
-                features['dow_sin'] = np.sin(2 * np.pi * data.index.dayofweek / 7)
-                features['dow_cos'] = np.cos(2 * np.pi * data.index.dayofweek / 7)
-            
-            return features
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Time feature generation failed: {e}")
-            return pd.DataFrame()
-    
-    def _generate_microstructure_features(self, data: pd.DataFrame, calculator: Any) -> pd.DataFrame:
-        """Generate microstructure features."""
-        try:
-            features = pd.DataFrame(index=data.index)
-            
-            if all(col in data.columns for col in ['open', 'high', 'low', 'close', 'volume']):
-                # Bid-ask spread proxy
-                spread_proxy = (data['high'] - data['low']) / data['close']
-                features['spread_proxy'] = spread_proxy
-                
-                # Price impact proxy
-                price_impact = data['volume'] / (data['high'] - data['low'] + 1e-10)
-                features['price_impact'] = price_impact
-                
-                # Order flow imbalance proxy
-                ofi_proxy = (data['close'] - data['open']) / (data['high'] - data['low'] + 1e-10)
-                features['ofi_proxy'] = ofi_proxy
-                
-                # Volume-weighted average price (VWAP) proxy
-                vwap = (data['high'] + data['low'] + data['close']) / 3
-                features['vwap_proxy'] = vwap
-                
-                # Volume-weighted price relative to VWAP
-                vwap_ratio = data['close'] / vwap
-                features['vwap_ratio'] = vwap_ratio
-            
-            return features
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Microstructure feature generation failed: {e}")
-            return pd.DataFrame()
     
     def _generate_interaction_features(self, features: pd.DataFrame) -> pd.DataFrame:
         """Generate interaction features between existing features."""
@@ -929,7 +874,6 @@ class FeatureEngineeringPipeline:
                 'trend': [],
                 'returns': [],
                 'oscillator': [],
-                'time': [],
                 'interaction': [],
                 'polynomial': [],
                 'other': []
@@ -949,8 +893,6 @@ class FeatureEngineeringPipeline:
                     categories['returns'].append(col)
                 elif 'stoch' in col_lower or 'williams' in col_lower or 'cci' in col_lower:
                     categories['oscillator'].append(col)
-                elif 'hour' in col_lower or 'day' in col_lower or 'month' in col_lower:
-                    categories['time'].append(col)
                 elif '_x_' in col_lower or '_div_' in col_lower:
                     categories['interaction'].append(col)
                 elif 'poly_' in col_lower:

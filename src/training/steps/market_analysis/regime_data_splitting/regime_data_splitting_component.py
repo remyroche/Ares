@@ -248,13 +248,12 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             # Initialize hardware manager
             init_result = self.hardware_manager.initialize()
             
-            if init_result.get('success', False):
+            if init_result:
                 self.logger.info("🧠 Hardware optimizations initialized successfully")
-                self.logger.info(f"🧠 Hardware capabilities: {init_result.get('capabilities', {})}")
                 
                 # Log hardware info
                 try:
-                    hardware_info = self.hardware_manager.get_system_info()
+                    hardware_info = self.hardware_manager.get_system_status()
                     self.logger.info(f"🧠 Hardware Info: {hardware_info}")
                 except Exception as e:
                     self.logger.warning(f"⚠️ Could not retrieve hardware info: {e}")
@@ -372,6 +371,13 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             splitting_result = await self._perform_regime_splitting(
                 market_data, regime_discovery, report
             )
+            
+            if splitting_result is None:
+                error_msg = "Regime splitting returned None - check method implementation"
+                tprint(f'❌ {error_msg}')
+                report.status = RegimeSplittingStatus.FAILED
+                report.errors.append(error_msg)
+                return self._create_failure_result(report, "Regime splitting failed")
             
             if not splitting_result['success']:
                 tprint(f'❌ Regime splitting failed: {splitting_result["errors"]}')
@@ -801,65 +807,62 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                         'data': None
                     }
 
-            except Exception as e:
-                self.logger.error(f"❌ Error in regime splitting: {e}")
-                return {
-                    'success': False,
-                    'errors': [f"Regime splitting failed: {str(e)}"],
-                    'data': None
-                }
-            
-            if regime_probabilities is not None:
-                try:
-                    regime_probabilities_aligned = regime_probabilities[:min_len]
-                    # Validate probabilities alignment
-                    if len(regime_probabilities_aligned) != min_len:
-                        self.logger.warning("⚠️ Regime probabilities alignment mismatch, setting to None")
+                if regime_probabilities is not None:
+                    try:
+                        regime_probabilities_aligned = regime_probabilities[:min_len]
+                        # Validate probabilities alignment
+                        if len(regime_probabilities_aligned) != min_len:
+                            self.logger.warning("⚠️ Regime probabilities alignment mismatch, setting to None")
+                            regime_probabilities_aligned = None
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Failed to align regime probabilities: {e}, setting to None")
                         regime_probabilities_aligned = None
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Failed to align regime probabilities: {e}, setting to None")
+                else:
                     regime_probabilities_aligned = None
-            else:
-                regime_probabilities_aligned = None
-            
-            # Final validation of aligned data
-            if len(market_data_aligned) != len(regime_states_aligned):
-                error = self.error_handler.handle_alignment_error(
-                    f"Data alignment validation failed: market_data={len(market_data_aligned)}, regime_states={len(regime_states_aligned)}",
-                    "Review data alignment logic and ensure consistent processing",
-                    context={
-                        'market_data_length': len(market_data_aligned),
-                        'regime_states_length': len(regime_states_aligned),
-                        'expected_length': min_len
-                    },
-                    severity=ErrorSeverity.CRITICAL
-                )
-                return {
-                    'success': False,
-                    'errors': [error.to_string()],
-                    'data': None
+                
+                # Final validation of aligned data
+                if len(market_data_aligned) != len(regime_states_aligned):
+                    error = self.error_handler.handle_alignment_error(
+                        f"Data alignment validation failed: market_data={len(market_data_aligned)}, regime_states={len(regime_states_aligned)}",
+                        "Review data alignment logic and ensure consistent processing",
+                        context={
+                            'market_data_length': len(market_data_aligned),
+                            'regime_states_length': len(regime_states_aligned),
+                            'expected_length': min_len
+                        },
+                        severity=ErrorSeverity.CRITICAL
+                    )
+                    return {
+                        'success': False,
+                        'errors': [error.to_string()],
+                        'data': None
+                    }
+                
+                # Log alignment success
+                alignment_info = {
+                    'original_market_data_length': original_market_len,
+                    'original_regime_states_length': original_regime_len,
+                    'aligned_length': min_len,
+                    'data_loss_percentage': data_loss_percentage,
+                    'temporal_validation_passed': temporal_validation_passed
                 }
-            
-            # Log alignment success
-            alignment_info = {
-                'original_market_data_length': original_market_len,
-                'original_regime_states_length': original_regime_len,
-                'aligned_length': min_len,
-                'data_loss_percentage': data_loss_percentage,
-                'temporal_validation_passed': temporal_validation_passed
-            }
-            self.logger.info(f"✅ Data alignment completed successfully: {alignment_info}")
-            
-            # Clean up original data references using hardware manager
-            del market_data
-            
-            # Optimize memory using hardware manager
-            try:
-                memory_result = self.hardware_manager.optimize_memory()
-                self.logger.debug(f"Memory optimization result: {memory_result}")
-            except Exception as e:
-                self.logger.warning(f"⚠️ Memory optimization failed: {e}")
-                # Continue without memory optimization
+                self.logger.info(f"✅ Data alignment completed successfully: {alignment_info}")
+                
+                # Clean up original data references using hardware manager
+                del market_data
+                
+                # Optimize memory using hardware manager
+                try:
+                    if hasattr(self.hardware_manager, 'optimize_memory'):
+                        memory_result = self.hardware_manager.optimize_memory()
+                        self.logger.debug(f"Memory optimization result: {memory_result}")
+                    else:
+                        # Use memory optimizer directly
+                        memory_result = self.memory_optimizer.optimize_memory()
+                        self.logger.debug(f"Memory optimization result: {memory_result}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Memory optimization failed: {e}")
+                    # Continue without memory optimization
                 
                 # Add regime information to market data using safe operations
                 market_data_aligned['regime_state'] = regime_states_aligned
@@ -909,7 +912,9 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         """Extract regime states from regime discovery results."""
         try:
             # Try different possible structures
-            if 'regime_states' in regime_discovery:
+            if 'cluster_assignments' in regime_discovery:
+                states = regime_discovery['cluster_assignments']
+            elif 'regime_states' in regime_discovery:
                 states = regime_discovery['regime_states']
             elif 'states' in regime_discovery:
                 states = regime_discovery['states']
@@ -921,9 +926,13 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 self.logger.error("❌ Cannot extract regime states from discovery results")
                 return None
             
-            # Convert to numpy array if needed
+            # Convert to numpy array if needed and ensure proper data types
             if not isinstance(states, np.ndarray):
                 states = np.array(states)
+            
+            # Convert int64 to int32 to avoid JSON serialization issues
+            if states.dtype == np.int64:
+                states = states.astype(np.int32)
             
             return states
             
@@ -964,6 +973,8 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 market_data, 
                 lambda df: df['regime_state'].value_counts().to_dict()
             )
+            # Convert numpy int64/int32 keys to regular Python ints for JSON serialization
+            regime_counts = {int(k): int(v) for k, v in regime_counts.items()}
             regime_stats['regime_distribution'] = regime_counts
             regime_stats['total_regimes'] = len(regime_counts)
             regime_stats['total_data_points'] = len(market_data)
@@ -976,16 +987,19 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             )
             
             for regime_id in unique_regimes:
+                # Convert regime_id to regular Python int to avoid JSON serialization issues
+                regime_id_int = int(regime_id)
                 regime_data = safe_filter_dataframe(
                     market_data, 
-                    f"regime_state == {regime_id}"
+                    f"regime_state == {regime_id_int}"
                 )
                 
                 # Use safe math operations for calculations
                 count = len(regime_data)
                 percentage = safe_divide(count, len(market_data), 0.0) * 100
                 
-                regime_details[regime_id] = {
+                # Use the converted regime_id_int for JSON serialization
+                regime_details[regime_id_int] = {
                     'count': count,
                     'percentage': percentage,
                     'volatility_std': safe_std(regime_data['close']) if 'close' in regime_data.columns else 0.0,
@@ -1028,7 +1042,8 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             
             # Basic regime distribution using M1 optimizations
             unique_regimes, counts = np.unique(regime_states, return_counts=True)
-            regime_counts = dict(zip(unique_regimes, counts))
+            # Convert numpy int64/int32 keys to regular Python ints for JSON serialization
+            regime_counts = {int(k): int(v) for k, v in zip(unique_regimes, counts)}
             
             regime_stats['regime_distribution'] = regime_counts
             regime_stats['total_regimes'] = len(unique_regimes)
@@ -1044,7 +1059,8 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 count = int(np.sum(mask))
                 percentage = safe_divide(count, len(market_data), 0.0) * 100
                 
-                regime_details[regime_id] = {
+                # Convert regime_id to regular Python int for JSON serialization
+                regime_details[int(regime_id)] = {
                     'count': count,
                     'percentage': percentage,
                     'volatility_std': math_safe_std(regime_data['close'].values) if 'close' in regime_data.columns else 0.0,
@@ -1100,7 +1116,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             
             # Validate regime states
             regime_states = regime_data['regime_states']
-            if regime_states is None or not regime_states:
+            if regime_states is None or (hasattr(regime_states, '__len__') and len(regime_states) == 0):
                 validation_result['valid'] = False
                 validation_result['errors'].append("No regime states found")
                 return validation_result
@@ -1126,8 +1142,21 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             # Check for regime state consistency
             if 'regime_state' in market_data.columns:
                 regime_states_in_data = market_data['regime_state'].values
-                if not np.array_equal(regime_states, regime_states_in_data):
-                    validation_result['warnings'].append("Regime states in data don't match extracted regime states")
+                try:
+                    # Ensure both arrays are numpy arrays and have the same shape
+                    if isinstance(regime_states, np.ndarray) and isinstance(regime_states_in_data, np.ndarray):
+                        if regime_states.shape == regime_states_in_data.shape:
+                            # Use np.array_equal properly - it returns a boolean, not an array
+                            arrays_equal = np.array_equal(regime_states, regime_states_in_data)
+                            if not arrays_equal:
+                                validation_result['warnings'].append("Regime states in data don't match extracted regime states")
+                        else:
+                            validation_result['warnings'].append(f"Regime state shape mismatch: {regime_states.shape} vs {regime_states_in_data.shape}")
+                    else:
+                        validation_result['warnings'].append("Regime states are not numpy arrays")
+                except (ValueError, TypeError) as e:
+                    # Handle shape mismatch or type issues
+                    validation_result['warnings'].append(f"Regime state comparison failed: {str(e)}")
             
             # Check for regime probability consistency
             if 'regime_probability' in market_data.columns and regime_data['regime_probabilities'] is not None:
@@ -1326,17 +1355,70 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         
         try:
             # Create artifacts with enhanced metadata
+            # Ensure splitting_result['data'] is properly structured
+            self.logger.info(f"🔍 Debug: splitting_result type: {type(splitting_result)}")
+            self.logger.info(f"🔍 Debug: splitting_result keys: {list(splitting_result.keys()) if isinstance(splitting_result, dict) else 'Not a dict'}")
+            
+            regime_data = splitting_result.get('data', {})
+            self.logger.info(f"🔍 Debug: regime_data type: {type(regime_data)}")
+            self.logger.info(f"🔍 Debug: regime_data keys: {list(regime_data.keys()) if isinstance(regime_data, dict) else 'Not a dict'}")
+            
+            if not isinstance(regime_data, dict):
+                self.logger.warning(f"⚠️ Regime data is not a dictionary: {type(regime_data)}")
+                regime_data = {}
+            else:
+                # Ensure regime_data has the expected structure
+                if 'market_data' not in regime_data:
+                    self.logger.warning("⚠️ Regime data missing 'market_data' key")
+                    regime_data['market_data'] = None
+                if 'regime_states' not in regime_data:
+                    self.logger.warning("⚠️ Regime data missing 'regime_states' key")
+                    regime_data['regime_states'] = None
+                if 'regime_statistics' not in regime_data:
+                    self.logger.warning("⚠️ Regime data missing 'regime_statistics' key")
+                    regime_data['regime_statistics'] = {}
+            
+            # Create artifacts with safe error handling
+            try:
+                regime_stats = splitting_result.get('regime_stats', {})
+                self.logger.info(f"🔍 Debug: regime_stats type: {type(regime_stats)}")
+            except Exception as e:
+                self.logger.error(f"❌ Error getting regime_stats: {e}")
+                regime_stats = {}
+            
+            try:
+                memory_usage = 0
+                if hasattr(get_memory_usage, '__call__'):
+                    memory_result = get_memory_usage()
+                    if isinstance(memory_result, dict):
+                        memory_usage = memory_result.get('used_memory', 0) / (1024 * 1024)
+                self.logger.info(f"🔍 Debug: memory_usage calculated: {memory_usage}")
+            except Exception as e:
+                self.logger.error(f"❌ Error calculating memory usage: {e}")
+                memory_usage = 0
+            
+            try:
+                cpu_cores = 'unknown'
+                if hasattr(self.cpu_optimizer, 'get_cpu_info'):
+                    cpu_info = self.cpu_optimizer.get_cpu_info()
+                    if isinstance(cpu_info, dict):
+                        cpu_cores = cpu_info.get('total_cores', 'unknown')
+                self.logger.info(f"🔍 Debug: cpu_cores calculated: {cpu_cores}")
+            except Exception as e:
+                self.logger.error(f"❌ Error getting CPU info: {e}")
+                cpu_cores = 'unknown'
+            
             artifacts = {
                 'regime_data_splitting_result': {
-                    'regime_data': splitting_result['data'],
-                    'regime_stats': splitting_result['regime_stats'],
+                    'regime_data': regime_data,
+                    'regime_stats': regime_stats,
                     'processing_metrics': {
                         'total_data_points': self.metrics.total_data_points,
                         'regime_count': self.metrics.regime_count,
                         'processing_time_seconds': self.metrics.processing_time_seconds,
                         'data_quality_score': self.metrics.data_quality_score,
                         'regime_continuity_score': self.metrics.regime_continuity_score,
-                        'memory_usage_mb': get_memory_usage().get('used_memory', 0) / (1024 * 1024),
+                        'memory_usage_mb': memory_usage,
                         'hardware_optimized': is_m1_available()
                     },
                     'metadata': {
@@ -1348,7 +1430,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                         'hardware_info': {
                             'is_m1': is_m1_available(),
                             'mps_available': is_mps_available(),
-                            'cpu_cores': self.cpu_optimizer.get_cpu_info().get('total_cores', 'unknown')
+                            'cpu_cores': cpu_cores
                         }
                     }
                 },
@@ -1402,13 +1484,20 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             # Save regime data splitting result as parquet
             if 'regime_data' in artifacts['regime_data_splitting_result']:
                 regime_data = artifacts['regime_data_splitting_result']['regime_data']
-                if 'market_data' in regime_data:
-                    parquet_path = artifacts_dir / "regime_market_data.parquet"
-                    safe_to_parquet(regime_data['market_data'], parquet_path)
-                    self.logger.info(f"💾 Saved regime market data to {parquet_path}")
+                # Check if regime_data is a dictionary and contains market_data
+                if isinstance(regime_data, dict) and 'market_data' in regime_data and regime_data['market_data'] is not None:
+                    try:
+                        parquet_path = artifacts_dir / "regime_market_data.parquet"
+                        safe_to_parquet(regime_data['market_data'], parquet_path)
+                        self.logger.info(f"💾 Saved regime market data to {parquet_path}")
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Failed to save regime market data: {e}")
+                else:
+                    self.logger.warning(f"⚠️ Regime data is not a dictionary, doesn't contain market_data, or market_data is None: {type(regime_data)}")
             
             # Save report as JSON
             report_path = Path("outcomes/market_analysis") / "regime_splitting_report.json"
+            report_path.parent.mkdir(parents=True, exist_ok=True)
             self.serializer.save(artifacts['regime_splitting_report'], str(report_path))
             self.logger.info(f"💾 Saved regime splitting report to {report_path}")
             

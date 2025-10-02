@@ -28,8 +28,7 @@ from .nas_tas_clustering import NASTASClusteringComponent
 from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
 from .cross_timeframe_analysis import CrossTimeframeAnalysisComponent  # Now uses PID-based feature generation
 from .final_feature_selection import FinalFeatureSelectionComponent
-from .nas_tas_models_training import NASTASModelsTrainingComponent
-from .nas_tas_ensemble_training import NASTASEnsembleTrainingComponent
+# Removed unused NAS-TAS components - system uses regime_models_training and regime_ensemble_training instead
 from .nas_ensemble_training import NASEnsembleTrainingComponent
 from .regime_models_training import RegimeModelsTrainingComponent
 from .regime_ensemble_training import RegimeEnsembleTrainingComponent
@@ -633,8 +632,8 @@ class ComponentFactory:
         'tas_regime_discovery': TASRegimeDiscoveryComponent,
         'nas_tas_regime_discovery': NASTASRegimeDiscoveryComponent,
         'nas_tas_clustering': NASTASClusteringComponent,  # NAS-TAS combined clustering
-        'nas_tas_models_training': NASTASModelsTrainingComponent,  # NAS-TAS models training
-        'nas_tas_ensemble_training': NASTASEnsembleTrainingComponent,  # NAS-TAS ensemble training
+        'nas_tas_models_training': RegimeModelsTrainingComponent,  # NAS-TAS models training
+        'nas_tas_ensemble_training': RegimeEnsembleTrainingComponent,  # NAS-TAS ensemble training
         'nas_ensemble_training': NASEnsembleTrainingComponent,  # Simplified NAS ensemble training
         'regime_models_training': RegimeModelsTrainingComponent,  # Regime detection models training
         'regime_ensemble_training': RegimeEnsembleTrainingComponent,  # Regime detection ensemble training

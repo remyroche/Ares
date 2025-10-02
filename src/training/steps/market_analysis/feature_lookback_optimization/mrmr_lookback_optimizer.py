@@ -1585,10 +1585,10 @@ class MRMRLookbackOptimizer:
         self.logger.info(f"📊 TPE fine-tuning completed: {len(study.trials)} trials")
         self.logger.info(f"📊 Final result: {best_params['first_lookback']}, {best_params['second_lookback']} (score: {best_trial.value:.4f})")
         
-        # Create result object
+        # Create result object (convert int64 to int)
         result = LookbackOptimizationResult(
-            first_lookback_period=best_params['first_lookback'],
-            second_lookback_period=best_params['second_lookback'],
+            first_lookback_period=int(best_params['first_lookback']),
+            second_lookback_period=int(best_params['second_lookback']),
             first_mi_score=best_trial.user_attrs['first_mi_score'],
             second_mi_score=best_trial.user_attrs['second_mi_score'],
             combined_mi_score=best_trial.value,

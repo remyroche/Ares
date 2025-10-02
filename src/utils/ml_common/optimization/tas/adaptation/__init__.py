@@ -9,12 +9,13 @@ Advanced adaptation capabilities for tree architecture search including:
 - Adaptive search strategies
 """
 
-from .real_time_adaptation import TreeRealTimeAdapter, TreePerformanceMonitor, TreeAdaptiveSearch
-from .dynamic_optimization import TreeDynamicOptimizer, TreeIncrementalLearner, TreeOnlineOptimizer
-from .performance_tracking import TreePerformanceTracker, TreeMetricsCollector, TreeAnalytics
+# Missing modules commented out
+# from .real_time_adaptation import TreeRealTimeAdapter, TreePerformanceMonitor, TreeAdaptiveSearch
+# from .dynamic_optimization import TreeDynamicOptimizer, TreeIncrementalLearner, TreeOnlineOptimizer
+# from .performance_tracking import TreePerformanceTracker, TreeMetricsCollector, TreeAnalytics
 
 __all__ = [
-    'TreeRealTimeAdapter', 'TreePerformanceMonitor', 'TreeAdaptiveSearch',
-    'TreeDynamicOptimizer', 'TreeIncrementalLearner', 'TreeOnlineOptimizer',
-    'TreePerformanceTracker', 'TreeMetricsCollector', 'TreeAnalytics'
+    # 'TreeRealTimeAdapter', 'TreePerformanceMonitor', 'TreeAdaptiveSearch',
+    # 'TreeDynamicOptimizer', 'TreeIncrementalLearner', 'TreeOnlineOptimizer',
+    # 'TreePerformanceTracker', 'TreeMetricsCollector', 'TreeAnalytics'
 ]

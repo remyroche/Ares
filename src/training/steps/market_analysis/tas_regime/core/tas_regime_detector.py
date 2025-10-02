@@ -1744,7 +1744,8 @@ class TASRegimeDetector:
 
             # Calculate regime distribution
             unique_labels, counts = np.unique(labels, return_counts=True)
-            regime_distribution = dict(zip(unique_labels, counts))
+            # Convert numpy int64 keys to regular Python ints for JSON serialization
+            regime_distribution = {int(k): int(v) for k, v in zip(unique_labels, counts)}
 
             return {
                 'silhouette_score': float(silhouette),

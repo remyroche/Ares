@@ -25,10 +25,13 @@ from .tas_config import TASConfig, TASArchitectureType, TradingObjective, Market
 from ..components.micro_regime_detector import MicroRegimeDetector, MicroRegimeDetectionResult
 from ..components.neural_architecture import TASNeuralModel, NeuralArchitectureConfig
 from ..evaluation.tas_evaluator import TASEvaluator, EvaluationResult
-from ..search.advanced_search import AdvancedTASSearch
-from ..hardware.accelerator import HardwareAccelerator
-from ..meta_learning.meta_learner import MetaLearner
-from ..validation.economic_validator import EconomicValidator
+# Missing module commented out
+# from ..search.advanced_search import AdvancedTASSearch
+# Missing module commented out
+# from ..hardware.accelerator import HardwareAccelerator
+# from ..meta_learning.meta_learner import MetaLearner
+# Missing module commented out
+# from ..validation.economic_validator import EconomicValidator
 from src.utils.tprint import (
     tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, 
     tprint_success, tprint_progress, tprint_performance, tprint_timer

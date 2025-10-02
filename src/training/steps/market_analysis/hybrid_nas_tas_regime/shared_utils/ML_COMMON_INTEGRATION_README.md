@@ -87,7 +87,7 @@ class SharedMLUtilitiesManager:
         self.error_handler = RobustErrorHandler()
         self.memory_optimizer = MemoryOptimizer()
         self.lookahead_protection = LookaheadProtection()
-        self.cache = get_unified_cache()
+        self.cache = get_unified_cache(namespace="ml_common_integration")
         self.model_registry = ModelRegistry()
         self.regime_optimizer = RegimeSpecificTPSLOptimizer()
         self.config_validator = ConfigurationValidator()

@@ -9,12 +9,13 @@ Advanced uncertainty estimation capabilities for tree models including:
 - Robustness analysis and adversarial testing
 """
 
-from .uncertainty_estimation import TreeUncertaintyEstimator, TreeEnsembleUncertainty, TreeBayesianUncertainty
-from .confidence_scoring import TreeConfidenceScorer, TreeReliabilityEstimator, TreeCalibrationScorer
-from .robustness_analysis import TreeRobustnessAnalyzer, TreeAdversarialTesting, TreePerturbationAnalysis
+# Missing modules commented out
+# from .uncertainty_estimation import TreeUncertaintyEstimator, TreeEnsembleUncertainty, TreeBayesianUncertainty
+# from .confidence_scoring import TreeConfidenceScorer, TreeReliabilityEstimator, TreeCalibrationScorer
+# from .robustness_analysis import TreeRobustnessAnalyzer, TreeAdversarialTesting, TreePerturbationAnalysis
 
 __all__ = [
-    'TreeUncertaintyEstimator', 'TreeEnsembleUncertainty', 'TreeBayesianUncertainty',
-    'TreeConfidenceScorer', 'TreeReliabilityEstimator', 'TreeCalibrationScorer',
-    'TreeRobustnessAnalyzer', 'TreeAdversarialTesting', 'TreePerturbationAnalysis'
+    # 'TreeUncertaintyEstimator', 'TreeEnsembleUncertainty', 'TreeBayesianUncertainty',
+    # 'TreeConfidenceScorer', 'TreeReliabilityEstimator', 'TreeCalibrationScorer',
+    # 'TreeRobustnessAnalyzer', 'TreeAdversarialTesting', 'TreePerturbationAnalysis'
 ]

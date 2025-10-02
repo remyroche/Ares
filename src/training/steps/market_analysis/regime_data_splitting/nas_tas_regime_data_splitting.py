@@ -450,7 +450,7 @@ class NasTasRegimeDataSplitting:
                 'nas_tas_tagging_completed': True,
                 'nas_tas_model_used': 'nas_tas_clustering_results',
                 'nas_tas_n_regimes': len(np.unique(regime_states_aligned)),
-                'nas_tas_regime_distribution': dict(zip(*np.unique(regime_states_aligned, return_counts=True))),
+                'nas_tas_regime_distribution': {int(k): int(v) for k, v in zip(*np.unique(regime_states_aligned, return_counts=True))},
                 'nas_tas_tagging_timestamp': pd.Timestamp.now().isoformat(),
                 'tagging_confidence_mean': 1.0,
                 'tagging_confidence_std': 0.0

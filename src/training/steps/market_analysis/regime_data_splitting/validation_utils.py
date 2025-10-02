@@ -260,9 +260,10 @@ class StandardizedValidator:
                 warnings.append(f"Unusually high regime values detected: max={max_regime}")
         
         # Add details
+        unique_regimes, counts = np.unique(regime_states, return_counts=True)
         details.update({
             'regime_count': unique_regimes,
-            'regime_distribution': dict(zip(*np.unique(regime_states, return_counts=True))),
+            'regime_distribution': {int(k): int(v) for k, v in zip(unique_regimes, counts)},
             'min_regime': int(np.min(regime_states)) if len(regime_states) > 0 else None,
             'max_regime': int(np.max(regime_states)) if len(regime_states) > 0 else None
         })

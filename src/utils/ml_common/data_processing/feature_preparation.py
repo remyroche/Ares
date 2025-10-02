@@ -307,12 +307,12 @@ class FeaturePreparator:
                     target_data = data[target_column].values
                     feature_data = data.drop(columns=[target_column]).values
                     if feature_names is None:
-                        feature_names = data.drop(columns=[target_column]).columns.tolist()
+                        feature_names = [str(col) for col in data.drop(columns=[target_column]).columns.tolist()]
                     preparation_metadata['target_separated'] = True
                 else:
                     feature_data = data.values
                     if feature_names is None:
-                        feature_names = data.columns.tolist()
+                        feature_names = [str(col) for col in data.columns.tolist()]
                     preparation_metadata['target_separated'] = False
             else:
                 feature_data = data.copy()
@@ -386,7 +386,7 @@ class FeaturePreparator:
             # Return original data on failure
             if isinstance(data, pd.DataFrame):
                 fallback_data = data.values
-                fallback_names = data.columns.tolist()
+                fallback_names = [str(col) for col in data.columns.tolist()]
             else:
                 fallback_data = data.copy()
                 fallback_names = feature_names or [f"feature_{i}" for i in range(data.shape[1])]

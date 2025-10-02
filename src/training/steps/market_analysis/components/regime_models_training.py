@@ -26,6 +26,9 @@ from .base_component import BaseMarketAnalysisComponent, ComponentConfig, Compon
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
+# Suppress LightGBM warnings about no further splits
+warnings.filterwarnings('ignore', message='.*No further splits with positive gain.*')
+
 # Import ML libraries with comprehensive error handling
 tprint("🔍 [REGIME_MODELS] Starting ML libraries import process", color="cyan")
 ML_LIBRARIES_AVAILABLE = False
@@ -82,11 +85,20 @@ else:
     tprint(f"⚠️ [REGIME_MODELS] Import errors encountered: {ML_IMPORT_ERRORS}", color="yellow")
     tprint("🔧 [REGIME_MODELS] Some functionality may be limited", color="yellow")
 
+# Import feature generation system
+try:
+    from src.feature_generation.core.factory import get_feature_bank, FeatureGenerator, FeatureCategory
+    FEATURE_GENERATION_AVAILABLE = True
+    tprint("✅ [REGIME_MODELS] Feature generation system imported successfully", color="green")
+except ImportError as e:
+    FEATURE_GENERATION_AVAILABLE = False
+    tprint(f"⚠️ [REGIME_MODELS] Feature generation system not available: {e}", color="yellow")
+
 
 class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
     """
     Regime Detection Models Training Component.
-    
+
     This component trains the specific regime detection models:
     - CatBoost (base model)
     - Greedy Rule Lists (base model - multi-class compatible)
@@ -280,7 +292,8 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             unique_regimes = np.unique(regime_labels)
             tprint(f"📊 [REGIME_MODELS] Found regime labels: {len(regime_labels)} samples", color="blue")
             tprint(f"📊 [REGIME_MODELS] Unique regimes: {unique_regimes} (count: {len(unique_regimes)})", color="blue")
-            tprint(f"📊 [REGIME_MODELS] Regime distribution: {dict(zip(*np.unique(regime_labels, return_counts=True)))}", color="blue")
+            regime_dist = {int(k): int(v) for k, v in zip(*np.unique(regime_labels, return_counts=True))}
+            tprint(f"📊 [REGIME_MODELS] Regime distribution: {regime_dist}", color="blue")
             
             # Step 3: Prepare training data
             tprint("🔍 [REGIME_MODELS] Step 3: Preparing training data", color="cyan")
@@ -324,7 +337,8 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         f"🏆 [REGIME_MODELS] Top retained features: {top_preview}",
                         color="blue"
                     )
-            tprint(f"📊 [REGIME_MODELS] Target distribution: {dict(zip(*np.unique(y, return_counts=True)))}", color="blue")
+            target_dist = {int(k): int(v) for k, v in zip(*np.unique(y, return_counts=True))}
+            tprint(f"📊 [REGIME_MODELS] Target distribution: {target_dist}", color="blue")
 
             # Step 4: Train regime detection models
             tprint("🔍 [REGIME_MODELS] Step 4: Training regime detection models", color="cyan")
@@ -642,28 +656,40 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"📊 [REGIME_MODELS] Input data shape: {data.shape}", color="blue")
             tprint(f"📊 [REGIME_MODELS] Input data columns: {list(data.columns)}", color="blue")
             
-            # Reuse features from clustering stage instead of creating generic ones
-            tprint("🔧 [REGIME_MODELS] Reusing regime-focused features from clustering stage", color="cyan")
+            # Force comprehensive feature generation using feature bank
+            tprint("🔧 [REGIME_MODELS] FORCING comprehensive feature generation using feature bank", color="cyan", bold=True)
+            tprint("🚫 [REGIME_MODELS] Bypassing clustering features to ensure comprehensive feature set", color="yellow")
             
-            # Extract features from pipeline state artifacts
-            if pipeline_state is None:
-                pipeline_state = {}
-            artifacts = pipeline_state.get('artifacts', {})
-            nas_tas_clustering_result = artifacts.get('nas_tas_clustering_result', {})
+            # Check if we should use original market data for feature generation
+            original_data = None
+            if pipeline_state is not None:
+                original_data = pipeline_state.get('original_data')
+                force_feature_bank = pipeline_state.get('force_feature_bank', False)
+                
+                if original_data is not None and force_feature_bank:
+                    tprint("✅ [REGIME_MODELS] Using original market data for feature bank generation", color="green")
+                    data_for_features = original_data
+                else:
+                    tprint("⚠️ [REGIME_MODELS] No original data available, using processed data", color="yellow")
+                    data_for_features = data
+            else:
+                data_for_features = data
             
-            # Fast fail if clustering features not available
-            if 'original_features' not in nas_tas_clustering_result:
-                raise ValueError(
-                    "ML Training requires clustering features. "
-                    "Ensure clustering stage completed successfully before ML training. "
-                    "Clustering features not found in pipeline state."
-                )
-            
-            # Use clustering features (fast fail ensures they exist)
-            X = nas_tas_clustering_result['original_features']
-            feature_names = nas_tas_clustering_result.get('feature_names', [f'feature_{i}' for i in range(X.shape[1])])
-            tprint(f"📊 [REGIME_MODELS] Using clustering features: {X.shape}", color="blue")
-            tprint(f"📋 [REGIME_MODELS] Feature names ({len(feature_names)}): {feature_names[:10]}..." if len(feature_names) > 10 else f"📋 [REGIME_MODELS] Feature names ({len(feature_names)}): {feature_names}", color="blue")
+            if FEATURE_GENERATION_AVAILABLE:
+                X = self._generate_features_with_bank(data_for_features)
+                if X is None or X.shape[1] < 50:
+                    error_msg = f"Feature bank generated insufficient features: {X.shape[1] if X is not None else 0} < 50 required"
+                    tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
+                    self.logger.error(error_msg)
+                    return None, None, {}
+                else:
+                    tprint(f"✅ [REGIME_MODELS] Feature bank generated {X.shape[1]} comprehensive features", color="green")
+                    feature_names = [f'feature_{i}' for i in range(X.shape[1])]
+            else:
+                error_msg = "Feature generation system not available - cannot generate comprehensive features"
+                tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
+                self.logger.error(error_msg)
+                return None, None, {}
             
             # Check for NaN or infinite values in features
             nan_count = np.isnan(X).sum()
@@ -721,6 +747,84 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"Error preparing training data: {str(e)}", exc_info=True)
             return None, None, {}
     
+    def _generate_features_with_bank(self, data: pd.DataFrame) -> Optional[np.ndarray]:
+        """Generate comprehensive features using the existing feature bank."""
+        tprint("🔧 [REGIME_MODELS] Generating features using feature bank", color="cyan", bold=True)
+        
+        try:
+            if not FEATURE_GENERATION_AVAILABLE:
+                tprint("❌ [REGIME_MODELS] Feature generation system not available", color="red")
+                return None
+            
+            # Get feature bank
+            feature_bank = get_feature_bank()
+            tprint("✅ [REGIME_MODELS] Feature bank retrieved successfully", color="green")
+            
+            # Define feature categories to generate
+            categories = [
+                FeatureCategory.MOMENTUM,
+                FeatureCategory.VOLATILITY, 
+                FeatureCategory.VOLUME,
+                FeatureCategory.TREND,
+                FeatureCategory.OSCILLATOR,
+                FeatureCategory.RETURNS
+            ]
+            
+            all_features = pd.DataFrame(index=data.index)
+            total_features = 0
+            
+            # Generate features for each category
+            for category in categories:
+                tprint(f"🔍 [REGIME_MODELS] Generating {category.value} features", color="blue")
+                
+                # Get generators for this category
+                generators = feature_bank.get_generators_by_category(category)
+                
+                if not generators:
+                    tprint(f"⚠️ [REGIME_MODELS] No generators found for {category.value}", color="yellow")
+                    continue
+                
+                category_features = pd.DataFrame(index=data.index)
+                
+                # Generate features using each generator
+                for generator in generators:
+                    try:
+                        tprint(f"🔧 [REGIME_MODELS] Using generator: {generator.config.name}", color="blue")
+                        result = generator.generate(data)
+                        
+                        if result and hasattr(result, 'data') and not result.data.empty:
+                            # Add feature with category prefix
+                            feature_name = f"{category.value}_{result.name}"
+                            category_features[feature_name] = result.data
+                            total_features += 1
+                            tprint(f"✅ [REGIME_MODELS] Generated feature: {feature_name}", color="green")
+                        else:
+                            tprint(f"⚠️ [REGIME_MODELS] Generator {generator.config.name} returned empty result", color="yellow")
+                            
+                    except Exception as e:
+                        tprint(f"⚠️ [REGIME_MODELS] Generator {generator.config.name} failed: {e}", color="yellow")
+                        continue
+                
+                # Add category features to all features
+                if not category_features.empty:
+                    all_features = pd.concat([all_features, category_features], axis=1)
+                    tprint(f"📊 [REGIME_MODELS] {category.value} features: {category_features.shape[1]}", color="blue")
+            
+            # Convert to numpy array
+            if not all_features.empty:
+                X = all_features.values
+                tprint(f"✅ [REGIME_MODELS] Feature bank generated {X.shape[1]} features from {len(categories)} categories", color="green")
+                tprint(f"📊 [REGIME_MODELS] Feature matrix shape: {X.shape}", color="blue")
+                return X
+            else:
+                tprint("❌ [REGIME_MODELS] Feature bank generated no features", color="red")
+                return None
+                
+        except Exception as e:
+            tprint(f"❌ [REGIME_MODELS] Error generating features with feature bank: {e}", color="red")
+            self.logger.error(f"Error generating features with feature bank: {str(e)}", exc_info=True)
+            return None
+    
     def _train_regime_models(
         self,
         X: np.ndarray,
@@ -775,7 +879,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             # Step 3: Train CatBoost with timeout protection
             tprint("🔧 [REGIME_MODELS] Step 3: Training CatBoost", color="cyan")
             catboost_start = time.time()
-            
+
             try:
                 # Use CPU-only configuration to prevent hanging on M1 Macs
                 catboost_config = self.regime_models_config['base']['CatBoost'].copy()
@@ -784,17 +888,17 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'verbose': False,    # Reduce verbosity
                     'random_seed': 42    # Ensure reproducibility
                 })
-                
+
                 catboost_model = cb.CatBoostClassifier(**catboost_config)
                 catboost_model.fit(X_train_scaled, y_train)
                 models['CatBoost'] = catboost_model
-                
+
                 catboost_time = time.time() - catboost_start
                 tprint(f"⏱️ [REGIME_MODELS] CatBoost training completed in {catboost_time:.3f} seconds", color="blue")
             except Exception as e:
                 tprint(f"❌ [REGIME_MODELS] CatBoost training failed: {e}", color="red")
                 models['CatBoost'] = None
-            
+
             # Step 4: Train Greedy Rule Lists with parameter optimization
             tprint("🔧 [REGIME_MODELS] Step 4: Training Greedy Rule Lists with parameter optimization", color="cyan")
             grl_start = time.time()
@@ -1040,10 +1144,11 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     learning_rate=0.05,
                     random_state=self.model_config.get('random_state', 42),
                     class_weight='balanced',
-                    importance_type='gain'
+                    importance_type='gain',
+                    verbose=-1
                 ),
-                threshold='median',
-                max_features=min(150, features.shape[1]) if features.shape[1] > 0 else None
+                threshold='median',  # Use median threshold for feature selection
+                max_features=min(100, features.shape[1]) if features.shape[1] > 0 else None
             )
 
             selector.fit(features, labels)
@@ -1060,7 +1165,14 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             support_mask = selector.get_support()
             if not np.any(support_mask):
                 sorted_indices = np.argsort(importances)[::-1]
-                top_k = min(max(1, int(np.ceil(features.shape[1] * 0.25))), features.shape[1])
+                # Only apply aggressive feature selection for large feature sets (>100 features)
+                if features.shape[1] > 100:
+                    # For large feature sets, use minimum 90 features
+                    min_features = max(90, min(110, features.shape[1]))
+                    top_k = min(max(min_features, int(np.ceil(features.shape[1] * 0.8))), features.shape[1])
+                else:
+                    # For smaller feature sets, keep at least 75% of features
+                    top_k = max(1, int(np.ceil(features.shape[1] * 0.75)))
                 support_mask = np.zeros_like(importances, dtype=bool)
                 support_mask[sorted_indices[:top_k]] = True
 
@@ -1112,8 +1224,43 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
 
         except Exception as e:
             info['selection_time_seconds'] = time.time() - selection_start
-            tprint(f"⚠️ [REGIME_MODELS] Feature selection failed ({e}); retaining all features", color="yellow")
-            self.logger.warning("Feature selection failed; using all features", exc_info=True)
+            tprint(f"⚠️ [REGIME_MODELS] Feature selection failed ({e}); using fallback selection", color="yellow")
+            self.logger.warning("Feature selection failed; using fallback selection", exc_info=True)
+            
+            # Fallback: Select top features by variance if available, otherwise use all
+            if features.shape[1] > 0:
+                try:
+                    # Use variance-based selection as fallback
+                    variances = np.var(features, axis=0)
+                    sorted_indices = np.argsort(variances)[::-1]
+                    # Select at least 90% of features or minimum 90 features
+                    min_features = max(90, min(110, features.shape[1]))
+                    top_k = min(max(min_features, int(np.ceil(features.shape[1] * 0.9))), features.shape[1])
+                    selected_indices = sorted_indices[:top_k]
+                    
+                    info.update({
+                        'selection_performed': True,
+                        'selection_method': 'variance_fallback',
+                        'selected_indices': [int(idx) for idx in selected_indices],
+                        'selected_feature_names': [feature_names[idx] for idx in selected_indices],
+                        'retained_feature_count': int(len(selected_indices)),
+                        'total_feature_count': int(features.shape[1]),
+                        'selection_time_seconds': time.time() - selection_start
+                    })
+                    
+                    tprint(f"✅ [REGIME_MODELS] Fallback selection retained {len(selected_indices)}/{features.shape[1]} features", color="green")
+                except Exception as fallback_error:
+                    tprint(f"⚠️ [REGIME_MODELS] Fallback selection also failed ({fallback_error}); using all features", color="yellow")
+                    # Ultimate fallback: use all features
+                    info.update({
+                        'selection_performed': False,
+                        'selection_method': 'all_features_fallback',
+                        'selected_indices': list(range(features.shape[1])),
+                        'selected_feature_names': feature_names.copy(),
+                        'retained_feature_count': int(features.shape[1]),
+                        'total_feature_count': int(features.shape[1]),
+                        'selection_time_seconds': time.time() - selection_start
+                    })
 
         return info
 

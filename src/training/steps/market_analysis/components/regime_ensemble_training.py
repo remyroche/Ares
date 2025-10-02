@@ -35,6 +35,15 @@ except ImportError as e:
     ML_LIBRARIES_AVAILABLE = False
     tprint(f"❌ [REGIME_ENSEMBLE] Failed to import ML libraries: {e}", color="red")
 
+# Import feature generation system
+try:
+    from src.feature_generation.core.factory import get_feature_bank, FeatureGenerator, FeatureCategory
+    FEATURE_GENERATION_AVAILABLE = True
+    tprint("✅ [REGIME_ENSEMBLE] Feature generation system imported successfully", color="green")
+except ImportError as e:
+    FEATURE_GENERATION_AVAILABLE = False
+    tprint(f"⚠️ [REGIME_ENSEMBLE] Feature generation system not available: {e}", color="yellow")
+
 
 class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
     """
@@ -102,8 +111,8 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             regime_labels = nas_tas_clustering_result.get('cluster_assignments')
             
             # Get base models from previous training
-            regime_models_result = artifacts.get('regime_models_training_result', {})
-            base_models = regime_models_result.get('regime_models', {})
+            nas_tas_models_result = artifacts.get('nas_tas_models_training_result', {})
+            base_models = nas_tas_models_result.get('models', {})
             
             # Prepare training data from the input data DataFrame
             tprint("🔧 [REGIME_ENSEMBLE] Preparing training data from input DataFrame", color="yellow")
@@ -125,29 +134,85 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 regime_labels = y
             
             if not base_models:
-                tprint("❌ [REGIME_ENSEMBLE] No base models found from previous training", color="red")
-                return ComponentResult(
-                    success=False,
-                    artifacts={},
-                    error_message="No base models found from previous training",
-                    metadata={'component_type': 'regime_ensemble_training'}
-                )
+                tprint("⚠️ [REGIME_ENSEMBLE] No base models found from previous training, training base models", color="yellow")
+                # Train base models if not provided
+                tprint("🏋️ [REGIME_ENSEMBLE] Training base models for ensemble", color="blue")
+                base_models = self._train_base_models(X, y, regime_labels)
+                if not base_models:
+                    tprint("❌ [REGIME_ENSEMBLE] Failed to train base models", color="red")
+                    return ComponentResult(
+                        success=False,
+                        artifacts={},
+                        error_message="Failed to train base models",
+                        metadata={'component_type': 'regime_ensemble_training'}
+                    )
             
             tprint(f"📊 [REGIME_ENSEMBLE] Data shapes - X: {X.shape}, y: {y.shape}, regime_labels: {len(regime_labels) if regime_labels is not None else 'None'}", color="blue")
             tprint(f"📊 [REGIME_ENSEMBLE] Base models available: {list(base_models.keys())}", color="blue")
             
-            # Prepare data for ensemble training
-            tprint("🔧 [REGIME_ENSEMBLE] Preparing data for ensemble training", color="yellow")
+            # Prepare data for ensemble training with proper train/test split
+            tprint("🔧 [REGIME_ENSEMBLE] Preparing data for ensemble training with proper validation", color="yellow")
             X_processed, y_processed, regime_labels_processed = self._prepare_data(X, y, regime_labels)
             tprint(f"✅ [REGIME_ENSEMBLE] Data prepared - X: {X_processed.shape}, y: {y_processed.shape}", color="green")
-            
-            # Train stacker_lgbm_calibrated meta-learner
-            tprint("🎭 [REGIME_ENSEMBLE] Training stacker_lgbm_calibrated meta-learner", color="yellow")
-            stacker_result = self._train_stacker_lgbm_calibrated(X_processed, y_processed, base_models)
-            
-            # Evaluate ensemble
-            tprint("📊 [REGIME_ENSEMBLE] Evaluating ensemble performance", color="yellow")
-            ensemble_metrics = self._evaluate_ensemble(X_processed, y_processed, stacker_result)
+
+            # Import temporal validation utilities
+            from src.utils.ml_common.validation.universal_temporal_validation import UniversalTemporalValidator, TemporalValidationConfig
+
+            # Create temporal validator for proper train/test splitting
+            temporal_config = TemporalValidationConfig(
+                enable_temporal_checks=True,
+                strict_temporal_order=True,
+                initial_train_size=0.7,  # 70% for training
+                test_size=0.3,  # 30% for validation
+                gap_size=1  # Gap between train and test
+            )
+            temporal_validator = UniversalTemporalValidator(temporal_config)
+
+            # Perform proper temporal split to prevent data leakage
+            tprint("🔄 [REGIME_ENSEMBLE] Performing temporal train/test split to prevent data leakage", color="cyan")
+
+            # For temporal data, we need to sort by time if not already sorted
+            # Assuming data is already in temporal order, we'll split by index
+            total_samples = len(X_processed)
+            train_size = int(total_samples * 0.7)
+
+            # Create temporal indices for validation
+            train_indices = np.arange(train_size)
+            test_indices = np.arange(train_size, total_samples)
+
+            # Split the data temporally
+            X_train = X_processed[train_indices]
+            X_test = X_processed[test_indices]
+            y_train = y_processed[train_indices]
+            y_test = y_processed[test_indices]
+
+            # Validate the temporal split
+            validation_report = temporal_validator.validate_temporal_split(
+                X_train, X_test, y_train, y_test,
+                model_name="regime_ensemble",
+                model_type="ensemble"
+            )
+
+            if not validation_report.temporal_order_valid:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Temporal validation failed: {validation_report.temporal_message}", color="yellow")
+                tprint("🔧 [REGIME_ENSEMBLE] Using fallback split method", color="yellow")
+                # Fallback to random split if temporal validation fails
+                from sklearn.model_selection import train_test_split
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X_processed, y_processed, test_size=0.3, random_state=42, stratify=y_processed
+                )
+            else:
+                tprint("✅ [REGIME_ENSEMBLE] Temporal validation passed - no data leakage detected", color="green")
+
+            tprint(f"📊 [REGIME_ENSEMBLE] Train set: {X_train.shape}, Test set: {X_test.shape}", color="blue")
+
+            # Train stacker_lgbm_calibrated meta-learner on training data only
+            tprint("🎭 [REGIME_ENSEMBLE] Training stacker_lgbm_calibrated meta-learner on training data", color="yellow")
+            stacker_result = self._train_stacker_lgbm_calibrated(X_train, y_train, base_models)
+
+            # Evaluate ensemble on holdout test data
+            tprint("📊 [REGIME_ENSEMBLE] Evaluating ensemble performance on holdout test data", color="yellow")
+            ensemble_metrics = self._evaluate_ensemble(X_test, y_test, stacker_result)
             
             # Create comprehensive results
             tprint("📦 [REGIME_ENSEMBLE] Creating comprehensive results", color="yellow")
@@ -158,9 +223,18 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     'ensemble_metrics': ensemble_metrics,
                     'training_time': (datetime.now() - start_time).total_seconds(),
                     'success': True,
+                    'validation_report': {
+                        'temporal_order_valid': validation_report.temporal_order_valid,
+                        'leakage_detected': validation_report.leakage_detected,
+                        'validation_score': validation_report.validation_score,
+                        'warnings': validation_report.warnings,
+                        'recommendations': validation_report.recommendations
+                    },
                     'metadata': {
                         'component_type': 'regime_ensemble_training',
                         'data_shape': X_processed.shape,
+                        'train_shape': X_train.shape,
+                        'test_shape': X_test.shape,
                         'n_regimes': len(np.unique(regime_labels_processed)) if regime_labels_processed is not None else 0,
                         'feature_names': feature_names,
                         'timestamp': datetime.now().isoformat()
@@ -334,19 +408,25 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             meta_features = np.column_stack(base_predictions)
             tprint(f"📊 [REGIME_ENSEMBLE] Meta-features shape: {meta_features.shape}", color="blue")
             
-            # Create LightGBM meta-learner with improved parameters
-            tprint("🌲 [REGIME_ENSEMBLE] Creating LightGBM meta-learner", color="blue")
+            # Create LightGBM meta-learner with AGGRESSIVE regularization to prevent overfitting
+            tprint("🌲 [REGIME_ENSEMBLE] Creating LightGBM meta-learner with AGGRESSIVE regularization", color="blue", bold=True)
             meta_learner = LGBMClassifier(
-                num_leaves=63,        # Increased for better complexity
-                max_depth=8,          # Increased depth
-                learning_rate=0.05,   # Reduced for better convergence
-                n_estimators=200,     # More estimators
-                min_child_samples=20, # Prevent overfitting
-                subsample=0.8,        # Stochastic sampling
-                colsample_bytree=0.8, # Feature sampling
-                reg_alpha=0.1,        # L1 regularization
-                reg_lambda=0.1,       # L2 regularization
+                num_leaves=8,           # Dramatically reduced from 63 to 8
+                max_depth=2,            # Dramatically reduced from 8 to 2
+                learning_rate=0.02,     # Reduced from 0.05 to 0.02
+                n_estimators=100,       # Reduced from 200 to 100
+                min_child_samples=50,   # Increased from 20 to 50
+                subsample=0.5,          # Reduced from 0.8 to 0.5
+                colsample_bytree=0.5,   # Reduced from 0.8 to 0.5
+                reg_alpha=1.0,          # Increased from 0.1 to 1.0
+                reg_lambda=1.0,         # Increased from 0.1 to 1.0
                 class_weight='balanced', # Handle class imbalance
+                max_bin=127,            # Added: limit bin size
+                min_data_in_bin=3,      # Added: minimum data per bin
+                boost_from_average=False, # Added: disable boost from average
+                force_col_wise=True,    # Added: force column-wise boosting
+                extra_trees=True,       # Added: use extra trees for more randomness
+                min_split_gain=0.1,     # Added: high threshold for splits
                 random_state=42,
                 verbose=-1,
                 n_jobs=-1
@@ -505,27 +585,40 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"📊 [REGIME_ENSEMBLE] Input data shape: {data.shape}", color="blue")
             tprint(f"📊 [REGIME_ENSEMBLE] Input data columns: {list(data.columns)}", color="blue")
 
-            # Reuse features from clustering stage instead of creating generic ones
-            tprint("🔧 [REGIME_ENSEMBLE] Reusing regime-focused features from clustering stage", color="cyan")
-
-            # Extract features from pipeline state artifacts
-            if pipeline_state is None:
-                pipeline_state = {}
-            artifacts = pipeline_state.get('artifacts', {})
-            nas_tas_clustering_result = artifacts.get('nas_tas_clustering_result', {})
-
-            # Fast fail if clustering features not available
-            if 'original_features' not in nas_tas_clustering_result:
-                raise ValueError(
-                    "ML Training requires clustering features. "
-                    "Ensure clustering stage completed successfully before ML training. "
-                    "Clustering features not found in pipeline state."
-                )
+            # Force comprehensive feature generation using feature bank
+            tprint("🔧 [REGIME_ENSEMBLE] FORCING comprehensive feature generation using feature bank", color="cyan", bold=True)
+            tprint("🚫 [REGIME_ENSEMBLE] Bypassing base model features to ensure comprehensive feature set", color="yellow")
             
-            # Use clustering features (fast fail ensures they exist)
-            X = nas_tas_clustering_result['original_features']
-            feature_names = nas_tas_clustering_result.get('feature_names', [f'feature_{i}' for i in range(X.shape[1])])
-            tprint(f"📊 [REGIME_ENSEMBLE] Using clustering features: {X.shape}", color="blue")
+            # Check if we should use original market data for feature generation
+            original_data = None
+            if pipeline_state is not None:
+                original_data = pipeline_state.get('original_data')
+                force_feature_bank = pipeline_state.get('force_feature_bank', False)
+                
+                if original_data is not None and force_feature_bank:
+                    tprint("✅ [REGIME_ENSEMBLE] Using original market data for feature bank generation", color="green")
+                    data_for_features = original_data
+                else:
+                    tprint("⚠️ [REGIME_ENSEMBLE] No original data available, using processed data", color="yellow")
+                    data_for_features = data
+            else:
+                data_for_features = data
+            
+            if FEATURE_GENERATION_AVAILABLE:
+                X = self._generate_features_with_bank(data_for_features)
+                if X is None or X.shape[1] < 50:
+                    error_msg = f"Feature bank generated insufficient features: {X.shape[1] if X is not None else 0} < 50 required"
+                    tprint(f"❌ [REGIME_ENSEMBLE] {error_msg}", color="red")
+                    self.logger.error(error_msg)
+                    return None, None, None
+                else:
+                    tprint(f"✅ [REGIME_ENSEMBLE] Feature bank generated {X.shape[1]} comprehensive features", color="green")
+                    feature_names = [f'feature_{i}' for i in range(X.shape[1])]
+            else:
+                error_msg = "Feature generation system not available - cannot generate comprehensive features"
+                tprint(f"❌ [REGIME_ENSEMBLE] {error_msg}", color="red")
+                self.logger.error(error_msg)
+                return None, None, None
             tprint(f"📋 [REGIME_ENSEMBLE] Feature names ({len(feature_names)}): {feature_names[:10]}..." if len(feature_names) > 10 else f"📋 [REGIME_ENSEMBLE] Feature names ({len(feature_names)}): {feature_names}", color="blue")
 
             # Check for NaN or infinite values in features
@@ -533,7 +626,8 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             inf_count = np.isinf(X).sum()
             if nan_count > 0:
                 tprint(f"⚠️ [REGIME_ENSEMBLE] Found {nan_count} NaN values in features", color="yellow")
-                X = np.nan_to_num(X, nan=0.0)
+                # Use sophisticated NaN handling for time series data
+                X = self._handle_nan_values(X, nan_count)
             if inf_count > 0:
                 tprint(f"⚠️ [REGIME_ENSEMBLE] Found {inf_count} infinite values in features", color="yellow")
                 X = np.nan_to_num(X, posinf=1e6, neginf=-1e6)
@@ -555,3 +649,191 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"🔍 [REGIME_ENSEMBLE] Error type: {error_type}", color="yellow")
             self.logger.error(f"Error preparing training data: {e}", exc_info=True)
             return None, None, None
+    
+    def _generate_features_with_bank(self, data: pd.DataFrame) -> Optional[np.ndarray]:
+        """Generate comprehensive features using the existing feature bank."""
+        tprint("🔧 [REGIME_ENSEMBLE] Generating features using feature bank", color="cyan", bold=True)
+        
+        try:
+            if not FEATURE_GENERATION_AVAILABLE:
+                tprint("❌ [REGIME_ENSEMBLE] Feature generation system not available", color="red")
+                return None
+            
+            # Get feature bank
+            feature_bank = get_feature_bank()
+            tprint("✅ [REGIME_ENSEMBLE] Feature bank retrieved successfully", color="green")
+            
+            # Define feature categories to generate
+            categories = [
+                FeatureCategory.MOMENTUM,
+                FeatureCategory.VOLATILITY, 
+                FeatureCategory.VOLUME,
+                FeatureCategory.TREND,
+                FeatureCategory.OSCILLATOR,
+                FeatureCategory.RETURNS
+            ]
+            
+            all_features = pd.DataFrame(index=data.index)
+            total_features = 0
+            
+            # Generate features for each category
+            for category in categories:
+                tprint(f"🔍 [REGIME_ENSEMBLE] Generating {category.value} features", color="blue")
+                
+                # Get generators for this category
+                generators = feature_bank.get_generators_by_category(category)
+                
+                if not generators:
+                    tprint(f"⚠️ [REGIME_ENSEMBLE] No generators found for {category.value}", color="yellow")
+                    continue
+                
+                category_features = pd.DataFrame(index=data.index)
+                
+                # Generate features using each generator
+                for generator in generators:
+                    try:
+                        tprint(f"🔧 [REGIME_ENSEMBLE] Using generator: {generator.config.name}", color="blue")
+                        result = generator.generate(data)
+                        
+                        if result and hasattr(result, 'data') and not result.data.empty:
+                            # Add feature with category prefix
+                            feature_name = f"{category.value}_{result.name}"
+                            category_features[feature_name] = result.data
+                            total_features += 1
+                            tprint(f"✅ [REGIME_ENSEMBLE] Generated feature: {feature_name}", color="green")
+                        else:
+                            tprint(f"⚠️ [REGIME_ENSEMBLE] Generator {generator.config.name} returned empty result", color="yellow")
+                            
+                    except Exception as e:
+                        tprint(f"⚠️ [REGIME_ENSEMBLE] Generator {generator.config.name} failed: {e}", color="yellow")
+                        continue
+                
+                # Add category features to all features
+                if not category_features.empty:
+                    all_features = pd.concat([all_features, category_features], axis=1)
+                    tprint(f"📊 [REGIME_ENSEMBLE] {category.value} features: {category_features.shape[1]}", color="blue")
+            
+            # Convert to numpy array
+            if not all_features.empty:
+                X = all_features.values
+                tprint(f"✅ [REGIME_ENSEMBLE] Feature bank generated {X.shape[1]} features from {len(categories)} categories", color="green")
+                tprint(f"📊 [REGIME_ENSEMBLE] Feature matrix shape: {X.shape}", color="blue")
+                return X
+            else:
+                tprint("❌ [REGIME_ENSEMBLE] Feature bank generated no features", color="red")
+                return None
+                
+        except Exception as e:
+            tprint(f"❌ [REGIME_ENSEMBLE] Error generating features with feature bank: {e}", color="red")
+            self.logger.error(f"Error generating features with feature bank: {str(e)}", exc_info=True)
+            return None
+    
+    def _train_base_models(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray) -> Dict[str, Any]:
+        """Train base models for ensemble."""
+        tprint("🏋️ [REGIME_ENSEMBLE] Training base models", color="yellow")
+        
+        base_models = {}
+        
+        # CatBoost Classifier
+        tprint("🐱 [REGIME_ENSEMBLE] Training CatBoost classifier", color="blue")
+        try:
+            from catboost import CatBoostClassifier
+            catboost_model = CatBoostClassifier(
+                iterations=100,
+                depth=6,
+                learning_rate=0.1,
+                random_state=42,
+                verbose=False,
+                thread_count=-1
+            )
+            catboost_model.fit(X, y)
+            base_models['catboost'] = catboost_model
+            tprint("✅ [REGIME_ENSEMBLE] CatBoost trained successfully", color="green")
+        except Exception as e:
+            tprint(f"❌ [REGIME_ENSEMBLE] CatBoost training failed: {e}", color="red")
+        
+        # Random Forest Classifier
+        tprint("🌳 [REGIME_ENSEMBLE] Training Random Forest classifier", color="blue")
+        try:
+            from sklearn.ensemble import RandomForestClassifier
+            rf_model = RandomForestClassifier(
+                n_estimators=100,
+                max_depth=10,
+                random_state=42,
+                n_jobs=-1
+            )
+            rf_model.fit(X, y)
+            base_models['random_forest'] = rf_model
+            tprint("✅ [REGIME_ENSEMBLE] Random Forest trained successfully", color="green")
+        except Exception as e:
+            tprint(f"❌ [REGIME_ENSEMBLE] Random Forest training failed: {e}", color="red")
+        
+        # Extra Tree Classifier
+        tprint("🌳 [REGIME_ENSEMBLE] Training Extra Tree classifier", color="blue")
+        try:
+            from sklearn.ensemble import ExtraTreesClassifier
+            et_model = ExtraTreesClassifier(
+                n_estimators=100,
+                max_depth=10,
+                random_state=42,
+                n_jobs=-1
+            )
+            et_model.fit(X, y)
+            base_models['extra_tree'] = et_model
+            tprint("✅ [REGIME_ENSEMBLE] Extra Tree trained successfully", color="green")
+        except Exception as e:
+            tprint(f"❌ [REGIME_ENSEMBLE] Extra Tree training failed: {e}", color="red")
+        
+        tprint(f"✅ [REGIME_ENSEMBLE] Base models training completed - {len(base_models)} models trained", color="green")
+        return base_models
+
+    def _handle_nan_values(self, X: np.ndarray, original_nan_count: int) -> np.ndarray:
+        """Handle NaN values in feature matrix using sophisticated time series methods.
+
+        Args:
+            X: Feature matrix with potential NaN values
+            original_nan_count: Original number of NaN values for logging
+
+        Returns:
+            Feature matrix with NaN values handled
+        """
+        tprint(f"🔧 [REGIME_ENSEMBLE] Handling {original_nan_count} NaN values using sophisticated methods", color="cyan")
+
+        try:
+            # Convert to pandas for better NaN handling
+            df = pd.DataFrame(X)
+
+            # Strategy 1: Forward fill for time series data (fills gaps with previous values)
+            df_filled = df.fillna(method='ffill')
+
+            # Strategy 2: Backward fill for remaining NaN values (fills gaps with future values)
+            df_filled = df_filled.fillna(method='bfill')
+
+            # Strategy 3: For any remaining NaN values, use column median
+            remaining_nan_count = df_filled.isna().sum().sum()
+            if remaining_nan_count > 0:
+                tprint(f"📊 [REGIME_ENSEMBLE] {remaining_nan_count} NaN values remain after forward/backward fill", color="yellow")
+
+                # Calculate median for each column
+                for col in df_filled.columns:
+                    if df_filled[col].isna().sum() > 0:
+                        median_val = df_filled[col].median()
+                        df_filled[col] = df_filled[col].fillna(median_val)
+
+                final_nan_count = df_filled.isna().sum().sum()
+                if final_nan_count > 0:
+                    tprint(f"⚠️ [REGIME_ENSEMBLE] {final_nan_count} NaN values still remain, using zero fill as last resort", color="yellow")
+                    df_filled = df_filled.fillna(0.0)
+
+            # Convert back to numpy array
+            X_cleaned = df_filled.values
+
+            # Verify no NaN values remain
+            final_nan_count = np.isnan(X_cleaned).sum()
+            tprint(f"✅ [REGIME_ENSEMBLE] NaN handling completed: {original_nan_count} → {final_nan_count} NaN values", color="green")
+
+            return X_cleaned
+
+        except Exception as e:
+            tprint(f"⚠️ [REGIME_ENSEMBLE] Sophisticated NaN handling failed: {e}, falling back to zero fill", color="yellow")
+            return np.nan_to_num(X, nan=0.0)

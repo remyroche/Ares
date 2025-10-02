@@ -9,12 +9,13 @@ Comprehensive evaluation capabilities for tree architecture search including:
 - Cross-validation and time series evaluation
 """
 
-from .tree_evaluator import TreeEvaluator, TreePerformanceEvaluator, TreeBenchmarkEvaluator
-from .multi_objective_evaluation import TreeMultiObjectiveEvaluator, TreeParetoEvaluator
-from .regime_evaluation import TreeRegimeEvaluator, TreeRegimePerformanceAnalyzer
+# Missing modules commented out
+# from .tree_evaluator import TreeEvaluator, TreePerformanceEvaluator, TreeBenchmarkEvaluator
+# from .multi_objective_evaluation import TreeMultiObjectiveEvaluator, TreeParetoEvaluator
+# from .regime_evaluation import TreeRegimeEvaluator, TreeRegimePerformanceAnalyzer
 
 __all__ = [
-    'TreeEvaluator', 'TreePerformanceEvaluator', 'TreeBenchmarkEvaluator',
-    'TreeMultiObjectiveEvaluator', 'TreeParetoEvaluator',
-    'TreeRegimeEvaluator', 'TreeRegimePerformanceAnalyzer'
+    # 'TreeEvaluator', 'TreePerformanceEvaluator', 'TreeBenchmarkEvaluator',
+    # 'TreeMultiObjectiveEvaluator', 'TreeParetoEvaluator',
+    # 'TreeRegimeEvaluator', 'TreeRegimePerformanceAnalyzer'
 ]

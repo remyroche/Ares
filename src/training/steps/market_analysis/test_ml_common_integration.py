@@ -35,7 +35,7 @@ def test_ml_common_imports():
 
         # Test that we can create instances
         logger = get_logger(__name__)
-        cache = get_unified_cache()
+        cache = get_unified_cache(namespace="test_ml_common")
         safeguards = MLTrainingSafeguards()
         error_handler = RobustErrorHandler()
         memory_optimizer = MemoryOptimizer()

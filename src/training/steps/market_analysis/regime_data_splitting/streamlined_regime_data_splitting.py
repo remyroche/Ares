@@ -527,7 +527,7 @@ class StreamlinedRegimeDataSplitting:
             # Calculate regime distribution
             if 'composite_cluster_id' in data.columns:
                 regime_counts = data['composite_cluster_id'].value_counts()
-                self.metrics.regime_distribution = regime_counts.to_dict()
+                self.metrics.regime_distribution = {int(k): int(v) for k, v in regime_counts.to_dict().items()}
 
             # Calculate regime continuity score
             if 'composite_cluster_id' in data.columns:

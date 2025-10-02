@@ -54,14 +54,25 @@ class OptimizationResult:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert result to dictionary."""
+        # Ensure metadata contains serializable values
+        def convert_metadata(obj):
+            if isinstance(obj, np.int64):
+                return int(obj)
+            elif isinstance(obj, dict):
+                return {k: convert_metadata(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return [convert_metadata(item) for item in obj]
+            else:
+                return obj
+
         return {
-            'best_lookback_period': self.best_lookback_period,
+            'best_lookback_period': int(self.best_lookback_period) if isinstance(self.best_lookback_period, np.int64) else self.best_lookback_period,
             'best_score': self.best_score,
             'optimization_method': self.optimization_method,
-            'total_trials': self.total_trials,
+            'total_trials': int(self.total_trials) if isinstance(self.total_trials, np.int64) else self.total_trials,
             'optimization_time': self.optimization_time,
             'convergence_achieved': self.convergence_achieved,
-            'metadata': self.metadata
+            'metadata': convert_metadata(self.metadata)
         }
 
 
@@ -569,7 +580,7 @@ class CoreOptimizer:
     def _create_failed_result(self, method: str, optimization_time: float) -> OptimizationResult:
         """Create a failed optimization result."""
         return OptimizationResult(
-            best_lookback_period=OPTIMIZATION_CONSTANTS.DEFAULT_MIN_LOOKBACK,
+            best_lookback_period=OPTIMIZATION_CONSTANTS.DEFAULT_MIN_LOOKBACK,  # Already an int
             best_score=0.0,
             optimization_method=method,
             total_trials=0,

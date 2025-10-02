@@ -881,15 +881,18 @@ class NASTASRegimeDiscoveryComponent(BaseMarketAnalysisComponent):
         regime_diversity_bonus = min(0.2, max(0, (min(total_regimes, 15) - 8) * 0.02))  # Bonus capped at 15 regimes
         consensus_penalty = max(0, 0.3 - consensus_score)  # Penalty for low consensus
         
-        # Improved weight distribution focusing on regime quality
+        # Enhanced weight distribution with improved consensus weighting
+        consensus_weight = 0.3 if consensus_score < 0.3 else 0.25  # Higher weight for low consensus
+        balance_weight = 0.3 if combined_regime_balance < 0.5 else 0.25  # Higher weight for poor balance
+        
         overall_score = (
-            economic_avg * 0.2 +           # Reduced from 0.25
-            trading_avg * 0.2 +            # Reduced from 0.25  
-            stability_avg * 0.15 +         # Reduced from 0.2
-            combined_regime_balance * 0.25 +  # Increased from 0.15
-            consensus_score * 0.2 +        # Increased from 0.15
-            regime_diversity_bonus -      # New: diversity bonus
-            consensus_penalty             # New: consensus penalty
+            economic_avg * 0.18 +           # Slightly reduced
+            trading_avg * 0.18 +            # Slightly reduced  
+            stability_avg * 0.12 +          # Reduced to make room for consensus
+            combined_regime_balance * balance_weight +  # Dynamic weight based on balance quality
+            consensus_score * consensus_weight +        # Dynamic weight based on consensus quality
+            regime_diversity_bonus -        # Diversity bonus
+            consensus_penalty              # Consensus penalty
         )
         
         # Ensure score is bounded [0, 1]

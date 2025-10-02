@@ -279,7 +279,7 @@ class RegimePredictiveEnsembles:
                 pca = None
             # Create base LightGBM model (no PatchTST wrapper for global meta-learner)
             model = LGBMClassifier(**self.global_meta_config, random_state = 42)
-            model.fit(X_train, y_train, eval_set=[(X_val, y_val)], callbacks=[LGBMClassifier.early_stopping(10, verbose = False)])
+            model.fit(X_train, y_train, eval_set=[(X_val, y_val)], callbacks=[LGBMClassifier.early_stopping(10, verbose=False)])
             score = model.score(X_val, y_val)
             if score > best_score:
                 best_score = score

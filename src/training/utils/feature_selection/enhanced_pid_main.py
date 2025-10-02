@@ -194,7 +194,7 @@ class EnhancedPartialInformationDecomposition:
                 self.validator = CrossStepValidator()
                 self.matrix_ops = get_unified_matrix_operations()
                 self.hardware_manager = get_unified_hardware_manager()
-                self.cache_manager = get_unified_cache() if hasattr(self, 'cache_manager') else None
+                self.cache_manager = get_unified_cache(namespace="enhanced_pid") if hasattr(self, 'cache_manager') else None
                 self.logger.info("✅ Utility frameworks initialized")
             else:
                 self.validator = None

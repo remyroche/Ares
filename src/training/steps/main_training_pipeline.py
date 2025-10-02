@@ -163,7 +163,7 @@ class MainPipelineConfig:
         ],
         PipelineStage.MARKET_ANALYSIS: [
             'sr_parameter_optimization', 'sr_detection', 'sr_clustering',
-            'hmm_regime_discovery', 'hmm_clustering', 'hmm_models_training', 'hmm_ensemble_training',
+            'nas_tas_regime_discovery', 'nas_tas_clustering', 'regime_models_training', 'regime_ensemble_training',
             'regime_data_splitting', 'feature_lookback_optimization',
             'pid_based_feature_generation', 'multi_horizon_profit_labeler', 'final_feature_selection'
         ],
@@ -755,15 +755,37 @@ class MainTrainingPipeline:
         else:
             self.logger.info(f"📈 Final metrics: Total={total_sub_pipelines}, Completed={completed_sub_pipelines}, Failed={failed_sub_pipelines}, Rate={result.success_rate:.1%}")
         
-        # Calculate performance metrics
+        # Calculate performance metrics with int64 conversion
         result.performance_metrics = {
-            'total_sub_pipelines': total_sub_pipelines,
-            'completed_sub_pipelines': completed_sub_pipelines,
-            'failed_sub_pipelines': failed_sub_pipelines,
-            'success_rate': result.success_rate,
-            'stages_completed': len([s for s in result.stage_results.keys() if s not in result.failed_stages]),
-            'stages_failed': len(result.failed_stages)
+            'total_sub_pipelines': int(total_sub_pipelines),
+            'completed_sub_pipelines': int(completed_sub_pipelines),
+            'failed_sub_pipelines': int(failed_sub_pipelines),
+            'success_rate': float(result.success_rate),
+            'stages_completed': int(len([s for s in result.stage_results.keys() if s not in result.failed_stages])),
+            'stages_failed': int(len(result.failed_stages))
         }
+        
+        # Convert any numpy types in artifacts to Python types to avoid JSON serialization errors
+        result.artifacts = self._convert_numpy_types(result.artifacts)
+    
+    def _convert_numpy_types(self, obj: Any) -> Any:
+        """Convert numpy types to Python types to avoid JSON serialization errors."""
+        import numpy as np
+        
+        if isinstance(obj, dict):
+            return {key: self._convert_numpy_types(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [self._convert_numpy_types(item) for item in obj]
+        elif isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        else:
+            return obj
     
     def get_pipeline_status(self, pipeline_id: str) -> Optional[SubPipelineStatus]:
         """Get status of a specific pipeline execution."""
@@ -797,7 +819,7 @@ class MainTrainingPipeline:
                 return []
         elif stage == PipelineStage.MARKET_ANALYSIS:
             if self.market_analysis_pipeline:
-                return self.market_analysis_pipeline.get_available_sub_pipelines()
+                return self.market_analysis_pipeline.get_available_sub_pipelines(stage)
             else:
                 return []
         elif stage == PipelineStage.MODEL_TRAINING:

@@ -9,14 +9,15 @@ Comprehensive search strategies for tree architecture search including:
 - Hybrid search strategies
 """
 
-from .evolutionary_search import EvolutionaryTreeSearch, TreeGeneticAlgorithm, TreeNSGA2
-from .bayesian_search import BayesianTreeSearch, TreeBayesianOptimizer, TreeGaussianProcess
-from .rl_search import RLTreeSearch, TreeReinforcementLearner, TreePPO, TreeA2C
-from .multi_objective_search import MultiObjectiveTreeSearch, TreeMultiObjectiveOptimizer
+# Missing modules commented out
+# from .evolutionary_search import EvolutionaryTreeSearch, TreeGeneticAlgorithm, TreeNSGA2
+# from .bayesian_search import BayesianTreeSearch, TreeBayesianOptimizer, TreeGaussianProcess
+# from .rl_search import RLTreeSearch, TreeReinforcementLearner, TreePPO, TreeA2C
+# from .multi_objective_search import MultiObjectiveTreeSearch, TreeMultiObjectiveOptimizer
 
 __all__ = [
-    'EvolutionaryTreeSearch', 'TreeGeneticAlgorithm', 'TreeNSGA2',
-    'BayesianTreeSearch', 'TreeBayesianOptimizer', 'TreeGaussianProcess',
-    'RLTreeSearch', 'TreeReinforcementLearner', 'TreePPO', 'TreeA2C',
-    'MultiObjectiveTreeSearch', 'TreeMultiObjectiveOptimizer'
+    # 'EvolutionaryTreeSearch', 'TreeGeneticAlgorithm', 'TreeNSGA2',
+    # 'BayesianTreeSearch', 'TreeBayesianOptimizer', 'TreeGaussianProcess',
+    # 'RLTreeSearch', 'TreeReinforcementLearner', 'TreePPO', 'TreeA2C',
+    # 'MultiObjectiveTreeSearch', 'TreeMultiObjectiveOptimizer'
 ]

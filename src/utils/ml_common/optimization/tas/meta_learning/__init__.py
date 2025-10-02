@@ -10,11 +10,12 @@ Advanced meta-learning capabilities for tree-based architecture search including
 """
 
 from .tree_meta_learning import TreeMetaLearning, TreeMAML, TreePrototypicalNetwork
-from .few_shot_learning import FewShotTreeLearner, TreeFewShotAdapter
-from .continual_learning import ContinualTreeLearner, TreeEpisodicMemory
+# Missing modules commented out
+# from .few_shot_learning import FewShotTreeLearner, TreeFewShotAdapter
+# from .continual_learning import ContinualTreeLearner, TreeEpisodicMemory
 
 __all__ = [
     'TreeMetaLearning', 'TreeMAML', 'TreePrototypicalNetwork',
-    'FewShotTreeLearner', 'TreeFewShotAdapter',
-    'ContinualTreeLearner', 'TreeEpisodicMemory'
+    # 'FewShotTreeLearner', 'TreeFewShotAdapter',
+    # 'ContinualTreeLearner', 'TreeEpisodicMemory'
 ]

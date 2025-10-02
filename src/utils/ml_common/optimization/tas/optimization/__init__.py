@@ -9,12 +9,13 @@ Advanced optimization capabilities for tree architecture search including:
 - Real-time performance monitoring
 """
 
-from .hardware_optimization import TreeHardwareOptimizer, TreeMatrixOperations, TreeM1Optimizer
-from .memory_optimization import TreeMemoryOptimizer, TreeCacheManager, TreeMemoryPool
-from .parallel_optimization import TreeParallelOptimizer, TreeDistributedSearch, TreeMultiProcessing
+# Missing modules commented out
+# from .hardware_optimization import TreeHardwareOptimizer, TreeMatrixOperations, TreeM1Optimizer
+# from .memory_optimization import TreeMemoryOptimizer, TreeCacheManager, TreeMemoryPool
+# from .parallel_optimization import TreeParallelOptimizer, TreeDistributedSearch, TreeMultiProcessing
 
 __all__ = [
-    'TreeHardwareOptimizer', 'TreeMatrixOperations', 'TreeM1Optimizer',
-    'TreeMemoryOptimizer', 'TreeCacheManager', 'TreeMemoryPool',
-    'TreeParallelOptimizer', 'TreeDistributedSearch', 'TreeMultiProcessing'
+    # 'TreeHardwareOptimizer', 'TreeMatrixOperations', 'TreeM1Optimizer',
+    # 'TreeMemoryOptimizer', 'TreeCacheManager', 'TreeMemoryPool',
+    # 'TreeParallelOptimizer', 'TreeDistributedSearch', 'TreeMultiProcessing'
 ]

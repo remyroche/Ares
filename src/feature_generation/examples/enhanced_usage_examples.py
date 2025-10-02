@@ -272,7 +272,7 @@ def example_4_interaction_features():
     
     print(f"\nCreated {len(interaction_generators)} interaction generators:")
     for i, generator in enumerate(interaction_generators):
-        print(f"  {i+1}. {generator.name}")
+        print(f"  {i+1}. {generator.config.name}")
 
 def example_5_feature_bank_with_enhanced_features():
     """

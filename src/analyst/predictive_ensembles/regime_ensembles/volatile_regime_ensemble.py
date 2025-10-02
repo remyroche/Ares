@@ -9,7 +9,7 @@ from .base_ensemble import BaseEnsemble
 import numpy as np
 import pandas as pd
 import typing
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 # Add tprint imports for enhanced logging
 from src.utils.tprint import tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer

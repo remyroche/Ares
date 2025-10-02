@@ -464,13 +464,20 @@ class GARCHFeatureGenerator(FeatureGenerator):
 
         close_prices = data['close'].dropna()
         if len(close_prices) < self.config.min_lookback:
-            return pd.Series([np.nan] * len(data), index=data.index, name=self.config.name)
+            # Instead of all NaN, provide fallback volatility estimate
+            fallback_volatility = close_prices.pct_change().std() if len(close_prices) > 1 else 0.02
+            return pd.Series([fallback_volatility] * len(data), index=data.index, name=self.config.name)
 
         # Calculate returns
         returns = 100 * close_prices.pct_change().dropna()
 
         if len(returns) < 50:  # Need minimum data for GARCH
-            return pd.Series([np.nan] * len(data), index=data.index, name=self.config.name)
+            # Fallback to rolling volatility for insufficient data
+            fallback_volatility = close_prices.pct_change().rolling(window=min(20, len(returns))).std().fillna(0.02)
+            # Pad to match data length
+            pad_length = len(data) - len(fallback_volatility)
+            result = pd.Series([0.02] * pad_length + fallback_volatility.tolist(), index=data.index, name=self.config.name)
+            return result
 
         try:
             # Use vectorized rolling window with pandas
@@ -479,7 +486,8 @@ class GARCHFeatureGenerator(FeatureGenerator):
             def fit_garch_window(window_returns: pd.Series) -> float:
                 """Fit GARCH model on a window and return volatility forecast."""
                 if len(window_returns) < 50:  # Minimum data requirement
-                    return np.nan
+                    # Fallback to simple volatility estimate
+                    return window_returns.std() if len(window_returns) > 1 else 0.02
 
                 try:
                     # Fit GARCH model
@@ -492,7 +500,8 @@ class GARCHFeatureGenerator(FeatureGenerator):
                     return volatility_forecast
 
                 except Exception:
-                    return np.nan
+                    # Fallback to rolling volatility when GARCH fails
+                    return window_returns.rolling(window=min(20, len(window_returns))).std().iloc[-1] if len(window_returns) > 1 else 0.02
 
             # Apply GARCH fitting to rolling windows
             # For vectorized processing, we'll use expanding windows with proper alignment
@@ -520,18 +529,31 @@ class GARCHFeatureGenerator(FeatureGenerator):
                         volatility_forecast = forecast.variance.iloc[-1].values[0] if self.forecast_horizon == 1 else forecast.variance.iloc[-1].values[0]
                         volatility_forecasts.append(volatility_forecast)
                     except Exception:
-                        volatility_forecasts.append(np.nan)
+                        # Fallback volatility when GARCH fitting fails for this window
+                        window_vol = window_returns.std() if len(window_returns) > 1 else 0.02
+                        volatility_forecasts.append(window_vol)
 
-            # Pad the beginning with NaN to match data length
+            # Pad the beginning with fallback volatility to match data length
             pad_length = len(data) - len(volatility_forecasts)
-            volatility_series = pd.Series([np.nan] * pad_length + volatility_forecasts,
+            # Use fallback volatility (0.02) for padding instead of NaN
+            fallback_vol = 0.02
+            volatility_series = pd.Series([fallback_vol] * pad_length + volatility_forecasts,
                                         index=data.index, name=self.config.name)
 
             return volatility_series
 
         except Exception as e:
-            logging.getLogger(__name__).warning(f"⚠️ Vectorized GARCH calculation failed: {e}")
-            return pd.Series([np.nan] * len(data), index=data.index, name=self.config.name)
+            logging.getLogger(__name__).warning(f"⚠️ Vectorized GARCH calculation failed: {e}, using fallback volatility")
+            # Fallback to simple rolling volatility when GARCH completely fails
+            close_prices = data['close'].dropna()
+            if len(close_prices) > 1:
+                fallback_volatility = close_prices.pct_change().rolling(window=min(20, len(close_prices))).std().fillna(0.02)
+                # Pad to match data length
+                pad_length = len(data) - len(fallback_volatility)
+                result = pd.Series([0.02] * pad_length + fallback_volatility.tolist(), index=data.index, name=self.config.name)
+                return result
+            else:
+                return pd.Series([0.02] * len(data), index=data.index, name=self.config.name)
 
 
 

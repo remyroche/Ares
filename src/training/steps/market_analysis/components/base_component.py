@@ -3,7 +3,7 @@ Base component class for market analysis pipeline components.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
 from datetime import datetime
 import logging
@@ -41,9 +41,23 @@ class ComponentConfig:
     volume_regime_weight: float = 0.25
     structural_trend_weight: float = 0.2
     
+    # Feature selection patterns
+    signal_like_patterns: List[str] = None
+    
+    # Feature category caps for limiting features per category
+    feature_category_caps: Optional[Dict[str, int]] = None
+    
     def __post_init__(self):
         if self.custom_params is None:
             self.custom_params = {}
+        if self.signal_like_patterns is None:
+            self.signal_like_patterns = [
+                r"signal",
+                r"entry",
+                r"exit",
+                r"crossover",
+                r"trade",
+            ]
 
 
 @dataclass

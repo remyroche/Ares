@@ -342,6 +342,15 @@ class M1MemoryOptimizer:
         """Alias for optimize_dataframe_memory for compatibility."""
         return self.optimize_dataframe_memory(df)
     
+    def optimize_memory(self) -> Dict[str, Any]:
+        """
+        Optimize memory usage for M1 architecture (alias for optimize_memory_usage).
+        
+        Returns:
+            Dictionary with optimization results
+        """
+        return self.optimize_memory_usage(aggressive=False)
+    
     def optimize_memory_usage(self, aggressive: bool = False) -> Dict[str, Any]:
         """
         Optimize memory usage for M1 architecture.

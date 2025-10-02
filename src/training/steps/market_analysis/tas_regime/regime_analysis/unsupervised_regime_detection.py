@@ -22,7 +22,8 @@ from scipy import stats
 from scipy.signal import find_peaks
 from scipy.stats import jarque_bera, kstest, anderson
 from statsmodels.tsa.stattools import adfuller, kpss
-from statsmodels.tsa.regime_switching import MarkovRegression
+# MarkovRegression not available in current statsmodels version
+# from statsmodels.tsa.regime_switching import MarkovRegression
 import warnings
 import threading
 import queue

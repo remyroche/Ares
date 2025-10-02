@@ -27,63 +27,66 @@ from .core.tas_result import TASResult, TASSearchResult, TASOptimizationResult
 # Trading-specific components
 from .core.tas_config import TASArchitectureType, TradingObjective, MarketRegime, MicroRegimeType
 from .core.advanced_tas_search import AdvancedTradingArchitectureSearch, AdvancedTASResult
-from .core.tree_cvlSA_architecture import TreeCVLSASearch, CVLSAResult
+# Classes commented out due to missing dependencies
+# from .core.tree_cvlSA_architecture import TreeCVLSASearch, CVLSAResult
 
 # Meta-learning components
 from .meta_learning.tree_meta_learning import TreeMetaLearning, TreeMAML, TreePrototypicalNetwork
-from .meta_learning.few_shot_learning import FewShotTreeLearner, TreeFewShotAdapter
-from .meta_learning.continual_learning import ContinualTreeLearner, TreeEpisodicMemory
+# Missing modules commented out
+# from .meta_learning.few_shot_learning import FewShotTreeLearner, TreeFewShotAdapter
+# from .meta_learning.continual_learning import ContinualTreeLearner, TreeEpisodicMemory
 
-# Search strategies
-from .search.evolutionary_search import EvolutionaryTreeSearch, TreeGeneticAlgorithm
-from .search.bayesian_search import BayesianTreeSearch, TreeBayesianOptimizer
-from .search.rl_search import RLTreeSearch, TreeReinforcementLearner
-from .search.multi_objective_search import MultiObjectiveTreeSearch, TreeNSGA2
+# Search strategies - commented out due to missing modules
+# from .search.evolutionary_search import EvolutionaryTreeSearch, TreeGeneticAlgorithm
+# from .search.bayesian_search import BayesianTreeSearch, TreeBayesianOptimizer
+# from .search.rl_search import RLTreeSearch, TreeReinforcementLearner
+# from .search.multi_objective_search import MultiObjectiveTreeSearch, TreeNSGA2
 
-# Optimization components
-from .optimization.hardware_optimization import TreeHardwareOptimizer, TreeMatrixOperations
-from .optimization.memory_optimization import TreeMemoryOptimizer, TreeCacheManager
-from .optimization.parallel_optimization import TreeParallelOptimizer, TreeDistributedSearch
+# Optimization components - commented out due to missing modules
+# from .optimization.hardware_optimization import TreeHardwareOptimizer, TreeMatrixOperations
+# from .optimization.memory_optimization import TreeMemoryOptimizer, TreeCacheManager
+# from .optimization.parallel_optimization import TreeParallelOptimizer, TreeDistributedSearch
 
-# Uncertainty estimation
-from .uncertainty.uncertainty_estimation import TreeUncertaintyEstimator, TreeEnsembleUncertainty
-from .uncertainty.confidence_scoring import TreeConfidenceScorer, TreeReliabilityEstimator
-from .uncertainty.robustness_analysis import TreeRobustnessAnalyzer, TreeAdversarialTesting
+# Uncertainty estimation - commented out due to missing modules
+# from .uncertainty.uncertainty_estimation import TreeUncertaintyEstimator, TreeEnsembleUncertainty
+# from .uncertainty.confidence_scoring import TreeConfidenceScorer, TreeReliabilityEstimator
+# from .uncertainty.robustness_analysis import TreeRobustnessAnalyzer, TreeAdversarialTesting
 
-# Regime analysis
-from .regime_analysis.tree_regime_analyzer import TreeRegimeAnalyzer, TreeRegimeDetector
-from .regime_analysis.regime_optimization import TreeRegimeOptimizer, TreeRegimeSelector
-from .regime_analysis.regime_reporting import TreeRegimeReporter, TreeRegimeVisualizer
+# Regime analysis - commented out due to missing modules
+# from .regime_analysis.tree_regime_analyzer import TreeRegimeAnalyzer, TreeRegimeDetector
+# from .regime_analysis.regime_optimization import TreeRegimeOptimizer, TreeRegimeSelector
+# from .regime_analysis.regime_reporting import TreeRegimeReporter, TreeRegimeVisualizer
 
 # Trading-specific components
 from .components.micro_regime_detector import MicroRegimeDetector, MicroRegimeDetectionResult
 from .components.neural_architecture import TASNeuralModel, NeuralArchitectureConfig
 
-# Adaptation
-from .adaptation.real_time_adaptation import TreeRealTimeAdapter, TreePerformanceMonitor
-from .adaptation.dynamic_optimization import TreeDynamicOptimizer, TreeAdaptiveSearch
-from .adaptation.performance_tracking import TreePerformanceTracker, TreeMetricsCollector
+# Adaptation - commented out due to missing modules
+# from .adaptation.real_time_adaptation import TreeRealTimeAdapter, TreePerformanceMonitor
+# from .adaptation.dynamic_optimization import TreeDynamicOptimizer, TreeAdaptiveSearch
+# from .adaptation.performance_tracking import TreePerformanceTracker, TreeMetricsCollector
 
-# Evaluation
-from .evaluation.tree_evaluator import TreeEvaluator, TreePerformanceEvaluator
-from .evaluation.multi_objective_evaluation import TreeMultiObjectiveEvaluator
-from .evaluation.regime_evaluation import TreeRegimeEvaluator, TreeRegimePerformanceAnalyzer
+# Evaluation - commented out due to missing modules
+# from .evaluation.tree_evaluator import TreeEvaluator, TreePerformanceEvaluator
+# from .evaluation.multi_objective_evaluation import TreeMultiObjectiveEvaluator
+# from .evaluation.regime_evaluation import TreeRegimeEvaluator, TreeRegimePerformanceAnalyzer
 from .evaluation.tas_evaluator import TASEvaluator, EvaluationResult
 
-# Utilities
-from .utils.tree_utils import TreeUtils, TreeArchitectureUtils
-from .utils.visualization import TreeVisualizer, TreeArchitectureVisualizer
-from .utils.logging import TreeLogger, TreeSearchLogger
+# Utilities - commented out due to missing modules
+# from .utils.tree_utils import TreeUtils, TreeArchitectureUtils
+# from .utils.visualization import TreeVisualizer, TreeArchitectureVisualizer
+# from .utils.logging import TreeLogger, TreeSearchLogger
 
 # Convenience functions
 from .core.advanced_tas_search import optimize_advanced_trading_architecture
-from .core.tree_cvlSA_architecture import optimize_cvlSA_architecture
+# Missing module commented out
+# from .core.tree_cvlSA_architecture import optimize_cvlSA_architecture
 
 __version__ = "2.0.0"
 __author__ = "Advanced TAS Team"
 
-# Package configuration
-DEFAULT_CONFIG = TASConfig.create_advanced_trading_config()
+# Package configuration - commented out due to method placement issue
+# DEFAULT_CONFIG = TASConfig.create_advanced_trading_config()
 
 # Main exports
 __all__ = [

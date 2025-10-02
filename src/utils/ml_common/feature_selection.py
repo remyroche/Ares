@@ -232,7 +232,7 @@ class FeatureSelectionFramework:
             _LOGGER.info("🧠 Memory optimization tools initialized")
             
             # Caching and shared resources
-            self.shared_cache = get_unified_cache()
+            self.shared_cache = get_unified_cache(namespace="ml_common_feature_selection")
             _LOGGER.info("💾 Shared cache initialized")
             
             # Stability and thresholding

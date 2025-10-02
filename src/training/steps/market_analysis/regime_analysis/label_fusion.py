@@ -730,7 +730,7 @@ class RegimeOptimizationService:
         return balanced_assignments, optimization_metrics, fusion_result.metadata
     
     def _apply_balance_optimization(self, features: np.ndarray, assignments: np.ndarray, optimal_k: int) -> Tuple[np.ndarray, float]:
-        """Apply balance-aware optimization to prevent dominant regimes (>20% threshold)."""
+        """Apply balance-aware optimization to prevent dominant regimes (>15% threshold)."""
         try:
             import numpy as np
             

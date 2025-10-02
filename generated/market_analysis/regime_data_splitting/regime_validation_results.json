@@ -1,0 +1,8 @@
+{
+  "validation_checks_passed": 0,
+  "validation_checks_failed": 0,
+  "data_quality_validation": "True",
+  "regime_diversity_validation": true,
+  "continuity_validation": "True",
+  "overall_validation_passed": "True"
+}

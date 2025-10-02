@@ -133,7 +133,7 @@ class InfluxDBManager:
         if "timestamp" in df.columns:
             df["timestamp"] = (
                 pd.to_datetime(df["timestamp"]).astype("int64") // 1_000_000
-            )
+            ).astype(int)
 
             # Validate that timestamps are reasonable (>= 2000-01-01)
             min_reasonable_ts = 946684800000  # 2000-01-01 in milliseconds

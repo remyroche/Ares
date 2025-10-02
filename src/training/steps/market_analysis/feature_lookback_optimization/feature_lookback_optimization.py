@@ -34,6 +34,44 @@ from .dependency_manager import dependency_manager, get_dependency, is_dependenc
 np, np_fallback = get_dependency('numpy')
 pd, pd_fallback = get_dependency('pandas')
 
+# Utility function to convert int64 to int for dictionary keys
+def convert_int64_to_int(value: Any) -> Any:
+    """Convert int64 values to regular Python int for JSON serialization."""
+    try:
+        if hasattr(value, 'dtype') and value.dtype == 'int64':
+            return int(value)
+        elif isinstance(value, np.int64):
+            return int(value)
+        elif isinstance(value, dict):
+            # Convert both keys and values to handle int64 keys
+            converted_dict = {}
+            for k, v in value.items():
+                # Convert key if it's int64
+                converted_key = k
+                if isinstance(k, np.int64):
+                    converted_key = int(k)
+                elif hasattr(k, 'dtype') and k.dtype == 'int64':
+                    converted_key = int(k)
+
+                # Convert value recursively
+                converted_dict[converted_key] = convert_int64_to_int(v)
+
+            return converted_dict
+        elif isinstance(value, (list, tuple)):
+            # Convert each item in the list/tuple recursively
+            return [convert_int64_to_int(item) for item in value]
+        elif hasattr(value, 'shape') and len(value.shape) > 0:
+            # Handle numpy arrays that might be problematic
+            if value.size > 100:  # Large arrays might cause issues
+                return f"LargeArray_{value.shape}_{value.dtype}"
+            else:
+                return value.tolist()
+        else:
+            return value
+    except Exception:
+        # If conversion fails, return original value
+        return value
+
 if np_fallback or pd_fallback:
     tprint("⚠️ Using fallback implementations for core dependencies")
 
@@ -1873,15 +1911,70 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 
                 # Perform traditional optimization on enhanced data
                 optimization_result = await feature_optimizer.optimize_features(optimization_data, config)
-                
+
+                # Ensure optimization_result is a dictionary before updating
+                if not isinstance(optimization_result, dict):
+                    tprint(f"⚠️ optimization_result is not a dictionary (type: {type(optimization_result)}), creating new dict")
+                    optimization_result = {}
+
+                # Ensure all values are proper objects, not arrays or sequences
+                def safe_dict_value(value, key_name):
+                    """Ensure value is safe for dictionary storage."""
+                    if isinstance(value, (list, tuple, np.ndarray)):
+                        # Convert arrays/sequences to summary info
+                        if hasattr(value, 'shape'):
+                            return {
+                                'type': type(value).__name__,
+                                'shape': value.shape,
+                                'dtype': str(value.dtype) if hasattr(value, 'dtype') else 'unknown',
+                                'length': len(value) if hasattr(value, '__len__') else 'unknown'
+                            }
+                        else:
+                            return {
+                                'type': type(value).__name__,
+                                'length': len(value) if hasattr(value, '__len__') else 'unknown'
+                            }
+                    elif isinstance(value, pd.DataFrame):
+                        return {
+                            'type': 'DataFrame',
+                            'shape': value.shape,
+                            'columns': list(value.columns),
+                            'index_length': len(value.index)
+                        }
+                    else:
+                        return value
+
                 # Enhance results with matrix operations data
-                optimization_result.update({
-                    'correlation_analysis': correlation_analysis,
-                    'engineered_features': engineered_features,
-                    'hardware_optimized_features': hardware_optimized_features,
-                    'batch_results': batch_results,
-                    'optimization_method': 'matrix_operations_enhanced'
-                })
+                try:
+                    # Convert int64 values before dictionary operations
+                    safe_correlation = convert_int64_to_int(safe_dict_value(correlation_analysis, 'correlation_analysis'))
+                    safe_engineered = convert_int64_to_int(safe_dict_value(engineered_features, 'engineered_features'))
+                    safe_hardware = convert_int64_to_int(safe_dict_value(hardware_optimized_features, 'hardware_optimized_features'))
+                    safe_batch = convert_int64_to_int(safe_dict_value(batch_results, 'batch_results'))
+
+                    optimization_result.update({
+                        'correlation_analysis': safe_correlation,
+                        'engineered_features': safe_engineered,
+                        'hardware_optimized_features': safe_hardware,
+                        'batch_results': safe_batch,
+                        'optimization_method': 'matrix_operations_enhanced'
+                    })
+                except Exception as e:
+                    tprint(f"❌ Failed to update optimization_result: {e}")
+                    # Create a new dictionary with safe values
+                    safe_correlation = convert_int64_to_int(safe_dict_value(correlation_analysis, 'correlation_analysis'))
+                    safe_engineered = convert_int64_to_int(safe_dict_value(engineered_features, 'engineered_features'))
+                    safe_hardware = convert_int64_to_int(safe_dict_value(hardware_optimized_features, 'hardware_optimized_features'))
+                    safe_batch = convert_int64_to_int(safe_dict_value(batch_results, 'batch_results'))
+
+                    optimization_result = {
+                        'correlation_analysis': safe_correlation,
+                        'engineered_features': safe_engineered,
+                        'hardware_optimized_features': safe_hardware,
+                        'batch_results': safe_batch,
+                        'optimization_method': 'matrix_operations_enhanced',
+                        'error': f'Update failed: {str(e)}'
+                    }
                 
                 tprint('✅ Enhanced feature optimization with matrix operations completed')
             else:
@@ -1895,7 +1988,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                     tprint('🎯 Using NEW directional optimization (1 period per feature per direction)...')
                     
                     # Extract feature columns from prepared data
-                    feature_columns = [col for col in prepared_data.columns 
+                    feature_columns = [str(col) for col in prepared_data.columns
                                      if col not in ['returns', 'close_return', 'close_log_return', 'target', 'label', 'signal_direction']]
                     
                     # Find optimal target column
@@ -1927,7 +2020,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                         tprint('🎯 Using LEGACY directional MRMR optimization (2 periods per feature)...')
                         
                         # Extract feature columns from prepared data
-                        feature_columns = [col for col in prepared_data.columns 
+                        feature_columns = [str(col) for col in prepared_data.columns
                                          if col not in ['returns', 'close_return', 'close_log_return', 'target', 'label', 'signal_direction']]
                         
                         # Find optimal target column (prioritize multi-horizon targets)
@@ -2542,7 +2635,10 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             # Generate summary
             summary = self._generate_directional_optimization_summary(optimization_results)
             optimization_results['_summary'] = summary
-            
+
+            # Convert int64 values to regular int values for JSON serialization
+            optimization_results = convert_int64_to_int(optimization_results)
+
             return optimization_results
             
         except Exception as e:
@@ -2633,7 +2729,10 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             # Generate summary
             summary = self._generate_optimization_summary(optimization_results)
             optimization_results['_summary'] = summary
-            
+
+            # Convert int64 values to regular int values for JSON serialization
+            optimization_results = convert_int64_to_int(optimization_results)
+
             return optimization_results
             
         except Exception as e:
@@ -3021,7 +3120,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                         )
                         
                         feature_results[target_column] = {
-                            'lookback': result.first_lookback_period,
+                            'lookback': int(result.first_lookback_period),  # Convert to regular int
                             'score': result.combined_mi_score,
                             'correlation': result.correlation_between_periods,
                             'target_type': self._classify_target_type(target_column)
@@ -3153,16 +3252,16 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             # Calculate weighted consensus
             weighted_lookback = 0
             weighted_score = 0
-            
+
             for target, result in valid_results.items():
                 weight = weights[target] / total_weight
-                weighted_lookback += result['lookback'] * weight
+                weighted_lookback += int(result['lookback']) * weight  # Convert to regular int
                 weighted_score += result['score'] * weight
-            
+
             consensus_lookback = int(round(weighted_lookback))
             
             # Calculate consensus confidence
-            lookback_values = [r['lookback'] for r in valid_results.values()]
+            lookback_values = [int(r['lookback']) for r in valid_results.values()]  # Convert to regular int
             lookback_std = np.std(lookback_values) if len(lookback_values) > 1 else 0
             consensus_confidence = max(0, 1 - (lookback_std / np.mean(lookback_values))) if lookback_values else 0
             
@@ -3194,7 +3293,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             score_consistency = max(0, 1 - (score_std / score_mean)) if score_mean > 0 else 0
             
             # Lookback consistency
-            lookbacks = [r['lookback'] for r in valid_results.values()]
+            lookbacks = [int(r['lookback']) for r in valid_results.values()]  # Convert to regular int
             lookback_std = np.std(lookbacks)
             lookback_consistency = max(0, 1 - (lookback_std / 20))  # Normalize by reasonable range
             
@@ -3779,10 +3878,15 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             
             if total_count <= max_features:
                 # Within budget, no constraints needed
+                # Convert int64 values before dictionary operations
+                safe_directional = convert_int64_to_int(directional_count)
+                safe_unified = convert_int64_to_int(unified_count)
+                safe_meta = convert_int64_to_int(meta_count)
+
                 selection_result['feature_budget'].update({
-                    'directional_used': directional_count,
-                    'unified_used': unified_count,
-                    'meta_used': meta_count,
+                    'directional_used': safe_directional,
+                    'unified_used': safe_unified,
+                    'meta_used': safe_meta,
                     'budget_exceeded': False
                 })
                 return selection_result
@@ -3818,12 +3922,18 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 selection_result['meta_features'] = []
             
             # Update budget tracking
+            # Convert int64 values before dictionary operations
+            safe_directional_final = convert_int64_to_int(len(selection_result['directional_features']))
+            safe_unified_final = convert_int64_to_int(len(selection_result['unified_features']))
+            safe_meta_final = convert_int64_to_int(len(selection_result['meta_features']))
+            safe_features_dropped = convert_int64_to_int(total_count - max_features)
+
             selection_result['feature_budget'].update({
-                'directional_used': len(selection_result['directional_features']),
-                'unified_used': len(selection_result['unified_features']),
-                'meta_used': len(selection_result['meta_features']),
+                'directional_used': safe_directional_final,
+                'unified_used': safe_unified_final,
+                'meta_used': safe_meta_final,
                 'budget_exceeded': True,
-                'features_dropped': total_count - max_features
+                'features_dropped': safe_features_dropped
             })
             
             final_count = (len(selection_result['directional_features']) + 

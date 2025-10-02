@@ -1,7 +1,7 @@
 from src.utils.tprint import tprint
 
 
-from ...utils.logger import system_logger
+from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 import numpy as np
 
@@ -396,7 +396,7 @@ class DynamicWeighter:
 
     @handles_errors(fallback = None)
     async def _perform_performance_weighting(
-        self, _weighting_input: dict[str, Any]
+        self, weighting_input: dict[str, Any]
     ) -> dict[str, Any]:
         """Perform performance-based weighting."""
         try:
@@ -438,7 +438,7 @@ class DynamicWeighter:
             results = {}
             for method_name, method_func in weighting_methods.items():
                 if self.risk_weighting_components.get(method_name, False):
-                    results[method_name] = method_func(weighting_input)
+                    results[method_name] = method_func(_weighting_input)
 
             return results
 
@@ -457,25 +457,25 @@ class DynamicWeighter:
             # Market regime weighting
             if self.adaptive_weighting_components.get("market_regime_weighting", False):
                 results["market_regime_weighting"] = (
-                    self._perform_market_regime_weighting(weighting_input)
+                    self._perform_market_regime_weighting(_weighting_input)
                 )
 
             # Regime detection
             if self.adaptive_weighting_components.get("regime_detection", False):
                 results["regime_detection"] = self._perform_regime_detection(
-                    weighting_input
+                    _weighting_input
                 )
 
             # Adaptive learning
             if self.adaptive_weighting_components.get("adaptive_learning", False):
                 results["adaptive_learning"] = self._perform_adaptive_learning(
-                    weighting_input
+                    _weighting_input
                 )
 
             # Dynamic adjustment
             if self.adaptive_weighting_components.get("dynamic_adjustment", False):
                 results["dynamic_adjustment"] = self._perform_dynamic_adjustment(
-                    weighting_input
+                    _weighting_input
                 )
 
             return results
@@ -811,7 +811,7 @@ class DynamicWeighter:
                 "price_momentum_weighting", False
             ):
                 results["price_momentum_weighting"] = (
-                    self._perform_price_momentum_weighting(weighting_input)
+                    self._perform_price_momentum_weighting(_weighting_input)
                 )
 
             # Volume momentum weighting
@@ -819,7 +819,7 @@ class DynamicWeighter:
                 "volume_momentum_weighting", False
             ):
                 results["volume_momentum_weighting"] = (
-                    self._perform_volume_momentum_weighting(weighting_input)
+                    self._perform_volume_momentum_weighting(_weighting_input)
                 )
 
             # Momentum breakout weighting
@@ -827,7 +827,7 @@ class DynamicWeighter:
                 "momentum_breakout_weighting", False
             ):
                 results["momentum_breakout_weighting"] = (
-                    self._perform_momentum_breakout_weighting(weighting_input)
+                    self._perform_momentum_breakout_weighting(_weighting_input)
                 )
 
             # Momentum reversal weighting
@@ -835,7 +835,7 @@ class DynamicWeighter:
                 "momentum_reversal_weighting", False
             ):
                 results["momentum_reversal_weighting"] = (
-                    self._perform_momentum_reversal_weighting(weighting_input)
+                    self._perform_momentum_reversal_weighting(_weighting_input)
                 )
 
             return results
@@ -997,7 +997,7 @@ class DynamicWeighter:
                 "realized_volatility_weighting", False
             ):
                 results["realized_volatility_weighting"] = (
-                    self._perform_realized_volatility_weighting(weighting_input)
+                    self._perform_realized_volatility_weighting(_weighting_input)
                 )
 
             # Implied volatility weighting
@@ -1005,7 +1005,7 @@ class DynamicWeighter:
                 "implied_volatility_weighting", False
             ):
                 results["implied_volatility_weighting"] = (
-                    self._perform_implied_volatility_weighting(weighting_input)
+                    self._perform_implied_volatility_weighting(_weighting_input)
                 )
 
             # Volatility regime weighting
@@ -1013,7 +1013,7 @@ class DynamicWeighter:
                 "volatility_regime_weighting", False
             ):
                 results["volatility_regime_weighting"] = (
-                    self._perform_volatility_regime_weighting(weighting_input)
+                    self._perform_volatility_regime_weighting(_weighting_input)
                 )
 
             # Volatility forecast weighting
@@ -1021,7 +1021,7 @@ class DynamicWeighter:
                 "volatility_forecast_weighting", False
             ):
                 results["volatility_forecast_weighting"] = (
-                    self._perform_volatility_forecast_weighting(weighting_input)
+                    self._perform_volatility_forecast_weighting(_weighting_input)
                 )
 
             return results

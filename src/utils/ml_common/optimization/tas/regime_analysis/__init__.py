@@ -9,9 +9,10 @@ Advanced regime analysis capabilities for tree architecture search including:
 - Regime visualization and reporting
 """
 
-from .tree_regime_analyzer import TreeRegimeAnalyzer, TreeRegimeDetector, TreeRegimeClassifier
-from .regime_optimization import TreeRegimeOptimizer, TreeRegimeSelector, TreeRegimeAdapter
-from .regime_reporting import TreeRegimeReporter, TreeRegimeVisualizer, TreeRegimeDashboard
+# Missing modules commented out
+# from .tree_regime_analyzer import TreeRegimeAnalyzer, TreeRegimeDetector, TreeRegimeClassifier
+# from .regime_optimization import TreeRegimeOptimizer, TreeRegimeSelector, TreeRegimeAdapter
+# from .regime_reporting import TreeRegimeReporter, TreeRegimeVisualizer, TreeRegimeDashboard
 from .clustering_regime_detection import (
     TreeBasedClusteringRegimeDetector,
     ClusteringRegimeConfig,
@@ -20,9 +21,9 @@ from .clustering_regime_detection import (
 from .unsupervised_regime_detection import UnsupervisedRegimeDetector, RegimeDetectionConfig
 
 __all__ = [
-    'TreeRegimeAnalyzer', 'TreeRegimeDetector', 'TreeRegimeClassifier',
-    'TreeRegimeOptimizer', 'TreeRegimeSelector', 'TreeRegimeAdapter',
-    'TreeRegimeReporter', 'TreeRegimeVisualizer', 'TreeRegimeDashboard',
+    # 'TreeRegimeAnalyzer', 'TreeRegimeDetector', 'TreeRegimeClassifier',
+    # 'TreeRegimeOptimizer', 'TreeRegimeSelector', 'TreeRegimeAdapter',
+    # 'TreeRegimeReporter', 'TreeRegimeVisualizer', 'TreeRegimeDashboard',
     'TreeBasedClusteringRegimeDetector', 'ClusteringRegimeConfig', 'quick_clustering_detection',
     'UnsupervisedRegimeDetector', 'RegimeDetectionConfig'
 ]

@@ -683,7 +683,8 @@ class MarketAnalysisSubPipeline:
             # Update pipeline state for next components
             self._current_pipeline_state.update({
                 'regime_models': results['regime_models'],
-                'regime_assignments': results['regime_assignments']
+                'regime_assignments': results['regime_assignments'],
+                'nas_tas_regime_discovery_result': nas_regime_data  # Pass the full regime discovery result
             })
             
             # Stage 5: NAS-TAS Clustering
@@ -717,21 +718,13 @@ class MarketAnalysisSubPipeline:
             # Prepare data for HMM Models Training
             self.logger.info('📊 Preparing data for HMM Models Training...')
             try:
-                # Extract features from optimized_features or pid_based_features
-                features = None
+                # FORCE ORIGINAL MARKET DATA for feature bank integration
+                self.logger.info('🔧 FORCING original market data for regime models training feature bank integration')
+                tprint("🔧 [SUB_PIPELINE] FORCING original market data for regime models training", color="cyan", bold=True)
+                
+                # Don't use processed features - let the component generate comprehensive features from original data
+                features = None  # Force None to trigger feature bank generation
                 feature_names = []
-                
-                if 'optimized_features' in results and results['optimized_features']:
-                    features_data = results['optimized_features']
-                    if isinstance(features_data, dict) and 'features' in features_data:
-                        features = features_data['features']
-                        feature_names = features_data.get('feature_names', [])
-                
-                if features is None and 'pid_based_features' in results:
-                    pid_features = results['pid_based_features']
-                    if isinstance(pid_features, dict) and 'combined_features' in pid_features:
-                        features = pid_features['combined_features']
-                        feature_names = pid_features.get('combined_feature_names', [])
                 
                 # Targets are not required: HMM training uses cluster_assignments as labels
                 targets = None
@@ -747,12 +740,14 @@ class MarketAnalysisSubPipeline:
                         # Legacy format - regime_assignments is a dict with regime_labels
                         regime_labels = regime_data['regime_labels']
                 
-                # Update pipeline state with prepared data
+                # Store original market data for feature bank generation
                 self._current_pipeline_state.update({
-                    'features': features,
+                    'features': features,  # None to force feature bank generation
                     'targets': targets,
                     'regime_labels': regime_labels,
-                    'feature_names': feature_names
+                    'feature_names': feature_names,
+                    'original_data': data,  # Store original market data for feature bank
+                    'force_feature_bank': True  # Flag to force feature bank usage
                 })
                 
                 # Log data availability for debugging
@@ -1254,9 +1249,38 @@ class MarketAnalysisSubPipeline:
             self.logger.error(f"❌ {sub_pipeline_name} sub-pipeline failed: {e}")
             return result
     
-    def get_available_sub_pipelines(self) -> List[str]:
-        """Get list of available sub-pipelines."""
-        return list(self.component_factory.get_available_components())
+    def get_available_sub_pipelines(self, stage: Optional[Any] = None) -> List[str]:
+        """Get list of available sub-pipelines for a given stage."""
+        # Import here to avoid circular imports
+        from src.training.steps.main_training_pipeline import PipelineStage
+
+        # If no stage specified or stage is MARKET_ANALYSIS, return market analysis sub-pipelines
+        if stage is None or stage == PipelineStage.MARKET_ANALYSIS:
+            # Market analysis sub-pipelines
+            return [
+                'sr_detection',
+                'sr_clustering',
+                'nas_tas_regime_discovery',
+                'nas_tas_clustering',
+                'nas_regime_discovery',  # DEPRECATED
+                'nas_clustering',        # DEPRECATED
+                'hmm_training',
+                'analyst_model_training',
+                'analyst_ensemble_training',
+                'tactician_pre_ml_orchestration',
+                'tactician_dual_training',
+                'regime_specific_training',
+                'model_validation',
+                'model_persistence',
+                'model_evaluation',
+                'basic_backtesting_pre',
+                'basic_backtesting_post',
+                'walk_forward_validation',
+                'monte_carlo_simulation'
+            ]
+
+        # For other stages, return empty list (they have their own sub-pipelines)
+        return []
     
     def get_sub_pipeline_status(self, sub_pipeline_name: str) -> Optional[SubPipelineStatus]:
         """Get status of a specific sub-pipeline."""

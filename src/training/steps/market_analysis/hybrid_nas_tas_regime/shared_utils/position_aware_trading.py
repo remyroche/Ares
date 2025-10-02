@@ -606,9 +606,13 @@ class PositionAwareTradingAnalyzer:
         try:
             # Get returns array (length N-1 due to pct_change)
             returns = market_data['close'].pct_change().values
-            position_directions = np.zeros(len(returns))
-
-            # Ensure regime_predictions is aligned with market_data length
+            
+            # Remove NaN values from returns and get valid indices
+            valid_returns_mask = ~np.isnan(returns)
+            returns = returns[valid_returns_mask]
+            
+            # Align regime_predictions with the valid returns
+            # Since returns is length N-1 due to pct_change, we need to align regime_predictions accordingly
             if len(regime_predictions) != len(market_data):
                 tprint_warning(f"⚠️ Regime predictions length {len(regime_predictions)} != market data length {len(market_data)}")
                 # Align regime_predictions to market_data length
@@ -617,18 +621,20 @@ class PositionAwareTradingAnalyzer:
                 else:
                     # Pad with last regime if shorter
                     regime_predictions = np.pad(regime_predictions, (0, len(market_data) - len(regime_predictions)), mode='edge')
+            
+            # Align regime_predictions with returns (skip first element due to pct_change)
+            # and apply the same valid mask as returns
+            regime_predictions_aligned = regime_predictions[1:][valid_returns_mask]
+            
+            position_directions = np.zeros(len(returns))
 
-            unique_regimes = np.unique(regime_predictions)
+            unique_regimes = np.unique(regime_predictions_aligned)
             tprint_debug(f"Inferring positions for {len(unique_regimes)} regimes")
-            tprint_debug(f"Array dimensions - returns: {len(returns)}, position_directions: {len(position_directions)}, regime_predictions: {len(regime_predictions)}")
+            tprint_debug(f"Array dimensions - returns: {len(returns)}, position_directions: {len(position_directions)}, regime_predictions_aligned: {len(regime_predictions_aligned)}")
 
             for regime in unique_regimes:
-                # Create regime mask for full data (length N)
-                regime_mask_full = regime_predictions == regime
-                
-                # Align regime mask with returns (skip first element due to pct_change)
-                # This ensures regime_mask has length N-1, same as returns
-                regime_mask = regime_mask_full[1:]
+                # Create regime mask aligned with returns
+                regime_mask = regime_predictions_aligned == regime
                 
                 # Final safety check - ensure all arrays have same length
                 if len(regime_mask) != len(returns):

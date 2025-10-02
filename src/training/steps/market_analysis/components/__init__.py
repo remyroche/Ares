@@ -27,8 +27,9 @@ from .nas_tas_clustering import NASTASClusteringComponent
 # TripleBarrierLabelingComponent moved to triple_barrier_labeling package
 from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
 from .cross_timeframe_analysis import CrossTimeframeAnalysisComponent
-from .nas_tas_models_training import NASTASModelsTrainingComponent
-from .nas_tas_ensemble_training import NASTASEnsembleTrainingComponent
+# NAS-TAS components use the same regime training components
+# from .nas_tas_models_training import NASTASModelsTrainingComponent  # Uses regime_models_training
+# from .nas_tas_ensemble_training import NASTASEnsembleTrainingComponent  # Uses regime_ensemble_training
 from .regime_models_training import RegimeModelsTrainingComponent
 from .regime_ensemble_training import RegimeEnsembleTrainingComponent
 
@@ -45,8 +46,9 @@ __all__ = [
     'TASRegimeDiscoveryComponent',
     'NASTASRegimeDiscoveryComponent',
     'NASTASClusteringComponent',
-    'NASTASModelsTrainingComponent',
-    'NASTASEnsembleTrainingComponent',
+    # NAS-TAS components use the same regime training components
+    # 'NASTASModelsTrainingComponent',  # Uses RegimeModelsTrainingComponent
+    # 'NASTASEnsembleTrainingComponent',  # Uses RegimeEnsembleTrainingComponent
     'HMMRegimeDiscoveryComponent',
     # 'HMMModelsTrainingComponent',  # Moved to hmm_models_training module
     'HMMEnsembleTrainingComponent'

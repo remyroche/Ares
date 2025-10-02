@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
 
 import src  # noqa: F401  # Ensure base package is registered
 import src.training  # noqa: F401
+import numpy as np
 
 
 def _ensure_stub_package(name: str, path: Path) -> None:
@@ -187,6 +188,65 @@ def test_prepare_features_raises_when_none(monkeypatch):
 
     with pytest.raises(ValueError):
         component._prepare_features(market_data)
+
+
+def test_select_regime_features_tracks_stage1_operations(monkeypatch):
+    component = _build_component()
+    component.config.signal_like_patterns = [r"signal"]
+    component.config.feature_category_caps = {
+        'volatility_regime': 1,
+        'other': 1,
+    }
+    component.config.n_regimes = 2
+
+    stage1_df = pd.DataFrame(
+        {
+            "signal_feature": [0.1, 0.2, 0.3],
+            "volatility_alpha": [1.0, 1.1, 1.2],
+            "volatility_beta": [0.9, 0.8, 0.7],
+            "other_gamma": [2.0, 2.1, 2.2],
+        }
+    )
+
+    stage1_metadata = {
+        'stage_metadata': {'operations': [{'type': 'stage1_op'}]},
+        'feature_columns': list(stage1_df.columns),
+    }
+
+    feature_result = FeaturePreparationResult(
+        features_array=stage1_df.values,
+        features_df=stage1_df.copy(),
+        summary={},
+        metadata=stage1_metadata,
+    )
+
+    component._extract_regime_assignments = lambda: (
+        np.array([0, 1, 0]),
+        np.array([1, 0, 1]),
+    )
+
+    market_data = pd.DataFrame({})
+
+    features, feature_names, selection_metadata = component._select_regime_features(
+        feature_result=feature_result,
+        market_data=market_data,
+        target_n_features=2,
+    )
+
+    assert features.shape[1] == 2
+    assert feature_names == ['volatility_alpha', 'other_gamma']
+    assert component.stage1_filtered_df is not None
+    assert list(component.stage1_filtered_df.columns) == ['volatility_alpha', 'other_gamma']
+
+    operations = selection_metadata['operations']
+    assert operations[0]['type'] == 'stage1_op'
+    op_types = {op['type'] for op in operations}
+    assert {'signal_filter', 'category_cap'}.issubset(op_types)
+
+    staged_metadata = selection_metadata['stage1_metadata']
+    assert staged_metadata['filtered_feature_columns'] == ['volatility_alpha', 'other_gamma']
+    selection_ops = [op['type'] for op in staged_metadata.get('selection_operations', [])]
+    assert {'signal_filter', 'category_cap'}.issubset(set(selection_ops))
 
 
 def test_build_artifacts_delegates_to_consolidated(monkeypatch):

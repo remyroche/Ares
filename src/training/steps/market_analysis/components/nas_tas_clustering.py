@@ -5,6 +5,7 @@ This component uses shared utilities to eliminate redundancy between NAS and TAS
 It demonstrates how to use the shared_utils package for common functionality.
 """
 
+import copy
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -546,6 +547,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             # Stage 1 feature preparation outputs
             self.stage1_features_df: Optional[pd.DataFrame] = None
+            self.stage1_filtered_df: Optional[pd.DataFrame] = None
             self.stage1_metadata: Dict[str, Any] = {}
             self.feature_projection_metadata: Dict[str, Any] = {}
             self.feature_projection_artifact_path: Optional[Path] = None
@@ -1807,7 +1809,8 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             raise ValueError("Failed to prepare features for clustering")
 
         self.stage1_features_df = result.features_df.copy()
-        self.stage1_metadata = result.metadata or {}
+        self.stage1_filtered_df = self.stage1_features_df.copy()
+        self.stage1_metadata = copy.deepcopy(result.metadata or {})
         self.features = result.features_array
 
         tprint(f"Features prepared: {result.features_array.shape}", "SUCCESS")
@@ -1853,7 +1856,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             raise ValueError("Feature preparation result is required for regime feature selection")
 
         stage1_df = feature_result.features_df.copy()
-        stage1_metadata = feature_result.metadata or {}
+        stage1_metadata = copy.deepcopy(feature_result.metadata or {})
         if stage1_df.empty:
             raise ValueError("Stage 1 feature DataFrame is empty")
 
@@ -1862,9 +1865,11 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         selection_metadata: Dict[str, Any] = {
             'stage1_metadata': stage1_metadata,
             'stage1_feature_count': int(n_features),
-            'operations': [],
+            'operations': list(stage1_metadata.get('stage_metadata', {}).get('operations', [])),
         }
-        
+
+        selection_operations: List[Dict[str, Any]] = stage1_metadata.setdefault('selection_operations', [])
+
         # Always perform feature selection to ensure we have exactly target_n_features maximum
         tprint(f"🔍 FEATURE SELECTION: Starting with {n_features} features, target: {target_n_features}", color="cyan", bold=True)
         
@@ -1893,10 +1898,12 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
         if signal_like_columns:
             stage1_df = stage1_df.drop(columns=signal_like_columns)
-            selection_metadata['operations'].append({
+            operation_record = {
                 'type': 'signal_filter',
                 'dropped_columns': signal_like_columns,
-            })
+            }
+            selection_metadata['operations'].append(operation_record)
+            selection_operations.append(operation_record)
             tprint_info(f"🔎 Signal-like feature filter removed {len(signal_like_columns)} columns")
 
         # Stage 1.2: Enforce per-category caps prior to dimensionality reduction
@@ -1920,11 +1927,13 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             if dropped_by_cap:
                 stage1_df = stage1_df[kept_columns]
-                selection_metadata['operations'].append({
+                operation_record = {
                     'type': 'category_cap',
                     'dropped_columns': dropped_by_cap,
                     'caps': category_caps,
-                })
+                }
+                selection_metadata['operations'].append(operation_record)
+                selection_operations.append(operation_record)
                 tprint_info(
                     f"🔧 Category caps enforced: {len(dropped_by_cap)} features removed to respect per-category limits"
                 )
@@ -1936,14 +1945,20 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
         selection_metadata['category_counts_before'] = dict(category_counts_before)
         selection_metadata['category_counts_after'] = dict(category_counts_after)
 
+        stage1_metadata['filtered_feature_columns'] = list(stage1_df.columns)
+        self.stage1_filtered_df = stage1_df.copy()
+        self.stage1_metadata = stage1_metadata
+
         base_features = stage1_df.to_numpy()
         base_names = list(stage1_df.columns)
         if base_features.size == 0:
             raise ValueError("No features available after Stage 1 filtering")
 
+        operations_combined = list(selection_metadata['operations'])
         metadata: Dict[str, Any] = {
             'selection_performed': True,
-            'stage1_operations': selection_metadata['operations'],
+            'stage1_operations': operations_combined,
+            'operations': operations_combined,
             'original_n_features': int(n_features),
             'post_stage1_n_features': int(base_features.shape[1]),
             'stage1_metadata': stage1_metadata,
@@ -2052,6 +2067,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             'category_counts_before': selection_metadata.get('category_counts_before', {}),
             'category_counts_after': selection_metadata.get('category_counts_after', {}),
             'signal_like_dropped': signal_like_columns,
+            'operations': operations_combined,
         })
 
         self.feature_scores = feature_scores

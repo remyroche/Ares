@@ -4,21 +4,53 @@ Essential NAS Clusterer
 Neural Architecture Search clustering for market regime detection.
 """
 
+print("🔍 [ESSENTIAL_NAS_CLUSTERER] Loading Essential NAS Clusterer module")
+print("🔍 [ESSENTIAL_NAS_CLUSTERER] Module path: /workspace/src/training/steps/market_analysis/nas_clustering/core/essential_nas_clusterer.py")
+print("🔍 [ESSENTIAL_NAS_CLUSTERER] Purpose: Neural Architecture Search clustering for market regime detection")
+print("🔍 [ESSENTIAL_NAS_CLUSTERER] Status: Starting module import")
+
 import numpy as np
+print("🔍 [ESSENTIAL_NAS_CLUSTERER] ✓ NumPy imported successfully")
+
 import pandas as pd
+print("🔍 [ESSENTIAL_NAS_CLUSTERER] ✓ Pandas imported successfully")
+
 from typing import Dict, List, Any, Optional, Tuple, Union
+print("🔍 [ESSENTIAL_NAS_CLUSTERER] ✓ Typing imports completed")
+
 import logging
+print("🔍 [ESSENTIAL_NAS_CLUSTERER] ✓ Logging imported successfully")
+
 from sklearn.cluster import KMeans, AgglomerativeClustering
+print("🔍 [ESSENTIAL_NAS_CLUSTERER] ✓ Scikit-learn clustering algorithms imported")
+
 from sklearn.mixture import GaussianMixture
+print("🔍 [ESSENTIAL_NAS_CLUSTERER] ✓ Gaussian Mixture Model imported")
+
 from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+print("🔍 [ESSENTIAL_NAS_CLUSTERER] ✓ Clustering metrics imported")
+
 from sklearn.preprocessing import StandardScaler
+print("🔍 [ESSENTIAL_NAS_CLUSTERER] ✓ StandardScaler imported")
+
 import torch
+print("🔍 [ESSENTIAL_NAS_CLUSTERER] ✓ PyTorch imported successfully")
+
 import torch.nn as nn
+print("🔍 [ESSENTIAL_NAS_CLUSTERER] ✓ PyTorch neural network module imported")
+
 import torch.optim as optim
+print("🔍 [ESSENTIAL_NAS_CLUSTERER] ✓ PyTorch optimizer imported")
+
 from collections import defaultdict
+print("🔍 [ESSENTIAL_NAS_CLUSTERER] ✓ Collections defaultdict imported")
+
 import time
+print("🔍 [ESSENTIAL_NAS_CLUSTERER] ✓ Time module imported")
 
 logger = logging.getLogger(__name__)
+print("🔍 [ESSENTIAL_NAS_CLUSTERER] ✓ Logger initialized")
+print("🔍 [ESSENTIAL_NAS_CLUSTERER] All imports completed successfully")
 
 class EssentialNASClusterer:
     """Essential Neural Architecture Search Clusterer for market regime detection."""
@@ -50,37 +82,98 @@ class EssentialNASClusterer:
             adaptive_clustering: Enable adaptive clustering to automatically adjust parameters
             concentration_threshold: Threshold for detecting over-concentration (default 20%)
         """
+        print("🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] Initializing EssentialNASClusterer")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] Parameters received:")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT]   - n_clusters: {n_clusters}")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT]   - clustering_method: {clustering_method}")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT]   - search_strategy: {search_strategy}")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT]   - max_iterations: {max_iterations}")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT]   - device: {device}")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT]   - max_clusters_ratio: {max_clusters_ratio}")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT]   - min_cluster_size_ratio: {min_cluster_size_ratio}")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT]   - light_mode: {light_mode}")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT]   - max_cluster_size_ratio: {max_cluster_size_ratio}")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT]   - adaptive_clustering: {adaptive_clustering}")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT]   - concentration_threshold: {concentration_threshold}")
+        print("🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] Setting instance variables...")
         self.n_clusters = n_clusters
-        self.clustering_method = clustering_method
-        self.search_strategy = search_strategy
-        self.max_iterations = max_iterations
-        self.device = device
-        self.max_clusters_ratio = max_clusters_ratio
-        self.min_cluster_size_ratio = min_cluster_size_ratio
-        self.light_mode = light_mode
-        self.max_cluster_size_ratio = max_cluster_size_ratio
-        self.adaptive_clustering = adaptive_clustering
-        self.concentration_threshold = concentration_threshold
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ n_clusters set to: {self.n_clusters}")
         
+        self.clustering_method = clustering_method
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ clustering_method set to: {self.clustering_method}")
+        
+        self.search_strategy = search_strategy
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ search_strategy set to: {self.search_strategy}")
+        
+        self.max_iterations = max_iterations
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ max_iterations set to: {self.max_iterations}")
+        
+        self.device = device
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ device set to: {self.device}")
+        
+        self.max_clusters_ratio = max_clusters_ratio
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ max_clusters_ratio set to: {self.max_clusters_ratio}")
+        
+        self.min_cluster_size_ratio = min_cluster_size_ratio
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ min_cluster_size_ratio set to: {self.min_cluster_size_ratio}")
+        
+        self.light_mode = light_mode
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ light_mode set to: {self.light_mode}")
+        
+        self.max_cluster_size_ratio = max_cluster_size_ratio
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ max_cluster_size_ratio set to: {self.max_cluster_size_ratio}")
+        
+        self.adaptive_clustering = adaptive_clustering
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ adaptive_clustering set to: {self.adaptive_clustering}")
+        
+        self.concentration_threshold = concentration_threshold
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ concentration_threshold set to: {self.concentration_threshold}")
+        
+        print("🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] Initializing clustering components...")
         # Clustering components
         self.scaler = StandardScaler()
-        self.clusterer = None
-        self.best_clusterer = None
-        self.best_score = -np.inf
-        self.best_params = None
+        print("🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ StandardScaler initialized")
         
+        self.clusterer = None
+        print("🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ clusterer set to None")
+        
+        self.best_clusterer = None
+        print("🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ best_clusterer set to None")
+        
+        self.best_score = -np.inf
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ best_score initialized to: {self.best_score}")
+        
+        self.best_params = None
+        print("🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ best_params set to None")
+        
+        print("🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] Initializing search state...")
         # Search state
         self.search_history = []
-        self.architecture_pool = []
-        self.performance_scores = []
+        print("🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ search_history initialized as empty list")
         
+        self.architecture_pool = []
+        print("🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ architecture_pool initialized as empty list")
+        
+        self.performance_scores = []
+        print("🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ performance_scores initialized as empty list")
+        
+        print("🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] Initializing results storage...")
         # Results
         self.cluster_labels = None
-        self.cluster_centers = None
-        self.cluster_metrics = {}
-        self.is_fitted = False
+        print("🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ cluster_labels set to None")
         
+        self.cluster_centers = None
+        print("🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ cluster_centers set to None")
+        
+        self.cluster_metrics = {}
+        print("🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ cluster_metrics initialized as empty dict")
+        
+        self.is_fitted = False
+        print("🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] ✓ is_fitted set to False")
+        
+        print("🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] Initialization complete!")
         logger.info(f"EssentialNASClusterer initialized with n_clusters={n_clusters}")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_INIT] Logger info: EssentialNASClusterer initialized with n_clusters={n_clusters}")
     
     def search(self, 
                data: np.ndarray,
@@ -96,67 +189,158 @@ class EssentialNASClusterer:
         Returns:
             Dictionary containing search results and best architecture
         """
+        print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Starting NAS search for clustering")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Data shape: {data.shape}")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Data type: {type(data)}")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Data dtype: {data.dtype}")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Data min: {np.min(data):.6f}")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Data max: {np.max(data):.6f}")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Data mean: {np.mean(data):.6f}")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Data std: {np.std(data):.6f}")
+        
+        if target is not None:
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Target provided - shape: {target.shape}")
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Target type: {type(target)}")
+        else:
+            print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] No target provided - unsupervised clustering")
+        
+        if search_space is not None:
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Custom search space provided: {search_space}")
+        else:
+            print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Using default search space")
+        
         logger.info(f"Starting NAS search for clustering with data shape: {data.shape}")
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Logger info: Starting NAS search for clustering with data shape: {data.shape}")
         
         start_time = time.time()
+        print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Start time recorded: {start_time}")
         
         try:
+            print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Starting try block")
             # Prepare data
+            print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Fitting and transforming data with StandardScaler")
             data_scaled = self.scaler.fit_transform(data)
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] ✓ Data scaled - shape: {data_scaled.shape}")
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Scaled data min: {np.min(data_scaled):.6f}")
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Scaled data max: {np.max(data_scaled):.6f}")
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Scaled data mean: {np.mean(data_scaled):.6f}")
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Scaled data std: {np.std(data_scaled):.6f}")
             
             # Define search space
+            print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Defining search space...")
             if search_space is None:
+                print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Using default search space")
                 search_space = self._get_default_search_space()
+                print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] ✓ Default search space created: {search_space}")
+            else:
+                print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] ✓ Using provided search space: {search_space}")
             
             # Apply adaptive clustering if enabled
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Adaptive clustering enabled: {self.adaptive_clustering}")
             if self.adaptive_clustering:
+                print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Applying adaptive clustering preprocessing...")
                 data_scaled, search_space = self._apply_adaptive_clustering(data_scaled, search_space)
+                print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] ✓ Adaptive clustering applied")
+                print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Updated data shape: {data_scaled.shape}")
+                print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Updated search space: {search_space}")
+            else:
+                print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Adaptive clustering disabled - using original data and search space")
 
             # Perform search based on strategy
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Selecting search strategy: {self.search_strategy}")
             if self.search_strategy == 'evolutionary':
+                print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Using evolutionary search strategy")
                 results = self._evolutionary_search(data_scaled, target, search_space)
+                print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] ✓ Evolutionary search completed")
             elif self.search_strategy == 'random':
+                print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Using random search strategy")
                 results = self._random_search(data_scaled, target, search_space)
+                print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] ✓ Random search completed")
             elif self.search_strategy == 'grid':
+                print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Using grid search strategy")
                 results = self._grid_search(data_scaled, target, search_space)
+                print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] ✓ Grid search completed")
             else:
+                print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] ❌ Unknown search strategy: {self.search_strategy}")
                 raise ValueError(f"Unknown search strategy: {self.search_strategy}")
             
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Search results: {results}")
+            
             # Fit best clusterer with over-clustering validation
+            print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Checking for best clusterer...")
             if self.best_clusterer is not None:
+                print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] ✓ Best clusterer found - fitting final model")
                 self.clusterer = self.best_clusterer
+                print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] ✓ Clusterer assigned to self.clusterer")
+                
+                print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Fitting and predicting cluster labels...")
                 self.cluster_labels = self.clusterer.fit_predict(data_scaled)
+                print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] ✓ Cluster labels generated - shape: {self.cluster_labels.shape}")
+                print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Unique labels: {np.unique(self.cluster_labels)}")
+                print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Number of clusters found: {len(np.unique(self.cluster_labels))}")
                 
                 # Validate clustering results to prevent over-clustering
+                print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Validating clustering results...")
                 validated_labels = self._validate_clustering_results(data_scaled, self.cluster_labels)
                 if validated_labels is not None:
+                    print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] ✓ Validation returned labels - updating cluster_labels")
                     self.cluster_labels = validated_labels
+                    print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Updated unique labels: {np.unique(self.cluster_labels)}")
+                else:
+                    print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Validation returned None - keeping original labels")
                 
+                print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Calculating cluster centers...")
                 self.cluster_centers = self._get_cluster_centers(data_scaled, self.cluster_labels)
+                print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] ✓ Cluster centers calculated - shape: {self.cluster_centers.shape}")
+                
+                print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Calculating cluster metrics...")
                 self.cluster_metrics = self._calculate_cluster_metrics(data_scaled, self.cluster_labels)
+                print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] ✓ Cluster metrics calculated: {self.cluster_metrics}")
+                
                 self.is_fitted = True
+                print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] ✓ Model marked as fitted")
+            else:
+                print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] ❌ No best clusterer found - search may have failed")
             
             search_time = time.time() - start_time
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Search completed in {search_time:.2f} seconds")
+            
+            print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Updating results with final metrics...")
+            n_clusters_found = len(np.unique(self.cluster_labels)) if self.cluster_labels is not None else 0
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Clusters found: {n_clusters_found}")
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Best score: {self.best_score}")
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Best params: {self.best_params}")
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Search history length: {len(self.search_history)}")
             
             results.update({
                 'search_time': search_time,
                 'best_score': self.best_score,
                 'best_params': self.best_params,
-                'n_clusters_found': len(np.unique(self.cluster_labels)) if self.cluster_labels is not None else 0,
+                'n_clusters_found': n_clusters_found,
                 'cluster_metrics': self.cluster_metrics,
                 'search_history': self.search_history
             })
             
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Final results: {results}")
             logger.info(f"NAS search completed in {search_time:.2f}s with best score: {self.best_score:.4f}")
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Logger info: NAS search completed in {search_time:.2f}s with best score: {self.best_score:.4f}")
+            print("🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] ✓ Search method completed successfully")
             return results
             
         except Exception as e:
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] ❌ Exception occurred: {e}")
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Exception type: {type(e)}")
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Search time before error: {time.time() - start_time:.2f}s")
             logger.error(f"NAS search failed: {e}")
-            return {
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Logger error: NAS search failed: {e}")
+            
+            error_result = {
                 'success': False,
                 'error': str(e),
                 'search_time': time.time() - start_time
             }
+            print(f"🔍 [ESSENTIAL_NAS_CLUSTERER_SEARCH] Returning error result: {error_result}")
+            return error_result
     
     def _get_default_search_space(self) -> Dict[str, Any]:
         """Get default search space for clustering algorithms with over-clustering prevention."""

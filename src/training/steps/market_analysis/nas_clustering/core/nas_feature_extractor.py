@@ -4,28 +4,57 @@ NAS Feature Extractor
 Neural Architecture Search feature extraction for market analysis.
 """
 
+print("🔍 [NAS_FEATURE_EXTRACTOR] Loading NAS Feature Extractor module")
+print("🔍 [NAS_FEATURE_EXTRACTOR] Module path: /workspace/src/training/steps/market_analysis/nas_clustering/core/nas_feature_extractor.py")
+print("🔍 [NAS_FEATURE_EXTRACTOR] Purpose: Neural Architecture Search feature extraction for market analysis")
+print("🔍 [NAS_FEATURE_EXTRACTOR] Status: Starting module import")
+
 import numpy as np
+print("🔍 [NAS_FEATURE_EXTRACTOR] ✓ NumPy imported successfully")
+
 import pandas as pd
+print("🔍 [NAS_FEATURE_EXTRACTOR] ✓ Pandas imported successfully")
+
 from typing import Dict, List, Any, Optional, Tuple
+print("🔍 [NAS_FEATURE_EXTRACTOR] ✓ Typing imports completed")
+
 import logging
+print("🔍 [NAS_FEATURE_EXTRACTOR] ✓ Logging imported successfully")
+
 from sklearn.preprocessing import StandardScaler
+print("🔍 [NAS_FEATURE_EXTRACTOR] ✓ StandardScaler imported successfully")
+
 from sklearn.decomposition import PCA
+print("🔍 [NAS_FEATURE_EXTRACTOR] ✓ PCA imported successfully")
+
 import torch
+print("🔍 [NAS_FEATURE_EXTRACTOR] ✓ PyTorch imported successfully")
+
 import torch.nn as nn
+print("🔍 [NAS_FEATURE_EXTRACTOR] ✓ PyTorch neural network module imported successfully")
 
 # Import existing feature selection framework
+print("🔍 [NAS_FEATURE_EXTRACTOR] Attempting to import feature selection framework...")
 try:
     from src.utils.feature_selection.framework import (
         select_features, run_comprehensive_feature_selection,
         MRMRSelector, ElasticNetStabilitySelector, RecursiveFeatureEliminator
     )
     FEATURE_SELECTION_AVAILABLE = True
-except ImportError:
+    print("🔍 [NAS_FEATURE_EXTRACTOR] ✓ Feature selection framework imported successfully")
+    print("🔍 [NAS_FEATURE_EXTRACTOR] Available methods: select_features, run_comprehensive_feature_selection")
+    print("🔍 [NAS_FEATURE_EXTRACTOR] Available selectors: MRMRSelector, ElasticNetStabilitySelector, RecursiveFeatureEliminator")
+except ImportError as e:
     FEATURE_SELECTION_AVAILABLE = False
+    print(f"🔍 [NAS_FEATURE_EXTRACTOR] ❌ Feature selection framework import failed: {e}")
+    print("🔍 [NAS_FEATURE_EXTRACTOR] Falling back to sklearn feature selection")
     # Fallback to sklearn
     from sklearn.feature_selection import SelectKBest, f_regression
+    print("🔍 [NAS_FEATURE_EXTRACTOR] ✓ Sklearn feature selection imported as fallback")
 
 logger = logging.getLogger(__name__)
+print("🔍 [NAS_FEATURE_EXTRACTOR] ✓ Logger initialized")
+print("🔍 [NAS_FEATURE_EXTRACTOR] All imports completed successfully")
 
 class NASFeatureExtractor:
     """Neural Architecture Search Feature Extractor for market analysis."""
@@ -43,10 +72,24 @@ class NASFeatureExtractor:
             selection_k: Number of features to select
             device: Computation device
         """
+        print("🔍 [NAS_FEATURE_EXTRACTOR_INIT] Initializing NASFeatureExtractor")
+        print(f"🔍 [NAS_FEATURE_EXTRACTOR_INIT] Parameters received:")
+        print(f"🔍 [NAS_FEATURE_EXTRACTOR_INIT]   - feature_dim: {feature_dim}")
+        print(f"🔍 [NAS_FEATURE_EXTRACTOR_INIT]   - n_components: {n_components}")
+        print(f"🔍 [NAS_FEATURE_EXTRACTOR_INIT]   - selection_k: {selection_k}")
+        print(f"🔍 [NAS_FEATURE_EXTRACTOR_INIT]   - device: {device}")
+        
         self.feature_dim = feature_dim
+        print(f"🔍 [NAS_FEATURE_EXTRACTOR_INIT] ✓ feature_dim set to: {self.feature_dim}")
+        
         self.n_components = n_components
+        print(f"🔍 [NAS_FEATURE_EXTRACTOR_INIT] ✓ n_components set to: {self.n_components}")
+        
         self.selection_k = selection_k
+        print(f"🔍 [NAS_FEATURE_EXTRACTOR_INIT] ✓ selection_k set to: {self.selection_k}")
+        
         self.device = device
+        print(f"🔍 [NAS_FEATURE_EXTRACTOR_INIT] ✓ device set to: {self.device}")
         
         # Feature processing components
         self.scaler = StandardScaler()

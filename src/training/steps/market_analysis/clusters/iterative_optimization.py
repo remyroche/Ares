@@ -140,7 +140,7 @@ class OptimizedCalculationEngine:
                 self.use_hardware_accel = False
     
     def calculate_silhouette_score_optimized(self, features: np.ndarray, assignments: np.ndarray) -> float:
-        """Calculate silhouette score with vectorized operations and caching."""
+        """Calculate silhouette score with proper implementation and caching."""
         try:
             if len(features) == 0 or len(assignments) == 0:
                 return 0.0
@@ -157,33 +157,18 @@ class OptimizedCalculationEngine:
             if np.any(sizes < 2):
                 return 0.0
             
-            # Always use sklearn for reliable silhouette calculation
-            from sklearn.metrics import silhouette_score as sk_silhouette_score
-            try:
-                if features.ndim == 1:
-                    features_2d = features.reshape(-1, 1)
-                    sil_score = sk_silhouette_score(features_2d, assignments)
-                else:
-                    sil_score = sk_silhouette_score(features, assignments)
-                
-                # Validate the result
-                if np.isnan(sil_score) or np.isinf(sil_score):
-                    tprint(f"⚠️ Silhouette score is NaN/Inf, using 0.0", "WARNING")
-                    sil_score = 0.0
-                    
-            except Exception as sk_error:
-                tprint(f"⚠️ Sklearn silhouette calculation failed: {sk_error}", "WARNING")
-                # Try hardware-optimized as last resort
-                try:
-                    if self.use_hardware_accel and self.vectorized_core:
-                        sil_score = self._calculate_silhouette_hardware_optimized(features, assignments)
-                        if np.isnan(sil_score) or np.isinf(sil_score):
-                            sil_score = 0.0
-                    else:
-                        sil_score = 0.0
-                except Exception as hw_error:
-                    tprint(f"⚠️ Hardware silhouette also failed: {hw_error}", "WARNING")
-                    sil_score = 0.0
+            # Use proper silhouette calculation with centroid-based approximation for large datasets
+            if len(features) > 5000:
+                # For large datasets, use centroid-based approximation
+                sil_score = self._calculate_silhouette_centroid_approximation(features, assignments)
+            else:
+                # For smaller datasets, use exact calculation
+                sil_score = self._calculate_silhouette_exact(features, assignments)
+            
+            # Validate the result
+            if np.isnan(sil_score) or np.isinf(sil_score):
+                tprint(f"⚠️ Silhouette score is NaN/Inf, using 0.0", "WARNING")
+                sil_score = 0.0
             
             # Cache the result
             if len(self._silhouette_cache) < self.cache_size:
@@ -195,21 +180,88 @@ class OptimizedCalculationEngine:
             tprint(f"⚠️ Optimized silhouette calculation failed: {e}", "ERROR")
             return 0.0
     
-    def _calculate_silhouette_hardware_optimized(self, features: np.ndarray, assignments: np.ndarray) -> float:
-        """Calculate silhouette score using hardware acceleration and matrix operations."""
+    def _calculate_silhouette_exact(self, features: np.ndarray, assignments: np.ndarray) -> float:
+        """Calculate exact silhouette score using sklearn."""
         try:
-            # Always fallback to sklearn for reliable results
             from sklearn.metrics import silhouette_score
             return silhouette_score(features, assignments)
-                
         except Exception as e:
-            tprint(f"⚠️ Hardware-optimized silhouette failed: {e}", "WARNING")
-            # Final fallback
+            tprint(f"⚠️ Exact silhouette calculation failed: {e}", "WARNING")
+            return 0.0
+    
+    def _calculate_silhouette_centroid_approximation(self, features: np.ndarray, assignments: np.ndarray) -> float:
+        """Calculate silhouette score using centroid-based approximation for large datasets."""
+        try:
+            n_samples = len(features)
+            n_clusters = len(np.unique(assignments))
+            
+            if n_clusters < 2:
+                return 0.0
+            
+            # Calculate centroids for each cluster
+            centroids = np.zeros((n_clusters, features.shape[1]))
+            cluster_sizes = np.bincount(assignments)
+            
+            for i in range(n_clusters):
+                mask = assignments == i
+                if np.sum(mask) > 0:
+                    centroids[i] = np.mean(features[mask], axis=0)
+            
+            # Calculate silhouette scores using centroid distances
+            silhouette_scores = np.zeros(n_samples)
+            
+            for i in range(n_samples):
+                point = features[i]
+                cluster_id = assignments[i]
+                
+                # Calculate intra-cluster distance (a_i)
+                cluster_points = features[assignments == cluster_id]
+                if len(cluster_points) > 1:
+                    a_i = np.mean([np.linalg.norm(point - other_point) 
+                                 for other_point in cluster_points if not np.array_equal(point, other_point)])
+                else:
+                    a_i = 0.0
+                
+                # Calculate inter-cluster distances (b_i)
+                inter_cluster_distances = []
+                for j in range(n_clusters):
+                    if j != cluster_id:
+                        other_cluster_points = features[assignments == j]
+                        if len(other_cluster_points) > 0:
+                            avg_dist = np.mean([np.linalg.norm(point - other_point) 
+                                              for other_point in other_cluster_points])
+                            inter_cluster_distances.append(avg_dist)
+                
+                if inter_cluster_distances:
+                    b_i = min(inter_cluster_distances)
+                else:
+                    b_i = 0.0
+                
+                # Calculate silhouette score for this point
+                if max(a_i, b_i) > 0:
+                    silhouette_scores[i] = (b_i - a_i) / max(a_i, b_i)
+                else:
+                    silhouette_scores[i] = 0.0
+            
+            return np.mean(silhouette_scores)
+            
+        except Exception as e:
+            tprint(f"⚠️ Centroid approximation silhouette failed: {e}", "WARNING")
+            # Fallback to sklearn
             try:
                 from sklearn.metrics import silhouette_score
                 return silhouette_score(features, assignments)
             except Exception:
                 return 0.0
+    
+    def _calculate_silhouette_hardware_optimized(self, features: np.ndarray, assignments: np.ndarray) -> float:
+        """Calculate silhouette score using hardware acceleration and matrix operations."""
+        try:
+            # Use centroid approximation for hardware optimization
+            return self._calculate_silhouette_centroid_approximation(features, assignments)
+        except Exception as e:
+            tprint(f"⚠️ Hardware-optimized silhouette failed: {e}", "WARNING")
+            return 0.0
     
     def _process_silhouette_with_matrix_ops(self, features: np.ndarray, assignments: np.ndarray) -> float:
         """Process silhouette calculation with matrix operations."""
@@ -1935,13 +1987,13 @@ class OptConfig:
     beta: float = 0.6  # Step 2 weight
     split_tries_max: int = 5  # KMeans restarts
     
-    # Standardized objective weights (consistent across all modules)
-    w_cv: float = 0.50   # Primary: Variance ratio
-    w_temp: float = 0.30 # Secondary: Temporal smoothness
-    w_sil: float = 0.10  # Tertiary: Cluster cohesion
+    # Standardized objective weights (consistent across all modules) - ENHANCED for aggressive optimization
+    w_cv: float = 0.60   # Primary: Variance ratio (increased from 0.50)
+    w_temp: float = 0.25 # Secondary: Temporal smoothness (reduced from 0.30)
+    w_sil: float = 0.15  # Tertiary: Cluster cohesion (increased from 0.10)
     w_dbi: float = 0.00  # accessory
     w_ch: float = 0.00   # accessory
-    w_bal: float = 0.10  # Minimal: Balance constraint (will be removed from objective)
+    w_bal: float = 0.00  # Balance constraint (removed from objective, used as constraint only)
     
     # Optimization parameters
     max_rounds: int = 25
@@ -2140,10 +2192,10 @@ class IterativeOptimization:
         self.step2_epoch_churn = getattr(self, "step2_epoch_churn", int(0.02*N))
 
         # Weights & guards - will be overridden by step-specific weights during execution
-        self.w_cv  = getattr(self, "w_cv", 0.50)
-        self.w_temp = getattr(self, "w_temp", 0.30)
-        self.w_sil = getattr(self, "w_sil", 0.10)
-        self.w_bal = getattr(self, "w_bal", 0.10)
+        self.w_cv  = getattr(self, "w_cv", 0.60)    # Enhanced default
+        self.w_temp = getattr(self, "w_temp", 0.25)  # Enhanced default
+        self.w_sil = getattr(self, "w_sil", 0.15)    # Enhanced default
+        self.w_bal = getattr(self, "w_bal", 0.00)    # Removed from objective
         self.neighbor_consensus_threshold = getattr(self, "neighbor_consensus_threshold", 0.6)
 
         # Micro-merge threshold (requested 0.1%)
@@ -2161,23 +2213,23 @@ class IterativeOptimization:
             else:
                 # Apply default step-specific weights (balance used as constraint)
                 if step == 1:
-                    # Step 1: Local frontier moves - focus on CV improvements
-                    self.w_cv = 0.70
-                    self.w_temp = 0.20
-                    self.w_sil = 0.10
-                    self.w_bal = 0.00  # Balance used as constraint, not weight
+                    # Step 1: Local frontier moves - AGGRESSIVE focus on CV improvements
+                    self.w_cv = 0.80    # Increased from 0.70 - prioritize variance ratio
+                    self.w_temp = 0.15  # Reduced from 0.20 - secondary priority
+                    self.w_sil = 0.05   # Reduced from 0.10 - tertiary priority
+                    self.w_bal = 0.00   # Balance used as constraint, not weight
                 elif step == 2:
-                    # Step 2: Global reallocation - focus on temporal smoothness + CV
-                    self.w_cv = 0.40
-                    self.w_temp = 0.50
-                    self.w_sil = 0.10
-                    self.w_bal = 0.00  # Balance used as constraint, not weight
+                    # Step 2: Global reallocation - AGGRESSIVE focus on temporal smoothness + CV
+                    self.w_cv = 0.45    # Increased from 0.40 - maintain CV focus
+                    self.w_temp = 0.45   # Reduced from 0.50 - balance with CV
+                    self.w_sil = 0.10   # Maintained - important for cluster quality
+                    self.w_bal = 0.00   # Balance used as constraint, not weight
                 elif step == 3:
-                    # Step 3: Break large clusters - balanced approach
-                    self.w_cv = 0.50
-                    self.w_temp = 0.30
-                    self.w_sil = 0.10
-                    self.w_bal = 0.00  # Balance used as constraint, not weight
+                    # Step 3: Break large clusters - ENHANCED balanced approach
+                    self.w_cv = 0.60    # Increased from 0.50 - prioritize variance ratio
+                    self.w_temp = 0.25  # Reduced from 0.30 - secondary priority
+                    self.w_sil = 0.15   # Increased from 0.10 - enhance cluster cohesion
+                    self.w_bal = 0.00   # Balance used as constraint, not weight
                 tprint(f"🔧 Applied default step {step} weights: CV={self.w_cv:.2f}, Sil={self.w_sil:.2f}, Temp={self.w_temp:.2f}, Bal={self.w_bal:.2f}", "INFO")
         except Exception as e:
             tprint(f"❌ Failed to apply step {step} weights: {e}", "ERROR")
@@ -2962,21 +3014,81 @@ class IterativeOptimization:
         return 0.0 if mu == 0 else (sizes.std(ddof=0) / mu)
     
     def temporal_switch_penalty(self, labels: np.ndarray, entity_ids: np.ndarray, time_idx: np.ndarray) -> float:
-        """Calculate temporal smoothness penalty (lower is better)."""
+        """Calculate enhanced temporal smoothness penalty (lower is better)."""
         if entity_ids is None or time_idx is None:
             return 0.0
         
-        # Sort by entity_id, then by time
-        order = np.lexsort((time_idx, entity_ids))
-        lid = labels[order]
-        eid = entity_ids[order]
-        
-        # Count switches within same entity
-        switches = (lid[1:] != lid[:-1]) & (eid[1:] == eid[:-1])
-        adj = (eid[1:] == eid[:-1])
-        total_adj = adj.sum()
-        
-        return 0.0 if total_adj == 0 else switches.sum() / total_adj
+        try:
+            # Sort by entity_id, then by time
+            order = np.lexsort((time_idx, entity_ids))
+            lid = labels[order]
+            eid = entity_ids[order]
+            tid = time_idx[order]
+            
+            # Count switches within same entity
+            switches = (lid[1:] != lid[:-1]) & (eid[1:] == eid[:-1])
+            adj = (eid[1:] == eid[:-1])
+            total_adj = adj.sum()
+            
+            if total_adj == 0:
+                return 0.0
+            
+            # Basic switch rate
+            switch_rate = switches.sum() / total_adj
+            
+            # Enhanced temporal smoothness: penalize rapid switches and reward longer runs
+            entity_runs = []
+            current_entity = eid[0]
+            current_run_length = 1
+            current_cluster = lid[0]
+            
+            for i in range(1, len(eid)):
+                if eid[i] == current_entity:
+                    if lid[i] == current_cluster:
+                        current_run_length += 1
+                    else:
+                        # Cluster switch occurred
+                        entity_runs.append(current_run_length)
+                        current_run_length = 1
+                        current_cluster = lid[i]
+                else:
+                    # New entity
+                    entity_runs.append(current_run_length)
+                    current_entity = eid[i]
+                    current_run_length = 1
+                    current_cluster = lid[i]
+            
+            # Add the last run
+            entity_runs.append(current_run_length)
+            
+            # Calculate temporal smoothness score
+            if len(entity_runs) > 0:
+                avg_run_length = np.mean(entity_runs)
+                # Normalize by expected run length (inverse relationship with switch rate)
+                expected_run_length = 1.0 / max(switch_rate, 1e-6)
+                temporal_smoothness = min(1.0, avg_run_length / expected_run_length)
+                
+                # Combine switch rate with temporal smoothness
+                # Lower switch rate and higher smoothness = better (lower penalty)
+                penalty = switch_rate * (1.0 - temporal_smoothness * 0.5)
+            else:
+                penalty = switch_rate
+            
+            return penalty
+            
+        except Exception as e:
+            tprint(f"⚠️ Enhanced temporal smoothness calculation failed: {e}", "WARNING")
+            # Fallback to simple calculation
+            try:
+                order = np.lexsort((time_idx, entity_ids))
+                lid = labels[order]
+                eid = entity_ids[order]
+                switches = (lid[1:] != lid[:-1]) & (eid[1:] == eid[:-1])
+                adj = (eid[1:] == eid[:-1])
+                total_adj = adj.sum()
+                return 0.0 if total_adj == 0 else switches.sum() / total_adj
+            except Exception:
+                return 0.0
     
     def evaluate_metrics(self, X: np.ndarray, labels: np.ndarray, entity_ids: np.ndarray = None, 
                         time_idx: np.ndarray = None, sample_for_indices: np.ndarray = None) -> dict:
@@ -3405,11 +3517,11 @@ class IterativeOptimization:
         self.alpha = 1.0  # Size-aware penalty
         self.max_new_clusters_per_round = 3
         
-        # Standardized objective function weights (consistent across all modules)
-        self.w_cv = 0.50     # Primary: variance ratio
-        self.w_temp = 0.30   # Secondary: temporal smoothness
-        self.w_sil = 0.10    # Tertiary: cluster cohesion
-        self.w_bal = 0.10    # Minimal: balance constraint (will be removed from objective)
+        # Standardized objective function weights (consistent across all modules) - ENHANCED
+        self.w_cv = 0.60     # Primary: variance ratio (increased from 0.50)
+        self.w_temp = 0.25   # Secondary: temporal smoothness (reduced from 0.30)
+        self.w_sil = 0.15    # Tertiary: cluster cohesion (increased from 0.10)
+        self.w_bal = 0.00    # Balance constraint (removed from objective, used as constraint only)
         self.lambda_switch = 1e-5  # Reduced by 10x from 1e-4 to 1e-5
         
         # Gating configuration - single source of truth
@@ -8365,6 +8477,162 @@ class IterativeOptimization:
             else:
                 validation_results['incremental_checks_passed'] += 1
 
+    def suggest_pca_per_category_enhancement(self, features: np.ndarray, feature_categories: dict = None) -> dict:
+        """
+        Suggest PCA enhancement strategy for per-category features with different weights.
+        
+        This method analyzes the feature space and suggests how to apply PCA on different
+        feature categories with varying weights to improve clustering quality.
+        
+        Args:
+            features: Input feature matrix (n_samples, n_features)
+            feature_categories: Dictionary mapping category names to feature indices
+                               If None, will suggest default categories based on feature analysis
+        
+        Returns:
+            Dictionary containing PCA enhancement suggestions
+        """
+        try:
+            n_samples, n_features = features.shape
+            
+            # Default feature categories if not provided
+            if feature_categories is None:
+                feature_categories = self._suggest_default_feature_categories(features)
+            
+            suggestions = {
+                'recommended_approach': 'PCA per category with weighted combination',
+                'feature_categories': feature_categories,
+                'pca_configurations': {},
+                'weight_recommendations': {},
+                'implementation_steps': [],
+                'expected_benefits': []
+            }
+            
+            # Analyze each category
+            for category_name, feature_indices in feature_categories.items():
+                if len(feature_indices) > 1:  # Only apply PCA if multiple features
+                    category_features = features[:, feature_indices]
+                    
+                    # Calculate variance explained by first few components
+                    from sklearn.decomposition import PCA
+                    pca = PCA()
+                    pca.fit(category_features)
+                    
+                    # Find optimal number of components (explain 95% variance)
+                    cumsum_variance = np.cumsum(pca.explained_variance_ratio_)
+                    n_components_95 = np.argmax(cumsum_variance >= 0.95) + 1
+                    n_components_90 = np.argmax(cumsum_variance >= 0.90) + 1
+                    
+                    suggestions['pca_configurations'][category_name] = {
+                        'original_features': len(feature_indices),
+                        'recommended_components_95': n_components_95,
+                        'recommended_components_90': n_components_90,
+                        'variance_explained_95': cumsum_variance[n_components_95-1] if n_components_95 > 0 else 0,
+                        'variance_explained_90': cumsum_variance[n_components_90-1] if n_components_90 > 0 else 0,
+                        'feature_indices': feature_indices
+                    }
+                    
+                    # Suggest weights based on category importance
+                    weight = self._calculate_category_weight(category_name, category_features)
+                    suggestions['weight_recommendations'][category_name] = weight
+            
+            # Generate implementation steps
+            suggestions['implementation_steps'] = [
+                "1. Apply PCA to each feature category separately",
+                "2. Retain components explaining 90-95% of variance per category",
+                "3. Combine PCA-transformed features with category-specific weights",
+                "4. Use weighted combination as input to clustering optimization",
+                "5. Validate clustering quality improvements"
+            ]
+            
+            # Expected benefits
+            suggestions['expected_benefits'] = [
+                "Reduced dimensionality while preserving category-specific information",
+                "Better handling of multicollinearity within categories",
+                "Improved clustering stability and interpretability",
+                "Enhanced variance ratio through better feature representation",
+                "More robust temporal smoothness through cleaner feature space"
+            ]
+            
+            # Print summary
+            tprint("\n" + "="*80, "INFO")
+            tprint("🎯 PCA PER-CATEGORY ENHANCEMENT SUGGESTIONS", "INFO")
+            tprint("="*80, "INFO")
+            
+            for category_name, config in suggestions['pca_configurations'].items():
+                tprint(f"\n📊 Category: {category_name}", "INFO")
+                tprint(f"   Original features: {config['original_features']}", "INFO")
+                tprint(f"   Recommended components (95% var): {config['recommended_components_95']}", "INFO")
+                tprint(f"   Recommended components (90% var): {config['recommended_components_90']}", "INFO")
+                tprint(f"   Suggested weight: {suggestions['weight_recommendations'][category_name]:.3f}", "INFO")
+            
+            tprint(f"\n💡 Implementation approach: {suggestions['recommended_approach']}", "INFO")
+            tprint("Expected benefits:", "INFO")
+            for benefit in suggestions['expected_benefits']:
+                tprint(f"   • {benefit}", "INFO")
+            
+            return suggestions
+            
+        except Exception as e:
+            tprint(f"⚠️ PCA enhancement suggestion failed: {e}", "WARNING")
+            return {'error': str(e)}
+    
+    def _suggest_default_feature_categories(self, features: np.ndarray) -> dict:
+        """Suggest default feature categories based on feature analysis."""
+        n_features = features.shape[1]
+        
+        # Default categorization strategy
+        categories = {}
+        
+        # If we have many features, suggest grouping by variance
+        if n_features > 20:
+            # Calculate variance for each feature
+            feature_variances = np.var(features, axis=0)
+            
+            # Group features by variance quartiles
+            q1 = np.percentile(feature_variances, 25)
+            q2 = np.percentile(feature_variances, 50)
+            q3 = np.percentile(feature_variances, 75)
+            
+            categories = {
+                'low_variance': np.where(feature_variances <= q1)[0].tolist(),
+                'medium_low_variance': np.where((feature_variances > q1) & (feature_variances <= q2))[0].tolist(),
+                'medium_high_variance': np.where((feature_variances > q2) & (feature_variances <= q3))[0].tolist(),
+                'high_variance': np.where(feature_variances > q3)[0].tolist()
+            }
+        else:
+            # For smaller feature sets, suggest equal grouping
+            group_size = max(1, n_features // 4)
+            categories = {
+                'group_1': list(range(0, min(group_size, n_features))),
+                'group_2': list(range(group_size, min(2*group_size, n_features))),
+                'group_3': list(range(2*group_size, min(3*group_size, n_features))),
+                'group_4': list(range(3*group_size, n_features))
+            }
+        
+        # Remove empty categories
+        categories = {k: v for k, v in categories.items() if len(v) > 0}
+        
+        return categories
+    
+    def _calculate_category_weight(self, category_name: str, category_features: np.ndarray) -> float:
+        """Calculate suggested weight for a feature category."""
+        try:
+            # Weight based on variance and feature count
+            variance = np.mean(np.var(category_features, axis=0))
+            feature_count = category_features.shape[1]
+            
+            # Normalize weight (higher variance and more features = higher weight)
+            weight = variance * np.log(feature_count + 1)
+            
+            # Normalize to reasonable range [0.1, 1.0]
+            weight = max(0.1, min(1.0, weight))
+            
+            return weight
+            
+        except Exception:
+            return 0.5  # Default weight
+
     def _print_final_metrics(self, features: np.ndarray, stats: ClusteringStats):
         """Print comprehensive final metrics when optimization completes."""
         try:
@@ -8441,10 +8709,13 @@ class IterativeOptimization:
             # Core clustering metrics
             tprint("\n📊 CLUSTER STRUCTURE METRICS:", "INFO")
             tprint(f"   🔢 Number of Clusters: {num_clusters}", "INFO")
-            tprint(f"   📈 Variance Ratio: {cv_ratio:.4f} (HIGHER is better - between/within)", "INFO")
+            tprint(f"   📈 Variance Ratio (CV Ratio): {cv_ratio:.4f} (HIGHER is better - between/within)", "INFO")
             tprint(f"   ⚖️  Balance Score: {balance_score:.4f} (HIGHER is better - measures cluster size uniformity)", "INFO")
             tprint(f"   🎭 Silhouette Score: {silhouette_score:.4f} (HIGHER is better - measures cluster separation quality)", "INFO")
             tprint(f"   🔍 Davies-Bouldin Index: {db_score:.4f} (LOWER is better - measures cluster compactness vs separation)", "INFO")
+            
+            # Add CV Ratio as a separate metric for clarity
+            tprint(f"   📊 CV Ratio (Coefficient of Variation): {cv_ratio:.4f} (Variance Ratio - between-cluster/within-cluster)", "INFO")
 
             # Temporal metrics summary
             try:
@@ -8551,6 +8822,17 @@ class IterativeOptimization:
             tprint(f"   📈 Overall Variance Ratio Quality: {overall_vr_quality} ({cv_ratio:.4f})", "INFO")
             
             tprint("\n" + "="*80, "SUCCESS")
+            
+            # Suggest PCA enhancement if requested
+            try:
+                tprint("\n🔍 Generating PCA enhancement suggestions...", "INFO")
+                pca_suggestions = self.suggest_pca_per_category_enhancement(features)
+                if 'error' not in pca_suggestions:
+                    tprint("✅ PCA enhancement suggestions generated successfully", "SUCCESS")
+                else:
+                    tprint(f"⚠️ PCA suggestions failed: {pca_suggestions['error']}", "WARNING")
+            except Exception as e:
+                tprint(f"⚠️ PCA suggestion generation failed: {e}", "WARNING")
             
         except Exception as e:
             tprint(f"Failed to print final metrics: {e}", "ERROR")

@@ -74,6 +74,16 @@ from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperatio
 from .step1_feature_preparation import ClusteringContext
 from .risk_mitigation import RiskMitigationSystem, PRODUCTION_RISK_CONFIG
 
+# Import CV enhancement strategies
+try:
+    from .cv_enhancement_strategies import (
+        AdaptiveWeightScheduler,
+        EnhancedVarianceRatioCalculator
+    )
+    CV_ENHANCEMENT_AVAILABLE = True
+except ImportError:
+    CV_ENHANCEMENT_AVAILABLE = False
+
 # Import optimization utilities
 try:
     from src.utils.matrix_operations import (
@@ -3320,13 +3330,32 @@ class IterativeOptimization:
             # Initialize with hard constraints
             assignments = self._enforce_hard_constraints(X, initial_assignments, entity_ids, time_idx)
             
-            # Main optimization loop
+            # Main optimization loop with adaptive weights
             for iteration in range(self.config.max_rounds):
                 self._log_with_context(f"=== Iteration {iteration + 1}/{self.config.max_rounds} ===", "INFO", "MAIN")
                 
-                # Evaluate current metrics
+                # Apply adaptive weights (CV enhancement strategy)
+                if CV_ENHANCEMENT_AVAILABLE and hasattr(self, 'adaptive_scheduler') and self.adaptive_scheduler:
+                    adaptive_weights = self.adaptive_scheduler.get_weights(iteration)
+                    # Update current weights
+                    self.w_cv = adaptive_weights['w_cv']
+                    self.w_temp = adaptive_weights['w_temp']
+                    self.w_sil = adaptive_weights['w_sil']
+                    self.w_bal = adaptive_weights['w_bal']
+                
+                # Evaluate current metrics (with enhanced CV if available)
                 sample_indices = self._get_sample_indices(N)
                 current_metrics = self.evaluate_metrics(X, assignments, entity_ids, time_idx, sample_indices)
+                
+                # Calculate enhanced CV ratio if available
+                if CV_ENHANCEMENT_AVAILABLE:
+                    enhanced_cv_metrics = EnhancedVarianceRatioCalculator.calculate_enhanced_cv(
+                        X, assignments, include_calinski_harabasz=True
+                    )
+                    current_metrics['enhanced_cv'] = enhanced_cv_metrics['combined_cv']
+                    current_metrics['calinski_harabasz'] = enhanced_cv_metrics['calinski_harabasz']
+                    self._log_with_context(f"Enhanced CV metrics: combined_cv={enhanced_cv_metrics['combined_cv']:.4f}, CH={enhanced_cv_metrics['calinski_harabasz']:.2f}", "DEBUG", "MAIN")
+                
                 self._log_with_context(f"Current metrics: CV={current_metrics['cv']:.4f}, Sil={current_metrics['sil']:.4f}, Temp={current_metrics['temp']:.4f}", "INFO", "MAIN")
                 
                 # Generate candidates

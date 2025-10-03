@@ -24,17 +24,22 @@ class CategoryConfig:
     features: List[str]  # Feature names in this category
 
 
-# Default feature categorization for financial time series
+# Default feature categorization based on actual feature_engineer.py output
+# NOTE: Momentum features (momentum_10, momentum_20, roc_10, roc_20, vwap_momentum_*)
+# are EXCLUDED from returns as they measure acceleration rather than trend
 DEFAULT_FEATURE_CATEGORIES = {
     'returns': CategoryConfig(
-        description='Return-based features (momentum, trends)',
+        description='Return-based features (price/volume changes)',
         weight=0.40,  # Highest weight - primary regime driver
         variance_threshold=0.95,  # Retain 95% variance
         features=[
-            'log_returns_1d', 'log_returns_5d', 'log_returns_20d',
-            'forward_returns_1d', 'forward_returns_5d', 'forward_returns_20d',
-            'momentum_10d', 'momentum_20d', 'momentum_60d',
-            'return_volatility_ratio', 'sharpe_ratio_20d'
+            # Price returns (NOT momentum which measures acceleration)
+            'close_return', 'close_log_return',
+            # Volume returns
+            'volume_return', 'volume_log_return',
+            # Price patterns
+            'body_size_pct', 'price_range_pct',
+            'upper_shadow', 'lower_shadow'
         ]
     ),
     'volatility': CategoryConfig(
@@ -42,10 +47,14 @@ DEFAULT_FEATURE_CATEGORIES = {
         weight=0.30,  # Second highest - regime state indicator
         variance_threshold=0.90,  # Retain 90% variance
         features=[
-            'realized_volatility_5d', 'realized_volatility_20d', 'realized_volatility_60d',
-            'garch_volatility', 'parkinson_volatility', 'garman_klass_volatility',
-            'atr_14', 'bollinger_width', 'volatility_regime_indicator',
-            'vol_of_vol_20d'
+            # Realized volatility
+            'volatility_20', 'volatility_5',
+            # Bollinger bands (volatility proxy)
+            'bb_width', 'bb_position',
+            # Price range features
+            'price_range', 'price_range_pct',
+            # ATR (Average True Range)
+            'atr'
         ]
     ),
     'volume': CategoryConfig(
@@ -53,20 +62,42 @@ DEFAULT_FEATURE_CATEGORIES = {
         weight=0.15,  # Moderate weight - market participation
         variance_threshold=0.85,  # Retain 85% variance
         features=[
-            'volume_normalized', 'turnover_ratio', 'dollar_volume',
-            'bid_ask_spread', 'volume_ma_ratio_20', 'volume_trend_strength',
-            'volume_volatility_20d', 'volume_price_correlation'
+            # Raw volume
+            'volume', 'volume_sma_20', 'volume_ratio',
+            # Volume-based indicators
+            'obv',  # On-Balance Volume
+            'cmf',  # Chaikin Money Flow
+            'pvt',  # Price Volume Trend
+            # VWAP features
+            'vwap', 'vwap_price_ratio'
         ]
     ),
     'technical': CategoryConfig(
-        description='Technical indicators',
-        weight=0.15,  # Moderate weight - market sentiment
+        description='Technical indicators (momentum in separate category)',
+        weight=0.10,  # Reduced weight - supplementary indicators
         variance_threshold=0.85,  # Retain 85% variance
         features=[
-            'rsi_14', 'macd', 'macd_signal', 'macd_histogram',
-            'ma_cross_20_50', 'ma_cross_50_200',
-            'stochastic_k', 'stochastic_d',
-            'adx_14', 'cci_20'
+            # Oscillators
+            'rsi_14', 'stoch_k', 'stoch_d', 'williams_r', 'cci',
+            # Trend indicators  
+            'macd', 'macd_signal', 'macd_histogram', 'adx',
+            # Moving averages
+            'close_sma_5', 'close_sma_20', 'close_ema_12', 'close_ema_26',
+            # Bollinger bands levels
+            'bb_upper', 'bb_middle', 'bb_lower'
+        ]
+    ),
+    'momentum': CategoryConfig(
+        description='Momentum/acceleration indicators (separated from returns)',
+        weight=0.05,  # Low weight - acceleration is noisy
+        variance_threshold=0.80,  # Retain 80% variance
+        features=[
+            # Price momentum (measures acceleration, not trend)
+            'momentum_10', 'momentum_20',
+            # Rate of change
+            'roc_10', 'roc_20',
+            # VWAP momentum
+            'vwap_momentum_5', 'vwap_momentum_10', 'vwap_momentum_20'
         ]
     )
 }

@@ -20,6 +20,17 @@ except ImportError:
     WEIGHTED_PCA_AVAILABLE = False
     tprint("⚠️ WeightedCategoryPCA not available, will use standard PCA", "WARNING")
 
+# Import CV enhancement strategies
+try:
+    from .cv_enhancement_strategies import (
+        apply_cv_enhancement_strategies,
+        RegimeDiscriminativeFeatures
+    )
+    CV_ENHANCEMENT_AVAILABLE = True
+except ImportError:
+    CV_ENHANCEMENT_AVAILABLE = False
+    tprint("⚠️ CV enhancement strategies not available", "WARNING")
+
 # Optional imports
 try:
     import umap
@@ -83,12 +94,24 @@ class FeaturePreparationStep:
         try:
             tprint("Step 1: Starting feature preparation and optimization...", "INFO")
             
-            # Use shared utilities for feature preparation
+            # Step 1a: Add regime-discriminative features to market data (BEFORE feature extraction)
+            use_cv_enhancement = getattr(config, 'use_cv_enhancement', True)  # Default: enabled
+            if use_cv_enhancement and CV_ENHANCEMENT_AVAILABLE:
+                try:
+                    tprint("⭐ Applying CV enhancement strategies to market data...", "INFO")
+                    context.market_data = apply_cv_enhancement_strategies(
+                        context.market_data,
+                        add_regime_features=True
+                    )
+                except Exception as e:
+                    tprint(f"⚠️ CV enhancement failed, continuing without it: {e}", "WARNING")
+            
+            # Step 1b: Use shared utilities for feature preparation
             feature_result = await self._prepare_features_using_shared_utils(
                 context.market_data, config
             )
             
-            # Apply regime-specific feature optimization
+            # Step 1c: Apply regime-specific feature optimization (PCA, etc.)
             context = await self._optimize_features(context, config)
             
             tprint("Step 1: Feature preparation completed successfully", "SUCCESS")

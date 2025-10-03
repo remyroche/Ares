@@ -12,6 +12,14 @@ from dataclasses import dataclass, field
 from sklearn.preprocessing import RobustScaler
 from sklearn.decomposition import PCA
 
+# Import weighted category PCA
+try:
+    from .weighted_category_pca import WeightedCategoryPCA, create_feature_categories_from_names
+    WEIGHTED_PCA_AVAILABLE = True
+except ImportError:
+    WEIGHTED_PCA_AVAILABLE = False
+    tprint("⚠️ WeightedCategoryPCA not available, will use standard PCA", "WARNING")
+
 # Optional imports
 try:
     import umap
@@ -164,6 +172,61 @@ class FeaturePreparationStep:
             tprint(f"Feature standardization completed: {context.original_features.shape}", "SUCCESS")
             tprint(f"🔍 MEMORY: Scaled features created - {features_scaled.nbytes / 1024 / 1024:.2f} MB", "INFO")
 
+            # Try Weighted Category PCA first (ENHANCED APPROACH)
+            use_weighted_pca = getattr(config, 'use_weighted_category_pca', True)  # Default to True
+            if WEIGHTED_PCA_AVAILABLE and use_weighted_pca and context.original_features.shape[1] >= 4:
+                tprint("⭐ Attempting Weighted Category PCA (ENHANCED APPROACH)...", "INFO")
+                try:
+                    # Auto-detect categories from feature names
+                    categories = create_feature_categories_from_names(feature_names)
+                    
+                    if categories:
+                        # Create and fit transformer
+                        pca_transformer = WeightedCategoryPCA(categories_config=categories)
+                        features_pca = pca_transformer.fit_transform(features_scaled, feature_names)
+                        
+                        # Get transformed feature names and summary
+                        transformed_names = pca_transformer.get_feature_names_out()
+                        component_summary = pca_transformer.get_component_summary()
+                        
+                        # Validate features
+                        features_final = self._validate_feature_quality_minimal(features_pca, context.market_data)
+                        
+                        # Update context
+                        context.optimized_features = features_final
+                        context.optimized_feature_names = transformed_names
+                        context.dropped_feature_names = context.dropped_feature_names or []
+                        
+                        # Create PCA loading scores from variance explained
+                        pca_loading_scores = {}
+                        for cat_name, cat_info in component_summary.items():
+                            cat_weight = categories[cat_name].weight
+                            for i, var_explained in enumerate(cat_info['explained_variance_ratio']):
+                                comp_name = f"{cat_name}_pc{i+1}"
+                                # Score = variance explained * category weight
+                                pca_loading_scores[comp_name] = float(var_explained * cat_weight)
+                        
+                        context.pca_loading_scores = pca_loading_scores
+                        if context.feature_scores:
+                            context.feature_scores = pca_loading_scores
+                        
+                        tprint(f"✅ Weighted Category PCA Success: {context.original_features.shape} -> {features_final.shape}", "SUCCESS")
+                        
+                        # Save transformer for later use (test-time transformation)
+                        try:
+                            import os
+                            os.makedirs('models/pca', exist_ok=True)
+                            pca_transformer.save('models/pca/weighted_category_pca.pkl')
+                        except Exception as save_err:
+                            tprint(f"⚠️ Could not save PCA transformer: {save_err}", "WARNING")
+                        
+                        self._safe_memory_cleanup([features_scaled, features_pca])
+                        return context
+                    else:
+                        tprint("⚠️ No feature categories detected, falling back to standard PCA", "WARNING")
+                except Exception as pca_err:
+                    tprint(f"⚠️ Weighted Category PCA failed: {pca_err}, falling back to standard PCA", "WARNING")
+            
             if context.original_features.shape[1] < 2:
                 tprint_warning("⚠️ Fewer than two features available after pruning - skipping PCA")
                 tprint(f"🔍 DEBUG: Insufficient features for PCA - only {context.original_features.shape[1]} features available", "WARNING")

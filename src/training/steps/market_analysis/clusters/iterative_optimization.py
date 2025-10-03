@@ -1442,19 +1442,38 @@ class ClusteringStats:
         return objective
     
     def get_balance_score(self) -> float:
-        """Calculate cluster balance score."""
+        """Calculate cluster balance score.
+        
+        IMPORTANT: Balance is now a SOFT CONSTRAINT, not a hard objective.
+        Only penalizes extreme imbalances (> 3x deviation from mean).
+        This prevents forcing all clusters to have identical sizes, which
+        was killing CV ratio and regime separation quality.
+        """
         if self.n_clusters <= 1:
             return 1.0
         
-        target_size = self.n_samples / self.n_clusters
-        size_penalties = []
+        sizes = np.array([s for s in self.cluster_sizes if s > 0])
+        if len(sizes) == 0:
+            return 1.0
         
-        for size in self.cluster_sizes:
-            if size > 0:
-                penalty = (size / self.n_samples - 1.0 / self.n_clusters) ** 2
-                size_penalties.append(penalty)
+        mean_size = np.mean(sizes)
         
-        return 1.0 - np.mean(size_penalties) if size_penalties else 1.0
+        # Only penalize EXTREME imbalances (> 3x mean or < 0.33x mean)
+        # This allows natural cluster size variation for better regime separation
+        extreme_penalties = []
+        for size in sizes:
+            ratio = size / mean_size
+            if ratio > 3.0:  # Too large
+                extreme_penalties.append((ratio - 3.0) ** 2)
+            elif ratio < 0.33:  # Too small
+                extreme_penalties.append((0.33 - ratio) ** 2)
+        
+        if not extreme_penalties:
+            return 1.0  # No extreme imbalances
+        
+        # Soft penalty: only reduce score for extreme cases
+        penalty = np.mean(extreme_penalties)
+        return max(0.0, 1.0 - 0.1 * penalty)  # Very gentle penalty
     
     def calculate_move_delta(self, point_idx: int, from_cluster: int, to_cluster: int) -> Dict[str, float]:
         """Calculate delta using variance decomposition (primary), centroid-silhouette (secondary), and temporal smoothness.

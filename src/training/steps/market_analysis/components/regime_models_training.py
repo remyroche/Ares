@@ -316,8 +316,35 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                         tprint("🔍 [REGIME_MODELS] Found optimal_regime_clustering_result, extracting from clustering_result object", color="blue")
                         clustering_result = optimal_clustering_result.get('clustering_result')
                         if clustering_result is not None:
-                            # Try to get assignments from the clustering result object
-                            if hasattr(clustering_result, 'current_results') and clustering_result.current_results:
+                            tprint(f"🔍 [REGIME_MODELS] clustering_result type: {type(clustering_result)}", color="blue")
+                            if isinstance(clustering_result, dict):
+                                tprint(f"🔍 [REGIME_MODELS] clustering_result keys: {list(clustering_result.keys())}", color="blue")
+                            else:
+                                tprint(f"🔍 [REGIME_MODELS] clustering_result attributes: {dir(clustering_result)}", color="blue")
+                            # First try direct access to clustering_result (new wrapper structure)
+                            if isinstance(clustering_result, dict):
+                                # Try different possible keys for assignments in the direct clustering_result dict
+                                for assignment_key in ['cluster_assignments', 'assignments', 'tas_assignments', 'nas_assignments']:
+                                    if assignment_key in clustering_result:
+                                        regime_labels = clustering_result[assignment_key]
+                                        # Handle case where assignments are stored as string representation
+                                        if isinstance(regime_labels, str):
+                                            try:
+                                                # Parse numpy array string representation
+                                                import ast
+                                                # Remove brackets and split by spaces, then convert to int
+                                                clean_str = regime_labels.strip('[]')
+                                                regime_labels = np.array([int(x) for x in clean_str.split() if x.strip()])
+                                                tprint(f"🔍 [REGIME_MODELS] Parsed regime labels from string representation", color="blue")
+                                            except Exception as e:
+                                                tprint(f"⚠️ [REGIME_MODELS] Failed to parse regime labels string: {e}", color="yellow")
+                                                regime_labels = None
+                                                continue
+                                        tprint(f"🔍 [REGIME_MODELS] Found regime labels in clustering_result.{assignment_key}", color="blue")
+                                        break
+                            
+                            # If not found in direct dict, try to get assignments from the clustering result object
+                            if regime_labels is None and hasattr(clustering_result, 'current_results') and clustering_result.current_results:
                                 current_results = clustering_result.current_results
                                 # Try different possible keys for assignments
                                 for assignment_key in ['cluster_assignments', 'assignments', 'tas_assignments', 'nas_assignments']:
@@ -335,6 +362,18 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                                     elif hasattr(context, 'initial_assignments') and context.initial_assignments is not None:
                                         regime_labels = context.initial_assignments
                                         tprint("🔍 [REGIME_MODELS] Found regime labels in clustering_result.context.initial_assignments", color="blue")
+                
+                # Try extracting from component factory wrapper structure (fallback)
+                if regime_labels is None:
+                    optimal_clustering_result = artifacts.get('optimal_regime_clustering_result', {})
+                    if optimal_clustering_result:
+                        tprint("🔍 [REGIME_MODELS] Trying component factory wrapper structure fallback", color="blue")
+                        # Check if the wrapper stored the data directly in the artifact
+                        for assignment_key in ['cluster_assignments', 'assignments', 'tas_assignments', 'nas_assignments']:
+                            if assignment_key in optimal_clustering_result:
+                                regime_labels = optimal_clustering_result[assignment_key]
+                                tprint(f"🔍 [REGIME_MODELS] Found regime labels in optimal_clustering_result.{assignment_key}", color="blue")
+                                break
 
             if regime_labels is None:
                 error_msg = "No regime labels found in any artifact structure"
@@ -760,7 +799,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     error_msg = f"Feature bank generated insufficient features: {X.shape[1] if X is not None else 0} < 50 required"
                     tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
                     self.logger.error(error_msg)
-                    return None, None, {}
+                    return None, None, {}, None, None, None
                 else:
                     tprint(f"✅ [REGIME_MODELS] Feature bank generated {X.shape[1]} comprehensive features", color="green")
                     if feature_names is None:
@@ -769,7 +808,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 error_msg = "Feature generation system not available - cannot generate comprehensive features"
                 tprint(f"❌ [REGIME_MODELS] {error_msg}", color="red")
                 self.logger.error(error_msg)
-                return None, None, {}
+                return None, None, {}, None, None
             
             # Check for NaN or infinite values in features with detailed analysis
             nan_count = np.isnan(X).sum()
@@ -854,7 +893,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"🔍 [REGIME_MODELS] Error type: {error_type}", color="yellow")
 
             self.logger.error(f"Error preparing training data: {str(e)}", exc_info=True)
-            return None, None, {}
+            return None, None, {}, None
     
     def _generate_features_with_bank(self, data: pd.DataFrame) -> Tuple[Optional[np.ndarray], Optional[List[str]]]:
         """Generate comprehensive features using the existing feature bank."""

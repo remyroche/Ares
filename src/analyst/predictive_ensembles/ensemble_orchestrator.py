@@ -12,9 +12,22 @@ import numpy as np
 import pandas as pd
 import json
 import logging
+import time
+import gc
 
 # Add tprint imports for enhanced logging
 from src.utils.tprint import tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer
+
+# Import hardware optimization tools
+try:
+    from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, WorkloadType, OptimizationLevel
+    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+    from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
+    HARDWARE_OPTIMIZATIONS_AVAILABLE = True
+    tprint("✅ Hardware optimization tools available", "INFO")
+except ImportError as e:
+    HARDWARE_OPTIMIZATIONS_AVAILABLE = False
+    tprint(f"⚠️ Hardware optimizations not available: {e}", "WARNING")
 
 
 class RegimePredictiveEnsembles:
@@ -53,6 +66,24 @@ class RegimePredictiveEnsembles:
         tprint("🚀 [ENSEMBLE_ORCHESTRATOR] Initializing RegimePredictiveEnsembles", color="cyan", bold=True)
         self.config = config.get('analyst', {})
         self.logger = system_logger.getChild('PredictiveEnsembles.Orchestrator')
+        
+        # Initialize hardware optimization tools
+        self.hardware_manager = None
+        self.memory_optimizer = None
+        self.cpu_optimizer = None
+        
+        if HARDWARE_OPTIMIZATIONS_AVAILABLE:
+            try:
+                self.hardware_manager = UnifiedHardwareManager()
+                self.memory_optimizer = M1MemoryOptimizer(memory_limit_gb=8.0)  # 8GB limit for regime processing
+                self.cpu_optimizer = M1CPUOptimizer()
+                tprint("🚀 Hardware optimization initialized for regime data splitting", "INFO")
+            except Exception as e:
+                tprint(f"⚠️ Failed to initialize hardware optimizations: {e}", "WARNING")
+                self.hardware_manager = None
+                self.memory_optimizer = None
+                self.cpu_optimizer = None
+        
         tprint("✅ [ENSEMBLE_ORCHESTRATOR] RegimePredictiveEnsembles initialized successfully", color="green")
         self.regime_ensembles = {'VOLATILE_REGIME': VolatileRegimeEnsemble(config, 'VolatileRegimeEnsemble')}
         self.model_storage_dir = os.path.join(CONFIG['CHECKPOINT_DIR'], 'analyst_models', 'ensembles')
@@ -85,68 +116,179 @@ class RegimePredictiveEnsembles:
             prepared_data (pd.DataFrame): The full prepared historical data with 'regime' and 'target' columns.
             model_path_prefix (str, optional): A prefix for saving models (e.g., includes fold_id).
         """
+        start_time = time.time()
         tprint(f"🚀 [ENSEMBLE_ORCHESTRATOR] Starting training for all ensembles for asset {asset} (prefix: {model_path_prefix})", color="cyan", bold=True)
         self.logger.info(f'Orchestrator: Starting training for all ensembles for asset {asset} (prefix: {model_path_prefix})...')
+        
+        # Initialize hardware optimization for ML training workload
+        if self.hardware_manager:
+            try:
+                self.hardware_manager.optimize_for_workload(WorkloadType.ML_TRAINING, OptimizationLevel.BALANCED)
+                tprint("🔧 Hardware optimized for ML training workload", "INFO")
+            except Exception as e:
+                tprint(f"⚠️ Hardware optimization failed: {e}", "WARNING")
+        
+        # Enhanced data validation
+        if prepared_data is None or prepared_data.empty:
+            tprint("❌ Prepared data is None or empty. Halting training.", "ERROR")
+            return
+        
+        tprint(f"📊 Data shape: {prepared_data.shape}, Memory usage: {prepared_data.memory_usage(deep=True).sum() / 1024**2:.2f} MB", "INFO")
+        
+        # Memory optimization before processing
+        if self.memory_optimizer:
+            try:
+                self.memory_optimizer.optimize_memory_usage()
+                tprint("🧠 Memory optimized before regime data splitting", "INFO")
+            except Exception as e:
+                tprint(f"⚠️ Memory optimization failed: {e}", "WARNING")
+        
         if 'composite_cluster_id' in prepared_data.columns:
-            self.logger.info('🎯 Using HMM composite regime data for ensemble training (PARAMOUNT)')
+            tprint('🎯 Using HMM composite regime data for ensemble training (PARAMOUNT)', "INFO")
             regime_column = 'composite_cluster_id'
             regime_prefix = 'hmm_composite_'
         else:
-            self.logger.error('🚨 HMM composite_cluster_id column is missing from prepared data. Halting training.')
-            self.logger.error('   HMM composite clusters are paramount - no fallbacks allowed')
-            self.logger.error('   Please ensure step3_hmm_regime_discovery completed successfully')
+            tprint('🚨 HMM composite_cluster_id column is missing from prepared data. Halting training.', "ERROR")
+            tprint('   HMM composite clusters are paramount - no fallbacks allowed', "ERROR")
+            tprint('   Please ensure step3_hmm_regime_discovery completed successfully', "ERROR")
             return
+        
         if 'target' not in prepared_data.columns:
-            self.logger.error("Prepared data is missing 'target' column. Halting training.")
+            tprint("❌ Prepared data is missing 'target' column. Halting training.", "ERROR")
             return
+        
+        # Validate target column has sufficient diversity
+        target_unique = prepared_data['target'].nunique()
+        if target_unique < 2:
+            tprint(f"❌ Insufficient target diversity: {target_unique} unique values. Need at least 2.", "ERROR")
+            return
+        
+        tprint(f"✅ Target validation passed: {target_unique} unique target values", "INFO")
+        
         meta_learner_data = []
         unique_regimes = prepared_data[regime_column].unique()
-        self.logger.info(f'📊 Found {len(unique_regimes)} unique regimes: {unique_regimes}')
+        tprint(f'📊 Found {len(unique_regimes)} unique regimes: {unique_regimes}', "INFO")
         for regime_id in unique_regimes:
             regime_key = f'{regime_prefix}{regime_id}'
-            self.logger.info(f'--- Processing ensemble for {regime_key} ---')
-            regime_data = prepared_data[prepared_data[regime_column] == regime_id]
-            if regime_data.empty or len(regime_data['target'].unique()) < 2:
-                self.logger.warning(f'Insufficient or single-class data for {regime_key}. Skipping training.')
-                continue
-            if regime_key not in self.regime_ensembles:
-                self.logger.info(f'🆕 Creating new ensemble instance for {regime_key}')
-                ensemble_instance = VolatileRegimeEnsemble(self.config, regime_key)
-                self.regime_ensembles[regime_key] = ensemble_instance
-            ensemble_instance = self.regime_ensembles[regime_key]
-            historical_features = regime_data.drop(columns=['target', regime_column], errors='ignore')
-            historical_targets = regime_data['target']
-            model_file_name = f'{regime_key.lower()}_ensemble.joblib'
-            if model_path_prefix:
-                full_model_path = f'{model_path_prefix}{model_file_name}'
-            else:
-                full_model_path = os.path.join(self.model_storage_dir, f'final_{model_file_name}')
-            if os.path.exists(full_model_path):
-                self.logger.info(f'Attempting to load {regime_key} ensemble from {full_model_path}...')
-                if ensemble_instance.load_model(full_model_path):
-                    self.logger.info(f'Successfully loaded {regime_key} ensemble.')
+            regime_start_time = time.time()
+            tprint(f'--- Processing ensemble for {regime_key} ---', "INFO")
+            
+            # Enhanced regime data splitting with safety checks
+            try:
+                regime_data = prepared_data[prepared_data[regime_column] == regime_id].copy()
+                tprint(f"📊 Regime {regime_key}: {len(regime_data)} samples, Memory: {regime_data.memory_usage(deep=True).sum() / 1024**2:.2f} MB", "INFO")
+                
+                # Validate regime data quality
+                if regime_data.empty:
+                    tprint(f'⚠️ Empty data for {regime_key}. Skipping training.', "WARNING")
+                    continue
+                
+                target_unique = regime_data['target'].nunique()
+                if target_unique < 2:
+                    tprint(f'⚠️ Insufficient target diversity for {regime_key}: {target_unique} unique values. Skipping training.', "WARNING")
+                    continue
+                
+                tprint(f"✅ Regime {regime_key} validation passed: {target_unique} unique targets", "INFO")
+                
+                # Memory optimization for large regime datasets
+                if self.memory_optimizer and len(regime_data) > 10000:
+                    try:
+                        self.memory_optimizer.optimize_memory_usage()
+                        tprint(f"🧠 Memory optimized for large regime dataset: {regime_key}", "INFO")
+                    except Exception as e:
+                        tprint(f"⚠️ Memory optimization failed for {regime_key}: {e}", "WARNING")
+                
+                # Create or retrieve ensemble instance
+                if regime_key not in self.regime_ensembles:
+                    tprint(f'🆕 Creating new ensemble instance for {regime_key}', "INFO")
+                    ensemble_instance = VolatileRegimeEnsemble(self.config, regime_key)
+                    self.regime_ensembles[regime_key] = ensemble_instance
                 else:
-                    self.logger.warning(f'Failed to load {regime_key} ensemble from {full_model_path}. Retraining.')
+                    ensemble_instance = self.regime_ensembles[regime_key]
+                
+                # Prepare features and targets with error handling
+                try:
+                    historical_features = regime_data.drop(columns=['target', regime_column], errors='ignore')
+                    historical_targets = regime_data['target']
+                    tprint(f"🔧 Features shape: {historical_features.shape}, Targets shape: {historical_targets.shape}", "DEBUG")
+                except Exception as e:
+                    tprint(f"❌ Error preparing features/targets for {regime_key}: {e}", "ERROR")
+                    continue
+                
+                # Model persistence logic
+                model_file_name = f'{regime_key.lower()}_ensemble.joblib'
+                if model_path_prefix:
+                    full_model_path = f'{model_path_prefix}{model_file_name}'
+                else:
+                    full_model_path = os.path.join(self.model_storage_dir, f'final_{model_file_name}')
+                
+                # Try to load existing model or train new one
+                if os.path.exists(full_model_path):
+                    tprint(f'🔄 Attempting to load {regime_key} ensemble from {full_model_path}...', "INFO")
+                    if ensemble_instance.load_model(full_model_path):
+                        tprint(f'✅ Successfully loaded {regime_key} ensemble.', "INFO")
+                    else:
+                        tprint(f'⚠️ Failed to load {regime_key} ensemble from {full_model_path}. Retraining.', "WARNING")
+                        ensemble_instance.train_ensemble(historical_features, historical_targets)
+                else:
+                    tprint(f'🆕 No existing model found for {regime_key}. Training new ensemble.', "INFO")
                     ensemble_instance.train_ensemble(historical_features, historical_targets)
-            else:
-                ensemble_instance.train_ensemble(historical_features, historical_targets)
-            if ensemble_instance.trained:
-                ensemble_instance.save_model(full_model_path)
-                ensemble_predictions_on_full_data = ensemble_instance.get_prediction_on_historical_data(historical_features)
-                for idx, row in ensemble_predictions_on_full_data.iterrows():
-                    meta_learner_data.append({
-                        'timestamp': idx,
-                        'regime': regime_key,
-                        'prediction': row['prediction'],
-                        'confidence': row['confidence'],
-                        'true_target': prepared_data.loc[idx, 'target']
-                    })
-            else:
-                self.logger.warning(f'Ensemble {regime_key} was not trained/loaded successfully. Skipping for meta-learner.')
+                
+                # Process trained ensemble
+                if ensemble_instance.trained:
+                    tprint(f'💾 Saving {regime_key} ensemble to {full_model_path}', "INFO")
+                    ensemble_instance.save_model(full_model_path)
+                    
+                    # Generate predictions for meta-learner
+                    try:
+                        ensemble_predictions_on_full_data = ensemble_instance.get_prediction_on_historical_data(historical_features)
+                        tprint(f"🔮 Generated {len(ensemble_predictions_on_full_data)} predictions for meta-learner", "INFO")
+                        
+                        for idx, row in ensemble_predictions_on_full_data.iterrows():
+                            meta_learner_data.append({
+                                'timestamp': idx,
+                                'regime': regime_key,
+                                'prediction': row['prediction'],
+                                'confidence': row['confidence'],
+                                'true_target': prepared_data.loc[idx, 'target']
+                            })
+                    except Exception as e:
+                        tprint(f"❌ Error generating predictions for {regime_key}: {e}", "ERROR")
+                        continue
+                else:
+                    tprint(f'⚠️ Ensemble {regime_key} was not trained/loaded successfully. Skipping for meta-learner.', "WARNING")
+                
+                # Performance timing
+                regime_time = time.time() - regime_start_time
+                tprint(f"⏱️ Regime {regime_key} processing completed in {regime_time:.2f}s", "INFO")
+                
+            except Exception as e:
+                tprint(f"❌ Error processing regime {regime_key}: {e}", "ERROR")
+                continue
+        # Final processing and cleanup
+        total_time = time.time() - start_time
+        tprint(f"⏱️ Total regime data splitting completed in {total_time:.2f}s", "INFO")
+        
         if meta_learner_data:
+            tprint(f"🔮 Training global meta-learner with {len(meta_learner_data)} samples", "INFO")
             self._train_global_meta_learner(meta_learner_data)
+            tprint("✅ Global meta-learner training completed", "INFO")
         else:
-            self.logger.warning('No data collected for global meta-learner training. Skipping.')
+            tprint('⚠️ No data collected for global meta-learner training. Skipping.', "WARNING")
+        
+        # Memory cleanup
+        if self.memory_optimizer:
+            try:
+                self.memory_optimizer.cleanup_memory()
+                tprint("🧹 Memory cleanup completed", "INFO")
+            except Exception as e:
+                tprint(f"⚠️ Memory cleanup failed: {e}", "WARNING")
+        
+        # Force garbage collection
+        gc.collect()
+        tprint("🗑️ Garbage collection completed", "INFO")
+        
+        tprint(f"✅ [ENSEMBLE_ORCHESTRATOR] Training completed successfully for {asset}", "SUCCESS")
 
     def get_all_predictions(self, asset: str, current_features: pd.DataFrame, **kwargs) -> dict[str, Any]:
         """

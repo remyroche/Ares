@@ -33,18 +33,28 @@ class ClusteringStats:
         self.features = features
         self.assignments = assignments
         self.n_samples, self.n_features = features.shape
-        self.n_clusters = len(np.unique(assignments))
         
-        # Calculate basic statistics
-        self.cluster_sizes = np.bincount(assignments.astype(int), minlength=self.n_clusters)
-        self.centroids = np.array([np.mean(features[assignments == i], axis=0) 
+        # CRITICAL FIX: Handle non-consecutive cluster IDs properly
+        unique_clusters = np.unique(assignments)
+        self.n_clusters = len(unique_clusters)
+        
+        # Create mapping from original cluster IDs to consecutive 0-based indices
+        self.cluster_id_map = {old_id: new_id for new_id, old_id in enumerate(unique_clusters)}
+        self.inverse_cluster_id_map = {new_id: old_id for old_id, new_id in self.cluster_id_map.items()}
+        
+        # Remap assignments to consecutive 0-based indices
+        self.remapped_assignments = np.array([self.cluster_id_map[cid] for cid in assignments])
+        
+        # Calculate basic statistics using remapped assignments
+        self.cluster_sizes = np.bincount(self.remapped_assignments, minlength=self.n_clusters)
+        self.centroids = np.array([np.mean(features[self.remapped_assignments == i], axis=0) 
                                   for i in range(self.n_clusters)])
         self.global_mean = np.mean(features, axis=0)
         
-        # Calculate WCSS and BCSS
+        # Calculate WCSS and BCSS using remapped assignments
         self.total_wcss = 0.0
         for i in range(self.n_clusters):
-            cluster_points = features[assignments == i]
+            cluster_points = features[self.remapped_assignments == i]
             if len(cluster_points) > 0:
                 self.total_wcss += np.sum((cluster_points - self.centroids[i]) ** 2)
         
@@ -55,6 +65,41 @@ class ClusteringStats:
         if self.total_wcss == 0:
             return 0.0
         return self.total_bcss / self.total_wcss
+    
+    def calculate_move_delta(self, point_idx: int, from_cluster: int, to_cluster: int) -> Dict[str, float]:
+        """Calculate move delta using remapped cluster IDs."""
+        # Map original cluster IDs to consecutive indices
+        from_cluster_remapped = self.cluster_id_map.get(from_cluster, from_cluster)
+        to_cluster_remapped = self.cluster_id_map.get(to_cluster, to_cluster)
+        
+        if from_cluster_remapped == to_cluster_remapped:
+            return {'total': 0.0, 'cv': 0.0, 'balance': 0.0, 'silhouette': 0.0, 'temporal': 0.0}
+        
+        # Calculate basic delta (simplified for risk mitigation)
+        point = self.features[point_idx]
+        
+        # Distance-based delta calculation
+        from_centroid = self.centroids[from_cluster_remapped]
+        to_centroid = self.centroids[to_cluster_remapped]
+        
+        old_distance = np.linalg.norm(point - from_centroid)
+        new_distance = np.linalg.norm(point - to_centroid)
+        
+        distance_delta = new_distance - old_distance
+        
+        # Simple balance delta
+        old_from_size = self.cluster_sizes[from_cluster_remapped]
+        old_to_size = self.cluster_sizes[to_cluster_remapped]
+        
+        balance_delta = 0.0  # Simplified for risk mitigation
+        
+        return {
+            'total': distance_delta,
+            'cv': distance_delta,
+            'balance': balance_delta,
+            'silhouette': 0.0,
+            'temporal': 0.0
+        }
     
     def get_balance_score(self) -> float:
         """Calculate cluster balance score."""
@@ -287,8 +332,17 @@ class RiskMitigationSystem:
                 
                 target_cluster = np.random.choice(other_clusters)
                 
-                # Calculate incremental delta
-                delta_inc = stats.calculate_move_delta(idx, current_cluster, target_cluster)
+                # CRITICAL FIX: Check if this is the risk mitigation ClusteringStats or main ClusteringStats
+                if hasattr(stats, 'cluster_id_map'):
+                    # This is the risk mitigation ClusteringStats, use remapped IDs
+                    current_cluster_remapped = stats.cluster_id_map.get(current_cluster, current_cluster)
+                    target_cluster_remapped = stats.cluster_id_map.get(target_cluster, target_cluster)
+                    
+                    # Calculate incremental delta using remapped IDs
+                    delta_inc = stats.calculate_move_delta(idx, current_cluster_remapped, target_cluster_remapped)
+                else:
+                    # This is the main ClusteringStats, use original IDs
+                    delta_inc = stats.calculate_move_delta(idx, current_cluster, target_cluster)
                 
                 # Calculate full recomputation
                 temp_assignments = stats.assignments.copy()

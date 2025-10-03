@@ -8,6 +8,7 @@ modules for validation, error handling, performance monitoring, and optimization
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
+from pathlib import Path
 
 # Import utility modules
 from src.utils.common_operations import safe_dataframe_operation
@@ -74,6 +75,9 @@ from .performance.monitor import PerformanceMonitor, MetricType, MetricLevel
 
 from ..components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 
+# Import optimized process engine
+from ..optimized_process_engines import OptimizedFeatureLookbackEngine, ProcessType
+
 # Import dependencies with fallbacks
 from .dependency_manager import get_dependency, is_dependency_available
 
@@ -136,6 +140,14 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         self.performance_monitor = PerformanceMonitor(component_name="FeatureLookbackOptimization")
         self.core_optimizer = CoreOptimizer(logger=self.logger)
         tprint("✅ Modular components initialized")
+
+        # Initialize optimized process engine
+        tprint("🔧 Initializing optimized feature lookback engine...")
+        self.optimized_engine = OptimizedFeatureLookbackEngine(
+            use_hardware_accel=True,
+            cache_size=1000
+        )
+        tprint("✅ Optimized feature lookback engine initialized")
 
         # Component state
         self.optimization_status = "pending"
@@ -221,6 +233,9 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 log_error("Market data loading failed - no data available for feature lookback optimization")
                 return self._create_failed_result()
 
+            # Align data with regime assignments to ensure consistency
+            market_data = self._align_data_with_regime_assignments(market_data, pipeline_state)
+
             # Prepare data for optimization
             optimization_data = self._prepare_data_for_optimization(market_data, labeling_data)
 
@@ -294,6 +309,72 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             )
             return None
 
+    def _align_data_with_regime_assignments(self, market_data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> pd.DataFrame:
+        """Align market data with regime assignments to ensure consistency with clustering step."""
+        try:
+            # Try to load regime assignment file to get the correct data size
+            symbol = pipeline_state.get('symbol', 'ETHUSDT').lower()
+            regime_files = list(Path('/Users/remyroche/Documents/Ares/data_cache/nas_tas_clustering').glob(f'**/{symbol}/nas_tas_regime_assignments_*.parquet'))
+            
+            if regime_files:
+                # Load the most recent regime assignment file
+                latest_file = max(regime_files, key=lambda x: x.stat().st_mtime)
+                regime_df = pd.read_parquet(latest_file)
+                
+                # Filter market data to match the regime assignment size
+                if len(regime_df) < len(market_data):
+                    # Use the same number of records as regime assignments
+                    market_data = market_data.tail(len(regime_df)).copy()
+                    self.logger.info(f"🔍 Aligned market data to regime assignments: {len(market_data)} records")
+                else:
+                    self.logger.info(f"📊 Using full market data: {len(market_data)} records")
+            else:
+                self.logger.warning("⚠️ No regime assignment files found, using full dataset")
+                
+            return market_data
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to align data with regime assignments: {e}")
+            return market_data
+
+    async def _generate_features_for_optimization(self, data: pd.DataFrame) -> List[str]:
+        """Load existing engineered features from regime assignment file for lookback optimization."""
+        try:
+            # Load the regime assignment file that contains engineered features
+            symbol = getattr(self.config, 'symbol', 'ETHUSDT').lower()
+            regime_files = list(Path('/Users/remyroche/Documents/Ares/data_cache/nas_tas_clustering').glob(f'**/{symbol}/nas_tas_regime_assignments_*.parquet'))
+            
+            if regime_files:
+                # Load the most recent regime assignment file
+                latest_file = max(regime_files, key=lambda x: x.stat().st_mtime)
+                self.logger.info(f"📊 Loading engineered features from: {latest_file}")
+                
+                regime_df = pd.read_parquet(latest_file)
+                self.logger.info(f"📊 Loaded regime assignment file: {regime_df.shape}")
+                
+                # Get all feature columns (exclude regime_id, regime_prob, and basic OHLCV columns)
+                excluded_columns = ['regime_id', 'regime_prob', 'open', 'high', 'low', 'close', 'volume', 'timestamp', 'symbol', 'open_time', 'close_time', 'interval', 'exchange', 'timeframe']
+                feature_columns = [col for col in regime_df.columns if col not in excluded_columns]
+                
+                # Filter out wavelets and autoencoder features as requested
+                feature_columns = [col for col in feature_columns if 'wavelet' not in col.lower() and 'autoencoder' not in col.lower()]
+                
+                self.logger.info(f"🎯 Found {len(feature_columns)} engineered features for optimization (excluding wavelets and autoencoder)")
+                
+                # Add the engineered features to the data
+                for col in feature_columns:
+                    if col in regime_df.columns and col not in data.columns:
+                        data[col] = regime_df[col].values[:len(data)]  # Align with data length
+                
+                return feature_columns
+            else:
+                self.logger.warning("⚠️ No regime assignment files found, using basic features")
+                return []
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to load engineered features: {e}")
+            return []
+
     def _load_recent_labeling_results(self, symbol: str, exchange: str, timeframe: str) -> Optional[Dict[str, Any]]:
         """Load recent labeling results."""
         try:
@@ -314,13 +395,16 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
     ) -> Dict[str, Any]:
         """Perform feature optimization using the core optimizer."""
         try:
-            # Get available features (exclude OHLCV, timestamp, and categorical columns)
-            excluded_columns = ['open', 'high', 'low', 'close', 'volume', 'timestamp', 'symbol', 'open_time', 'close_time']
-            feature_columns = [col for col in data.columns if col not in excluded_columns]
+            # Generate features using PID-based feature generation system
+            feature_columns = await self._generate_features_for_optimization(data)
             
-            # Filter to only numeric columns to avoid aggregation errors
-            numeric_columns = data.select_dtypes(include=['number']).columns.tolist()
-            feature_columns = [col for col in feature_columns if col in numeric_columns]
+            if not feature_columns:
+                # Fallback to basic features if feature generation fails
+                excluded_columns = ['regime_id', 'regime_prob', 'open', 'high', 'low', 'close', 'volume', 'timestamp', 'symbol', 'open_time', 'close_time', 'interval', 'exchange', 'timeframe']
+                feature_columns = [col for col in data.columns if col not in excluded_columns]
+                numeric_columns = data.select_dtypes(include=['number']).columns.tolist()
+                feature_columns = [col for col in feature_columns if col in numeric_columns]
+                self.logger.info(f"📊 Using {len(feature_columns)} basic features as fallback")
 
             if not feature_columns:
                 return {'feature_results': {}, 'error': 'No features available for optimization'}
@@ -329,7 +413,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             feature_results = {}
             target_column = 'close'  # Default target
 
-            for feature in feature_columns[:5]:  # Limit to first 5 features for demo
+            for feature in feature_columns:  # Optimize all available features
                 try:
                     result = self.core_optimizer.optimize_single_feature(
                         data,
@@ -460,10 +544,10 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 error_rate=1.0
             )
 
-    def _create_artifacts(self, optimization_results: Dict[str, Any], pipeline_state: Dict[str, Any]) -> List[str]:
+    def _create_artifacts(self, optimization_results: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Create artifacts from optimization results."""
         try:
-            artifacts = []
+            artifacts = {}
 
             # Create optimization summary artifact
             summary = {
@@ -474,9 +558,8 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 'optimization_results': convert_int64_to_int(optimization_results)
             }
 
-            # In a real implementation, this would save to files
-            # For now, just track the artifact names
-            artifacts.append('feature_lookback_optimization_summary.json')
+            # Store the summary as an artifact
+            artifacts['feature_lookback_optimization_summary'] = summary
 
             return artifacts
 
@@ -484,9 +567,9 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             self.error_handler.handle_error(
                 e,
                 "_create_artifacts",
-                return_value=[]
+                return_value={}
             )
-            return []
+            return {}
 
     def get_enhanced_performance_metrics(self) -> Dict[str, Any]:
         """Get enhanced performance metrics."""

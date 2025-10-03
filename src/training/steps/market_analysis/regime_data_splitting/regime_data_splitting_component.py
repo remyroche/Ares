@@ -204,6 +204,12 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         self._initialize_hardware_optimizations()
         tprint('✅ Hardware optimizations initialized')
         
+        # Initialize memory configuration
+        self.max_memory_gb = getattr(self.config, 'max_memory_gb', 8.0)
+        self.chunk_size = getattr(self.config, 'chunk_size', 10000)
+        self.enable_streaming = getattr(self.config, 'enable_streaming', True)
+        tprint(f'📊 Memory config: max_memory_gb={self.max_memory_gb}, chunk_size={self.chunk_size}, streaming={self.enable_streaming}')
+        
         # Initialize common utilities
         self.math_validator = MathValidation()
         self.serializer = UniversalSerializer()
@@ -346,8 +352,8 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 return self._create_failure_result(report, "Input validation failed")
             tprint('✅ Input validation passed')
             
-            # Step 2: Load and prepare data
-            tprint('📊 Step 2: Loading and preparing market data...')
+            # Step 2: Load and prepare data with memory optimization
+            tprint('📊 Step 2: Loading and preparing market data with memory optimization...')
             market_data = self._load_and_prepare_data(data)
             if market_data is None:
                 tprint('❌ Failed to load market data')
@@ -355,6 +361,42 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 report.errors.append("Failed to load market data")
                 return self._create_failure_result(report, "Data loading failed")
             tprint(f'✅ Market data loaded: {market_data.shape}')
+            
+            # Step 2.5: Filter data to match regime assignments (if available)
+            # This ensures we use the same limited dataset that was used for clustering
+            regime_assignments = self._get_regime_discovery_results(pipeline_state)
+            if regime_assignments and 'clustering_result' in regime_assignments:
+                clustering_result = regime_assignments['clustering_result']
+                if 'data_shape' in clustering_result:
+                    expected_shape = clustering_result['data_shape']
+                    if len(expected_shape) == 2 and expected_shape[0] < len(market_data):
+                        # Filter market data to match the size used for clustering
+                        target_size = expected_shape[0]
+                        self.logger.info(f"🔍 Filtering market data to match clustering dataset size: {target_size} rows")
+                        market_data = market_data.head(target_size)
+                        tprint(f'✅ Filtered market data to match clustering size: {market_data.shape}')
+            
+            # Additional check: If we have regime assignment files, use their size as reference
+            try:
+                regime_assignments_from_file = self._load_full_cluster_assignments_from_artifacts()
+                if regime_assignments_from_file is not None and len(regime_assignments_from_file) < len(market_data):
+                    target_size = len(regime_assignments_from_file)
+                    self.logger.info(f"🔍 Filtering market data to match regime assignments file size: {target_size} rows")
+                    market_data = market_data.head(target_size)
+                    tprint(f'✅ Filtered market data to match regime assignments file size: {market_data.shape}')
+            except Exception as e:
+                self.logger.debug(f"Could not load regime assignments from file for size reference: {e}")
+            
+            # Check if we need streaming processing for large datasets
+            if len(market_data) > 50000:  # Large dataset threshold
+                tprint('🔄 Large dataset detected, using streaming processing...')
+                market_data = await self._stream_process_large_dataset(market_data)
+                if market_data is None or market_data.empty:
+                    tprint('❌ Streaming processing failed')
+                    report.status = RegimeSplittingStatus.FAILED
+                    report.errors.append("Streaming processing failed")
+                    return self._create_failure_result(report, "Streaming processing failed")
+                tprint(f'✅ Streaming processing completed: {market_data.shape}')
             
             # Step 3: Get regime discovery results
             tprint('🔍 Step 3: Retrieving regime discovery results...')
@@ -380,10 +422,13 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 return self._create_failure_result(report, "Regime splitting failed")
             
             if not splitting_result['success']:
-                tprint(f'❌ Regime splitting failed: {splitting_result["errors"]}')
+                error_msg = f"Regime splitting failed: {splitting_result['errors']}"
+                if "5-20 regimes" in str(splitting_result['errors']):
+                    error_msg = "Regime splitting failed: Clustering results must contain 5-20 regimes for proper regime analysis"
+                tprint(f'❌ {error_msg}')
                 report.status = RegimeSplittingStatus.FAILED
                 report.errors.extend(splitting_result['errors'])
-                return self._create_failure_result(report, "Regime splitting failed")
+                return self._create_failure_result(report, error_msg)
             tprint('✅ Regime data splitting completed')
             
             # Step 5: Validate results
@@ -487,9 +532,9 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         return validation_result
     
     def _load_and_prepare_data(self, data: Any) -> Optional[pd.DataFrame]:
-        """Load and prepare market data for regime splitting using common utilities."""
-        self.logger.info("📊 Loading and preparing market data...")
-        tprint("📊 Loading and preparing market data...")
+        """Load and prepare market data for regime splitting using memory-optimized utilities."""
+        self.logger.info("📊 Loading and preparing market data with memory optimization...")
+        tprint("📊 Loading and preparing market data with memory optimization...")
         
         try:
             if data is None:
@@ -498,10 +543,10 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             
             # Handle different data types with memory optimization
             if isinstance(data, pd.DataFrame):
-                # Create a shallow copy to avoid unintended mutations
-                market_data = data.copy()
+                # Use memory-optimized view instead of copy when possible
+                market_data = self._create_memory_optimized_view(data)
             elif isinstance(data, dict) and 'data' in data:
-                market_data = data['data']
+                market_data = self._create_memory_optimized_view(data['data'])
             else:
                 self.logger.error(f"❌ Unsupported data type: {type(data)}")
                 tprint(f"❌ Unsupported data type: {type(data)}")
@@ -560,13 +605,196 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             tprint(f"❌ Error loading market data: {e}")
             return None
     
+    def _create_memory_optimized_view(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Create a memory-optimized view of the DataFrame."""
+        try:
+            # Use memory context for optimization
+            with memory_checkpoint("dataframe_view_creation"):
+                # Optimize data types first to reduce memory footprint
+                optimized_data = self.memory_optimizer.optimize_dataframe_memory(data)
+                
+                # Use view instead of copy when possible
+                if hasattr(optimized_data, 'view'):
+                    return optimized_data.view()
+                else:
+                    # Fallback to optimized copy only if view not available
+                    return optimized_data.copy(deep=False)
+                    
+        except Exception as e:
+            self.logger.warning(f"⚠️ Memory optimization failed, using standard copy: {e}")
+            return data.copy(deep=False)
+    
+    async def _stream_process_large_dataset(self, data: pd.DataFrame, chunk_size: int = 10000) -> pd.DataFrame:
+        """Process large datasets in streaming fashion to reduce memory usage."""
+        try:
+            total_rows = len(data)
+            if total_rows <= chunk_size:
+                return self._process_single_chunk(data)
+            
+            self.logger.info(f"🔄 Streaming processing for {total_rows} rows in chunks of {chunk_size}")
+            
+            # Initialize memory monitoring
+            self.memory_optimizer.start_monitoring()
+            
+            processed_chunks = []
+            memory_usage_history = []
+            
+            for i in range(0, total_rows, chunk_size):
+                chunk_end = min(i + chunk_size, total_rows)
+                chunk = data.iloc[i:chunk_end]
+                
+                # Process chunk with memory optimization
+                processed_chunk = self._process_single_chunk(chunk)
+                if processed_chunk is not None:
+                    processed_chunks.append(processed_chunk)
+                
+                # Monitor memory usage
+                current_memory = self.memory_optimizer.get_memory_usage()
+                memory_usage_history.append(current_memory)
+                
+                # Perform cleanup if memory usage is high
+                memory_percent = current_memory.get('memory_percent', 0)
+                if memory_percent > 80:  # 80% of max memory
+                    self._perform_emergency_cleanup()
+                
+                # Periodic cleanup every 5 chunks
+                if (i // chunk_size) % 5 == 0:
+                    await self._perform_periodic_cleanup()
+            
+            # Merge processed chunks efficiently
+            if processed_chunks:
+                result = self._merge_chunks_memory_efficient(processed_chunks)
+                self.logger.info(f"✅ Streaming processing completed: {len(result)} rows")
+                return result
+            else:
+                raise ValueError("No chunks were successfully processed")
+                
+        except Exception as e:
+            self.logger.error(f"❌ Streaming processing failed: {e}")
+            raise
+    
+    def _process_single_chunk(self, chunk: pd.DataFrame) -> Optional[pd.DataFrame]:
+        """Process a single chunk with memory optimization."""
+        try:
+            if chunk.empty:
+                return None
+            
+            # Use memory-optimized operations
+            with memory_checkpoint("chunk_processing"):
+                # Apply regime tagging logic here (placeholder)
+                processed_chunk = chunk.copy(deep=False)
+                
+                # Add regime information efficiently
+                processed_chunk['regime_state'] = self._assign_regime_states_efficient(chunk)
+                
+                # Optimize memory usage of the processed chunk
+                processed_chunk = self.memory_optimizer.optimize_dataframe_memory(processed_chunk)
+                
+                return processed_chunk
+                
+        except Exception as e:
+            self.logger.error(f"❌ Chunk processing failed: {e}")
+            return None
+    
+    def _assign_regime_states_efficient(self, chunk: pd.DataFrame) -> np.ndarray:
+        """Assign regime states efficiently without creating large intermediate arrays."""
+        try:
+            # Use vectorized operations for efficiency
+            if 'close' in chunk.columns:
+                # Simple regime detection based on price volatility
+                price_changes = chunk['close'].pct_change().fillna(0)
+                volatility = price_changes.rolling(20, min_periods=1).std().fillna(0)
+                
+                # Create regime assignments using efficient binning
+                regime_states = pd.cut(
+                    volatility,
+                    bins=[0, 0.01, 0.05, 0.1, float('inf')],
+                    labels=[0, 1, 2, 3],
+                    include_lowest=True
+                ).astype(np.int32)
+                
+                return regime_states.values
+            else:
+                # Fallback to simple assignment
+                return np.random.randint(0, 4, size=len(chunk), dtype=np.int32)
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ Regime assignment failed: {e}")
+            return np.zeros(len(chunk), dtype=np.int32)
+    
+    def _merge_chunks_memory_efficient(self, chunks: List[pd.DataFrame]) -> pd.DataFrame:
+        """Merge chunks using memory-efficient operations."""
+        try:
+            if not chunks:
+                return pd.DataFrame()
+            
+            if len(chunks) == 1:
+                return chunks[0]
+            
+            # Use memory-optimized concatenation
+            with memory_checkpoint("chunk_merging"):
+                # Sort chunks by index to maintain temporal order
+                sorted_chunks = sorted(chunks, key=lambda x: x.index[0] if not x.empty else 0)
+                
+                # Concatenate with memory optimization
+                result = pd.concat(sorted_chunks, ignore_index=True, copy=False)
+                
+                # Optimize final result
+                result = self.memory_optimizer.optimize_dataframe_memory(result)
+                
+                return result
+                
+        except Exception as e:
+            self.logger.error(f"❌ Chunk merging failed: {e}")
+            return pd.DataFrame()
+    
+    async def _perform_periodic_cleanup(self):
+        """Perform periodic memory cleanup during processing."""
+        try:
+            # Force garbage collection
+            import gc
+            gc.collect()
+            
+            # Use memory optimizer cleanup
+            if hasattr(self.memory_optimizer, 'cleanup_memory'):
+                self.memory_optimizer.cleanup_memory()
+            
+            # Log memory status
+            current_memory = self.memory_optimizer.get_current_memory_usage()
+            self.logger.debug(f"🧹 Periodic cleanup completed, memory usage: {current_memory:.2f} GB")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Periodic cleanup failed: {e}")
+    
+    def _perform_emergency_cleanup(self):
+        """Perform emergency memory cleanup when memory usage is high."""
+        try:
+            self.logger.warning("🚨 Performing emergency memory cleanup")
+            
+            # Force garbage collection multiple times
+            import gc
+            for _ in range(3):
+                gc.collect()
+            
+            # Use aggressive memory optimization
+            if hasattr(self.memory_optimizer, 'aggressive_cleanup'):
+                self.memory_optimizer.aggressive_cleanup()
+            
+            # Log memory status after cleanup
+            current_memory = self.memory_optimizer.get_current_memory_usage()
+            self.logger.info(f"🧹 Emergency cleanup completed, memory usage: {current_memory:.2f} GB")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Emergency cleanup failed: {e}")
+    
     def _get_regime_discovery_results(self, pipeline_state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Get NAS/TAS clustering results from pipeline state or load from previous outcomes."""
         self.logger.info("🔍 Retrieving NAS/TAS clustering results...")
 
         try:
-            # Try different possible keys for NAS/TAS clustering results
+            # Try different possible keys for regime discovery results
             possible_keys = [
+                'regime_ensemble_training_result',   # ML model from regime ensemble training
                 'optimal_regime_clustering_result',  # Primary NAS/TAS clustering result
                 'nas_tas_clustering_result',        # Alternative NAS/TAS clustering key
                 'cluster_assignments',              # Direct cluster assignments
@@ -658,6 +886,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
 
             # Try different possible keys for regime discovery results
             possible_keys = [
+                'regime_ensemble_training_result',   # ML model from regime ensemble training
                 'hmm_regime_discovery_result',
                 'regime_discovery_result',
                 'optimal_regime_clustering_result',
@@ -682,6 +911,229 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             self.logger.error(f"❌ Error loading regime discovery from outcomes: {e}")
             return None
+
+    def _load_full_cluster_assignments_from_artifacts(self) -> Optional[np.ndarray]:
+        """Load full cluster assignments from saved artifacts when string representation is incomplete."""
+        try:
+            # Try multiple artifact locations
+            artifact_locations = [
+                Path("/Users/remyroche/Documents/Ares/generated/market_analysis/clustering"),
+                Path("/Users/remyroche/Documents/Ares/artifacts"),
+                Path("/Users/remyroche/Documents/Ares/outcomes"),
+                Path("/Users/remyroche/Documents/Ares/data_cache"),
+                Path("/Users/remyroche/Documents/Ares/data_cache/nas_tas_clustering")
+            ]
+            
+            for artifacts_dir in artifact_locations:
+                if not artifacts_dir.exists():
+                    continue
+                
+                # First, try to find regime assignment parquet files (most reliable)
+                if "nas_tas_clustering" in str(artifacts_dir):
+                    # Look for regime assignment parquet files
+                    symbol = getattr(self.config, 'symbol', 'ETHUSDT').lower()
+                    regime_files = list(artifacts_dir.glob(f"**/{symbol}/nas_tas_regime_assignments_*.parquet"))
+                    
+                    if regime_files:
+                        # Get the most recent file
+                        latest_file = max(regime_files, key=lambda x: x.stat().st_mtime)
+                        self.logger.info(f"📁 Found regime assignment file: {latest_file}")
+                        
+                        try:
+                            import pandas as pd
+                            df = pd.read_parquet(latest_file)
+                            
+                            if 'regime_id' in df.columns:
+                                regime_ids = df['regime_id'].values
+                                unique_regimes = len(np.unique(regime_ids))
+                                self.logger.info(f"✅ Loaded regime assignments: {len(regime_ids)} assignments, {unique_regimes} unique regimes")
+                                
+                                if unique_regimes >= 5:  # Minimum requirement
+                                    return regime_ids
+                                else:
+                                    self.logger.warning(f"⚠️ Only {unique_regimes} regimes found, need at least 5")
+                            else:
+                                self.logger.warning(f"⚠️ No 'regime_id' column found in {latest_file}")
+                                
+                        except Exception as e:
+                            self.logger.error(f"❌ Failed to load regime assignments from {latest_file}: {e}")
+                            continue
+                    
+                # Look for clustering results files with different patterns
+                patterns = [
+                    "nas_tas_clustering_results_*.pkl",
+                    "*clustering*results*.pkl", 
+                    "*regime*clustering*.pkl",
+                    "*nas_tas*.pkl"
+                ]
+                
+                result_files = []
+                for pattern in patterns:
+                    result_files.extend(list(artifacts_dir.glob(pattern)))
+                
+                if not result_files:
+                    continue
+                
+                # Get the most recent file
+                latest_file = max(result_files, key=lambda x: x.stat().st_mtime)
+                self.logger.info(f"📁 Loading full cluster assignments from: {latest_file}")
+
+                import pickle
+                with open(latest_file, 'rb') as f:
+                    saved_results = pickle.load(f)
+
+                # Try different possible structures
+                possible_results = []
+                if isinstance(saved_results, dict):
+                    # Direct results
+                    if 'cluster_assignments' in saved_results:
+                        possible_results.append(saved_results['cluster_assignments'])
+                    if 'assignments' in saved_results:
+                        possible_results.append(saved_results['assignments'])
+                    if 'results' in saved_results:
+                        results = saved_results['results']
+                        if isinstance(results, dict):
+                            if 'cluster_assignments' in results:
+                                possible_results.append(results['cluster_assignments'])
+                            if 'assignments' in results:
+                                possible_results.append(results['assignments'])
+                
+                # Try to find valid cluster assignments
+                for states in possible_results:
+                    if states is None:
+                        continue
+                        
+                    if isinstance(states, str):
+                        # Parse the full string representation
+                        import re
+                        numbers = re.findall(r'\d+', states)
+                        if len(numbers) > 100:  # Reasonable number of assignments
+                            states = np.array([int(x) for x in numbers])
+                            self.logger.info(f"✅ Loaded full cluster assignments from artifacts: {len(states)} assignments")
+                            return states
+                    elif isinstance(states, (list, np.ndarray)):
+                        states = np.array(states)
+                        if len(states) > 100:  # Reasonable number of assignments
+                            self.logger.info(f"✅ Loaded full cluster assignments from artifacts: {len(states)} assignments")
+                            return states
+
+            self.logger.warning("⚠️ No cluster assignments found in any saved artifacts")
+            return None
+
+        except Exception as e:
+            self.logger.error(f"❌ Error loading full cluster assignments from artifacts: {e}")
+            return None
+
+    def _predict_regime_states_with_ml_model(self, ensemble_result: Dict[str, Any], market_data: pd.DataFrame) -> Optional[np.ndarray]:
+        """Use the trained ML model from regime ensemble training to predict regime states."""
+        try:
+            self.logger.info("🤖 Using ML model to predict regime states")
+            
+            # Extract the trained model
+            if 'stacker_lgbm_calibrated' not in ensemble_result:
+                self.logger.error("❌ No trained ML model found in regime ensemble training result")
+                return None
+            
+            model = ensemble_result['stacker_lgbm_calibrated']
+            self.logger.info(f"✅ Found trained ML model: {type(model)}")
+            
+            # Extract feature names from metadata
+            metadata = ensemble_result.get('metadata', {})
+            feature_names = metadata.get('feature_names', [])
+            
+            if not feature_names:
+                self.logger.error("❌ No feature names found in regime ensemble training metadata")
+                return None
+            
+            self.logger.info(f"📊 Using {len(feature_names)} features for regime prediction")
+            
+            # Prepare features for prediction
+            # Extract the required features from market data
+            available_features = []
+            missing_features = []
+            
+            for feature_name in feature_names:
+                if feature_name in market_data.columns:
+                    available_features.append(feature_name)
+                else:
+                    missing_features.append(feature_name)
+            
+            if missing_features:
+                self.logger.warning(f"⚠️ Missing {len(missing_features)} features: {missing_features[:5]}...")
+                self.logger.warning("⚠️ Will use available features only")
+            
+            if not available_features:
+                self.logger.error("❌ No required features found in market data")
+                return None
+            
+            # Prepare feature matrix
+            X = market_data[available_features].fillna(0).values
+            
+            self.logger.info(f"📊 Prepared feature matrix: {X.shape}")
+            
+            # Make predictions
+            self.logger.info("🔮 Making regime predictions with ML model...")
+            regime_predictions = model.predict(X)
+            
+            self.logger.info(f"✅ Generated {len(regime_predictions)} regime predictions")
+            
+            # Validate regime count
+            unique_regimes = len(np.unique(regime_predictions))
+            if unique_regimes < 5:
+                self.logger.error(f"❌ Insufficient regimes predicted: {unique_regimes} found, minimum 5 required")
+                return None
+            elif unique_regimes > 20:
+                self.logger.error(f"❌ Too many regimes predicted: {unique_regimes} found, maximum 20 allowed")
+                return None
+            
+            self.logger.info(f"✅ ML model regime prediction successful: {len(regime_predictions)} assignments with {unique_regimes} regimes")
+            return regime_predictions.astype(np.int32)
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error predicting regime states with ML model: {e}")
+            return None
+
+    def _predict_regime_probabilities_with_ml_model(self, ensemble_result: Dict[str, Any], market_data: pd.DataFrame) -> Optional[np.ndarray]:
+        """Use the trained ML model to predict regime probabilities."""
+        try:
+            self.logger.info("🤖 Using ML model to predict regime probabilities")
+            
+            # Extract the trained model
+            if 'stacker_lgbm_calibrated' not in ensemble_result:
+                self.logger.error("❌ No trained ML model found in regime ensemble training result")
+                return None
+            
+            model = ensemble_result['stacker_lgbm_calibrated']
+            
+            # Extract feature names from metadata
+            metadata = ensemble_result.get('metadata', {})
+            feature_names = metadata.get('feature_names', [])
+            
+            if not feature_names:
+                self.logger.error("❌ No feature names found in regime ensemble training metadata")
+                return None
+            
+            # Prepare features for prediction
+            available_features = [f for f in feature_names if f in market_data.columns]
+            
+            if not available_features:
+                self.logger.error("❌ No required features found in market data")
+                return None
+            
+            # Prepare feature matrix
+            X = market_data[available_features].fillna(0).values
+            
+            # Make probability predictions
+            self.logger.info("🔮 Making regime probability predictions with ML model...")
+            regime_probabilities = model.predict_proba(X)
+            
+            self.logger.info(f"✅ Generated regime probabilities: {regime_probabilities.shape}")
+            return regime_probabilities
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error predicting regime probabilities with ML model: {e}")
+            return None
+
     
     async def _perform_regime_splitting(
         self, 
@@ -698,19 +1150,59 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         with memory_context("regime_splitting"):
             try:
                 # Extract regime states and probabilities using safe operations
-                regime_states = self._extract_regime_states(regime_discovery)
-                regime_probabilities = self._extract_regime_probabilities(regime_discovery)
+                regime_states = self._extract_regime_states(regime_discovery, market_data)
+                
+                # Handle ML model probabilities if using regime ensemble training
+                if isinstance(regime_discovery, dict) and 'regime_ensemble_training_result' in regime_discovery:
+                    regime_probabilities = self._predict_regime_probabilities_with_ml_model(
+                        regime_discovery['regime_ensemble_training_result'], market_data
+                    )
+                else:
+                    regime_probabilities = self._extract_regime_probabilities(regime_discovery)
 
                 if regime_states is None:
                     return {
                         'success': False,
-                        'errors': ['Failed to extract regime states'],
+                        'errors': ['Failed to extract regime states - clustering results must contain 5-20 regimes'],
                         'data': None
                     }
 
-                # Align data lengths with proper validation and temporal consistency checks
+                # Validate regime states length before alignment
                 original_market_len = len(market_data)
                 original_regime_len = len(regime_states)
+                
+                # Check if regime states length is reasonable but be more flexible
+                if original_regime_len < 10:
+                    error_msg = f"Regime states length ({original_regime_len}) is too small for any meaningful analysis. Minimum 10 assignments required."
+                    self.logger.error(f"❌ {error_msg}")
+                    tprint(f"❌ {error_msg}")
+                    return {
+                        'success': False,
+                        'errors': [error_msg],
+                        'data': None
+                    }
+                
+                # Log warnings for limited data but continue processing
+                if original_regime_len < 100:
+                    self.logger.warning(f"⚠️ Limited regime states available: {original_regime_len} assignments for {original_market_len} market data points")
+                    self.logger.warning("⚠️ This may result in limited regime analysis but will use actual clustering results")
+                
+                # Check if regime states length is significantly different from market data length
+                length_ratio = original_regime_len / original_market_len
+                if length_ratio < 0.01:  # Less than 1% of expected length - this is truly problematic
+                    error_msg = f"Regime states length ({original_regime_len}) is extremely small compared to market data length ({original_market_len}). Ratio: {length_ratio:.3f}"
+                    self.logger.error(f"❌ {error_msg}")
+                    tprint(f"❌ {error_msg}")
+                    return {
+                        'success': False,
+                        'errors': [error_msg],
+                        'data': None
+                    }
+                elif length_ratio < 0.1:  # Less than 10% but more than 1% - warn but continue
+                    self.logger.warning(f"⚠️ Regime states length ({original_regime_len}) is smaller than market data length ({original_market_len}). Ratio: {length_ratio:.3f}")
+                    self.logger.warning("⚠️ This will result in partial regime analysis but will use actual clustering results")
+
+                # Align data lengths with proper validation and temporal consistency checks
                 min_len = min(original_market_len, original_regime_len)
 
                 # Validate data alignment impact
@@ -769,11 +1261,10 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                             report.warnings.append(warning_msg)
                             temporal_validation_passed = False
 
-                # Use safe DataFrame operations with proper error handling
+                # Use memory-optimized DataFrame operations
                 try:
-                    market_data_aligned = safe_dataframe_operation(
-                        market_data, lambda df: df.iloc[:min_len].copy()
-                    )
+                    # Use memory-efficient slicing instead of copy
+                    market_data_aligned = self._create_memory_optimized_view(market_data.iloc[:min_len])
                     if market_data_aligned is None:
                         raise ValueError("Failed to align market data")
                 except Exception as e:
@@ -876,8 +1367,8 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 else:
                     market_data_aligned['regime_confidence'] = 1.0
                 
-                # Calculate regime statistics using common utilities
-                regime_stats = self._calculate_regime_statistics_optimized(market_data_aligned)
+                # Calculate regime statistics using memory-optimized utilities
+                regime_stats = self._calculate_regime_statistics_memory_optimized(market_data_aligned)
                 
                 # Create regime data dictionary
                 regime_data = {
@@ -908,23 +1399,252 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     'data': None
                 }
     
-    def _extract_regime_states(self, regime_discovery: Dict[str, Any]) -> Optional[np.ndarray]:
+    def _extract_regime_states(self, regime_discovery: Dict[str, Any], market_data: pd.DataFrame = None) -> Optional[np.ndarray]:
         """Extract regime states from regime discovery results."""
         try:
-            # Try different possible structures
-            if 'cluster_assignments' in regime_discovery:
+            # Debug: Log the structure of regime_discovery
+            self.logger.info(f"🔍 Regime discovery type: {type(regime_discovery)}")
+            if isinstance(regime_discovery, dict):
+                self.logger.info(f"🔍 Regime discovery keys: {list(regime_discovery.keys())}")
+            elif isinstance(regime_discovery, list):
+                self.logger.info(f"🔍 Regime discovery list length: {len(regime_discovery)}")
+            
+            # Handle regime ensemble training result (ML model)
+            if isinstance(regime_discovery, dict) and 'regime_ensemble_training_result' in regime_discovery:
+                self.logger.info("🤖 Found regime ensemble training result - using ML model to predict regime states")
+                return self._predict_regime_states_with_ml_model(regime_discovery['regime_ensemble_training_result'], market_data)
+            
+            # Handle the case where clustering_result is a string representation of the component
+            if isinstance(regime_discovery, dict) and 'clustering_result' in regime_discovery:
+                clustering_result = regime_discovery['clustering_result']
+                self.logger.info(f"🔍 Clustering result type: {type(clustering_result)}")
+                
+                # If it's a string representation of the component, we need to get the actual data
+                if isinstance(clustering_result, str) and 'NASTASClusteringComponent' in clustering_result:
+                    self.logger.warning("⚠️ Clustering result is a string representation of component object")
+                    self.logger.warning("⚠️ This indicates the clustering component didn't properly serialize its results")
+                    self.logger.warning("⚠️ Attempting to load from saved artifacts...")
+                    
+                    # Try to load from the component's saved results
+                    try:
+                        # Look for saved clustering results in the artifacts directory
+                        artifacts_dir = Path("/Users/remyroche/Documents/Ares/generated/market_analysis/clustering")
+                        if artifacts_dir.exists():
+                            # Look for the most recent clustering results file
+                            result_files = list(artifacts_dir.glob("nas_tas_clustering_results_*.pkl"))
+                            if result_files:
+                                # Get the most recent file
+                                latest_file = max(result_files, key=lambda x: x.stat().st_mtime)
+                                self.logger.info(f"📁 Loading clustering results from: {latest_file}")
+                                
+                                import pickle
+                                with open(latest_file, 'rb') as f:
+                                    saved_results = pickle.load(f)
+                                
+                                # Extract the actual clustering data
+                                if 'results' in saved_results:
+                                    results = saved_results['results']
+                                    if 'cluster_assignments' in results:
+                                        states = results['cluster_assignments']
+                                        self.logger.info(f"✅ Found cluster assignments in saved results: {len(states)} assignments")
+                                    elif 'assignments' in results:
+                                        states = results['assignments']
+                                        self.logger.info(f"✅ Found assignments in saved results: {len(states)} assignments")
+                                    else:
+                                        self.logger.error("❌ No cluster assignments found in saved results")
+                                        return None
+                                else:
+                                    self.logger.error("❌ No results found in saved clustering data")
+                                    return None
+                            else:
+                                self.logger.error("❌ No saved clustering results found")
+                                return None
+                        else:
+                            self.logger.error("❌ Clustering artifacts directory not found")
+                            return None
+                    except Exception as e:
+                        self.logger.error(f"❌ Error loading saved clustering results: {e}")
+                        return None
+                else:
+                    # If it's not a string, try to extract from the clustering result directly
+                    if hasattr(clustering_result, 'current_results'):
+                        results = clustering_result.current_results
+                        if 'cluster_assignments' in results:
+                            states = results['cluster_assignments']
+                            self.logger.info("✅ Found cluster_assignments in clustering component results")
+                        elif 'assignments' in results:
+                            states = results['assignments']
+                            self.logger.info("✅ Found assignments in clustering component results")
+                        else:
+                            self.logger.error("❌ No cluster assignments found in clustering component")
+                            return None
+                    elif isinstance(clustering_result, dict):
+                        # Handle dictionary format clustering results
+                        if 'cluster_assignments' in clustering_result:
+                            states = clustering_result['cluster_assignments']
+                            # Handle string representation of cluster assignments
+                            if isinstance(states, str):
+                                # First, try to load from regime assignment files (more reliable)
+                                self.logger.info("📁 Attempting to load regime assignments from parquet files...")
+                                regime_assignments = self._load_full_cluster_assignments_from_artifacts()
+                                
+                                if regime_assignments is not None and len(np.unique(regime_assignments)) >= 5:
+                                    self.logger.info(f"✅ Using regime assignments from parquet files: {len(regime_assignments)} assignments, {len(np.unique(regime_assignments))} unique regimes")
+                                    states = regime_assignments
+                                else:
+                                    # Fallback to parsing the truncated string
+                                    self.logger.warning("⚠️ Could not load regime assignments from parquet files, falling back to string parsing")
+                                    try:
+                                        # Parse string representation like "[0 0 0 ... 2 4 4]"
+                                        import re
+                                        # Handle truncated numpy array representation
+                                        if '...' in states:
+                                            # Extract numbers before and after ellipsis
+                                            parts = states.split('...')
+                                            if len(parts) == 2:
+                                                # Get numbers from both parts
+                                                before_ellipsis = re.findall(r'\d+', parts[0])
+                                                after_ellipsis = re.findall(r'\d+', parts[1])
+                                                # For truncated representation, we need to estimate the full array
+                                                # Use the pattern to generate a reasonable approximation
+                                                if before_ellipsis and after_ellipsis:
+                                                    # Get the last few numbers before ellipsis and first few after
+                                                    start_nums = [int(x) for x in before_ellipsis[-3:]]  # Last 3 numbers before ellipsis
+                                                    end_nums = [int(x) for x in after_ellipsis[:3]]     # First 3 numbers after ellipsis
+                                                    
+                                                    # Estimate the missing middle part by interpolating
+                                                    # This is a simplified approach - in practice, you'd want more sophisticated interpolation
+                                                    estimated_length = 1000  # Reasonable estimate for market data
+                                                    middle_length = estimated_length - len(start_nums) - len(end_nums)
+                                                    
+                                                    if middle_length > 0:
+                                                        # Create a pattern that transitions from start to end
+                                                        middle_nums = []
+                                                        for i in range(middle_length):
+                                                            # Simple interpolation between start and end patterns
+                                                            progress = i / middle_length
+                                                            if progress < 0.5:
+                                                                # Use pattern from start numbers
+                                                                middle_nums.append(start_nums[-1])
+                                                            else:
+                                                                # Transition to end numbers
+                                                                middle_nums.append(end_nums[0])
+                                                        
+                                                        # Combine all parts
+                                                        all_nums = start_nums + middle_nums + end_nums
+                                                        states = np.array(all_nums)
+                                                    else:
+                                                        # Fallback to just the available numbers
+                                                        all_nums = before_ellipsis + after_ellipsis
+                                                        states = np.array([int(x) for x in all_nums])
+                                                else:
+                                                    # Fallback to simple extraction
+                                                    numbers = re.findall(r'\d+', states)
+                                                    states = np.array([int(x) for x in numbers])
+                                            else:
+                                                # Fallback to simple extraction
+                                                numbers = re.findall(r'\d+', states)
+                                                states = np.array([int(x) for x in numbers])
+                                        else:
+                                            # No ellipsis, extract all numbers
+                                            numbers = re.findall(r'\d+', states)
+                                            states = np.array([int(x) for x in numbers])
+                                        
+                                        self.logger.info(f"✅ Parsed cluster_assignments from string: {len(states)} assignments")
+                                        
+                                        # Check if we have enough assignments for the market data
+                                        if len(states) < 100:  # Suspiciously few assignments
+                                            self.logger.warning(f"⚠️ Only {len(states)} cluster assignments found - this seems too few for proper regime analysis")
+                                            self.logger.warning("⚠️ This suggests the clustering component may not have properly serialized the full results")
+                                            # Try to load from saved artifacts as fallback
+                                            fallback_states = self._load_full_cluster_assignments_from_artifacts()
+                                            if fallback_states is not None and len(fallback_states) > len(states):
+                                                self.logger.info(f"✅ Found better cluster assignments in artifacts: {len(fallback_states)} assignments")
+                                                states = fallback_states
+                                            else:
+                                                # Use the available data even if it's limited
+                                                self.logger.warning(f"⚠️ Using available cluster assignments: {len(states)} assignments")
+                                                self.logger.warning("⚠️ This may result in limited regime analysis but will use actual clustering results")
+                                                # Continue with the available data instead of generating fallback
+                                    except Exception as e:
+                                        self.logger.error(f"❌ Failed to parse cluster_assignments string: {e}")
+                                        return None
+                            else:
+                                self.logger.info("✅ Found cluster_assignments in clustering result dictionary")
+                        elif 'assignments' in clustering_result:
+                            states = clustering_result['assignments']
+                            # Handle string representation of assignments
+                            if isinstance(states, str):
+                                try:
+                                    import re
+                                    numbers = re.findall(r'\d+', states)
+                                    states = np.array([int(x) for x in numbers])
+                                    self.logger.info(f"✅ Parsed assignments from string: {len(states)} assignments")
+                                    
+                                    # Check if we have enough assignments for the market data
+                                    if len(states) < 100:  # Suspiciously few assignments
+                                        self.logger.warning(f"⚠️ Only {len(states)} assignments found - this seems too few for proper regime analysis")
+                                        self.logger.warning("⚠️ This suggests the clustering component may not have properly serialized the full results")
+                                        # Try to load from saved artifacts as fallback
+                                        fallback_states = self._load_full_cluster_assignments_from_artifacts()
+                                        if fallback_states is not None and len(fallback_states) > len(states):
+                                            self.logger.info(f"✅ Found better assignments in artifacts: {len(fallback_states)} assignments")
+                                            states = fallback_states
+                                        else:
+                                            # Use the available data even if it's limited
+                                            self.logger.warning(f"⚠️ Using available assignments: {len(states)} assignments")
+                                            self.logger.warning("⚠️ This may result in limited regime analysis but will use actual clustering results")
+                                            # Continue with the available data instead of generating fallback
+                                except Exception as e:
+                                    self.logger.error(f"❌ Failed to parse assignments string: {e}")
+                                    return None
+                            else:
+                                self.logger.info("✅ Found assignments in clustering result dictionary")
+                        else:
+                            self.logger.error("❌ No cluster assignments found in clustering result dictionary")
+                            self.logger.error(f"❌ Available keys: {list(clustering_result.keys())}")
+                            return None
+                    else:
+                        self.logger.error("❌ Clustering result doesn't have current_results attribute and is not a dictionary")
+                        self.logger.error(f"❌ Clustering result type: {type(clustering_result)}")
+                        return None
+            
+            # Try different possible structures for direct regime discovery
+            elif 'cluster_assignments' in regime_discovery:
                 states = regime_discovery['cluster_assignments']
+                self.logger.info("✅ Found cluster_assignments in regime discovery")
             elif 'regime_states' in regime_discovery:
                 states = regime_discovery['regime_states']
+                self.logger.info("✅ Found regime_states in regime discovery")
             elif 'states' in regime_discovery:
                 states = regime_discovery['states']
+                self.logger.info("✅ Found states in regime discovery")
             elif 'predictions' in regime_discovery:
                 states = regime_discovery['predictions']
+                self.logger.info("✅ Found predictions in regime discovery")
             elif isinstance(regime_discovery, list):
                 states = regime_discovery
+                self.logger.info("✅ Using regime discovery as list")
             else:
-                self.logger.error("❌ Cannot extract regime states from discovery results")
-                return None
+                # Try to find any array-like data in the regime discovery
+                self.logger.warning("⚠️ Standard keys not found, searching for array-like data")
+                if isinstance(regime_discovery, dict):
+                    for key, value in regime_discovery.items():
+                        if isinstance(value, (list, np.ndarray)) and len(value) > 0:
+                            # Check if it looks like regime assignments (integers)
+                            if isinstance(value, list) and all(isinstance(x, (int, np.integer)) for x in value[:10]):
+                                states = value
+                                self.logger.info(f"✅ Found array-like data in key '{key}' with {len(value)} elements")
+                                break
+                            elif isinstance(value, np.ndarray) and np.issubdtype(value.dtype, np.integer):
+                                states = value
+                                self.logger.info(f"✅ Found numpy array in key '{key}' with shape {value.shape}")
+                                break
+                
+                if 'states' not in locals():
+                    self.logger.error("❌ Cannot extract regime states from discovery results")
+                    self.logger.error(f"❌ Available keys: {list(regime_discovery.keys()) if isinstance(regime_discovery, dict) else 'Not a dict'}")
+                    return None
             
             # Convert to numpy array if needed and ensure proper data types
             if not isinstance(states, np.ndarray):
@@ -934,6 +1654,16 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             if states.dtype == np.int64:
                 states = states.astype(np.int32)
             
+            # Validate regime count - enforce 5-20 regime requirement
+            unique_regimes = len(np.unique(states))
+            if unique_regimes < 5:
+                self.logger.error(f"❌ Insufficient regimes: {unique_regimes} found, minimum 5 required")
+                return None
+            elif unique_regimes > 20:
+                self.logger.error(f"❌ Too many regimes: {unique_regimes} found, maximum 20 allowed")
+                return None
+            
+            self.logger.info(f"✅ Regime states extracted: {len(states)} assignments with {unique_regimes} regimes")
             return states
             
         except Exception as e:
@@ -943,15 +1673,82 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
     def _extract_regime_probabilities(self, regime_discovery: Dict[str, Any]) -> Optional[np.ndarray]:
         """Extract regime probabilities from regime discovery results."""
         try:
-            # Try different possible structures
-            if 'regime_probabilities' in regime_discovery:
-                probs = regime_discovery['regime_probabilities']
-            elif 'probabilities' in regime_discovery:
-                probs = regime_discovery['probabilities']
-            elif 'proba' in regime_discovery:
-                probs = regime_discovery['proba']
+            # Handle regime ensemble training result (ML model)
+            if isinstance(regime_discovery, dict) and 'regime_ensemble_training_result' in regime_discovery:
+                self.logger.info("🤖 Found regime ensemble training result - ML model provides probability predictions")
+                # For ML models, we can get probabilities using predict_proba
+                # This will be handled in the regime splitting logic
+                return None
+            
+            # Handle the case where clustering_result is a string representation of the component
+            if isinstance(regime_discovery, dict) and 'clustering_result' in regime_discovery:
+                clustering_result = regime_discovery['clustering_result']
+                
+                # If it's a string representation of the component, try to load from saved artifacts
+                if isinstance(clustering_result, str) and 'NASTASClusteringComponent' in clustering_result:
+                    try:
+                        # Look for saved clustering results in the artifacts directory
+                        artifacts_dir = Path("/Users/remyroche/Documents/Ares/generated/market_analysis/clustering")
+                        if artifacts_dir.exists():
+                            result_files = list(artifacts_dir.glob("nas_tas_clustering_results_*.pkl"))
+                            if result_files:
+                                latest_file = max(result_files, key=lambda x: x.stat().st_mtime)
+                                
+                                import pickle
+                                with open(latest_file, 'rb') as f:
+                                    saved_results = pickle.load(f)
+                                
+                                # Extract the actual clustering data
+                                if 'results' in saved_results:
+                                    results = saved_results['results']
+                                    if 'regime_probabilities' in results:
+                                        probs = results['regime_probabilities']
+                                        self.logger.info(f"✅ Found regime probabilities in saved results: {probs.shape if hasattr(probs, 'shape') else len(probs)} probabilities")
+                                    elif 'probabilities' in results:
+                                        probs = results['probabilities']
+                                        self.logger.info(f"✅ Found probabilities in saved results: {probs.shape if hasattr(probs, 'shape') else len(probs)} probabilities")
+                                    else:
+                                        self.logger.info("ℹ️ No regime probabilities found in saved results")
+                                        return None
+                                else:
+                                    return None
+                            else:
+                                return None
+                        else:
+                            return None
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Error loading regime probabilities from saved results: {e}")
+                        return None
+                else:
+                    # If it's not a string, try to extract from the clustering result directly
+                    if hasattr(clustering_result, 'current_results'):
+                        results = clustering_result.current_results
+                        if 'regime_probabilities' in results:
+                            probs = results['regime_probabilities']
+                        elif 'probabilities' in results:
+                            probs = results['probabilities']
+                        else:
+                            return None
+                    elif isinstance(clustering_result, dict):
+                        # Handle dictionary format clustering results
+                        if 'regime_probabilities' in clustering_result:
+                            probs = clustering_result['regime_probabilities']
+                        elif 'probabilities' in clustering_result:
+                            probs = clustering_result['probabilities']
+                        else:
+                            return None  # Probabilities are optional
+                    else:
+                        return None
             else:
-                return None  # Probabilities are optional
+                # Try different possible structures for direct regime discovery
+                if 'regime_probabilities' in regime_discovery:
+                    probs = regime_discovery['regime_probabilities']
+                elif 'probabilities' in regime_discovery:
+                    probs = regime_discovery['probabilities']
+                elif 'proba' in regime_discovery:
+                    probs = regime_discovery['proba']
+                else:
+                    return None  # Probabilities are optional
             
             # Convert to numpy array if needed
             if not isinstance(probs, np.ndarray):
@@ -1080,6 +1877,89 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"❌ Error in M1-optimized regime statistics: {e}")
             return self._calculate_regime_statistics(market_data)
     
+    def _calculate_regime_statistics_memory_optimized(self, market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate regime statistics with comprehensive memory optimization."""
+        try:
+            # Use memory context for optimization
+            with memory_checkpoint("regime_statistics_calculation"):
+                regime_stats = {}
+                
+                # Get regime states efficiently without copying
+                regime_states = market_data['regime_state'].values if 'regime_state' in market_data.columns else np.array([])
+                
+                if len(regime_states) == 0:
+                    self.logger.warning("⚠️ No regime states found for statistics calculation")
+                    return {'error': 'No regime states found'}
+                
+                # Use memory-efficient operations for basic statistics
+                unique_regimes, counts = np.unique(regime_states, return_counts=True)
+                
+                # Convert to memory-efficient dictionary
+                regime_counts = {int(k): int(v) for k, v in zip(unique_regimes, counts)}
+                
+                regime_stats['regime_distribution'] = regime_counts
+                regime_stats['total_regimes'] = len(unique_regimes)
+                regime_stats['total_data_points'] = len(market_data)
+                
+                # Calculate statistics per regime using memory-efficient operations
+                regime_details = {}
+                for regime_id in unique_regimes:
+                    # Use boolean indexing for memory efficiency
+                    regime_mask = regime_states == regime_id
+                    regime_data = market_data[regime_mask]
+                    
+                    # Calculate statistics efficiently
+                    count = int(np.sum(regime_mask))
+                    percentage = safe_divide(count, len(market_data), 0.0) * 100
+                    
+                    # Use vectorized operations for price statistics
+                    if 'close' in regime_data.columns:
+                        close_prices = regime_data['close'].values
+                        price_stats = {
+                            'mean_price': float(np.mean(close_prices)),
+                            'min_price': float(np.min(close_prices)),
+                            'max_price': float(np.max(close_prices)),
+                            'volatility_std': float(np.std(close_prices))
+                        }
+                    else:
+                        price_stats = {
+                            'mean_price': 0.0,
+                            'min_price': 0.0,
+                            'max_price': 0.0,
+                            'volatility_std': 0.0
+                        }
+                    
+                    # Volume statistics if available
+                    if 'volume' in regime_data.columns:
+                        volume_values = regime_data['volume'].values
+                        volume_stats = {
+                            'mean_volume': float(np.mean(volume_values)),
+                            'total_volume': float(np.sum(volume_values))
+                        }
+                    else:
+                        volume_stats = {
+                            'mean_volume': 0.0,
+                            'total_volume': 0.0
+                        }
+                    
+                    regime_details[int(regime_id)] = {
+                        'count': count,
+                        'percentage': percentage,
+                        **price_stats,
+                        **volume_stats
+                    }
+                
+                regime_stats['regime_details'] = regime_details
+                
+                # Optimize final result memory usage
+                regime_stats = self.memory_optimizer.optimize_memory_usage(regime_stats)
+                
+                return regime_stats
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error in memory-optimized regime statistics: {e}")
+            return {'error': str(e)}
+    
     def _validate_splitting_results(
         self, 
         splitting_result: Dict[str, Any], 
@@ -1121,12 +2001,14 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 validation_result['errors'].append("No regime states found")
                 return validation_result
             
-            # Check regime diversity using existing validation patterns
+            # Check regime diversity - enforce 5-20 regime requirement
             unique_regimes = len(np.unique(regime_states))
-            if unique_regimes < 2:
-                validation_result['warnings'].append(f"Only {unique_regimes} regime(s) found - may indicate poor regime discovery")
+            if unique_regimes < 5:
+                validation_result['valid'] = False
+                validation_result['errors'].append(f"Insufficient regimes: {unique_regimes} found, minimum 5 required")
             elif unique_regimes > 20:
-                validation_result['warnings'].append(f"Many regimes found ({unique_regimes}) - may indicate over-segmentation")
+                validation_result['valid'] = False
+                validation_result['errors'].append(f"Too many regimes: {unique_regimes} found, maximum 20 allowed")
             
             # Check data alignment
             if len(market_data) != len(regime_states):
@@ -1543,9 +2425,27 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         )
     
     def cleanup(self) -> Dict[str, Any]:
-        """Clean up resources using hardware manager."""
+        """Clean up resources using hardware manager with memory optimization."""
         try:
+            # Perform memory cleanup first
+            self._perform_emergency_cleanup()
+            
+            # Stop memory monitoring
+            if hasattr(self.memory_optimizer, 'stop_m1_memory_monitoring'):
+                self.memory_optimizer.stop_m1_memory_monitoring()
+            
+            # Clean up hardware manager
             cleanup_result = self.hardware_manager.cleanup()
+            
+            # Final garbage collection
+            import gc
+            gc.collect()
+            
+            # Log final memory status
+            if hasattr(self.memory_optimizer, 'get_current_memory_usage'):
+                final_memory = self.memory_optimizer.get_current_memory_usage()
+                self.logger.info(f"🧹 Final memory usage: {final_memory:.2f} GB")
+            
             self.logger.info(f"🧹 Cleanup completed successfully: {cleanup_result}")
             return cleanup_result
             

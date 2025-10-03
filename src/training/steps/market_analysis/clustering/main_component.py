@@ -382,12 +382,22 @@ class NASTASClusteringComponent:
             self.context = optimization_result.final_context
             log_success("Optimization loop completed")
             
-            # Step 4: Validation and evaluation
-            log_info("Step 4: Validating and evaluating results...")
+            # Step 4: Prepare clustering results for validation
+            log_info("Step 4: Preparing clustering results...")
+            tprint("📋 Preparing clustering results...", "INFO")
+            
+            clustering_results = {
+                'assignments': self.context.optimized_assignments,
+                'n_clusters': self.context.optimal_k,
+                'optimization_history': optimization_result.optimization_history
+            }
+            
+            # Step 5: Validation and evaluation
+            log_info("Step 5: Validating and evaluating results...")
             tprint("✅ Validating and evaluating results...", "INFO")
             
             validation_results = self._validate_and_evaluate(
-                processed_data, self.context.optimized_assignments, labels
+                processed_data, clustering_results, labels
             )
             
             self.context.validation_results = validation_results
@@ -397,15 +407,9 @@ class NASTASClusteringComponent:
             self.context.end_time = datetime.now()
             self.context.duration = (self.context.end_time - self.context.start_time).total_seconds()
             
-            # Step 5: Results consolidation
-            log_info("Step 5: Consolidating final results...")
+            # Step 6: Results consolidation
+            log_info("Step 6: Consolidating final results...")
             tprint("📋 Consolidating final results...", "INFO")
-            
-            clustering_results = {
-                'assignments': self.context.optimized_assignments,
-                'n_clusters': self.context.optimal_k,
-                'optimization_history': optimization_result.optimization_history
-            }
             self.current_results = self._consolidate_results(
                 processed_data, clustering_results, validation_results
             )

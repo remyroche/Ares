@@ -533,10 +533,25 @@ class MarketAnalysisSubPipeline:
             if data is not None:
                 clustering_result = await clustering_component.fit(data, None, pipeline_state)
                 
-                # Create artifacts in the expected format
+                # Extract the actual clustering data from the component
+                clustering_data = {}
+                if hasattr(clustering_result, 'current_results') and clustering_result.current_results:
+                    clustering_data = clustering_result.current_results
+                else:
+                    # Fallback: try to get data from the component's context
+                    if hasattr(clustering_result, 'context') and clustering_result.context:
+                        context = clustering_result.context
+                        if hasattr(context, 'optimized_assignments') and context.optimized_assignments is not None:
+                            clustering_data['cluster_assignments'] = context.optimized_assignments
+                        if hasattr(context, 'optimal_k') and context.optimal_k is not None:
+                            clustering_data['n_clusters'] = context.optimal_k
+                        if hasattr(context, 'optimized_results') and context.optimized_results:
+                            clustering_data.update(context.optimized_results)
+                
+                # Create artifacts in the expected format with actual clustering data
                 artifacts = {
                     'optimal_regime_clustering_result': {
-                        'clustering_result': clustering_result,
+                        'clustering_result': clustering_data,  # Store actual data instead of component object
                         'component_config': clustering_config.__dict__,
                         'execution_metadata': {
                             'component_type': 'NASTASClusteringComponent',
@@ -1358,6 +1373,8 @@ class MarketAnalysisSubPipeline:
                 'tactician_pre_ml_orchestration',
                 'tactician_dual_training',
                 'regime_specific_training',
+                'regime_data_splitting',  # Tag data by regimes
+                'feature_lookback_optimization',  # Optimize feature lookback periods
                 'model_validation',
                 'model_persistence',
                 'model_evaluation',

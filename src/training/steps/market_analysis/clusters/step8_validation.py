@@ -140,21 +140,45 @@ class ValidationStep:
             
             # Silhouette score
             try:
-                metrics['silhouette_score'] = silhouette_score(features, assignments)
+                # Check for valid data before calculating silhouette score
+                if len(features) == 0 or len(assignments) == 0:
+                    metrics['silhouette_score'] = 0.0
+                elif features.ndim == 1:
+                    # Reshape 1D array to 2D for sklearn compatibility
+                    features_2d = features.reshape(-1, 1)
+                    metrics['silhouette_score'] = silhouette_score(features_2d, assignments)
+                else:
+                    metrics['silhouette_score'] = silhouette_score(features, assignments)
             except Exception as e:
                 metrics['silhouette_score'] = 0.0
                 tprint(f"Silhouette score calculation failed: {e}", "WARNING")
             
             # Davies-Bouldin score
             try:
-                metrics['davies_bouldin_score'] = davies_bouldin_score(features, assignments)
+                # Check for valid data before calculating Davies-Bouldin score
+                if len(features) == 0 or len(assignments) == 0:
+                    metrics['davies_bouldin_score'] = float('inf')
+                elif features.ndim == 1:
+                    # Reshape 1D array to 2D for sklearn compatibility
+                    features_2d = features.reshape(-1, 1)
+                    metrics['davies_bouldin_score'] = davies_bouldin_score(features_2d, assignments)
+                else:
+                    metrics['davies_bouldin_score'] = davies_bouldin_score(features, assignments)
             except Exception as e:
                 metrics['davies_bouldin_score'] = float('inf')
                 tprint(f"Davies-Bouldin score calculation failed: {e}", "WARNING")
             
             # Calinski-Harabasz score
             try:
-                metrics['calinski_harabasz_score'] = calinski_harabasz_score(features, assignments)
+                # Check for valid data before calculating Calinski-Harabasz score
+                if len(features) == 0 or len(assignments) == 0:
+                    metrics['calinski_harabasz_score'] = 0.0
+                elif features.ndim == 1:
+                    # Reshape 1D array to 2D for sklearn compatibility
+                    features_2d = features.reshape(-1, 1)
+                    metrics['calinski_harabasz_score'] = calinski_harabasz_score(features_2d, assignments)
+                else:
+                    metrics['calinski_harabasz_score'] = calinski_harabasz_score(features, assignments)
             except Exception as e:
                 metrics['calinski_harabasz_score'] = 0.0
                 tprint(f"Calinski-Harabasz score calculation failed: {e}", "WARNING")

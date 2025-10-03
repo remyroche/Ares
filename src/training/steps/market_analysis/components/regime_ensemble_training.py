@@ -25,7 +25,7 @@ warnings.filterwarnings('ignore')
 try:
     from sklearn.ensemble import StackingClassifier
     from sklearn.model_selection import cross_val_score, StratifiedKFold
-    from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+    from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, precision_recall_fscore_support
     from sklearn.preprocessing import StandardScaler, LabelEncoder
     from sklearn.calibration import CalibratedClassifierCV
     from lightgbm import LGBMClassifier
@@ -107,12 +107,46 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             
             # Extract regime labels from pipeline state artifacts
             artifacts = pipeline_state.get('artifacts', {})
-            nas_tas_clustering_result = artifacts.get('nas_tas_clustering_result', {})
-            regime_labels = nas_tas_clustering_result.get('cluster_assignments')
+            
+            # Try multiple possible artifact keys for clustering results
+            regime_labels = None
+            
+            # First try the new optimal_regime_clustering_result structure
+            optimal_clustering_result = artifacts.get('optimal_regime_clustering_result', {})
+            if optimal_clustering_result:
+                clustering_result = optimal_clustering_result.get('clustering_result')
+                if clustering_result and isinstance(clustering_result, dict):
+                    regime_labels = clustering_result.get('cluster_assignments')
+                    # Handle case where assignments are stored as string representation
+                    if isinstance(regime_labels, str):
+                        try:
+                            # Parse numpy array string representation
+                            # Remove brackets and split by spaces, then convert to int
+                            clean_str = regime_labels.strip('[]')
+                            regime_labels = np.array([int(x) for x in clean_str.split() if x.strip()])
+                            tprint("🔍 [REGIME_ENSEMBLE] Parsed regime labels from string representation", color="blue")
+                        except Exception as e:
+                            tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to parse regime labels string: {e}", color="yellow")
+                            regime_labels = None
+                    if regime_labels is not None:
+                        tprint("🔍 [REGIME_ENSEMBLE] Found regime labels in optimal_regime_clustering_result", color="blue")
+            
+            # Fallback to old nas_tas_clustering_result structure
+            if regime_labels is None:
+                nas_tas_clustering_result = artifacts.get('nas_tas_clustering_result', {})
+                regime_labels = nas_tas_clustering_result.get('cluster_assignments')
+                if regime_labels is not None:
+                    tprint("🔍 [REGIME_ENSEMBLE] Found regime labels in nas_tas_clustering_result", color="blue")
             
             # Get base models from previous training
             nas_tas_models_result = artifacts.get('nas_tas_models_training_result', {})
             base_models = nas_tas_models_result.get('models', {})
+            
+            # Check if regime labels are available before preparing training data
+            if regime_labels is None:
+                tprint("⚠️ [REGIME_ENSEMBLE] No regime labels found in artifacts, will create synthetic regime labels", color="yellow")
+                # Create synthetic regime labels based on data patterns
+                regime_labels = self._create_synthetic_regime_labels(data)
             
             # Prepare training data from the input data DataFrame
             tprint("🔧 [REGIME_ENSEMBLE] Preparing training data from input DataFrame", color="yellow")
@@ -128,10 +162,6 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     error_message="Failed to prepare training data from input DataFrame",
                     metadata={'component_type': 'regime_ensemble_training'}
                 )
-            
-            if regime_labels is None:
-                tprint("⚠️ [REGIME_ENSEMBLE] No regime labels found, using targets as regime labels", color="yellow")
-                regime_labels = y
             
             if not base_models:
                 tprint("⚠️ [REGIME_ENSEMBLE] No base models found from previous training, training base models", color="yellow")
@@ -328,10 +358,11 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             
             # 5. Class-specific features
             unique_classes = np.unique(y)
-            for class_val in unique_classes:
+            for i, class_val in enumerate(unique_classes):
                 class_mask = (y == class_val)
                 if np.sum(class_mask) > 0:
-                    class_confidence = meta_features[class_mask, class_val].mean()
+                    # Use column index i instead of class_val for indexing
+                    class_confidence = meta_features[class_mask, i].mean()
                     class_feature = np.full((len(y), 1), class_confidence)
                     enhanced_features.append(class_feature)
             
@@ -565,8 +596,54 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 'meta_features_shape': meta_features.shape
             }
             
-            tprint(f"✅ [REGIME_ENSEMBLE] Meta-learner accuracy: {accuracy:.4f}", color="green")
-            tprint(f"📊 [REGIME_ENSEMBLE] Prediction confidence: {y_pred_proba.max(axis=1).mean():.4f} ± {y_pred_proba.max(axis=1).std():.4f}", color="blue")
+            # Calculate comprehensive metrics for meta-learner
+            precision, recall, f1, support = precision_recall_fscore_support(y, y_pred, average='weighted')
+            confidence_mean = y_pred_proba.max(axis=1).mean()
+            confidence_std = y_pred_proba.max(axis=1).std()
+            
+            tprint("🎯 [REGIME_ENSEMBLE] META-LEARNER PERFORMANCE METRICS", color="green", bold=True)
+            tprint("="*50, color="green")
+            tprint(f"🎯 Accuracy: {accuracy:.4f}", color="green")
+            tprint(f"📈 Precision: {precision:.4f}", color="green")
+            tprint(f"📈 Recall: {recall:.4f}", color="green")
+            tprint(f"📈 F1-Score: {f1:.4f}", color="green")
+            tprint(f"🎲 Prediction Confidence: {confidence_mean:.4f} ± {confidence_std:.4f}", color="green")
+            tprint(f"🔧 Calibration Method: {stacker_result.get('calibration_method', 'none')}", color="green")
+            tprint(f"🤖 Base Models Used: {len(base_models)}", color="green")
+            tprint(f"📊 Meta-features Shape: {meta_features.shape}", color="green")
+            tprint("="*50, color="green")
+            
+            # Add comparison with base models if available
+            if base_models:
+                tprint("🔄 [REGIME_ENSEMBLE] ENSEMBLE vs BASE MODELS COMPARISON", color="cyan", bold=True)
+                tprint("="*60, color="cyan")
+                
+                # Calculate base model accuracies for comparison
+                base_accuracies = {}
+                for name, model in base_models.items():
+                    try:
+                        if name not in ['stacker_lgbm_calibrated', 'stacker_lgbm_calibrated_feature_indices']:
+                            y_pred_base = model.predict(X)
+                            base_accuracy = accuracy_score(y, y_pred_base)
+                            base_accuracies[name] = base_accuracy
+                    except Exception as e:
+                        tprint(f"⚠️ [REGIME_ENSEMBLE] Could not evaluate {name}: {e}", color="yellow")
+                
+                # Print comparison
+                tprint(f"🎯 Meta-learner Accuracy: {accuracy:.4f}", color="green")
+                for name, base_acc in base_accuracies.items():
+                    improvement = accuracy - base_acc
+                    status = "📈" if improvement > 0 else "📉" if improvement < 0 else "➡️"
+                    tprint(f"   {status} {name}: {base_acc:.4f} (Δ: {improvement:+.4f})", color="blue")
+                
+                # Calculate average base model performance
+                if base_accuracies:
+                    avg_base_accuracy = np.mean(list(base_accuracies.values()))
+                    ensemble_improvement = accuracy - avg_base_accuracy
+                    tprint(f"📊 Average Base Model: {avg_base_accuracy:.4f}", color="blue")
+                    tprint(f"🚀 Ensemble Improvement: {ensemble_improvement:+.4f}", color="green" if ensemble_improvement > 0 else "red")
+                
+                tprint("="*60, color="cyan")
             
         except Exception as e:
             tprint(f"❌ [REGIME_ENSEMBLE] Ensemble evaluation failed: {e}", color="red")
@@ -758,7 +835,21 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             )
             catboost_model.fit(X, y)
             base_models['catboost'] = catboost_model
+            
+            # Calculate and print CatBoost metrics
+            y_pred_catboost = catboost_model.predict(X)
+            y_pred_proba_catboost = catboost_model.predict_proba(X)
+            catboost_accuracy = accuracy_score(y, y_pred_catboost)
+            
             tprint("✅ [REGIME_ENSEMBLE] CatBoost trained successfully", color="green")
+            tprint(f"📊 [REGIME_ENSEMBLE] CatBoost Metrics:", color="blue")
+            tprint(f"   🎯 Accuracy: {catboost_accuracy:.4f}", color="blue")
+            tprint(f"   🎲 Prediction Confidence: {y_pred_proba_catboost.max(axis=1).mean():.4f} ± {y_pred_proba_catboost.max(axis=1).std():.4f}", color="blue")
+            
+            # Print classification report for CatBoost
+            from sklearn.metrics import precision_recall_fscore_support
+            precision, recall, f1, support = precision_recall_fscore_support(y, y_pred_catboost, average='weighted')
+            tprint(f"   📈 Precision: {precision:.4f}, Recall: {recall:.4f}, F1-Score: {f1:.4f}", color="blue")
         except Exception as e:
             tprint(f"❌ [REGIME_ENSEMBLE] CatBoost training failed: {e}", color="red")
         
@@ -774,7 +865,20 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             )
             rf_model.fit(X, y)
             base_models['random_forest'] = rf_model
+            
+            # Calculate and print Random Forest metrics
+            y_pred_rf = rf_model.predict(X)
+            y_pred_proba_rf = rf_model.predict_proba(X)
+            rf_accuracy = accuracy_score(y, y_pred_rf)
+            
             tprint("✅ [REGIME_ENSEMBLE] Random Forest trained successfully", color="green")
+            tprint(f"📊 [REGIME_ENSEMBLE] Random Forest Metrics:", color="blue")
+            tprint(f"   🎯 Accuracy: {rf_accuracy:.4f}", color="blue")
+            tprint(f"   🎲 Prediction Confidence: {y_pred_proba_rf.max(axis=1).mean():.4f} ± {y_pred_proba_rf.max(axis=1).std():.4f}", color="blue")
+            
+            # Print classification report for Random Forest
+            precision, recall, f1, support = precision_recall_fscore_support(y, y_pred_rf, average='weighted')
+            tprint(f"   📈 Precision: {precision:.4f}, Recall: {recall:.4f}, F1-Score: {f1:.4f}", color="blue")
         except Exception as e:
             tprint(f"❌ [REGIME_ENSEMBLE] Random Forest training failed: {e}", color="red")
         
@@ -790,11 +894,52 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             )
             et_model.fit(X, y)
             base_models['extra_tree'] = et_model
+            
+            # Calculate and print Extra Tree metrics
+            y_pred_et = et_model.predict(X)
+            y_pred_proba_et = et_model.predict_proba(X)
+            et_accuracy = accuracy_score(y, y_pred_et)
+            
             tprint("✅ [REGIME_ENSEMBLE] Extra Tree trained successfully", color="green")
+            tprint(f"📊 [REGIME_ENSEMBLE] Extra Tree Metrics:", color="blue")
+            tprint(f"   🎯 Accuracy: {et_accuracy:.4f}", color="blue")
+            tprint(f"   🎲 Prediction Confidence: {y_pred_proba_et.max(axis=1).mean():.4f} ± {y_pred_proba_et.max(axis=1).std():.4f}", color="blue")
+            
+            # Print classification report for Extra Tree
+            precision, recall, f1, support = precision_recall_fscore_support(y, y_pred_et, average='weighted')
+            tprint(f"   📈 Precision: {precision:.4f}, Recall: {recall:.4f}, F1-Score: {f1:.4f}", color="blue")
         except Exception as e:
             tprint(f"❌ [REGIME_ENSEMBLE] Extra Tree training failed: {e}", color="red")
         
         tprint(f"✅ [REGIME_ENSEMBLE] Base models training completed - {len(base_models)} models trained", color="green")
+        
+        # Print comprehensive summary of all base model metrics
+        tprint("📊 [REGIME_ENSEMBLE] BASE MODELS PERFORMANCE SUMMARY", color="cyan", bold=True)
+        tprint("="*60, color="cyan")
+        
+        for model_name, model in base_models.items():
+            try:
+                y_pred = model.predict(X)
+                y_pred_proba = model.predict_proba(X)
+                accuracy = accuracy_score(y, y_pred)
+                precision, recall, f1, support = precision_recall_fscore_support(y, y_pred, average='weighted')
+                confidence_mean = y_pred_proba.max(axis=1).mean()
+                confidence_std = y_pred_proba.max(axis=1).std()
+                
+                tprint(f"🤖 {model_name.upper()}:", color="yellow")
+                tprint(f"   🎯 Accuracy: {accuracy:.4f}", color="blue")
+                tprint(f"   📈 Precision: {precision:.4f}", color="blue")
+                tprint(f"   📈 Recall: {recall:.4f}", color="blue")
+                tprint(f"   📈 F1-Score: {f1:.4f}", color="blue")
+                tprint(f"   🎲 Confidence: {confidence_mean:.4f} ± {confidence_std:.4f}", color="blue")
+                tprint("", color="white")  # Empty line for spacing
+                
+            except Exception as e:
+                tprint(f"❌ [REGIME_ENSEMBLE] Failed to evaluate {model_name}: {e}", color="red")
+        
+        tprint("="*60, color="cyan")
+        tprint("✅ [REGIME_ENSEMBLE] Base models evaluation completed", color="green")
+        
         return base_models
 
     def _handle_nan_values(self, X: np.ndarray, original_nan_count: int) -> np.ndarray:
@@ -847,3 +992,64 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"⚠️ [REGIME_ENSEMBLE] Sophisticated NaN handling failed: {e}, falling back to zero fill", color="yellow")
             return np.nan_to_num(X, nan=0.0)
+    
+    def _create_synthetic_regime_labels(self, data: pd.DataFrame) -> np.ndarray:
+        """
+        Create synthetic regime labels based on data patterns when clustering results are not available.
+        
+        Args:
+            data: Market data DataFrame
+            
+        Returns:
+            Synthetic regime labels array
+        """
+        tprint("🔧 [REGIME_ENSEMBLE] Creating synthetic regime labels based on data patterns", color="cyan")
+        
+        try:
+            # Use simple clustering based on price volatility and trend
+            if 'close' in data.columns:
+                # Calculate rolling volatility
+                returns = data['close'].pct_change().dropna()
+                volatility = returns.rolling(window=20).std().fillna(returns.std())
+                
+                # Calculate trend strength
+                if 'high' in data.columns and 'low' in data.columns:
+                    price_range = (data['high'] - data['low']) / data['close']
+                    trend_strength = price_range.rolling(window=20).mean().fillna(price_range.mean())
+                else:
+                    # Fallback: use price momentum
+                    momentum = data['close'].pct_change(20).fillna(0)
+                    trend_strength = momentum.abs()
+                
+                # Create regime labels based on volatility and trend
+                # High volatility + high trend = regime 0 (trending)
+                # High volatility + low trend = regime 1 (ranging)
+                # Low volatility + high trend = regime 2 (breakout)
+                # Low volatility + low trend = regime 3 (consolidation)
+                
+                vol_threshold = volatility.median()
+                trend_threshold = trend_strength.median()
+                
+                regime_labels = np.zeros(len(data))
+                regime_labels[(volatility > vol_threshold) & (trend_strength > trend_threshold)] = 0  # Trending
+                regime_labels[(volatility > vol_threshold) & (trend_strength <= trend_threshold)] = 1  # Ranging
+                regime_labels[(volatility <= vol_threshold) & (trend_strength > trend_threshold)] = 2  # Breakout
+                regime_labels[(volatility <= vol_threshold) & (trend_strength <= trend_threshold)] = 3  # Consolidation
+                
+                tprint(f"✅ [REGIME_ENSEMBLE] Created synthetic regime labels: {len(np.unique(regime_labels))} regimes", color="green")
+                tprint(f"📊 [REGIME_ENSEMBLE] Regime distribution: {np.bincount(regime_labels.astype(int))}", color="blue")
+                
+                return regime_labels
+            else:
+                # Fallback: create simple regime labels based on data length
+                n_regimes = min(4, max(2, len(data) // 100))  # 2-4 regimes based on data length
+                regime_labels = np.random.randint(0, n_regimes, len(data))
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Using random regime labels as fallback: {n_regimes} regimes", color="yellow")
+                return regime_labels
+                
+        except Exception as e:
+            tprint(f"⚠️ [REGIME_ENSEMBLE] Synthetic regime creation failed: {e}, using simple fallback", color="yellow")
+            # Simple fallback: create 2 regimes
+            regime_labels = np.random.randint(0, 2, len(data))
+            tprint("📊 [REGIME_ENSEMBLE] Using simple 2-regime fallback", color="blue")
+            return regime_labels

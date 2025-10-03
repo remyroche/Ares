@@ -253,6 +253,11 @@ class ClusteringService:
             )
             optimization_history["final_objective"] = final_stats.get_objective_value()
 
+            # Print comprehensive final metrics
+            self.iterative_optimizer._print_final_metrics(
+                context.optimized_features, final_stats
+            )
+
             return context, optimization_history
 
         except Exception as e:
@@ -365,14 +370,34 @@ class ClusteringService:
 
             # Silhouette score
             try:
-                quality_metrics["silhouette_score"] = float(silhouette_score(features, assignments))
+                # Check for valid data before calculating silhouette score
+                if len(features) == 0 or len(assignments) == 0:
+                    quality_metrics["silhouette_score"] = 0.0
+                elif len(np.unique(assignments)) < 2:
+                    quality_metrics["silhouette_score"] = 0.0
+                elif features.ndim == 1:
+                    # Reshape 1D array to 2D for sklearn compatibility
+                    features_2d = features.reshape(-1, 1)
+                    quality_metrics["silhouette_score"] = float(silhouette_score(features_2d, assignments))
+                else:
+                    quality_metrics["silhouette_score"] = float(silhouette_score(features, assignments))
             except Exception as e:
                 quality_metrics["silhouette_score"] = 0.0
                 tprint(f"Silhouette score calculation failed: {e}", "WARNING")
 
             # Davies-Bouldin index
             try:
-                quality_metrics["davies_bouldin_score"] = float(davies_bouldin_score(features, assignments))
+                # Check for valid data before calculating Davies-Bouldin score
+                if len(features) == 0 or len(assignments) == 0:
+                    quality_metrics["davies_bouldin_score"] = float('inf')
+                elif len(np.unique(assignments)) < 2:
+                    quality_metrics["davies_bouldin_score"] = float('inf')
+                elif features.ndim == 1:
+                    # Reshape 1D array to 2D for sklearn compatibility
+                    features_2d = features.reshape(-1, 1)
+                    quality_metrics["davies_bouldin_score"] = float(davies_bouldin_score(features_2d, assignments))
+                else:
+                    quality_metrics["davies_bouldin_score"] = float(davies_bouldin_score(features, assignments))
             except Exception as e:
                 quality_metrics["davies_bouldin_score"] = float('inf')
                 tprint(f"Davies-Bouldin score calculation failed: {e}", "WARNING")

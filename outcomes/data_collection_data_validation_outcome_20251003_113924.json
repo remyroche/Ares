@@ -1,0 +1,79 @@
+{
+  "stage": "data_collection",
+  "sub_pipeline": "data_validation",
+  "timestamp": "2025-10-03T11:39:24.371187",
+  "status": "completed",
+  "output_files": [],
+  "metadata": {
+    "mode": "light",
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m"
+  },
+  "artifacts": {
+    "validation_results": {},
+    "quality_metrics": {
+      "overall_success_rate": 0,
+      "files_validated": 0
+    },
+    "validation_reports": []
+  },
+  "config": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "mode": "light",
+    "intensity_percentage": 0.5,
+    "training_mode_config": {
+      "name": "light",
+      "description": "Development mode - Minimal data with all features/models",
+      "lookback_days": 20,
+      "lookback_years": 0,
+      "intensity_percentage": 0.025,
+      "computational_intensity": "minimal",
+      "estimated_duration_minutes": 10,
+      "max_trials": 10,
+      "n_trials": 5,
+      "monte_carlo_samples": 100,
+      "ab_test_rounds": 2,
+      "optuna_trials": 10,
+      "optuna_timeout": 300,
+      "batch_size": 512,
+      "epochs": 10,
+      "early_stopping_patience": 5,
+      "cross_validation_folds": 2,
+      "enable_parallelization": false,
+      "enable_caching": true,
+      "enable_advanced_features": true,
+      "enable_ensemble_training": true,
+      "enable_multi_timeframe_training": true,
+      "enable_adaptive_training": true
+    }
+  },
+  "next_stage_requirements": {
+    "required_files": [
+      "processed_data.parquet",
+      "data_quality_report.json",
+      "exported_data.parquet"
+    ],
+    "required_artifacts": [
+      "data_metadata",
+      "quality_metrics",
+      "integration_results"
+    ],
+    "data_dependencies": [],
+    "next_stage": "market_analysis",
+    "sub_pipelines": [
+      "data_download",
+      "data_conversion",
+      "data_validation",
+      "data_preparation",
+      "feature_engineering",
+      "data_quality_check",
+      "data_storage",
+      "data_monitoring",
+      "data_integration",
+      "data_export"
+    ]
+  }
+}

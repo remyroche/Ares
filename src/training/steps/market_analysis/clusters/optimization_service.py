@@ -39,12 +39,34 @@ class OptimizationResult:
 
 @dataclass
 class ObjectiveWeights:
-    """Objective function weights."""
-    cv_ratio_weight: float = 0.55    # Calinski-Harabasz ratio
-    balance_weight: float = 0.15     # Cluster balance
-    silhouette_weight: float = 0.10  # Silhouette score
-    temporal_weight: float = 0.20    # Temporal consistency
-    k_penalty_weight: float = 0.25   # K complexity penalty
+    """Standardized objective function weights across all modules."""
+    cv_ratio_weight: float = 0.50    # Primary: Variance ratio
+    temporal_weight: float = 0.30    # Secondary: Temporal smoothness
+    silhouette_weight: float = 0.10  # Tertiary: Cluster cohesion
+    balance_weight: float = 0.10     # Minimal: Balance constraint (will be removed from objective)
+    k_penalty_weight: float = 0.15   # K complexity penalty (softened from 0.25)
+
+
+@dataclass
+class StepSpecificWeights:
+    """Step-specific weighting for optimization phases."""
+    # Step 1: Local frontier moves - focus on CV improvements (balance as constraint)
+    step1_cv_weight: float = 0.70
+    step1_temp_weight: float = 0.20
+    step1_sil_weight: float = 0.10
+    step1_bal_weight: float = 0.00  # Balance used as constraint, not weight
+    
+    # Step 2: Global reallocation - focus on temporal smoothness + CV (balance as constraint)
+    step2_cv_weight: float = 0.40
+    step2_temp_weight: float = 0.50
+    step2_sil_weight: float = 0.10
+    step2_bal_weight: float = 0.00  # Balance used as constraint, not weight
+    
+    # Step 3: Break large clusters - balanced approach (balance as constraint)
+    step3_cv_weight: float = 0.50
+    step3_temp_weight: float = 0.30
+    step3_sil_weight: float = 0.10
+    step3_bal_weight: float = 0.00  # Balance used as constraint, not weight
 
 
 class OptimizationService:
@@ -82,6 +104,9 @@ class OptimizationService:
 
         # Default objective weights
         self.objective_weights = ObjectiveWeights()
+        
+        # Step-specific weights for different optimization phases
+        self.step_weights = StepSpecificWeights()
 
         # Optimization tracking
         self.optimization_history = []
@@ -185,12 +210,27 @@ class OptimizationService:
                 if round_results.get("risk_violations", 0) > 0:
                     tprint(f"⚠️ Risk violations detected in round {iteration}", "WARNING")
 
-            # Get final objective value
+            # Finalize assignments to meet K/sizing constraints and remove singletons
+            try:
+                finalized = self.iterative_optimizer.finalize_labels(
+                    current_context.optimized_features,
+                    current_context.optimized_assignments,
+                )
+                current_context.optimized_assignments = finalized
+            except Exception as _:
+                pass
+
+            # Get final objective value on finalized labels
             final_stats = await self._calculate_clustering_stats(
                 current_context.optimized_features, current_context.optimized_assignments
             )
             run_history["final_objective"] = self._calculate_objective_value(
                 final_stats, self.objective_weights
+            )
+
+            # Print comprehensive final metrics
+            self.iterative_optimizer._print_final_metrics(
+                current_context.optimized_features, final_stats
             )
 
             # Record total execution time
@@ -290,11 +330,11 @@ class OptimizationService:
 
             # Define search space for objective weights
             search_space = {
-                'cv_ratio_weight': {'type': 'float', 'low': 0.1, 'high': 0.8},
-                'balance_weight': {'type': 'float', 'low': 0.05, 'high': 0.3},
+                'cv_ratio_weight': {'type': 'float', 'low': 0.3, 'high': 0.7},
+                'temporal_weight': {'type': 'float', 'low': 0.1, 'high': 0.5},
                 'silhouette_weight': {'type': 'float', 'low': 0.05, 'high': 0.2},
-                'temporal_weight': {'type': 'float', 'low': 0.1, 'high': 0.3},
-                'k_penalty_weight': {'type': 'float', 'low': 0.1, 'high': 0.5}
+                'balance_weight': {'type': 'float', 'low': 0.05, 'high': 0.2},
+                'k_penalty_weight': {'type': 'float', 'low': 0.05, 'high': 0.3}
             }
 
             # Objective function for HPO (synchronous for HPO compatibility)
@@ -343,11 +383,11 @@ class OptimizationService:
             # This would use the HPO utilities to run optimization
             # For now, return default weights as placeholder
             default_params = {
-                'cv_ratio_weight': 0.55,
-                'balance_weight': 0.15,
+                'cv_ratio_weight': 0.50,
+                'temporal_weight': 0.30,
                 'silhouette_weight': 0.10,
-                'temporal_weight': 0.20,
-                'k_penalty_weight': 0.25
+                'balance_weight': 0.10,
+                'k_penalty_weight': 0.15
             }
 
             # Calculate objective with default weights as baseline
@@ -446,6 +486,48 @@ class OptimizationService:
         except Exception as e:
             tprint(f"❌ Weight update failed: {e}", "ERROR")
             raise
+    
+    def get_step_weights(self, step: int) -> Dict[str, float]:
+        """Get step-specific weights for the given optimization step."""
+        try:
+            if step == 1:
+                return {
+                    'w_cv': self.step_weights.step1_cv_weight,
+                    'w_sil': self.step_weights.step1_sil_weight,
+                    'w_temp': self.step_weights.step1_temp_weight,
+                    'w_bal': self.step_weights.step1_bal_weight
+                }
+            elif step == 2:
+                return {
+                    'w_cv': self.step_weights.step2_cv_weight,
+                    'w_sil': self.step_weights.step2_sil_weight,
+                    'w_temp': self.step_weights.step2_temp_weight,
+                    'w_bal': self.step_weights.step2_bal_weight
+                }
+            elif step == 3:
+                return {
+                    'w_cv': self.step_weights.step3_cv_weight,
+                    'w_sil': self.step_weights.step3_sil_weight,
+                    'w_temp': self.step_weights.step3_temp_weight,
+                    'w_bal': self.step_weights.step3_bal_weight
+                }
+            else:
+                # Default to standard weights
+                return {
+                    'w_cv': self.objective_weights.cv_ratio_weight,
+                    'w_sil': self.objective_weights.silhouette_weight,
+                    'w_temp': self.objective_weights.temporal_weight,
+                    'w_bal': self.objective_weights.balance_weight
+                }
+        except Exception as e:
+            tprint(f"❌ Failed to get step weights for step {step}: {e}", "ERROR")
+            # Return default weights as fallback
+            return {
+                'w_cv': 0.50,
+                'w_temp': 0.30,
+                'w_sil': 0.10,
+                'w_bal': 0.10
+            }
 
     def get_optimization_statistics(self) -> Dict[str, Any]:
         """Get optimization statistics across all runs."""

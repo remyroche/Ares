@@ -36,6 +36,15 @@ from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 from src.utils.logger import get_logger
 from src.core.decorators import handles_errors, traced, validates, log_execution_time
 
+# Import optimized process engine
+try:
+    from ..optimized_process_engines import OptimizedMultiHorizonEngine, ProcessType
+    OPTIMIZED_ENGINE_AVAILABLE = True
+except ImportError:
+    OptimizedMultiHorizonEngine = None
+    ProcessType = None
+    OPTIMIZED_ENGINE_AVAILABLE = False
+
 class ExecutionMode(Enum):
     """Enhanced execution modes with configurable parameters."""
     FULL = "full"          # Complete execution with all data
@@ -611,6 +620,18 @@ class MultiHorizonSubPipelineAdapter:
         self.optimization_enabled = OPTIMIZATION_AVAILABLE
         if self.optimization_enabled:
             self._initialize_optimization_components()
+        
+        # Initialize optimized process engine
+        if OPTIMIZED_ENGINE_AVAILABLE:
+            tprint("🔧 Initializing optimized multi-horizon engine...")
+            self.optimized_engine = OptimizedMultiHorizonEngine(
+                use_hardware_accel=True,
+                cache_size=1000
+            )
+            tprint("✅ Optimized multi-horizon engine initialized")
+        else:
+            self.optimized_engine = None
+            tprint("⚠️ Optimized multi-horizon engine not available")
         
         # Optimize CPU for data processing
         if self.cpu_optimizer:

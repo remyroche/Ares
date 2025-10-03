@@ -140,8 +140,37 @@ class NASEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             y = pipeline_state.get('targets')
             # Extract regime labels from pipeline state artifacts
             artifacts = pipeline_state.get('artifacts', {})
-            nas_tas_clustering_result = artifacts.get('nas_tas_clustering_result', {})
-            regime_labels = nas_tas_clustering_result.get('regime_assignments')
+            
+            # Try multiple possible artifact keys for clustering results
+            regime_labels = None
+            
+            # First try the new optimal_regime_clustering_result structure
+            optimal_clustering_result = artifacts.get('optimal_regime_clustering_result', {})
+            if optimal_clustering_result:
+                clustering_result = optimal_clustering_result.get('clustering_result')
+                if clustering_result and isinstance(clustering_result, dict):
+                    regime_labels = clustering_result.get('cluster_assignments') or clustering_result.get('regime_assignments')
+                    # Handle case where assignments are stored as string representation
+                    if isinstance(regime_labels, str):
+                        try:
+                            # Parse numpy array string representation
+                            import numpy as np
+                            # Remove brackets and split by spaces, then convert to int
+                            clean_str = regime_labels.strip('[]')
+                            regime_labels = np.array([int(x) for x in clean_str.split() if x.strip()])
+                            tprint("🔍 [NAS_ENSEMBLE] Parsed regime labels from string representation", color="blue")
+                        except Exception as e:
+                            tprint(f"⚠️ [NAS_ENSEMBLE] Failed to parse regime labels string: {e}", color="yellow")
+                            regime_labels = None
+                    if regime_labels is not None:
+                        tprint("🔍 [NAS_ENSEMBLE] Found regime labels in optimal_regime_clustering_result", color="blue")
+            
+            # Fallback to old nas_tas_clustering_result structure
+            if regime_labels is None:
+                nas_tas_clustering_result = artifacts.get('nas_tas_clustering_result', {})
+                regime_labels = nas_tas_clustering_result.get('regime_assignments')
+                if regime_labels is not None:
+                    tprint("🔍 [NAS_ENSEMBLE] Found regime labels in nas_tas_clustering_result", color="blue")
             feature_names = pipeline_state.get('feature_names', [])
             
             # Validate required data

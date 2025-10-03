@@ -46,6 +46,9 @@ from .pid_based_feature_orchestrator import PIDBasedFeatureOrchestrator, Orchest
 from .optimized_lookback_integration import OptimizedLookbackIntegration, LookbackIntegrationResult
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error
 
+# Import optimized process engine
+from ..optimized_process_engines import OptimizedPIDFeatureEngine, ProcessType
+
 # Import logger
 try:
     from src.utils.logger import system_logger
@@ -82,6 +85,14 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
         tprint("🔧 Initializing PID-based feature generation components...")
         self._initialize_components()
         tprint("✅ Components initialized successfully")
+        
+        # Initialize optimized process engine
+        tprint("🔧 Initializing optimized PID feature engine...")
+        self.optimized_engine = OptimizedPIDFeatureEngine(
+            use_hardware_accel=True,
+            cache_size=1000
+        )
+        tprint("✅ Optimized PID feature engine initialized")
         
         # Track generation status
         self.generation_status = GenerationStatus.PENDING

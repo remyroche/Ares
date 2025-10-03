@@ -17,6 +17,9 @@ from ..logging_standards import (
     LoggingContext, log_step_progress, log_data_info, log_validation_result
 )
 
+# Import optimized process engine
+from ..optimized_process_engines import OptimizedFeatureSelectionEngine, ProcessType
+
 
 class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
     """
@@ -30,6 +33,14 @@ class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
         super().__init__(config)
         # Use standardized logging
         self.logger = get_logger('FinalFeatureSelectionComponent')
+        
+        # Initialize optimized process engine
+        tprint("🔧 Initializing optimized feature selection engine...")
+        self.optimized_engine = OptimizedFeatureSelectionEngine(
+            use_hardware_accel=True,
+            cache_size=1000
+        )
+        tprint("✅ Optimized feature selection engine initialized")
 
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""

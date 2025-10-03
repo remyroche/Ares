@@ -12,6 +12,12 @@ from dataclasses import dataclass, field
 from sklearn.preprocessing import RobustScaler
 from sklearn.decomposition import PCA
 
+# Optional imports
+try:
+    import umap
+except ImportError:
+    umap = None
+
 from src.utils.tprint import (
     tprint, tprint_info, tprint_success, tprint_warning, tprint_error
 )
@@ -184,34 +190,145 @@ class FeaturePreparationStep:
             if umap_features is not None:
                 tprint("Using UMAP reduction instead of PCA", "INFO")
                 features_final = self._validate_feature_quality_minimal(umap_features, context.market_data)
+                
+                # Create meaningful UMAP feature names
+                umap_feature_names = [f"UMAP_dim{i+1}" for i in range(features_final.shape[1])]
+                
                 context.optimized_features = features_final
-                context.optimized_feature_names = [f"umap_{i}" for i in range(features_final.shape[1])]
+                context.optimized_feature_names = umap_feature_names
                 context.dropped_feature_names = context.dropped_feature_names or []
-                context.pca_loading_scores = {f"umap_{i}": 1.0 for i in range(features_final.shape[1])}
+                context.pca_loading_scores = {umap_feature_names[i]: 1.0 for i in range(features_final.shape[1])}
                 if context.feature_scores:
-                    context.feature_scores = {f"umap_{i}": 1.0 for i in range(features_final.shape[1])}
+                    context.feature_scores = {umap_feature_names[i]: 1.0 for i in range(features_final.shape[1])}
                 
                 tprint(f"UMAP feature optimization: {context.original_features.shape} -> {features_final.shape}", "SUCCESS")
                 
                 self._safe_memory_cleanup([features_scaled, umap_features])
                 return context
 
-            # Fallback to PCA
-            tprint("Using PCA for dimensionality reduction", "INFO")
-            pca = PCA(n_components=min(20, features_scaled.shape[1] - 1))
-            features_pca = pca.fit_transform(features_scaled)
+            # Group-weighted, per-group PCA
+            tprint("🔧 Using group weighting and per-group PCA for dimensionality reduction", "INFO")
+            n_samples, n_features = features_scaled.shape
+            n_components_total = min(20, n_features - 1)
+            tprint(f"  📊 Input data: {n_samples} samples × {n_features} features", "DEBUG")
+            tprint(f"  🎯 Total target components: {n_components_total}", "DEBUG")
+
+            # Build group masks (returns/volatility/volume), leave others as passthrough block
+            names = context.pre_pca_feature_names
+            names_lower = [str(n).lower() for n in names]
+            returns_mask = np.array([
+                ('return' in name) or ('log_return' in name) or ('close_return' in name) for name in names_lower
+            ], dtype=bool)
+            volatility_mask = np.array([
+                any(term in name for term in ['volatility', 'vol_', 'atr', 'std', 'boll', 'bb']) for name in names_lower
+            ], dtype=bool)
+            volume_mask = np.array([
+                ('volume' in name) or ('vwap' in name) or ('obv' in name) or ('accumulation' in name) or ('distribution' in name) for name in names_lower
+            ], dtype=bool)
+            other_mask = ~(returns_mask | volatility_mask | volume_mask)
+
+            # Weights per group (sqrt-applied so group variance ≈ weight)
+            w_returns, w_vol, w_volume = 0.50, 0.30, 0.20
+            features_w = features_scaled.copy()
+            if np.any(returns_mask):
+                features_w[:, returns_mask] *= np.sqrt(w_returns)
+            if np.any(volatility_mask):
+                features_w[:, volatility_mask] *= np.sqrt(w_vol)
+            if np.any(volume_mask):
+                features_w[:, volume_mask] *= np.sqrt(w_volume)
+
+            # Allocate components per group proportional to weights and availability
+            present = np.array([
+                max(1, int(np.sum(returns_mask))),
+                max(1, int(np.sum(volatility_mask))),
+                max(1, int(np.sum(volume_mask)))
+            ], dtype=int)
+            weights = np.array([w_returns, w_vol, w_volume], dtype=float)
+            weights = weights * (present > 0)
+            if np.sum(weights) == 0:
+                weights = np.array([1.0, 1.0, 1.0], dtype=float)
+            weights /= np.sum(weights)
+            allocated = np.maximum(1, np.round(weights * n_components_total).astype(int))
+            # Clip to available dims
+            allocated[0] = min(allocated[0], int(np.sum(returns_mask)))
+            allocated[1] = min(allocated[1], int(np.sum(volatility_mask)))
+            allocated[2] = min(allocated[2], int(np.sum(volume_mask)))
+            # Ensure sum <= n_components_total
+            while np.sum(allocated) > n_components_total:
+                idx = np.argmax(allocated)
+                if allocated[idx] > 1:
+                    allocated[idx] -= 1
+                else:
+                    break
+
+            def fit_group_pca(block: np.ndarray, ncomp: int):
+                if block.shape[1] == 0:
+                    return None, [], []
+                if block.shape[1] == 1 or ncomp <= 1:
+                    # passthrough or single-component PCA
+                    comp = block if ncomp <= 0 else block[:, :1]
+                    names_blk = ["PC1"] if comp.shape[1] == 1 else []
+                    vars_blk = [1.0] if comp.shape[1] == 1 else []
+                    return comp, names_blk, vars_blk
+                ncomp = min(ncomp, block.shape[1])
+                p = PCA(n_components=ncomp)
+                comp = p.fit_transform(block)
+                return comp, [f"PC{i+1}_var{p.explained_variance_ratio_[i]:.3f}" for i in range(ncomp)], list(p.explained_variance_ratio_)
+
+            comps = []
+            comp_names = []
+            comp_scores = []
+            # Returns
+            if np.any(returns_mask):
+                comp, names_blk, vars_blk = fit_group_pca(features_w[:, returns_mask], int(allocated[0]))
+                if comp is not None and comp != []:
+                    comps.append(comp)
+                    comp_names += [f"RET_{n}" for n in names_blk] if names_blk else ["RET_PC1"]
+                    comp_scores += (vars_blk if vars_blk else [1.0])
+            # Volatility
+            if np.any(volatility_mask):
+                comp, names_blk, vars_blk = fit_group_pca(features_w[:, volatility_mask], int(allocated[1]))
+                if comp is not None and comp != []:
+                    comps.append(comp)
+                    comp_names += [f"VOL_{n}" for n in names_blk] if names_blk else ["VOL_PC1"]
+                    comp_scores += (vars_blk if vars_blk else [1.0])
+            # Volume
+            if np.any(volume_mask):
+                comp, names_blk, vars_blk = fit_group_pca(features_w[:, volume_mask], int(allocated[2]))
+                if comp is not None and comp != []:
+                    comps.append(comp)
+                    comp_names += [f"VLM_{n}" for n in names_blk] if names_blk else ["VLM_PC1"]
+                    comp_scores += (vars_blk if vars_blk else [1.0])
+            # Others: optional passthrough (no PCA) – cap to keep dimensionality reasonable
+            if np.any(other_mask):
+                # Keep at most 2 top-variance columns as-is
+                other_block = features_w[:, other_mask]
+                var_rank = np.argsort(-np.var(other_block, axis=0))
+                keep = min(2, other_block.shape[1])
+                passthrough = other_block[:, var_rank[:keep]] if keep > 0 else None
+                if passthrough is not None and keep > 0:
+                    comps.append(passthrough)
+                    comp_names += [f"OTH_{i+1}" for i in range(keep)]
+                    comp_scores += [1.0] * keep
+
+            if len(comps) == 0:
+                features_final = self._validate_feature_quality_minimal(features_scaled, context.market_data)
+                context.optimized_features = features_final
+                context.optimized_feature_names = list(feature_names)
+                context.pca_loading_scores = {feature_names[i]: 1.0 for i in range(len(feature_names))}
+            else:
+                features_pca_group = np.concatenate(comps, axis=1)
+                features_final = self._validate_feature_quality_minimal(features_pca_group, context.market_data)
+                context.optimized_features = features_final
+                context.optimized_feature_names = comp_names
+                context.pca_loading_scores = {comp_names[i]: float(comp_scores[i]) for i in range(len(comp_names))}
+                tprint(f"📈 Group PCA: RET={int(np.sum(returns_mask))}->{allocated[0]}, VOL={int(np.sum(volatility_mask))}->{allocated[1]}, VLM={int(np.sum(volume_mask))}->{allocated[2]}", "INFO")
+                tprint(f"  📊 Final features: {features_final.shape[1]}", "INFO")
             
-            features_final = self._validate_feature_quality_minimal(features_pca, context.market_data)
-            context.optimized_features = features_final
-            context.optimized_feature_names = [f"pca_{i}" for i in range(features_final.shape[1])]
-            context.dropped_feature_names = context.dropped_feature_names or []
-            context.pca_loading_scores = {f"pca_{i}": float(pca.explained_variance_ratio_[i]) for i in range(features_final.shape[1])}
             if context.feature_scores:
-                context.feature_scores = {f"pca_{i}": float(pca.explained_variance_ratio_[i]) for i in range(features_final.shape[1])}
+                context.feature_scores = {n: float(context.pca_loading_scores.get(n, 1.0)) for n in context.optimized_feature_names}
             
-            tprint(f"PCA feature optimization: {context.original_features.shape} -> {features_final.shape}", "SUCCESS")
-            
-            self._safe_memory_cleanup([features_scaled, features_pca])
+            self._safe_memory_cleanup([features_scaled])
 
         except Exception as e:
             tprint(f"Feature optimization failed: {e}", "ERROR")
@@ -222,8 +339,7 @@ class FeaturePreparationStep:
     def _try_umap_reduction(self, features: np.ndarray, target_features: int = 20) -> Optional[np.ndarray]:
         """Try UMAP reduction as an alternative to PCA."""
         try:
-            import umap
-            if not hasattr(umap, 'UMAP'):
+            if umap is None or not hasattr(umap, 'UMAP'):
                 return None
                 
             reducer = umap.UMAP(
@@ -239,6 +355,46 @@ class FeaturePreparationStep:
         except Exception as e:
             tprint(f"UMAP reduction failed: {e}, falling back to PCA", "WARNING")
             return None
+
+    def _categorize_feature(self, feature_name: str) -> str:
+        """Categorize a feature by its name to identify type (volatility, momentum, trend, etc.)."""
+        feature_name_lower = feature_name.lower()
+        
+        # Volatility indicators
+        if any(term in feature_name_lower for term in ['vol', 'volatility', 'atr', 'std', 'dev', 'range', 'bb', 'bollinger']):
+            return "VOLATILITY"
+        
+        # Momentum indicators
+        elif any(term in feature_name_lower for term in ['rsi', 'momentum', 'roc', 'rate_of_change', 'stoch', 'stochastic', 'williams', 'cci']):
+            return "MOMENTUM"
+        
+        # Trend indicators
+        elif any(term in feature_name_lower for term in ['ma', 'moving_average', 'ema', 'sma', 'trend', 'macd', 'adx', 'dmi', 'aroon']):
+            return "TREND"
+        
+        # Volume indicators
+        elif any(term in feature_name_lower for term in ['volume', 'vol', 'obv', 'ad', 'accumulation', 'distribution', 'mfi', 'money_flow']):
+            return "VOLUME"
+        
+        # Price-based features
+        elif any(term in feature_name_lower for term in ['price', 'close', 'open', 'high', 'low', 'return', 'change', 'pct']):
+            return "PRICE"
+        
+        # Statistical features
+        elif any(term in feature_name_lower for term in ['skew', 'kurt', 'stat', 'corr', 'correlation', 'beta', 'alpha']):
+            return "STATISTICAL"
+        
+        # Regime features
+        elif any(term in feature_name_lower for term in ['regime', 'state', 'phase', 'cycle']):
+            return "REGIME"
+        
+        # Technical patterns
+        elif any(term in feature_name_lower for term in ['pattern', 'signal', 'crossover', 'breakout', 'support', 'resistance']):
+            return "PATTERN"
+        
+        # Default category
+        else:
+            return "OTHER"
 
     def _validate_feature_quality_minimal(self, features: np.ndarray, market_data: pd.DataFrame) -> np.ndarray:
         """Validate feature quality with minimal checks."""

@@ -1,0 +1,304 @@
+{
+  "stage": "market_analysis",
+  "sub_pipeline": "regime_data_splitting",
+  "timestamp": "2025-10-03T23:37:43.529413",
+  "status": "completed",
+  "output_files": [],
+  "metadata": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "1m",
+    "regime_count": 0,
+    "execution_time": 13.472174,
+    "data_quality_score": 0.9999861233174523
+  },
+  "artifacts": {
+    "regime_data_splitting_result": {
+      "regime_data": {
+        "market_data": "                                  timestamp     open_time         open         high  ...  exchange  timeframe  regime_state  regime_confidence\n1970-01-01 00:00:00.000000000  1.663178e+09  1.663178e+12  1593.010010  1594.020020  ...   binance         1m             2                1.0\n1970-01-01 00:00:00.000000001  1.663178e+09  1.663178e+12  1593.369995  1594.729980  ...   binance         1m             2                1.0\n1970-01-01 00:00:00.000000002  1.663178e+09  1.663178e+12  1594.339966  1594.520020  ...   binance         1m             2                1.0\n1970-01-01 00:00:00.000000003  1.663178e+09  1.663178e+12  1591.219971  1591.500000  ...   binance         1m             2                1.0\n1970-01-01 00:00:00.000000004  1.663178e+09  1.663178e+12  1590.469971  1592.420044  ...   binance         1m             2                1.0\n...                                     ...           ...          ...          ...  ...       ...        ...           ...                ...\n1970-01-01 00:00:00.000001658  1.663277e+09  1.663277e+12  1493.609985  1493.770020  ...   binance         1m             0                1.0\n1970-01-01 00:00:00.000001659  1.663278e+09  1.663277e+12  1491.449951  1491.959961  ...   binance         1m             0                1.0\n1970-01-01 00:00:00.000001660  1.663278e+09  1.663278e+12  1491.619995  1491.920044  ...   binance         1m             0                1.0\n1970-01-01 00:00:00.000001661  1.663278e+09  1.663278e+12  1491.780029  1491.829956  ...   binance         1m             0                1.0\n1970-01-01 00:00:00.000001662  1.663278e+09  1.663278e+12  1491.479980  1492.400024  ...   binance         1m             0                1.0\n\n[1663 rows x 28 columns]",
+        "regime_states": "[2 2 2 ... 0 0 0]",
+        "regime_probabilities": null,
+        "regime_statistics": {
+          "success": true,
+          "memory_saved_mb": 0,
+          "initial_memory_mb": 0,
+          "final_memory_mb": 0,
+          "optimization_time_s": 1.2469761371612549,
+          "gc_collected": 0,
+          "aggressive_mode": {
+            "regime_distribution": {
+              "0": 448,
+              "1": 472,
+              "2": 102,
+              "3": 60,
+              "4": 102,
+              "5": 479
+            },
+            "total_regimes": 6,
+            "total_data_points": 1663,
+            "regime_details": {
+              "0": {
+                "count": 448,
+                "percentage": 26.93926638604931,
+                "mean_price": 1567.5460205078125,
+                "min_price": 1491.449951171875,
+                "max_price": 1653.5999755859375,
+                "volatility_std": 58.55740737915039,
+                "mean_volume": 621.6033935546875,
+                "total_volume": 278478.3125
+              },
+              "1": {
+                "count": 472,
+                "percentage": 28.382441371016238,
+                "mean_price": 1613.1295166015625,
+                "min_price": 1583.1199951171875,
+                "max_price": 1650.4599609375,
+                "volatility_std": 17.044790267944336,
+                "mean_volume": 1054.4149169921875,
+                "total_volume": 497683.8125
+              },
+              "2": {
+                "count": 102,
+                "percentage": 6.133493686109441,
+                "mean_price": 1583.1116943359375,
+                "min_price": 1561.469970703125,
+                "max_price": 1594.3399658203125,
+                "volatility_std": 5.453518390655518,
+                "mean_volume": 728.5289306640625,
+                "total_volume": 74309.953125
+              },
+              "3": {
+                "count": 60,
+                "percentage": 3.6079374624173184,
+                "mean_price": 1595.2208251953125,
+                "min_price": 1499.449951171875,
+                "max_price": 1630.3499755859375,
+                "volatility_std": 14.353574752807617,
+                "mean_volume": 406.1838073730469,
+                "total_volume": 24371.029296875
+              },
+              "4": {
+                "count": 102,
+                "percentage": 6.133493686109441,
+                "mean_price": 1586.24462890625,
+                "min_price": 1576.260009765625,
+                "max_price": 1594.550048828125,
+                "volatility_std": 4.813958168029785,
+                "mean_volume": 620.9061279296875,
+                "total_volume": 63332.42578125
+              },
+              "5": {
+                "count": 479,
+                "percentage": 28.803367408298257,
+                "mean_price": 1548.120849609375,
+                "min_price": 1464.97998046875,
+                "max_price": 1619.7900390625,
+                "volatility_std": 47.397071838378906,
+                "mean_volume": 1055.3916015625,
+                "total_volume": 505532.5625
+              }
+            }
+          }
+        }
+      },
+      "regime_stats": {
+        "success": true,
+        "memory_saved_mb": 0,
+        "initial_memory_mb": 0,
+        "final_memory_mb": 0,
+        "optimization_time_s": 1.2469761371612549,
+        "gc_collected": 0,
+        "aggressive_mode": {
+          "regime_distribution": {
+            "0": 448,
+            "1": 472,
+            "2": 102,
+            "3": 60,
+            "4": 102,
+            "5": 479
+          },
+          "total_regimes": 6,
+          "total_data_points": 1663,
+          "regime_details": {
+            "0": {
+              "count": 448,
+              "percentage": 26.93926638604931,
+              "mean_price": 1567.5460205078125,
+              "min_price": 1491.449951171875,
+              "max_price": 1653.5999755859375,
+              "volatility_std": 58.55740737915039,
+              "mean_volume": 621.6033935546875,
+              "total_volume": 278478.3125
+            },
+            "1": {
+              "count": 472,
+              "percentage": 28.382441371016238,
+              "mean_price": 1613.1295166015625,
+              "min_price": 1583.1199951171875,
+              "max_price": 1650.4599609375,
+              "volatility_std": 17.044790267944336,
+              "mean_volume": 1054.4149169921875,
+              "total_volume": 497683.8125
+            },
+            "2": {
+              "count": 102,
+              "percentage": 6.133493686109441,
+              "mean_price": 1583.1116943359375,
+              "min_price": 1561.469970703125,
+              "max_price": 1594.3399658203125,
+              "volatility_std": 5.453518390655518,
+              "mean_volume": 728.5289306640625,
+              "total_volume": 74309.953125
+            },
+            "3": {
+              "count": 60,
+              "percentage": 3.6079374624173184,
+              "mean_price": 1595.2208251953125,
+              "min_price": 1499.449951171875,
+              "max_price": 1630.3499755859375,
+              "volatility_std": 14.353574752807617,
+              "mean_volume": 406.1838073730469,
+              "total_volume": 24371.029296875
+            },
+            "4": {
+              "count": 102,
+              "percentage": 6.133493686109441,
+              "mean_price": 1586.24462890625,
+              "min_price": 1576.260009765625,
+              "max_price": 1594.550048828125,
+              "volatility_std": 4.813958168029785,
+              "mean_volume": 620.9061279296875,
+              "total_volume": 63332.42578125
+            },
+            "5": {
+              "count": 479,
+              "percentage": 28.803367408298257,
+              "mean_price": 1548.120849609375,
+              "min_price": 1464.97998046875,
+              "max_price": 1619.7900390625,
+              "volatility_std": 47.397071838378906,
+              "mean_volume": 1055.3916015625,
+              "total_volume": 505532.5625
+            }
+          }
+        }
+      },
+      "processing_metrics": {
+        "total_data_points": 1663,
+        "regime_count": 0,
+        "processing_time_seconds": 13.472174,
+        "data_quality_score": 0.9999861233174523,
+        "regime_continuity_score": 0.9578820697954272,
+        "memory_usage_mb": 0,
+        "hardware_optimized": true
+      },
+      "metadata": {
+        "symbol": "ETHUSDT",
+        "exchange": "binance",
+        "timeframe": "1m",
+        "execution_timestamp": "2025-10-03T23:37:43.513862",
+        "component_version": "enhanced_v2.0_common_utils",
+        "hardware_info": {
+          "is_m1": true,
+          "mps_available": true,
+          "cpu_cores": 8
+        }
+      }
+    },
+    "regime_splitting_report": {
+      "status": "in_progress",
+      "metrics": {
+        "total_data_points": 1663,
+        "regime_count": 0,
+        "regime_distribution": {},
+        "processing_time_seconds": 13.472174,
+        "data_quality_score": 0.9999861233174523,
+        "regime_continuity_score": 0.9578820697954272
+      },
+      "execution_summary": {
+        "total_data_points": 1663,
+        "regime_count": 0,
+        "processing_time_seconds": 13.472174,
+        "data_quality_score": 0.9999861233174523,
+        "regime_continuity_score": 0.9578820697954272,
+        "memory_usage_mb": 0.0
+      },
+      "warnings": [],
+      "errors": [],
+      "recommendations": [
+        "Consider adjusting regime discovery parameters - only few regimes detected"
+      ],
+      "timestamp": "2025-10-03T23:37:30.031609"
+    },
+    "regime_validation_results": {
+      "validation_checks_passed": 0,
+      "validation_checks_failed": 0,
+      "data_quality_validation": "True",
+      "regime_diversity_validation": false,
+      "continuity_validation": "True",
+      "overall_validation_passed": false
+    }
+  },
+  "config": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "1m",
+    "mode": "light",
+    "intensity_percentage": 0.5,
+    "training_mode_config": {
+      "name": "light",
+      "description": "Development mode - Minimal data with all features/models",
+      "lookback_days": 20,
+      "lookback_years": 0,
+      "intensity_percentage": 0.025,
+      "computational_intensity": "minimal",
+      "estimated_duration_minutes": 10,
+      "max_trials": 10,
+      "n_trials": 5,
+      "monte_carlo_samples": 100,
+      "ab_test_rounds": 2,
+      "optuna_trials": 10,
+      "optuna_timeout": 300,
+      "batch_size": 512,
+      "epochs": 10,
+      "early_stopping_patience": 5,
+      "cross_validation_folds": 2,
+      "enable_parallelization": false,
+      "enable_caching": true,
+      "enable_advanced_features": true,
+      "enable_ensemble_training": true,
+      "enable_multi_timeframe_training": true,
+      "enable_adaptive_training": true
+    }
+  },
+  "next_stage_requirements": {
+    "required_files": [
+      "sr_levels.json",
+      "regime_assignments.parquet",
+      "labels.parquet",
+      "features.parquet"
+    ],
+    "required_artifacts": [
+      "sr_clusters",
+      "regime_model",
+      "feature_metadata"
+    ],
+    "data_dependencies": [],
+    "next_stage": "model_training",
+    "sub_pipelines": [
+      "sr_detection",
+      "sr_clustering",
+      "nas_tas_regime_discovery",
+      "nas_tas_clustering",
+      "nas_regime_discovery",
+      "nas_clustering",
+      "hmm_models_training",
+      "hmm_ensemble_training",
+      "feature_lookback_optimization",
+      "pid_based_feature_generation",
+      "multi_horizon_profit_labeler",
+      "triple_barrier_labeling",
+      "sr_feature_integration"
+    ]
+  }
+}

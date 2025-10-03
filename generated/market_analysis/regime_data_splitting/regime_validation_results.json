@@ -2,7 +2,7 @@
   "validation_checks_passed": 0,
   "validation_checks_failed": 0,
   "data_quality_validation": "True",
-  "regime_diversity_validation": true,
+  "regime_diversity_validation": false,
   "continuity_validation": "True",
-  "overall_validation_passed": "True"
+  "overall_validation_passed": false
 }

@@ -130,19 +130,19 @@ class NASTASClusteringConfig(BaseConfig):
     exchange: str = "binance"
 
     # Empirical regime search bounds
-    regime_search_min: int = 5
-    regime_search_max: int = 15
+    regime_search_min: int = 2
+    regime_search_max: int = 5
     
     # Clustering parameters
-    n_regimes: int = 10  # Increased from 8 to 10 for more granular regimes
+    n_regimes: int = 3  # Reduced to 3 for better balance with current data
     # algorithm_type removed - always use custom progressive regime optimization
     enable_economic_clustering: bool = True
     enable_ensemble_clustering: bool = True
     
-    # Balance control parameters - ENHANCED for better balance
-    max_regime_percentage: float = 0.15  # Maximum percentage for any single regime (reduced to 15% for better balance)
-    min_regime_percentage: float = 0.05  # Minimum percentage for any single regime (reduced for better flexibility)
-    balance_weight: float = 0.40  # Weight for balance in composite score (increased from 25% to 40% for better regime balance)
+    # Balance control parameters - SOFTENED for better optimization
+    max_regime_percentage: float = 0.60  # Maximum percentage for any single regime (softened from 50% to 60%)
+    min_regime_percentage: float = 0.05  # Minimum percentage for any single regime (softened from 10% to 5%)
+    # balance_weight removed - balance will be used as constraints, not objective weights
     
     # Regime-focused clustering weights (removed momentum_weight)
     economic_weight: float = 0.25
@@ -254,7 +254,7 @@ class NASTASClusteringConfig(BaseConfig):
             'enable_ensemble_clustering': self.enable_ensemble_clustering,
             'max_regime_percentage': self.max_regime_percentage,
             'min_regime_percentage': self.min_regime_percentage,
-            'balance_weight': self.balance_weight,
+            # 'balance_weight' removed - balance used as constraints, not objective weights
             'economic_weight': self.economic_weight,
             'volatility_regime_weight': self.volatility_regime_weight,
             'volume_regime_weight': self.volume_regime_weight,

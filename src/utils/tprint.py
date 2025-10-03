@@ -277,31 +277,37 @@ class TPrintManager:
     def _setup_python_logging(self):
         """Setup integration with Python logging if configured."""
         if self.config.integrate_with_logging:
-            # Create a custom logger for tprint
-            self.logger = logging.getLogger('tprint')
-            if not self.logger.handlers:
-                # Try to use the structured logging formatter if available
-                try:
-                    from .structured_logging import get_json_formatter
-                    formatter = get_json_formatter()
-                    handler = logging.StreamHandler()
-                    handler.setFormatter(formatter)
-                    self.logger.addHandler(handler)
-                except ImportError:
-                    # Fallback to basic formatter
-                    handler = logging.StreamHandler()
-                    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-                    handler.setFormatter(formatter)
-                    self.logger.addHandler(handler)
+            # Try to use the system logger if available
+            try:
+                from .logger import system_logger
+                self.logger = system_logger.getChild('tprint')
+                # Use the system logger's existing handlers and configuration
+            except ImportError:
+                # Fallback to creating a custom logger for tprint
+                self.logger = logging.getLogger('tprint')
+                if not self.logger.handlers:
+                    # Try to use the structured logging formatter if available
+                    try:
+                        from .structured_logging import get_json_formatter
+                        formatter = get_json_formatter()
+                        handler = logging.StreamHandler()
+                        handler.setFormatter(formatter)
+                        self.logger.addHandler(handler)
+                    except ImportError:
+                        # Fallback to basic formatter
+                        handler = logging.StreamHandler()
+                        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+                        handler.setFormatter(formatter)
+                        self.logger.addHandler(handler)
 
-                # Also add the correlation ID filter if available
-                try:
-                    from .structured_logging import CorrelationIdFilter
-                    self.logger.addFilter(CorrelationIdFilter())
-                except ImportError:
-                    pass
+                    # Also add the correlation ID filter if available
+                    try:
+                        from .structured_logging import CorrelationIdFilter
+                        self.logger.addFilter(CorrelationIdFilter())
+                    except ImportError:
+                        pass
 
-                self.logger.setLevel(logging.DEBUG)
+                    self.logger.setLevel(logging.DEBUG)
     
     def _get_timestamp(self) -> str:
         """Get formatted timestamp with caching."""
@@ -473,8 +479,19 @@ def configure_tprint(config: TPrintConfig) -> None:
     # Auto-replace print if configured
     if config.auto_replace_print:
         replace_builtin_print()
-    else:
-        restore_builtin_print()
+
+
+def configure_tprint_with_system_logger(enable_logging: bool = True, enable_file_output: bool = True) -> None:
+    """Configure tprint to integrate with the system logger."""
+    config = TPrintConfig(
+        integrate_with_logging=enable_logging,
+        log_to_python_logger=enable_logging,
+        output_to_file=enable_file_output,
+        output_to_console=True,
+        use_colors=True,
+        min_log_level=LogLevel.INFO
+    )
+    configure_tprint(config)
 
 
 def get_tprint_config() -> TPrintConfig:
@@ -937,6 +954,7 @@ __all__ = [
 
     # Configuration and management
     'configure_tprint',
+    'configure_tprint_with_system_logger',
     'get_tprint_config',
     'tprint_context',
     'tprint_timer',

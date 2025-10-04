@@ -574,19 +574,25 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                     
                     # Look for long opportunity target
                     if 'long_overall_opportunity' in labeled_data.columns:
-                        long_values = labeled_data['long_overall_opportunity'].values
-                        long_valid_mask = ~np.isnan(long_values)
+                        long_values = labeled_data['long_overall_opportunity'].to_numpy(dtype=float, copy=True)
+                        long_valid_mask = np.isfinite(long_values)
                         if np.any(long_valid_mask):
-                            targets['long'] = long_values[long_valid_mask]
-                            self.logger.info(f"🎯 LONG PID: Found long opportunity target ({np.sum(long_valid_mask)} valid samples)")
-                    
+                            sanitized_long = np.nan_to_num(long_values, nan=0.0, posinf=0.0, neginf=0.0)
+                            targets['long'] = sanitized_long
+                            self.logger.info(
+                                f"🎯 LONG PID: Found long opportunity target ({int(np.sum(long_valid_mask))} valid samples)"
+                            )
+
                     # Look for short opportunity target
                     if 'short_overall_opportunity' in labeled_data.columns:
-                        short_values = labeled_data['short_overall_opportunity'].values
-                        short_valid_mask = ~np.isnan(short_values)
+                        short_values = labeled_data['short_overall_opportunity'].to_numpy(dtype=float, copy=True)
+                        short_valid_mask = np.isfinite(short_values)
                         if np.any(short_valid_mask):
-                            targets['short'] = short_values[short_valid_mask]
-                            self.logger.info(f"🎯 SHORT PID: Found short opportunity target ({np.sum(short_valid_mask)} valid samples)")
+                            sanitized_short = np.nan_to_num(short_values, nan=0.0, posinf=0.0, neginf=0.0)
+                            targets['short'] = sanitized_short
+                            self.logger.info(
+                                f"🎯 SHORT PID: Found short opportunity target ({int(np.sum(short_valid_mask))} valid samples)"
+                            )
                     
                     # If we have both long and short targets, return them
                     if 'long' in targets and 'short' in targets:
@@ -594,7 +600,10 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                         self._target_source_info = {
                             'target_used': 'long_short_opportunities',
                             'target_type': 'long_short_differentiated',
-                            'valid_samples': {'long': len(targets['long']), 'short': len(targets['short'])},
+                            'valid_samples': {
+                                'long': int(np.sum(long_valid_mask)),
+                                'short': int(np.sum(short_valid_mask))
+                            },
                             'source': 'multi_horizon_labeling'
                         }
                         return targets
@@ -603,11 +612,14 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                     for target_option in target_options:
                         self.logger.info(f"🔍 DEBUG: Checking fallback target '{target_option}': {'✅ Found' if target_option in labeled_data.columns else '❌ Not found'}")
                         if target_option in labeled_data.columns:
-                            target_values = labeled_data[target_option].values
-                            valid_mask = ~np.isnan(target_values)
+                            target_values = labeled_data[target_option].to_numpy(dtype=float, copy=True)
+                            valid_mask = np.isfinite(target_values)
                             if np.any(valid_mask):
+                                sanitized_values = np.nan_to_num(target_values, nan=0.0, posinf=0.0, neginf=0.0)
                                 if target_option in ['directional_confidence', 'opportunity_asymmetry']:
-                                    self.logger.info(f"🎯 BI-DIRECTIONAL PID: Using '{target_option}' as fallback PID target ({np.sum(valid_mask)} valid samples)")
+                                    self.logger.info(
+                                        f"🎯 BI-DIRECTIONAL PID: Using '{target_option}' as fallback PID target ({np.sum(valid_mask)} valid samples)"
+                                    )
                                     # Store target source info for outcome tracking
                                     self._target_source_info = {
                                         'target_used': target_option,
@@ -615,9 +627,11 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                                         'valid_samples': int(np.sum(valid_mask)),
                                         'source': 'multi_horizon_labeling'
                                     }
-                                    return {'combined': target_values[valid_mask]}
+                                    return {'combined': sanitized_values}
                                 else:
-                                    self.logger.info(f"✅ LEGACY PID: Using '{target_option}' as fallback PID target ({np.sum(valid_mask)} valid samples)")
+                                    self.logger.info(
+                                        f"✅ LEGACY PID: Using '{target_option}' as fallback PID target ({np.sum(valid_mask)} valid samples)"
+                                    )
                                     # Store target source info for outcome tracking
                                     self._target_source_info = {
                                         'target_used': target_option,
@@ -625,7 +639,7 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                                         'valid_samples': int(np.sum(valid_mask)),
                                         'source': 'multi_horizon_labeling'
                                     }
-                                    return {'combined': target_values[valid_mask]}
+                                    return {'combined': sanitized_values}
             
             # Try to load multi-horizon results from recent outcome files
             self.logger.info("🔍 Attempting to load multi-horizon results from recent outcome files...")

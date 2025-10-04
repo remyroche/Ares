@@ -291,15 +291,33 @@ class AdvancedTradingArchitectureSearch:
         self.logger.info("🏗️ Performing advanced architecture search...")
 
         # Use the advanced search engine
+        search_space = self.config.get_tree_search_space()
+        if not search_space:
+            search_space = self._build_default_search_space(market_data)
+
         search_result = self.search_engine.search(
             market_data=market_data,
             target_returns=target_returns,
             market_regimes=market_analysis,
             micro_regimes=micro_regime_analysis,
-            architecture_type=self.config.architecture_type
+            architecture_type=self.config.architecture_type,
+            search_space=search_space
         )
 
         return search_result['best_architecture']
+
+    def _build_default_search_space(self, market_data: pd.DataFrame) -> Dict[str, Any]:
+        """Fallback search space when configuration does not provide one."""
+        numeric_columns = market_data.select_dtypes(include=[np.number])
+        n_features = max(numeric_columns.shape[1], 1)
+
+        feature_options = list(range(1, min(n_features, 5) + 1))
+        return {
+            'max_depth': [3, 5, 7],
+            'min_samples_leaf': [1, 5, 10],
+            'feature_subset': feature_options,
+            'regularization_strength': [0.0, 0.01, 0.05],
+        }
 
     def _evaluate_architecture_comprehensive(self, architecture: Any, market_data: pd.DataFrame,
                                            target_returns: pd.Series, market_analysis: Dict,

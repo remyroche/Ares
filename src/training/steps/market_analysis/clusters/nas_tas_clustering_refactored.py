@@ -18,6 +18,19 @@ from collections import defaultdict
 import pickle
 import re
 
+from src.utils.tprint import (
+    tprint,
+    tprint_debug,
+    tprint_info,
+    tprint_warning,
+    tprint_error,
+    tprint_success,
+    tprint_progress,
+    tprint_performance,
+    tprint_timer,
+    tprint_structured,
+)
+
 # Mac M1 Hardware Optimizations
 HARDWARE_OPTIMIZATIONS_AVAILABLE = False
 try:
@@ -33,19 +46,6 @@ try:
 except ImportError:
     HARDWARE_OPTIMIZATIONS_AVAILABLE = False
     tprint("⚠️ Mac M1 hardware optimizations not available", "WARNING")
-
-from src.utils.tprint import (
-    tprint,
-    tprint_debug,
-    tprint_info,
-    tprint_warning,
-    tprint_error,
-    tprint_success,
-    tprint_progress,
-    tprint_performance,
-    tprint_timer,
-    tprint_structured,
-)
 
 # Import ComponentResult for the wrapper compatibility
 from ..components.base_component import ComponentResult

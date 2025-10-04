@@ -567,20 +567,25 @@ class StreamlinedRegimeDataSplitting:
                 self.logger.warning("⚠️ Empty chunk encountered")
                 return None
 
-            # Use GPU optimization if available for large chunks
+            price_column = self._get_price_close_column(chunk)
+            if price_column is None:
+                self.logger.warning("⚠️ Missing price column for regime tagging")
+                chunk = chunk.copy()
+                chunk['composite_cluster_id'] = -1
+                return chunk
+
+            # Use GPU optimization if available for large chunks while keeping deterministic logic
             if len(chunk) > 1000 and self.gpu_manager:
-                # Use GPU-accelerated processing
                 with gpu_context():
-                    chunk = chunk.copy()
-                    chunk['composite_cluster_id'] = np.random.randint(0, 5, size=len(chunk))
+                    chunk = self._apply_regime_tags_to_chunk_cpu(chunk)
             else:
-                # Use CPU-optimized processing
                 if self.cpu_optimizer:
-                    chunk = self.cpu_optimizer.optimize_function_for_m1(
-                        lambda x: self._apply_regime_tags_to_chunk_cpu(x)
-                    )(chunk)
+                    optimized_func = self.cpu_optimizer.optimize_function_for_m1(
+                        self._apply_regime_tags_to_chunk_cpu
+                    )
+                    chunk = optimized_func(chunk)
                 else:
-                    chunk = self._apply_regime_tags_to_chunk(chunk)
+                    chunk = self._apply_regime_tags_to_chunk_cpu(chunk)
 
             # Validate temporal continuity
             if 'timestamp' in chunk.columns:
@@ -592,25 +597,34 @@ class StreamlinedRegimeDataSplitting:
             self.logger.exception(f"Failed to apply regime tags to chunk: {e}")
             return None
 
+    def _get_price_close_column(self, chunk: pd.DataFrame) -> Optional[str]:
+        """Select the appropriate price column for regime tagging."""
+        if 'price_close' in chunk.columns:
+            return 'price_close'
+        if 'close' in chunk.columns:
+            return 'close'
+        return None
+
     def _apply_regime_tags_to_chunk_cpu(self, chunk: pd.DataFrame) -> pd.DataFrame:
         """CPU-optimized regime tagging implementation."""
         chunk = chunk.copy()
 
-        # Use vectorized operations for better performance
-        if 'price_close' in chunk.columns:
-            # Simple regime detection based on price volatility
-            price_changes = chunk['price_close'].pct_change()
-            volatility = price_changes.rolling(20).std()
+        price_column = self._get_price_close_column(chunk)
+        if price_column is None:
+            self.logger.warning("⚠️ Missing price column for CPU regime tagging")
+            chunk['composite_cluster_id'] = -1
+            return chunk
 
-            # Create regime IDs based on volatility thresholds
-            chunk['composite_cluster_id'] = pd.cut(
-                volatility,
-                bins=[0, 0.01, 0.05, 0.1, float('inf')],
-                labels=[0, 1, 2, 3]
-            ).astype(int)
-        else:
-            # Fallback to random regime assignment
-            chunk['composite_cluster_id'] = np.random.randint(0, 5, size=len(chunk))
+        price_series = chunk[price_column]
+        price_changes = price_series.pct_change().fillna(0)
+        volatility = price_changes.rolling(20, min_periods=1).std().fillna(0)
+
+        regime_bins = [-float('inf'), 0.01, 0.05, 0.1, float('inf')]
+        regime_labels = [0, 1, 2, 3]
+        regime_categories = pd.cut(volatility, bins=regime_bins, labels=regime_labels)
+        regime_codes = regime_categories.cat.codes.replace(-1, regime_labels[0])
+
+        chunk['composite_cluster_id'] = regime_codes.astype(int)
 
         return chunk
 

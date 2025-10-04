@@ -51,7 +51,12 @@ except ImportError:
 # Import unified NAS/TAS tools
 try:
     from src.nas_tas.data.data_processor import UnifiedDataProcessor, DataProcessingConfig
-    from src.nas_tas.config.base_config import UnifiedArchitectureConfig, create_comprehensive_config
+    from src.nas_tas.config.base_config import (
+        UnifiedArchitectureConfig,
+        create_comprehensive_config,
+        ArchitectureType,
+        OptimizationMode,
+    )
     from src.nas_tas.evaluation.unified_evaluator import UnifiedEvaluator, EvaluationConfig
     from src.nas_tas.unified_pipeline import UnifiedPipelineConfig, create_nas_pipeline, create_tas_pipeline
     UNIFIED_TOOLS_AVAILABLE = True

@@ -74,6 +74,16 @@ from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperatio
 from .step1_feature_preparation import ClusteringContext
 from .risk_mitigation import RiskMitigationSystem, PRODUCTION_RISK_CONFIG
 
+# Import CV enhancement strategies
+try:
+    from .cv_enhancement_strategies import (
+        AdaptiveWeightScheduler,
+        EnhancedVarianceRatioCalculator
+    )
+    CV_ENHANCEMENT_AVAILABLE = True
+except ImportError:
+    CV_ENHANCEMENT_AVAILABLE = False
+
 # Import optimization utilities
 try:
     from src.utils.matrix_operations import (
@@ -152,9 +162,11 @@ class OptimizedCalculationEngine:
             if cache_key in self._silhouette_cache:
                 return self._silhouette_cache[cache_key]
             
-            # Skip if any cluster < 2 points
+            # Skip if any active cluster has < 2 points (only check non-empty clusters)
+            unique_labels = np.unique(assignments)
             sizes = np.bincount(assignments)
-            if np.any(sizes < 2):
+            active_sizes = sizes[unique_labels]
+            if np.any(active_sizes < 2):
                 return 0.0
             
             # Always use sklearn for reliable silhouette calculation
@@ -1440,19 +1452,38 @@ class ClusteringStats:
         return objective
     
     def get_balance_score(self) -> float:
-        """Calculate cluster balance score."""
+        """Calculate cluster balance score.
+        
+        IMPORTANT: Balance is now a SOFT CONSTRAINT, not a hard objective.
+        Only penalizes extreme imbalances (> 3x deviation from mean).
+        This prevents forcing all clusters to have identical sizes, which
+        was killing CV ratio and regime separation quality.
+        """
         if self.n_clusters <= 1:
             return 1.0
         
-        target_size = self.n_samples / self.n_clusters
-        size_penalties = []
+        sizes = np.array([s for s in self.cluster_sizes if s > 0])
+        if len(sizes) == 0:
+            return 1.0
         
-        for size in self.cluster_sizes:
-            if size > 0:
-                penalty = (size / self.n_samples - 1.0 / self.n_clusters) ** 2
-                size_penalties.append(penalty)
+        mean_size = np.mean(sizes)
         
-        return 1.0 - np.mean(size_penalties) if size_penalties else 1.0
+        # Only penalize EXTREME imbalances (> 3x mean or < 0.33x mean)
+        # This allows natural cluster size variation for better regime separation
+        extreme_penalties = []
+        for size in sizes:
+            ratio = size / mean_size
+            if ratio > 3.0:  # Too large
+                extreme_penalties.append((ratio - 3.0) ** 2)
+            elif ratio < 0.33:  # Too small
+                extreme_penalties.append((0.33 - ratio) ** 2)
+        
+        if not extreme_penalties:
+            return 1.0  # No extreme imbalances
+        
+        # Soft penalty: only reduce score for extreme cases
+        penalty = np.mean(extreme_penalties)
+        return max(0.0, 1.0 - 0.1 * penalty)  # Very gentle penalty
     
     def calculate_move_delta(self, point_idx: int, from_cluster: int, to_cluster: int) -> Dict[str, float]:
         """Calculate delta using variance decomposition (primary), centroid-silhouette (secondary), and temporal smoothness.
@@ -1713,7 +1744,7 @@ class ClusteringStats:
             if other_dists:
                 b_i = min(other_dists)
                 self._point_silhouettes[i] = (b_i - a_i) / max(a_i, b_i) if max(a_i, b_i) > 0 else 0.0
-        else:
+            else:
                 self._point_silhouettes[i] = 0.0
         self._silhouette_valid = True
 
@@ -1923,7 +1954,9 @@ class AtomicOperationContext:
 @dataclass
 class OptConfig:
     """Unified configuration for iterative optimization - single source of truth."""
-    # Core K and size constraints
+    # Core K and size constraints - STRICTLY ENFORCED
+    # K_MIN = 6: Minimum clusters for adequate regime diversity (HARD CONSTRAINT)
+    # K_MAX = 12: Maximum to prevent over-fragmentation (HARD CONSTRAINT)
     K_MIN: int = 6
     K_MAX: int = 12
     MIN_FRAC: float = 0.03  # 3% minimum cluster size
@@ -1935,24 +1968,25 @@ class OptConfig:
     beta: float = 0.6  # Step 2 weight
     split_tries_max: int = 5  # KMeans restarts
     
-    # Standardized objective weights (consistent across all modules)
-    w_cv: float = 0.50   # Primary: Variance ratio
-    w_temp: float = 0.30 # Secondary: Temporal smoothness
-    w_sil: float = 0.10  # Tertiary: Cluster cohesion
+    # ENHANCED objective weights - AGGRESSIVE optimization focus
+    # Prioritizing CV, Temporal Smoothness, and Silhouette per requirements
+    w_cv: float = 0.45   # Primary: Variance ratio (CV) - balanced for multi-objective
+    w_temp: float = 0.35 # Secondary: Temporal smoothness - INCREASED for regime stability
+    w_sil: float = 0.15  # Tertiary: Cluster cohesion (Silhouette) - INCREASED
     w_dbi: float = 0.00  # accessory
     w_ch: float = 0.00   # accessory
-    w_bal: float = 0.10  # Minimal: Balance constraint (will be removed from objective)
+    w_bal: float = 0.05  # Minimal: Balance constraint - reduced to soft penalty
     
-    # Optimization parameters
-    max_rounds: int = 25
-    eps_std_step1: float = -0.12
-    sil_guard: float = 0.0
-    temporal_bonus: float = 0.0
+    # AGGRESSIVE Optimization parameters - tuned for enhanced performance
+    max_rounds: int = 30  # Increased iterations for better convergence
+    eps_std_step1: float = -0.15  # More aggressive step 1 threshold
+    sil_guard: float = -0.05  # Require slight silhouette improvement
+    temporal_bonus: float = 0.15  # Bonus for temporal stability improvements
     
-    # Lexicographic acceptor parameters
-    eps_cv: float = 1e-4
-    eps_sil: float = 1e-3
-    eps_temp: float = 1e-3
+    # ENHANCED Lexicographic acceptor parameters - tighter for quality
+    eps_cv: float = 5e-5  # Tighter CV threshold (was 1e-4) - more selective
+    eps_sil: float = 5e-4  # Tighter Silhouette threshold (was 1e-3) - more selective
+    eps_temp: float = 5e-4  # Tighter Temporal threshold (was 1e-3) - favor stability
     accessories_weight: float = 1e-3
     
     # Size-aware CV gate parameters
@@ -3296,13 +3330,32 @@ class IterativeOptimization:
             # Initialize with hard constraints
             assignments = self._enforce_hard_constraints(X, initial_assignments, entity_ids, time_idx)
             
-            # Main optimization loop
+            # Main optimization loop with adaptive weights
             for iteration in range(self.config.max_rounds):
                 self._log_with_context(f"=== Iteration {iteration + 1}/{self.config.max_rounds} ===", "INFO", "MAIN")
                 
-                # Evaluate current metrics
+                # Apply adaptive weights (CV enhancement strategy)
+                if CV_ENHANCEMENT_AVAILABLE and hasattr(self, 'adaptive_scheduler') and self.adaptive_scheduler:
+                    adaptive_weights = self.adaptive_scheduler.get_weights(iteration)
+                    # Update current weights
+                    self.w_cv = adaptive_weights['w_cv']
+                    self.w_temp = adaptive_weights['w_temp']
+                    self.w_sil = adaptive_weights['w_sil']
+                    self.w_bal = adaptive_weights['w_bal']
+                
+                # Evaluate current metrics (with enhanced CV if available)
                 sample_indices = self._get_sample_indices(N)
                 current_metrics = self.evaluate_metrics(X, assignments, entity_ids, time_idx, sample_indices)
+                
+                # Calculate enhanced CV ratio if available
+                if CV_ENHANCEMENT_AVAILABLE:
+                    enhanced_cv_metrics = EnhancedVarianceRatioCalculator.calculate_enhanced_cv(
+                        X, assignments, include_calinski_harabasz=True
+                    )
+                    current_metrics['enhanced_cv'] = enhanced_cv_metrics['combined_cv']
+                    current_metrics['calinski_harabasz'] = enhanced_cv_metrics['calinski_harabasz']
+                    self._log_with_context(f"Enhanced CV metrics: combined_cv={enhanced_cv_metrics['combined_cv']:.4f}, CH={enhanced_cv_metrics['calinski_harabasz']:.2f}", "DEBUG", "MAIN")
+                
                 self._log_with_context(f"Current metrics: CV={current_metrics['cv']:.4f}, Sil={current_metrics['sil']:.4f}, Temp={current_metrics['temp']:.4f}", "INFO", "MAIN")
                 
                 # Generate candidates
@@ -3385,19 +3438,21 @@ class IterativeOptimization:
         # Step 3 hardening parameters
         self.split_tries_max = 8  # not 50
         
-        # Step 1: Local frontier parameters (LOOSENED FOR TRIAGE)
-        self.frontier_fraction = 0.40  # Increased from 25% to 40%
-        self.knn_size = 10
-        self.neighbor_consensus_threshold = 0.60  # Loosened from 0.65 to 0.60
-        self.local_threshold = 0.0
-        self.local_churn_cap = 0.02  # 2% of N
-        self.hysteresis_rounds = 2
+        # Step 1: Local frontier parameters - AGGRESSIVE OPTIMIZATION
+        # Enhanced to maximize CV, Silhouette, and Temporal Smoothness
+        self.frontier_fraction = 0.50  # Increased to 50% for broader exploration
+        self.knn_size = 15  # Increased kNN for better neighborhood detection
+        self.neighbor_consensus_threshold = 0.55  # Slightly relaxed for more candidates
+        self.local_threshold = -0.001  # Require small improvement (negative = better)
+        self.local_churn_cap = 0.03  # 3% of N - increased for more moves
+        self.hysteresis_rounds = 3  # Increased stability rounds
         
-        # Step 2: Global reallocation parameters (LOOSENED FOR TRIAGE)
-        self.beta = 0.20  # Increased from 0.15 to 0.20
-        self.global_threshold = 0.0
-        self.global_churn_cap = 0.08  # 8% of N
-        self.min_cluster_size = 25
+        # Step 2: Global reallocation parameters - AGGRESSIVE OPTIMIZATION
+        # Focus on temporal smoothness and CV improvement
+        self.beta = 0.25  # Increased weight for global coordination
+        self.global_threshold = -0.001  # Require improvement for global moves
+        self.global_churn_cap = 0.10  # 10% of N - increased for global optimization
+        self.min_cluster_size = 20  # Slightly reduced to allow more flexibility
         
         # Step 3: Break large clusters parameters (LOOSENED FOR TRIAGE)
         self.size_factor_threshold = 1.3  # Reduced from 1.5 to 1.3
@@ -3405,11 +3460,12 @@ class IterativeOptimization:
         self.alpha = 1.0  # Size-aware penalty
         self.max_new_clusters_per_round = 3
         
-        # Standardized objective function weights (consistent across all modules)
-        self.w_cv = 0.50     # Primary: variance ratio
-        self.w_temp = 0.30   # Secondary: temporal smoothness
-        self.w_sil = 0.10    # Tertiary: cluster cohesion
-        self.w_bal = 0.10    # Minimal: balance constraint (will be removed from objective)
+        # ENHANCED objective function weights - AGGRESSIVE optimization focus
+        # Prioritizing CV, Temporal Smoothness, and Silhouette per requirements
+        self.w_cv = 0.45     # Primary: variance ratio (CV) - slightly reduced to balance
+        self.w_temp = 0.35   # Secondary: temporal smoothness - INCREASED for stability
+        self.w_sil = 0.15    # Tertiary: cluster cohesion (Silhouette) - INCREASED
+        self.w_bal = 0.05    # Minimal: balance constraint (soft penalty)
         self.lambda_switch = 1e-5  # Reduced by 10x from 1e-4 to 1e-5
         
         # Gating configuration - single source of truth
@@ -8427,24 +8483,33 @@ class IterativeOptimization:
             tprint("🎯 CLUSTERING OPTIMIZATION COMPLETED - DETAILED METRICS", "SUCCESS")
             tprint("="*80, "SUCCESS")
             
-            # Add explanation of key metrics
-            tprint("\n📚 METRIC EXPLANATIONS:", "INFO")
-            tprint("   📈 Variance Ratio: between-cluster variance / within-cluster variance", "INFO")
-            tprint("      → HIGHER values indicate better regime separation (more distinct clusters)", "INFO")
-            tprint("   ⚖️  Balance Score: Measures how evenly distributed cluster sizes are (0-1 scale)", "INFO")
+            # Add explanation of key metrics with CV RATIO prominence
+            tprint("\n📚 KEY CLUSTERING METRICS EXPLANATIONS:", "INFO")
+            tprint("   ⭐ CV RATIO (Variance Ratio): between-cluster variance / within-cluster variance", "SUCCESS")
+            tprint("      → PRIMARY METRIC: HIGHER values = better regime separation & financial distinctness", "SUCCESS")
+            tprint("      → Target: > 1.5 (Excellent), > 1.0 (Good), > 0.5 (Fair)", "INFO")
+            tprint("   📈 Silhouette Score: Measures cluster cohesion and separation (-1 to 1 scale)", "INFO")
+            tprint("      → HIGHER values indicate better cluster quality and point assignment", "INFO")
+            tprint("   🕒 Temporal Smoothness: Regime stability over time (lower switch rate = better)", "INFO")
+            tprint("      → LOWER change rate indicates more stable, persistent regimes", "INFO")
+            tprint("   ⚖️  Balance Score: Cluster size distribution uniformity (0-1 scale)", "INFO")
             tprint("      → HIGHER values indicate more balanced cluster sizes", "INFO")
-            tprint("   🎭 Silhouette Score: Measures how well-separated and cohesive clusters are (-1 to 1 scale)", "INFO")
-            tprint("      → HIGHER values indicate better cluster quality", "INFO")
-            tprint("   🔍 Davies-Bouldin Index: Ratio of within-cluster scatter to between-cluster separation", "INFO")
-            tprint("      → LOWER values indicate better cluster compactness and separation", "INFO")
+            tprint("   🔍 Davies-Bouldin Index: Within-cluster scatter vs between-cluster separation", "INFO")
+            tprint("      → LOWER values indicate better compactness and separation", "INFO")
             
-            # Core clustering metrics
-            tprint("\n📊 CLUSTER STRUCTURE METRICS:", "INFO")
-            tprint(f"   🔢 Number of Clusters: {num_clusters}", "INFO")
-            tprint(f"   📈 Variance Ratio: {cv_ratio:.4f} (HIGHER is better - between/within)", "INFO")
-            tprint(f"   ⚖️  Balance Score: {balance_score:.4f} (HIGHER is better - measures cluster size uniformity)", "INFO")
-            tprint(f"   🎭 Silhouette Score: {silhouette_score:.4f} (HIGHER is better - measures cluster separation quality)", "INFO")
-            tprint(f"   🔍 Davies-Bouldin Index: {db_score:.4f} (LOWER is better - measures cluster compactness vs separation)", "INFO")
+            # Core clustering metrics with CV RATIO prominence
+            tprint("\n📊 CORE CLUSTERING PERFORMANCE METRICS:", "SUCCESS")
+            tprint("="*80, "SUCCESS")
+            tprint(f"   🔢 Number of Clusters (K): {num_clusters} [Range: K_MIN={self.config.K_MIN} to K_MAX={self.config.K_MAX}]", "INFO")
+            tprint("\n   ⭐ PRIMARY METRIC - CV RATIO (Variance Ratio):", "SUCCESS")
+            tprint(f"      Value: {cv_ratio:.4f} (between-cluster / within-cluster variance)", "SUCCESS")
+            cv_quality = "Excellent" if cv_ratio > 1.5 else ("Good" if cv_ratio > 1.0 else ("Fair" if cv_ratio > 0.5 else "Poor"))
+            tprint(f"      Quality Assessment: {cv_quality}", "SUCCESS" if cv_ratio > 1.0 else "WARNING")
+            tprint(f"      Interpretation: {'Strong regime separation' if cv_ratio > 1.0 else 'Moderate separation, consider refinement'}", "INFO")
+            tprint("\n   📈 SECONDARY METRICS:", "INFO")
+            tprint(f"      🎭 Silhouette Score: {silhouette_score:.4f} (cluster cohesion & separation)", "INFO")
+            tprint(f"      ⚖️  Balance Score: {balance_score:.4f} (cluster size uniformity)", "INFO")
+            tprint(f"      🔍 Davies-Bouldin Index: {db_score:.4f} (compactness vs separation)", "INFO")
 
             # Temporal metrics summary
             try:

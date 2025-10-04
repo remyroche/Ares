@@ -413,8 +413,15 @@ class CrossTimeframeFeatureGenerator:
             base_feature_indices = {}
             for tf_name in timeframe_features:
                 if '_tf' in tf_name:
-                    # Extract base feature name (remove _short_tf, _medium_tf, _long_tf)
-                    base_name = tf_name.split('_')[0] + '_' + '_'.join(tf_name.split('_')[1:-2]) if len(tf_name.split('_')) > 2 else tf_name.split('_')[0]
+                    # Extract base feature name by removing the synthetic suffix
+                    base_name = tf_name
+                    for suffix in ('_short_tf', '_medium_tf', '_long_tf'):
+                        if base_name.endswith(suffix):
+                            base_name = base_name[:-len(suffix)]
+                            break
+
+                    base_name = base_name.rstrip('_')
+
                     if base_name in feature_names:
                         base_feature_indices[tf_name] = feature_names.index(base_name)
             
@@ -559,10 +566,16 @@ class CrossTimeframeFeatureGenerator:
                 correlation_matrix = np.corrcoef(X.T)
             
             significant_pairs = []
-            timeframe_indices = [feature_names.index(f) for f in timeframe_features]
-            
-            for i, feat1 in enumerate(timeframe_features):
-                for j, feat2 in enumerate(timeframe_features[i+1:], i+1):
+            timeframe_features_in_data = [
+                f for f in timeframe_features if f in feature_names
+            ]
+
+            if len(timeframe_features_in_data) < 2:
+                self.logger.warning("⚠️ Insufficient timeframe features available after filtering")
+                return []
+
+            for i, feat1 in enumerate(timeframe_features_in_data):
+                for j, feat2 in enumerate(timeframe_features_in_data[i+1:], i+1):
                     # Check if features are from different timeframes
                     if self._are_different_timeframes(feat1, feat2):
                         idx1 = feature_names.index(feat1)

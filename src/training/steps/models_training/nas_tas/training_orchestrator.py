@@ -320,12 +320,14 @@ class TrainingOrchestrator:
     
     def _setup_logging(self):
         """Set up logging configuration."""
+        log_dir = Path(self.config.output_directory)
+        log_dir.mkdir(parents=True, exist_ok=True)
         logging.basicConfig(
             level=getattr(logging, self.config.log_level.upper()),
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
             handlers=[
                 logging.StreamHandler(),
-                logging.FileHandler(f"{self.config.output_directory}/orchestrator.log")
+                logging.FileHandler(log_dir / "orchestrator.log")
             ]
         )
     

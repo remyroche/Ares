@@ -1177,7 +1177,21 @@ class ClusteringStats:
     def cluster_sizes(self):
         """Always compute cluster sizes from current assignments - single source of truth."""
         return np.bincount(self.assignments, minlength=self.K_fixed)
-    
+
+    def refresh_cluster_sizes(self) -> np.ndarray:
+        """Recompute cluster sizes and update internal caches."""
+        target_len = max(self.K_fixed, getattr(self, 'centroids', np.empty((0,))).shape[0])
+        sizes = np.bincount(self.assignments, minlength=target_len)
+        if hasattr(self, '_cluster_sizes_cache'):
+            if self._cluster_sizes_cache.shape[0] != sizes.shape[0]:
+                new_cache = np.zeros(sizes.shape[0], dtype=self._cluster_sizes_cache.dtype)
+                upto = min(self._cluster_sizes_cache.shape[0], sizes.shape[0])
+                new_cache[:upto] = self._cluster_sizes_cache[:upto]
+                self._cluster_sizes_cache = new_cache
+            np.copyto(self._cluster_sizes_cache,
+                      sizes.astype(self._cluster_sizes_cache.dtype, copy=False))
+        return sizes
+
     def _validate_state(self):
         """Comprehensive state validation to catch desync issues early."""
         assert self.assignments.max() < self.K_fixed, f"Assignment max {self.assignments.max()} >= K_fixed {self.K_fixed}"
@@ -1315,6 +1329,45 @@ class ClusteringStats:
                 if 0 <= u < K and 0 <= v < K:
                     self.transition_counts[u, v] += 1
                     self.transition_row_sums[u] += 1
+
+    def ensure_k_capacity(self, new_K: int) -> None:
+        """Resize all K-dimensional buffers to accommodate new clusters."""
+        current_K = getattr(self, 'centroids', np.zeros((0,))).shape[0]
+        if new_K <= current_K:
+            return
+
+        def _resize(arr: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
+            new_arr = np.zeros(shape, dtype=arr.dtype)
+            slices = tuple(slice(0, min(old, new)) for old, new in zip(arr.shape, shape))
+            new_arr[slices] = arr[slices]
+            return new_arr
+
+        if hasattr(self, '_cluster_sizes_cache'):
+            cache = np.zeros(new_K, dtype=self._cluster_sizes_cache.dtype)
+            upto = min(len(self._cluster_sizes_cache), new_K)
+            cache[:upto] = self._cluster_sizes_cache[:upto]
+            self._cluster_sizes_cache = cache
+
+        self.centroids = _resize(self.centroids, (new_K, self.n_features))
+        self.wcss_per_cluster = _resize(self.wcss_per_cluster, (new_K,))
+        self.S = _resize(self.S, (new_K, self.n_features))
+        self.Q_trace = _resize(self.Q_trace, (new_K,))
+
+        if hasattr(self, 'transition_counts'):
+            counts = self.transition_counts
+            new_counts = np.zeros((new_K, new_K), dtype=counts.dtype)
+            new_counts[:counts.shape[0], :counts.shape[1]] = counts
+            self.transition_counts = new_counts
+
+        if hasattr(self, 'transition_row_sums'):
+            rows = self.transition_row_sums
+            new_rows = np.zeros(new_K, dtype=rows.dtype)
+            upto = min(rows.shape[0], new_K)
+            new_rows[:upto] = rows[:upto]
+            self.transition_row_sums = new_rows
+
+        self.K_fixed = max(self.K_fixed, new_K)
+        self.n_clusters = max(self.n_clusters, new_K)
         
     def _update_all_stats(self):
         """Update all clustering statistics with sufficient statistics."""
@@ -5060,13 +5113,21 @@ class IterativeOptimization:
             labels = self._relabel_compact(np.asarray(labels))
             
             if hasattr(stats, 'update_after_labels'):
-                return stats.update_after_labels(labels, X) if X is not None else stats.update_after_labels(labels)
+                result = stats.update_after_labels(labels, X) if X is not None else stats.update_after_labels(labels)
+                if hasattr(stats, '_initialize_transition_caches'):
+                    stats._initialize_transition_caches()
+                if hasattr(stats, 'refresh_cluster_sizes'):
+                    stats.refresh_cluster_sizes()
+                return result
             if hasattr(stats, '_update_cluster_sizes'):
                 # legacy/private fallback
                 return stats._update_cluster_sizes(labels)
             # last resort: update assignments and recompute stats without touching read-only properties
             if hasattr(stats, 'assignments'):
                 stats.assignments = labels
+            new_K = int(labels.max()) + 1 if labels.size else 0
+            if hasattr(stats, 'ensure_k_capacity'):
+                stats.ensure_k_capacity(new_K)
             # If available, recompute all stats
             if hasattr(stats, '_update_all_stats'):
                 stats._update_all_stats()
@@ -5075,6 +5136,8 @@ class IterativeOptimization:
             # Refresh transition caches after bulk label changes
             if hasattr(stats, '_initialize_transition_caches'):
                 stats._initialize_transition_caches()
+            if hasattr(stats, 'refresh_cluster_sizes'):
+                stats.refresh_cluster_sizes()
             return None
         except Exception as e:
             tprint(f"Stats update failed: {e}", "ERROR")
@@ -8022,59 +8085,52 @@ class IterativeOptimization:
     
     def _snapshot_state(self, stats: ClusteringStats) -> Dict:
         """Create a snapshot of current clustering state."""
-        return {
-            'assignments': stats.assignments.copy(),
-            'n_clusters': stats.n_clusters,
-            'K_fixed': stats.K_fixed,
-            'cluster_sizes': stats.cluster_sizes.copy(),
-            'centroids': stats.centroids.copy(),
-            'wcss_per_cluster': stats.wcss_per_cluster.copy(),
-            'total_wcss': stats.total_wcss,
-            'total_bcss': stats.total_bcss
-        }
+        snapshot = stats._snapshot_state()
+        snapshot['n_clusters'] = stats.n_clusters
+        snapshot['K_fixed'] = stats.K_fixed
+        if hasattr(stats, 'transition_counts'):
+            snapshot['transition_counts'] = stats.transition_counts.copy()
+        else:
+            snapshot['transition_counts'] = None
+        if hasattr(stats, 'transition_row_sums'):
+            snapshot['transition_row_sums'] = stats.transition_row_sums.copy()
+        else:
+            snapshot['transition_row_sums'] = None
+        snapshot['optimizer_assignments'] = (self.assignments.copy()
+                                             if self.assignments is not None else None)
+        return snapshot
     
     def _restore_state(self, stats: ClusteringStats, state: Dict):
         """Restore clustering state from snapshot."""
-        stats.assignments = state['assignments']
-        stats.n_clusters = state['n_clusters']
-        stats.K_fixed = state['K_fixed']
-        stats.cluster_sizes = state['cluster_sizes']
-        stats.centroids = state['centroids']
-        stats.wcss_per_cluster = state['wcss_per_cluster']
-        stats.total_wcss = state['total_wcss']
-        stats.total_bcss = state['total_bcss']
+        stats._restore_state(state)
+        stats.n_clusters = state.get('n_clusters', stats.n_clusters)
+        stats.K_fixed = state.get('K_fixed', stats.K_fixed)
+        if state.get('transition_counts') is not None:
+            stats.transition_counts = state['transition_counts'].copy()
+        if state.get('transition_row_sums') is not None:
+            stats.transition_row_sums = state['transition_row_sums'].copy()
         # Update remapped assignments
         stats.remapped_assignments = np.array([stats.cluster_id_map.get(cid, cid) for cid in stats.assignments])
+        # Restore optimizer assignments if provided
+        optimizer_assignments = state.get('optimizer_assignments')
+        if optimizer_assignments is not None:
+            self.assignments = optimizer_assignments.copy()
+        elif hasattr(stats, 'assignments'):
+            self.assignments = stats.assignments.copy()
+        if hasattr(stats, 'refresh_cluster_sizes'):
+            stats.refresh_cluster_sizes()
     
     def _expand_k_dim_arrays(self, stats: ClusteringStats, new_K: int):
         """Expand all K-dimensional arrays to new size."""
-        old_K = len(stats.cluster_sizes)
+        current_centroids = getattr(stats, 'centroids', None)
+        old_K = current_centroids.shape[0] if current_centroids is not None else 0
         if new_K <= old_K:
             return
-        
-        # Expand cluster_sizes
-        new_sizes = np.zeros(new_K, dtype=stats.cluster_sizes.dtype)
-        new_sizes[:old_K] = stats.cluster_sizes
-        stats.cluster_sizes = new_sizes
-        
-        # Expand centroids
-        new_centroids = np.zeros((new_K, stats.n_features), dtype=stats.centroids.dtype)
-        new_centroids[:old_K] = stats.centroids
-        stats.centroids = new_centroids
-        
-        # Expand WCSS per cluster
-        new_wcss = np.zeros(new_K, dtype=stats.wcss_per_cluster.dtype)
-        new_wcss[:old_K] = stats.wcss_per_cluster
-        stats.wcss_per_cluster = new_wcss
-        
-        # Expand sufficient statistics arrays
-        new_S = np.zeros((new_K, stats.n_features), dtype=stats.S.dtype)
-        new_S[:old_K] = stats.S
-        stats.S = new_S
-        
-        new_Q = np.zeros(new_K, dtype=stats.Q_trace.dtype)
-        new_Q[:old_K] = stats.Q_trace
-        stats.Q_trace = new_Q
+
+        if hasattr(stats, 'ensure_k_capacity'):
+            stats.ensure_k_capacity(new_K)
+        else:
+            raise ValueError("ClusteringStats must provide ensure_k_capacity for resizing")
     
     def _apply_split_atomic(self, features: np.ndarray, stats: ClusteringStats, cid: int, min_size: int = 25, eps: float = 1e-9) -> Optional[SplitError]:
         """Apply atomic cluster split with commit/rollback - only log success."""
@@ -8109,9 +8165,10 @@ class IterativeOptimization:
                 # Expand ALL K-dimensional arrays
                 self._expand_k_dim_arrays(stats, K0 + 1)
                 
-                # Update cluster counts and centroids
-                stats.cluster_sizes[cid] = len(A)
-                stats.cluster_sizes[new_id] = len(B)
+                # Update cluster counts cache and centroids
+                current_sizes = (stats.refresh_cluster_sizes()
+                                 if hasattr(stats, 'refresh_cluster_sizes')
+                                 else stats.cluster_sizes)
                 stats.centroids[cid] = np.mean(features[A], axis=0)
                 stats.centroids[new_id] = np.mean(features[B], axis=0)
                 
@@ -8127,7 +8184,7 @@ class IterativeOptimization:
                 
                 # Update totals
                 stats.total_wcss = np.sum(stats.wcss_per_cluster)
-                safe_sizes = np.where(stats.cluster_sizes > 0, stats.cluster_sizes, 1)
+                safe_sizes = np.where(current_sizes > 0, current_sizes, 1)
                 stats.total_bcss = np.sum(np.sum(stats.S ** 2, axis=1) / safe_sizes) - np.sum(stats.global_S ** 2) / stats.global_N
                 
                 # Update K_fixed and mappings
@@ -8264,9 +8321,10 @@ class IterativeOptimization:
             # Expand ALL K-dimensional arrays
             self._expand_k_dim_arrays(stats, K0 + 1)
             
-            # Update cluster counts and centroids
-            stats.cluster_sizes[cid] = len(A)
-            stats.cluster_sizes[new_id] = len(B)
+            # Update cluster counts cache and centroids
+            current_sizes = (stats.refresh_cluster_sizes()
+                             if hasattr(stats, 'refresh_cluster_sizes')
+                             else stats.cluster_sizes)
             stats.centroids[cid] = np.mean(features[A], axis=0)
             stats.centroids[new_id] = np.mean(features[B], axis=0)
             
@@ -8282,7 +8340,7 @@ class IterativeOptimization:
             
             # Update totals
             stats.total_wcss = np.sum(stats.wcss_per_cluster)
-            safe_sizes = np.where(stats.cluster_sizes > 0, stats.cluster_sizes, 1)
+            safe_sizes = np.where(current_sizes > 0, current_sizes, 1)
             stats.total_bcss = np.sum(np.sum(stats.S ** 2, axis=1) / safe_sizes) - np.sum(stats.global_S ** 2) / stats.global_N
             
             # Update K_fixed and mappings

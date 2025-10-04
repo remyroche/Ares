@@ -12,6 +12,10 @@ from dataclasses import dataclass, field
 from sklearn.preprocessing import RobustScaler
 from sklearn.decomposition import PCA
 
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error
+)
+
 # Import weighted category PCA
 try:
     from .weighted_category_pca import WeightedCategoryPCA, create_feature_categories_from_names
@@ -36,10 +40,6 @@ try:
     import umap
 except ImportError:
     umap = None
-
-from src.utils.tprint import (
-    tprint, tprint_info, tprint_success, tprint_warning, tprint_error
-)
 
 from ..shared_utils import (
     prepare_market_features,

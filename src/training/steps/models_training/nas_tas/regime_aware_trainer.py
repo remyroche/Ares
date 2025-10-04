@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import json
 import pickle
+import copy
 from sklearn.model_selection import train_test_split, TimeSeriesSplit
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
@@ -217,7 +218,7 @@ class RegimeAwareTrainer:
         self.trained_models = {}
         self.regime_models = {}
         self.ensemble_models = {}
-        self.performance_history = []
+        self.performance_history = {}
         
         self.logger.info("✅ Regime-Aware Trainer initialized")
         self.logger.info(f"   Training strategy: {config.training_strategy.value}")
@@ -381,7 +382,13 @@ class RegimeAwareTrainer:
             performance_results = self._evaluate_performance(
                 regime_datasets, regime_models, ensemble_models
             )
-            
+
+            # Update trainer state with latest results
+            self.regime_models = regime_models
+            self.trained_models = regime_models
+            self.ensemble_models = ensemble_models or {}
+            self.performance_history = copy.deepcopy(performance_results['regime_performance'])
+
             # Step 6: Save models if requested
             if self.config.save_models:
                 tprint("💾 [REGIME_AWARE_TRAINER] Step 6: Saving trained models", color="yellow")
@@ -822,14 +829,13 @@ class RegimeAwareTrainer:
             regime_performance = {}
             for model_type, model_info in models.items():
                 regime_performance[model_type] = {
-                    'train_f1': model_info['train_metrics']['f1_score'],
-                    'val_f1': model_info['val_metrics']['f1_score'],
-                    'test_f1': model_info['test_metrics']['f1_score'],
-                    'val_accuracy': model_info['val_metrics']['accuracy'],
-                    'val_precision': model_info['val_metrics']['precision'],
-                    'val_recall': model_info['val_metrics']['recall']
+                    'train_metrics': model_info['train_metrics'],
+                    'val_metrics': model_info['val_metrics'],
+                    'test_metrics': model_info['test_metrics'],
+                    'feature_importance': model_info.get('feature_importance', {}),
+                    'hyperparameters': model_info.get('hyperparameters', {})
                 }
-            
+
             performance_results['regime_performance'][regime_id] = regime_performance
         
         # Calculate overall performance

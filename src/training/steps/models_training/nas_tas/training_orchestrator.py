@@ -5,6 +5,7 @@ Orchestrates the complete model training pipeline including regime detection,
 model training, selection, and management for the NAS-TAS system.
 """
 
+import asyncio
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple, Union, Callable
@@ -380,28 +381,77 @@ class TrainingOrchestrator:
             self.logger.error(f"❌ Component initialization failed: {e}")
             raise
     
-    def orchestrate(self, 
+    def orchestrate(self,
                    market_data: pd.DataFrame,
                    target_variable: str,
                    feature_columns: Optional[List[str]] = None,
                    timestamps: Optional[pd.Series] = None,
                    context: Optional[Dict[str, Any]] = None) -> OrchestrationResult:
+        """Synchronously orchestrate the complete training pipeline.
+
+        This method is the legacy entry point used throughout the codebase. It
+        internally drives the asynchronous unified pipeline execution using
+        ``asyncio.run`` so callers can continue to invoke it from synchronous
+        contexts. When running inside an existing event loop, use
+        :meth:`orchestrate_async` instead and ``await`` the result.
+
+        Args:
+            market_data: Market data for training.
+            target_variable: Name of target variable.
+            feature_columns: List of feature columns (``None`` for all except target).
+            timestamps: Optional timestamps aligned with the market data.
+            context: Additional context for orchestration.
+
+        Returns:
+            OrchestrationResult with complete pipeline results.
         """
-        Orchestrate the complete training pipeline using unified tools when available.
-        
+        try:
+            running_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            running_loop = None
+
+        if running_loop and running_loop.is_running():
+            raise RuntimeError(
+                "TrainingOrchestrator.orchestrate() cannot be called while an event loop is running. "
+                "Use `await orchestrator.orchestrate_async(...)` instead."
+            )
+
+        return asyncio.run(
+            self.orchestrate_async(
+                market_data=market_data,
+                target_variable=target_variable,
+                feature_columns=feature_columns,
+                timestamps=timestamps,
+                context=context,
+            )
+        )
+
+    async def orchestrate_async(self,
+                                market_data: pd.DataFrame,
+                                target_variable: str,
+                                feature_columns: Optional[List[str]] = None,
+                                timestamps: Optional[pd.Series] = None,
+                                context: Optional[Dict[str, Any]] = None) -> OrchestrationResult:
+        """Asynchronously orchestrate the complete training pipeline.
+
+        This mirrors :meth:`orchestrate` but is designed for callers that
+        already operate inside an event loop. Legacy synchronous workflows
+        should continue using :meth:`orchestrate`, while new asynchronous
+        workflows can ``await`` this coroutine directly.
+
         Args:
             market_data: Market data for training
             target_variable: Name of target variable
             feature_columns: List of feature columns (None for all except target)
             timestamps: Optional timestamps
             context: Additional context
-            
+
         Returns:
             OrchestrationResult with complete pipeline results
         """
         start_time = datetime.now()
         self.logger.info("🚀 Starting orchestration pipeline")
-        
+
         try:
             # Initialize result
             result = OrchestrationResult(
@@ -414,7 +464,7 @@ class TrainingOrchestrator:
             # Use unified pipeline if available and appropriate
             if UNIFIED_TOOLS_AVAILABLE and self.unified_pipeline and self.config.mode == OrchestrationMode.FULL_PIPELINE:
                 self.logger.info("🔧 Using unified pipeline for orchestration")
-                return self._orchestrate_with_unified_pipeline(
+                return await self._orchestrate_with_unified_pipeline(
                     market_data, target_variable, feature_columns, timestamps, context, start_time
                 )
             

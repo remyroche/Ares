@@ -119,6 +119,19 @@ config = OrchestratorConfig(
 orchestrator = TrainingOrchestrator(config)
 ```
 
+Run the orchestrator synchronously with:
+
+```python
+result = orchestrator.orchestrate(market_data, target_variable)
+```
+
+When integrating with existing asyncio applications, await the asynchronous
+entry point instead:
+
+```python
+result = await orchestrator.orchestrate_async(market_data, target_variable)
+```
+
 ## Benefits
 
 ### 1. **Enhanced Performance**

@@ -3220,18 +3220,18 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         """Calculate consensus lookback period across multiple targets."""
         try:
             valid_results = {k: v for k, v in feature_results.items() if 'error' not in v}
-            
+
             if not valid_results:
                 return {'lookback': 20, 'weighted_score': 0.0, 'method': 'fallback'}
-            
+
             # Weight targets by their performance and type
             weights = {}
             total_weight = 0
-            
+
             for target, result in valid_results.items():
                 # Base weight from MI score
                 score_weight = result['score']
-                
+
                 # Type-based weight adjustment
                 target_type = result['target_type']
                 type_weights = {
@@ -3242,13 +3242,41 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                     'short_probability': 1.0,
                     'other': 0.8
                 }
-                
+
                 type_weight = type_weights.get(target_type, 1.0)
                 final_weight = score_weight * type_weight
-                
+
                 weights[target] = final_weight
                 total_weight += final_weight
-            
+
+            lookback_values = [int(r['lookback']) for r in valid_results.values()]  # Convert to regular int
+            score_values = [r['score'] for r in valid_results.values()]
+
+            if total_weight <= 0:
+                log_warning(
+                    "Total weight for multi-target consensus was non-positive; "
+                    "falling back to uniform averaging."
+                )
+                consensus_lookback = int(round(np.mean(lookback_values))) if lookback_values else 20
+                average_score = float(np.mean(score_values)) if score_values else 0.0
+                lookback_std = np.std(lookback_values) if len(lookback_values) > 1 else 0
+                consensus_confidence = (
+                    max(0, 1 - (lookback_std / np.mean(lookback_values)))
+                    if lookback_values and np.mean(lookback_values) != 0
+                    else 0
+                )
+                uniform_weight = 1 / len(valid_results) if valid_results else 0
+                uniform_weights = {target: uniform_weight for target in valid_results}
+
+                return {
+                    'lookback': consensus_lookback,
+                    'weighted_score': average_score,
+                    'consensus_confidence': consensus_confidence,
+                    'method': 'uniform_consensus',
+                    'target_weights': uniform_weights,
+                    'lookback_std': lookback_std
+                }
+
             # Calculate weighted consensus
             weighted_lookback = 0
             weighted_score = 0
@@ -3259,12 +3287,11 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 weighted_score += result['score'] * weight
 
             consensus_lookback = int(round(weighted_lookback))
-            
+
             # Calculate consensus confidence
-            lookback_values = [int(r['lookback']) for r in valid_results.values()]  # Convert to regular int
             lookback_std = np.std(lookback_values) if len(lookback_values) > 1 else 0
             consensus_confidence = max(0, 1 - (lookback_std / np.mean(lookback_values))) if lookback_values else 0
-            
+
             return {
                 'lookback': consensus_lookback,
                 'weighted_score': weighted_score,
@@ -3273,7 +3300,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 'target_weights': weights,
                 'lookback_std': lookback_std
             }
-            
+
         except Exception as e:
             tprint(f"❌ Error calculating multi-target consensus: {e}")
             return {'lookback': 20, 'weighted_score': 0.0, 'method': 'error_fallback'}

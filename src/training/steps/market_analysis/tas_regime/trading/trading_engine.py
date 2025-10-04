@@ -16,9 +16,6 @@ import json
 from pathlib import Path
 
 from .signal_generator import TradingSignalGenerator, SignalConfig
-from .position_manager import PositionManager, PositionConfig
-from .risk_manager import RiskManager, RiskConfig
-from .performance_monitor import TradingPerformanceMonitor, PerformanceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +124,15 @@ class TradingEngine:
     providing regime-aware trading capabilities.
     """
     
-    def __init__(self, config: TradingConfig):
+    def __init__(
+        self,
+        config: TradingConfig,
+        *,
+        signal_generator: Optional[TradingSignalGenerator] = None,
+        position_manager: Optional[Any] = None,
+        risk_manager: Optional[Any] = None,
+        performance_monitor: Optional[Any] = None,
+    ):
         """Initialize trading engine.
         
         Args:
@@ -137,10 +142,10 @@ class TradingEngine:
         self.logger = logging.getLogger(self.__class__.__name__)
         
         # Initialize components
-        self.signal_generator = TradingSignalGenerator(SignalConfig())
-        self.position_manager = PositionManager(PositionConfig())
-        self.risk_manager = RiskManager(RiskConfig())
-        self.performance_monitor = TradingPerformanceMonitor(PerformanceConfig())
+        self.signal_generator = signal_generator or TradingSignalGenerator(SignalConfig())
+        self.position_manager = position_manager
+        self.risk_manager = risk_manager
+        self.performance_monitor = performance_monitor
         
         # Trading state
         self.current_capital = config.initial_capital
@@ -157,6 +162,13 @@ class TradingEngine:
         self.logger.info("✅ Trading Engine initialized")
         self.logger.info(f"💰 Initial capital: ${config.initial_capital:,.2f}")
         self.logger.info(f"🎯 Trading mode: {config.trading_mode.value}")
+
+        if self.config.enable_performance_monitoring and self.performance_monitor is None:
+            self.logger.debug(
+                "Performance monitoring enabled in config but no monitor supplied – skipping external tracker."
+            )
+        if self.risk_manager is None:
+            self.logger.debug("No risk manager supplied – engine will rely on internal safeguards only.")
     
     def execute_trade(self,
                      symbol: str,
@@ -183,9 +195,13 @@ class TradingEngine:
         
         try:
             # Risk management check
-            if not self.risk_manager.check_trade_risk(symbol, side, quantity, self.current_capital):
-                self.logger.warning(f"⚠️ Trade rejected by risk management")
-                return None
+            if self.risk_manager and hasattr(self.risk_manager, "check_trade_risk"):
+                is_valid = self.risk_manager.check_trade_risk(
+                    symbol, side, quantity, self.current_capital
+                )
+                if not is_valid:
+                    self.logger.warning("⚠️ Trade rejected by risk management")
+                    return None
             
             # Get current price if not provided
             if price is None:
@@ -227,6 +243,8 @@ class TradingEngine:
             
             # Update positions
             self.positions[symbol] = new_position
+            if self.risk_manager and hasattr(self.risk_manager, "update_position"):
+                self.risk_manager.update_position(symbol, new_position)
             
             # Create trade result
             trade_result = TradingResult(
@@ -254,7 +272,11 @@ class TradingEngine:
             self.trades.append(trade_result)
             
             # Update performance monitoring
-            if self.config.enable_performance_monitoring:
+            if (
+                self.config.enable_performance_monitoring
+                and self.performance_monitor
+                and hasattr(self.performance_monitor, "update_performance")
+            ):
                 self.performance_monitor.update_performance(trade_result)
             
             # Log trade
@@ -300,14 +322,17 @@ class TradingEngine:
                 current_positions=self.positions,
                 current_capital=self.current_capital
             )
-            
+
             # Filter signals based on risk management
             filtered_signals = []
-            for signal in signals:
-                if self.risk_manager.check_signal_risk(signal, self.current_capital):
-                    filtered_signals.append(signal)
-                else:
-                    self.logger.warning(f"⚠️ Signal rejected by risk management: {signal}")
+            if self.risk_manager and hasattr(self.risk_manager, "check_signal_risk"):
+                for signal in signals:
+                    if self.risk_manager.check_signal_risk(signal, self.current_capital):
+                        filtered_signals.append(signal)
+                    else:
+                        self.logger.warning(f"⚠️ Signal rejected by risk management: {signal}")
+            else:
+                filtered_signals = signals
             
             self.logger.info(f"📊 Generated {len(signals)} signals, {len(filtered_signals)} approved")
             return filtered_signals
@@ -499,7 +524,10 @@ class TradingEngine:
         self.daily_pnl = 0.0
         self.max_drawdown = 0.0
         self.peak_capital = self.config.initial_capital
-        
+
+        if self.risk_manager and hasattr(self.risk_manager, "reset"):
+            self.risk_manager.reset()
+
         self.logger.info("🔄 Trading state reset")
     
     def export_trading_log(self, filepath: str):

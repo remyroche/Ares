@@ -4775,6 +4775,31 @@ class IterativeOptimization:
             tprint(f"Local frontier moves failed: {e}", "ERROR")
             return 0.0
     
+    def _apply_step2_move_with_guard(self, stats: ClusteringStats, move: Dict[str, int], initial_k: int) -> bool:
+        """Apply a Step-2 move and rollback safely if it collapses K."""
+        point_idx = int(move['point_idx'])
+        from_cluster = int(move['from_cluster'])
+        to_cluster = int(move['to_cluster'])
+
+        stats.apply_move(point_idx, from_cluster, to_cluster)
+
+        current_k = len(np.unique(stats.assignments))
+        if current_k < initial_k:
+            # Full rollback using inverse move to keep statistics in sync
+            stats.apply_move(point_idx, to_cluster, from_cluster)
+            if hasattr(stats, 'invalidate_silhouettes'):
+                stats.invalidate_silhouettes()
+            if hasattr(stats, '_recompute_variance_caches'):
+                stats._recompute_variance_caches()
+            try:
+                stats._validate_state()
+            except Exception:
+                pass
+            tprint(f"🛑 Step-2 K-collapse detected, rolled back move {point_idx}", "WARNING")
+            return False
+
+        return True
+
     async def _step2_global_reallocation(self, features: np.ndarray, stats: ClusteringStats, constraints: NAgosticConstraints) -> float:
         """Step 2: Global reallocation with capacity-aware coordination."""
         try:
@@ -4942,20 +4967,11 @@ class IterativeOptimization:
                 # Apply batch with K-collapse guard
                 initial_k = len(set(stats.assignments))
                 for m in batch:
-                    # Store original state for rollback
-                    original_assignment = stats.assignments[m['point_idx']]
-                    stats.apply_move(m['point_idx'], m['from_cluster'], m['to_cluster'])
-                    
-                    # CRITICAL FIX: Check if K collapsed after move
-                    current_k = len(set(stats.assignments))
-                    if current_k < initial_k:
-                        # Rollback this move
-                        stats.assignments[m['point_idx']] = original_assignment
-                        tprint(f"🛑 Step-2 K-collapse detected, rolled back move {m['point_idx']}", "WARNING")
+                    if not self._apply_step2_move_with_guard(stats, m, initial_k):
                         continue
-                    
+
                     applied_total += 1
-                    
+
                     # CRITICAL FIX: Check churn cap per move
                     if applied_total >= self.step2_epoch_churn:
                         break

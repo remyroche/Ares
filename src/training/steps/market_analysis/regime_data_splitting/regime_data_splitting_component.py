@@ -7,7 +7,9 @@ Refactored to use common utilities for better maintainability and performance.
 """
 
 import asyncio
+import json
 import logging
+import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
@@ -912,117 +914,292 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"❌ Error loading regime discovery from outcomes: {e}")
             return None
 
-    def _load_full_cluster_assignments_from_artifacts(self) -> Optional[np.ndarray]:
+    def _load_cluster_assignment_metadata(self) -> Optional[Dict[str, Any]]:
+        """Load metadata describing saved cluster assignment artifacts."""
+        try:
+            path_manager = getattr(self, 'path_manager', None) or get_path_manager()
+            artifacts_dir = path_manager.get_artifacts_dir()
+            candidate_dirs = [artifacts_dir / "regime_data_splitting", artifacts_dir]
+
+            for directory in candidate_dirs:
+                if not directory.exists():
+                    continue
+
+                metadata_files = sorted(directory.glob("*assignment*metadata*.json"))
+                for metadata_file in metadata_files:
+                    try:
+                        with open(metadata_file, 'r', encoding='utf-8') as handle:
+                            metadata = json.load(handle)
+                        if isinstance(metadata, dict):
+                            metadata.setdefault('_metadata_file', str(metadata_file))
+                            self.logger.info(
+                                "📄 Loaded cluster assignment metadata from %s", metadata_file
+                            )
+                            return metadata
+                    except Exception as exc:
+                        self.logger.warning(
+                            "⚠️ Failed to load cluster assignment metadata from %s: %s",
+                            metadata_file,
+                            exc,
+                        )
+
+            self.logger.info("ℹ️ No cluster assignment metadata found in managed artifact directories")
+            return None
+        except Exception as exc:
+            self.logger.warning(f"⚠️ Unable to load cluster assignment metadata: {exc}")
+            return None
+
+    def _load_full_cluster_assignments_from_artifacts(self, metadata: Optional[Dict[str, Any]] = None) -> Optional[np.ndarray]:
         """Load full cluster assignments from saved artifacts when string representation is incomplete."""
         try:
-            # Try multiple artifact locations
-            artifact_locations = [
-                Path("/Users/remyroche/Documents/Ares/generated/market_analysis/clustering"),
-                Path("/Users/remyroche/Documents/Ares/artifacts"),
-                Path("/Users/remyroche/Documents/Ares/outcomes"),
-                Path("/Users/remyroche/Documents/Ares/data_cache"),
-                Path("/Users/remyroche/Documents/Ares/data_cache/nas_tas_clustering")
+            path_manager = getattr(self, 'path_manager', None) or get_path_manager()
+            artifacts_dir = path_manager.get_artifacts_dir()
+            candidate_dirs = [artifacts_dir]
+
+            additional_dirs = [
+                artifacts_dir / "regime_data_splitting",
+                artifacts_dir / "market_analysis",
+                artifacts_dir / "market_analysis" / "clustering",
             ]
-            
-            for artifacts_dir in artifact_locations:
-                if not artifacts_dir.exists():
+
+            for directory in additional_dirs:
+                if directory.exists():
+                    candidate_dirs.append(directory)
+
+            candidate_files: List[Path] = []
+
+            if metadata and 'artifact_path' in metadata:
+                artifact_path = Path(metadata['artifact_path'])
+                if not artifact_path.is_absolute():
+                    artifact_path = artifacts_dir / artifact_path
+                if artifact_path.exists():
+                    candidate_files.append(artifact_path)
+                else:
+                    self.logger.warning(
+                        "⚠️ Metadata referenced artifact %s but it does not exist",
+                        artifact_path,
+                    )
+
+            patterns = [
+                "nas_tas_regime_assignments_*.parquet",
+                "*regime_assignments*.parquet",
+                "nas_tas_clustering_results_*.pkl",
+                "*clustering*results*.pkl",
+                "*regime*clustering*.pkl",
+                "*nas_tas*.pkl",
+            ]
+
+            seen_files = set()
+            for directory in candidate_dirs:
+                if not directory.exists():
                     continue
-                
-                # First, try to find regime assignment parquet files (most reliable)
-                if "nas_tas_clustering" in str(artifacts_dir):
-                    # Look for regime assignment parquet files
-                    symbol = getattr(self.config, 'symbol', 'ETHUSDT').lower()
-                    regime_files = list(artifacts_dir.glob(f"**/{symbol}/nas_tas_regime_assignments_*.parquet"))
-                    
-                    if regime_files:
-                        # Get the most recent file
-                        latest_file = max(regime_files, key=lambda x: x.stat().st_mtime)
-                        self.logger.info(f"📁 Found regime assignment file: {latest_file}")
-                        
-                        try:
-                            import pandas as pd
-                            df = pd.read_parquet(latest_file)
-                            
-                            if 'regime_id' in df.columns:
-                                regime_ids = df['regime_id'].values
-                                unique_regimes = len(np.unique(regime_ids))
-                                self.logger.info(f"✅ Loaded regime assignments: {len(regime_ids)} assignments, {unique_regimes} unique regimes")
-                                
-                                if unique_regimes >= 5:  # Minimum requirement
-                                    return regime_ids
-                                else:
-                                    self.logger.warning(f"⚠️ Only {unique_regimes} regimes found, need at least 5")
-                            else:
-                                self.logger.warning(f"⚠️ No 'regime_id' column found in {latest_file}")
-                                
-                        except Exception as e:
-                            self.logger.error(f"❌ Failed to load regime assignments from {latest_file}: {e}")
-                            continue
-                    
-                # Look for clustering results files with different patterns
-                patterns = [
-                    "nas_tas_clustering_results_*.pkl",
-                    "*clustering*results*.pkl", 
-                    "*regime*clustering*.pkl",
-                    "*nas_tas*.pkl"
-                ]
-                
-                result_files = []
                 for pattern in patterns:
-                    result_files.extend(list(artifacts_dir.glob(pattern)))
-                
-                if not result_files:
-                    continue
-                
-                # Get the most recent file
-                latest_file = max(result_files, key=lambda x: x.stat().st_mtime)
-                self.logger.info(f"📁 Loading full cluster assignments from: {latest_file}")
+                    for file_path in directory.rglob(pattern):
+                        if file_path in seen_files:
+                            continue
+                        seen_files.add(file_path)
+                        candidate_files.append(file_path)
 
-                import pickle
-                with open(latest_file, 'rb') as f:
-                    saved_results = pickle.load(f)
+            for file_path in sorted(candidate_files, key=lambda x: x.stat().st_mtime, reverse=True):
+                self.logger.info(f"📁 Attempting to load cluster assignments from: {file_path}")
 
-                # Try different possible structures
-                possible_results = []
-                if isinstance(saved_results, dict):
-                    # Direct results
-                    if 'cluster_assignments' in saved_results:
-                        possible_results.append(saved_results['cluster_assignments'])
-                    if 'assignments' in saved_results:
-                        possible_results.append(saved_results['assignments'])
-                    if 'results' in saved_results:
-                        results = saved_results['results']
-                        if isinstance(results, dict):
-                            if 'cluster_assignments' in results:
-                                possible_results.append(results['cluster_assignments'])
-                            if 'assignments' in results:
-                                possible_results.append(results['assignments'])
-                
-                # Try to find valid cluster assignments
-                for states in possible_results:
-                    if states is None:
+                try:
+                    if file_path.suffix == '.parquet':
+                        if not PANDAS_AVAILABLE:
+                            self.logger.warning("⚠️ pandas is required to load parquet files but is unavailable")
+                            continue
+                        df = pd.read_parquet(file_path)
+                        if 'regime_id' in df.columns:
+                            states = df['regime_id'].to_numpy()
+                        elif 'cluster_assignments' in df.columns:
+                            states = df['cluster_assignments'].to_numpy()
+                        else:
+                            self.logger.warning(
+                                "⚠️ Parquet file %s does not contain expected columns",
+                                file_path,
+                            )
+                            continue
+                    elif file_path.suffix == '.pkl':
+                        import pickle
+
+                        with open(file_path, 'rb') as handle:
+                            saved_results = pickle.load(handle)
+
+                        possible_results = []
+                        if isinstance(saved_results, dict):
+                            if 'cluster_assignments' in saved_results:
+                                possible_results.append(saved_results['cluster_assignments'])
+                            if 'assignments' in saved_results:
+                                possible_results.append(saved_results['assignments'])
+                            if 'results' in saved_results:
+                                results = saved_results['results']
+                                if isinstance(results, dict):
+                                    if 'cluster_assignments' in results:
+                                        possible_results.append(results['cluster_assignments'])
+                                    if 'assignments' in results:
+                                        possible_results.append(results['assignments'])
+                        else:
+                            possible_results.append(saved_results)
+
+                        states = None
+                        for candidate in possible_results:
+                            if candidate is None:
+                                continue
+                            if isinstance(candidate, str):
+                                numbers = re.findall(r'\d+', candidate)
+                                if not numbers:
+                                    continue
+                                states = np.array([int(x) for x in numbers], dtype=np.int32)
+                            else:
+                                states = np.array(candidate)
+
+                            if states is not None:
+                                break
+
+                        if states is None:
+                            self.logger.warning(
+                                "⚠️ Could not extract cluster assignments from pickle %s",
+                                file_path,
+                            )
+                            continue
+                    else:
+                        self.logger.debug(f"ℹ️ Skipping unsupported artifact type: {file_path.suffix}")
                         continue
-                        
-                    if isinstance(states, str):
-                        # Parse the full string representation
-                        import re
-                        numbers = re.findall(r'\d+', states)
-                        if len(numbers) > 100:  # Reasonable number of assignments
-                            states = np.array([int(x) for x in numbers])
-                            self.logger.info(f"✅ Loaded full cluster assignments from artifacts: {len(states)} assignments")
-                            return states
-                    elif isinstance(states, (list, np.ndarray)):
-                        states = np.array(states)
-                        if len(states) > 100:  # Reasonable number of assignments
-                            self.logger.info(f"✅ Loaded full cluster assignments from artifacts: {len(states)} assignments")
-                            return states
 
-            self.logger.warning("⚠️ No cluster assignments found in any saved artifacts")
+                    if not isinstance(states, np.ndarray):
+                        states = np.array(states)
+
+                    if metadata and 'expected_length' in metadata:
+                        expected_length = int(metadata['expected_length'])
+                        if len(states) != expected_length:
+                            self.logger.warning(
+                                "⚠️ Loaded %s assignments from %s but expected %s",
+                                len(states),
+                                file_path,
+                                expected_length,
+                            )
+                            continue
+
+                    unique_regimes = len(np.unique(states))
+                    if unique_regimes < 1:
+                        self.logger.warning(
+                            "⚠️ Loaded assignments from %s but no regimes detected",
+                            file_path,
+                        )
+                        continue
+
+                    self.logger.info(
+                        "✅ Loaded %s assignments with %s regimes from %s",
+                        len(states),
+                        unique_regimes,
+                        file_path,
+                    )
+                    return states
+                except Exception as exc:
+                    self.logger.error(f"❌ Failed to load regime assignments from {file_path}: {exc}")
+                    continue
+
+            self.logger.warning("⚠️ No cluster assignments found in any managed artifact directories")
             return None
 
         except Exception as e:
-            self.logger.error(f"❌ Error loading full cluster assignments from artifacts: {e}")
+            self.logger.error(f"❌ Error loading cluster assignments from artifacts: {e}")
             return None
+
+    def _parse_cluster_assignments_string(
+        self,
+        states_str: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> np.ndarray:
+        """Parse cluster assignments stored as a (potentially truncated) numpy string."""
+        if not NUMPY_AVAILABLE:
+            raise ValueError("numpy is required to parse cluster assignment strings")
+
+        if not isinstance(states_str, str):
+            raise ValueError("Cluster assignments must be provided as a string for parsing")
+
+        metadata = metadata or self._load_cluster_assignment_metadata()
+        preview_numbers = [int(x) for x in re.findall(r'\d+', states_str)]
+        is_truncated = '...' in states_str
+
+        if is_truncated:
+            self.logger.info("📄 Detected truncated cluster assignment string; attempting artifact recovery")
+            assignments = self._load_full_cluster_assignments_from_artifacts(metadata)
+            if assignments is not None:
+                if metadata and 'expected_length' in metadata:
+                    expected_length = int(metadata['expected_length'])
+                    if len(assignments) != expected_length:
+                        raise ValueError(
+                            f"Loaded {len(assignments)} assignments but expected {expected_length} according to metadata"
+                        )
+                return np.array(assignments, dtype=np.int32)
+
+            expected_length = (
+                int(metadata['expected_length'])
+                if metadata and 'expected_length' in metadata
+                else None
+            )
+            if expected_length is not None:
+                raise ValueError(
+                    "Truncated cluster assignment string encountered; "
+                    f"expected {expected_length} assignments but no artifact could be loaded"
+                )
+            raise ValueError(
+                "Truncated cluster assignment string encountered but no cluster assignment artifact could be loaded"
+            )
+
+        if not preview_numbers:
+            raise ValueError("Cluster assignment string did not contain any numeric values")
+
+        assignments = np.array(preview_numbers, dtype=np.int32)
+
+        if metadata and 'expected_length' in metadata:
+            expected_length = int(metadata['expected_length'])
+            if len(assignments) != expected_length:
+                self.logger.info(
+                    "📄 Cluster assignment string length %s does not match expected %s; attempting artifact recovery",
+                    len(assignments),
+                    expected_length,
+                )
+                full_assignments = self._load_full_cluster_assignments_from_artifacts(metadata)
+                if full_assignments is not None and len(full_assignments) == expected_length:
+                    return np.array(full_assignments, dtype=np.int32)
+                raise ValueError(
+                    f"Cluster assignment string contained {len(assignments)} entries but expected {expected_length}"
+                )
+
+        return assignments
+
+    def _resolve_cluster_assignments_value(
+        self,
+        value: Any,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> np.ndarray:
+        """Normalize cluster assignments from various representations using optional metadata."""
+        if not NUMPY_AVAILABLE:
+            raise ValueError("numpy is required to resolve cluster assignments")
+
+        if isinstance(value, str):
+            return self._parse_cluster_assignments_string(value, metadata)
+
+        assignments = value if isinstance(value, np.ndarray) else np.array(value)
+
+        if metadata and 'expected_length' in metadata:
+            expected_length = int(metadata['expected_length'])
+            if len(assignments) != expected_length:
+                self.logger.info(
+                    "📄 Loaded %s assignments but expected %s according to metadata; attempting artifact recovery",
+                    len(assignments),
+                    expected_length,
+                )
+                recovered = self._load_full_cluster_assignments_from_artifacts(metadata)
+                if recovered is None or len(recovered) != expected_length:
+                    raise ValueError(
+                        f"Loaded {len(assignments)} assignments but expected {expected_length}"
+                    )
+                assignments = recovered if isinstance(recovered, np.ndarray) else np.array(recovered)
+
+        return assignments
 
     def _predict_regime_states_with_ml_model(self, ensemble_result: Dict[str, Any], market_data: pd.DataFrame) -> Optional[np.ndarray]:
         """Use the trained ML model from regime ensemble training to predict regime states."""
@@ -1479,127 +1656,22 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                             self.logger.error("❌ No cluster assignments found in clustering component")
                             return None
                     elif isinstance(clustering_result, dict):
-                        # Handle dictionary format clustering results
+                        assignment_metadata: Optional[Dict[str, Any]] = None
                         if 'cluster_assignments' in clustering_result:
-                            states = clustering_result['cluster_assignments']
-                            # Handle string representation of cluster assignments
-                            if isinstance(states, str):
-                                # First, try to load from regime assignment files (more reliable)
-                                self.logger.info("📁 Attempting to load regime assignments from parquet files...")
-                                regime_assignments = self._load_full_cluster_assignments_from_artifacts()
-                                
-                                if regime_assignments is not None and len(np.unique(regime_assignments)) >= 5:
-                                    self.logger.info(f"✅ Using regime assignments from parquet files: {len(regime_assignments)} assignments, {len(np.unique(regime_assignments))} unique regimes")
-                                    states = regime_assignments
-                                else:
-                                    # Fallback to parsing the truncated string
-                                    self.logger.warning("⚠️ Could not load regime assignments from parquet files, falling back to string parsing")
-                                    try:
-                                        # Parse string representation like "[0 0 0 ... 2 4 4]"
-                                        import re
-                                        # Handle truncated numpy array representation
-                                        if '...' in states:
-                                            # Extract numbers before and after ellipsis
-                                            parts = states.split('...')
-                                            if len(parts) == 2:
-                                                # Get numbers from both parts
-                                                before_ellipsis = re.findall(r'\d+', parts[0])
-                                                after_ellipsis = re.findall(r'\d+', parts[1])
-                                                # For truncated representation, we need to estimate the full array
-                                                # Use the pattern to generate a reasonable approximation
-                                                if before_ellipsis and after_ellipsis:
-                                                    # Get the last few numbers before ellipsis and first few after
-                                                    start_nums = [int(x) for x in before_ellipsis[-3:]]  # Last 3 numbers before ellipsis
-                                                    end_nums = [int(x) for x in after_ellipsis[:3]]     # First 3 numbers after ellipsis
-                                                    
-                                                    # Estimate the missing middle part by interpolating
-                                                    # This is a simplified approach - in practice, you'd want more sophisticated interpolation
-                                                    estimated_length = 1000  # Reasonable estimate for market data
-                                                    middle_length = estimated_length - len(start_nums) - len(end_nums)
-                                                    
-                                                    if middle_length > 0:
-                                                        # Create a pattern that transitions from start to end
-                                                        middle_nums = []
-                                                        for i in range(middle_length):
-                                                            # Simple interpolation between start and end patterns
-                                                            progress = i / middle_length
-                                                            if progress < 0.5:
-                                                                # Use pattern from start numbers
-                                                                middle_nums.append(start_nums[-1])
-                                                            else:
-                                                                # Transition to end numbers
-                                                                middle_nums.append(end_nums[0])
-                                                        
-                                                        # Combine all parts
-                                                        all_nums = start_nums + middle_nums + end_nums
-                                                        states = np.array(all_nums)
-                                                    else:
-                                                        # Fallback to just the available numbers
-                                                        all_nums = before_ellipsis + after_ellipsis
-                                                        states = np.array([int(x) for x in all_nums])
-                                                else:
-                                                    # Fallback to simple extraction
-                                                    numbers = re.findall(r'\d+', states)
-                                                    states = np.array([int(x) for x in numbers])
-                                            else:
-                                                # Fallback to simple extraction
-                                                numbers = re.findall(r'\d+', states)
-                                                states = np.array([int(x) for x in numbers])
-                                        else:
-                                            # No ellipsis, extract all numbers
-                                            numbers = re.findall(r'\d+', states)
-                                            states = np.array([int(x) for x in numbers])
-                                        
-                                        self.logger.info(f"✅ Parsed cluster_assignments from string: {len(states)} assignments")
-                                        
-                                        # Check if we have enough assignments for the market data
-                                        if len(states) < 100:  # Suspiciously few assignments
-                                            self.logger.warning(f"⚠️ Only {len(states)} cluster assignments found - this seems too few for proper regime analysis")
-                                            self.logger.warning("⚠️ This suggests the clustering component may not have properly serialized the full results")
-                                            # Try to load from saved artifacts as fallback
-                                            fallback_states = self._load_full_cluster_assignments_from_artifacts()
-                                            if fallback_states is not None and len(fallback_states) > len(states):
-                                                self.logger.info(f"✅ Found better cluster assignments in artifacts: {len(fallback_states)} assignments")
-                                                states = fallback_states
-                                            else:
-                                                # Use the available data even if it's limited
-                                                self.logger.warning(f"⚠️ Using available cluster assignments: {len(states)} assignments")
-                                                self.logger.warning("⚠️ This may result in limited regime analysis but will use actual clustering results")
-                                                # Continue with the available data instead of generating fallback
-                                    except Exception as e:
-                                        self.logger.error(f"❌ Failed to parse cluster_assignments string: {e}")
-                                        return None
-                            else:
-                                self.logger.info("✅ Found cluster_assignments in clustering result dictionary")
+                            assignment_metadata = self._load_cluster_assignment_metadata()
+                            states = self._resolve_cluster_assignments_value(
+                                clustering_result['cluster_assignments'],
+                                assignment_metadata,
+                            )
+                            self.logger.info("✅ Found cluster_assignments in clustering result dictionary")
                         elif 'assignments' in clustering_result:
-                            states = clustering_result['assignments']
-                            # Handle string representation of assignments
-                            if isinstance(states, str):
-                                try:
-                                    import re
-                                    numbers = re.findall(r'\d+', states)
-                                    states = np.array([int(x) for x in numbers])
-                                    self.logger.info(f"✅ Parsed assignments from string: {len(states)} assignments")
-                                    
-                                    # Check if we have enough assignments for the market data
-                                    if len(states) < 100:  # Suspiciously few assignments
-                                        self.logger.warning(f"⚠️ Only {len(states)} assignments found - this seems too few for proper regime analysis")
-                                        self.logger.warning("⚠️ This suggests the clustering component may not have properly serialized the full results")
-                                        # Try to load from saved artifacts as fallback
-                                        fallback_states = self._load_full_cluster_assignments_from_artifacts()
-                                        if fallback_states is not None and len(fallback_states) > len(states):
-                                            self.logger.info(f"✅ Found better assignments in artifacts: {len(fallback_states)} assignments")
-                                            states = fallback_states
-                                        else:
-                                            # Use the available data even if it's limited
-                                            self.logger.warning(f"⚠️ Using available assignments: {len(states)} assignments")
-                                            self.logger.warning("⚠️ This may result in limited regime analysis but will use actual clustering results")
-                                            # Continue with the available data instead of generating fallback
-                                except Exception as e:
-                                    self.logger.error(f"❌ Failed to parse assignments string: {e}")
-                                    return None
-                            else:
-                                self.logger.info("✅ Found assignments in clustering result dictionary")
+                            if assignment_metadata is None:
+                                assignment_metadata = self._load_cluster_assignment_metadata()
+                            states = self._resolve_cluster_assignments_value(
+                                clustering_result['assignments'],
+                                assignment_metadata,
+                            )
+                            self.logger.info("✅ Found assignments in clustering result dictionary")
                         else:
                             self.logger.error("❌ No cluster assignments found in clustering result dictionary")
                             self.logger.error(f"❌ Available keys: {list(clustering_result.keys())}")
@@ -1611,7 +1683,11 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             
             # Try different possible structures for direct regime discovery
             elif 'cluster_assignments' in regime_discovery:
-                states = regime_discovery['cluster_assignments']
+                metadata = self._load_cluster_assignment_metadata()
+                states = self._resolve_cluster_assignments_value(
+                    regime_discovery['cluster_assignments'],
+                    metadata,
+                )
                 self.logger.info("✅ Found cluster_assignments in regime discovery")
             elif 'regime_states' in regime_discovery:
                 states = regime_discovery['regime_states']
@@ -1666,8 +1742,11 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             self.logger.info(f"✅ Regime states extracted: {len(states)} assignments with {unique_regimes} regimes")
             return states
             
-        except Exception as e:
+        except ValueError as e:
             self.logger.error(f"❌ Error extracting regime states: {e}")
+            raise
+        except Exception as e:
+            self.logger.error(f"❌ Unexpected error extracting regime states: {e}")
             return None
     
     def _extract_regime_probabilities(self, regime_discovery: Dict[str, Any]) -> Optional[np.ndarray]:

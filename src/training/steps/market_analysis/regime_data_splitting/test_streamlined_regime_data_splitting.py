@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import pandas as pd
 import numpy as np
+import traceback
 
 # Add src to path for imports
 project_root = Path(__file__).parent.parent.parent.parent.parent.parent
@@ -193,6 +194,82 @@ def test_basic_functionality():
         traceback.print_exc()
         return False
 
+async def test_close_column_regime_tagging():
+    """Ensure regime tagging works deterministically with only a close column."""
+    print("🔍 Testing regime tagging with close column only...")
+
+    try:
+        from src.training.steps.market_analysis.regime_data_splitting import (
+            StreamlinedRegimeDataSplitting
+        )
+
+        instance = StreamlinedRegimeDataSplitting({'chunk_size': 100, 'max_memory_gb': 1.0})
+
+        timestamps = pd.date_range('2024-01-01', periods=120, freq='1min')
+        close_prices = 100 + np.linspace(0, 1, 120) + np.sin(np.linspace(0, 3.14, 120)) * 0.5
+        close_only_chunk = pd.DataFrame({
+            'timestamp': timestamps,
+            'close': close_prices
+        })
+
+        cpu_tagged = instance._apply_regime_tags_to_chunk_cpu(close_only_chunk)
+
+        if 'composite_cluster_id' not in cpu_tagged.columns:
+            print("❌ CPU tagging missing composite_cluster_id column")
+            return False
+
+        if cpu_tagged['composite_cluster_id'].isna().any():
+            print("❌ CPU tagging produced NaN regime values")
+            return False
+
+        if cpu_tagged['composite_cluster_id'].lt(0).any():
+            print("❌ CPU tagging produced negative regime values")
+            return False
+
+        if cpu_tagged['composite_cluster_id'].max() > 3:
+            print("❌ CPU tagging produced unexpected regime labels")
+            return False
+
+        if cpu_tagged['composite_cluster_id'].head(5).lt(0).any():
+            print("❌ CPU tagging failed to label initial rows")
+            return False
+
+        optimized_tagged = await instance._apply_regime_tags_to_chunk_optimized(close_only_chunk)
+
+        if optimized_tagged is None:
+            print("❌ Optimized tagging returned None")
+            return False
+
+        if optimized_tagged['composite_cluster_id'].isna().any():
+            print("❌ Optimized tagging produced NaN regime values")
+            return False
+
+        if optimized_tagged['composite_cluster_id'].lt(0).any():
+            print("❌ Optimized tagging produced negative regime values")
+            return False
+
+        if not cpu_tagged['composite_cluster_id'].reset_index(drop=True).equals(
+            optimized_tagged['composite_cluster_id']
+        ):
+            print("❌ Optimized tagging does not match CPU tagging")
+            return False
+
+        if optimized_tagged['composite_cluster_id'].max() > 3:
+            print("❌ Optimized tagging produced unexpected regime labels")
+            return False
+
+        if optimized_tagged['composite_cluster_id'].head(5).lt(0).any():
+            print("❌ Optimized tagging failed to label initial rows")
+            return False
+
+        print("✅ Close column regime tagging successful")
+        return True
+
+    except Exception as e:
+        print(f"❌ Error during close column regime tagging test: {e}")
+        traceback.print_exc()
+        return False
+
 def test_error_handling():
     """Test error handling and edge cases."""
     print("🔍 Testing error handling...")
@@ -347,15 +424,19 @@ async def main():
     print("=" * 60)
     test_results.append(("Basic Functionality", test_basic_functionality()))
 
-    # Test 4: Error handling
+    # Test 4: Close column deterministic tagging
+    print("=" * 60)
+    test_results.append(("Close Column Tagging", await test_close_column_regime_tagging()))
+
+    # Test 5: Error handling
     print("=" * 60)
     test_results.append(("Error Handling", test_error_handling()))
 
-    # Test 5: Main integration
+    # Test 6: Main integration
     print("=" * 60)
     test_results.append(("Main Integration", await test_main_integration()))
 
-    # Test 6: Streamlined implementation
+    # Test 7: Streamlined implementation
     print("=" * 60)
     test_results.append(("Streamlined Implementation", await test_streamlined_implementation()))
 

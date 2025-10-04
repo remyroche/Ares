@@ -110,8 +110,11 @@ class FeaturePreparationStep:
             feature_result = await self._prepare_features_using_shared_utils(
                 context.market_data, config
             )
-            
-            # Step 1c: Apply regime-specific feature optimization (PCA, etc.)
+
+            # Step 1c: Inject prepared feature data into the context before optimization
+            context = self._integrate_feature_result_into_context(context, feature_result)
+
+            # Step 1d: Apply regime-specific feature optimization (PCA, etc.)
             context = await self._optimize_features(context, config)
             
             tprint("Step 1: Feature preparation completed successfully", "SUCCESS")
@@ -120,6 +123,100 @@ class FeaturePreparationStep:
         except Exception as e:
             tprint(f"Step 1: Feature preparation failed: {e}", "ERROR")
             raise ValueError(f"Feature preparation failed: {e}")
+
+    def _integrate_feature_result_into_context(
+        self,
+        context: ClusteringContext,
+        feature_result: FeaturePreparationResult
+    ) -> ClusteringContext:
+        """Populate the clustering context with shared utility feature outputs."""
+
+        if feature_result is None:
+            raise ValueError("Shared feature preparation returned no result")
+
+        # Extract feature matrix
+        if hasattr(feature_result, 'features') and feature_result.features is not None:
+            features = feature_result.features
+            feature_names = getattr(feature_result, 'feature_names', None)
+            feature_scores = getattr(feature_result, 'feature_scores', None)
+            dropped_features = getattr(feature_result, 'dropped_features', None)
+            metadata = getattr(feature_result, 'metadata', {}) or {}
+        elif hasattr(feature_result, 'features_array') and feature_result.features_array is not None:
+            features = feature_result.features_array
+            feature_df = getattr(feature_result, 'features_df', None)
+            feature_names = list(feature_df.columns) if feature_df is not None else None
+            metadata = getattr(feature_result, 'metadata', {}) or {}
+            feature_scores = metadata.get('feature_scores') or metadata.get('scores')
+            dropped_features = metadata.get('dropped_columns')
+        else:
+            features = np.asarray(feature_result)
+            feature_names = None
+            feature_scores = None
+            metadata = {}
+            dropped_features = None
+
+        if features is None or getattr(features, 'size', 0) == 0:
+            raise ValueError("Shared feature preparation produced empty features")
+
+        # Derive feature names if missing
+        n_features = features.shape[1] if hasattr(features, 'shape') and len(features.shape) >= 2 else 0
+        if not feature_names:
+            feature_names = [f"feature_{i}" for i in range(n_features)]
+
+        # Normalize feature scores
+        if feature_scores is None:
+            feature_scores = {}
+        feature_scores = {
+            str(name): float(score)
+            for name, score in (feature_scores.items() if isinstance(feature_scores, dict) else [])
+        }
+
+        # Extract dropped feature names from metadata structures
+        dropped_feature_names: List[str] = []
+        if isinstance(dropped_features, list):
+            dropped_feature_names.extend(str(name) for name in dropped_features)
+        elif isinstance(dropped_features, dict):
+            for names in dropped_features.values():
+                if isinstance(names, (list, tuple, set)):
+                    dropped_feature_names.extend(str(name) for name in names)
+
+        stage_metadata = metadata.get('stage_metadata') if isinstance(metadata, dict) else None
+        if isinstance(stage_metadata, dict):
+            operations = stage_metadata.get('operations', [])
+            for operation in operations:
+                if isinstance(operation, dict):
+                    removed = operation.get('removed_columns') or operation.get('removed_features')
+                    if isinstance(removed, list):
+                        dropped_feature_names.extend(str(name) for name in removed)
+
+        # Deduplicate dropped feature names while preserving order
+        if dropped_feature_names:
+            seen = set()
+            deduped = []
+            for name in dropped_feature_names:
+                if name not in seen:
+                    deduped.append(name)
+                    seen.add(name)
+            dropped_feature_names = deduped
+
+        # Update context attributes with shared utility outputs
+        context.original_features = features
+        context.original_feature_names = list(feature_names)
+        context.feature_scores = feature_scores
+        context.dropped_feature_names = dropped_feature_names
+        context.pre_pca_feature_names = list(feature_names)
+        context.pre_pca_feature_count = len(feature_names)
+
+        # Store metadata for downstream reporting without overwriting existing summary
+        context.summary = context.summary or {}
+        context.summary.setdefault('feature_preparation', {})
+        context.summary['feature_preparation'].update({
+            'metadata': metadata,
+            'feature_count': len(feature_names),
+            'dropped_features': dropped_feature_names,
+        })
+
+        return context
     
     async def _prepare_features_using_shared_utils(
         self, 
@@ -143,32 +240,14 @@ class FeaturePreparationStep:
             # Prepare features using shared utilities
             feature_result = prepare_market_features(
                 market_data=market_data,
-                config=feature_config
+                feature_config=feature_config,
+                return_metadata=True
             )
 
-            # Handle both return types: FeaturePreparationResult or numpy array
-            if hasattr(feature_result, 'features'):
-                # It's a FeaturePreparationResult
-                features = feature_result.features
-                tprint(f"Shared utilities prepared {features.shape[1]} features", "SUCCESS")
-            else:
-                # It's a numpy array
-                features = feature_result
-                tprint(f"Shared utilities prepared {features.shape[1]} features", "SUCCESS")
+            features = feature_result.features_array
+            tprint(f"Shared utilities prepared {features.shape[1]} features", "SUCCESS")
 
-            # Ensure we return a FeaturePreparationResult-like object
-            if hasattr(feature_result, 'features'):
-                return feature_result
-            else:
-                # Create a FeaturePreparationResult-like object for consistency
-                return FeaturePreparationResult(
-                    features=features,
-                    feature_names=[f'feature_{i}' for i in range(features.shape[1])],
-                    feature_scores={},
-                    dropped_features=[],
-                    preparation_time=0.0,
-                    metadata={'prepared_directly': True, 'total_features': features.shape[1]}
-                )
+            return feature_result
             
         except Exception as e:
             tprint(f"Shared feature preparation failed: {e}", "ERROR")

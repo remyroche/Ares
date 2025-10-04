@@ -118,13 +118,13 @@ class ModelSelectionResult:
     expected_performance: Dict[str, float]
     historical_performance: Dict[str, float]
     confidence_interval: Tuple[float, float]
-    
+
     # Alternative options
     alternative_models: List[Dict[str, Any]]
-    ensemble_weights: Optional[Dict[str, float]] = None
-    
+
     # Metadata
     selection_time: datetime
+    ensemble_weights: Optional[Dict[str, float]] = None
     regime_probabilities: Optional[np.ndarray] = None
     model_rankings: Dict[str, int] = field(default_factory=dict)
 
@@ -265,7 +265,8 @@ class ModelSelector:
                     'model': ensemble_info['model'],
                     'model_id': ensemble_id,
                     'performance': ensemble_info.get('val_metrics', {}),
-                    'base_models': ensemble_info.get('base_models', [])
+                    'base_models': ensemble_info.get('base_models', []),
+                    'weights': ensemble_info.get('weights')
                 }
                 
                 self.performance_history[ensemble_id] = []
@@ -313,7 +314,7 @@ class ModelSelector:
                 )
             elif self.config.selection_strategy == SelectionStrategy.ENSEMBLE:
                 selection_result = self._select_ensemble_model(
-                    regime_models, market_data, context
+                    current_regime, regime_models, market_data, context
                 )
             elif self.config.selection_strategy == SelectionStrategy.ADAPTIVE:
                 selection_result = self._select_adaptive_model(
@@ -489,77 +490,140 @@ class ModelSelector:
         best_model = None
         best_score = -1
         best_model_type = None
+        best_model_id = None
         
         for model_type, model_info in regime_models.items():
             # Get performance score
             performance = model_info['performance']
             score = performance.get(self.config.performance_metric, 0.0)
-            
+
             if score > best_score:
                 best_score = score
                 best_model = model_info['model']
                 best_model_type = model_type
-        
+                best_model_id = model_info['model_id']
+
         if best_model is None:
             raise ValueError("No models available for selection")
-        
+
         return {
             'model': best_model,
             'model_type': best_model_type,
-            'model_id': f"regime_{best_model_type}",
+            'model_id': best_model_id,
             'confidence': best_score,
             'reason': f"Best {self.config.performance_metric}: {best_score:.3f}"
         }
-    
-    def _select_ensemble_model(self, 
+
+    def _select_ensemble_model(self,
+                             regime_id: int,
                              regime_models: Dict[str, Any],
                              market_data: pd.DataFrame,
                              context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """Select ensemble model."""
         if not self.config.enable_ensemble:
             return self._select_best_performance_model(regime_models, market_data, context)
-        
+
         try:
             from sklearn.ensemble import VotingClassifier
-            
+
             # Create ensemble from available models
             base_models = []
             model_weights = []
-            
+            base_model_ids = []
+
             for model_type, model_info in regime_models.items():
                 base_models.append((model_type, model_info['model']))
                 # Weight by performance
                 performance = model_info['performance']
                 weight = performance.get(self.config.performance_metric, 0.5)
                 model_weights.append(weight)
-            
+                base_model_ids.append(model_info['model_id'])
+
             if len(base_models) < 2:
                 # Not enough models for ensemble, use best single model
                 return self._select_best_performance_model(regime_models, market_data, context)
-            
+
             # Normalize weights
             total_weight = sum(model_weights)
             model_weights = [w / total_weight for w in model_weights]
-            
-            # Create ensemble
+
+            # Try to find a matching pre-trained ensemble
+            ensemble_registry = self.available_models.get('ensemble', {})
+            for ensemble_name, ensemble_info in ensemble_registry.items():
+                registered_base_models = ensemble_info.get('base_models', [])
+                if registered_base_models and not set(registered_base_models).issubset(set(base_model_ids)):
+                    continue
+
+                performance = ensemble_info.get('performance', {})
+                confidence = performance.get(self.config.performance_metric, np.mean(model_weights))
+
+                return {
+                    'model': ensemble_info['model'],
+                    'model_type': 'ensemble',
+                    'model_id': ensemble_info['model_id'],
+                    'confidence': confidence,
+                    'reason': f"Pre-trained ensemble {ensemble_name}",
+                    'ensemble_weights': ensemble_info.get('weights')
+                }
+
+            # No pre-trained ensemble available - attempt to build one on the fly
+            training_data = None
+            if context:
+                training_data = context.get('training_data')
+
+            if training_data is None:
+                self.logger.warning(
+                    "No pre-trained ensemble available and no training data provided; falling back to best model"
+                )
+                return self._select_best_performance_model(regime_models, market_data, context)
+
+            # Extract training data (supports tuple/list or dict with keys)
+            if isinstance(training_data, (tuple, list)) and len(training_data) >= 2:
+                X_train, y_train = training_data[0], training_data[1]
+            elif isinstance(training_data, dict):
+                X_train = training_data.get('X') or training_data.get('features')
+                y_train = training_data.get('y') or training_data.get('labels')
+            else:
+                raise ValueError("Unsupported training_data format for ensemble fitting")
+
+            if X_train is None or y_train is None:
+                raise ValueError("Training data for ensemble fitting must include features (X) and labels (y)")
+
             ensemble = VotingClassifier(
                 estimators=base_models,
                 voting='soft',
                 weights=model_weights
             )
-            
+
+            ensemble.fit(X_train, y_train)
+
             # Calculate ensemble confidence
             ensemble_confidence = np.mean(model_weights)
-            
+
+            # Create deterministic ensemble identifier based on regime and base model ids
+            sorted_ids = "_".join(sorted(base_model_ids))
+            ensemble_name = f"auto_regime_{regime_id}_{hash(sorted_ids) & 0xffff:x}"
+            ensemble_id = f"ensemble_{ensemble_name}"
+
+            # Register the newly created ensemble for future reuse
+            self.available_models.setdefault('ensemble', {})[ensemble_name] = {
+                'model': ensemble,
+                'model_id': ensemble_id,
+                'performance': {},
+                'base_models': base_model_ids,
+                'weights': dict(zip([name for name, _ in base_models], model_weights))
+            }
+            self.performance_history.setdefault(ensemble_id, [])
+
             return {
                 'model': ensemble,
                 'model_type': 'ensemble',
-                'model_id': 'ensemble_model',
+                'model_id': ensemble_id,
                 'confidence': ensemble_confidence,
-                'reason': f"Ensemble of {len(base_models)} models",
+                'reason': f"Auto-ensemble of {len(base_models)} models",
                 'ensemble_weights': dict(zip([name for name, _ in base_models], model_weights))
             }
-            
+
         except Exception as e:
             self.logger.warning(f"Ensemble selection failed: {e}")
             return self._select_best_performance_model(regime_models, market_data, context)
@@ -587,11 +651,12 @@ class ModelSelector:
         # Select best adaptive model
         best_model_type = max(adaptive_scores.keys(), key=lambda x: adaptive_scores[x])
         best_model = regime_models[best_model_type]['model']
-        
+        best_model_id = regime_models[best_model_type]['model_id']
+
         return {
             'model': best_model,
             'model_type': best_model_type,
-            'model_id': f"adaptive_{best_model_type}",
+            'model_id': best_model_id,
             'confidence': adaptive_scores[best_model_type],
             'reason': f"Adaptive selection: {best_model_type} (weight: {self.adaptation_weights.get(best_model_type, 1.0):.3f})"
         }
@@ -615,11 +680,12 @@ class ModelSelector:
         # Select best meta-learning model
         best_model_type = max(meta_scores.keys(), key=lambda x: meta_scores[x])
         best_model = regime_models[best_model_type]['model']
-        
+        best_model_id = regime_models[best_model_type]['model_id']
+
         return {
             'model': best_model,
             'model_type': best_model_type,
-            'model_id': f"meta_{best_model_type}",
+            'model_id': best_model_id,
             'confidence': meta_scores[best_model_type],
             'reason': f"Meta-learning selection: {best_model_type}"
         }
@@ -660,11 +726,12 @@ class ModelSelector:
         # Select best confidence-based model
         best_model_type = max(confidence_scores.keys(), key=lambda x: confidence_scores[x])
         best_model = regime_models[best_model_type]['model']
-        
+        best_model_id = regime_models[best_model_type]['model_id']
+
         return {
             'model': best_model,
             'model_type': best_model_type,
-            'model_id': f"confidence_{best_model_type}",
+            'model_id': best_model_id,
             'confidence': confidence_scores[best_model_type],
             'reason': f"Confidence-based selection: {best_model_type}"
         }

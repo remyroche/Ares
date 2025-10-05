@@ -21,7 +21,7 @@ import asyncio
 import logging
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any, Union
+from typing import Dict, List, Optional, Tuple, Any, Union, TYPE_CHECKING
 from datetime import datetime, timedelta
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -87,6 +87,9 @@ try:
     from src.training.steps.market_analysis.final_feature_selection_step import (
         FinalFeatureSelectionStep
     )
+    from src.training.steps.market_analysis.final_feature_selection_pipeline import (
+        FeatureSelectionConfig
+    )
     FEATURE_SELECTION_AVAILABLE = True
 except ImportError as e:
     FEATURE_SELECTION_AVAILABLE = False
@@ -137,6 +140,14 @@ class OrchestratorConfig:
     stage_2_target: int = 80
     stage_3_target: int = 60
 
+    # NEW: Directional processing modes
+    direction_mode: str = 'both'  # 'both', 'long_only', 'short_only'
+    separate_directional_features: bool = True  # Create completely separate feature sets for long/short
+    directional_feature_prefixes: Dict[str, str] = field(default_factory=lambda: {
+        'long': 'long_',
+        'short': 'short_'
+    })
+
     # Hardware optimization
     enable_parallel_processing: bool = True
     enable_gpu_acceleration: bool = True
@@ -165,8 +176,8 @@ class OrchestratorResult:
     long_optimized_lookbacks: Dict[str, int] = field(default_factory=dict)
     short_optimized_lookbacks: Dict[str, int] = field(default_factory=dict)
 
-    long_pid_features: OrchestratorResult = None
-    short_pid_features: OrchestratorResult = None
+    long_pid_features: Optional[Any] = None
+    short_pid_features: Optional[Any] = None
 
     long_labeled_targets: Dict[str, np.ndarray] = field(default_factory=dict)
     short_labeled_targets: Dict[str, np.ndarray] = field(default_factory=dict)
@@ -234,6 +245,8 @@ class TacticianPreMLOrchestrator:
             tprint_info(f"Min analyst confidence: {self.config.min_analyst_confidence}")
             tprint_info(f"Subsequent minutes: {self.config.subsequent_minutes}")
             tprint_info(f"Output directory: {self.config.output_directory}")
+            tprint_info(f"Direction mode: {self.config.direction_mode}")
+            tprint_info(f"Separate directional features: {self.config.separate_directional_features}")
 
         except Exception as e:
             tprint_error(f"❌ Failed to initialize TacticianPreMLOrchestrator: {e}")
@@ -285,10 +298,13 @@ class TacticianPreMLOrchestrator:
                     profit_targets=self.config.profit_targets,
                     time_horizons=self.config.time_horizons,
                     enable_quality_scoring=True,
-                    leverage_aware=True
+                    leverage_aware=True,
+                    direction_mode=self.config.direction_mode,
+                    separate_directional_targets=self.config.separate_directional_features,
+                    directional_target_prefixes=self.config.directional_feature_prefixes
                 )
                 self.horizon_labeler = MultiHorizonLabeler(labeler_config)
-                tprint_success("✅ Multi-horizon profit labeler initialized")
+                tprint_success(f"✅ Multi-horizon profit labeler initialized (mode: {self.config.direction_mode})")
             except Exception as e:
                 tprint_error(f"❌ Failed to initialize horizon labeler: {e}")
                 self.horizon_labeler = None
@@ -300,17 +316,20 @@ class TacticianPreMLOrchestrator:
         # Final feature selection
         if FEATURE_SELECTION_AVAILABLE and self.config.enable_feature_selection:
             try:
-                selection_config = {
-                    'initial_features': self.config.initial_features,
-                    'stage_1_target': self.config.stage_1_target,
-                    'stage_2_target': self.config.stage_2_target,
-                    'stage_3_target': self.config.stage_3_target,
-                    'output_directory': self.config.output_directory,
-                    'save_analysis': self.config.save_intermediate_results,
-                    'verbose': True
-                }
+                selection_config = FeatureSelectionConfig(
+                    initial_features=self.config.initial_features,
+                    stage_1_target=self.config.stage_1_target,
+                    stage_2_target=self.config.stage_2_target,
+                    stage_3_target=self.config.stage_3_target,
+                    direction_mode=self.config.direction_mode,
+                    separate_directional_features=self.config.separate_directional_features,
+                    directional_feature_prefixes=self.config.directional_feature_prefixes,
+                    output_directory=self.config.output_directory,
+                    save_analysis=self.config.save_intermediate_results,
+                    verbose=True
+                )
                 self.feature_selector = FinalFeatureSelectionStep(selection_config)
-                tprint_success("✅ Final feature selector initialized")
+                tprint_success(f"✅ Final feature selector initialized (mode: {self.config.direction_mode})")
             except Exception as e:
                 tprint_error(f"❌ Failed to initialize feature selector: {e}")
                 self.feature_selector = None
@@ -339,7 +358,7 @@ class TacticianPreMLOrchestrator:
             OrchestratorResult with processed data for both long and short training
         """
         start_time = tprint_timer()
-        tprint_info("🚀 Starting Tactician pre-ML training orchestration...")
+        tprint_info(f"🚀 Starting Tactician pre-ML training orchestration (mode: {self.config.direction_mode})...")
 
         result = OrchestratorResult()
         result.feature_generation_status = "in_progress"
@@ -452,7 +471,12 @@ class TacticianPreMLOrchestrator:
             result.total_long_samples = len(result.long_training_data)
             result.total_short_samples = len(result.short_training_data)
 
-            tprint_success(f"✅ Training data prepared: {result.total_long_samples} long, {result.total_short_samples} short samples")
+            if self.config.direction_mode == 'both':
+                tprint_success(f"✅ Training data prepared: {result.total_long_samples} long, {result.total_short_samples} short samples")
+            elif self.config.direction_mode == 'long_only':
+                tprint_success(f"✅ Training data prepared: {result.total_long_samples} long samples only")
+            elif self.config.direction_mode == 'short_only':
+                tprint_success(f"✅ Training data prepared: {result.total_short_samples} short samples only")
 
             # Step 7: Save intermediate results
             if self.config.save_intermediate_results:
@@ -973,6 +997,8 @@ class TacticianPreMLOrchestrator:
                     'short_signals_count': result.short_signals_count,
                     'confidence_threshold': self.config.confidence_threshold,
                     'subsequent_minutes': self.config.subsequent_minutes,
+                    'direction_mode': self.config.direction_mode,
+                    'separate_directional_features': self.config.separate_directional_features,
                     'feature_generation_status': result.feature_generation_status,
                     'lookback_optimization_enabled': result.lookback_optimization_enabled,
                     'pid_feature_generation_enabled': result.pid_feature_generation_enabled,
@@ -1086,6 +1112,8 @@ class TacticianPreMLOrchestrator:
             tprint_info(f"⏱️  Total Orchestration Time: {orchestration['total_orchestration_time']:.2f}s")
             tprint_info(f"✅ Success: {'Yes' if orchestration['success'] else 'No'}")
             tprint_info(f"📊 Status: {orchestration['feature_generation_status']}")
+            tprint_info(f"🎯 Direction Mode: {orchestration['direction_mode']}")
+            tprint_info(f"🔄 Separate Features: {'Enabled' if orchestration['separate_directional_features'] else 'Disabled'}")
             tprint_info(f"🔄 Lookback Optimization: {'Enabled' if orchestration['lookback_optimization_enabled'] else 'Disabled'}")
             tprint_info(f"🧬 PID Features: {'Enabled' if orchestration['pid_feature_generation_enabled'] else 'Disabled'}")
             tprint_info(f"🎯 Horizon Labeling: {'Enabled' if orchestration['horizon_labeling_enabled'] else 'Disabled'}")
@@ -1101,12 +1129,21 @@ class TacticianPreMLOrchestrator:
             tprint_info(f"  🎯 Avg Confidence Short: {signals['average_confidence_short']:.3f}")
 
             tprint_info("\n🔢 Feature Processing Results:")
-            tprint_info(f"  📊 Long Features: {features['long_features_count']}")
-            tprint_info(f"  📉 Short Features: {features['short_features_count']}")
-            tprint_info(f"  🔍 Long Lookbacks Optimized: {features['long_optimized_lookbacks_count']}")
-            tprint_info(f"  🔍 Short Lookbacks Optimized: {features['short_optimized_lookbacks_count']}")
-            tprint_info(f"  🎯 Long Targets: {features['long_targets_count']}")
-            tprint_info(f"  🎯 Short Targets: {features['short_targets_count']}")
+            if orchestration['direction_mode'] == 'both':
+                tprint_info(f"  📊 Long Features: {features['long_features_count']}")
+                tprint_info(f"  📉 Short Features: {features['short_features_count']}")
+                tprint_info(f"  🔍 Long Lookbacks Optimized: {features['long_optimized_lookbacks_count']}")
+                tprint_info(f"  🔍 Short Lookbacks Optimized: {features['short_optimized_lookbacks_count']}")
+                tprint_info(f"  🎯 Long Targets: {features['long_targets_count']}")
+                tprint_info(f"  🎯 Short Targets: {features['short_targets_count']}")
+            elif orchestration['direction_mode'] == 'long_only':
+                tprint_info(f"  📊 Long Features: {features['long_features_count']}")
+                tprint_info(f"  🔍 Long Lookbacks Optimized: {features['long_optimized_lookbacks_count']}")
+                tprint_info(f"  🎯 Long Targets: {features['long_targets_count']}")
+            elif orchestration['direction_mode'] == 'short_only':
+                tprint_info(f"  📉 Short Features: {features['short_features_count']}")
+                tprint_info(f"  🔍 Short Lookbacks Optimized: {features['short_optimized_lookbacks_count']}")
+                tprint_info(f"  🎯 Short Targets: {features['short_targets_count']}")
 
             tprint_info("\n📊 Data Quality Metrics:")
             tprint_info(f"  📈 Long Quality: {quality['long_data_quality_score']:.3f}")
@@ -1135,45 +1172,89 @@ class TacticianPreMLOrchestrator:
             if hasattr(orchestration, 'input_samples') and orchestration['input_samples'] > 0:
                 tprint_info(f"\n📈 Sample Processing:")
                 tprint_info(f"  📊 Input Samples: {orchestration['input_samples']}")
-                tprint_info(f"  📈 Long Samples: {orchestration['long_samples_processed']}")
-                tprint_info(f"  📉 Short Samples: {orchestration['short_samples_processed']}")
+                if orchestration['direction_mode'] == 'both':
+                    tprint_info(f"  📈 Long Samples: {orchestration['long_samples_processed']}")
+                    tprint_info(f"  📉 Short Samples: {orchestration['short_samples_processed']}")
+                elif orchestration['direction_mode'] == 'long_only':
+                    tprint_info(f"  📈 Long Samples: {orchestration['long_samples_processed']}")
+                elif orchestration['direction_mode'] == 'short_only':
+                    tprint_info(f"  📉 Short Samples: {orchestration['short_samples_processed']}")
 
             # Log evaluation metrics if available
             if evaluation and evaluation.get('evaluation_completed', False):
                 tprint_info("\n🎯 Model Evaluation Metrics:")
-                tprint_info(f"  📈 Long Training Accuracy: {evaluation['long_training_accuracy']:.4f}")
-                tprint_info(f"  📉 Short Training Accuracy: {evaluation['short_training_accuracy']:.4f}")
-                tprint_info(f"  ✅ Long Validation Accuracy: {evaluation['long_validation_accuracy']:.4f}")
-                tprint_info(f"  ✅ Short Validation Accuracy: {evaluation['short_validation_accuracy']:.4f}")
-                tprint_info(f"  🎯 Long F1 Score: {evaluation['long_f1_score']:.4f}")
-                tprint_info(f"  🎯 Short F1 Score: {evaluation['short_f1_score']:.4f}")
-                tprint_info(f"  📊 Long Precision: {evaluation['long_precision']:.4f}")
-                tprint_info(f"  📊 Short Precision: {evaluation['short_precision']:.4f}")
-                tprint_info(f"  📈 Long Recall: {evaluation['long_recall']:.4f}")
-                tprint_info(f"  📉 Short Recall: {evaluation['short_recall']:.4f}")
-                tprint_info(f"  📈 Long ROC-AUC: {evaluation['long_roc_auc']:.4f}")
-                tprint_info(f"  📉 Short ROC-AUC: {evaluation['short_roc_auc']:.4f}")
-                tprint_info(f"  💰 Long Sharpe Ratio: {evaluation['long_sharpe_ratio']:.4f}")
-                tprint_info(f"  💰 Short Sharpe Ratio: {evaluation['short_sharpe_ratio']:.4f}")
-                tprint_info(f"  📉 Long Max Drawdown: {evaluation['long_max_drawdown']:.4f}")
-                tprint_info(f"  📉 Short Max Drawdown: {evaluation['short_max_drawdown']:.4f}")
+                if orchestration['direction_mode'] == 'both':
+                    tprint_info(f"  📈 Long Training Accuracy: {evaluation['long_training_accuracy']:.4f}")
+                    tprint_info(f"  📉 Short Training Accuracy: {evaluation['short_training_accuracy']:.4f}")
+                    tprint_info(f"  ✅ Long Validation Accuracy: {evaluation['long_validation_accuracy']:.4f}")
+                    tprint_info(f"  ✅ Short Validation Accuracy: {evaluation['short_validation_accuracy']:.4f}")
+                    tprint_info(f"  🎯 Long F1 Score: {evaluation['long_f1_score']:.4f}")
+                    tprint_info(f"  🎯 Short F1 Score: {evaluation['short_f1_score']:.4f}")
+                    tprint_info(f"  📊 Long Precision: {evaluation['long_precision']:.4f}")
+                    tprint_info(f"  📊 Short Precision: {evaluation['short_precision']:.4f}")
+                    tprint_info(f"  📈 Long Recall: {evaluation['long_recall']:.4f}")
+                    tprint_info(f"  📉 Short Recall: {evaluation['short_recall']:.4f}")
+                    tprint_info(f"  📈 Long ROC-AUC: {evaluation['long_roc_auc']:.4f}")
+                    tprint_info(f"  📉 Short ROC-AUC: {evaluation['short_roc_auc']:.4f}")
+                    tprint_info(f"  💰 Long Sharpe Ratio: {evaluation['long_sharpe_ratio']:.4f}")
+                    tprint_info(f"  💰 Short Sharpe Ratio: {evaluation['short_sharpe_ratio']:.4f}")
+                    tprint_info(f"  📉 Long Max Drawdown: {evaluation['long_max_drawdown']:.4f}")
+                    tprint_info(f"  📉 Short Max Drawdown: {evaluation['short_max_drawdown']:.4f}")
+                elif orchestration['direction_mode'] == 'long_only':
+                    tprint_info(f"  📈 Long Training Accuracy: {evaluation['long_training_accuracy']:.4f}")
+                    tprint_info(f"  ✅ Long Validation Accuracy: {evaluation['long_validation_accuracy']:.4f}")
+                    tprint_info(f"  🎯 Long F1 Score: {evaluation['long_f1_score']:.4f}")
+                    tprint_info(f"  📊 Long Precision: {evaluation['long_precision']:.4f}")
+                    tprint_info(f"  📈 Long Recall: {evaluation['long_recall']:.4f}")
+                    tprint_info(f"  📈 Long ROC-AUC: {evaluation['long_roc_auc']:.4f}")
+                    tprint_info(f"  💰 Long Sharpe Ratio: {evaluation['long_sharpe_ratio']:.4f}")
+                    tprint_info(f"  📉 Long Max Drawdown: {evaluation['long_max_drawdown']:.4f}")
+                elif orchestration['direction_mode'] == 'short_only':
+                    tprint_info(f"  📉 Short Training Accuracy: {evaluation['short_training_accuracy']:.4f}")
+                    tprint_info(f"  ✅ Short Validation Accuracy: {evaluation['short_validation_accuracy']:.4f}")
+                    tprint_info(f"  🎯 Short F1 Score: {evaluation['short_f1_score']:.4f}")
+                    tprint_info(f"  📊 Short Precision: {evaluation['short_precision']:.4f}")
+                    tprint_info(f"  📉 Short Recall: {evaluation['short_recall']:.4f}")
+                    tprint_info(f"  📉 Short ROC-AUC: {evaluation['short_roc_auc']:.4f}")
+                    tprint_info(f"  💰 Short Sharpe Ratio: {evaluation['short_sharpe_ratio']:.4f}")
+                    tprint_info(f"  📉 Short Max Drawdown: {evaluation['short_max_drawdown']:.4f}")
 
                 # Financial trading metrics
-                tprint_info(f"  🤖 Long Total Trades: {evaluation['long_total_trades']}")
-                tprint_info(f"  🤖 Short Total Trades: {evaluation['short_total_trades']}")
-                tprint_info(f"  📊 Long Avg Trades/Month: {evaluation['long_avg_trades_per_month']:.1f}")
-                tprint_info(f"  📊 Short Avg Trades/Month: {evaluation['short_avg_trades_per_month']:.1f}")
-                tprint_info(f"  💵 Long Total P&L: {evaluation['long_total_pnl']:.6f}")
-                tprint_info(f"  💵 Short Total P&L: {evaluation['short_total_pnl']:.6f}")
+                if orchestration['direction_mode'] == 'both':
+                    tprint_info(f"  🤖 Long Total Trades: {evaluation['long_total_trades']}")
+                    tprint_info(f"  🤖 Short Total Trades: {evaluation['short_total_trades']}")
+                    tprint_info(f"  📊 Long Avg Trades/Month: {evaluation['long_avg_trades_per_month']:.1f}")
+                    tprint_info(f"  📊 Short Avg Trades/Month: {evaluation['short_avg_trades_per_month']:.1f}")
+                    tprint_info(f"  💵 Long Total P&L: {evaluation['long_total_pnl']:.6f}")
+                    tprint_info(f"  💵 Short Total P&L: {evaluation['short_total_pnl']:.6f}")
+                elif orchestration['direction_mode'] == 'long_only':
+                    tprint_info(f"  🤖 Long Total Trades: {evaluation['long_total_trades']}")
+                    tprint_info(f"  📊 Long Avg Trades/Month: {evaluation['long_avg_trades_per_month']:.1f}")
+                    tprint_info(f"  💵 Long Total P&L: {evaluation['long_total_pnl']:.6f}")
+                elif orchestration['direction_mode'] == 'short_only':
+                    tprint_info(f"  🤖 Short Total Trades: {evaluation['short_total_trades']}")
+                    tprint_info(f"  📊 Short Avg Trades/Month: {evaluation['short_avg_trades_per_month']:.1f}")
+                    tprint_info(f"  💵 Short Total P&L: {evaluation['short_total_pnl']:.6f}")
 
                 # Monthly P&L breakdown (show top 5 months)
-                if evaluation['long_monthly_pnl']:
+                if orchestration['direction_mode'] == 'both':
+                    if evaluation['long_monthly_pnl']:
+                        tprint_info("  📅 Long Monthly P&L (Top 5):")
+                        sorted_months = sorted(evaluation['long_monthly_pnl'].items(), key=lambda x: x[1], reverse=True)[:5]
+                        for month, pnl in sorted_months:
+                            tprint_info(f"    {month}: {pnl:.6f}")
+
+                    if evaluation['short_monthly_pnl']:
+                        tprint_info("  📅 Short Monthly P&L (Top 5):")
+                        sorted_months = sorted(evaluation['short_monthly_pnl'].items(), key=lambda x: x[1], reverse=True)[:5]
+                        for month, pnl in sorted_months:
+                            tprint_info(f"    {month}: {pnl:.6f}")
+                elif orchestration['direction_mode'] == 'long_only' and evaluation['long_monthly_pnl']:
                     tprint_info("  📅 Long Monthly P&L (Top 5):")
                     sorted_months = sorted(evaluation['long_monthly_pnl'].items(), key=lambda x: x[1], reverse=True)[:5]
                     for month, pnl in sorted_months:
                         tprint_info(f"    {month}: {pnl:.6f}")
-
-                if evaluation['short_monthly_pnl']:
+                elif orchestration['direction_mode'] == 'short_only' and evaluation['short_monthly_pnl']:
                     tprint_info("  📅 Short Monthly P&L (Top 5):")
                     sorted_months = sorted(evaluation['short_monthly_pnl'].items(), key=lambda x: x[1], reverse=True)[:5]
                     for month, pnl in sorted_months:
@@ -1650,6 +1731,8 @@ class TacticianPreMLOrchestrator:
                 'min_analyst_confidence': self.config.min_analyst_confidence,
                 'subsequent_minutes': self.config.subsequent_minutes,
                 'max_lookback_periods': self.config.max_lookback_periods,
+                'direction_mode': self.config.direction_mode,
+                'separate_directional_features': self.config.separate_directional_features,
                 'output_directory': self.config.output_directory
             },
             'component_availability': {

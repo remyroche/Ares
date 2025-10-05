@@ -10,8 +10,8 @@ import pandas as pd
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import (
-    FeatureGenerator, 
-    FeatureConfig, 
+    FeatureGenerator,
+    FeatureConfig,
     FeatureCategory,
     VectorizedFeatureGenerator
 )
@@ -19,6 +19,7 @@ from ..base_calculations import (
     BaseCalculationType,
     create_base_calculator
 )
+from ...utils.math_validation import validate_finite
 
 class MicrostructureFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for microstructure-based features."""
@@ -87,14 +88,54 @@ class BidAskSpreadGenerator(VectorizedFeatureGenerator):
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate bid-ask spread."""
-        if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
-            bid = data['bid']
-            ask = data['ask']
-            spread = ask - bid
+        """Generate bid-ask spread or fallback to price volatility when bid/ask not available."""
+        # Check if bid and ask columns are available
+        if 'bid' in data.columns and 'ask' in data.columns:
+            if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
+                bid = data['bid']
+                ask = data['ask']
+                spread = ask - bid
+            else:
+                base_values = self.base_calculator.calculate(data)
+                spread = base_values.rolling(window=self.window).std()
         else:
-            base_values = self.base_calculator.calculate(data)
-            spread = base_values.rolling(window=self.window).std()
+            # Fallback: use high-low spread as proxy for bid-ask spread
+            self.logger.warning(f"⚠️ Bid/ask columns not available, using high-low spread as proxy")
+            if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
+                spread = data['high'] - data['low']
+            else:
+                base_values = self.base_calculator.calculate(data)
+                spread = base_values.rolling(window=self.window).std()
+
+        # Validate that all values are finite and provide detailed information
+        try:
+            validate_finite(spread.values, f"BidAskSpread_{self.window}_{self.base_calculation.value}")
+        except ValueError as e:
+            # Get detailed information about where the NaN/inf values are
+            non_finite_mask = ~np.isfinite(spread.values)
+            if np.any(non_finite_mask):
+                non_finite_indices = np.where(non_finite_mask)[0]
+                total_count = len(non_finite_indices)
+
+                # Show first few and last few problematic indices
+                if total_count <= 10:
+                    indices_str = f"indices {non_finite_indices.tolist()}"
+                else:
+                    first_5 = non_finite_indices[:5].tolist()
+                    last_5 = non_finite_indices[-5:].tolist()
+                    indices_str = f"indices {first_5} ... {last_5} (total: {total_count})"
+
+                # Only log once per feature globally to reduce verbosity
+                feature_key = f"BidAskSpread_{self.window}_{self.base_calculation.value}"
+                # Use class-level tracking to prevent duplicate warnings across all instances
+                if not hasattr(BidAskSpreadGenerator, '_logged_warnings'):
+                    BidAskSpreadGenerator._logged_warnings = set()
+                if feature_key not in BidAskSpreadGenerator._logged_warnings:
+                    self.logger.warning(f"⚠️ {e} - {indices_str}")
+                    BidAskSpreadGenerator._logged_warnings.add(feature_key)
+            else:
+                self.logger.warning(f"⚠️ {e}")
+
         return spread
 
 # Order Flow Imbalance Generator

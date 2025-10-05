@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint
 from ..logging_standards import (
     get_logger, log_info, log_warning, log_error, log_success, log_debug,
     LoggingContext, log_step_progress, log_data_info, log_validation_result
@@ -19,6 +20,11 @@ from ..logging_standards import (
 
 # Import optimized process engine
 from ..optimized_process_engines import OptimizedFeatureSelectionEngine, ProcessType
+
+# Import hardware optimization tools
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.adaptive_optimization_engine import AdaptiveOptimizationEngine
+from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
 
 
 class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
@@ -33,14 +39,20 @@ class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
         super().__init__(config)
         # Use standardized logging
         self.logger = get_logger('FinalFeatureSelectionComponent')
-        
-        # Initialize optimized process engine
+
+        # Initialize hardware optimization tools
+        tprint("🔧 Initializing hardware optimization tools...")
+        self.memory_optimizer = get_m1_memory_optimizer(memory_limit_gb=8.0)
+        self.adaptive_engine = AdaptiveOptimizationEngine()
+        self.hardware_manager = UnifiedHardwareManager()
+
+        # Initialize optimized process engine with hardware acceleration
         tprint("🔧 Initializing optimized feature selection engine...")
         self.optimized_engine = OptimizedFeatureSelectionEngine(
             use_hardware_accel=True,
             cache_size=1000
         )
-        tprint("✅ Optimized feature selection engine initialized")
+        tprint("✅ Hardware optimization tools and feature selection engine initialized")
 
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
@@ -123,6 +135,23 @@ class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
         log_info('🎯 Starting Final Feature Selection')
 
         try:
+            # Check memory pressure and apply optimizations
+            memory_pressure = getattr(self.memory_optimizer, 'memory_pressure', 0.0)
+            if memory_pressure > 0.75:
+                log_warning(f'🧠 High memory pressure detected ({memory_pressure:.2f}), applying memory optimizations')
+                self.memory_optimizer._apply_memory_optimizations()
+
+            # Get optimal hardware configuration for feature selection
+            hardware_config = self.hardware_manager.get_optimal_config('feature_selection')
+            log_debug(f'📊 Hardware configuration: {hardware_config}')
+
+            # Adapt optimization strategy based on current conditions
+            adaptive_strategy = self.adaptive_engine.get_optimal_strategy('feature_selection', {
+                'memory_pressure': memory_pressure,
+                'hardware_config': hardware_config
+            })
+            log_debug(f'🎯 Adaptive strategy: {adaptive_strategy}')
+
             # Import the final feature selection step
             from ..final_feature_selection_step import run_final_feature_selection_step
 
@@ -154,10 +183,19 @@ class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
             if data_dir is None:
                 data_dir = 'historical_data'  # Default data directory
 
-            # Load model-specific configuration
+            # Load model-specific configuration with hardware optimizations
             final_feature_selection_config = self._load_model_specific_config('default')
 
-            # Execute final feature selection
+            # Apply adaptive optimizations to config
+            if adaptive_strategy:
+                final_feature_selection_config.update({
+                    'hardware_accelerated': adaptive_strategy.get('hardware_accelerated', True),
+                    'memory_efficient': adaptive_strategy.get('memory_efficient', True),
+                    'parallel_processing': adaptive_strategy.get('parallel_processing', False)
+                })
+
+            # Execute final feature selection with hardware optimization
+            log_info(f'🚀 Executing feature selection with hardware optimizations...')
             success = await run_final_feature_selection_step(
                 symbol=symbol,
                 exchange=exchange,
@@ -167,7 +205,14 @@ class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
             )
 
             if success:
-                # Create result artifacts
+                # Create result artifacts with hardware performance metrics
+                performance_metrics = {
+                    'memory_pressure_before': memory_pressure,
+                    'memory_pressure_after': getattr(self.memory_optimizer, 'memory_pressure', 0.0),
+                    'hardware_config_used': hardware_config,
+                    'adaptive_strategy_used': adaptive_strategy
+                }
+
                 artifacts = {
                     'final_feature_selection_result': {
                         'symbol': symbol,
@@ -182,11 +227,29 @@ class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
                             'stage_1': 100,
                             'stage_2': 80,
                             'stage_3': 60
-                        }
+                        },
+                        'hardware_performance': performance_metrics
                     }
                 }
 
-                log_success('Final feature selection completed successfully')
+                log_success(f'✅ Final feature selection completed successfully with hardware optimizations')
+                log_info(f'📊 Performance metrics: {performance_metrics}')
+
+                # Clean up memory after processing
+                self.memory_optimizer._light_memory_cleanup()
+                
+                # Save artifacts persistently using the artifact manager
+                try:
+                    saved_files = await self.save_artifacts(artifacts, {
+                        'component_type': 'final_feature_selection',
+                        'symbol': symbol,
+                        'exchange': exchange,
+                        'timeframe': timeframe
+                    })
+                    log_success(f"💾 [FINAL_FEATURE_SELECTION] Artifacts saved persistently: {list(saved_files.keys())}")
+                except Exception as e:
+                    log_warning(f"⚠️ [FINAL_FEATURE_SELECTION] Failed to save artifacts persistently: {e}")
+                
                 return ComponentResult(
                     success=True,
                     artifacts=artifacts,
@@ -196,11 +259,16 @@ class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
                         'component_type': 'final_feature_selection',
                         'symbol': symbol,
                         'exchange': exchange,
-                        'timeframe': timeframe
+                        'timeframe': timeframe,
+                        'artifacts_saved_persistently': True
                     }
                 )
             else:
                 log_error('Final feature selection failed')
+
+                # Clean up memory even on failure
+                self.memory_optimizer._light_memory_cleanup()
+
                 return ComponentResult(
                     success=False,
                     artifacts={},
@@ -210,12 +278,20 @@ class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
                         'component_type': 'final_feature_selection',
                         'symbol': symbol,
                         'exchange': exchange,
-                        'timeframe': timeframe
+                        'timeframe': timeframe,
+                        'memory_pressure': getattr(self.memory_optimizer, 'memory_pressure', 0.0)
                     }
                 )
 
         except Exception as e:
             log_error(f'Final feature selection failed with exception: {e}')
+
+            # Clean up memory on exception
+            try:
+                self.memory_optimizer._light_memory_cleanup()
+            except:
+                pass  # Ignore cleanup errors
+
             return ComponentResult(
                 success=False,
                 artifacts={},
@@ -225,6 +301,16 @@ class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
                     'component_type': 'final_feature_selection',
                     'symbol': symbol if 'symbol' in locals() else 'unknown',
                     'exchange': exchange if 'exchange' in locals() else 'unknown',
-                    'timeframe': timeframe if 'timeframe' in locals() else 'unknown'
+                    'timeframe': timeframe if 'timeframe' in locals() else 'unknown',
+                    'memory_pressure': getattr(self.memory_optimizer, 'memory_pressure', 0.0)
                 }
             )
+
+    def cleanup(self):
+        """Clean up hardware optimization resources."""
+        try:
+            log_info('🧹 Cleaning up hardware optimization resources...')
+            self.memory_optimizer._light_memory_cleanup()
+            log_info('✅ Hardware optimization resources cleaned up')
+        except Exception as e:
+            log_warning(f'⚠️ Error during hardware cleanup: {e}')

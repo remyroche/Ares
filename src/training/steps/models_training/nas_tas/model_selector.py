@@ -7,7 +7,7 @@ the best model for each market regime based on performance metrics.
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Any, Optional, Tuple, Union, Callable
+from typing import Dict, List, Any, Optional, Tuple, Union, Callable, Tuple as TypingTuple
 from dataclasses import dataclass, field
 import logging
 from datetime import datetime, timedelta
@@ -225,15 +225,17 @@ class ModelSelector:
             self.ml_common_ops = None
             self.validation_framework = None
     
-    def register_models(self, 
+    def register_models(self,
                       regime_models: Dict[int, Dict[str, Any]],
-                      ensemble_models: Optional[Dict[str, Any]] = None):
+                      ensemble_models: Optional[Dict[str, Any]] = None,
+                      directional_models: Optional[Dict[str, Dict[int, Dict[str, Any]]]] = None):
         """
         Register trained models for selection.
-        
+
         Args:
             regime_models: Dictionary of regime_id -> {model_type: model_info}
             ensemble_models: Optional ensemble models
+            directional_models: Optional directional models (direction -> regime -> models)
         """
         self.logger.info("📝 Registering models for selection")
         
@@ -271,21 +273,48 @@ class ModelSelector:
                 
                 self.performance_history[ensemble_id] = []
                 self.logger.info(f"   ✅ Registered ensemble {ensemble_name}")
-        
+
+        # Register directional models
+        if directional_models:
+            for direction, regime_models in directional_models.items():
+                self.available_models[f"{direction}_models"] = {}
+
+                for regime_id, models in regime_models.items():
+                    direction_regime_key = f"{direction}_regime_{regime_id}"
+                    self.available_models[f"{direction}_models"][direction_regime_key] = {}
+
+                    for model_type, model_info in models.items():
+                        model_id = f"{direction}_{regime_id}_{model_type}"
+                        self.available_models[f"{direction}_models"][direction_regime_key][model_type] = {
+                            'model': model_info['model'],
+                            'model_id': model_id,
+                            'performance': model_info.get('val_metrics', {}),
+                            'feature_importance': model_info.get('feature_importance', {}),
+                            'hyperparameters': model_info.get('hyperparameters', {}),
+                            'direction': direction
+                        }
+
+                        # Initialize performance history
+                        self.performance_history[model_id] = []
+
+                        self.logger.info(f"   ✅ Registered {model_type} for {direction} regime {regime_id}")
+
         self.logger.info(f"📊 Total models registered: {sum(len(models) for models in self.available_models.values())}")
     
-    def select_model(self, 
+    def select_model(self,
                     market_data: pd.DataFrame,
                     current_regime: Optional[int] = None,
-                    context: Optional[Dict[str, Any]] = None) -> ModelSelectionResult:
+                    context: Optional[Dict[str, Any]] = None,
+                    direction: Optional[str] = None) -> ModelSelectionResult:
         """
         Select the best model for given market conditions.
-        
+
         Args:
             market_data: Current market data
             current_regime: Current regime (None for auto-detection)
             context: Additional context for selection
-            
+            direction: Trading direction ('long', 'short', or None for auto-detection)
+
         Returns:
             ModelSelectionResult with selected model and metadata
         """
@@ -300,12 +329,19 @@ class ModelSelector:
                 regime_probabilities = regime_info.get('probabilities')
             else:
                 regime_probabilities = None
-            
-            # Step 2: Get available models for regime
-            if current_regime not in self.available_models:
-                raise ValueError(f"No models available for regime {current_regime}")
-            
-            regime_models = self.available_models[current_regime]
+
+            # Step 2: Detect direction if not provided
+            if direction is None:
+                direction = self._detect_direction(market_data, context)
+
+            # Step 3: Get available models for regime and direction
+            regime_models = self._get_models_for_regime_and_direction(current_regime, direction)
+
+            if not regime_models:
+                self.logger.warning(f"⚠️ No directional models found for regime {current_regime}, direction {direction}. Using standard regime models.")
+                if current_regime not in self.available_models:
+                    raise ValueError(f"No models available for regime {current_regime}")
+                regime_models = self.available_models[current_regime]
             
             # Step 3: Select model based on strategy
             if self.config.selection_strategy == SelectionStrategy.BEST_PERFORMANCE:
@@ -1039,4 +1075,90 @@ class ModelSelector:
                     'n_predictions': len(recent_performance)
                 }
         
+        return summary
+
+    def _detect_direction(self, market_data: pd.DataFrame, context: Optional[Dict[str, Any]] = None) -> str:
+        """Detect trading direction from market data."""
+        try:
+            # Check for explicit direction indicators in data
+            direction_columns = [col for col in market_data.columns if any(keyword in col.lower() for keyword in ['direction', 'long', 'short'])]
+
+            if direction_columns:
+                for col in direction_columns:
+                    if market_data[col].iloc[-1] == 1:  # Assuming binary indicator
+                        if 'long' in col.lower():
+                            return 'long'
+                        elif 'short' in col.lower():
+                            return 'short'
+
+            # Check context for direction
+            if context and 'direction' in context:
+                return context['direction']
+
+            # Infer direction from recent price movement
+            if 'close' in market_data.columns and len(market_data) >= 2:
+                recent_prices = market_data['close'].tail(5)
+                price_change = (recent_prices.iloc[-1] - recent_prices.iloc[0]) / recent_prices.iloc[0]
+
+                if price_change > 0.001:  # 0.1% positive change
+                    return 'long'
+                elif price_change < -0.001:  # 0.1% negative change
+                    return 'short'
+
+            # Default to long if unclear
+            return 'long'
+
+        except Exception as e:
+            self.logger.warning(f"Direction detection failed: {e}")
+            return 'long'
+
+    def _get_models_for_regime_and_direction(self, regime_id: int, direction: str) -> Dict[str, Any]:
+        """Get models for specific regime and direction."""
+        # Try directional models first
+        direction_key = f"{direction}_models"
+        if direction_key in self.available_models:
+            direction_regime_key = f"{direction}_regime_{regime_id}"
+            if direction_regime_key in self.available_models[direction_key]:
+                return self.available_models[direction_key][direction_regime_key]
+
+        # Fall back to standard regime models
+        if regime_id in self.available_models:
+            return self.available_models[regime_id]
+
+        return {}
+
+    def select_model_for_direction(self,
+                                 market_data: pd.DataFrame,
+                                 direction: str,
+                                 current_regime: Optional[int] = None,
+                                 context: Optional[Dict[str, Any]] = None) -> ModelSelectionResult:
+        """
+        Select model specifically for a trading direction.
+
+        Args:
+            market_data: Current market data
+            direction: Trading direction ('long' or 'short')
+            current_regime: Current regime (None for auto-detection)
+            context: Additional context
+
+        Returns:
+            ModelSelectionResult with selected model for the direction
+        """
+        return self.select_model(market_data, current_regime, context, direction)
+
+    def get_directional_model_summary(self) -> Dict[str, Any]:
+        """Get summary of available directional models."""
+        summary = {
+            'directions_available': [],
+            'directional_models': {},
+            'total_directional_models': 0
+        }
+
+        for key, models in self.available_models.items():
+            if '_models' in key and key != 'ensemble':
+                direction = key.replace('_models', '')
+                summary['directions_available'].append(direction)
+                summary['directional_models'][direction] = len(models)
+                summary['total_directional_models'] += len(models)
+
         return summary

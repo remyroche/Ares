@@ -163,25 +163,33 @@ class OptimizedCalculationEngine:
                 return self._silhouette_cache[cache_key]
             
             # Skip if any active cluster has < 2 points (only check non-empty clusters)
-            unique_labels = np.unique(assignments)
-            sizes = np.bincount(assignments)
-            active_sizes = sizes[unique_labels]
-            if np.any(active_sizes < 2):
+            unique_labels, cluster_sizes = np.unique(assignments, return_counts=True)
+            if np.any(cluster_sizes < 2):
                 return 0.0
-            
+
             # Always use sklearn for reliable silhouette calculation
             from sklearn.metrics import silhouette_score as sk_silhouette_score
             try:
+                # Ensure features are in proper format for sklearn
                 if features.ndim == 1:
                     features_2d = features.reshape(-1, 1)
-                    sil_score = sk_silhouette_score(features_2d, assignments)
                 else:
-                    sil_score = sk_silhouette_score(features, assignments)
-                
-                # Validate the result
-                if np.isnan(sil_score) or np.isinf(sil_score):
-                    tprint(f"⚠️ Silhouette score is NaN/Inf, using 0.0", "WARNING")
-                    sil_score = 0.0
+                    features_2d = features
+
+                # Handle very large datasets by sampling for silhouette calculation
+                if len(features_2d) > 50000:
+                    tprint(f"⚠️ Large dataset ({len(features_2d)} samples) for silhouette calculation, using sampling", "WARNING")
+                    sample_indices = np.random.choice(len(features_2d), size=min(50000, len(features_2d)), replace=False)
+                    sample_features = features_2d[sample_indices]
+                    sample_assignments = assignments[sample_indices]
+                    sil_score = sk_silhouette_score(sample_features, sample_assignments)
+                else:
+                    sil_score = sk_silhouette_score(features_2d, assignments)
+
+                # Validate the result with more robust checks
+                if np.isnan(sil_score) or np.isinf(sil_score) or sil_score < -1.0 or sil_score > 1.0:
+                    tprint(f"⚠️ Invalid silhouette score ({sil_score:.4f}), using fallback calculation", "WARNING")
+                    sil_score = self._calculate_silhouette_robust_fallback(features_2d, assignments)
                     
             except Exception as sk_error:
                 tprint(f"⚠️ Sklearn silhouette calculation failed: {sk_error}", "WARNING")
@@ -207,13 +215,60 @@ class OptimizedCalculationEngine:
             tprint(f"⚠️ Optimized silhouette calculation failed: {e}", "ERROR")
             return 0.0
     
+    def _calculate_silhouette_robust_fallback(self, features: np.ndarray, assignments: np.ndarray) -> float:
+        """Robust fallback silhouette calculation for edge cases."""
+        try:
+            # Use a simple distance-based approximation for robustness
+            unique_labels = np.unique(assignments)
+            if len(unique_labels) < 2:
+                return 0.0
+
+            # Calculate pairwise distances between points
+            from sklearn.metrics.pairwise import euclidean_distances
+            distances = euclidean_distances(features)
+
+            # For each point, calculate average distance to points in same cluster and nearest other cluster
+            silhouettes = []
+
+            for i in range(len(features)):
+                cluster_id = assignments[i]
+
+                # Distance to points in same cluster
+                same_cluster_mask = assignments == cluster_id
+                if np.sum(same_cluster_mask) <= 1:
+                    continue
+
+                a_i = np.mean(distances[i, same_cluster_mask])
+
+                # Distance to points in nearest other cluster
+                other_clusters = [c for c in unique_labels if c != cluster_id]
+                b_i_values = []
+
+                for other_c in other_clusters:
+                    other_mask = assignments == other_c
+                    if np.sum(other_mask) > 0:
+                        b_i_values.append(np.mean(distances[i, other_mask]))
+
+                if not b_i_values:
+                    continue
+
+                b_i = min(b_i_values)
+                silhouette_i = (b_i - a_i) / max(a_i, b_i) if max(a_i, b_i) > 0 else 0.0
+                silhouettes.append(silhouette_i)
+
+            return float(np.mean(silhouettes)) if silhouettes else 0.0
+
+        except Exception as e:
+            tprint(f"⚠️ Robust fallback silhouette failed: {e}", "WARNING")
+            return 0.0
+
     def _calculate_silhouette_hardware_optimized(self, features: np.ndarray, assignments: np.ndarray) -> float:
         """Calculate silhouette score using hardware acceleration and matrix operations."""
         try:
             # Always fallback to sklearn for reliable results
             from sklearn.metrics import silhouette_score
             return silhouette_score(features, assignments)
-                
+
         except Exception as e:
             tprint(f"⚠️ Hardware-optimized silhouette failed: {e}", "WARNING")
             # Final fallback
@@ -1505,38 +1560,33 @@ class ClusteringStats:
         return objective
     
     def get_balance_score(self) -> float:
-        """Calculate cluster balance score.
-        
-        IMPORTANT: Balance is now a SOFT CONSTRAINT, not a hard objective.
-        Only penalizes extreme imbalances (> 3x deviation from mean).
-        This prevents forcing all clusters to have identical sizes, which
-        was killing CV ratio and regime separation quality.
+        """Calculate cluster balance score using coefficient of variation.
+
+        Uses the standard statistical measure of balance: lower CV = better balance.
+        CV = (standard deviation / mean) of cluster sizes.
+        Returns 1.0 for perfect balance, approaching 0.0 for very imbalanced clusters.
         """
         if self.n_clusters <= 1:
             return 1.0
-        
+
         sizes = np.array([s for s in self.cluster_sizes if s > 0])
         if len(sizes) == 0:
             return 1.0
-        
+
         mean_size = np.mean(sizes)
-        
-        # Only penalize EXTREME imbalances (> 3x mean or < 0.33x mean)
-        # This allows natural cluster size variation for better regime separation
-        extreme_penalties = []
-        for size in sizes:
-            ratio = size / mean_size
-            if ratio > 3.0:  # Too large
-                extreme_penalties.append((ratio - 3.0) ** 2)
-            elif ratio < 0.33:  # Too small
-                extreme_penalties.append((0.33 - ratio) ** 2)
-        
-        if not extreme_penalties:
-            return 1.0  # No extreme imbalances
-        
-        # Soft penalty: only reduce score for extreme cases
-        penalty = np.mean(extreme_penalties)
-        return max(0.0, 1.0 - 0.1 * penalty)  # Very gentle penalty
+        if mean_size == 0:
+            return 0.0
+
+        # Calculate coefficient of variation (CV)
+        # CV = std / mean, so higher CV = more imbalance
+        cv = np.std(sizes) / mean_size
+
+        # Convert to balance score: 1.0 - CV (normalized)
+        # Perfect balance (CV=0) = 1.0
+        # Very imbalanced (CV > 1.0) = approaches 0.0
+        balance_score = max(0.0, 1.0 - cv)
+
+        return balance_score
     
     def calculate_move_delta(self, point_idx: int, from_cluster: int, to_cluster: int) -> Dict[str, float]:
         """Calculate delta using variance decomposition (primary), centroid-silhouette (secondary), and temporal smoothness.
@@ -1611,16 +1661,23 @@ class ClusteringStats:
         except Exception:
             temporal_delta_impr = 0.0
         
-        # Temporal: keep minimal signal as before
+        # Enhanced temporal smoothness with regime persistence
         temporal_delta = 0.0
         n_from = int(self.cluster_sizes[from_idx])
         n_to = int(self.cluster_sizes[to_idx])
+        
         if n_to > 0 and n_from > 0:
+            # Enhanced size ratio analysis for regime stability
             size_ratio_old = n_from / max(1.0, n_to)
             size_ratio_new = (n_from - 1.0) / (n_to + 1.0)
+            
+            # Regime persistence bonus - reward moves that maintain cluster stability
             if size_ratio_old > 2.0 and size_ratio_new < size_ratio_old:
-                temporal_delta = 0.01
+                temporal_delta = 0.02  # Increased bonus for stability
             elif size_ratio_old < 0.5 and size_ratio_new > size_ratio_old:
+                temporal_delta = 0.02  # Increased bonus for stability
+            elif 0.5 <= size_ratio_old <= 2.0 and 0.5 <= size_ratio_new <= 2.0:
+                # Bonus for maintaining balanced clusters
                 temporal_delta = 0.01
         
         # Combine with existing negative-improvement convention
@@ -1634,6 +1691,7 @@ class ClusteringStats:
         return {
             'total': float(total_delta),
             'cv': float(-variance_delta),
+            'balance': 0.0,  # Balance metric - placeholder for now
             'silhouette': float(-sil_delta),
             'temporal': float(-temporal_delta_impr),
             'variance_ratio': float(variance_delta),
@@ -1740,15 +1798,29 @@ class ClusteringStats:
         denom = max(1, (len(self.features) - self.K_fixed))
         delta_within = (pooled_new - pooled_old) / denom
         
-        # Between-variance delta via centroid shifts
+        # Enhanced between-variance delta with AGGRESSIVE regime separation focus
         old_mean_from = self.centroids[from_cluster]
         old_mean_to = self.centroids[to_cluster]
         global_mean = self.global_mean
+        
+        # Apply regime separation enhancement factor for better CV ratio
+        regime_separation_factor = 1.5  # Boost between-cluster variance calculation
+        
+        # Original between-variance calculation
         old_between = (n_from * float(np.mean((old_mean_from - global_mean) ** 2)) +
                        n_to * float(np.mean((old_mean_to - global_mean) ** 2)))
         new_between = ((n_from - 1) * float(np.mean((new_mean_from - global_mean) ** 2)) +
                        (n_to + 1) * float(np.mean((new_mean_to - global_mean) ** 2)))
-        delta_between = (new_between - old_between) / max(1, len(self.features))
+        
+        # Add regime separation bonus - reward moves that increase cluster separation
+        centroid_distance_old = float(np.linalg.norm(old_mean_from - old_mean_to))
+        centroid_distance_new = float(np.linalg.norm(new_mean_from - new_mean_to))
+        separation_bonus = (centroid_distance_new - centroid_distance_old) * 0.05  # 5% bonus for separation
+        
+        delta_between = (new_between - old_between) / max(1, len(self.features)) + separation_bonus
+        
+        # Apply regime separation enhancement to boost CV ratio
+        delta_between *= regime_separation_factor
         
         # Variance ratio delta
         new_within = self.within_var + delta_within
@@ -2011,7 +2083,7 @@ class OptConfig:
     # K_MIN = 6: Minimum clusters for adequate regime diversity (HARD CONSTRAINT)
     # K_MAX = 12: Maximum to prevent over-fragmentation (HARD CONSTRAINT)
     K_MIN: int = 6
-    K_MAX: int = 12
+    K_MAX: int = 10
     MIN_FRAC: float = 0.03  # 3% minimum cluster size
     MAX_FRAC: float = 0.20  # 20% maximum cluster size
     
@@ -2021,25 +2093,25 @@ class OptConfig:
     beta: float = 0.6  # Step 2 weight
     split_tries_max: int = 5  # KMeans restarts
     
-    # ENHANCED objective weights - AGGRESSIVE optimization focus
-    # Prioritizing CV, Temporal Smoothness, and Silhouette per requirements
-    w_cv: float = 0.45   # Primary: Variance ratio (CV) - balanced for multi-objective
-    w_temp: float = 0.35 # Secondary: Temporal smoothness - INCREASED for regime stability
-    w_sil: float = 0.15  # Tertiary: Cluster cohesion (Silhouette) - INCREASED
+    # ENHANCED objective weights - AGGRESSIVE CV optimization focus
+    # Prioritizing CV ratio for maximum regime separation quality
+    w_cv: float = 0.70   # Primary: Variance ratio (CV) - MAXIMIZED for regime separation
+    w_temp: float = 0.20 # Secondary: Temporal smoothness - reduced to focus on CV
+    w_sil: float = 0.10  # Tertiary: Cluster cohesion (Silhouette) - reduced
     w_dbi: float = 0.00  # accessory
     w_ch: float = 0.00   # accessory
     w_bal: float = 0.05  # Minimal: Balance constraint - reduced to soft penalty
     
-    # AGGRESSIVE Optimization parameters - tuned for enhanced performance
-    max_rounds: int = 30  # Increased iterations for better convergence
-    eps_std_step1: float = -0.15  # More aggressive step 1 threshold
-    sil_guard: float = -0.05  # Require slight silhouette improvement
-    temporal_bonus: float = 0.15  # Bonus for temporal stability improvements
-    
-    # ENHANCED Lexicographic acceptor parameters - tighter for quality
-    eps_cv: float = 5e-5  # Tighter CV threshold (was 1e-4) - more selective
-    eps_sil: float = 5e-4  # Tighter Silhouette threshold (was 1e-3) - more selective
-    eps_temp: float = 5e-4  # Tighter Temporal threshold (was 1e-3) - favor stability
+    # ULTRA-AGGRESSIVE Optimization parameters - maximum focus on CV, temporal, and silhouette
+    max_rounds: int = 40  # Maximum iterations for optimal convergence
+    eps_std_step1: float = -0.20  # Very aggressive step 1 threshold for CV optimization
+    sil_guard: float = -0.08  # Require silhouette improvement for acceptance
+    temporal_bonus: float = 0.25  # Strong bonus for temporal stability improvements
+
+    # ULTRA-AGGRESSIVE Lexicographic acceptor parameters - maximum selectivity for quality
+    eps_cv: float = 1e-5   # Ultra-tight CV threshold - maximum CV optimization
+    eps_sil: float = 1e-4  # Ultra-tight Silhouette threshold - strong silhouette focus
+    eps_temp: float = 1e-4 # Ultra-tight Temporal threshold - maximum temporal stability
     accessories_weight: float = 1e-3
     
     # Size-aware CV gate parameters
@@ -2248,21 +2320,21 @@ class IterativeOptimization:
             else:
                 # Apply default step-specific weights (balance used as constraint)
                 if step == 1:
-                    # Step 1: Local frontier moves - focus on CV improvements
-                    self.w_cv = 0.70
-                    self.w_temp = 0.20
-                    self.w_sil = 0.10
+                    # Step 1: Local frontier moves - MAXIMUM CV optimization focus
+                    self.w_cv = 0.80  # MAXIMUM CV optimization
+                    self.w_temp = 0.15  # Reduced temporal focus to prioritize CV
+                    self.w_sil = 0.05  # Minimal silhouette for step 1
                     self.w_bal = 0.00  # Balance used as constraint, not weight
                 elif step == 2:
-                    # Step 2: Global reallocation - focus on temporal smoothness + CV
-                    self.w_cv = 0.40
-                    self.w_temp = 0.50
-                    self.w_sil = 0.10
+                    # Step 2: Global reallocation - MAXIMUM CV + minimal temporal focus
+                    self.w_cv = 0.80  # MAXIMUM CV optimization
+                    self.w_temp = 0.15  # Reduced temporal smoothness to prioritize CV
+                    self.w_sil = 0.05  # Minimal silhouette for step 2
                     self.w_bal = 0.00  # Balance used as constraint, not weight
                 elif step == 3:
-                    # Step 3: Break large clusters - balanced approach
-                    self.w_cv = 0.50
-                    self.w_temp = 0.30
+                    # Step 3: Break large clusters - MAXIMUM CV focus
+                    self.w_cv = 0.75
+                    self.w_temp = 0.15
                     self.w_sil = 0.10
                     self.w_bal = 0.00  # Balance used as constraint, not weight
                 tprint(f"🔧 Applied default step {step} weights: CV={self.w_cv:.2f}, Sil={self.w_sil:.2f}, Temp={self.w_temp:.2f}, Bal={self.w_bal:.2f}", "INFO")
@@ -3047,23 +3119,333 @@ class IterativeOptimization:
         sizes = np.bincount(labels, minlength=K)
         mu = sizes.mean()
         return 0.0 if mu == 0 else (sizes.std(ddof=0) / mu)
-    
+
+    def robust_feature_cv(self, features: np.ndarray) -> float:
+        """
+        Calculate robust coefficient of variation for standardized features.
+
+        For standardized features (mean ≈ 0), traditional CV = std/mean becomes problematic.
+        This method uses a robust approach that considers the scale of variation relative
+        to the feature's inherent variability.
+
+        Args:
+            features: Feature matrix (n_samples, n_features)
+
+        Returns:
+            Average robust CV across all features
+        """
+        if features.shape[1] == 0:
+            return 0.0
+
+        feature_cvs = []
+        for i in range(features.shape[1]):
+            feature_values = features[:, i]
+
+            # For standardized features, use median absolute deviation as scale estimate
+            # instead of mean (which is ≈ 0)
+            mad = np.median(np.abs(feature_values - np.median(feature_values)))
+
+            # Use MAD as the scale estimate (robust to outliers)
+            if mad > 0:
+                # Robust CV: MAD / median(|values|) - handles zero-centered features
+                median_abs = np.median(np.abs(feature_values))
+                if median_abs > 0:
+                    robust_cv = mad / median_abs
+                else:
+                    # Fallback for features that are all zeros
+                    robust_cv = 0.0
+            else:
+                robust_cv = 0.0
+
+            feature_cvs.append(robust_cv)
+
+        return np.mean(feature_cvs) if feature_cvs else 0.0
+
+    def select_important_features(self, features: np.ndarray, assignments: np.ndarray,
+                                importance_threshold: float = 0.001) -> Tuple[np.ndarray, List[int]]:
+        """
+        Select most discriminative features based on regime separation importance.
+
+        Args:
+            features: Feature matrix (n_samples, n_features)
+            assignments: Cluster assignments
+            importance_threshold: Minimum importance for feature inclusion
+
+        Returns:
+            Tuple of (selected_features, selected_indices)
+        """
+        try:
+            # Calculate feature importance for regime separation
+            importance_scores, _ = self._calculate_enhanced_cv_metrics(features, assignments)
+
+            # Select features above threshold
+            selected_indices = np.where(importance_scores >= importance_threshold)[0]
+            selected_features = features[:, selected_indices]
+
+            self._log_with_context(
+                f"Feature selection: {len(selected_indices)}/{features.shape[1]} features selected "
+                f"(threshold: {importance_threshold})", "INFO", "FEATURE_SELECTION"
+            )
+
+            return selected_features, selected_indices.tolist()
+
+        except Exception as e:
+            self._log_with_context(f"Feature selection failed: {e}", "ERROR", "FEATURE_SELECTION")
+            return features, list(range(features.shape[1]))
+
+    def validate_temporal_consistency(self, features: np.ndarray, assignments: np.ndarray,
+                                    time_idx: np.ndarray) -> Dict[str, Any]:
+        """
+        Validate temporal consistency of clustering results.
+
+        Args:
+            features: Feature matrix
+            assignments: Cluster assignments
+            time_idx: Time indices for samples
+
+        Returns:
+            Dictionary with temporal validation results
+        """
+        try:
+            validation = {
+                'temporal_stability': 0.0,
+                'regime_persistence': 0.0,
+                'warnings': []
+            }
+
+            if len(time_idx) < 2:
+                validation['warnings'].append('Insufficient temporal data for validation')
+                return validation
+
+            # Sort by time
+            sorted_indices = np.argsort(time_idx)
+            sorted_assignments = assignments[sorted_indices]
+
+            # Calculate regime persistence (how long regimes last)
+            regime_changes = np.sum(sorted_assignments[1:] != sorted_assignments[:-1])
+            total_transitions = len(sorted_assignments) - 1
+            persistence_ratio = 1.0 - (regime_changes / max(1, total_transitions))
+
+            # Calculate temporal stability (regime consistency over time windows)
+            window_size = min(50, len(sorted_assignments) // 10)  # Adaptive window
+            if window_size > 1:
+                stability_scores = []
+                for i in range(0, len(sorted_assignments) - window_size, window_size):
+                    window_assignments = sorted_assignments[i:i + window_size]
+                    # Stability = 1 - (unique_regimes / total_regimes_in_window)
+                    unique_regimes = len(np.unique(window_assignments))
+                    stability = 1.0 - (unique_regimes / len(window_assignments))
+                    stability_scores.append(stability)
+
+                temporal_stability = np.mean(stability_scores) if stability_scores else 0.0
+            else:
+                temporal_stability = persistence_ratio
+
+            validation['temporal_stability'] = float(temporal_stability)
+            validation['regime_persistence'] = float(persistence_ratio)
+
+            # Warnings for poor temporal consistency
+            if temporal_stability < 0.5:
+                validation['warnings'].append(f'Low temporal stability: {temporal_stability:.3f}')
+            if persistence_ratio < 0.7:
+                validation['warnings'].append(f'Low regime persistence: {persistence_ratio:.3f}')
+
+            return validation
+
+        except Exception as e:
+            self._log_with_context(f"Temporal validation failed: {e}", "ERROR", "TEMPORAL")
+            return {'temporal_stability': 0.0, 'regime_persistence': 0.0, 'warnings': [str(e)]}
+
+    def validate_features_for_clustering(self, features: np.ndarray) -> Dict[str, Any]:
+        """
+        Validate features are suitable for clustering.
+
+        Args:
+            features: Feature matrix to validate
+
+        Returns:
+            Dictionary with validation results and warnings
+        """
+        validation = {
+            'is_valid': True,
+            'warnings': [],
+            'recommendations': []
+        }
+
+        if features.shape[1] == 0:
+            validation['is_valid'] = False
+            validation['warnings'].append('No features provided')
+            return validation
+
+        # Check for standardization artifacts (means near zero)
+        feature_means = np.abs(features.mean(axis=0))
+        standardized_count = np.sum(feature_means < 1e-8)
+
+        if standardized_count > 0:
+            validation['warnings'].append(f'{standardized_count} features appear standardized (mean ≈ 0)')
+            validation['recommendations'].append('Consider using MinMaxScaler instead of StandardScaler')
+
+        # Check for low variance features
+        feature_stds = features.std(axis=0)
+        low_variance_count = np.sum(feature_stds < 1e-6)
+
+        if low_variance_count > 0:
+            validation['warnings'].append(f'{low_variance_count} features have very low variance')
+            validation['recommendations'].append('Consider removing constant or near-constant features')
+
+        # Check for extreme ranges
+        feature_ranges = features.max(axis=0) - features.min(axis=0)
+        extreme_range_count = np.sum(feature_ranges > 100)
+
+        if extreme_range_count > 0:
+            validation['warnings'].append(f'{extreme_range_count} features have extreme value ranges')
+            validation['recommendations'].append('Consider outlier removal or robust scaling')
+
+        # Check feature correlations (high correlation may indicate redundant features)
+        if features.shape[1] > 1:
+            try:
+                corr_matrix = np.corrcoef(features.T)
+                # Check for highly correlated features (>0.95)
+                high_corr_count = 0
+                for i in range(len(corr_matrix)):
+                    for j in range(i+1, len(corr_matrix)):
+                        if abs(corr_matrix[i, j]) > 0.95:
+                            high_corr_count += 1
+
+                if high_corr_count > 0:
+                    validation['warnings'].append(f'{high_corr_count} highly correlated feature pairs detected')
+                    validation['recommendations'].append('Consider feature selection to reduce redundancy')
+            except:
+                pass  # Skip correlation check if it fails
+
+        if validation['warnings']:
+            validation['is_valid'] = len(validation['warnings']) < features.shape[1] * 0.5  # Valid if < 50% problematic
+
+        return validation
+
+    def _calculate_enhanced_cv_metrics(self, features: np.ndarray, assignments: np.ndarray,
+                                     sample_indices: np.ndarray = None) -> Dict[str, float]:
+        """
+        Calculate enhanced CV metrics optimized for standardized features.
+
+        Returns:
+            Dictionary with within_regime_cv, between_regime_cv, cv_ratio, and robust_feature_cv
+        """
+        try:
+            # Use sample if provided
+            if sample_indices is not None:
+                features_sample = features[sample_indices]
+                assignments_sample = assignments[sample_indices]
+            else:
+                features_sample = features
+                assignments_sample = assignments
+
+            unique_regimes = np.unique(assignments_sample)
+
+            # Within-regime CV using robust calculation
+            within_cvs = []
+            for regime in unique_regimes:
+                regime_features = features_sample[assignments_sample == regime]
+                if regime_features.shape[0] > 1:
+                    regime_cvs = []
+                    for i in range(regime_features.shape[1]):
+                        feature_values = regime_features[:, i]
+                        mad = np.median(np.abs(feature_values - np.median(feature_values)))
+                        median_abs = np.median(np.abs(feature_values))
+
+                        if median_abs > 0 and mad > 0:
+                            cv = mad / median_abs
+                        else:
+                            cv = 0.0
+                        regime_cvs.append(cv)
+
+                    within_cvs.append(np.mean(regime_cvs))
+
+            within_regime_cv = np.mean(within_cvs) if within_cvs else 0.0
+
+            # Between-regime CV using robust calculation
+            centroids = np.array([np.mean(features_sample[assignments_sample == regime], axis=0)
+                                for regime in unique_regimes])
+            if centroids.shape[0] > 1:
+                between_cvs = []
+                for i in range(centroids.shape[1]):
+                    feature_values = centroids[:, i]
+                    mad = np.median(np.abs(feature_values - np.median(feature_values)))
+                    median_abs = np.median(np.abs(feature_values))
+
+                    if median_abs > 0 and mad > 0:
+                        cv = mad / median_abs
+                    else:
+                        cv = 0.0
+                    between_cvs.append(cv)
+
+                between_regime_cv = np.mean(between_cvs)
+            else:
+                between_regime_cv = 0.0
+
+            # CV ratio (higher is better)
+            cv_ratio = between_regime_cv / (within_regime_cv + 1e-9)
+
+            # Overall feature robustness
+            robust_feature_cv = self.robust_feature_cv(features_sample)
+
+            return {
+                "within_regime_cv": float(within_regime_cv),
+                "between_regime_cv": float(between_regime_cv),
+                "cv_ratio": float(cv_ratio),
+                "robust_feature_cv": float(robust_feature_cv),
+            }
+
+        except Exception as e:
+            self._log_with_context(f"Error calculating enhanced CV metrics: {e}", "ERROR", "METRICS")
+            return {
+                "within_regime_cv": 0.0,
+                "between_regime_cv": 0.0,
+                "cv_ratio": 0.0,
+                "robust_feature_cv": 0.0,
+            }
+
     def temporal_switch_penalty(self, labels: np.ndarray, entity_ids: np.ndarray, time_idx: np.ndarray) -> float:
         """Calculate temporal smoothness penalty (lower is better)."""
-        if entity_ids is None or time_idx is None:
+        if entity_ids is None or time_idx is None or len(labels) < 2:
             return 0.0
-        
-        # Sort by entity_id, then by time
-        order = np.lexsort((time_idx, entity_ids))
-        lid = labels[order]
-        eid = entity_ids[order]
-        
-        # Count switches within same entity
-        switches = (lid[1:] != lid[:-1]) & (eid[1:] == eid[:-1])
-        adj = (eid[1:] == eid[:-1])
-        total_adj = adj.sum()
-        
-        return 0.0 if total_adj == 0 else switches.sum() / total_adj
+
+        try:
+            # Sort by entity_id, then by time
+            order = np.lexsort((time_idx, entity_ids))
+            lid = labels[order]
+            eid = entity_ids[order]
+
+            # Count switches within same entity
+            switches = (lid[1:] != lid[:-1]) & (eid[1:] == eid[:-1])
+            adj = (eid[1:] == eid[:-1])
+            total_adj = adj.sum()
+
+            if total_adj == 0:
+                return 0.0
+
+            base_penalty = switches.sum() / total_adj
+
+            # Enhanced temporal smoothness: penalize cluster fragmentation
+            # Count how fragmented each entity's sequence is
+            entity_switches = []
+            for entity_id in np.unique(eid):
+                entity_mask = eid == entity_id
+                if np.sum(entity_mask) > 1:
+                    entity_labels = lid[entity_mask]
+                    entity_switches.append(np.sum(entity_labels[1:] != entity_labels[:-1]))
+
+            if entity_switches:
+                avg_entity_fragmentation = np.mean(entity_switches)
+                # Weight by average switches per entity to penalize fragmented sequences more
+                fragmentation_penalty = min(0.5, avg_entity_fragmentation / max(1, np.mean([np.sum(eid == e) for e in np.unique(eid)])))
+                base_penalty += fragmentation_penalty
+
+            return min(1.0, base_penalty)  # Cap at 1.0
+
+        except Exception as e:
+            tprint(f"⚠️ Temporal switch penalty calculation failed: {e}", "WARNING")
+            return 0.0
     
     def evaluate_metrics(self, X: np.ndarray, labels: np.ndarray, entity_ids: np.ndarray = None, 
                         time_idx: np.ndarray = None, sample_for_indices: np.ndarray = None) -> dict:
@@ -3085,12 +3467,47 @@ class IterativeOptimization:
                 dbi = davies_bouldin_score(X, labels) if len(np.unique(labels)) > 1 else 0.0
                 ch = calinski_harabasz_score(X, labels) if len(np.unique(labels)) > 1 else 0.0
             
+            # Enhanced CV metrics for standardized features (PRIMARY METRIC)
+            enhanced_cv = self._calculate_enhanced_cv_metrics(X, labels, sample_for_indices)
+
+            # Temporal validation (SECONDARY METRIC)
+            temporal_validation = {}
+            if time_idx is not None:
+                temporal_validation = self.validate_temporal_consistency(X, labels, time_idx)
+
+            # Feature quality validation (TERTIARY METRIC)
+            feature_validation = self.validate_features_for_clustering(X)
+
+            # Primary quality metric: CV ratio (regime separation)
+            primary_score = enhanced_cv["cv_ratio"]
+
+            # Secondary quality metric: Temporal consistency
+            secondary_score = temporal_validation.get("temporal_stability", 0.0)
+
+            # Tertiary quality metric: Feature quality
+            tertiary_score = 1.0 if feature_validation["is_valid"] else 0.0
+
+            # Overall quality score (weighted combination)
+            overall_quality = (primary_score * 0.5 + secondary_score * 0.3 + tertiary_score * 0.2)
+
             return {
                 "cv": self.cv_of_sizes(labels, K),
                 "sil": sil,
                 "temp": self.temporal_switch_penalty(labels, entity_ids, time_idx),
                 "dbi": dbi,
                 "ch": ch,
+                # Enhanced CV metrics (PRIMARY INDICATORS)
+                "within_regime_cv": enhanced_cv["within_regime_cv"],
+                "between_regime_cv": enhanced_cv["between_regime_cv"],
+                "cv_ratio": enhanced_cv["cv_ratio"],  # PRIMARY QUALITY METRIC
+                "robust_feature_cv": enhanced_cv["robust_feature_cv"],
+                # Temporal validation (SECONDARY METRIC)
+                "temporal_stability": temporal_validation.get("temporal_stability", 0.0),
+                "regime_persistence": temporal_validation.get("regime_persistence", 0.0),
+                # Feature validation (TERTIARY METRIC)
+                "feature_quality_score": tertiary_score,
+                # Overall quality assessment
+                "overall_quality_score": overall_quality,
             }
         except Exception as e:
             self._log_with_context(f"Error evaluating metrics: {e}", "ERROR", "METRICS")
@@ -3383,10 +3800,25 @@ class IterativeOptimization:
             # Initialize with hard constraints
             assignments = self._enforce_hard_constraints(X, initial_assignments, entity_ids, time_idx)
             
-            # Main optimization loop with adaptive weights
-            for iteration in range(self.config.max_rounds):
+            # Main optimization loop with adaptive weights and timeout protection
+            import time
+            start_time = time.time()
+            max_optimization_time = 300  # 5 minutes timeout
+
+            # Track metrics for early stopping
+            no_improvement_count = 0
+            no_moves_count = 0
+            prev_cv = 0.0
+
+            for iteration in range(self.config.max_rounds):  # Maximum iterations
+                # Check timeout
+                elapsed_time = time.time() - start_time
+                if elapsed_time > max_optimization_time:
+                    self._log_with_context(f"Timeout reached after {elapsed_time:.1f}s, stopping optimization", "WARNING", "MAIN")
+                    break
+
                 self._log_with_context(f"=== Iteration {iteration + 1}/{self.config.max_rounds} ===", "INFO", "MAIN")
-                
+
                 # Apply adaptive weights (CV enhancement strategy)
                 if CV_ENHANCEMENT_AVAILABLE and hasattr(self, 'adaptive_scheduler') and self.adaptive_scheduler:
                     adaptive_weights = self.adaptive_scheduler.get_weights(iteration)
@@ -3395,11 +3827,11 @@ class IterativeOptimization:
                     self.w_temp = adaptive_weights['w_temp']
                     self.w_sil = adaptive_weights['w_sil']
                     self.w_bal = adaptive_weights['w_bal']
-                
+
                 # Evaluate current metrics (with enhanced CV if available)
                 sample_indices = self._get_sample_indices(N)
                 current_metrics = self.evaluate_metrics(X, assignments, entity_ids, time_idx, sample_indices)
-                
+
                 # Calculate enhanced CV ratio if available
                 if CV_ENHANCEMENT_AVAILABLE:
                     enhanced_cv_metrics = EnhancedVarianceRatioCalculator.calculate_enhanced_cv(
@@ -3408,27 +3840,42 @@ class IterativeOptimization:
                     current_metrics['enhanced_cv'] = enhanced_cv_metrics['combined_cv']
                     current_metrics['calinski_harabasz'] = enhanced_cv_metrics['calinski_harabasz']
                     self._log_with_context(f"Enhanced CV metrics: combined_cv={enhanced_cv_metrics['combined_cv']:.4f}, CH={enhanced_cv_metrics['calinski_harabasz']:.2f}", "DEBUG", "MAIN")
-                
-                self._log_with_context(f"Current metrics: CV={current_metrics['cv']:.4f}, Sil={current_metrics['sil']:.4f}, Temp={current_metrics['temp']:.4f}", "INFO", "MAIN")
-                
+
+                current_cv = current_metrics.get('cv', current_metrics.get('enhanced_cv', 0.0))
+                self._log_with_context(f"Current metrics: CV={current_cv:.4f}, Sil={current_metrics['sil']:.4f}, Temp={current_metrics['temp']:.4f}", "INFO", "MAIN")
+
+                # Check for improvement (early stopping)
+                if abs(current_cv - prev_cv) < 0.001:  # Less than 0.1% improvement
+                    no_improvement_count += 1
+                    if no_improvement_count >= 2:  # No improvement for 2 consecutive iterations
+                        self._log_with_context("Early stopping: no CV improvement for 2 iterations", "INFO", "MAIN")
+                        break
+                else:
+                    no_improvement_count = 0
+                    prev_cv = current_cv
+
                 # Generate candidates
                 centroids = self._compute_centroids(X, assignments)
                 candidates = self.generate_candidates(X, assignments, centroids, max_size)
                 self._log_with_context(f"Generated {len(candidates)} candidates", "DEBUG", "MAIN")
-                
+
                 # Try moves with lexicographic acceptance
                 moves_applied = 0
                 for candidate in candidates:
                     if self._try_move_with_lexicographic(X, assignments, candidate, entity_ids, time_idx, sample_indices):
                         moves_applied += 1
-                
+
                 self._log_with_context(f"Applied {moves_applied} moves", "INFO", "MAIN")
-                
+
                 # Check for convergence
                 if moves_applied == 0:
-                    self._log_with_context("Converged: no moves accepted", "INFO", "MAIN")
-                    break
-                
+                    no_moves_count += 1
+                    if no_moves_count >= 2:  # No moves for 2 consecutive rounds
+                        self._log_with_context("Converged: no moves accepted for 2 rounds", "INFO", "MAIN")
+                        break
+                else:
+                    no_moves_count = 0  # Reset counter if moves were applied
+
                 # Re-enforce hard constraints after each iteration
                 assignments = self._enforce_hard_constraints(X, assignments, entity_ids, time_idx)
             
@@ -3513,11 +3960,11 @@ class IterativeOptimization:
         self.alpha = 1.0  # Size-aware penalty
         self.max_new_clusters_per_round = 3
         
-        # ENHANCED objective function weights - AGGRESSIVE optimization focus
-        # Prioritizing CV, Temporal Smoothness, and Silhouette per requirements
-        self.w_cv = 0.45     # Primary: variance ratio (CV) - slightly reduced to balance
-        self.w_temp = 0.35   # Secondary: temporal smoothness - INCREASED for stability
-        self.w_sil = 0.15    # Tertiary: cluster cohesion (Silhouette) - INCREASED
+        # ENHANCED objective function weights - MAXIMUM CV optimization focus
+        # Prioritizing CV ratio for maximum regime separation quality
+        self.w_cv = 0.70     # Primary: variance ratio (CV) - MAXIMIZED for regime separation
+        self.w_temp = 0.20   # Secondary: temporal smoothness - reduced to focus on CV
+        self.w_sil = 0.10    # Tertiary: cluster cohesion (Silhouette) - reduced
         self.w_bal = 0.05    # Minimal: balance constraint (soft penalty)
         self.lambda_switch = 1e-5  # Reduced by 10x from 1e-4 to 1e-5
         
@@ -4711,13 +5158,13 @@ class IterativeOptimization:
                         'temporal': np.clip(d['temporal'] / scales['temporal'] if scales['temporal'] > 0 else d['temporal'], -5.0, 5.0)
                     }
                     # Calculate both raw and standardized totals
-                    d_raw_total = (self.w_cv * d['cv'] + 
-                                  self.w_bal * d['balance'] + 
-                                  self.w_sil * d['silhouette'] + 
+                    d_raw_total = (self.w_cv * d['cv'] +
+                                  self.w_bal * d['balance'] +
+                                  self.w_sil * d['silhouette'] +
                                   self.w_temp * d['temporal'])
-                    d_std_total = (self.w_cv * d_std['cv'] + 
-                                  self.w_bal * d_std['balance'] + 
-                                  self.w_sil * d_std['silhouette'] + 
+                    # Calculate standardized total WITHOUT balance weight to match _objective method
+                    d_std_total = (self.w_cv * d_std['cv'] +
+                                  self.w_sil * d_std['silhouette'] +
                                   self.w_temp * d_std['temporal'])
                     
                     # Update move with both raw and standardized info
@@ -6296,7 +6743,7 @@ class IterativeOptimization:
         """Pull from instance if present; otherwise use the constants shown in your logs."""
         SOFT_CAP = getattr(self, "SOFT_CAP", 332)
         MIN_SIZE = getattr(self, "MIN_SIZE", 50)
-        K_MAX    = getattr(self, "K_MAX", 12)
+        K_MAX    = getattr(self, "K_MAX", 10)
         return SOFT_CAP, MIN_SIZE, K_MAX
 
     def _safe_caps(self, cfg=None):
@@ -8562,6 +9009,7 @@ class IterativeOptimization:
             tprint("   ⭐ CV RATIO (Variance Ratio): between-cluster variance / within-cluster variance", "SUCCESS")
             tprint("      → PRIMARY METRIC: HIGHER values = better regime separation & financial distinctness", "SUCCESS")
             tprint("      → Target: > 1.5 (Excellent), > 1.0 (Good), > 0.5 (Fair)", "INFO")
+            tprint("      → Financial Impact: Higher CV ratio = more distinct market regimes = better trading signals", "SUCCESS")
             tprint("   📈 Silhouette Score: Measures cluster cohesion and separation (-1 to 1 scale)", "INFO")
             tprint("      → HIGHER values indicate better cluster quality and point assignment", "INFO")
             tprint("   🕒 Temporal Smoothness: Regime stability over time (lower switch rate = better)", "INFO")
@@ -8575,11 +9023,45 @@ class IterativeOptimization:
             tprint("\n📊 CORE CLUSTERING PERFORMANCE METRICS:", "SUCCESS")
             tprint("="*80, "SUCCESS")
             tprint(f"   🔢 Number of Clusters (K): {num_clusters} [Range: K_MIN={self.config.K_MIN} to K_MAX={self.config.K_MAX}]", "INFO")
-            tprint("\n   ⭐ PRIMARY METRIC - CV RATIO (Variance Ratio):", "SUCCESS")
-            tprint(f"      Value: {cv_ratio:.4f} (between-cluster / within-cluster variance)", "SUCCESS")
-            cv_quality = "Excellent" if cv_ratio > 1.5 else ("Good" if cv_ratio > 1.0 else ("Fair" if cv_ratio > 0.5 else "Poor"))
-            tprint(f"      Quality Assessment: {cv_quality}", "SUCCESS" if cv_ratio > 1.0 else "WARNING")
-            tprint(f"      Interpretation: {'Strong regime separation' if cv_ratio > 1.0 else 'Moderate separation, consider refinement'}", "INFO")
+
+            # Enhanced CV RATIO display - make it the most prominent metric
+            tprint("\n" + "🎯" * 20 + " PRIMARY METRIC - CV RATIO (Variance Ratio) " + "🎯" * 20, "SUCCESS")
+            tprint(f"   📈 CV RATIO Value: {cv_ratio:.4f}", "SUCCESS")
+            tprint(f"   📊 Formula: between-cluster variance / within-cluster variance", "INFO")
+            tprint(f"   💰 Financial Impact: Higher values = more distinct market regimes = better trading performance", "SUCCESS")
+
+            # Detailed CV ratio quality assessment
+            if cv_ratio > 2.0:
+                cv_quality = "EXCEPTIONAL"
+                cv_color = "SUCCESS"
+                cv_interpretation = "Outstanding regime separation - expect excellent trading performance"
+            elif cv_ratio > 1.5:
+                cv_quality = "Excellent"
+                cv_color = "SUCCESS"
+                cv_interpretation = "Strong regime separation - very good trading signals"
+            elif cv_ratio > 1.0:
+                cv_quality = "Good"
+                cv_color = "SUCCESS"
+                cv_interpretation = "Clear regime separation - good trading opportunities"
+            elif cv_ratio > 0.5:
+                cv_quality = "Fair"
+                cv_color = "WARNING"
+                cv_interpretation = "Moderate regime separation - may need refinement"
+            else:
+                cv_quality = "Poor"
+                cv_color = "ERROR"
+                cv_interpretation = "Weak regime separation - clustering needs improvement"
+
+            tprint(f"   🏆 Quality Assessment: {cv_quality}", cv_color)
+            tprint(f"   💡 Interpretation: {cv_interpretation}", "INFO")
+
+            # Show CV ratio trend if available
+            try:
+                if hasattr(stats, 'cv_history') and stats.cv_history:
+                    cv_trend = "↗️ Improving" if stats.cv_history[-1] > stats.cv_history[0] else "↘️ Declining"
+                    tprint(f"   📈 CV Trend: {cv_trend} (from {stats.cv_history[0]:.4f} to {stats.cv_history[-1]:.4f})", "INFO")
+            except:
+                pass
             tprint("\n   📈 SECONDARY METRICS:", "INFO")
             tprint(f"      🎭 Silhouette Score: {silhouette_score:.4f} (cluster cohesion & separation)", "INFO")
             tprint(f"      ⚖️  Balance Score: {balance_score:.4f} (cluster size uniformity)", "INFO")

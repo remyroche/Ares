@@ -44,6 +44,7 @@ from ...market_analysis.components.base_component import BaseMarketAnalysisCompo
 # Import PID-based feature generation components
 from .pid_based_feature_orchestrator import PIDBasedFeatureOrchestrator, OrchestratorConfig, OrchestratorResult
 from .optimized_lookback_integration import OptimizedLookbackIntegration, LookbackIntegrationResult
+from .interaction_feature_generator import OptimizationMetrics, OptimizationStatus
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error
 
 # Import optimized process engine
@@ -85,6 +86,16 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
         tprint("🔧 Initializing PID-based feature generation components...")
         self._initialize_components()
         tprint("✅ Components initialized successfully")
+
+        # Initialize execution mode configuration
+        tprint("🔧 Initializing execution mode lookback configuration...")
+        try:
+            from ..shared_utils.execution_mode_lookback_config import get_execution_mode_config
+            self.execution_mode_config = get_execution_mode_config()
+            tprint("✅ Execution mode configuration initialized")
+        except ImportError as e:
+            self.logger.warning(f"⚠️ Could not import execution mode config: {e}")
+            self.execution_mode_config = None
         
         # Initialize optimized process engine
         tprint("🔧 Initializing optimized PID feature engine...")
@@ -93,6 +104,10 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
             cache_size=1000
         )
         tprint("✅ Optimized PID feature engine initialized")
+
+        # Initialize optimization tracking
+        self.optimization_metrics = OptimizationMetrics()
+        self.optimization_status = OptimizationStatus.ENABLED
         
         # Track generation status
         self.generation_status = GenerationStatus.PENDING
@@ -183,17 +198,32 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                 'data_quality_score': self._calculate_data_quality_score(market_data)
             })
             
-            # Step 2: Get feature optimization results from previous stage
+            # Step 2: Extract execution mode parameters
+            execution_mode_params = {}
+            if self.execution_mode_config and hasattr(pipeline_state, 'get'):
+                try:
+                    # Try to extract execution mode from pipeline state or config
+                    pipeline_config = pipeline_state.get('pipeline_config', {})
+                    pid_params = self.execution_mode_config.get_pid_generation_parameters(
+                        pipeline_config.get('mode', 'full')
+                    )
+                    execution_mode_params = pid_params
+                    self.logger.info(f"📊 Using execution mode parameters for PID generation: {execution_mode_params}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Could not extract execution mode parameters: {e}")
+                    execution_mode_params = {}
+
+            # Step 3: Get feature optimization results from previous stage
             self.logger.info('⚙️ Retrieving feature lookback optimization results...')
             feature_lookback_optimization = await self._get_feature_optimization_results(pipeline_state)
             self._report_checkpoint('feature_optimization', 'retrieved', {
                 'optimization_available': bool(feature_lookback_optimization)
             })
             
-            # Step 3: Integrate optimized lookback periods
+            # Step 4: Integrate optimized lookback periods
             self.logger.info('🔧 Integrating optimized lookback periods...')
             lookback_integration_result = self.lookback_integration.integrate_optimized_lookback_periods(
-                feature_lookback_optimization, 
+                feature_lookback_optimization,
                 list(market_data.columns) if isinstance(market_data, pd.DataFrame) else None
             )
             self._report_checkpoint('lookback_integration', 'completed', {
@@ -201,18 +231,29 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                 'integration_status': lookback_integration_result.integration_status.value,
                 'optimization_quality_score': lookback_integration_result.optimization_quality_score
             })
-            
-            # Step 4: Prepare feature names
+
+            # Step 5: Prepare feature names
             if isinstance(market_data, pd.DataFrame):
                 feature_names = list(market_data.columns)
             else:
                 feature_names = [f"feature_{i}" for i in range(market_data.shape[1])]
-            
-            # Step 5: Get target variable if available (from multi-horizon profit labeler)
+
+            # Step 6: Apply execution mode data windowing
+            if execution_mode_params:
+                # Apply data windowing if specified (but keep all features)
+                window_days = execution_mode_params.get('window_days', 1460)
+                if market_data is not None and hasattr(market_data, 'tail'):
+                    if len(market_data) > window_days:
+                        market_data = market_data.tail(window_days).copy()
+                        self.logger.info(f"📊 Applied execution mode window: using last {window_days} days for PID generation")
+
+            # Step 7: Get target variable if available (from multi-horizon profit labeler)
             target = await self._get_target_variable(pipeline_state)
-            
-            # Step 6: Orchestrate feature generation with long/short differentiation
+
+            # Step 8: Orchestrate feature generation with long/short differentiation
             self.logger.info('🚀 Orchestrating PID-based feature generation with long/short differentiation...')
+
+            # Use all features for generation (no limits based on execution mode)
             orchestrator_result = await self.orchestrator.orchestrate_feature_generation(
                 market_data,
                 feature_names,
@@ -224,24 +265,24 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                 'generation_status': orchestrator_result.generation_status.value,
                 'overall_quality_score': orchestrator_result.overall_quality_score
             })
-            
-            # Step 7: Validate generation results
+
+            # Step 10: Validate generation results
             validation_result = await self._validate_generation_results(orchestrator_result)
             self._report_checkpoint('validation', 'completed', {
                 'is_valid': validation_result['is_valid'],
                 'quality_score': validation_result['quality_score'],
                 'issues_count': len(validation_result['issues'])
             })
-            
-            # Step 8: Create comprehensive artifacts
+
+            # Step 11: Create comprehensive artifacts
             artifacts = await self._create_comprehensive_artifacts(
-                orchestrator_result, 
-                lookback_integration_result, 
-                validation_result, 
+                orchestrator_result,
+                lookback_integration_result,
+                validation_result,
                 market_data
             )
-            
-            # Step 9: Generate final report
+
+            # Step 12: Generate final report
             final_report = self._generate_final_report(artifacts, validation_result, orchestrator_result)
             self._report_checkpoint('completion', 'success', {
                 'total_features': orchestrator_result.total_features_generated,
@@ -252,6 +293,24 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
             self.generation_status = GenerationStatus.COMPLETED
             
             self.logger.info(f'✅ PID-Based Feature Generation completed: {orchestrator_result.total_features_generated} features generated')
+            
+            # Save artifacts persistently using the artifact manager
+            try:
+                saved_files = await self.save_artifacts(artifacts, {
+                    'symbol': self.config.symbol,
+                    'exchange': self.config.exchange,
+                    'timeframe': self.config.timeframe,
+                    'total_features_generated': orchestrator_result.total_features_generated,
+                    'generation_status': self.generation_status.value,
+                    'data_quality_score': validation_result['quality_score'],
+                    'optimization_source': lookback_integration_result.optimization_source,
+                    'final_report': final_report,
+                    'execution_time': time.time() - self.start_time
+                })
+                tprint(f"💾 [PID_FEATURE_GEN] Artifacts saved persistently: {list(saved_files.keys())}", color="green")
+            except Exception as e:
+                tprint(f"⚠️ [PID_FEATURE_GEN] Failed to save artifacts persistently: {e}", color="yellow")
+            
             return ComponentResult(
                 success=True,
                 artifacts=artifacts,
@@ -264,7 +323,10 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                     'data_quality_score': validation_result['quality_score'],
                     'optimization_source': lookback_integration_result.optimization_source,
                     'final_report': final_report,
-                    'execution_time': time.time() - self.start_time
+                    'execution_time': time.time() - self.start_time,
+                    'artifacts_saved_persistently': True,
+                    'optimization_status': self.optimization_status.value,
+                    'optimization_metrics': self.optimization_metrics.__dict__ if hasattr(self, 'optimization_metrics') else {}
                 }
             )
             
@@ -291,7 +353,9 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                     'timeframe': self.config.timeframe,
                     'generation_status': self.generation_status.value,
                     'failure_report': failure_report,
-                    'execution_time': time.time() - self.start_time if self.start_time else 0
+                    'execution_time': time.time() - self.start_time if self.start_time else 0,
+                    'optimization_status': self.optimization_status.value,
+                    'optimization_metrics': self.optimization_metrics.__dict__ if hasattr(self, 'optimization_metrics') else {}
                 }
             )
     
@@ -532,7 +596,7 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                         # Try to parse as JSON first (new format)
                         json_data = json.loads(labeled_data)
                         labeled_data = pd.DataFrame(json_data)
-                        self.logger.info(f"✅ Successfully parsed JSON labeled data: {labeled_data.shape}")
+                        self.logger.info(f"✅ Successfully parsed JSON labeled data: {len(json_data)} records")
                     except (json.JSONDecodeError, ValueError) as e:
                         # Fallback: Try to get the actual DataFrame from pipeline state artifacts
                         self.logger.info(f"⚠️ JSON parsing failed ({e}), trying pipeline state extraction...")
@@ -868,7 +932,7 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
             'pid_based_feature_generation_result': {
                 # Individual results
                 'interaction_result': orchestrator_result.interaction_result.__dict__ if orchestrator_result.interaction_result else None,
-                'polynomial_result': orchestrator_result.polynomial_result.__dict__ if orchestrator_result.polynomial_result else None,
+                'polynomial_result': None,  # Polynomial features not generated for NAS/TAS
                 'cross_timeframe_result': orchestrator_result.cross_timeframe_result.__dict__ if orchestrator_result.cross_timeframe_result else None,
                 
                 # Combined results
@@ -905,7 +969,7 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                     'total_timeframes_analyzed': len(self.orchestrator.config.timeframes) if hasattr(self.orchestrator.config, 'timeframes') else 0,
                     'total_features_generated': orchestrator_result.total_features_generated,
                     'interaction_features': len([f for f in orchestrator_result.combined_feature_names if f.startswith('interaction_')]),
-                    'polynomial_features': len([f for f in orchestrator_result.combined_feature_names if f.startswith('polynomial_')]),
+                    'polynomial_features': 0,  # Polynomial features not generated for NAS/TAS
                     'cross_timeframe_features': len([f for f in orchestrator_result.combined_feature_names if f.startswith('cross_timeframe_')]),
                     'execution_time': orchestrator_result.execution_time,
                     'quality_score': validation_result['quality_score'],
@@ -940,7 +1004,7 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
         # Categorize features by type and direction
         feature_breakdown = {
             'interaction_features': len([f for f in orchestrator_result.combined_feature_names if 'interaction' in f]),
-            'polynomial_features': len([f for f in orchestrator_result.combined_feature_names if 'polynomial' in f]),
+            'polynomial_features': 0,  # Polynomial features not generated for NAS/TAS
             'cross_timeframe_features': len([f for f in orchestrator_result.combined_feature_names if 'cross_timeframe' in f]),
             'total_features': orchestrator_result.total_features_generated,
             # Long/Short breakdown

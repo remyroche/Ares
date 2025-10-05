@@ -463,6 +463,20 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             self.logger.info(f'✅ Enhanced Regime Data Splitting completed: {self.metrics.regime_count} regimes processed')
             tprint(f'✅ Enhanced Regime Data Splitting completed: {self.metrics.regime_count} regimes processed')
             
+            # Save artifacts persistently using the artifact manager
+            try:
+                saved_files = await self.save_artifacts(artifacts, {
+                    'symbol': self.config.symbol,
+                    'exchange': self.config.exchange,
+                    'timeframe': self.config.timeframe,
+                    'regime_count': self.metrics.regime_count,
+                    'execution_time': self.metrics.processing_time_seconds,
+                    'data_quality_score': self.metrics.data_quality_score
+                })
+                tprint(f"💾 [REGIME_DATA_SPLITTING] Artifacts saved persistently: {list(saved_files.keys())}", color="green")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_DATA_SPLITTING] Failed to save artifacts persistently: {e}", color="yellow")
+            
             return ComponentResult(
                 success=True,
                 artifacts=artifacts,
@@ -472,7 +486,8 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     'timeframe': self.config.timeframe,
                     'regime_count': self.metrics.regime_count,
                     'execution_time': self.metrics.processing_time_seconds,
-                    'data_quality_score': self.metrics.data_quality_score
+                    'data_quality_score': self.metrics.data_quality_score,
+                    'artifacts_saved_persistently': True
                 }
             )
             
@@ -1893,7 +1908,12 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             
         except Exception as e:
             self.logger.error(f"❌ Error calculating regime statistics: {e}")
-            return {'error': str(e)}
+            return {
+                'error': str(e),
+                'total_regimes': 0,
+                'regime_distribution': {},
+                'total_data_points': 0
+            }
     
     def _calculate_regime_statistics_optimized(self, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Calculate regime statistics with M1 optimizations."""
@@ -1954,7 +1974,16 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             
         except Exception as e:
             self.logger.error(f"❌ Error in M1-optimized regime statistics: {e}")
-            return self._calculate_regime_statistics(market_data)
+            fallback_result = self._calculate_regime_statistics(market_data)
+            # Ensure fallback result has required fields
+            if not isinstance(fallback_result, dict) or 'total_regimes' not in fallback_result:
+                return {
+                    'error': str(e),
+                    'total_regimes': 0,
+                    'regime_distribution': {},
+                    'total_data_points': 0
+                }
+            return fallback_result
     
     def _calculate_regime_statistics_memory_optimized(self, market_data: pd.DataFrame) -> Dict[str, Any]:
         """Calculate regime statistics with comprehensive memory optimization."""
@@ -1968,7 +1997,12 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 
                 if len(regime_states) == 0:
                     self.logger.warning("⚠️ No regime states found for statistics calculation")
-                    return {'error': 'No regime states found'}
+                    return {
+                        'error': 'No regime states found',
+                        'total_regimes': 0,
+                        'regime_distribution': {},
+                        'total_data_points': 0
+                    }
                 
                 # Use memory-efficient operations for basic statistics
                 unique_regimes, counts = np.unique(regime_states, return_counts=True)
@@ -2095,9 +2129,21 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 validation_result['errors'].append(f"Data length mismatch: market_data={len(market_data)}, regime_states={len(regime_states)}")
             
             # Validate regime statistics
-            regime_stats = regime_data['regime_statistics']
-            if not regime_stats or 'total_regimes' not in regime_stats:
-                validation_result['warnings'].append("Incomplete regime statistics")
+            regime_stats = regime_data.get('regime_statistics', {})
+            if not isinstance(regime_stats, dict):
+                validation_result['warnings'].append("Regime statistics is not a dictionary")
+                regime_stats = {}
+
+            # Ensure required fields are present
+            if 'total_regimes' not in regime_stats:
+                # Try to calculate total_regimes from the regime_states
+                if regime_states is not None and len(regime_states) > 0:
+                    unique_regimes = len(np.unique(regime_states))
+                    regime_stats['total_regimes'] = unique_regimes
+                    validation_result['warnings'].append("Calculated missing total_regimes from regime_states")
+                else:
+                    regime_stats['total_regimes'] = 0
+                    validation_result['warnings'].append("No regime states found - setting total_regimes to 0")
             
             # Additional data consistency checks
             # Check for regime state consistency

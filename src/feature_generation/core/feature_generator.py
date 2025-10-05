@@ -398,7 +398,7 @@ class VectorizedFeatureGenerator(FeatureGenerator):
             try:
                 from ...utils.matrix_operations import get_unified_matrix_operations
                 self.matrix_ops = get_unified_matrix_operations()
-                self.logger.info("Matrix operations enabled")
+                self.logger.debug("Matrix operations enabled")
             except ImportError:
                 self.matrix_ops = None
                 self.enable_matrix_ops = False

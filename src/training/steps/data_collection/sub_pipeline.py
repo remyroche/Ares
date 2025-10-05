@@ -334,9 +334,15 @@ class DataCollectionSubPipeline:
             return await self._fallback_data_download(config)
         
         try:
-            # Set date range
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=config.custom_params.get('lookback_days', 30))
+            # Set date range - use config dates if available, otherwise calculate from lookback_days
+            if config.start_date and config.end_date:
+                start_date = datetime.strptime(config.start_date, '%Y-%m-%d')
+                end_date = datetime.strptime(config.end_date, '%Y-%m-%d')
+                self.logger.info(f"📅 Using config date range: {config.start_date} to {config.end_date}")
+            else:
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=config.custom_params.get('lookback_days', 30))
+                self.logger.info(f"📅 Using calculated date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
             
             # Download klines data
             self.logger.info(f"📥 Downloading klines data for {config.exchange}_{config.symbol}_{config.timeframe}")
@@ -1414,6 +1420,8 @@ async def execute_full_data_collection_pipeline(
     timeframe: str = "1m",
     data_dir: str = "historical_data",
     mode: ExecutionMode = ExecutionMode.FULL,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
     **kwargs
 ) -> Dict[str, Any]:
     """Execute the complete data collection pipeline."""
@@ -1423,6 +1431,8 @@ async def execute_full_data_collection_pipeline(
         timeframe=timeframe,
         data_dir=data_dir,
         mode=mode,
+        start_date=start_date,
+        end_date=end_date,
         custom_params=kwargs
     )
     

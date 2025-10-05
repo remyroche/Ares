@@ -39,7 +39,7 @@ class DirectionalLookbackConfig:
     
     # Base optimization settings
     min_lookback: int = 5
-    max_lookback: int = 100
+    max_lookback: int = 300
     optimization_method: str = "bayesian"
     
     # Directional settings

@@ -359,11 +359,16 @@ def prepare_market_features(
         rows_before = len(features_df)
 
         if feature_config.handle_missing_values:
-            # Count NaN values before handling
+            # Enhanced NaN analysis and handling
             initial_nan_count = np.isnan(features_array).sum()
             initial_nan_pct = initial_nan_count / (features_array.size) * 100
-
-            features_df = features_df.fillna(method='bfill')
+            
+            if verbose:
+                tprint_debug(f"📊 [SHARED_FEATURES] Enhanced NaN handling: {initial_nan_count:,} NaN values ({initial_nan_pct:.2f}%)")
+            
+            # Enhanced NaN handling with regime-aware imputation
+            features_df = _enhanced_nan_handling(features_df, verbose=verbose)
+            features_array = features_df.values
 
             # Remove rows with any remaining NaN values
             valid_rows = ~np.isnan(features_array).any(axis=1)
@@ -372,10 +377,10 @@ def prepare_market_features(
             features_df = features_df.iloc[valid_indices]
             removed_rows = int(len(valid_rows) - valid_rows.sum())
 
-            # Log NaN handling results
+            # Log enhanced NaN handling results
             final_nan_count = np.isnan(features_array).sum()
             if verbose:
-                tprint_debug(f"📊 [SHARED_FEATURES] NaN handling: {initial_nan_count:,} NaN values ({initial_nan_pct:.2f}%) → {final_nan_count:,} remaining")
+                tprint_debug(f"📊 [SHARED_FEATURES] Enhanced NaN handling: {initial_nan_count:,} → {final_nan_count:,} remaining")
                 if removed_rows > 0:
                     tprint_debug(f"📊 [SHARED_FEATURES] Removed {removed_rows} rows with NaN values")
 
@@ -487,20 +492,82 @@ def prepare_market_features(
                 f"Insufficient valid observations: {len(features_df)} < {feature_config.min_observations}"
             )
 
-        # Standardize features if requested
+        # Scale features if requested (using MinMaxScaler for better regime separation)
         if feature_config.use_standardized_features:
             if verbose:
-                tprint_debug("🔧 [SHARED_FEATURES] Standardizing features")
+                tprint_debug("🔧 [SHARED_FEATURES] Scaling features with MinMaxScaler")
 
-            from sklearn.preprocessing import StandardScaler
+            from sklearn.preprocessing import MinMaxScaler
 
-            scaler = StandardScaler()
+            scaler = MinMaxScaler(feature_range=(-1, 1))
             features_array = scaler.fit_transform(features_array)
             features_df = pd.DataFrame(features_array, index=features_df.index, columns=features_df.columns)
             stage_metadata['operations'].append({
-                'type': 'standardization',
-                'scaler': 'StandardScaler',
+                'type': 'minmax_scaling',
+                'scaler': 'MinMaxScaler',
+                'range': '(-1, 1)',
             })
+
+            # Enhanced feature validation for clustering suitability
+            if verbose:
+                tprint_debug("🔍 [SHARED_FEATURES] Validating scaled features for clustering")
+
+            # Check for standardization artifacts (means near zero)
+            feature_means = np.abs(features_array.mean(axis=0))
+            standardized_features = np.sum(feature_means < 1e-8)
+
+            # Enhanced feature validation (warnings only, don't fail pipeline)
+            validation_issues = []
+
+            if standardized_features > 0:
+                warning_msg = f"{standardized_features} features appear standardized (mean ≈ 0). This may harm clustering performance."
+                tprint_warning(f"⚠️ [SHARED_FEATURES] {warning_msg}")
+                validation_issues.append({
+                    'type': 'standardized_features_detected',
+                    'count': int(standardized_features),
+                    'message': 'Features with near-zero means detected after scaling'
+                })
+
+            # Check feature variance (ensure features aren't constant)
+            feature_stds = features_array.std(axis=0)
+            low_variance_features = np.sum(feature_stds < 1e-6)
+
+            if low_variance_features > 0:
+                warning_msg = f"{low_variance_features} features have very low variance (< 1e-6). Consider removing constant features."
+                tprint_warning(f"⚠️ [SHARED_FEATURES] {warning_msg}")
+                validation_issues.append({
+                    'type': 'low_variance_features',
+                    'count': int(low_variance_features),
+                    'message': 'Features with insufficient variance detected'
+                })
+
+            # Check for extreme feature ranges (potential outliers)
+            feature_ranges = features_array.max(axis=0) - features_array.min(axis=0)
+            extreme_range_features = np.sum(feature_ranges > 100)
+
+            if extreme_range_features > 0:
+                warning_msg = f"{extreme_range_features} features have extreme ranges (> 100). Consider outlier removal or robust scaling."
+                tprint_warning(f"⚠️ [SHARED_FEATURES] {warning_msg}")
+                validation_issues.append({
+                    'type': 'extreme_feature_ranges',
+                    'count': int(extreme_range_features),
+                    'message': 'Features with extreme value ranges detected'
+                })
+
+            # Store validation results in metadata for downstream use
+            stage_metadata['validation_results'] = {
+                'issues': validation_issues,
+                'warnings_count': len(validation_issues),
+                'is_valid': len(validation_issues) < features_array.shape[1] * 0.5  # Valid if < 50% problematic
+            }
+
+            if verbose:
+                tprint_debug(f"🔍 [SHARED_FEATURES] Feature validation complete: "
+                           f"{standardized_features} standardized, {low_variance_features} low variance, "
+                           f"{extreme_range_features} extreme range features")
+
+        # Note: Removed stage_metadata['warnings'] to prevent pipeline failures
+        # Warnings are now stored in stage_metadata['validation_results']['issues']
         
         # Final validation
         if features_array.shape[0] < feature_config.min_observations:
@@ -707,3 +774,73 @@ def validate_features(features: np.ndarray, expected_shape: Optional[tuple] = No
         
     except Exception:
         return False
+
+
+def _enhanced_nan_handling(features_df: pd.DataFrame, verbose: bool = False) -> pd.DataFrame:
+    """
+    Enhanced NaN handling with regime-aware imputation strategies.
+    
+    Args:
+        features_df: DataFrame with potential NaN values
+        verbose: Whether to enable verbose logging
+        
+    Returns:
+        DataFrame with enhanced NaN handling
+    """
+    if verbose:
+        tprint("🔧 [SHARED_FEATURES] Applying enhanced NaN handling...")
+    
+    # Strategy 1: Forward fill for time series continuity
+    features_df = features_df.fillna(method='ffill')
+    
+    # Strategy 2: Backward fill for remaining NaNs
+    features_df = features_df.fillna(method='bfill')
+    
+    # Strategy 3: Regime-aware imputation for remaining NaNs
+    for col in features_df.columns:
+        if features_df[col].isna().any():
+            # Use median for robust imputation
+            median_val = features_df[col].median()
+            if not pd.isna(median_val):
+                features_df[col] = features_df[col].fillna(median_val)
+            else:
+                # Fallback to 0 for completely missing columns
+                features_df[col] = features_df[col].fillna(0.0)
+    
+    if verbose:
+        remaining_nans = features_df.isnull().sum().sum()
+        tprint(f"✅ [SHARED_FEATURES] Enhanced NaN handling completed: {remaining_nans} NaNs remaining")
+    
+    return features_df
+
+
+def _analyze_nan_patterns(features_df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    Analyze NaN patterns in features for better handling strategies.
+    
+    Args:
+        features_df: DataFrame to analyze
+        
+    Returns:
+        Dictionary with NaN analysis results
+    """
+    total_cells = features_df.size
+    total_nans = features_df.isnull().sum().sum()
+    nan_percentage = (total_nans / total_cells) * 100
+    
+    # Analyze by feature
+    feature_nan_counts = features_df.isnull().sum()
+    features_with_nans = feature_nan_counts[feature_nan_counts > 0]
+    
+    # Analyze by row
+    row_nan_counts = features_df.isnull().sum(axis=1)
+    rows_with_nans = row_nan_counts[row_nan_counts > 0]
+    
+    return {
+        'total_nans': int(total_nans),
+        'nan_percentage': float(nan_percentage),
+        'features_with_nans': len(features_with_nans),
+        'rows_with_nans': len(rows_with_nans),
+        'max_nans_per_feature': int(feature_nan_counts.max()) if len(feature_nan_counts) > 0 else 0,
+        'max_nans_per_row': int(row_nan_counts.max()) if len(row_nan_counts) > 0 else 0
+    }

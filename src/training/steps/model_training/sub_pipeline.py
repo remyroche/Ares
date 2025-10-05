@@ -7,8 +7,8 @@ This module provides the final model training sub-pipeline with enhanced NAS/TAS
 2. tas_training - Tree Architecture Search training per-regime on 1m timeframe
 3. analyst_models_training - Per-regime individual model training with HPO, saving, and metrics
 4. analyst_ensemble_training - Per-regime ensemble training with NAS integration
-5. tactician_pre_ml_orchestration - Pre-ML processing: separate long/short signals, optimize features, generate PID features, apply horizon labeling, select features
-6. tactician_dual_training - Train multiple Tactician models: 4 base models + 1 ensemble for long signals, 4 base models + 1 ensemble for short signals (8 total models)
+5. tactician_pre_ml_orchestration - Pre-ML processing: unified signal processing, optimize features, generate PID features, apply horizon labeling, select features
+6. tactician_training - Train Tactician models on unified dataset: 3 base models + 1 ensemble (4 total models)
 7. tactician_ensemble_training - Per-regime ensemble training with TAS integration
 8. regime_specific_training - Regime-specific model training (legacy)
 9. model_validation - Model validation and testing (legacy)
@@ -23,7 +23,7 @@ ENHANCED FEATURES:
 - Data quality checks throughout pipeline
 - Resource monitoring and optimization
 - Silent failure prevention with explicit error propagation
-- NEW: Tactician dual training with differentiated long/short processing
+- NEW: Tactician unified training with integrated long/short processing
 """
 
 import asyncio
@@ -422,7 +422,7 @@ class ModelTrainingSubPipeline:
             'analyst_model_training': self._analyst_model_training_pipeline,
             'analyst_ensemble_training': self._analyst_ensemble_training_pipeline,
             'tactician_pre_ml_orchestration': self._tactician_pre_ml_orchestration_pipeline,
-            'tactician_dual_training': self._tactician_dual_training_pipeline,
+            'tactician_training': self._tactician_training_pipeline,
             'tactician_lookback_optimization': self._tactician_lookback_optimization_pipeline,
             'tactician_models_training': self._tactician_models_training_pipeline,
             'tactician_ensemble_training': self._tactician_ensemble_training_pipeline,
@@ -1138,8 +1138,8 @@ class ModelTrainingSubPipeline:
             required_artifacts = {
                 'analyst_model_training': ['models', 'metrics'],
             'analyst_ensemble_training': ['models', 'metrics'],
-            'tactician_pre_ml_orchestration': ['orchestration_result', 'long_training_data', 'short_training_data', 'tagged_market_data'],
-            'tactician_dual_training': ['training_result', 'long_base_models', 'short_base_models', 'long_ensemble_models', 'short_ensemble_models', 'models', 'metrics']
+            'tactician_pre_ml_orchestration': ['orchestration_result', 'unified_training_data', 'tagged_market_data'],
+            'tactician_training': ['training_result', 'unified_base_models', 'unified_ensemble_models', 'models', 'metrics']
             }
             
             if sub_pipeline_name in required_artifacts:
@@ -1411,7 +1411,7 @@ class ModelTrainingSubPipeline:
                 'analyst_model_training': 4,  # TEMPORAL_FUSION_TRANSFORMER, TABNET, HIST_GRADIENT_BOOSTING, EXTRA_TREES
         'analyst_ensemble_training': 1,  # Single ensemble model
         'tactician_pre_ml_orchestration': 0,  # No models, just orchestration
-        'tactician_dual_training': 8  # 4 long base models + 4 short base models (XGBOOST, LIGHTGBM, DEEPSCALER_1M, FINANCIAL_RESNET) - no ensembles in count
+        'tactician_training': 4  # 3 base models + 1 ensemble (XGBOOST, LIGHTGBM, DEEPSCALER_1M, FINANCIAL_RESNET)
             }
             
             if sub_pipeline_name in expected_model_counts:
@@ -2149,8 +2149,8 @@ class ModelTrainingSubPipeline:
         self.logger.info('📋 Steps to be executed automatically:')
         self.logger.info('   1. analyst_model_training - Per-regime individual model training with HPO, saving, and metrics')
         self.logger.info('   2. analyst_ensemble_training - Per-regime ensemble training with HPO, saving, and metrics')
-        self.logger.info('   3. tactician_pre_ml_orchestration - Pre-ML processing: separate long/short signals, optimize features, generate PID features, apply horizon labeling, select features')
-        self.logger.info('   4. tactician_dual_training - Train Tactician models twice (longs and shorts) with differentiated features and horizon labeling')
+        self.logger.info('   3. tactician_pre_ml_orchestration - Pre-ML processing: unified signal processing, optimize features, generate PID features, apply horizon labeling, select features')
+        self.logger.info('   4. tactician_training - Train Tactician models on unified dataset with integrated long/short processing')
         self.logger.info('   5. tactician_lookback_optimization - Lookback optimization for tactician models')
         self.logger.info('   6. tactician_models_training - All-regime individual model training with HPO, saving, and metrics')
         self.logger.info('   7. tactician_ensemble_training - All-regime ensemble training with HPO, saving, and metrics (legacy - now primarily used for combined signals)')
@@ -2211,7 +2211,7 @@ class ModelTrainingSubPipeline:
 
         tactician_steps = [
             'tactician_pre_ml_orchestration',
-            'tactician_dual_training'
+            'tactician_training'
         ]
         
         # Complete execution sequence
@@ -2332,14 +2332,14 @@ class ModelTrainingSubPipeline:
         return summary_data
 
     async def _tactician_pre_ml_orchestration_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Tactician pre-ML orchestration pipeline: separate long/short signals, optimize features, generate PID features, apply horizon labeling, select features."""
+        """Tactician pre-ML orchestration pipeline: unified signal processing, optimize features, generate PID features, apply horizon labeling, select features."""
         tprint(f"   🎯 TACTICIAN PRE-ML ORCHESTRATION PIPELINE STARTED")
         self.logger.info("🎯 Executing tactician pre-ML orchestration pipeline")
-        self.logger.info("   📊 Step 1: Separate Analyst signals into long/short with confidence filtering")
-        self.logger.info("   🔍 Step 2: Optimize feature lookback periods for each signal type")
-        self.logger.info("   🧬 Step 3: Generate PID-based features based on signal types")
+        self.logger.info("   📊 Step 1: Load Analyst signals for unified processing with confidence filtering")
+        self.logger.info("   🔍 Step 2: Optimize feature lookback periods for unified signals")
+        self.logger.info("   🧬 Step 3: Generate PID-based features for unified signals")
         self.logger.info("   🎯 Step 4: Apply multi-horizon profit labeling")
-        self.logger.info("   🔧 Step 5: Select final features for both signal types")
+        self.logger.info("   🔧 Step 5: Select final features for unified signals")
         
         try:
             # Perform comprehensive data quality validation
@@ -2348,131 +2348,131 @@ class ModelTrainingSubPipeline:
                     'status': 'failed',
                     'error': 'Training data validation failed - insufficient quality'
                 }
-            
-            # Step 1: Load Analyst signals for single-direction model with confidence filtering
-            tprint(f"   📊 Step 1: Loading Analyst signals for single-direction model with confidence filtering...")
-            signal_separation_result = await self._separate_analyst_signals(config)
-            if not signal_separation_result['success']:
+
+            # Step 1: Load Analyst signals for unified processing with confidence filtering
+            tprint(f"   📊 Step 1: Loading Analyst signals for unified processing with confidence filtering...")
+            signal_loading_result = await self._load_unified_analyst_signals(config)
+            if not signal_loading_result['success']:
                 return {
                     'status': 'failed',
-                    'error': f"Signal loading failed: {signal_separation_result['error']}"
+                    'error': f"Signal loading failed: {signal_loading_result['error']}"
                 }
-            tprint(f"   ✅ Loaded {signal_separation_result['signal_count']} {signal_separation_result['signal_type']} signals")
-            
-            # Step 2: Optimize feature lookback periods for the signal type
-            tprint(f"   🔍 Step 2: Optimizing feature lookback periods for {signal_separation_result['signal_type']} signals...")
-            lookback_optimization_result = await self._optimize_feature_lookback_periods(config, signal_separation_result)
+            tprint(f"   ✅ Loaded {signal_loading_result['signal_count']} unified signals")
+
+            # Step 2: Optimize feature lookback periods for unified signals
+            tprint(f"   🔍 Step 2: Optimizing feature lookback periods for unified signals...")
+            lookback_optimization_result = await self._optimize_unified_feature_lookback_periods(config, signal_loading_result)
             if not lookback_optimization_result['success']:
                 return {
                     'status': 'failed',
                     'error': f"Lookback optimization failed: {lookback_optimization_result['error']}"
                 }
-            tprint(f"   ✅ Optimized lookback period: {lookback_optimization_result['lookback_period']} for {lookback_optimization_result['signal_type']} signals")
-            
-            # Step 3: Generate PID-based features for the signal type
-            tprint(f"   🧬 Step 3: Generating PID-based features for {signal_separation_result['signal_type']} signals...")
-            pid_features_result = await self._generate_pid_features(config, signal_separation_result, lookback_optimization_result)
+            tprint(f"   ✅ Optimized lookback period: {lookback_optimization_result['lookback_period']} for unified signals")
+
+            # Step 3: Generate PID-based features for unified signals
+            tprint(f"   🧬 Step 3: Generating PID-based features for unified signals...")
+            pid_features_result = await self._generate_unified_pid_features(config, signal_loading_result, lookback_optimization_result)
             if not pid_features_result['success']:
                 return {
                     'status': 'failed',
                     'error': f"PID feature generation failed: {pid_features_result['error']}"
                 }
-            tprint(f"   ✅ Generated {pid_features_result['feature_count']} PID features for {pid_features_result['signal_type']} signals")
-            
+            tprint(f"   ✅ Generated {pid_features_result['feature_count']} PID features for unified signals")
+
             # Step 4: Apply multi-horizon profit labeling
-            tprint(f"   🎯 Step 4: Applying multi-horizon profit labeling for {signal_separation_result['signal_type']} signals...")
-            labeling_result = await self._apply_multi_horizon_labeling(config, signal_separation_result, pid_features_result)
+            tprint(f"   🎯 Step 4: Applying multi-horizon profit labeling for unified signals...")
+            labeling_result = await self._apply_unified_multi_horizon_labeling(config, signal_loading_result, pid_features_result)
             if not labeling_result['success']:
                 return {
                     'status': 'failed',
                     'error': f"Multi-horizon labeling failed: {labeling_result['error']}"
                 }
-            tprint(f"   ✅ Applied labeling with {labeling_result['label_count']} labels for {labeling_result['signal_type']} signals")
-            
-            # Step 5: Select final features for the signal type
-            tprint(f"   🔧 Step 5: Selecting final features for {signal_separation_result['signal_type']} signals...")
-            feature_selection_result = await self._select_final_features(config, signal_separation_result, pid_features_result, labeling_result)
+            tprint(f"   ✅ Applied labeling with {labeling_result['label_count']} labels for unified signals")
+
+            # Step 5: Select final features for unified signals
+            tprint(f"   🔧 Step 5: Selecting final features for unified signals...")
+            feature_selection_result = await self._select_unified_final_features(config, signal_loading_result, pid_features_result, labeling_result)
             if not feature_selection_result['success']:
                 return {
                     'status': 'failed',
                     'error': f"Feature selection failed: {feature_selection_result['error']}"
                 }
-            tprint(f"   ✅ Selected {feature_selection_result['final_feature_count']} final features for {feature_selection_result['signal_type']} signals")
-            
+            tprint(f"   ✅ Selected {feature_selection_result['final_feature_count']} final features for unified signals")
+
             # Compile results
             orchestration_results = {
                 'status': 'completed',
                 'message': 'Tactician pre-ML orchestration pipeline completed successfully',
-                'signal_separation': signal_separation_result,
+                'signal_loading': signal_loading_result,
                 'lookback_optimization': lookback_optimization_result,
                 'pid_features': pid_features_result,
                 'labeling': labeling_result,
                 'feature_selection': feature_selection_result,
                 'timestamp': self._generate_datetime_stamp()
             }
-            
+
             return orchestration_results
             
         except Exception as e:
             self.logger.error(f"❌ Tactician pre-ML orchestration pipeline failed: {e}")
             raise
 
-    async def _tactician_dual_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Tactician dual training pipeline: train models twice (longs and shorts) with differentiated features and horizon labeling."""
-        tprint(f"   ⚔️ TACTICIAN DUAL TRAINING PIPELINE STARTED")
-        self.logger.info("⚔️ Executing tactician dual training pipeline")
-        
+    async def _tactician_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Tactician training pipeline: train models with unified approach using RandomSurvivalForest, XGBoost, and ElasticNetCV."""
+        tprint(f"   ⚔️ TACTICIAN TRAINING PIPELINE STARTED")
+        self.logger.info("⚔️ Executing tactician training pipeline")
+
         try:
-            # Step 1: Load pre-ML orchestration results
-            tprint(f"   📊 Step 1: Loading pre-ML orchestration results...")
-            orchestration_results = await self._load_orchestration_results(config)
+            # Step 1: Load unified pre-ML orchestration results
+            tprint(f"   📊 Step 1: Loading unified pre-ML orchestration results...")
+            orchestration_results = await self._load_unified_orchestration_results(config)
             if not orchestration_results['success']:
                 return {
                     'status': 'failed',
-                    'error': f"Failed to load orchestration results: {orchestration_results['error']}"
+                    'error': f"Failed to load unified orchestration results: {orchestration_results['error']}"
                 }
-            tprint(f"   ✅ Loaded orchestration results with {orchestration_results['feature_count']} features for {orchestration_results['signal_type']} signals")
-            
-            # Step 2: Train models for the signal type (4 base models + 1 ensemble)
-            tprint(f"   📈 Step 2: Training {orchestration_results['signal_type']} signal models (4 base + 1 ensemble)...")
-            training_result = await self._train_signal_models(config, orchestration_results)
+            tprint(f"   ✅ Loaded unified orchestration results with {orchestration_results['feature_count']} features for {len(orchestration_results['signal_types'])} signal types")
+
+            # Step 2: Train models on unified dataset (4 base models + 1 ensemble)
+            tprint(f"   📈 Step 2: Training unified signal models (4 base + 1 ensemble)...")
+            training_result = await self._train_unified_signal_models(config, orchestration_results)
             if not training_result['success']:
                 return {
                     'status': 'failed',
-                    'error': f"{orchestration_results['signal_type']} signal training failed: {training_result['error']}"
+                    'error': f"Unified signal training failed: {training_result['error']}"
                 }
-            tprint(f"   ✅ Trained {training_result['model_count']} {training_result['signal_type']} signal models")
-            
+            tprint(f"   ✅ Trained {training_result['model_count']} unified signal models")
+
             # Step 3: Validate model performance and quality
             tprint(f"   🔍 Step 3: Validating model performance and quality...")
-            validation_result = await self._validate_training_models(config, training_result)
+            validation_result = await self._validate_unified_training_models(config, training_result)
             if not validation_result['success']:
                 return {
                     'status': 'failed',
                     'error': f"Model validation failed: {validation_result['error']}"
                 }
             tprint(f"   ✅ Validation passed: {validation_result['valid_models']} valid models")
-            
+
             # Step 4: Save models and generate training report
             tprint(f"   💾 Step 4: Saving models and generating training report...")
-            save_result = await self._save_training_models(config, training_result, validation_result)
+            save_result = await self._save_unified_training_models(config, training_result, validation_result)
             if not save_result['success']:
                 return {
                     'status': 'failed',
                     'error': f"Model saving failed: {save_result['error']}"
                 }
-            tprint(f"   ✅ Saved {save_result['saved_models']} {save_result['signal_type']} models to {save_result['save_path']}")
-            
+            tprint(f"   ✅ Saved {save_result['saved_models']} unified models to {save_result['save_path']}")
+
             # Compile results
             training_results = {
                 'status': 'completed',
-                'message': f'Tactician {orchestration_results["signal_type"]} training pipeline completed successfully',
+                'message': 'Tactician unified training pipeline completed successfully',
                 'orchestration_results': orchestration_results,
                 'training': training_result,
                 'validation': validation_result,
                 'save_results': save_result,
                 'total_models': training_result['model_count'],
-                'signal_type': orchestration_results['signal_type'],
+                'signal_types': orchestration_results['signal_types'],
                 'timestamp': self._generate_datetime_stamp()
             }
             
@@ -2486,11 +2486,11 @@ class ModelTrainingSubPipeline:
     # TACTICIAN PRE-ML ORCHESTRATION HELPER METHODS
     # ============================================================================
     
-    async def _separate_analyst_signals(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Load Analyst model predictions for single-direction models (long OR short) with confidence filtering."""
+    async def _load_unified_analyst_signals(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Load Analyst model predictions for unified signal processing with confidence filtering."""
         try:
-            tprint_debug(f"   🔍 Loading Analyst model predictions for single-direction models...")
-            
+            tprint_debug(f"   🔍 Loading Analyst model predictions for unified processing...")
+
             # Load Analyst model predictions
             analyst_predictions_path = f"{config.data_dir}/analyst_models/predictions"
             if not Path(analyst_predictions_path).exists():
@@ -2498,14 +2498,14 @@ class ModelTrainingSubPipeline:
                     'success': False,
                     'error': f"Analyst predictions not found at {analyst_predictions_path}"
                 }
-            
+
             # Load and process predictions
             predictions_data = []
             for pred_file in Path(analyst_predictions_path).glob("*.json"):
                 with open(pred_file, 'r') as f:
                     pred_data = json.load(f)
                     predictions_data.extend(pred_data.get('predictions', []))
-            
+
             if not predictions_data:
                 return {
                     'success': False,
@@ -2514,38 +2514,34 @@ class ModelTrainingSubPipeline:
             
             # Convert to DataFrame for processing
             df = pd.DataFrame(predictions_data)
-            
+
             # Apply confidence filtering (threshold: 0.6)
             confidence_threshold = 0.6
             high_confidence_mask = df['confidence'] >= confidence_threshold
-            
+
             # Filter high-confidence signals
             filtered_signals = df[high_confidence_mask]
-            
-            # Determine signal type from the data (should be consistent for single-direction models)
+
+            # For unified processing, we keep all signal types (long and short)
             signal_types = filtered_signals['signal'].unique()
-            if len(signal_types) > 1:
-                self.logger.warning(f"⚠️ Multiple signal types detected: {signal_types}. Using first type: {signal_types[0]}")
-                primary_signal_type = signal_types[0]
-            else:
-                primary_signal_type = signal_types[0] if len(signal_types) > 0 else 'unknown'
-            
-            # Save filtered signals
+
+            # Save filtered signals for unified processing
             signals_output_path = f"{config.data_dir}/tactician/signals"
             Path(signals_output_path).mkdir(parents=True, exist_ok=True)
-            
-            # Save as single signal type
-            filtered_signals.to_json(f"{signals_output_path}/{primary_signal_type}_signals.json", orient='records')
-            
-            self.logger.info(f"✅ Loaded {len(filtered_signals)} {primary_signal_type} signals (confidence >= {confidence_threshold})")
-            
+
+            # Save as unified signals (both long and short)
+            unified_signals_path = f"{signals_output_path}/unified_signals.json"
+            filtered_signals.to_json(unified_signals_path, orient='records')
+
+            self.logger.info(f"✅ Loaded {len(filtered_signals)} unified signals (confidence >= {confidence_threshold}) - Types: {list(signal_types)}")
+
             return {
                 'success': True,
-                'signal_type': primary_signal_type,
+                'signal_types': list(signal_types),
                 'signal_count': len(filtered_signals),
-                'signals_path': f"{signals_output_path}/{primary_signal_type}_signals.json",
+                'signals_path': unified_signals_path,
                 'confidence_threshold': confidence_threshold,
-                'is_single_direction': True
+                'is_unified': True
             }
             
         except Exception as e:
@@ -2555,57 +2551,57 @@ class ModelTrainingSubPipeline:
                 'error': str(e)
             }
     
-    async def _optimize_feature_lookback_periods(self, config: SubPipelineConfig, signal_separation_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Optimize feature lookback periods for single-direction signal type."""
+    async def _optimize_unified_feature_lookback_periods(self, config: SubPipelineConfig, signal_loading_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Optimize feature lookback periods for unified signals."""
         try:
-            tprint_debug(f"   🔍 Optimizing feature lookback periods for {signal_separation_result['signal_type']} signals...")
-            
+            tprint_debug(f"   🔍 Optimizing feature lookback periods for unified signals...")
+
             # Import lookback optimization utilities
             try:
                 from src.feature_generation.utils.optimization.lookback_optimizer import LookbackOptimizer
             except ImportError:
-                # Fallback to default lookback periods based on signal type
-                signal_type = signal_separation_result['signal_type']
-                default_lookback = 20 if signal_type == 'long' else 15
+                # Fallback to default lookback periods for unified signals
+                # Use a balanced lookback period that works for both long and short signals
+                default_lookback = 18  # Balanced between 15 (short) and 20 (long)
                 return {
                     'success': True,
                     'lookback_period': default_lookback,
-                    'signal_type': signal_type,
+                    'signal_types': signal_loading_result['signal_types'],
                     'optimization_method': 'default'
                 }
             
             # Load signal data
-            signals = pd.read_json(signal_separation_result['signals_path'])
-            signal_type = signal_separation_result['signal_type']
-            
-            # Optimize lookback periods
+            signals = pd.read_json(signal_loading_result['signals_path'])
+            signal_types = signal_loading_result['signal_types']
+
+            # Optimize lookback periods for unified signals
             optimizer = LookbackOptimizer()
-            
-            # Optimize for the specific signal type
-            optimized_lookback = await optimizer.optimize_lookback_period(
+
+            # Optimize for unified signals (both long and short)
+            optimized_lookback = await optimizer.optimize_lookback_period_unified(
                 signals=signals,
-                signal_type=signal_type,
+                signal_types=signal_types,
                 config=config
             )
-            
+
             # Save optimization results
             optimization_results = {
-                'signal_type': signal_type,
+                'signal_types': signal_types,
                 'lookback_period': optimized_lookback,
                 'optimization_timestamp': self._generate_datetime_stamp()
             }
-            
-            optimization_path = f"{config.data_dir}/tactician/lookback_optimization.json"
+
+            optimization_path = f"{config.data_dir}/tactician/unified_lookback_optimization.json"
             Path(optimization_path).parent.mkdir(parents=True, exist_ok=True)
             with open(optimization_path, 'w') as f:
                 json.dump(optimization_results, f, indent=2)
-            
-            self.logger.info(f"✅ Optimized lookback period for {signal_type} signals: {optimized_lookback}")
-            
+
+            self.logger.info(f"✅ Optimized lookback period for unified signals: {optimized_lookback}")
+
             return {
                 'success': True,
                 'lookback_period': optimized_lookback,
-                'signal_type': signal_type,
+                'signal_types': signal_types,
                 'optimization_path': optimization_path
             }
             
@@ -2616,11 +2612,11 @@ class ModelTrainingSubPipeline:
                 'error': str(e)
             }
     
-    async def _generate_pid_features(self, config: SubPipelineConfig, signal_separation_result: Dict[str, Any], lookback_optimization_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate PID-based features for single-direction signal type."""
+    async def _generate_unified_pid_features(self, config: SubPipelineConfig, signal_loading_result: Dict[str, Any], lookback_optimization_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate PID-based features for unified signals."""
         try:
-            tprint_debug(f"   🔍 Generating PID-based features for {signal_separation_result['signal_type']} signals...")
-            
+            tprint_debug(f"   🔍 Generating PID-based features for unified signals...")
+
             # Import PID feature generation utilities
             try:
                 from src.training.steps.market_analysis.pid_based_feature_generation.pid_based_feature_generation_component import PIDBasedFeatureGenerationComponent as PIDFeatureGenerator
@@ -2632,34 +2628,34 @@ class ModelTrainingSubPipeline:
             
             # Initialize PID feature generator
             pid_generator = PIDFeatureGenerator()
-            
-            # Generate features for the specific signal type
-            signal_type = signal_separation_result['signal_type']
-            features = await pid_generator.generate_features(
-                signals_path=signal_separation_result['signals_path'],
+
+            # Generate features for unified signals (both long and short)
+            signal_types = signal_loading_result['signal_types']
+            features = await pid_generator.generate_unified_features(
+                signals_path=signal_loading_result['signals_path'],
                 lookback_period=lookback_optimization_result['lookback_period'],
-                signal_type=signal_type,
+                signal_types=signal_types,
                 config=config
             )
-            
+
             # Save features
             features_data = {
-                'signal_type': signal_type,
+                'signal_types': signal_types,
                 'features': features,
                 'generation_timestamp': self._generate_datetime_stamp()
             }
-            
-            features_path = f"{config.data_dir}/tactician/pid_features.json"
+
+            features_path = f"{config.data_dir}/tactician/unified_pid_features.json"
             Path(features_path).parent.mkdir(parents=True, exist_ok=True)
             with open(features_path, 'w') as f:
                 json.dump(features_data, f, indent=2, default=str)
-            
-            self.logger.info(f"✅ Generated {len(features)} PID features for {signal_type} signals")
-            
+
+            self.logger.info(f"✅ Generated {len(features)} PID features for unified signals")
+
             return {
                 'success': True,
                 'feature_count': len(features),
-                'signal_type': signal_type,
+                'signal_types': signal_types,
                 'features_path': features_path
             }
             
@@ -2670,11 +2666,11 @@ class ModelTrainingSubPipeline:
                 'error': str(e)
             }
     
-    async def _apply_multi_horizon_labeling(self, config: SubPipelineConfig, signal_separation_result: Dict[str, Any], pid_features_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Apply multi-horizon profit labeling for single-direction signal type."""
+    async def _apply_unified_multi_horizon_labeling(self, config: SubPipelineConfig, signal_loading_result: Dict[str, Any], pid_features_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply multi-horizon profit labeling for unified signals."""
         try:
-            tprint_debug(f"   🔍 Applying multi-horizon profit labeling for {signal_separation_result['signal_type']} signals...")
-            
+            tprint_debug(f"   🔍 Applying multi-horizon profit labeling for unified signals...")
+
             # Import multi-horizon labeling utilities
             try:
                 from src.training.steps.market_analysis.multi_horizon_profit_labeler import MultiHorizonProfitLabeler
@@ -2692,7 +2688,7 @@ class ModelTrainingSubPipeline:
                 features_data = json.load(f)
             
             # Apply labeling to the specific signal type
-            signal_type = signal_separation_result['signal_type']
+            signal_type = signal_loading_result['signal_types'][0] if signal_loading_result['signal_types'] else 'unknown'
             labels = await labeler.apply_labeling(
                 features=features_data['features'],
                 signal_type=signal_type,
@@ -2727,96 +2723,36 @@ class ModelTrainingSubPipeline:
                 'error': str(e)
             }
     
-    async def _select_final_features(self, config: SubPipelineConfig, signal_separation_result: Dict[str, Any], pid_features_result: Dict[str, Any], labeling_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Select final features for single-direction signal type."""
-        try:
-            tprint_debug(f"   🔍 Selecting final features for {signal_separation_result['signal_type']} signals...")
-            
-            # Import feature selection utilities
-            try:
-                from src.training.steps.feature_engineering.feature_selector import TacticianFeatureSelector
-            except ImportError:
-                return {
-                    'success': False,
-                    'error': "Feature selector not available"
-                }
-            
-            # Initialize feature selector
-            feature_selector = TacticianFeatureSelector()
-            
-            # Load features and labels
-            with open(pid_features_result['features_path'], 'r') as f:
-                features_data = json.load(f)
-            
-            with open(labeling_result['labels_path'], 'r') as f:
-                labels_data = json.load(f)
-            
-            # Select features for the specific signal type
-            signal_type = signal_separation_result['signal_type']
-            selected_features = await feature_selector.select_features(
-                features=features_data['features'],
-                labels=labels_data['labels'],
-                signal_type=signal_type,
-                config=config
-            )
-            
-            # Save selected features
-            final_features = {
-                'signal_type': signal_type,
-                'selected_features': selected_features,
-                'selection_timestamp': self._generate_datetime_stamp()
-            }
-            
-            final_features_path = f"{config.data_dir}/tactician/final_features.json"
-            Path(final_features_path).parent.mkdir(parents=True, exist_ok=True)
-            with open(final_features_path, 'w') as f:
-                json.dump(final_features, f, indent=2, default=str)
-            
-            self.logger.info(f"✅ Selected {len(selected_features)} final features for {signal_type} signals")
-            
-            return {
-                'success': True,
-                'final_feature_count': len(selected_features),
-                'signal_type': signal_type,
-                'final_features_path': final_features_path
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Feature selection failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
     
     # ============================================================================
     # TACTICIAN DUAL TRAINING HELPER METHODS
     # ============================================================================
     
-    async def _load_orchestration_results(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Load pre-ML orchestration results for single-direction model."""
+    async def _load_unified_orchestration_results(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Load unified pre-ML orchestration results."""
         try:
-            tprint_debug(f"   🔍 Loading orchestration results...")
-            
-            # Load final features from orchestration
-            final_features_path = f"{config.data_dir}/tactician/final_features.json"
+            tprint_debug(f"   🔍 Loading unified orchestration results...")
+
+            # Load unified final features from orchestration
+            final_features_path = f"{config.data_dir}/tactician/unified_final_features.json"
             if not Path(final_features_path).exists():
                 return {
                     'success': False,
-                    'error': f"Final features not found at {final_features_path}"
+                    'error': f"Unified final features not found at {final_features_path}"
                 }
-            
+
             with open(final_features_path, 'r') as f:
                 orchestration_data = json.load(f)
-            
-            signal_type = orchestration_data.get('signal_type', 'unknown')
+
+            signal_types = orchestration_data.get('signal_types', [])
             feature_count = len(orchestration_data.get('selected_features', []))
-            
-            self.logger.info(f"✅ Loaded orchestration results with {feature_count} features for {signal_type} signals")
-            
+
+            self.logger.info(f"✅ Loaded unified orchestration results with {feature_count} features for {len(signal_types)} signal types")
+
             return {
                 'success': True,
                 'feature_count': feature_count,
-                'signal_type': signal_type,
+                'signal_types': signal_types,
                 'orchestration_data': orchestration_data,
                 'final_features_path': final_features_path
             }
@@ -3029,7 +2965,7 @@ async def execute_full_model_training_pipeline(
         'analyst_model_training',
         'analyst_ensemble_training',
         'tactician_pre_ml_orchestration',
-        'tactician_dual_training',
+        'tactician_training',
         'tactician_ensemble_training'
     ]
     

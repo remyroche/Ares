@@ -30,6 +30,7 @@ from .returns import (
     ReturnsVolatilityGenerator,
     ReturnsSkewnessGenerator,
     ReturnsKurtosisGenerator,
+    ReturnGenerator,
     SharpeRatioGenerator,
     create_returns_generators,
     create_default_returns_generators
@@ -42,6 +43,9 @@ from .momentum import (
     WilliamsRGenerator,
     MomentumOscillatorGenerator,
     RateOfChangeGenerator,
+    AdvancedMomentumGenerator,
+    PriceAccelerationGenerator,
+    VolumeMomentumGenerator,
     create_momentum_generators,
     create_default_momentum_generators
 )
@@ -115,6 +119,15 @@ from .entropy import (
     create_default_entropy_generators
 )
 
+from .advanced_regime_features import (
+    RegimeEntropyGenerator,
+    RegimeComplexityGenerator,
+    RegimeFractalDimensionGenerator,
+    RegimeHurstExponentGenerator,
+    RegimeMemoryStrengthGenerator,
+    create_advanced_regime_generators
+)
+
 from .microstructure import create_default_microstructure_generators
 from .autoencoder import create_default_autoencoder_generators
 from .order_flow import create_default_order_flow_generators
@@ -140,6 +153,7 @@ __all__ = [
     "ReturnsVolatilityGenerator",
     "ReturnsSkewnessGenerator",
     "ReturnsKurtosisGenerator",
+    "ReturnGenerator",
     "SharpeRatioGenerator",
     "MomentumFeatureGenerator",
     "RSIGenerator",

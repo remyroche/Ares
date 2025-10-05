@@ -107,7 +107,7 @@ class KlinesParquetManager:
                         timestamp_int = open_time_series.astype('int64')
                         timestamp_col = pd.to_datetime(timestamp_int, unit='ms')
 
-            if timestamp_col is not None:
+            if timestamp_col is not None and len(timestamp_col) > 0:
                 # Apply the date filtering
                 mask = (timestamp_col >= start_date) & (timestamp_col <= end_date)
                 df = df[mask]
@@ -118,7 +118,8 @@ class KlinesParquetManager:
 
                 self.logger.info(f"📅 Date filtering result: {len(df)} records")
             else:
-                self.logger.warning("⚠️ Could not find timestamp column for date filtering")
+                self.logger.warning("⚠️ Could not find timestamp column for date filtering or timestamp column is empty")
+                return None
 
         return df
     
@@ -315,32 +316,49 @@ class KlinesParquetManager:
             consolidated_files = [f for f in files if f.is_file() and 'consolidated' in f.name.lower()]
             partitioned_dirs = [f for f in files if f.is_dir()]
             
+            # Also check for consolidated files inside directories
+            for dir_path in partitioned_dirs:
+                consolidated_in_dir = list(dir_path.glob('*consolidated*.parquet'))
+                if consolidated_in_dir:
+                    consolidated_files.extend(consolidated_in_dir)
+                    self.logger.info(f"🔍 Found consolidated file in directory: {consolidated_in_dir[0].name}")
+
             self.logger.info(f"🔍 Found {len(consolidated_files)} consolidated files and {len(partitioned_dirs)} partitioned directories")
-            
-            # First try consolidated files
-            for file_path in sorted(consolidated_files):
-                try:
-                    df = self.parquet_utils.safe_read_parquet(str(file_path), columns=columns)
-                    if df is not None and not df.empty:
-                        # Apply date filtering to consolidated file if dates are specified
-                        if start_date is not None or end_date is not None:
-                            df = self._apply_date_filter_to_dataframe(df, start_date, end_date)
-                            if df is not None and not df.empty:
-                                dataframes.append(df)
-                                self.logger.info(f"✅ Loaded consolidated file: {file_path.name} with {len(df)} records (date filtered)")
-                                break  # Use only the first consolidated file
+
+            # Determine data loading strategy
+            use_consolidated_only = False
+
+            # First try consolidated files - if found, use ONLY consolidated files
+            if consolidated_files:
+                self.logger.info(f"🔍 Found consolidated files, attempting to load...")
+                for file_path in sorted(consolidated_files):
+                    try:
+                        df = self.parquet_utils.safe_read_parquet(str(file_path), columns=columns)
+                        if df is not None and not df.empty:
+                            self.logger.info(f"🔍 DEBUG: Loaded consolidated file with {len(df)} total records")
+                            self.logger.info(f"🔍 DEBUG: Consolidated file date range: {df.index.min()} to {df.index.max()}")
+
+                            # Apply date filtering to consolidated file if dates are specified
+                            if start_date is not None or end_date is not None:
+                                df = self._apply_date_filter_to_dataframe(df, start_date, end_date)
+                                if df is not None and not df.empty:
+                                    self.logger.info(f"✅ Loaded consolidated file: {file_path.name} with {len(df)} records (date filtered)")
+                                    dataframes.append(df)
+                                    use_consolidated_only = True  # Mark to use only consolidated data
+                                    break  # Use only the first consolidated file
+                                else:
+                                    self.logger.info(f"📅 Consolidated file filtered out by date range")
                             else:
-                                self.logger.info(f"📅 Consolidated file filtered out by date range")
-                        else:
-                            dataframes.append(df)
-                            self.logger.info(f"✅ Loaded consolidated file: {file_path.name} with {len(df)} records")
-                            break  # Use only the first consolidated file
-                except Exception as e:
-                    self.logger.warning(f"Could not read consolidated file {file_path}: {e}")
-            
-            # If no consolidated file was found, use partitioned directories
-            if not dataframes:
-                self.logger.info(f"🔍 No consolidated file found, using partitioned data")
+                                dataframes.append(df)
+                                self.logger.info(f"✅ Loaded consolidated file: {file_path.name} with {len(df)} records")
+                                use_consolidated_only = True  # Mark to use only consolidated data
+                                break  # Use only the first consolidated file
+                    except Exception as e:
+                        self.logger.warning(f"Could not read consolidated file {file_path}: {e}")
+
+            # Load partitioned data only if we haven't loaded consolidated data
+            if not use_consolidated_only and partitioned_dirs:
+                self.logger.info(f"🔍 Loading partitioned data")
 
                 # Filter partitioned directories by date range if dates are specified
                 filtered_partitioned_dirs = []
@@ -395,7 +413,13 @@ class KlinesParquetManager:
                         for pf in all_parquet_files:
                             df = self.parquet_utils.safe_read_parquet(pf, columns=columns)
                             if df is not None and not df.empty:
-                                dataframes.append(df)
+                                # Apply date filtering to each partitioned file
+                                if start_date is not None or end_date is not None:
+                                    df = self._apply_date_filter_to_dataframe(df, start_date, end_date)
+                                    if df is not None and not df.empty:
+                                        dataframes.append(df)
+                                else:
+                                    dataframes.append(df)
                     except Exception as e:
                         self.logger.warning(f"Could not read partitioned directory {file_path}: {e}")
             
@@ -455,28 +479,97 @@ class KlinesParquetManager:
             combined_df = combined_df.sort_index()
             self.logger.info(f"🔧 After sorting: {len(combined_df)} records")
             
-            # Remove duplicates - with detailed logging
+            # Remove true duplicates - with detailed logging
             records_before_dedup = len(combined_df)
-            duplicate_mask = combined_df.index.duplicated(keep='last')
-            num_duplicates = duplicate_mask.sum()
-            
-            if num_duplicates > 0:
-                # Get sample of duplicate timestamps for debugging
-                duplicate_indices = combined_df.index[duplicate_mask]
-                sample_duplicates = duplicate_indices[:10].tolist() if len(duplicate_indices) > 0 else []
-                
-                # Count how many times each timestamp appears
-                index_counts = combined_df.index.value_counts()
-                most_duplicated = index_counts.head(5)
-                
-                self.logger.warning(
-                    f"⚠️ 🔍 Found {num_duplicates:,} duplicate records ({num_duplicates/records_before_dedup*100:.2f}% of data)\n"
-                    f"   📊 Records before dedup: {records_before_dedup:,}\n"
-                    f"   🔢 Unique timestamps: {len(index_counts):,}\n"
-                    f"   🔝 Most duplicated timestamps:\n{most_duplicated.to_string()}\n"
-                    f"   🧪 Sample duplicate timestamps: {sample_duplicates}"
-                )
-            
+            self.logger.info(f"🔍 DEBUG: About to check for duplicates in {records_before_dedup} records")
+            self.logger.info(f"🔍 DEBUG: Combined DF date range: {combined_df.index.min()} to {combined_df.index.max()}")
+
+            # Check for duplicate indices first
+            index_duplicates = combined_df.index.duplicated(keep=False)  # keep=False marks all duplicates
+
+            if index_duplicates.sum() > 0:
+                self.logger.info(f"🔍 Found {index_duplicates.sum():,} records with duplicate timestamps")
+
+                # DEBUG: Print some statistics about the duplicates
+                self.logger.info(f"🔍 DEBUG: Total unique duplicate timestamps: {len(combined_df.index[index_duplicates].unique())}")
+                self.logger.info(f"🔍 DEBUG: Sample duplicate timestamps: {combined_df.index[index_duplicates].unique()[:5].tolist()}")
+
+                # For records with duplicate timestamps, check if they have identical data
+                # Define key columns that should be identical for true duplicates
+                key_columns = ['open', 'high', 'low', 'close', 'volume', 'open_time', 'close_time']
+
+                # Create a subset with only the key columns for comparison
+                subset_df = combined_df[key_columns].copy()
+
+                # For each group of duplicate timestamps, check if data values are identical
+                true_duplicates = []
+                data_duplicates = 0
+
+                duplicate_timestamps = combined_df.index[index_duplicates].unique()
+
+                for timestamp in duplicate_timestamps:
+                    # Get all records for this timestamp
+                    timestamp_records = combined_df[combined_df.index == timestamp]
+
+                    if len(timestamp_records) > 1:
+                        # DEBUG: Print info about this timestamp group
+                        self.logger.info(f"🔍 DEBUG: Timestamp {timestamp} has {len(timestamp_records)} records")
+
+                        # Check if all records for this timestamp are identical across key columns
+                        first_record = timestamp_records.iloc[0]
+                        all_identical = True
+
+                        for i in range(1, len(timestamp_records)):
+                            current_record = timestamp_records.iloc[i]
+                            # Check if all key columns match
+                            if not all(first_record[col] == current_record[col] for col in key_columns):
+                                all_identical = False
+                                # DEBUG: Show what differs
+                                differing_cols = [col for col in key_columns if first_record[col] != current_record[col]]
+                                self.logger.info(f"🔍 DEBUG: Records differ in columns: {differing_cols}")
+                                break
+
+                        if all_identical:
+                            # All records are identical - keep only the last one, mark others as duplicates
+                            true_duplicates.extend(timestamp_records.index[:-1].tolist())
+                            data_duplicates += len(timestamp_records) - 1
+                            self.logger.info(f"🔍 DEBUG: Found {len(timestamp_records)} identical records for {timestamp}")
+                        else:
+                            self.logger.info(f"🔍 DEBUG: Records for {timestamp} have different data - keeping all")
+                        # If not all identical, keep all records (they represent different data at same timestamp)
+
+                # Create mask for true duplicates only
+                if true_duplicates:
+                    duplicate_mask = combined_df.index.isin(true_duplicates)
+                    num_duplicates = duplicate_mask.sum()
+
+                    # Get sample of duplicate timestamps for debugging
+                    duplicate_indices = combined_df.index[duplicate_mask]
+                    sample_duplicates = duplicate_indices[:10].tolist() if len(duplicate_indices) > 0 else []
+
+                    # Count how many times each timestamp appears
+                    index_counts = combined_df.index.value_counts()
+                    most_duplicated = index_counts[index_counts > 1].head(5)
+
+                    self.logger.warning(
+                        f"⚠️ 🔍 Found {num_duplicates:,} true duplicate records ({num_duplicates/records_before_dedup*100:.2f}% of data)\n"
+                        f"   📊 Records before dedup: {records_before_dedup:,}\n"
+                        f"   🔢 Unique timestamps: {len(index_counts):,}\n"
+                        f"   🔝 Most duplicated timestamps:\n{most_duplicated.to_string()}\n"
+                        f"   🧪 Sample duplicate timestamps: {sample_duplicates}"
+                    )
+                else:
+                    self.logger.info(f"✅ No true duplicates found - all duplicate timestamps have different data values")
+                    duplicate_mask = pd.Series(False, index=combined_df.index)
+                    num_duplicates = 0
+
+                # DEBUG: Final summary
+                self.logger.info(f"🔍 DEBUG: Final duplicate summary - True duplicates: {num_duplicates}, Records with same timestamp but different data: {index_duplicates.sum() - num_duplicates}")
+            else:
+                self.logger.info(f"✅ No duplicate timestamps found")
+                duplicate_mask = pd.Series(False, index=combined_df.index)
+                num_duplicates = 0
+
             combined_df = combined_df[~duplicate_mask]
             self.logger.info(f"🔧 After duplicate removal: {len(combined_df)} records (removed {num_duplicates:,})")
             
@@ -586,6 +679,11 @@ class KlinesParquetManager:
                     max_date = timestamp_col.max()
                     min_date = timestamp_col.min()
                     
+                    # Check if we have valid dates (not NaT)
+                    if pd.isna(max_date) or pd.isna(min_date):
+                        self.logger.warning(f"⚠️ No valid timestamps found in data")
+                        return None
+                    
                     self.logger.info(f"📅 Available data range: {min_date.date()} to {max_date.date()}")
                     
                     # If the requested date range doesn't match available data, use last 20 days (light mode default)
@@ -595,8 +693,8 @@ class KlinesParquetManager:
                             start_date = pd.to_datetime(start_date)
                         if start_date.date() > max_date.date():
                             self.logger.warning(f"⚠️ Requested start_date {start_date.date()} is beyond available data (max: {max_date.date()})")
-                            self.logger.info(f"📅 Using last 20 days of available data instead")
-                            start_date = max_date - timedelta(days=20)
+                            self.logger.info(f"📅 Using all available data from {min_date.date()} to {max_date.date()}")
+                            start_date = min_date
                             end_date = max_date
                     
                     if end_date is not None:
@@ -605,14 +703,14 @@ class KlinesParquetManager:
                             end_date = pd.to_datetime(end_date)
                         if end_date.date() > max_date.date():
                             self.logger.warning(f"⚠️ Requested end_date {end_date.date()} is beyond available data (max: {max_date.date()})")
-                            self.logger.info(f"📅 Using last 20 days of available data instead")
-                            start_date = max_date - timedelta(days=20)
+                            self.logger.info(f"📅 Using all available data from {min_date.date()} to {max_date.date()}")
+                            start_date = min_date
                             end_date = max_date
                     
                     if start_date is not None and end_date is not None and start_date.date() > end_date.date():
                         self.logger.warning(f"⚠️ Invalid date range: start_date {start_date.date()} > end_date {end_date.date()}")
-                        self.logger.info(f"📅 Using last 20 days of available data instead")
-                        start_date = max_date - timedelta(days=20)
+                        self.logger.info(f"📅 Using all available data from {min_date.date()} to {max_date.date()}")
+                        start_date = min_date
                         end_date = max_date
                     
                     self.logger.info(f"📅 Final date range: {start_date.date()} to {end_date.date()}")

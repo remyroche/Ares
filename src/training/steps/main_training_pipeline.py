@@ -654,7 +654,7 @@ class MainTrainingPipeline:
 
         # For MARKET_ANALYSIS, use sequential execution with automatic progression
         # Start with the first sub-pipeline and let it trigger the next ones
-        self.logger.info("🚀 Starting automatic sequential execution: sr_parameter_optimization -> sr_detection -> sr_clustering -> hmm_regime_discovery -> hmm_clustering -> regime_data_splitting -> feature_lookback_optimization -> pid_based_feature_generation -> multi_horizon_profit_labeler -> final_feature_selection -> cross_timeframe_analysis")
+        self.logger.info("🚀 Starting automatic sequential execution: sr_parameter_optimization -> sr_detection -> sr_clustering -> hybrid_nas_tas_regime_discovery -> nas_tas_clustering -> regime_models_training -> regime_ensemble_training -> regime_data_splitting -> multi_horizon_profit_labeler -> feature_lookback_optimization -> pid_based_feature_generation -> final_feature_selection")
 
         results = []
         if sub_pipeline_names:

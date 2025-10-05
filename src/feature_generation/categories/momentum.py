@@ -11,8 +11,8 @@ import pandas as pd
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import (
-    FeatureGenerator, 
-    FeatureConfig, 
+    FeatureGenerator,
+    FeatureConfig,
     FeatureCategory,
     VectorizedFeatureGenerator
 )
@@ -22,6 +22,7 @@ from ..base_calculations import (
     BaseCalculationConfig,
     create_base_calculator
 )
+from ...utils.math_validation import safe_divide, validate_finite, safe_percentage_change
 
 # Legacy features are imported separately to avoid circular imports
 from .entropy import (
@@ -83,10 +84,10 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
 
 class RSIGenerator(VectorizedFeatureGenerator):
     """Generator for RSI (Relative Strength Index) with different base calculations."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  period: int = 14,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize RSI generator.
@@ -151,11 +152,11 @@ class RSIGenerator(VectorizedFeatureGenerator):
 class MACDGenerator(VectorizedFeatureGenerator):
     """Generator for MACD (Moving Average Convergence Divergence) with different base calculations."""
     
-    def __init__(self, 
-                 fast: int = 12, 
-                 slow: int = 26, 
+    def __init__(self,
+                 fast: int = 12,
+                 slow: int = 26,
                  signal: int = 9,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize MACD generator.
@@ -446,11 +447,52 @@ class RateOfChangeGenerator(VectorizedFeatureGenerator):
         """Generate ROC based on the specified base calculation."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
-        
-        # Calculate ROC
-        roc = ((base_values - base_values.shift(self.period)) / base_values.shift(self.period)) * 100
-        
-        return roc
+
+        # Calculate ROC with math validation using safe math utilities
+        shifted_values = base_values.shift(self.period)
+
+        # Use safe percentage change calculation
+        roc_values = []
+        for i in range(len(base_values)):
+            current_val = base_values.iloc[i]
+            shifted_val = shifted_values.iloc[i]
+
+            # Use safe percentage change function
+            roc_val = safe_percentage_change(shifted_val, current_val)
+            roc_values.append(roc_val)
+
+        roc_series = pd.Series(roc_values, index=data.index, name=f'roc_{self.period}_{self.base_calculation.value}')
+
+        # Validate that all values are finite and provide detailed information
+        try:
+            validate_finite(roc_series.values, f"ROC_{self.period}_{self.base_calculation.value}")
+        except ValueError as e:
+            # Get detailed information about where the NaN/inf values are
+            non_finite_mask = ~np.isfinite(roc_series.values)
+            if np.any(non_finite_mask):
+                non_finite_indices = np.where(non_finite_mask)[0]
+                total_count = len(non_finite_indices)
+
+                # Show first few and last few problematic indices
+                if total_count <= 10:
+                    indices_str = f"indices {non_finite_indices.tolist()}"
+                else:
+                    first_5 = non_finite_indices[:5].tolist()
+                    last_5 = non_finite_indices[-5:].tolist()
+                    indices_str = f"indices {first_5} ... {last_5} (total: {total_count})"
+
+                # Only log once per feature globally to reduce verbosity
+                feature_key = f"ROC_{self.period}_{self.base_calculation.value}"
+                # Use class-level tracking to prevent duplicate warnings across all instances
+                if not hasattr(RateOfChangeGenerator, '_logged_warnings'):
+                    RateOfChangeGenerator._logged_warnings = set()
+                if feature_key not in RateOfChangeGenerator._logged_warnings:
+                    self.logger.warning(f"⚠️ {e} - {indices_str}")
+                    RateOfChangeGenerator._logged_warnings.add(feature_key)
+            else:
+                self.logger.warning(f"⚠️ {e}")
+
+        return roc_series
 
 def create_momentum_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
     """Create a set of momentum feature generators."""
@@ -496,6 +538,109 @@ def create_momentum_generators(periods: Dict[str, List[int]] = None) -> List[Fea
     
     return generators
 
+class AdvancedMomentumGenerator(VectorizedFeatureGenerator):
+    """Generator for advanced momentum indicators for regime detection."""
+
+    def __init__(self, fast_period: int = 5, slow_period: int = 20):
+        config = FeatureConfig(
+            name=f"advanced_momentum_{fast_period}_{slow_period}",
+            category=FeatureCategory.MOMENTUM,
+            description=f"Advanced momentum indicator ({fast_period}/{slow_period}) for regime detection",
+            required_columns=["close"],
+            default_lookback=slow_period,
+            min_lookback=slow_period,
+            max_lookback=slow_period * 2,
+            parameters={"fast_period": fast_period, "slow_period": slow_period}
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Calculate enhanced momentum indicator with regime persistence."""
+        close = data['close']
+
+        # Fast and slow momentum with regime smoothing
+        fast_ma = close.rolling(window=self.config.parameters["fast_period"]).mean()
+        slow_ma = close.rolling(window=self.config.parameters["slow_period"]).mean()
+
+        # Enhanced momentum ratio with regime strength
+        momentum_ratio = (fast_ma - slow_ma) / (slow_ma + 1e-8)  # Avoid division by zero
+
+        # Regime persistence measure
+        momentum_volatility = momentum_ratio.rolling(window=10).std()
+        momentum_trend = momentum_ratio.rolling(window=5).mean()
+        
+        # Regime strength: higher when momentum is consistent and trending
+        regime_strength = np.abs(momentum_trend) / (momentum_volatility + 1e-8)
+        
+        # Enhanced regime indicator combining momentum and persistence
+        enhanced_momentum = momentum_ratio * (1 + regime_strength)
+        
+        # Add regime transition detection
+        momentum_change = momentum_ratio.diff().abs()
+        regime_transition = momentum_change.rolling(window=3).mean()
+        
+        # Combine momentum with regime transition awareness
+        regime_aware_momentum = enhanced_momentum * (1 - regime_transition)
+
+        return regime_aware_momentum
+
+
+class PriceAccelerationGenerator(VectorizedFeatureGenerator):
+    """Generator for price acceleration indicators."""
+
+    def __init__(self, period: int = 10):
+        config = FeatureConfig(
+            name=f"price_acceleration_{period}",
+            category=FeatureCategory.MOMENTUM,
+            description=f"Price acceleration indicator over {period} periods",
+            required_columns=["close"],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period * 2,
+            parameters={"period": period}
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Calculate price acceleration."""
+        close = data['close']
+
+        # Velocity (rate of change)
+        velocity = close.pct_change(self.config.parameters["period"])
+
+        # Acceleration (change in velocity)
+        acceleration = velocity.diff(self.config.parameters["period"])
+
+        return acceleration
+
+
+class VolumeMomentumGenerator(VectorizedFeatureGenerator):
+    """Generator for volume-based momentum indicators."""
+
+    def __init__(self, period: int = 10):
+        config = FeatureConfig(
+            name=f"volume_momentum_{period}",
+            category=FeatureCategory.VOLUME,
+            description=f"Volume momentum indicator over {period} periods",
+            required_columns=["volume"],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period * 2,
+            parameters={"period": period}
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Calculate volume momentum."""
+        volume = data['volume']
+
+        # Volume momentum
+        volume_ma = volume.rolling(window=self.config.parameters["period"]).mean()
+        volume_momentum = (volume - volume_ma) / volume_ma
+
+        return volume_momentum
+
+
 def create_default_momentum_generators() -> List[FeatureGenerator]:
     """Create default momentum generators including legacy and entropy features."""
     generators = []
@@ -533,5 +678,11 @@ def create_default_momentum_generators() -> List[FeatureGenerator]:
     for period in stochastic_periods:
         generators.append(StochasticGenerator(period))
         generators.append(LegacyStochasticGenerator(period))
-    
+
+    # Advanced momentum indicators for regime detection
+    generators.append(AdvancedMomentumGenerator(5, 20))
+    generators.append(AdvancedMomentumGenerator(10, 30))
+    generators.append(PriceAccelerationGenerator(10))
+    generators.append(PriceAccelerationGenerator(20))
+
     return generators

@@ -27,8 +27,9 @@ from ..base_calculations import (
 class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for volatility-based features with batch processing."""
 
-    def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None):
+    def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None, base_calculation: Optional[BaseCalculationType] = None):
         self.period = period
+        self.base_calculation = base_calculation
         if config is None:
             config = self._create_default_config(period)
         super().__init__(config, enable_matrix_ops=True)
@@ -111,10 +112,10 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
 class BollingerBandsGenerator(FeatureGenerator):
     """Generator for Bollinger Bands with different base calculations and batch processing."""
     
-    def __init__(self, 
-                 period: int = 20, 
+    def __init__(self,
+                 period: int = 20,
                  std_dev: float = 2.0,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  band_type: str = "upper",  # "upper", "lower", "middle"
                  **base_kwargs):
         """
@@ -234,9 +235,9 @@ class BollingerBandsGenerator(FeatureGenerator):
 class ATRGenerator(FeatureGenerator):
     """Generator for Average True Range with different base calculations and batch processing."""
     
-    def __init__(self, 
+    def __init__(self,
                  period: int = 14,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize ATR generator.

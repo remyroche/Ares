@@ -90,17 +90,29 @@ class InitialClusteringStep:
         try:
             features = context.optimized_features
             n_samples, n_features = features.shape
-            
+
             # Default optimal K
             default_k = getattr(config, 'n_regimes', 6)
-            
-            # Use BIC to determine optimal K for GMM
+
+            # Check memory pressure - skip optimal K determination if memory pressure is high
+            try:
+                from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+                memory_optimizer = get_m1_memory_optimizer()
+                memory_pressure = getattr(memory_optimizer, 'memory_pressure', 0.0)
+
+                if memory_pressure > 0.8:  # High memory pressure threshold
+                    tprint(f"🧠 High memory pressure detected ({memory_pressure:.2f}), skipping optimal K determination", "WARNING")
+                    return default_k
+            except Exception as e:
+                tprint(f"Could not check memory pressure: {e}, proceeding with optimal K determination", "WARNING")
+
+            # Use BIC to determine optimal K for GMM (simplified)
             k_range = range(2, min(10, n_samples // 10))
             bic_scores = []
-            
+
             for k in k_range:
                 try:
-                    gmm = GaussianMixture(n_components=k, random_state=42)
+                    gmm = GaussianMixture(n_components=k, random_state=42, max_iter=50)
                     gmm.fit(features)
                     bic_scores.append(gmm.bic(features))
                 except Exception as e:

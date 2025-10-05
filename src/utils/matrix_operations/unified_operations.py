@@ -127,7 +127,7 @@ class UnifiedMatrixOperations:
             try:
                 from ..ml_common.math_validation import MathValidator
                 self.math_validator = MathValidator()
-                self.logger.info("✅ Math Validator initialized")
+                self.logger.debug("✅ Math Validator initialized")
             except ImportError as e:
                 self.logger.warning(f"⚠️ Math Validator import failed: {e}")
                 self.math_validator = None
@@ -146,8 +146,11 @@ class UnifiedMatrixOperations:
             'peak_memory_usage_mb': 0.0
         }
 
-        self.logger.info("✅ Unified Matrix Operations initialized")
-        self.logger.info(f"📊 GPU: {self.enable_gpu}, Memory Opt: {self.enable_memory_optimization}, Parallel: {self.enable_parallel}")
+        self.logger.debug("✅ Unified Matrix Operations initialized")
+        # Only log configuration on first initialization to reduce verbosity
+        if not hasattr(self.__class__, '_config_logged'):
+            self.logger.info(f"📊 GPU: {self.enable_gpu}, Memory Opt: {self.enable_memory_optimization}, Parallel: {self.enable_parallel}")
+            self.__class__._config_logged = True
 
     def _initialize_components(self):
         """Initialize all required components."""
@@ -164,7 +167,7 @@ class UnifiedMatrixOperations:
             if self.enable_gpu:
                 self.gpu_manager = get_m1_gpu_manager()
                 if self.gpu_manager:
-                    self.logger.info("✅ M1 GPU Manager initialized")
+                    self.logger.debug("✅ M1 GPU Manager initialized")
                 else:
                     self.logger.info("ℹ️ M1 GPU Manager not available")
             else:
@@ -174,7 +177,7 @@ class UnifiedMatrixOperations:
             if self.enable_memory_optimization:
                 self.memory_optimizer = get_m1_memory_optimizer()
                 if self.memory_optimizer:
-                    self.logger.info("✅ M1 Memory Optimizer initialized")
+                    self.logger.debug("✅ M1 Memory Optimizer initialized")
                 else:
                     self.logger.info("ℹ️ M1 Memory Optimizer not available")
             else:
@@ -184,7 +187,7 @@ class UnifiedMatrixOperations:
             if self.enable_parallel:
                 self.cpu_optimizer = get_m1_cpu_optimizer()
                 if self.cpu_optimizer:
-                    self.logger.info("✅ M1 CPU Optimizer initialized")
+                    self.logger.debug("✅ M1 CPU Optimizer initialized")
                 else:
                     self.logger.info("ℹ️ M1 CPU Optimizer not available")
             else:
@@ -195,7 +198,7 @@ class UnifiedMatrixOperations:
                 try:
                     self.vectorized_core = get_vectorized_processing_core()
                     if self.vectorized_core:
-                        self.logger.info("✅ Vectorized Processing Core initialized")
+                        self.logger.debug("✅ Vectorized Processing Core initialized")
                     else:
                         self.logger.info("ℹ️ Vectorized Processing Core not available")
                 except Exception as e:

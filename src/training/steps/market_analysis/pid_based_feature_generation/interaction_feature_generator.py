@@ -16,8 +16,11 @@ import asyncio
 import logging
 import time
 import traceback
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 from datetime import datetime
+
+import numpy as np
+import pandas as pd
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -25,6 +28,340 @@ from enum import Enum
 from src.utils.tprint import tprint
 
 tprint("🔧 Loading interaction feature generator...")
+
+# Optimization imports
+import hashlib
+import weakref
+import gc
+from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+import multiprocessing as mp
+
+# Import matrix operations and hardware optimizations for enhanced performance
+try:
+    from src.utils.matrix_operations.hardware_integration import HardwareOptimizedMatrixProcessor, HardwareConfig
+    from src.utils.matrix_operations.unified_operations import get_unified_matrix_operations
+    from src.utils.matrix_operations.batch_operations import batch_matrix_multiply, batch_correlation_analysis
+    from src.utils.hardware.m1_optimizations import M1MemoryOptimizer
+    from src.utils.hardware.memory_optimization import memory_efficient, optimize_dataframe_dtypes, chunk_dataframe
+    HARDWARE_OPTIMIZATIONS_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Hardware optimizations not available: {e}")
+    HARDWARE_OPTIMIZATIONS_AVAILABLE = False
+
+# Import common operations for enhanced utilities
+try:
+    from src.utils.common_operations import (
+        safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
+        validate_finite, get_memory_usage, timed_operation
+    )
+    COMMON_OPERATIONS_AVAILABLE = True
+except ImportError:
+    COMMON_OPERATIONS_AVAILABLE = False
+
+
+class OptimizationStatus(Enum):
+    """Status of optimization features."""
+    ENABLED = "enabled"
+    DISABLED = "disabled"
+    PARTIAL = "partial"
+    FAILED = "failed"
+
+
+@dataclass
+class OptimizationMetrics:
+    """Metrics for optimization performance."""
+    async_operations: int = 0
+    cache_hits: int = 0
+    cache_misses: int = 0
+    memory_efficient_operations: int = 0
+    vectorized_operations: int = 0
+    hardware_accelerated_operations: int = 0
+    total_execution_time: float = 0.0
+    memory_usage_mb: float = 0.0
+    optimization_status: OptimizationStatus = OptimizationStatus.DISABLED
+
+
+class IntelligentCache:
+    """Intelligent caching system with LRU eviction and deterministic hashing."""
+
+    def __init__(self, max_size: int = 1000, ttl_seconds: int = 3600):
+        self.max_size = max_size
+        self.ttl_seconds = ttl_seconds
+        self.cache = {}
+        self.access_times = {}
+        self.hit_count = 0
+        self.miss_count = 0
+
+    def _generate_cache_key(self, data: Any, params: Dict[str, Any]) -> str:
+        """Generate deterministic cache key."""
+        # Convert data to hashable form
+        if hasattr(data, 'tobytes'):
+            data_hash = hashlib.md5(data.tobytes()).hexdigest()
+        else:
+            data_hash = hashlib.md5(str(data).encode()).hexdigest()
+
+        params_hash = hashlib.md5(str(sorted(params.items())).encode()).hexdigest()
+        return f"{data_hash}_{params_hash}"
+
+    def get(self, data: Any, params: Dict[str, Any], default: Any = None) -> Any:
+        """Get item from cache with TTL check."""
+        key = self._generate_cache_key(data, params)
+        current_time = time.time()
+
+        if key in self.cache:
+            cache_time, value = self.cache[key]
+            if current_time - cache_time < self.ttl_seconds:
+                self.access_times[key] = current_time
+                self.hit_count += 1
+                return value
+            else:
+                # Expired entry
+                del self.cache[key]
+                del self.access_times[key]
+
+        self.miss_count += 1
+        return default
+
+    def put(self, data: Any, params: Dict[str, Any], value: Any) -> None:
+        """Put item in cache with LRU eviction."""
+        key = self._generate_cache_key(data, params)
+        current_time = time.time()
+
+        # Check if we need to evict
+        if len(self.cache) >= self.max_size:
+            self._evict_lru()
+
+        self.cache[key] = (current_time, value)
+        self.access_times[key] = current_time
+
+    def _evict_lru(self) -> None:
+        """Evict least recently used items."""
+        if not self.access_times:
+            return
+
+        # Find LRU item
+        lru_key = min(self.access_times.keys(), key=lambda k: self.access_times[k])
+        del self.cache[lru_key]
+        del self.access_times[lru_key]
+
+    def clear(self) -> None:
+        """Clear all cache entries."""
+        self.cache.clear()
+        self.access_times.clear()
+        self.hit_count = 0
+        self.miss_count = 0
+
+    def stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        total_requests = self.hit_count + self.miss_count
+        hit_rate = self.hit_count / total_requests if total_requests > 0 else 0.0
+
+        return {
+            'size': len(self.cache),
+            'max_size': self.max_size,
+            'hit_count': self.hit_count,
+            'miss_count': self.miss_count,
+            'hit_rate': hit_rate,
+            'total_requests': total_requests
+        }
+
+
+class MemoryEfficientProcessor:
+    """Memory-efficient data processing with chunking and streaming."""
+
+    def __init__(self, chunk_size: int = 10000, memory_limit_gb: float = 8.0):
+        self.chunk_size = chunk_size
+        self.memory_limit_gb = memory_limit_gb
+        self.memory_optimizer = M1MemoryOptimizer(memory_limit_gb) if HARDWARE_OPTIMIZATIONS_AVAILABLE else None
+
+    async def process_large_dataset(self, data: Union[np.ndarray, pd.DataFrame],
+                                  processor_func: Callable, **kwargs) -> Any:
+        """Process large datasets in memory-efficient chunks."""
+        if isinstance(data, pd.DataFrame):
+            if len(data) <= self.chunk_size:
+                return await processor_func(data, **kwargs)
+
+            results = []
+            for chunk in chunk_dataframe(data, self.chunk_size):
+                if self.memory_optimizer:
+                    self.memory_optimizer.memory_checkpoint(f"Processing chunk {len(results)}")
+
+                result = await processor_func(chunk, **kwargs)
+                results.append(result)
+
+                # Force garbage collection between chunks
+                if self.memory_optimizer:
+                    gc.collect()
+
+            return self._combine_chunk_results(results)
+        else:
+            # For numpy arrays, process in chunks along first dimension
+            if data.shape[0] <= self.chunk_size:
+                return await processor_func(data, **kwargs)
+
+            results = []
+            for i in range(0, data.shape[0], self.chunk_size):
+                chunk = data[i:i + self.chunk_size]
+                result = await processor_func(chunk, **kwargs)
+                results.append(result)
+
+            return self._combine_chunk_results(results)
+
+    def _combine_chunk_results(self, results: List[Any]) -> Any:
+        """Combine results from chunked processing."""
+        if not results:
+            return None
+
+        if isinstance(results[0], np.ndarray):
+            return np.concatenate(results, axis=0)
+        elif isinstance(results[0], pd.DataFrame):
+            return pd.concat(results, axis=0, ignore_index=True)
+        else:
+            return results
+
+
+class VectorizedFeatureGenerator:
+    """Vectorized feature generation using optimized numpy operations."""
+
+    def __init__(self, matrix_processor: Any = None):
+        self.matrix_processor = matrix_processor or (
+            get_unified_matrix_operations() if HARDWARE_OPTIMIZATIONS_AVAILABLE else None
+        )
+        self.cache = IntelligentCache(max_size=500)
+
+    async def compute_vectorized_features(self, data: np.ndarray,
+                                        feature_configs: List[Dict[str, Any]]) -> np.ndarray:
+        """Compute features using vectorized operations."""
+        if not NUMPY_AVAILABLE:
+            raise RuntimeError("NumPy required for vectorized operations")
+
+        start_time = time.time()
+
+        # Pre-allocate result array
+        n_samples, n_features = data.shape
+        n_output_features = len(feature_configs)
+        result = np.zeros((n_samples, n_output_features), dtype=np.float32)
+
+        # Process features in parallel batches
+        batch_size = min(100, len(feature_configs))
+
+        for i in range(0, len(feature_configs), batch_size):
+            batch_configs = feature_configs[i:i + batch_size]
+
+            # Vectorized computation for batch
+            batch_results = await self._compute_feature_batch(data, batch_configs)
+
+            # Store results
+            end_idx = min(i + batch_size, n_output_features)
+            result[:, i:end_idx] = batch_results.T
+
+        execution_time = time.time() - start_time
+
+        return result
+
+    async def _compute_feature_batch(self, data: np.ndarray,
+                                   configs: List[Dict[str, Any]]) -> np.ndarray:
+        """Compute a batch of features using vectorized operations."""
+        results = []
+
+        for config in configs:
+            feature_type = config.get('type', 'interaction')
+            params = config.get('params', {})
+
+            # Check cache first
+            cache_params = {'type': feature_type, **params}
+            cached_result = self.cache.get(data, cache_params)
+
+            if cached_result is not None:
+                results.append(cached_result)
+                continue
+
+            # Compute feature based on type
+            if feature_type == 'interaction':
+                result = await self._compute_interaction_features(data, params)
+            elif feature_type == 'polynomial':
+                result = await self._compute_polynomial_features(data, params)
+            elif feature_type == 'cross_timeframe':
+                result = await self._compute_cross_timeframe_features(data, params)
+            else:
+                # Default to interaction features
+                result = await self._compute_interaction_features(data, params)
+
+            # Cache result
+            self.cache.put(data, cache_params, result)
+            results.append(result)
+
+        return np.column_stack(results)
+
+    async def _compute_interaction_features(self, data: np.ndarray,
+                                          params: Dict[str, Any]) -> np.ndarray:
+        """Compute interaction features using vectorized operations."""
+        feature_indices = params.get('indices', list(range(min(10, data.shape[1]))))
+        max_features = params.get('max_features', 100)
+
+        if len(feature_indices) < 2:
+            return np.zeros((data.shape[0], 0))
+
+        # Generate all pairwise interactions
+        interactions = []
+        for i in range(len(feature_indices)):
+            for j in range(i + 1, len(feature_indices)):
+                # Vectorized multiplication
+                interaction = data[:, feature_indices[i]] * data[:, feature_indices[j]]
+                interactions.append(interaction)
+
+        # Limit to max_features
+        if len(interactions) > max_features:
+            interactions = interactions[:max_features]
+
+        return np.column_stack(interactions) if interactions else np.zeros((data.shape[0], 0))
+
+    async def _compute_polynomial_features(self, data: np.ndarray,
+                                         params: Dict[str, Any]) -> np.ndarray:
+        """Compute polynomial features using vectorized operations."""
+        degree = params.get('degree', 2)
+        feature_indices = params.get('indices', list(range(min(5, data.shape[1]))))
+
+        polynomials = []
+
+        for idx in feature_indices:
+            feature = data[:, idx]
+
+            # Vectorized polynomial computation
+            for d in range(2, degree + 1):
+                poly_feature = feature ** d
+                polynomials.append(poly_feature)
+
+        return np.column_stack(polynomials) if polynomials else np.zeros((data.shape[0], 0))
+
+    async def _compute_cross_timeframe_features(self, data: np.ndarray,
+                                              params: Dict[str, Any]) -> np.ndarray:
+        """Compute cross-timeframe features using vectorized operations."""
+        lag_periods = params.get('lags', [1, 5, 10, 20])
+        feature_indices = params.get('indices', list(range(min(5, data.shape[1]))))
+
+        cross_features = []
+
+        for lag in lag_periods:
+            if lag >= data.shape[0]:
+                continue
+
+            # Vectorized lag computation
+            lagged_data = np.roll(data, lag, axis=0)
+
+            for idx in feature_indices:
+                # Compute ratios and differences
+                current = data[lag:, idx]  # Remove rolled values
+                lagged = lagged_data[lag:, idx]
+
+                # Safe division for ratios
+                ratios = safe_divide(current, lagged, fill_value=0.0)
+                differences = current - lagged
+
+                cross_features.extend([ratios, differences])
+
+        return np.column_stack(cross_features) if cross_features else np.zeros((data.shape[0], 0))
 
 # Core dependencies with fallback support
 try:
@@ -205,14 +542,62 @@ class InteractionFeatureGenerator(BaseFeatureGenerator):
     """
     
     def __init__(self, config: Optional[InteractionConfig] = None):
-        """Initialize the interaction feature generator with common utilities integration."""
-        tprint("🔧 Initializing InteractionFeatureGenerator...")
+        """Initialize the interaction feature generator with comprehensive optimizations."""
+        tprint("🔧 Initializing InteractionFeatureGenerator with optimizations...")
         super().__init__(config or InteractionConfig(), "InteractionFeatureGenerator")
-        
+
+        # Initialize optimization components
+        self._initialize_optimizations()
+
         self.logger.info(f"📊 Max interaction features: {self.config.max_interaction_features}")
         self.logger.info(f"📊 Interaction types: {[t.value for t in self.config.interaction_types]}")
         tprint("✅ InteractionFeatureGenerator initialization complete")
-    
+
+    def _initialize_optimizations(self) -> None:
+        """Initialize optimization components."""
+        # Cache for expensive operations
+        self.cache = IntelligentCache(
+            max_size=self.config.get('cache_size', 1000),
+            ttl_seconds=self.config.get('cache_ttl', 3600)
+        )
+
+        # Memory-efficient processor
+        self.memory_processor = MemoryEfficientProcessor(
+            chunk_size=self.config.get('chunk_size', 10000),
+            memory_limit_gb=self.config.get('memory_limit_gb', 8.0)
+        )
+
+        # Vectorized feature generator
+        self.vectorized_generator = VectorizedFeatureGenerator()
+
+        # Thread pool for parallel operations
+        max_workers = min(32, (mp.cpu_count() or 1) + 4)
+        self.thread_pool = ThreadPoolExecutor(max_workers=max_workers)
+
+        # Process pool for CPU-intensive operations
+        self.process_pool = ProcessPoolExecutor(max_workers=max_workers // 2)
+
+        # Performance tracking
+        self.metrics = OptimizationMetrics()
+
+        # Initialize hardware optimizations
+        if HARDWARE_OPTIMIZATIONS_AVAILABLE:
+            try:
+                # Hardware-optimized matrix processor
+                hardware_config = HardwareConfig(
+                    max_memory_gb=self.config.get('memory_limit_gb', 8.0),
+                    enable_gpu=self.config.get('enable_gpu', True),
+                    max_cpu_cores=self.config.get('max_cpu_cores', None),
+                    auto_optimize_dtypes=True,
+                    auto_chunk_large_data=True
+                )
+
+                self.hardware_processor = HardwareOptimizedMatrixProcessor(hardware_config)
+                self.logger.info("✅ Hardware optimizations initialized")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize hardware optimizations: {e}")
+                self.hardware_processor = None
+
     def _initialize_components(self):
         """Initialize required components."""
         # Initialize PID decompositor
@@ -293,13 +678,19 @@ class InteractionFeatureGenerator(BaseFeatureGenerator):
                 result.optimization_results = optimization_info
                 result.optimization_used = True
             
-            # Convert data to numpy array if needed
+            # Convert data to numpy array if needed with optimizations
             if isinstance(data, pd.DataFrame):
-                X = data.values
                 if feature_names is None:
                     feature_names = list(data.columns)
+
+                # Apply hardware optimizations if available
+                if self.hardware_processor:
+                    data = self.hardware_processor.optimize_dataframe_dtypes(data)
+                    self.metrics.hardware_accelerated_operations += 1
+
+                X = data.values.astype(np.float32)  # Use float32 for memory efficiency
             else:
-                X = data
+                X = data.astype(np.float32)
             
             # Enhanced data quality assessment
             if self.config.enable_quality_reporting:
@@ -333,13 +724,51 @@ class InteractionFeatureGenerator(BaseFeatureGenerator):
                 significant_pairs = self._correlation_based_interaction_detection(X, feature_names)
                 self.logger.info(f"📊 Found {len(significant_pairs)} correlation-based interactions")
             
-            # Generate interaction features
-            self.logger.info("🔧 Generating interaction features...")
-            interaction_features, interaction_names = self._generate_interaction_matrix(
-                X, feature_names, significant_pairs
-            )
-            
-            # Generate enhanced features using advanced matrix operations
+            # Use optimized vectorized feature generation for better performance
+            self.logger.info("🚀 Generating interaction features with optimizations...")
+            self.metrics.vectorized_operations += 1
+
+            # Prepare feature configurations for vectorized generation
+            feature_configs = []
+
+            # Add interaction features
+            for pair in significant_pairs[:50]:  # Limit to top 50 for performance
+                feature_configs.append({
+                    'type': 'interaction',
+                    'params': {
+                        'indices': [pair[0], pair[1]],
+                        'max_features': 100
+                    }
+                })
+
+            # Add polynomial features
+            feature_configs.append({
+                'type': 'polynomial',
+                'params': {
+                    'degree': 2,
+                    'indices': list(range(min(10, len(feature_names))))
+                }
+            })
+
+            # Generate features using optimized vectorized approach
+            if X.shape[0] > 50000:  # Use memory-efficient processing for large datasets
+                self.metrics.memory_efficient_operations += 1
+                interaction_features = await self.memory_processor.process_large_dataset(
+                    X, self.vectorized_generator.compute_vectorized_features, feature_configs=feature_configs
+                )
+            else:
+                interaction_features = await self.vectorized_generator.compute_vectorized_features(X, feature_configs)
+
+            # Generate feature names
+            interaction_names = []
+            for i, config in enumerate(feature_configs):
+                if config['type'] == 'interaction':
+                    pair = config['params']['indices']
+                    interaction_names.append(f"interaction_{feature_names[pair[0]]}_{feature_names[pair[1]]}")
+                elif config['type'] == 'polynomial':
+                    interaction_names.append(f"polynomial_{config['params']['degree']}")
+
+            # Generate enhanced features using advanced matrix operations (if still needed)
             self.logger.info("🔧 Generating enhanced features using advanced matrix operations...")
             enhanced_features = self._generate_enhanced_interaction_features(X, feature_names, target)
             
@@ -348,8 +777,8 @@ class InteractionFeatureGenerator(BaseFeatureGenerator):
                 interaction_features, interaction_names, target
             )
             
-            # Combine traditional and enhanced features
-            all_features = {name: feature for name, feature in zip(interaction_names, interaction_features.T)}
+            # Combine vectorized and enhanced features
+            all_features = {name: interaction_features[:, i] for i, name in enumerate(interaction_names)}
             all_features.update(enhanced_features)
             
             # Store results
@@ -814,7 +1243,7 @@ class InteractionFeatureGenerator(BaseFeatureGenerator):
             return enhanced_features
     
     def get_performance_metrics(self) -> Dict[str, Any]:
-        """Get performance metrics with common utilities integration."""
+        """Get comprehensive performance metrics including optimizations."""
         metrics = {
             'pid_available': PID_AVAILABLE,
             'matrix_ops_available': MATRIX_OPS_AVAILABLE,
@@ -822,15 +1251,38 @@ class InteractionFeatureGenerator(BaseFeatureGenerator):
             'pandas_available': PANDAS_AVAILABLE,
             'common_operations_available': COMMON_OPERATIONS_AVAILABLE,
             'serialization_available': SERIALIZATION_AVAILABLE,
-            'math_validation_available': MATH_VALIDATION_AVAILABLE
+            'math_validation_available': MATH_VALIDATION_AVAILABLE,
+            'hardware_optimizations_available': HARDWARE_OPTIMIZATIONS_AVAILABLE
         }
-        
+
         if self.matrix_ops:
             metrics['matrix_ops_stats'] = self.matrix_ops.get_performance_stats()
             metrics['hardware_info'] = self.matrix_ops.get_hardware_info()
-        
+
+        # Add optimization metrics
+        if hasattr(self, 'metrics'):
+            metrics['optimization_metrics'] = self.metrics.__dict__
+        if hasattr(self, 'cache'):
+            metrics['cache_stats'] = self.cache.stats()
+        if hasattr(self, 'memory_processor'):
+            metrics['memory_processor_active'] = True
+        if hasattr(self, 'vectorized_generator'):
+            metrics['vectorized_generator_active'] = True
+
         # Add common utilities metrics
         metrics['utility_integration_status'] = getattr(self, 'utility_integration_status', {})
         metrics['memory_usage'] = get_memory_usage() if COMMON_OPERATIONS_AVAILABLE else 0.0
-        
+
         return metrics
+
+    def cleanup(self) -> None:
+        """Cleanup optimization resources."""
+        try:
+            if hasattr(self, 'thread_pool'):
+                self.thread_pool.shutdown(wait=True)
+            if hasattr(self, 'process_pool'):
+                self.process_pool.shutdown(wait=True)
+            if hasattr(self, 'cache'):
+                self.cache.clear()
+        except Exception as e:
+            self.logger.warning(f"Error during cleanup: {e}")

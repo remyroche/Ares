@@ -99,6 +99,14 @@ class RegimeTrainingStrategy(Enum):
     CONTINUAL_LEARNING = "continual_learning"  # Continual learning across regimes
 
 
+class DirectionMode(Enum):
+    """Direction modes for long/short separation."""
+    BOTH = "both"        # Train models for both long and short positions
+    LONG_ONLY = "long_only"   # Train only long position models
+    SHORT_ONLY = "short_only" # Train only short position models
+    SEPARATE = "separate"     # Train separate models for long and short
+
+
 @dataclass
 class RegimeAwareTrainingConfig:
     """Configuration for regime-aware model training."""
@@ -138,6 +146,15 @@ class RegimeAwareTrainingConfig:
     regime_detection_method: str = "hybrid"  # "tas", "nas", "hybrid"
     regime_confidence_threshold: float = 0.7
     enable_regime_validation: bool = True
+
+    # Directional training settings
+    direction_mode: DirectionMode = DirectionMode.BOTH  # Long/short separation mode
+    separate_directional_features: bool = True  # Create separate feature sets for each direction
+    directional_feature_prefixes: Dict[str, str] = field(default_factory=lambda: {
+        'long': 'long_',
+        'short': 'short_'
+    })
+    min_directional_samples: int = 50  # Minimum samples required for directional training
     
     # Performance tracking
     enable_performance_tracking: bool = True
@@ -172,10 +189,15 @@ class RegimeTrainingResult:
     feature_importance: Dict[int, Dict[str, float]] = field(default_factory=dict)
     hyperparameters: Dict[int, Dict[str, Any]] = field(default_factory=dict)
     training_curves: Dict[int, Dict[str, List[float]]] = field(default_factory=dict)
-    
+
     # Regime information
     regime_statistics: Dict[int, Dict[str, Any]] = field(default_factory=dict)
     regime_transitions: Optional[Dict[str, Any]] = None
+
+    # Directional training information
+    directional_models: Dict[str, Dict[int, Dict[str, Any]]] = field(default_factory=dict)  # direction -> regime -> models
+    directional_performance: Dict[str, Dict[str, float]] = field(default_factory=dict)  # direction -> performance metrics
+    directional_statistics: Dict[str, Dict[str, Any]] = field(default_factory=dict)  # direction -> statistics
     
     # Error handling
     error_message: Optional[str] = None
@@ -315,20 +337,20 @@ class RegimeAwareTrainer:
             ModelType.ENSEMBLE: self._create_ensemble
         }
     
-    def train_models(self, 
+    def train_models(self,
                     market_data: pd.DataFrame,
                     target_variable: str,
                     feature_columns: Optional[List[str]] = None,
                     timestamps: Optional[pd.Series] = None) -> RegimeTrainingResult:
         """
-        Train regime-aware models.
-        
+        Train regime-aware models with directional separation.
+
         Args:
             market_data: Market data with features and target
             target_variable: Name of target variable column
             feature_columns: List of feature column names (None for all except target)
             timestamps: Optional timestamps for time series validation
-            
+
         Returns:
             RegimeTrainingResult with training results
         """
@@ -336,8 +358,12 @@ class RegimeAwareTrainer:
         tprint("🚀 [REGIME_AWARE_TRAINER] Starting regime-aware model training", color="cyan", bold=True)
         tprint(f"📊 [REGIME_AWARE_TRAINER] Input data: {len(market_data)} samples, target: {target_variable}", color="blue")
         self.logger.info("🚀 Starting regime-aware model training")
-        
+
         try:
+            # Check if directional training is enabled
+            if self.config.direction_mode in [DirectionMode.SEPARATE, DirectionMode.LONG_ONLY, DirectionMode.SHORT_ONLY]:
+                return self._train_directional_models(market_data, target_variable, feature_columns, timestamps, start_time)
+
             # Step 1: Detect regimes
             tprint("🔍 [REGIME_AWARE_TRAINER] Step 1: Detecting market regimes", color="yellow")
             tprint(f"🔍 [REGIME_AWARE_TRAINER] Using {self.config.regime_detection_method} detection method", color="blue")
@@ -432,7 +458,220 @@ class RegimeAwareTrainer:
                 models_trained={},
                 error_message=str(e)
             )
-    
+
+    def _train_directional_models(self,
+                                 market_data: pd.DataFrame,
+                                 target_variable: str,
+                                 feature_columns: Optional[List[str]],
+                                 timestamps: Optional[pd.Series],
+                                 start_time: datetime) -> RegimeTrainingResult:
+        """Train models with directional separation."""
+        try:
+            # Step 1: Separate data by direction
+            directional_data = self._separate_directional_data(market_data, target_variable)
+
+            if not directional_data:
+                return RegimeTrainingResult(
+                    success=False,
+                    training_time=0.0,
+                    n_regimes_detected=0,
+                    models_trained={},
+                    error_message="No directional data available"
+                )
+
+            # Step 2: Train models for each direction
+            directional_results = {}
+            directional_models = {}
+            directional_performance = {}
+
+            for direction, data in directional_data.items():
+                if len(data) < self.config.min_directional_samples:
+                    self.logger.warning(f"⚠️ Insufficient data for {direction} direction ({len(data)} < {self.config.min_directional_samples}), skipping")
+                    continue
+
+                self.logger.info(f"🎯 Training {direction} models with {len(data)} samples")
+
+                # Create direction-specific training result
+                direction_result = self._train_single_direction(data, target_variable, feature_columns, timestamps, direction)
+
+                if direction_result.success:
+                    directional_results[direction] = direction_result
+                    directional_models[direction] = direction_result.models_trained
+                    directional_performance[direction] = direction_result.overall_performance
+                    self.logger.info(f"✅ {direction.capitalize()} training completed - {direction_result.n_regimes_detected} regimes")
+                else:
+                    self.logger.warning(f"⚠️ {direction.capitalize()} training failed: {direction_result.error_message}")
+
+            # Step 3: Combine results
+            if not directional_results:
+                return RegimeTrainingResult(
+                    success=False,
+                    training_time=(datetime.now() - start_time).total_seconds(),
+                    n_regimes_detected=0,
+                    models_trained={},
+                    error_message="No successful directional training"
+                )
+
+            # Use first result as template and add directional information
+            main_result = list(directional_results.values())[0]
+            main_result.directional_models = directional_models
+            main_result.directional_performance = directional_performance
+            main_result.directional_statistics = {
+                direction: {'n_samples': len(data), 'n_regimes': result.n_regimes_detected}
+                for direction, (data, result) in zip(directional_data.keys(), [(data, directional_results[d]) for d in directional_data.keys() if d in directional_results])
+            }
+
+            # Calculate combined performance
+            combined_performance = self._calculate_directional_combined_performance(directional_performance)
+            main_result.overall_performance.update(combined_performance)
+
+            return main_result
+
+        except Exception as e:
+            self.logger.error(f"❌ Directional training failed: {e}")
+            return RegimeTrainingResult(
+                success=False,
+                training_time=(datetime.now() - start_time).total_seconds(),
+                n_regimes_detected=0,
+                models_trained={},
+                error_message=str(e)
+            )
+
+    def _separate_directional_data(self, market_data: pd.DataFrame, target_variable: str) -> Dict[str, pd.DataFrame]:
+        """Separate market data by trading direction."""
+        directional_data = {}
+
+        try:
+            # Check for explicit direction columns
+            direction_columns = [col for col in market_data.columns if any(keyword in col.lower() for keyword in ['direction', 'long', 'short'])]
+
+            if not direction_columns:
+                # Fallback: infer direction from target variable
+                if target_variable in market_data.columns:
+                    # Positive targets = long, negative targets = short
+                    long_mask = market_data[target_variable] > 0
+                    short_mask = market_data[target_variable] < 0
+
+                    if long_mask.any():
+                        directional_data['long'] = market_data[long_mask].copy()
+                    if short_mask.any():
+                        directional_data['short'] = market_data[short_mask].copy()
+                else:
+                    # No target variable, use all data for both directions
+                    directional_data['long'] = market_data.copy()
+                    directional_data['short'] = market_data.copy()
+            else:
+                # Use explicit direction indicators
+                for direction in ['long', 'short']:
+                    direction_cols = [col for col in direction_columns if direction in col.lower()]
+                    for col in direction_cols:
+                        mask = market_data[col] == 1  # Binary indicator
+                        if mask.any():
+                            directional_data[direction] = market_data[mask].copy()
+                            break
+
+            # Handle direction mode filtering
+            if self.config.direction_mode == DirectionMode.LONG_ONLY and 'short' in directional_data:
+                del directional_data['short']
+            elif self.config.direction_mode == DirectionMode.SHORT_ONLY and 'long' in directional_data:
+                del directional_data['long']
+
+            return directional_data
+
+        except Exception as e:
+            self.logger.error(f"❌ Directional data separation failed: {e}")
+            return {}
+
+    def _train_single_direction(self,
+                               data: pd.DataFrame,
+                               target_variable: str,
+                               feature_columns: Optional[List[str]],
+                               timestamps: Optional[pd.Series],
+                               direction: str) -> RegimeTrainingResult:
+        """Train models for a single direction."""
+        try:
+            # Detect regimes for this directional data
+            regime_results = self._detect_regimes(data, timestamps)
+
+            if not regime_results['success']:
+                return RegimeTrainingResult(
+                    success=False,
+                    training_time=0.0,
+                    n_regimes_detected=0,
+                    models_trained={},
+                    error_message=f"Regime detection failed for {direction}"
+                )
+
+            # Prepare regime datasets
+            regime_datasets = self._prepare_regime_datasets(data, target_variable, feature_columns, regime_results)
+
+            # Train regime models
+            regime_models = self._train_regime_models(regime_datasets)
+
+            # Train ensemble models if enabled
+            ensemble_models = None
+            if self.config.enable_ensemble_training:
+                ensemble_models = self._train_ensemble_models(regime_datasets, regime_models)
+
+            # Evaluate performance
+            performance_results = self._evaluate_performance(regime_datasets, regime_models, ensemble_models)
+
+            # Create result
+            training_time = (datetime.now() - datetime.now()).total_seconds()  # Placeholder
+            result = RegimeTrainingResult(
+                success=True,
+                training_time=training_time,
+                n_regimes_detected=regime_results['n_regimes'],
+                models_trained=regime_models,
+                ensemble_models=ensemble_models,
+                regime_performance=performance_results['regime_performance'],
+                overall_performance=performance_results['overall_performance'],
+                cross_regime_performance=performance_results['cross_regime_performance'],
+                feature_importance=performance_results['feature_importance'],
+                hyperparameters=performance_results['hyperparameters'],
+                training_curves=performance_results['training_curves'],
+                regime_statistics=regime_results['regime_statistics']
+            )
+
+            return result
+
+        except Exception as e:
+            self.logger.error(f"❌ Single direction training failed for {direction}: {e}")
+            return RegimeTrainingResult(
+                success=False,
+                training_time=0.0,
+                n_regimes_detected=0,
+                models_trained={},
+                error_message=str(e)
+            )
+
+    def _calculate_directional_combined_performance(self, directional_performance: Dict[str, Dict[str, float]]) -> Dict[str, float]:
+        """Calculate combined performance metrics across directions."""
+        combined_metrics = {}
+
+        if not directional_performance:
+            return combined_metrics
+
+        # Collect performance metrics from all directions
+        all_f1_scores = []
+        all_accuracies = []
+
+        for direction, perf in directional_performance.items():
+            if 'mean_f1' in perf:
+                all_f1_scores.append(perf['mean_f1'])
+            if 'mean_accuracy' in perf:
+                all_accuracies.append(perf['mean_accuracy'])
+
+        # Calculate combined metrics
+        if all_f1_scores:
+            combined_metrics.update({
+                'directional_combined_f1': np.mean(all_f1_scores),
+                'directional_f1_std': np.std(all_f1_scores),
+                'directions_trained': len(directional_performance)
+            })
+
+        return combined_metrics
+
     def _detect_regimes(self, market_data: pd.DataFrame, timestamps: Optional[pd.Series]) -> Dict[str, Any]:
         """Detect market regimes using configured method."""
         tprint(f"🔍 [REGIME_AWARE_TRAINER] _detect_regimes() called with method: {self.config.regime_detection_method}", color="blue")

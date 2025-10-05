@@ -61,7 +61,7 @@ class FeatureBank:
             try:
                 from ...utils.matrix_operations import get_unified_matrix_operations
                 self.matrix_ops = get_unified_matrix_operations()
-                self.logger.info("✅ Matrix operations enabled")
+                self.logger.debug("✅ Matrix operations enabled")
             except ImportError:
                 self.logger.warning("⚠️ Matrix operations not available")
         
@@ -805,6 +805,9 @@ class FeatureBank:
             for feature_name in features:
                 generator = self.get_generator_by_name(feature_name)
                 if generator:
+                    # Skip problematic generators that are already excluded from lookback optimization
+                    if self._should_exclude_generator(generator):
+                        continue
                     generators.append(generator)
                 else:
                     self.logger.warning(f"Generator not found: {feature_name}")
@@ -818,16 +821,81 @@ class FeatureBank:
                     except ValueError:
                         self.logger.warning(f"Invalid category: {category}")
                         continue
-                
+
+                # Skip problematic categories that are already excluded from lookback optimization
+                if self._should_exclude_category(category):
+                    continue
+
                 category_generators = self.get_generators_by_category(category)
                 generators.extend(category_generators)
         
         else:
-            # Select all generators
-            generators = self.registry.get_all()
+            # Select all generators but filter out problematic ones
+            all_generators = self.registry.get_all()
+            generators = [gen for gen in all_generators if not self._should_exclude_generator(gen)]
         
         return generators
-    
+
+    def _should_exclude_generator(self, generator: FeatureGenerator) -> bool:
+        """
+        Check if a generator should be excluded from feature generation.
+        These are generators that are already excluded from lookback optimization
+        and cause technical issues.
+
+        Args:
+            generator: The generator to check
+
+        Returns:
+            True if generator should be excluded
+        """
+        generator_name = generator.config.name.lower()
+
+        # Exclude autoencoder generators (technical issues)
+        if 'autoencoder' in generator_name:
+            return True
+
+        # Exclude cross-timeframe generators (complexity issues)
+        if 'cross_timeframe' in generator_name:
+            return True
+
+        # Exclude bid-ask generators (missing data)
+        if 'bid_ask' in generator_name or 'bidask' in generator_name:
+            return True
+
+        # Exclude interaction generators (complexity)
+        if 'interaction' in generator_name:
+            return True
+
+        # Exclude regime-specific generators (context-dependent)
+        if 'regime_' in generator_name:
+            return True
+
+        return False
+
+    def _should_exclude_category(self, category: FeatureCategory) -> bool:
+        """
+        Check if a category should be excluded from feature generation.
+
+        Args:
+            category: The category to check
+
+        Returns:
+            True if category should be excluded
+        """
+        # Exclude autoencoder category (technical issues)
+        if category == FeatureCategory.AUTOENCODER:
+            return True
+
+        # Exclude cross-timeframe category (complexity issues)
+        if category == FeatureCategory.CROSS_TIMEFRAME:
+            return True
+
+        # Exclude interaction category (complexity)
+        if category == FeatureCategory.INTERACTION:
+            return True
+
+        return False
+
     def _optimize_lookbacks(self, 
                            generators: List[FeatureGenerator],
                            data: pd.DataFrame,

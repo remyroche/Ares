@@ -36,6 +36,14 @@ from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 from src.utils.logger import get_logger
 from src.core.decorators import handles_errors, traced, validates, log_execution_time
 
+# Import tprint utility for enhanced logging
+try:
+    from src.utils.tprint import tprint
+except ImportError:
+    # Fallback to simple print if tprint is not available
+    def tprint(*args, **kwargs):
+        print(*args)
+
 # Import optimized process engine
 try:
     from ..optimized_process_engines import OptimizedMultiHorizonEngine, ProcessType
@@ -1817,8 +1825,6 @@ def execute_multi_horizon_labeling_step(data: pd.DataFrame,
 
 # Test function
 if __name__ == '__main__':
-    from src.utils.tprint import tprint
-    
     tprint('🧪 Testing Multi-Horizon Sub-Pipeline Adapter')
     
     # Create test data

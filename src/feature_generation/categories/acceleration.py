@@ -11,8 +11,8 @@ from typing import Any, Dict, List, Optional, Union
 from scipy import stats
 
 from ..core.feature_generator import (
-    FeatureGenerator, 
-    FeatureConfig, 
+    FeatureGenerator,
+    FeatureConfig,
     FeatureCategory,
     VectorizedFeatureGenerator
 )
@@ -20,6 +20,7 @@ from ..base_calculations import (
     BaseCalculationType,
     create_base_calculator
 )
+from ...utils.math_validation import safe_divide, validate_finite, safe_percentage_change
 
 class AccelerationFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for acceleration-based features."""
@@ -74,10 +75,54 @@ class MomentumGenerator(FeatureGenerator):
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate momentum."""
+        """Generate momentum with math validation."""
         base_values = self.base_calculator.calculate(data)
-        momentum = base_values.pct_change(self.period)
-        return momentum
+
+        # Calculate momentum with proper handling using safe math utilities
+        shifted_values = base_values.shift(self.period)
+
+        # Use safe percentage change calculation
+        momentum_values = []
+        for i in range(len(base_values)):
+            current_val = base_values.iloc[i]
+            shifted_val = shifted_values.iloc[i]
+
+            # Use safe percentage change function
+            momentum_val = safe_percentage_change(shifted_val, current_val)
+            momentum_values.append(momentum_val)
+
+        momentum_series = pd.Series(momentum_values, index=data.index, name=f'momentum_{self.period}_{self.base_calculation.value}')
+
+        # Validate that all values are finite and provide detailed information
+        try:
+            validate_finite(momentum_series.values, f"Momentum_{self.period}_{self.base_calculation.value}")
+        except ValueError as e:
+            # Get detailed information about where the NaN/inf values are
+            non_finite_mask = ~np.isfinite(momentum_series.values)
+            if np.any(non_finite_mask):
+                non_finite_indices = np.where(non_finite_mask)[0]
+                total_count = len(non_finite_indices)
+
+                # Show first few and last few problematic indices
+                if total_count <= 10:
+                    indices_str = f"indices {non_finite_indices.tolist()}"
+                else:
+                    first_5 = non_finite_indices[:5].tolist()
+                    last_5 = non_finite_indices[-5:].tolist()
+                    indices_str = f"indices {first_5} ... {last_5} (total: {total_count})"
+
+                # Only log once per feature globally to reduce verbosity
+                feature_key = f"Momentum_{self.period}_{self.base_calculation.value}"
+                # Use class-level tracking to prevent duplicate warnings across all instances
+                if not hasattr(MomentumGenerator, '_logged_warnings'):
+                    MomentumGenerator._logged_warnings = set()
+                if feature_key not in MomentumGenerator._logged_warnings:
+                    self.logger.warning(f"⚠️ {e} - {indices_str}")
+                    MomentumGenerator._logged_warnings.add(feature_key)
+            else:
+                self.logger.warning(f"⚠️ {e}")
+
+        return momentum_series
 
 # Price Acceleration Generator
 class PriceAccelerationGenerator(FeatureGenerator):
@@ -105,10 +150,56 @@ class PriceAccelerationGenerator(FeatureGenerator):
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate acceleration (second derivative of price)."""
+        """Generate acceleration (second derivative of price) with math validation."""
         base_values = self.base_calculator.calculate(data)
-        momentum = base_values.pct_change(self.period)
-        acceleration = momentum.diff(self.period)
+
+        # Calculate momentum with proper handling using safe math utilities
+        shifted_values = base_values.shift(self.period)
+
+        # Use safe percentage change calculation for momentum
+        momentum_values = []
+        for i in range(len(base_values)):
+            current_val = base_values.iloc[i]
+            shifted_val = shifted_values.iloc[i]
+
+            # Use safe percentage change function
+            momentum_val = safe_percentage_change(shifted_val, current_val)
+            momentum_values.append(momentum_val)
+
+        momentum_series = pd.Series(momentum_values, index=data.index)
+
+        # Calculate acceleration (second derivative) using diff
+        acceleration = momentum_series.diff(self.period)
+
+        # Validate that all values are finite and provide detailed information
+        try:
+            validate_finite(acceleration.values, f"Acceleration_{self.period}_{self.base_calculation.value}")
+        except ValueError as e:
+            # Get detailed information about where the NaN/inf values are
+            non_finite_mask = ~np.isfinite(acceleration.values)
+            if np.any(non_finite_mask):
+                non_finite_indices = np.where(non_finite_mask)[0]
+                total_count = len(non_finite_indices)
+
+                # Show first few and last few problematic indices
+                if total_count <= 10:
+                    indices_str = f"indices {non_finite_indices.tolist()}"
+                else:
+                    first_5 = non_finite_indices[:5].tolist()
+                    last_5 = non_finite_indices[-5:].tolist()
+                    indices_str = f"indices {first_5} ... {last_5} (total: {total_count})"
+
+                # Only log once per feature globally to reduce verbosity
+                feature_key = f"Acceleration_{self.period}_{self.base_calculation.value}"
+                # Use class-level tracking to prevent duplicate warnings across all instances
+                if not hasattr(PriceAccelerationGenerator, '_logged_warnings'):
+                    PriceAccelerationGenerator._logged_warnings = set()
+                if feature_key not in PriceAccelerationGenerator._logged_warnings:
+                    self.logger.warning(f"⚠️ {e} - {indices_str}")
+                    PriceAccelerationGenerator._logged_warnings.add(feature_key)
+            else:
+                self.logger.warning(f"⚠️ {e}")
+
         return acceleration
 
 # Price Jerk Generator
@@ -137,11 +228,59 @@ class PriceJerkGenerator(FeatureGenerator):
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        """Generate jerk (third derivative of price)."""
+        """Generate jerk (third derivative of price) with math validation."""
         base_values = self.base_calculator.calculate(data)
-        momentum = base_values.pct_change(self.period)
-        acceleration = momentum.diff(self.period)
+
+        # Calculate momentum with proper handling using safe math utilities
+        shifted_values = base_values.shift(self.period)
+
+        # Use safe percentage change calculation for momentum
+        momentum_values = []
+        for i in range(len(base_values)):
+            current_val = base_values.iloc[i]
+            shifted_val = shifted_values.iloc[i]
+
+            # Use safe percentage change function
+            momentum_val = safe_percentage_change(shifted_val, current_val)
+            momentum_values.append(momentum_val)
+
+        momentum_series = pd.Series(momentum_values, index=data.index)
+
+        # Calculate acceleration (second derivative) using diff
+        acceleration = momentum_series.diff(self.period)
+
+        # Calculate jerk (third derivative) using diff
         jerk = acceleration.diff(self.period)
+
+        # Validate that all values are finite and provide detailed information
+        try:
+            validate_finite(jerk.values, f"Jerk_{self.period}_{self.base_calculation.value}")
+        except ValueError as e:
+            # Get detailed information about where the NaN/inf values are
+            non_finite_mask = ~np.isfinite(jerk.values)
+            if np.any(non_finite_mask):
+                non_finite_indices = np.where(non_finite_mask)[0]
+                total_count = len(non_finite_indices)
+
+                # Show first few and last few problematic indices
+                if total_count <= 10:
+                    indices_str = f"indices {non_finite_indices.tolist()}"
+                else:
+                    first_5 = non_finite_indices[:5].tolist()
+                    last_5 = non_finite_indices[-5:].tolist()
+                    indices_str = f"indices {first_5} ... {last_5} (total: {total_count})"
+
+                # Only log once per feature globally to reduce verbosity
+                feature_key = f"Jerk_{self.period}_{self.base_calculation.value}"
+                # Use class-level tracking to prevent duplicate warnings across all instances
+                if not hasattr(PriceJerkGenerator, '_logged_warnings'):
+                    PriceJerkGenerator._logged_warnings = set()
+                if feature_key not in PriceJerkGenerator._logged_warnings:
+                    self.logger.warning(f"⚠️ {e} - {indices_str}")
+                    PriceJerkGenerator._logged_warnings.add(feature_key)
+            else:
+                self.logger.warning(f"⚠️ {e}")
+
         return jerk
 
 # Trend Strength Generator

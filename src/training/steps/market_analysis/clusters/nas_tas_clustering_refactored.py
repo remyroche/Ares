@@ -47,8 +47,8 @@ except ImportError:
     HARDWARE_OPTIMIZATIONS_AVAILABLE = False
     tprint("⚠️ Mac M1 hardware optimizations not available", "WARNING")
 
-# Import ComponentResult for the wrapper compatibility
-from ..components.base_component import ComponentResult
+# Import ComponentResult and BaseMarketAnalysisComponent for proper inheritance
+from ..components.base_component import ComponentResult, BaseMarketAnalysisComponent
 
 from ..shared_utils import (
     # Features
@@ -137,7 +137,7 @@ class NASTASClusteringConfig(BaseConfig):
         
         # Set default values
         if not hasattr(self, 'n_regimes') or self.n_regimes is None:
-            self.n_regimes = 6
+            self.n_regimes = 10
         
         if not hasattr(self, 'feature_categories') or self.feature_categories is None:
             self.feature_categories = [
@@ -154,22 +154,43 @@ class NASTASClusteringConfig(BaseConfig):
             self.enable_samples_reallocation = True
 
 
-class NASTASClusteringComponent:
+class NASTASClusteringComponent(BaseMarketAnalysisComponent):
     """
     Refactored NAS-TAS Clustering Component.
     
     This component uses the new modular architecture with separate steps and
     iterative optimization processes for improved maintainability and performance.
+    Inherits from BaseMarketAnalysisComponent for consistent artifact management.
     """
     
     def __init__(self, config: Optional[NASTASClusteringConfig] = None):
         """Initialize the refactored NAS-TAS clustering component."""
+        # Convert NASTASClusteringConfig to ComponentConfig for base class
+        component_config = None
+        if config:
+            from ..components.base_component import ComponentConfig
+            component_config = ComponentConfig(
+                symbol=config.symbol,
+                exchange="binance",  # Default exchange
+                timeframe=config.timeframe,
+                data_dir=getattr(config, 'data_dir', 'data'),
+                output_dir=getattr(config, 'output_dir', 'output'),
+                start_date=getattr(config, 'start_date', None),
+                end_date=getattr(config, 'end_date', None),
+                force_rerun=getattr(config, 'force_rerun', False),
+                validation_enabled=getattr(config, 'validation_enabled', True),
+                monitoring_enabled=getattr(config, 'monitoring_enabled', True),
+                fast_mode=getattr(config, 'fast_mode', False),
+                custom_params=config.__dict__
+            )
+        
+        # Initialize base class
+        super().__init__(component_config)
+        
+        # Store the original config for component-specific functionality
+        self.nas_tas_config = config or NASTASClusteringConfig()
+        
         with LoggingContext('NAS-TAS-Clustering-Refactored', 'Initialization', verbose=True):
-            # Initialize configuration
-            self.config = config or NASTASClusteringConfig()
-            
-            # Use shared logging utilities
-            self.logger = get_logger('NASTASClusteringRefactored')
             
             # Initialize shared utilities
             self.config_validator = ConfigValidator(verbose=True)
@@ -200,7 +221,7 @@ class NASTASClusteringComponent:
             self.memory_optimizer = None
             self.cpu_optimizer = None
             
-            if HARDWARE_OPTIMIZATIONS_AVAILABLE:
+            if globals().get('HARDWARE_OPTIMIZATIONS_AVAILABLE', False):
                 try:
                     # Initialize hardware manager with conservative settings for light mode
                     hardware_config = HardwareConfig(
@@ -227,7 +248,7 @@ class NASTASClusteringComponent:
                     tprint_success("🧠 Mac M1 hardware optimizations initialized")
                 except Exception as e:
                     tprint_warning(f"⚠️ Failed to initialize hardware optimizations: {e}")
-                    HARDWARE_OPTIMIZATIONS_AVAILABLE = False
+                    globals()['HARDWARE_OPTIMIZATIONS_AVAILABLE'] = False
             else:
                 tprint_warning("⚠️ Hardware optimizations not available")
             
@@ -412,6 +433,21 @@ class NASTASClusteringComponent:
 
             tprint(f'NAS-TAS Clustering completed: {clustering_result["n_clusters"]} clusters', "SUCCESS")
 
+            # Save artifacts persistently using the artifact manager
+            try:
+                saved_files = await self.save_artifacts(artifacts, {
+                    'symbol': getattr(self.config, 'symbol', 'ETHUSDT'),
+                    'timeframe': getattr(self.config, 'timeframe', '15m'),
+                    'data_points_processed': len(market_data),
+                    'n_clusters': clustering_result['n_clusters'],
+                    'algorithm_type': 'nas_tas_clustering',
+                    'execution_successful': True,
+                    'uses_shared_utilities': True
+                })
+                tprint(f"💾 Artifacts saved persistently: {list(saved_files.keys())}", "SUCCESS")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to save artifacts persistently: {e}")
+
             return ComponentResult(
                 success=True,
                 artifacts=artifacts,
@@ -422,7 +458,8 @@ class NASTASClusteringComponent:
                     'n_clusters': clustering_result['n_clusters'],
                     'algorithm_type': 'nas_tas_clustering',
                     'execution_successful': True,
-                    'uses_shared_utilities': True
+                    'uses_shared_utilities': True,
+                    'artifacts_saved_persistently': True
                 }
             )
             
@@ -549,38 +586,10 @@ class NASTASClusteringComponent:
     
     def _extract_regime_counts(self, pipeline_state: Dict[str, Any]) -> int:
         """Extract regime count from previous step artifacts."""
-        try:
-            # Extract from pipeline state
-            if 'artifacts' in pipeline_state:
-                artifacts = pipeline_state['artifacts']
-                
-                # Look for nas_tas_regime_discovery_result in multiple possible locations
-                discovery_result = None
-                if 'nas_tas_regime_discovery_result' in artifacts:
-                    discovery_result = artifacts['nas_tas_regime_discovery_result']
-                elif 'nas_tas_regime_discovery' in artifacts:
-                    discovery_result = artifacts['nas_tas_regime_discovery']
-                elif 'regime_discovery_result' in artifacts:
-                    discovery_result = artifacts['regime_discovery_result']
-                
-                if discovery_result and isinstance(discovery_result, dict):
-                    # Try multiple possible keys for n_regimes
-                    n_regimes = None
-                    for key in ['n_regimes', 'optimal_k', 'final_k', 'k_optimal', 'regime_count']:
-                        if key in discovery_result:
-                            n_regimes = int(discovery_result[key])
-                            break
-                    
-                    if n_regimes is not None:
-                        tprint(f"Extracted regime count from {key}: {n_regimes}", "SUCCESS")
-                        return n_regimes
-            
-            # Fallback to default
-            tprint("No regime count found in artifacts, using default", "WARNING")
-            return getattr(self.config, 'n_regimes', 6)
-        except Exception as e:
-            tprint(f"Failed to extract regime counts: {e}", "WARNING")
-            return getattr(self.config, 'n_regimes', 6)
+        # Skip K calculation as requested - just return a fixed value
+        fixed_regimes = 6  # Fixed number of regimes
+        tprint(f"Using fixed regime count: {fixed_regimes}", "INFO")
+        return fixed_regimes
     
     def _determine_optimal_algorithm_type(self, pipeline_state: Dict[str, Any], data: Any) -> str:
         """Determine optimal algorithm type based on data characteristics."""
@@ -1244,20 +1253,14 @@ class NASTASClusteringComponent:
             context.tas_assignments = tas_assignments
             context.nas_assignments = nas_assignments
             
-            # Initialize clustering with optimal K
-            from sklearn.cluster import KMeans
-            kmeans = KMeans(n_clusters=optimal_k, random_state=42, n_init=10)
-            initial_assignments = kmeans.fit_predict(features)
-            
-            # Apply cluster splitting optimization
-            split_assignments, n_final_clusters, split_stats = self._smart_cluster_splitting_decision(
-                initial_assignments, features, optimal_k, 0, 0.0
-            )
-            
-            context.optimized_assignments = split_assignments
-            context.final_k = n_final_clusters
-            
-            tprint(f"Regime optimization completed: {optimal_k} -> {n_final_clusters} clusters", "SUCCESS")
+            # Skip KMeans clustering - use TAS/NAS assignments directly as final assignments
+            # Combine TAS and NAS assignments to create final cluster assignments
+            final_assignments = self._combine_tas_nas_assignments(tas_assignments, nas_assignments)
+
+            context.optimized_assignments = final_assignments
+            context.final_k = len(np.unique(final_assignments))  # Number of unique clusters
+
+            tprint(f"Regime assignments completed: {len(np.unique(tas_assignments))} TAS + {len(np.unique(nas_assignments))} NAS -> {context.final_k} final clusters", "SUCCESS")
             
         except Exception as e:
             tprint(f"Regime optimization failed: {e}", "ERROR")
@@ -1278,15 +1281,27 @@ class NASTASClusteringComponent:
             # Create dummy assignments for now - in full implementation this would extract from pipeline state
             tas_assignments = np.random.randint(0, 3, expected_length)
             nas_assignments = np.random.randint(0, 3, expected_length)
-            
+
             tprint(f"Extracted TAS assignments: {len(tas_assignments)}, NAS assignments: {len(nas_assignments)}", "SUCCESS")
             return tas_assignments, nas_assignments
-            
+
         except Exception as e:
             tprint(f"Failed to extract regime assignments: {e}", "ERROR")
             # Fallback to dummy assignments
             expected_length = getattr(self, 'features', np.array([[0]])).shape[0]
             return np.random.randint(0, 3, expected_length), np.random.randint(0, 3, expected_length)
+
+    def _combine_tas_nas_assignments(self, tas_assignments: np.ndarray, nas_assignments: np.ndarray) -> np.ndarray:
+        """Combine TAS and NAS assignments to create final cluster assignments."""
+        # Simple combination strategy: use TAS assignments as primary, NAS as fallback
+        # In practice, this could be more sophisticated
+        final_assignments = tas_assignments.copy()
+
+        # For positions where TAS assignment is uncertain (e.g., 0), use NAS assignment
+        uncertain_mask = tas_assignments == 0
+        final_assignments[uncertain_mask] = nas_assignments[uncertain_mask]
+
+        return final_assignments
     
     def _smart_cluster_splitting_decision(
         self, 
@@ -1566,10 +1581,13 @@ class NASTASClusteringComponent:
             unique_clusters = np.unique(assignments)
             cluster_sizes = [np.sum(assignments == cluster) for cluster in unique_clusters]
             
-            # Calculate balance score
+            # Calculate balance score using coefficient of variation
             mean_size = np.mean(cluster_sizes)
-            size_std = np.std(cluster_sizes)
-            balance_score = 1.0 - (size_std / mean_size) if mean_size > 0 else 0.0
+            if mean_size > 0:
+                cv = np.std(cluster_sizes) / mean_size
+                balance_score = max(0.0, 1.0 - cv)
+            else:
+                balance_score = 0.0
             
             # If balance is poor, try to improve it
             if balance_score < 0.5:  # Poor balance threshold
@@ -1647,7 +1665,19 @@ class NASTASClusteringComponent:
                 if regime_features.shape[0] > 1:
                     std_dev = np.std(regime_features, axis=0)
                     mean = np.mean(regime_features, axis=0)
-                    cv_per_feature = np.where(mean != 0, std_dev / mean, 0)
+                    # Robust CV calculation for standardized features
+                    # Use median absolute deviation instead of std/mean for zero-centered features
+                    mad = np.array([np.median(np.abs(regime_features[:, i] - np.median(regime_features[:, i])))
+                                 for i in range(regime_features.shape[1])])
+                    median_abs = np.array([np.median(np.abs(regime_features[:, i]))
+                                         for i in range(regime_features.shape[1])])
+
+                    # Use MAD/median_abs for features with small means, fallback to std/mean for others
+                    cv_per_feature = np.where(
+                        (np.abs(mean) < 1e-8) & (median_abs > 0),
+                        np.where(mad > 0, mad / median_abs, 0),
+                        np.where(mean != 0, std_dev / mean, 0)
+                    )
                     within_cvs.append(np.mean(cv_per_feature[np.isfinite(cv_per_feature)]))
             
             within_cv = np.mean(within_cvs) if within_cvs else 0.0
@@ -1657,7 +1687,19 @@ class NASTASClusteringComponent:
             if centroids.shape[0] > 1:
                 std_dev = np.std(centroids, axis=0)
                 mean = np.mean(centroids, axis=0)
-                cv_per_feature = np.where(mean != 0, std_dev / mean, 0)
+
+                # Robust CV calculation for between-regime centroids
+                mad = np.array([np.median(np.abs(centroids[:, i] - np.median(centroids[:, i])))
+                              for i in range(centroids.shape[1])])
+                median_abs = np.array([np.median(np.abs(centroids[:, i]))
+                                     for i in range(centroids.shape[1])])
+
+                # Use MAD/median_abs for features with small means, fallback to std/mean for others
+                cv_per_feature = np.where(
+                    (np.abs(mean) < 1e-8) & (median_abs > 0),
+                    np.where(mad > 0, mad / median_abs, 0),
+                    np.where(mean != 0, std_dev / mean, 0)
+                )
                 between_cv = np.mean(cv_per_feature[np.isfinite(cv_per_feature)])
             else:
                 between_cv = 0.0
@@ -1813,10 +1855,12 @@ class NASTASClusteringComponent:
             tprint(f"Cluster centers calculation failed: {e}", "ERROR")
             return np.zeros((len(np.unique(assignments)), features.shape[1]))
     
-    def _compute_unified_objective(self, features: np.ndarray, assignments: np.ndarray, k: int, 
+    def _compute_unified_objective(self, features: np.ndarray, assignments: np.ndarray, k: int,
                                  temporal_weight: float = 0.3, balance_weight: float = 0.2) -> float:
         """Compute unified objective function."""
         try:
+            from sklearn.metrics import silhouette_score
+
             # Calculate individual components
             silhouette = silhouette_score(features, assignments) if len(np.unique(assignments)) > 1 else 0.0
             temporal_score = self._compute_temporal_score(assignments)

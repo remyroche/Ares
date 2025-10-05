@@ -8,7 +8,7 @@ model training, selection, and management for the NAS-TAS system.
 import asyncio
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Any, Optional, Tuple, Union, Callable
+from typing import Dict, List, Any, Optional, Tuple, Union, Callable, Tuple as TypingTuple
 from dataclasses import dataclass, field
 import logging
 from datetime import datetime, timedelta
@@ -65,7 +65,7 @@ except ImportError as e:
     UNIFIED_TOOLS_AVAILABLE = False
 
 # Import components
-from .regime_aware_trainer import RegimeAwareTrainer, RegimeAwareTrainingConfig, RegimeTrainingResult
+from .regime_aware_trainer import RegimeAwareTrainer, RegimeAwareTrainingConfig, RegimeTrainingResult, DirectionMode
 from .model_selector import ModelSelector, ModelSelectionConfig, ModelSelectionResult
 from .model_manager import ModelManager, ModelManagerConfig
 from .performance_tracker import PerformanceTracker, PerformanceConfig
@@ -141,7 +141,16 @@ class OrchestratorConfig:
 
     # Hybrid regime detection
     enable_hybrid_regime_detection: bool = True
-    
+
+    # Directional training settings
+    direction_mode: str = "both"  # "both", "long_only", "short_only", "separate"
+    separate_directional_features: bool = True
+    directional_feature_prefixes: Dict[str, str] = field(default_factory=lambda: {
+        'long': 'long_',
+        'short': 'short_'
+    })
+    min_directional_samples: int = 50
+
     def __post_init__(self):
         """Initialize unified configuration if not provided."""
         if self.unified_config is None and UNIFIED_TOOLS_AVAILABLE:
@@ -490,7 +499,10 @@ class TrainingOrchestrator:
             # Step 2: Feature engineering
             if self.config.feature_engineering:
                 self.logger.info("🔧 Performing feature engineering...")
-                processed_data = self._perform_feature_engineering(processed_data, target_variable)
+                if self.config.separate_directional_features:
+                    processed_data = self._perform_directional_feature_engineering(processed_data, target_variable)
+                else:
+                    processed_data = self._perform_feature_engineering(processed_data, target_variable)
             
             # Step 3: Model training
             training_result = None
@@ -791,7 +803,7 @@ class TrainingOrchestrator:
             
             self.logger.info(f"✅ Feature engineering completed - New shape: {data.shape}")
             return data
-            
+
         except Exception as e:
             self.logger.error(f"❌ Feature engineering failed: {e}")
             self.logger.warning("⚠️ Returning original data - feature engineering will be skipped, which may impact model performance")
@@ -799,29 +811,128 @@ class TrainingOrchestrator:
             if 'result' in locals():
                 result.warnings.append(f"Feature engineering failed: {e}")
             return market_data  # Return original data if engineering fails
+
+    def _perform_directional_feature_engineering(self,
+                                               market_data: pd.DataFrame,
+                                               target_variable: str) -> pd.DataFrame:
+        """Perform feature engineering with directional awareness."""
+        try:
+            # Step 1: Separate data by direction
+            directional_data = self._separate_directional_data(market_data, target_variable, None)
+
+            if not directional_data:
+                self.logger.warning("⚠️ No directional data found, falling back to standard feature engineering")
+                return self._perform_feature_engineering(market_data, target_variable)
+
+            engineered_data = []
+
+            # Step 2: Engineer features for each direction separately
+            for direction, data in directional_data.items():
+                if len(data) < self.config.min_directional_samples:
+                    self.logger.warning(f"⚠️ Insufficient data for {direction} direction ({len(data)} < {self.config.min_directional_samples}), skipping")
+                    continue
+
+                self.logger.info(f"🔧 Engineering features for {direction} direction with {len(data)} samples")
+
+                # Add direction-specific features
+                direction_data = self._add_directional_features(data, direction, target_variable)
+
+                # Apply standard feature engineering
+                direction_data = self._perform_feature_engineering(direction_data, target_variable)
+
+                # Add direction indicator column
+                direction_data[f'direction_{direction}'] = 1
+
+                engineered_data.append(direction_data)
+
+            # Step 3: Combine all directional data
+            if engineered_data:
+                combined_data = pd.concat(engineered_data, axis=0, ignore_index=True)
+                self.logger.info(f"✅ Directional feature engineering completed - Combined shape: {combined_data.shape}")
+                return combined_data
+            else:
+                self.logger.warning("⚠️ No directional data could be processed, returning original data")
+                return market_data
+
+        except Exception as e:
+            self.logger.error(f"❌ Directional feature engineering failed: {e}")
+            self.logger.warning("⚠️ Falling back to standard feature engineering")
+            return self._perform_feature_engineering(market_data, target_variable)
+
+    def _add_directional_features(self, data: pd.DataFrame, direction: str, target_variable: str) -> pd.DataFrame:
+        """Add direction-specific features."""
+        try:
+            engineered_data = data.copy()
+
+            if direction == 'long':
+                # Long position specific features
+                if 'close' in engineered_data.columns:
+                    # Focus on upside potential and momentum
+                    engineered_data['long_price_momentum_10'] = engineered_data['close'] / engineered_data['close'].shift(10) - 1
+                    engineered_data['long_price_momentum_20'] = engineered_data['close'] / engineered_data['close'].shift(20) - 1
+                    engineered_data['long_price_acceleration'] = engineered_data['long_price_momentum_10'] - engineered_data['long_price_momentum_20']
+
+                    # Long position bias indicators
+                    engineered_data['long_upside_potential'] = engineered_data['close'].rolling(20).max() - engineered_data['close']
+                    engineered_data['long_upside_ratio'] = engineered_data['long_upside_potential'] / engineered_data['close']
+
+                if 'volume' in engineered_data.columns:
+                    # Volume confirmation for long positions
+                    engineered_data['long_volume_trend'] = engineered_data['volume'].rolling(10).mean() / engineered_data['volume'].rolling(20).mean()
+                    engineered_data['long_volume_confirmation'] = (engineered_data['long_volume_trend'] > 1.0).astype(int)
+
+            elif direction == 'short':
+                # Short position specific features
+                if 'close' in engineered_data.columns:
+                    # Focus on downside risk and bearish momentum
+                    engineered_data['short_price_momentum_10'] = -(engineered_data['close'] / engineered_data['close'].shift(10) - 1)
+                    engineered_data['short_price_momentum_20'] = -(engineered_data['close'] / engineered_data['close'].shift(20) - 1)
+                    engineered_data['short_price_acceleration'] = engineered_data['short_price_momentum_20'] - engineered_data['short_price_momentum_10']
+
+                    # Short position bias indicators
+                    engineered_data['short_downside_risk'] = engineered_data['close'] - engineered_data['close'].rolling(20).min()
+                    engineered_data['short_downside_ratio'] = engineered_data['short_downside_risk'] / engineered_data['close']
+
+                if 'volume' in engineered_data.columns:
+                    # Volume confirmation for short positions
+                    engineered_data['short_volume_trend'] = engineered_data['volume'].rolling(10).mean() / engineered_data['volume'].rolling(20).mean()
+                    engineered_data['short_volume_bearish'] = (engineered_data['short_volume_trend'] > 1.0).astype(int)
+
+            return engineered_data
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Directional feature addition failed for {direction}: {e}")
+            return data
     
-    def _orchestrate_training(self, 
+    def _orchestrate_training(self,
                             market_data: pd.DataFrame,
                             target_variable: str,
                             feature_columns: Optional[List[str]],
                             timestamps: Optional[pd.Series]) -> RegimeTrainingResult:
-        """Orchestrate model training."""
+        """Orchestrate model training with directional separation."""
         try:
-            # Train models
-            training_result = self.trainer.train_models(
-                market_data=market_data,
-                target_variable=target_variable,
-                feature_columns=feature_columns,
-                timestamps=timestamps
-            )
-            
-            if training_result.success:
-                self.logger.info(f"✅ Training completed - {training_result.n_regimes_detected} regimes, {len(training_result.models_trained)} models")
+            # Check if directional training is enabled
+            if self.config.direction_mode in ["separate", "both"]:
+                # Separate data by direction and train separately
+                return self._orchestrate_directional_training(
+                    market_data, target_variable, feature_columns, timestamps
+                )
             else:
-                self.logger.error(f"❌ Training failed: {training_result.error_message}")
-            
-            return training_result
-            
+                # Standard training without directional separation
+                training_result = self.trainer.train_models(
+                    market_data=market_data,
+                    target_variable=target_variable,
+                    feature_columns=feature_columns,
+                    timestamps=timestamps
+                )
+
+                if training_result.success:
+                    self.logger.info(f"✅ Training completed - {training_result.n_regimes_detected} regimes, {len(training_result.models_trained)} models")
+                else:
+                    self.logger.error(f"❌ Training failed: {training_result.error_message}")
+
+                return training_result
+
         except Exception as e:
             self.logger.error(f"❌ Training orchestration failed: {e}")
             return RegimeTrainingResult(
@@ -831,6 +942,208 @@ class TrainingOrchestrator:
                 models_trained={},
                 error_message=str(e)
             )
+
+    def _orchestrate_directional_training(self,
+                                        market_data: pd.DataFrame,
+                                        target_variable: str,
+                                        feature_columns: Optional[List[str]],
+                                        timestamps: Optional[pd.Series]) -> RegimeTrainingResult:
+        """Orchestrate training with directional separation."""
+        try:
+            # Step 1: Separate data by direction
+            directional_data = self._separate_directional_data(
+                market_data, target_variable, feature_columns
+            )
+
+            if not directional_data:
+                self.logger.error("❌ No directional data available for training")
+                return RegimeTrainingResult(
+                    success=False,
+                    training_time=0.0,
+                    n_regimes_detected=0,
+                    models_trained={},
+                    error_message="No directional data available"
+                )
+
+            # Step 2: Train models for each direction
+            all_training_results = {}
+            directional_models = {}
+            directional_performance = {}
+            directional_statistics = {}
+
+            for direction, data in directional_data.items():
+                if len(data) < self.config.min_directional_samples:
+                    self.logger.warning(f"⚠️ Insufficient data for {direction} direction ({len(data)} < {self.config.min_directional_samples}), skipping")
+                    continue
+
+                self.logger.info(f"🎯 Training {direction} models with {len(data)} samples")
+
+                # Create direction-specific trainer config
+                directional_config = self._create_directional_config(direction)
+
+                # Create trainer for this direction
+                directional_trainer = RegimeAwareTrainer(directional_config)
+
+                # Train models for this direction
+                training_result = directional_trainer.train_models(
+                    market_data=data,
+                    target_variable=target_variable,
+                    feature_columns=feature_columns,
+                    timestamps=timestamps
+                )
+
+                if training_result.success:
+                    all_training_results[direction] = training_result
+                    directional_models[direction] = training_result.models_trained
+                    directional_performance[direction] = training_result.overall_performance
+                    directional_statistics[direction] = {
+                        'n_samples': len(data),
+                        'n_regimes': training_result.n_regimes_detected,
+                        'n_models': len(training_result.models_trained)
+                    }
+                    self.logger.info(f"✅ {direction.capitalize()} training completed - {training_result.n_regimes_detected} regimes, {len(training_result.models_trained)} models")
+                else:
+                    self.logger.warning(f"⚠️ {direction.capitalize()} training failed: {training_result.error_message}")
+
+            # Step 3: Combine results
+            if not all_training_results:
+                return RegimeTrainingResult(
+                    success=False,
+                    training_time=0.0,
+                    n_regimes_detected=0,
+                    models_trained={},
+                    error_message="No successful directional training"
+                )
+
+            # Use the first successful result as the main result structure
+            main_result = list(all_training_results.values())[0]
+
+            # Add directional information
+            main_result.directional_models = directional_models
+            main_result.directional_performance = directional_performance
+            main_result.directional_statistics = directional_statistics
+
+            # Calculate combined performance metrics
+            combined_performance = self._calculate_combined_performance(all_training_results)
+
+            main_result.overall_performance.update(combined_performance)
+
+            total_regimes = sum(result.n_regimes_detected for result in all_training_results.values())
+            total_models = sum(len(result.models_trained) for result in all_training_results.values())
+
+            self.logger.info(f"✅ Directional training completed - {total_regimes} total regimes, {total_models} total models")
+            self.logger.info(f"   Directions trained: {list(all_training_results.keys())}")
+
+            return main_result
+
+        except Exception as e:
+            self.logger.error(f"❌ Directional training orchestration failed: {e}")
+            return RegimeTrainingResult(
+                success=False,
+                training_time=0.0,
+                n_regimes_detected=0,
+                models_trained={},
+                error_message=str(e)
+            )
+
+    def _separate_directional_data(self,
+                                 market_data: pd.DataFrame,
+                                 target_variable: str,
+                                 feature_columns: Optional[List[str]]) -> Dict[str, pd.DataFrame]:
+        """Separate market data by trading direction."""
+        directional_data = {}
+
+        try:
+            # Check if we have direction indicators in the data
+            direction_columns = [col for col in market_data.columns if 'direction' in col.lower() or 'long' in col.lower() or 'short' in col.lower()]
+
+            if not direction_columns:
+                self.logger.warning("⚠️ No direction columns found in data, using fallback method")
+
+                # Fallback: Create synthetic directional data based on target values
+                if target_variable in market_data.columns:
+                    # Assume target > 0 means long, target < 0 means short
+                    long_mask = market_data[target_variable] > 0
+                    short_mask = market_data[target_variable] < 0
+
+                    if long_mask.any():
+                        directional_data['long'] = market_data[long_mask].copy()
+                    if short_mask.any():
+                        directional_data['short'] = market_data[short_mask].copy()
+                else:
+                    # No target variable, use all data for both directions
+                    directional_data['long'] = market_data.copy()
+                    directional_data['short'] = market_data.copy()
+            else:
+                # Use explicit direction columns
+                for direction in ['long', 'short']:
+                    direction_col = [col for col in direction_columns if direction in col.lower()]
+                    if direction_col:
+                        col = direction_col[0]
+                        mask = market_data[col] == 1  # Assuming binary indicator
+                        if mask.any():
+                            directional_data[direction] = market_data[mask].copy()
+
+            return directional_data
+
+        except Exception as e:
+            self.logger.error(f"❌ Directional data separation failed: {e}")
+            return {}
+
+    def _create_directional_config(self, direction: str) -> RegimeAwareTrainingConfig:
+        """Create direction-specific training configuration."""
+        # Start with base config
+        base_config = RegimeAwareTrainingConfig()
+
+        # Modify for directional training
+        base_config.direction_mode = getattr(DirectionMode, f"{direction.upper()}_ONLY", DirectionMode.BOTH)
+        base_config.min_regime_samples = max(50, self.config.min_directional_samples // 4)  # Reduce for directional data
+
+        # Add direction-specific feature prefixes
+        if self.config.separate_directional_features:
+            base_config.directional_feature_prefixes = {
+                direction: f"{direction}_",
+                'other': f"{'short' if direction == 'long' else 'long'}_"
+            }
+
+        return base_config
+
+    def _calculate_combined_performance(self, training_results: Dict[str, RegimeTrainingResult]) -> Dict[str, float]:
+        """Calculate combined performance metrics across all directions."""
+        combined_metrics = {}
+
+        if not training_results:
+            return combined_metrics
+
+        # Collect all performance metrics
+        all_f1_scores = []
+        all_accuracies = []
+        all_precisions = []
+        all_recalls = []
+
+        for direction, result in training_results.items():
+            if result.overall_performance:
+                perf = result.overall_performance
+                if 'mean_f1' in perf:
+                    all_f1_scores.append(perf['mean_f1'])
+                if 'mean_accuracy' in perf:
+                    all_accuracies.append(perf['mean_accuracy'])
+                if 'mean_precision' in perf:
+                    all_precisions.append(perf['mean_precision'])
+                if 'mean_recall' in perf:
+                    all_recalls.append(perf['mean_recall'])
+
+        # Calculate combined metrics
+        if all_f1_scores:
+            combined_metrics.update({
+                'combined_mean_f1': np.mean(all_f1_scores),
+                'combined_std_f1': np.std(all_f1_scores),
+                'directions_trained': len(training_results),
+                'total_regimes': sum(result.n_regimes_detected for result in training_results.values()),
+                'total_models': sum(len(result.models_trained) for result in training_results.values())
+            })
+
+        return combined_metrics
     
     def _setup_model_selection(self, training_result: RegimeTrainingResult):
         """Setup model selection with trained models."""

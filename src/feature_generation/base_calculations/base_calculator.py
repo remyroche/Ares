@@ -206,7 +206,7 @@ class ReturnsVWAPCalculator(BaseCalculator):
         """
         high = data[self.config.high_column]
         low = data[self.config.low_column]
-        close = data[self.config.close_column]
+        close = data[self.config.price_column]
         volume = data[self.config.volume_column]
         
         # Calculate typical price
@@ -223,7 +223,7 @@ class ReturnsVWAPCalculator(BaseCalculator):
         return [
             self.config.high_column,
             self.config.low_column,
-            self.config.close_column,
+            self.config.price_column,
             self.config.volume_column
         ]
 

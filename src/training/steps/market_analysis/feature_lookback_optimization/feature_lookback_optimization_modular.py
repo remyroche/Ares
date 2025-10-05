@@ -141,6 +141,16 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         self.core_optimizer = CoreOptimizer(logger=self.logger)
         tprint("✅ Modular components initialized")
 
+        # Initialize execution mode configuration
+        tprint("🔧 Initializing execution mode lookback configuration...")
+        try:
+            from ..shared_utils.execution_mode_lookback_config import get_execution_mode_config
+            self.execution_mode_config = get_execution_mode_config()
+            tprint("✅ Execution mode configuration initialized")
+        except ImportError as e:
+            self.logger.warning(f"⚠️ Could not import execution mode config: {e}")
+            self.execution_mode_config = None
+
         # Initialize optimized process engine
         tprint("🔧 Initializing optimized feature lookback engine...")
         self.optimized_engine = OptimizedFeatureLookbackEngine(
@@ -196,7 +206,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         start_time = self.performance_monitor.start_operation("execute")
 
         try:
-            log_info("🚀 Starting feature lookback optimization...")
+            log_info("🚀 Starting feature lookback optimization with multi-horizon profit targets...")
             tprint("📊 Performance monitoring started for execute operation")
 
             # Validate inputs
@@ -221,6 +231,21 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 validation_score=1.0 if validation_summary.overall_status == ValidationStatus.PASSED else 0.0
             )
 
+            # Extract execution mode parameters from pipeline configuration
+            execution_mode_params = {}
+            if self.execution_mode_config and hasattr(pipeline_state, 'get'):
+                try:
+                    # Try to extract execution mode from pipeline state or config
+                    pipeline_config = pipeline_state.get('pipeline_config', {})
+                    lookback_config = self.execution_mode_config.extract_from_pipeline_config(pipeline_config)
+                    execution_mode_params = self.execution_mode_config.get_optimization_parameters(
+                        pipeline_config.get('mode', 'full')
+                    )
+                    self.logger.info(f"📊 Using execution mode parameters: {execution_mode_params}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Could not extract execution mode parameters: {e}")
+                    execution_mode_params = {}
+
             # Load required data
             market_data = await self._load_market_data(cleaned_data)
             labeling_data = self._load_recent_labeling_results(
@@ -228,6 +253,16 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 pipeline_state.get('exchange', 'UNKNOWN'),
                 pipeline_state.get('timeframe', 'UNKNOWN')
             )
+
+            # Apply execution mode data windowing
+            if execution_mode_params and market_data is not None:
+                window_days = execution_mode_params.get('window_days', 1460)
+                if len(market_data) > window_days:
+                    # Use only the most recent data based on execution mode
+                    market_data = market_data.tail(window_days).copy()
+                    self.logger.info(f"📊 Applied execution mode window: using last {window_days} days of data")
+                else:
+                    self.logger.info(f"📊 Using all available data ({len(market_data)} records) for execution mode")
 
             if market_data is None:
                 log_error("Market data loading failed - no data available for feature lookback optimization")
@@ -258,19 +293,52 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             # Record final metrics
             self.performance_monitor.end_operation("execute", start_time, success=True)
 
+            # Save artifacts persistently using the artifact manager
+            try:
+                import asyncio
+                # Check if we're already in an event loop
+                try:
+                    loop = asyncio.get_running_loop()
+                    # We're in an event loop, create a task instead
+                    task = asyncio.create_task(self.save_artifacts(artifacts, {
+                        'optimization_status': 'completed',
+                        'total_features_optimized': len(optimization_results.get('feature_results', {})),
+                        'validation_summary': validation_summary.__dict__ if validation_summary else None,
+                        'performance_metrics': self.performance_monitor.get_performance_summary(),
+                        'optimization_results': optimization_results
+                    }))
+                    saved_files = await task
+                    log_success(f"💾 [FEATURE_LOOKBACK] Artifacts saved persistently: {list(saved_files.keys())}")
+                except RuntimeError:
+                    # No running event loop, use asyncio.run()
+                    saved_files = asyncio.run(self.save_artifacts(artifacts, {
+                        'optimization_status': 'completed',
+                        'total_features_optimized': len(optimization_results.get('feature_results', {})),
+                        'validation_summary': validation_summary.__dict__ if validation_summary else None,
+                        'performance_metrics': self.performance_monitor.get_performance_summary(),
+                        'optimization_results': optimization_results
+                    }))
+                    log_success(f"💾 [FEATURE_LOOKBACK] Artifacts saved persistently: {list(saved_files.keys())}")
+            except Exception as e:
+                log_warning(f"⚠️ [FEATURE_LOOKBACK] Failed to save artifacts persistently: {e}")
+
             result = ComponentResult(
                 success=True,
                 artifacts=artifacts,
                 metadata={
                     'optimization_status': 'completed',
-                    'total_features_optimized': len(optimization_results.get('feature_results', {})),
+                    'total_features_optimized': len(optimization_results.get('feature_results', {}).get('long_pipeline', {})) + len(optimization_results.get('feature_results', {}).get('short_pipeline', {})),
                     'validation_summary': validation_summary.__dict__ if validation_summary else None,
                     'performance_metrics': self.performance_monitor.get_performance_summary(),
-                    'optimization_results': optimization_results
+                    'optimization_results': optimization_results,
+                    'artifacts_saved_persistently': True,
+                    'pipeline_type': 'differentiated_long_short'
                 }
             )
 
-            log_success("Feature lookback optimization completed successfully")
+            long_count = len(optimization_results.get('feature_results', {}).get('long_pipeline', {}))
+            short_count = len(optimization_results.get('feature_results', {}).get('short_pipeline', {}))
+            log_success(f"🎯 Multi-horizon feature lookback optimization completed successfully - Long: {long_count} features, Short: {short_count} features")
             return result
 
         except Exception as e:
@@ -338,42 +406,85 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             return market_data
 
     async def _generate_features_for_optimization(self, data: pd.DataFrame) -> List[str]:
-        """Load existing engineered features from regime assignment file for lookback optimization."""
+        """Generate features using the feature bank system to get 200+ engineered features."""
         try:
-            # Load the regime assignment file that contains engineered features
-            symbol = getattr(self.config, 'symbol', 'ETHUSDT').lower()
-            regime_files = list(Path('/Users/remyroche/Documents/Ares/data_cache/nas_tas_clustering').glob(f'**/{symbol}/nas_tas_regime_assignments_*.parquet'))
+            # Import the feature bank system
+            from src.feature_generation.core.feature_bank import FeatureBank
             
-            if regime_files:
-                # Load the most recent regime assignment file
-                latest_file = max(regime_files, key=lambda x: x.stat().st_mtime)
-                self.logger.info(f"📊 Loading engineered features from: {latest_file}")
+            self.logger.info("🔧 Generating features using feature bank system...")
+            
+            # Initialize feature bank
+            feature_bank = FeatureBank()
+            
+            # Generate features using the feature bank directly
+            # This will create 200+ engineered features (RSI, MACD, Bollinger Bands, ATR, etc.)
+            # Include only the categories we want (exclude autoencoders and interaction features)
+            from src.feature_generation.core.feature_generator import FeatureCategory
+            included_categories = [
+                FeatureCategory.RETURNS,
+                FeatureCategory.MOMENTUM, 
+                FeatureCategory.VOLUME,
+                FeatureCategory.VOLATILITY,
+                FeatureCategory.TREND,
+                FeatureCategory.OSCILLATOR,
+                FeatureCategory.SUPPORT_RESISTANCE,
+                FeatureCategory.CANDLESTICK_PATTERN,
+                FeatureCategory.MICROSTRUCTURE,
+                FeatureCategory.ENTROPY,
+                FeatureCategory.ORDER_FLOW,
+                FeatureCategory.ACCELERATION,
+                FeatureCategory.TIME
+            ]
+            generated_features = feature_bank.generate_features(data, categories=included_categories)
+            
+            if generated_features is not None and not generated_features.empty:
+                # Provide detailed information about generated features
+                total_features = generated_features.shape[1]
+                total_rows = generated_features.shape[0]
+                self.logger.info(f"✅ Generated {total_features} features from feature bank")
+                self.logger.info(f"📊 Feature matrix: {total_rows} rows × {total_features} columns")
                 
-                regime_df = pd.read_parquet(latest_file)
-                self.logger.info(f"📊 Loaded regime assignment file: {regime_df.shape}")
+                # Show feature categories breakdown
+                feature_categories = {}
+                for col in generated_features.columns:
+                    if '_' in col:
+                        category = col.split('_')[0]
+                        feature_categories[category] = feature_categories.get(category, 0) + 1
                 
-                # Get all feature columns (exclude regime_id, regime_prob, and basic OHLCV columns)
-                excluded_columns = ['regime_id', 'regime_prob', 'open', 'high', 'low', 'close', 'volume', 'timestamp', 'symbol', 'open_time', 'close_time', 'interval', 'exchange', 'timeframe']
-                feature_columns = [col for col in regime_df.columns if col not in excluded_columns]
+                self.logger.info(f"📋 Feature breakdown: {dict(sorted(feature_categories.items()))}")
                 
-                # Filter out wavelets and autoencoder features as requested
-                feature_columns = [col for col in feature_columns if 'wavelet' not in col.lower() and 'autoencoder' not in col.lower()]
+                # Get feature columns, excluding unwanted types
+                excluded_columns = ['regime_id', 'regime_prob', 'open', 'high', 'low', 'close', 'volume', 
+                                  'timestamp', 'symbol', 'open_time', 'close_time', 'interval', 'exchange', 'timeframe']
                 
-                self.logger.info(f"🎯 Found {len(feature_columns)} engineered features for optimization (excluding wavelets and autoencoder)")
+                feature_columns = [col for col in generated_features.columns if col not in excluded_columns]
+                
+                # Filter out unwanted features: wavelets, autoencoders, NAS, TAS, interaction, cross-timeframe, regime-specific
+                # Also exclude bid/ask features that require missing data
+                feature_columns = [col for col in feature_columns 
+                                 if not any(unwanted in col.lower() for unwanted in [
+                                     'wavelet', 'autoencoder', 'regime_', 'nas_', 'tas_',
+                                     'interaction_', 'cross_timeframe_', 'cross_timeframe',
+                                     'bid_ask', 'bidask', 'market_depth', 'liquidity_proxy',
+                                     'order_flow', 'trade_intensity', 'volume_weighted'
+                                 ])]
+                
+                self.logger.info(f"🎯 Found {len(feature_columns)} engineered features for optimization (excluding unwanted types)")
                 
                 # Add the engineered features to the data
                 for col in feature_columns:
-                    if col in regime_df.columns and col not in data.columns:
-                        data[col] = regime_df[col].values[:len(data)]  # Align with data length
+                    if col in generated_features.columns and col not in data.columns:
+                        data[col] = generated_features[col].values[:len(data)]  # Align with data length
                 
                 return feature_columns
             else:
-                self.logger.warning("⚠️ No regime assignment files found, using basic features")
+                self.logger.warning("⚠️ Feature generation failed, falling back to basic features")
                 return []
                 
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to load engineered features: {e}")
-            return []
+            self.logger.error(f"❌ Error generating features with feature bank: {e}")
+            # Fail fast - don't fallback to basic features
+            raise RuntimeError(f"Failed to generate features using feature bank: {e}")
 
     def _load_recent_labeling_results(self, symbol: str, exchange: str, timeframe: str) -> Optional[Dict[str, Any]]:
         """Load recent labeling results."""
@@ -411,25 +522,67 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
 
             # Optimize each feature
             feature_results = {}
-            target_column = 'close'  # Default target
 
-            for feature in feature_columns:  # Optimize all available features
+            # Use differentiated long/short pipelines with separate optimization
+            long_target_column = self._select_optimal_target_column(data, direction='long')
+            short_target_column = self._select_optimal_target_column(data, direction='short')
+
+            log_info(f"🎯 Using differentiated targets - Long: {long_target_column}, Short: {short_target_column}")
+
+            # Separate optimization for long and short directions
+            long_feature_results = {}
+            short_feature_results = {}
+
+            for feature in feature_columns:
                 try:
-                    result = self.core_optimizer.optimize_single_feature(
-                        data,
-                        feature,
-                        target_column,
-                        method=OptimizationMethod.MRMR
-                    )
+                    # Use consistent lookback range for all execution modes
+                    lookback_range = (5, 300)  # Keep same range for all modes
 
-                    # Ensure feature name is converted to regular Python type for dictionary key
-                    feature_key = feature
-                    if isinstance(feature, np.int64):
-                        feature_key = int(feature)
-                    elif hasattr(feature, 'dtype') and feature.dtype == 'int64':
-                        feature_key = int(feature)
+                    # Optimize for LONG direction
+                    if long_target_column != 'close':  # Only if we have a proper long target
+                        long_result = self.core_optimizer.optimize_single_feature(
+                            data,
+                            feature,
+                            long_target_column,
+                            method=OptimizationMethod.COARSE_TO_REFINE,
+                            lookback_range=lookback_range
+                        )
 
-                    feature_results[feature_key] = result.to_dict()
+                        feature_key = feature
+                        if isinstance(feature, np.int64):
+                            feature_key = int(feature)
+                        elif hasattr(feature, 'dtype') and feature.dtype == 'int64':
+                            feature_key = int(feature)
+
+                        long_feature_results[feature_key] = {
+                            'best_lookback_period': long_result.best_lookback_period,
+                            'best_score': long_result.best_score,
+                            'target_column': long_target_column,
+                            'direction': 'long'
+                        }
+
+                    # Optimize for SHORT direction
+                    if short_target_column != 'close':  # Only if we have a proper short target
+                        short_result = self.core_optimizer.optimize_single_feature(
+                            data,
+                            feature,
+                            short_target_column,
+                            method=OptimizationMethod.COARSE_TO_REFINE,
+                            lookback_range=lookback_range
+                        )
+
+                        feature_key = feature
+                        if isinstance(feature, np.int64):
+                            feature_key = int(feature)
+                        elif hasattr(feature, 'dtype') and feature.dtype == 'int64':
+                            feature_key = int(feature)
+
+                        short_feature_results[feature_key] = {
+                            'best_lookback_period': short_result.best_lookback_period,
+                            'best_score': short_result.best_score,
+                            'target_column': short_target_column,
+                            'direction': 'short'
+                        }
 
                 except Exception as e:
                     self.error_handler.handle_error(
@@ -438,11 +591,21 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                         return_value=None
                     )
 
+            # Combine results
+            feature_results = {
+                'long_pipeline': long_feature_results,
+                'short_pipeline': short_feature_results,
+                'long_target': long_target_column,
+                'short_target': short_target_column
+            }
+
+            total_features = len(long_feature_results) + len(short_feature_results)
+            log_info(f"🎯 Completed differentiated optimization - Long: {len(long_feature_results)} features, Short: {len(short_feature_results)} features")
+
             return {
                 'feature_results': feature_results,
-                'total_features': len(feature_results),
-                'target_column': target_column,
-                'optimization_method': 'mrmr'
+                'total_features': total_features,
+                'optimization_method': 'coarse_to_refine_directional'
             }
 
         except Exception as e:
@@ -479,26 +642,40 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             return pd.DataFrame()
 
     def _create_optimization_metrics(self, optimization_results: Dict[str, Any]) -> OptimizationMetrics:
-        """Create optimization metrics."""
+        """Create optimization metrics for differentiated long/short pipelines."""
         try:
             feature_results = optimization_results.get('feature_results', {})
-            total_features = len(feature_results)
+            long_pipeline = feature_results.get('long_pipeline', {})
+            short_pipeline = feature_results.get('short_pipeline', {})
+            total_features = len(long_pipeline) + len(short_pipeline)
 
-            # Calculate basic metrics
-            best_lookback = 10  # Default
-            best_score = 0.0
+            # Calculate basic metrics for both pipelines
+            best_lookback_long = 10  # Default
+            best_score_long = 0.0
+            best_lookback_short = 10  # Default
+            best_score_short = 0.0
             optimization_time = 0.1  # Placeholder
 
-            if feature_results:
-                # Get best result from features
-                best_feature = max(feature_results.items(), key=lambda x: x[1].get('best_score', 0))
-                best_lookback = convert_int64_to_int(best_feature[1].get('best_lookback_period', 10))
-                best_score = best_feature[1].get('best_score', 0.0)
+            # Get best results for long pipeline
+            if long_pipeline:
+                best_feature_long = max(long_pipeline.items(), key=lambda x: x[1].get('best_score', 0))
+                best_lookback_long = convert_int64_to_int(best_feature_long[1].get('best_lookback_period', 10))
+                best_score_long = best_feature_long[1].get('best_score', 0.0)
+
+            # Get best results for short pipeline
+            if short_pipeline:
+                best_feature_short = max(short_pipeline.items(), key=lambda x: x[1].get('best_score', 0))
+                best_lookback_short = convert_int64_to_int(best_feature_short[1].get('best_lookback_period', 10))
+                best_score_short = best_feature_short[1].get('best_score', 0.0)
+
+            # Create combined metrics showing best from both pipelines
+            combined_best_lookback = best_lookback_long if best_score_long >= best_score_short else best_lookback_short
+            combined_best_score = max(best_score_long, best_score_short)
 
             return OptimizationMetrics(
-                best_lookback_period=best_lookback,
-                best_score=best_score,
-                optimization_method=optimization_results.get('optimization_method', 'unknown'),
+                best_lookback_period=combined_best_lookback,
+                best_score=combined_best_score,
+                optimization_method=optimization_results.get('optimization_method', 'coarse_to_refine_directional'),
                 total_features_optimized=total_features,
                 optimization_time=optimization_time,
                 convergence_iterations=1,
@@ -560,6 +737,13 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
 
             # Store the summary as an artifact
             artifacts['feature_lookback_optimization_summary'] = summary
+            # Also create the expected artifact for downstream components
+            artifacts['feature_lookback_optimization_result'] = {
+                'optimization_results': convert_int64_to_int(optimization_results),
+                'summary': summary,
+                'component_type': 'feature_lookback_optimization',
+                'timestamp': pd.Timestamp.now().isoformat()
+            }
 
             return artifacts
 
@@ -570,6 +754,112 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 return_value={}
             )
             return {}
+
+    def _select_optimal_target_column(self, data: pd.DataFrame, direction: str = None) -> str:
+        """
+        Select the optimal target column for feature optimization, prioritizing multi-horizon targets.
+
+        Args:
+            data: Input dataframe
+            direction: 'long', 'short', or None for general targets
+
+        Returns:
+            str: Optimal target column name
+        """
+        try:
+            # If direction is specified, prioritize directional targets
+            if direction == 'long':
+                # Priority 1: Long-specific directional targets
+                long_priority = [
+                    'long_overall_opportunity',
+                    'long_leverage_adjusted_score',
+                    'long_immediate_opportunity',
+                    'long_short_term_opportunity'
+                ]
+
+                for target in long_priority:
+                    if target in data.columns:
+                        log_success(f"🎯 Selected long-specific target: {target}")
+                        return target
+
+            elif direction == 'short':
+                # Priority 1: Short-specific directional targets
+                short_priority = [
+                    'short_overall_opportunity',
+                    'short_leverage_adjusted_score',
+                    'short_immediate_opportunity',
+                    'short_short_term_opportunity'
+                ]
+
+                for target in short_priority:
+                    if target in data.columns:
+                        log_success(f"🎯 Selected short-specific target: {target}")
+                        return target
+
+            # Priority 2: Multi-horizon composite targets (best overall signal)
+            composite_priority = [
+                'leverage_adjusted_score',  # Primary target from config
+                'overall_opportunity',      # Secondary target
+                'immediate_opportunity',    # Short-term focused
+                'directional_confidence',   # Directional bias confidence
+                'opportunity_asymmetry'     # Long vs short opportunity difference
+            ]
+
+            for target in composite_priority:
+                if target in data.columns:
+                    log_success(f"🎯 Selected multi-horizon target: {target}")
+                    return target
+
+            # Priority 3: Remaining directional opportunity targets (if direction not already handled above)
+            if direction != 'long' and direction != 'short':
+                directional_priority = [
+                    'long_overall_opportunity',
+                    'short_overall_opportunity',
+                    'long_immediate_opportunity',
+                    'short_immediate_opportunity'
+                ]
+
+                for target in directional_priority:
+                    if target in data.columns:
+                        log_success(f"🎯 Selected directional opportunity target: {target}")
+                        return target
+
+            # Priority 3: Any multi-horizon probability target
+            prob_targets = [col for col in data.columns if '_prob' in col and ('long' in col or 'short' in col)]
+            if prob_targets:
+                # Prefer immediate probabilities
+                immediate_probs = [col for col in prob_targets if 'immediate' in col]
+                if immediate_probs:
+                    log_success(f"🎯 Selected multi-horizon probability target: {immediate_probs[0]}")
+                    return immediate_probs[0]
+                else:
+                    log_success(f"🎯 Selected multi-horizon probability target: {prob_targets[0]}")
+                    return prob_targets[0]
+
+            # Priority 4: Fallback to price-based targets
+            price_targets = ['close', 'returns', 'target']
+            for target in price_targets:
+                if target in data.columns:
+                    log_warning(f"⚠️ Using fallback target (no multi-horizon targets found): {target}")
+                    return target
+
+            # Last resort: any numeric column
+            numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()
+            if numeric_cols:
+                log_warning(f"⚠️ Using fallback numeric column: {numeric_cols[0]}")
+                return numeric_cols[0]
+
+            # No suitable target found
+            log_error("❌ No suitable target column found for optimization")
+            return 'close'  # Final fallback
+
+        except Exception as e:
+            self.error_handler.handle_error(
+                e,
+                "_select_optimal_target_column",
+                return_value='close'
+            )
+            return 'close'
 
     def get_enhanced_performance_metrics(self) -> Dict[str, Any]:
         """Get enhanced performance metrics."""

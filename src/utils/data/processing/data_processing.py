@@ -594,6 +594,129 @@ class DataProcessor:
         validation_results["quality_score"] = max(0, quality_score)
         return validation_results
 
+    def calculate_enhanced_quality_metrics(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Calculate enhanced quality metrics for a DataFrame with comprehensive analysis.
+
+        Args:
+            data: DataFrame to analyze
+
+        Returns:
+            Dictionary with enhanced quality metrics
+        """
+        if data is None or data.empty:
+            return {}
+
+        metrics = {}
+
+        try:
+            # Basic metrics
+            total_rows = len(data)
+            total_cols = len(data.columns)
+            missing_values = int(data.isnull().sum().sum())
+
+            # Data type distribution
+            numeric_cols = len(data.select_dtypes(include=[np.number]).columns)
+            categorical_cols = len(data.select_dtypes(include=['object', 'category']).columns)
+            datetime_cols = len(data.select_dtypes(include=['datetime']).columns)
+
+            # Statistical metrics for numeric columns
+            numeric_data = data.select_dtypes(include=[np.number])
+            if not numeric_data.empty:
+                # Volatility metrics
+                volatility = numeric_data.std() / numeric_data.mean().replace(0, 1e-8)
+                volatility = volatility.replace([np.inf, -np.inf], 0).fillna(0)
+
+                # Skewness and kurtosis (robust calculation)
+                skewness = numeric_data.skew().fillna(0)
+                kurtosis = numeric_data.kurtosis().fillna(0)
+
+                # Range and outliers
+                q75 = numeric_data.quantile(0.75)
+                q25 = numeric_data.quantile(0.25)
+                iqr = q75 - q25
+                iqr = iqr.replace(0, 1e-8)  # Avoid division by zero
+
+                outlier_lower = q25 - 1.5 * iqr
+                outlier_upper = q75 + 1.5 * iqr
+
+                # Count outliers
+                outliers = ((numeric_data < outlier_lower) | (numeric_data > outlier_upper)).sum()
+
+                metrics.update({
+                    'volatility_mean': float(volatility.mean()),
+                    'volatility_std': float(volatility.std()),
+                    'skewness_mean': float(skewness.mean()),
+                    'kurtosis_mean': float(kurtosis.mean()),
+                    'outlier_count': int(outliers.sum()),
+                    'outlier_ratio': float(outliers.sum() / (total_rows * numeric_cols)) if total_cols > 0 else 0.0,
+                })
+
+            # Data consistency metrics
+            if isinstance(data.index, pd.DatetimeIndex):
+                # Time series specific metrics
+                time_gaps = data.index.to_series().diff().dropna()
+                if not time_gaps.empty:
+                    expected_freq = time_gaps.mode().iloc[0] if len(time_gaps.mode()) > 0 else time_gaps.median()
+                    irregular_gaps = abs(time_gaps - expected_freq) > pd.Timedelta(seconds=30)
+                    gap_ratio = irregular_gaps.sum() / len(time_gaps)
+
+                    metrics.update({
+                        'time_consistency_ratio': float(1.0 - gap_ratio),
+                        'avg_time_gap_seconds': float(time_gaps.mean().total_seconds()),
+                        'max_time_gap_seconds': float(time_gaps.max().total_seconds()),
+                    })
+
+            # Column completeness
+            col_completeness = 1.0 - (data.isnull().sum() / total_rows)
+
+            # Data diversity (unique ratio for categorical-like columns)
+            diversity_scores = []
+            for col in data.columns:
+                if data[col].dtype in ['object', 'category'] or data[col].nunique() < 50:
+                    unique_ratio = data[col].nunique() / total_rows
+                    diversity_scores.append(min(1.0, unique_ratio * 10))  # Scale up for diversity
+
+            metrics.update({
+                'total_rows': total_rows,
+                'total_columns': total_cols,
+                'missing_values': missing_values,
+                'missing_ratio': float(missing_values / (total_rows * total_cols)) if total_cols > 0 else 0.0,
+                'numeric_columns': numeric_cols,
+                'categorical_columns': categorical_cols,
+                'datetime_columns': datetime_cols,
+                'column_completeness_mean': float(col_completeness.mean()),
+                'column_completeness_std': float(col_completeness.std()),
+                'data_diversity_score': float(np.mean(diversity_scores)) if diversity_scores else 0.0,
+            })
+
+            # Overall quality score (0-100)
+            quality_score = 100.0
+
+            # Penalize missing data
+            missing_penalty = metrics.get('missing_ratio', 0) * 50
+            quality_score -= missing_penalty
+
+            # Penalize outliers
+            outlier_penalty = min(20, metrics.get('outlier_ratio', 0) * 200)
+            quality_score -= outlier_penalty
+
+            # Penalize time inconsistencies
+            time_penalty = (1.0 - metrics.get('time_consistency_ratio', 1.0)) * 10
+            quality_score -= time_penalty
+
+            # Bonus for data diversity
+            diversity_bonus = metrics.get('data_diversity_score', 0) * 5
+            quality_score += diversity_bonus
+
+            metrics['overall_quality_score'] = max(0.0, min(100.0, quality_score))
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating enhanced quality metrics: {e}")
+            metrics = {'error': str(e), 'overall_quality_score': 50.0}  # Default neutral score
+
+        return metrics
+
 # Convenience functions for backwards compatibility
 def regularize_timestamps(
     data: pd.DataFrame,

@@ -96,6 +96,59 @@ class BaseMarketAnalysisComponent(ABC):
             timeframe=self.config.timeframe
         )
     
+    async def save_artifacts(self, artifacts: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+        """
+        Save artifacts using the artifact manager.
+        
+        Args:
+            artifacts: Dictionary of artifacts to save
+            metadata: Optional metadata to include
+            
+        Returns:
+            Dictionary mapping artifact names to file paths
+        """
+        component_name = self.__class__.__name__
+        return await self.artifact_manager.save_artifacts(component_name, artifacts, metadata)
+    
+    async def load_artifacts_from_previous_stage(self, previous_component_name: str, artifact_names: List[str]) -> Dict[str, Any]:
+        """
+        Load artifacts from a previous pipeline stage.
+        
+        Args:
+            previous_component_name: Name of the previous component
+            artifact_names: List of artifact names to load
+            
+        Returns:
+            Dictionary of loaded artifacts
+        """
+        return await self.artifact_manager.load_artifacts_from_previous_stage(previous_component_name, artifact_names)
+    
+    def load_artifacts_from_latest_session(self, component_name: str, artifact_names: List[str]) -> Dict[str, Any]:
+        """
+        Load artifacts from the most recent session.
+        
+        Args:
+            component_name: Name of the component
+            artifact_names: List of artifact names to load
+            
+        Returns:
+            Dictionary of loaded artifacts
+        """
+        return self.artifact_manager.load_artifacts_from_latest_session(component_name, artifact_names)
+    
+    def validate_artifacts(self, required_artifacts: List[str]) -> bool:
+        """
+        Validate that all required artifacts exist and are non-empty.
+        
+        Args:
+            required_artifacts: List of required artifact names
+            
+        Returns:
+            True if all artifacts are valid
+        """
+        component_name = self.__class__.__name__
+        return self.artifact_manager.validate_artifacts(component_name, required_artifacts)
+    
     @abstractmethod
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """

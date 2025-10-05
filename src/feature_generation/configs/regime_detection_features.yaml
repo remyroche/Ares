@@ -56,8 +56,8 @@ regime_detection_features:
     - vol_persistence_score
     - vol_entropy
 
-  # Basic technical indicators for regime identification
-  basic_technical_features:
+  # Enhanced technical indicators for regime identification
+  enhanced_technical_features:
     - ADX  # Trend strength
     - ATR  # Volatility measure
     - SMA_9
@@ -68,7 +68,24 @@ regime_detection_features:
     - OBV  # Volume regime
     - VWAP  # Volume-weighted average price
 
-  # Statistical regime features
+  # Momentum indicators for regime identification (re-enabled for better regime separation)
+  momentum_regime_features:
+    - RSI_14  # Overbought/oversold conditions
+    - RSI_9   # Faster RSI for short-term regimes
+    - RSI_21  # Slower RSI for trend regimes
+    - MACD_12_26_9  # Trend momentum
+    - MACD_8_21_5   # Faster MACD for volatile regimes
+    - STOCHk_14_3_3  # Stochastic oscillator
+    - STOCHd_14_3_3  # Stochastic signal line
+
+  # Volume-price divergence features for regime identification
+  volume_price_divergence_features:
+    - volume_price_correlation_20  # Volume-price relationship
+    - volume_price_divergence_10   # Price-volume divergence
+    - volume_price_divergence_20   # Longer-term divergence
+    - price_volume_oscillator     # Volume-price oscillator
+
+  # Enhanced statistical regime features for better clustering
   statistical_features:
     - autocorrelation_5
     - autocorrelation_20
@@ -81,6 +98,17 @@ regime_detection_features:
     - statistical_persistence
     - distribution_stability
     - statistical_strength
+    # NEW: Advanced regime-specific statistical features
+    - regime_entropy_10
+    - regime_entropy_20
+    - regime_complexity_5
+    - regime_complexity_10
+    - regime_fractal_dimension
+    - regime_hurst_exponent
+    - regime_memory_strength
+    - regime_nonlinearity
+    - regime_chaos_indicators
+    - regime_phase_transitions
 
   # Cross-timeframe correlation features (basic regime relationships)
   cross_timeframe_regime_features:
@@ -99,8 +127,8 @@ regime_detection_features:
 
 # Features that should NOT be used for regime detection
 excluded_trading_features:
-  # Order flow and microstructure features
-  order_flow_features:
+  # Order flow and microstructure features (exclude for regime detection)
+  microstructure_features:
     - taker_buy_ratio
     - taker_sell_ratio
     - market_aggression_index
@@ -115,34 +143,8 @@ excluded_trading_features:
     - price_impact
     - tick_volatility
 
-  # Momentum and divergence features
-  momentum_features:
-    - RSI_MACD_Divergence
-    - Volume_Price_Divergence
-    - momentum_divergence
-    - RSI_14
-    - MACD_12_26_9
-    - STOCHk_14_3_3
-    - STOCHd_14_3_3
-
-  # Support/resistance features
-  support_resistance_features:
-    - distance_to_sr
-    - sr_strength
-    - sr_type
-    - price_position
-
-  # Time-based features
-  time_features:
-    - Hour_Sin
-    - Hour_Cos
-    - DayOfWeek_Sin
-    - DayOfWeek_Cos
-    - is_monday
-    - is_friday
-
-  # Advanced trading indicators
-  trading_indicators:
+  # Advanced trading indicators (exclude for regime detection)
+  advanced_trading_indicators:
     - SuperTrend_10_2.0
     - Parabolic_SAR
     - Williams_R_14
@@ -151,7 +153,7 @@ excluded_trading_features:
     - ROC_10
     - BBP_20_2.0
 
-  # Feature engineering artifacts
+  # Feature engineering artifacts (exclude for regime detection)
   engineered_features:
     - "*_z_score"
     - "*_change"
@@ -160,9 +162,9 @@ excluded_trading_features:
     - "poly_*"
     - "cross_*"
 
-# Configuration for regime detection
+# Enhanced configuration for regime detection with advanced features
 regime_detection_config:
-  max_features: 80  # Limit to essential regime features
+  max_features: 120  # Increased to accommodate advanced features
   feature_selection_method: "regime_relevant"
   exclude_trading_features: true
   focus_on_volatility_regimes: true
@@ -171,6 +173,13 @@ regime_detection_config:
   include_cross_timeframe_correlations: true
   exclude_microstructure_features: true
   exclude_order_flow_features: true
+  # NEW: Advanced regime detection settings
+  enable_entropy_features: true
+  enable_fractal_features: true
+  enable_chaos_features: true
+  enable_phase_transition_features: true
+  enable_regime_complexity_features: true
+  enable_memory_strength_features: true
 
 # Validation rules
 validation_rules:

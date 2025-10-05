@@ -47,6 +47,9 @@ print("🔧 [IMPORTS] Importing tprint...")
 from src.utils.tprint import tprint
 print("✅ [IMPORTS] Tprint imported")
 
+from src.training.steps.main_training_pipeline import SubPipelineStatus
+print("✅ [IMPORTS] SubPipelineStatus imported")
+
 tprint("🔧 [IMPORTS] Importing core decorators...")
 from src.core.decorators import handles_errors, traced, log_execution_time
 tprint("✅ [IMPORTS] Core decorators imported")
@@ -246,18 +249,16 @@ class AresLauncher:
                 'next_stage': 'model_training',
                 'required_files': ['sr_levels.json', 'regime_assignments.parquet', 'labels.parquet', 'features.parquet'],
                 'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata'],
-                'sub_pipelines': ['sr_detection', 'sr_clustering', 'nas_tas_regime_discovery', 'nas_tas_clustering', 'nas_regime_discovery', 'nas_clustering',
-                                'hmm_models_training', 'hmm_ensemble_training',
-                                'feature_lookback_optimization', 'pid_based_feature_generation',
-                                'multi_horizon_profit_labeler', 'triple_barrier_labeling',
-                                'sr_feature_integration']
+                'sub_pipelines': ['sr_detection', 'sr_clustering', 'hybrid_nas_tas_regime_discovery', 'nas_tas_clustering', 'regime_models_training', 'regime_ensemble_training',
+                                'regime_data_splitting', 'multi_horizon_profit_labeler', 'feature_lookback_optimization', 'pid_based_feature_generation',
+                                'final_feature_selection', 'sr_feature_integration']
             },
             'model_training': {
                 'next_stage': 'backtesting',
                 'required_files': ['trained_models.pkl', 'validation_results.json', 'evaluation_results.json'],
                 'required_artifacts': ['model_metadata', 'performance_metrics', 'ensemble_models'],
                 'sub_pipelines': ['hmm_training', 'analyst_model_training', 'analyst_ensemble_training',
-                                'tactician_pre_ml_orchestration', 'tactician_dual_training',
+                                'tactician_pre_ml_orchestration', 'tactician_training',
                                 'regime_specific_training', 'model_validation', 'model_persistence', 'model_evaluation']
             },
             'backtesting': {
@@ -500,8 +501,38 @@ class AresLauncher:
         
         # Filter base_config to only include supported parameters for each config function
         tprint("🔧 [SUB_PIPELINE_CONFIG] Filtering configuration parameters...")
-        supported_params = ['symbol', 'exchange', 'timeframe', 'data_dir']
+        supported_params = ['symbol', 'exchange', 'timeframe', 'data_dir', 'start_date', 'end_date']
         filtered_config = {k: v for k, v in base_config.items() if k in supported_params}
+
+        # Apply date filtering for light mode if not already present
+        if execution_mode == ExecutionModeType.LIGHT and 'start_date' not in filtered_config:
+            tprint("🔧 [SUB_PIPELINE_CONFIG] Applying light mode date filtering...")
+            from datetime import datetime, timedelta
+            from src.config.pipeline_modes import get_light_mode_config
+
+            mode_config = get_light_mode_config()
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=mode_config.lookback_days)
+
+            filtered_config['start_date'] = start_date.strftime('%Y-%m-%d')
+            filtered_config['end_date'] = end_date.strftime('%Y-%m-%d')
+
+            tprint(f"📅 [SUB_PIPELINE_CONFIG] Light mode date range: {filtered_config['start_date']} to {filtered_config['end_date']}")
+            tprint(f"📅 [SUB_PIPELINE_CONFIG] Lookback days: {mode_config.lookback_days}")
+        elif execution_mode == ExecutionModeType.BLANK and 'start_date' not in filtered_config:
+            tprint("🔧 [SUB_PIPELINE_CONFIG] Applying blank mode date filtering...")
+            from datetime import datetime, timedelta
+            from src.config.pipeline_modes import get_blank_mode_config
+
+            mode_config = get_blank_mode_config()
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=mode_config.lookback_days)
+
+            filtered_config['start_date'] = start_date.strftime('%Y-%m-%d')
+            filtered_config['end_date'] = end_date.strftime('%Y-%m-%d')
+
+            tprint(f"📅 [SUB_PIPELINE_CONFIG] Blank mode date range: {filtered_config['start_date']} to {filtered_config['end_date']}")
+            tprint(f"📅 [SUB_PIPELINE_CONFIG] Lookback days: {mode_config.lookback_days}")
 
         # SET 15M AS DEFAULT TIMEFRAME FOR NAS-RELATED SUB-PIPELINES
         nas_sub_pipelines = [
@@ -511,6 +542,8 @@ class AresLauncher:
             'nas_clustering',           # NAS-based regime clustering
             'nas_tas_models_training',      # Train regime detection models using NAS-TAS regime labels
             'nas_tas_ensemble_training',    # Train ensemble regime detection models using NAS-TAS regime labels
+            'regime_models_training',       # Train regime detection models using NAS-TAS regime labels
+            'regime_ensemble_training',     # Train ensemble regime detection models using NAS-TAS regime labels
             'nas'                       # Combined NAS regime discovery + clustering
         ]
         
@@ -536,7 +569,14 @@ class AresLauncher:
             config = get_full_pipeline_config(**filtered_config)
         elif execution_mode == ExecutionModeType.LIGHT:
             tprint("🔧 [SUB_PIPELINE_CONFIG] Using LIGHT execution mode configuration")
-            config = get_light_pipeline_config(**filtered_config)
+            # Remove date parameters from filtered_config for light mode since the function doesn't accept them
+            light_config = {k: v for k, v in filtered_config.items() if k not in ['start_date', 'end_date']}
+            config = get_light_pipeline_config(**light_config)
+            # Apply date filtering to the config object
+            if 'start_date' in filtered_config and 'end_date' in filtered_config:
+                config.start_date = filtered_config['start_date']
+                config.end_date = filtered_config['end_date']
+                tprint(f"📅 [SUB_PIPELINE_CONFIG] Applied date filtering to light mode config: {config.start_date} to {config.end_date}")
         elif execution_mode == ExecutionModeType.BLANK:
             tprint("🔧 [SUB_PIPELINE_CONFIG] Using BLANK execution mode configuration")
             config = get_blank_pipeline_config(**filtered_config)
@@ -654,10 +694,11 @@ class AresLauncher:
                 # Execute stage
                 stage_result = await self.pipeline._execute_stage(stage, config)
                 result.stage_results[stage] = stage_result
-                
-                # Create outcome files for each sub-pipeline in the stage
+
+                # Create outcome files for each successful sub-pipeline in the stage
+                # This ensures clustering results are saved even if later sub-pipelines fail
                 for sub_result in stage_result:
-                    if hasattr(sub_result, 'sub_pipeline_name'):
+                    if hasattr(sub_result, 'sub_pipeline_name') and sub_result.status == SubPipelineStatus.COMPLETED:
                         await self._create_outcome_file(stage.value, sub_result.sub_pipeline_name, sub_result, config)
                 
                 # Check if stage failed
@@ -936,6 +977,8 @@ class AresLauncher:
             'nas_tas_clustering': "Advanced regime clustering using combined NAS-TAS approaches with economic awareness and ensemble methods",
             'nas_tas_regime_discovery': "Discover market regimes using hybrid NAS-TAS approach (combines Neural Architecture Search & Tree-based Architecture Search)",
             'nas_regime_discovery': "Discover market regimes using NAS (DEPRECATED - use nas_tas_regime_discovery instead)",
+            'regime_models_training': "Train regime detection models using CatBoost, Bayesian Rule Lists, and ExtraTrees",
+            'regime_ensemble_training': "Train ensemble regime detection models",
             'nas_tas_models_training': "Train regime detection models using NAS-TAS regime labels",
             'nas_tas_ensemble_training': "Train ensemble regime detection models using NAS-TAS regime labels",
             'nas': "Combined NAS regime discovery + clustering (DEPRECATED - use nas_tas_regime_discovery instead)",
@@ -947,8 +990,8 @@ class AresLauncher:
             
             # Model Training (10 sub-pipelines)
             'analyst_model_training': "Train analyst-specific models",
-            'tactician_pre_ml_orchestration': "Pre-ML processing: separate long/short signals, optimize features, generate PID features, apply horizon labeling, select features",
-            'tactician_dual_training': "Train multiple Tactician models: 4 base models + 1 ensemble for long signals, 4 base models + 1 ensemble for short signals (8 total models)",
+            'tactician_pre_ml_orchestration': "Pre-ML processing: unified signal processing, optimize features, generate PID features, apply horizon labeling, select features",
+            'tactician_training': "Train Tactician models on unified dataset: 3 base models + 1 ensemble (4 total models)",
             'tactician_model_training': "Train tactician-specific models",
             'hmm_training': "HMM-based model training",
             'ensemble_training': "Ensemble model training",
@@ -993,11 +1036,15 @@ class AresLauncher:
             'nas_tas_clustering': ['sr_clustering'],
             'nas_tas_regime_discovery': ['sr_clustering'],
             'nas_regime_discovery': ['nas_tas_clustering'],  # DEPRECATED - use nas_tas_regime_discovery instead
-            'nas_tas_models_training': ['nas_tas_regime_discovery'],  # Updated to use hybrid discovery
-            'nas_tas_ensemble_training': ['nas_tas_models_training'],
-            'feature_lookback_optimization': ['hmm_regime_discovery', 'nas_tas_regime_discovery'],
+            'hybrid_nas_tas_regime_discovery': ['sr_clustering'],
+            'nas_tas_clustering': ['hybrid_nas_tas_regime_discovery'],
+            'regime_models_training': ['nas_tas_clustering'],
+            'regime_ensemble_training': ['regime_models_training'],
+            'regime_data_splitting': ['regime_ensemble_training'],
+            'multi_horizon_profit_labeler': ['regime_data_splitting'],
+            'feature_lookback_optimization': ['multi_horizon_profit_labeler'],
             'pid_based_feature_generation': ['feature_lookback_optimization'],
-            'multi_horizon_profit_labeler': ['pid_based_feature_generation'],
+            'final_feature_selection': ['pid_based_feature_generation'],
             'triple_barrier_labeling': ['hmm_regime_discovery'],
             'sr_feature_integration': ['multi_horizon_profit_labeler'],
             
@@ -1006,7 +1053,7 @@ class AresLauncher:
             'analyst_model_training': ['hmm_training'],
             'analyst_ensemble_training': ['analyst_model_training'],
             'tactician_pre_ml_orchestration': ['analyst_ensemble_training'],
-            'tactician_dual_training': ['tactician_pre_ml_orchestration'],
+            'tactician_training': ['tactician_pre_ml_orchestration'],
             'regime_specific_training': ['tactician_ensemble_training'],
             'model_validation': ['regime_specific_training'],
             'model_persistence': ['model_validation'],
@@ -1049,11 +1096,15 @@ class AresLauncher:
             'nas_tas_clustering': ['nas_tas_clustering_report.json', 'nas_tas_regime_assignments.parquet'],
             'nas_tas_regime_discovery': ['nas_tas_consolidated_report.json', 'nas_tas_regime_assignments.parquet'],
             'nas_regime_discovery': ['nas_regime_assignments.parquet'],
-            'nas_tas_models_training': ['nas_tas_models_training_result.json'],
-            'nas_tas_ensemble_training': ['nas_tas_ensemble_training_result.json'],
+            'hybrid_nas_tas_regime_discovery': ['hybrid_nas_tas_regime_discovery_result.json'],
+            'nas_tas_clustering': ['nas_tas_clustering_result.json'],
+            'regime_models_training': ['regime_models_training_result.json'],
+            'regime_ensemble_training': ['regime_ensemble_training_result.json'],
+            'regime_data_splitting': ['regime_data_splitting_result.parquet'],
+            'multi_horizon_profit_labeler': ['multi_horizon_labels.parquet'],
             'feature_lookback_optimization': ['optimized_features.parquet'],
             'pid_based_feature_generation': ['pid_based_features.parquet'],
-            'multi_horizon_profit_labeler': ['multi_horizon_labels.parquet'],
+            'final_feature_selection': ['final_features.parquet'],
             'triple_barrier_labeling': ['labels.parquet'],
             'sr_feature_integration': ['sr_features.json'],
             
@@ -1061,8 +1112,8 @@ class AresLauncher:
             'hmm_training': ['hmm_model.pkl'],
             'analyst_model_training': ['analyst_model.pkl'],
             'analyst_ensemble_training': ['analyst_ensemble.pkl'],
-            'tactician_pre_ml_orchestration': ['tactician_pre_ml_results.pkl', 'long_training_data.parquet', 'short_training_data.parquet'],
-            'tactician_dual_training': ['tactician_long_model.pkl', 'tactician_short_model.pkl', 'tactician_long_ensemble.pkl', 'tactician_short_ensemble.pkl'],
+            'tactician_pre_ml_orchestration': ['tactician_pre_ml_results.pkl', 'unified_training_data.parquet'],
+            'tactician_training': ['tactician_unified_models.pkl'],
             'regime_specific_training': ['regime_models.pkl'],
             'model_validation': ['validation_results.json'],
             'model_persistence': ['persisted_models.pkl'],
@@ -1231,7 +1282,7 @@ Examples:
     
     parser.add_argument(
         '--sub-pipeline', '--sub_pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, nas_tas_regime_discovery, nas_tas_clustering, nas_regime_discovery (DEPRECATED), nas_clustering (DEPRECATED), nas_tas_models_training, nas_tas_ensemble_training, hmm_training, analyst_model_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_dual_training, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, nas_tas_regime_discovery, nas_tas_clustering, nas_regime_discovery (DEPRECATED), nas_clustering (DEPRECATED), nas_tas_models_training, nas_tas_ensemble_training, hmm_training, analyst_model_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_training, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
     )
     
     parser.add_argument(

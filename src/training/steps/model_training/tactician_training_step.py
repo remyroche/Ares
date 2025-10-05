@@ -1,21 +1,15 @@
 """
-Tactician Dual Training Step - Enhanced for Long/Short Differentiation
+Tactician Training Step - Unified Multi-Model Training
 
-This step handles training multiple Tactician models for both long and short signals:
+This step handles training multiple Tactician models with a unified approach:
 
-LONG MODELS (4 base models + 1 ensemble):
-- XGBOOST model for long signals
-- LIGHTGBM model for long signals
-- DEEPSCALER_1M model for long signals
-- FINANCIAL_RESNET model for long signals
-- Ensemble model combining all long base models + ALL FEATURES + HMM + Analyst outputs
+BASE MODELS (3 models):
+- RandomSurvivalForest model
+- XGBoost model
+- ElasticNetCV model
 
-SHORT MODELS (4 base models + 1 ensemble):
-- XGBOOST model for short signals
-- LIGHTGBM model for short signals
-- DEEPSCALER_1M model for short signals
-- FINANCIAL_RESNET model for short signals
-- Ensemble model combining all short base models + ALL FEATURES + HMM + Analyst outputs
+ENSEMBLE MODEL (1 model):
+- Ensemble model combining all base models + ALL FEATURES + HMM + Analyst outputs
 
 🎯 ENSEMBLE FEATURE INTEGRATION:
 Each ensemble model includes:
@@ -26,8 +20,7 @@ Each ensemble model includes:
 - Technical indicators and market data
 - Multi-horizon target variables
 
-The training uses differentiated features and horizon labeling for each direction,
-ensuring optimal performance for both long and short trading scenarios.
+The training uses a unified approach with optimized features and horizon labeling.
 
 ENHANCED FEATURES:
 - Comprehensive error handling with detailed failure reporting
@@ -102,22 +95,20 @@ except ImportError as e:
 class TrainingPhase(Enum):
     """Training phase enumeration."""
     PRE_ML_ORCHESTRATION = "pre_ml_orchestration"
-    LONG_MODEL_TRAINING = "long_model_training"
-    SHORT_MODEL_TRAINING = "short_model_training"
-    LONG_ENSEMBLE_TRAINING = "long_ensemble_training"
-    SHORT_ENSEMBLE_TRAINING = "short_ensemble_training"
+    BASE_MODEL_TRAINING = "base_model_training"
+    ENSEMBLE_TRAINING = "ensemble_training"
     VALIDATION = "validation"
     COMPLETED = "completed"
     FAILED = "failed"
 
 
 @dataclass
-class DualTrainingConfig:
-    """Configuration for Tactician dual training."""
+class TacticianTrainingConfig:
+    """Configuration for Tactician unified training."""
     # Pre-ML orchestration parameters
     min_analyst_confidence: float = 0.5
     subsequent_minutes: int = 45
-    output_directory: str = "generated/tactician_dual_training"
+    output_directory: str = "generated/tactician_training"
 
     # Feature processing parameters
     enable_feature_optimization: bool = True
@@ -171,55 +162,47 @@ class DualTrainingConfig:
 
 
 @dataclass
-class DualTrainingResult:
-    """Result of Tactician dual training."""
+class TacticianTrainingResult:
+    """Result of Tactician unified training."""
     # Orchestration results
     orchestration_result: Optional[OrchestratorResult] = None
 
     # Training results
-    long_base_models: Dict[str, Any] = None
-    short_base_models: Dict[str, Any] = None
-    long_ensemble_models: Dict[str, Any] = None
-    short_ensemble_models: Dict[str, Any] = None
+    base_models: Dict[str, Any] = None
+    ensemble_models: Dict[str, Any] = None
 
     # Performance metrics
-    long_training_metrics: Dict[str, Any] = None
-    short_training_metrics: Dict[str, Any] = None
-    long_ensemble_metrics: Dict[str, Any] = None
-    short_ensemble_metrics: Dict[str, Any] = None
+    base_training_metrics: Dict[str, Any] = None
+    ensemble_metrics: Dict[str, Any] = None
 
     # Validation results
-    long_validation_predictions: Dict[str, np.ndarray] = None
-    short_validation_predictions: Dict[str, np.ndarray] = None
+    validation_predictions: Dict[str, np.ndarray] = None
 
     # Metadata
     execution_time: float = 0.0
-    total_long_samples: int = 0
-    total_short_samples: int = 0
+    total_samples: int = 0
     training_phase: TrainingPhase = TrainingPhase.PRE_ML_ORCHESTRATION
 
     # Status tracking
     pre_ml_orchestration_completed: bool = False
-    long_base_training_completed: bool = False
-    short_base_training_completed: bool = False
-    long_ensemble_training_completed: bool = False
-    short_ensemble_training_completed: bool = False
+    base_training_completed: bool = False
+    ensemble_training_completed: bool = False
     validation_completed: bool = False
 
 
-class TacticianDualTrainingStep:
+class TacticianTrainingStep:
     """
-    Tactician Dual Training Step.
+    Tactician Training Step.
 
-    Handles training Tactician models twice (once for longs, once for shorts)
-    with differentiated features and horizon labeling for each direction.
+    Handles training Tactician models with a unified approach using
+    RandomSurvivalForest, XGBoost, and ElasticNetCV base models.
     """
 
-    def __init__(self, config: Optional[DualTrainingConfig] = None):
-        """Initialize the Tactician dual training step."""
+    def __init__(self, config: Optional[TacticianTrainingConfig] = None):
+        """Initialize the Tactician training step."""
         try:
-            self.config = config or DualTrainingConfig()
-            self.logger = system_logger.getChild('TacticianDualTrainingStep')
+            self.config = config or TacticianTrainingConfig()
+            self.logger = system_logger.getChild('TacticianTrainingStep')
 
             # Initialize hardware optimizers
             if COMMON_OPS_AVAILABLE:
@@ -264,23 +247,23 @@ class TacticianDualTrainingStep:
                 self.base_trainer = None
                 self.ensemble_trainer = None
 
-            tprint_success("✅ TacticianDualTrainingStep initialized successfully")
+            tprint_success("✅ TacticianTrainingStep initialized successfully")
             tprint_info(f"Min analyst confidence: {self.config.min_analyst_confidence}")
             tprint_info(f"Output directory: {self.config.output_directory}")
 
         except Exception as e:
-            tprint_error(f"❌ Failed to initialize TacticianDualTrainingStep: {e}")
+            tprint_error(f"❌ Failed to initialize TacticianTrainingStep: {e}")
             raise
 
-    async def train_dual_tactician_models(
+    async def train_tactician_models(
         self,
         analyst_signals: pd.DataFrame,
         market_data: pd.DataFrame,
         feature_names: List[str],
         **kwargs
-    ) -> DualTrainingResult:
+    ) -> TacticianTrainingResult:
         """
-        Train Tactician models twice (longs and shorts) with differentiated processing.
+        Train Tactician models with a unified approach.
 
         Args:
             analyst_signals: DataFrame with Analyst signals and confidence scores
@@ -289,16 +272,16 @@ class TacticianDualTrainingStep:
             **kwargs: Additional parameters
 
         Returns:
-            DualTrainingResult with trained models and metrics
+            TacticianTrainingResult with trained models and metrics
         """
         start_time = tprint_timer()
-        tprint_info("🚀 Starting Tactician dual training...")
+        tprint_info("🚀 Starting Tactician unified training...")
 
-        result = DualTrainingResult()
+        result = TacticianTrainingResult()
         result.training_phase = TrainingPhase.PRE_ML_ORCHESTRATION
 
         try:
-            # Step 1: Pre-ML orchestration (separate long/short, optimize features, etc.)
+            # Step 1: Pre-ML orchestration (unified approach)
             tprint_info("📊 Step 1: Pre-ML orchestration...")
             orchestration_result = await self._run_pre_ml_orchestration(
                 analyst_signals, market_data, feature_names
@@ -308,76 +291,41 @@ class TacticianDualTrainingStep:
                 raise ValueError("Pre-ML orchestration failed")
 
             result.orchestration_result = orchestration_result
-            result.total_long_samples = orchestration_result.total_long_samples
-            result.total_short_samples = orchestration_result.total_short_samples
+            result.total_samples = orchestration_result.total_samples
             result.pre_ml_orchestration_completed = True
-            result.training_phase = TrainingPhase.LONG_MODEL_TRAINING
+            result.training_phase = TrainingPhase.BASE_MODEL_TRAINING
 
-            tprint_success(f"✅ Pre-ML orchestration completed: {result.total_long_samples} long, {result.total_short_samples} short samples")
+            tprint_success(f"✅ Pre-ML orchestration completed: {result.total_samples} total samples")
 
-            # Step 2: Train base models for long signals
-            if self.config.train_base_models and result.total_long_samples >= self.config.min_training_samples:
-                tprint_info("📈 Step 2: Training base models for long signals...")
-                long_base_result = await self._train_base_models(
-                    orchestration_result.long_training_data,
-                    orchestration_result.long_selected_features,
-                    "long"
+            # Step 2: Train base models
+            if self.config.train_base_models and result.total_samples >= self.config.min_training_samples:
+                tprint_info("📈 Step 2: Training base models...")
+                base_result = await self._train_base_models(
+                    orchestration_result.training_data,
+                    orchestration_result.selected_features
                 )
-                result.long_base_models = long_base_result.get('models', {})
-                result.long_training_metrics = long_base_result.get('metrics', {})
-                result.long_base_training_completed = True
-                tprint_success("✅ Long base model training completed")
+                result.base_models = base_result.get('models', {})
+                result.base_training_metrics = base_result.get('metrics', {})
+                result.base_training_completed = True
+                tprint_success("✅ Base model training completed")
             else:
-                tprint_info("⏭️ Skipping long base model training - insufficient data or disabled")
+                tprint_info("⏭️ Skipping base model training - insufficient data or disabled")
 
-            # Step 3: Train base models for short signals
-            if self.config.train_base_models and result.total_short_samples >= self.config.min_training_samples:
-                tprint_info("📉 Step 3: Training base models for short signals...")
-                short_base_result = await self._train_base_models(
-                    orchestration_result.short_training_data,
-                    orchestration_result.short_selected_features,
-                    "short"
+            # Step 3: Train ensemble models
+            if self.config.train_ensemble_models and result.total_samples >= self.config.min_training_samples and result.base_models:
+                tprint_info("🔄 Step 3: Training ensemble models...")
+                ensemble_result = await self._train_ensemble_models(
+                    orchestration_result.training_data,
+                    orchestration_result.selected_features,
+                    result.base_models
                 )
-                result.short_base_models = short_base_result.get('models', {})
-                result.short_training_metrics = short_base_result.get('metrics', {})
-                result.short_base_training_completed = True
-                tprint_success("✅ Short base model training completed")
+                result.ensemble_models = ensemble_result.get('models', {})
+                result.ensemble_metrics = ensemble_result.get('metrics', {})
+                result.ensemble_training_completed = True
+                tprint_success("✅ Ensemble model training completed with FULL FEATURE INTEGRATION")
+                tprint_info("   🎯 Ensemble includes: Base features + HMM outputs + Analyst predictions + OOF from base models")
             else:
-                tprint_info("⏭️ Skipping short base model training - insufficient data or disabled")
-
-            # Step 4: Train ensemble models for long signals
-            if self.config.train_ensemble_models and result.total_long_samples >= self.config.min_training_samples and result.long_base_models:
-                tprint_info("🔄 Step 4: Training ensemble models for long signals...")
-                long_ensemble_result = await self._train_ensemble_models(
-                    orchestration_result.long_training_data,
-                    orchestration_result.long_selected_features,
-                    result.long_base_models,
-                    "long"
-                )
-                result.long_ensemble_models = long_ensemble_result.get('models', {})
-                result.long_ensemble_metrics = long_ensemble_result.get('metrics', {})
-                result.long_ensemble_training_completed = True
-                tprint_success("✅ Long ensemble model training completed with FULL FEATURE INTEGRATION")
-                tprint_info("   🎯 Long ensemble includes: Base features + HMM outputs + Analyst predictions + OOF from base models")
-            else:
-                tprint_info("⏭️ Skipping long ensemble model training - insufficient data, disabled, or no base models")
-
-            # Step 5: Train ensemble models for short signals
-            if self.config.train_ensemble_models and result.total_short_samples >= self.config.min_training_samples and result.short_base_models:
-                tprint_info("🔄 Step 5: Training ensemble models for short signals...")
-                short_ensemble_result = await self._train_ensemble_models(
-                    orchestration_result.short_training_data,
-                    orchestration_result.short_selected_features,
-                    result.short_base_models,
-                    "short"
-                )
-                result.short_ensemble_models = short_ensemble_result.get('models', {})
-                result.short_ensemble_metrics = short_ensemble_result.get('metrics', {})
-                result.short_ensemble_training_completed = True
-                tprint_success("✅ Short ensemble model training completed with FULL FEATURE INTEGRATION")
-                tprint_info("   🎯 Short ensemble includes: Base features + HMM outputs + Analyst predictions + OOF from base models")
-            else:
-                tprint_info("⏭️ Skipping short ensemble model training - insufficient data, disabled, or no base models")
+                tprint_info("⏭️ Skipping ensemble model training - insufficient data, disabled, or no base models")
 
             # Step 6: Model evaluation and validation
             tprint_info("✅ Step 6: Model evaluation and validation...")
@@ -438,15 +386,14 @@ class TacticianDualTrainingStep:
     async def _train_base_models(
         self,
         training_data: pd.DataFrame,
-        selected_features: List[str],
-        signal_type: str
+        selected_features: List[str]
     ) -> Dict[str, Any]:
-        """Train multiple base models for a specific signal type."""
+        """Train multiple base models with unified approach."""
         try:
-            tprint_info(f"🔧 Training base models for {signal_type} signals...")
+            tprint_info("🔧 Training base models...")
 
             if training_data.empty or not selected_features:
-                raise ValueError(f"Insufficient training data for {signal_type} models")
+                raise ValueError("Insufficient training data for base models")
 
             # Prepare training data
             X = training_data[selected_features].values
@@ -460,29 +407,27 @@ class TacticianDualTrainingStep:
             all_models = {}
             all_metrics = {}
 
-            # Define multiple base model types to train
+            # Define the new base model types to train
             base_model_types = [
+                "RANDOM_SURVIVAL_FOREST",
                 "XGBOOST",
-                "LIGHTGBM",
-                "DEEPSCALER_1M",
-                "FINANCIAL_RESNET"
+                "ELASTIC_NET_CV"
             ]
 
             # Train each base model type
             for model_type in base_model_types:
                 try:
-                    tprint_info(f"   🔧 Training {model_type} model for {signal_type} signals...")
+                    tprint_info(f"   🔧 Training {model_type} model...")
 
                     # Create training configuration for this specific model type
                     training_config = {
-                        'signal_type': signal_type,
                         'model_type': model_type,
                         'training_data': training_data,
                         'feature_columns': selected_features,
                         'target_columns': [col for col in training_data.columns if col.startswith('target_')],
                         'sample_weight': sample_weight,
                         'save_models': self.config.save_models,
-                        'output_directory': f"{self.config.output_directory}/{signal_type}_base_models/{model_type.lower()}"
+                        'output_directory': f"{self.config.output_directory}/base_models/{model_type.lower()}"
                     }
 
                     # Call the existing base trainer with specific model type
@@ -493,19 +438,19 @@ class TacticianDualTrainingStep:
                     # Store results with model type prefix
                     if training_result.get('models'):
                         for model_name, model in training_result['models'].items():
-                            all_models[f"{signal_type}_{model_type.lower()}_{model_name}"] = model
+                            all_models[f"{model_type.lower()}_{model_name}"] = model
 
                     if training_result.get('metrics'):
-                        all_metrics[f"{signal_type}_{model_type.lower()}"] = training_result['metrics']
+                        all_metrics[f"{model_type.lower()}"] = training_result['metrics']
 
-                    tprint_success(f"   ✅ {model_type} model trained for {signal_type} signals")
+                    tprint_success(f"   ✅ {model_type} model trained")
 
                 except Exception as e:
-                    tprint_warning(f"   ⚠️ Failed to train {model_type} model for {signal_type}: {e}")
+                    tprint_warning(f"   ⚠️ Failed to train {model_type} model: {e}")
                     continue
 
             if not all_models:
-                raise ValueError(f"Failed to train any base models for {signal_type}")
+                raise ValueError("Failed to train any base models")
 
             return {
                 'models': all_models,
@@ -518,7 +463,7 @@ class TacticianDualTrainingStep:
             }
 
         except Exception as e:
-            tprint_error(f"❌ Base model training for {signal_type} failed: {e}")
+            tprint_error(f"❌ Base model training failed: {e}")
             return {
                 'models': {},
                 'metrics': {},
@@ -530,15 +475,14 @@ class TacticianDualTrainingStep:
         self,
         training_data: pd.DataFrame,
         selected_features: List[str],
-        base_models: Dict[str, Any],
-        signal_type: str
+        base_models: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Train ensemble models for a specific signal type with full feature integration."""
+        """Train ensemble models with full feature integration."""
         try:
-            tprint_info(f"🔄 Training ensemble models for {signal_type} signals with full feature integration...")
+            tprint_info("🔄 Training ensemble models with full feature integration...")
 
             if training_data.empty or not selected_features or not base_models:
-                raise ValueError(f"Insufficient data for {signal_type} ensemble training")
+                raise ValueError("Insufficient data for ensemble training")
 
             # Prepare training data (same as base models)
             X = training_data[selected_features].values
@@ -551,16 +495,15 @@ class TacticianDualTrainingStep:
 
             # Train ensemble models using existing trainer
             if self.ensemble_trainer:
-                # Create training configuration for this signal type with full feature integration
+                # Create training configuration with full feature integration
                 training_config = {
-                    'signal_type': signal_type,
                     'training_data': training_data,
                     'base_models': base_models,
                     'feature_columns': selected_features,
                     'target_columns': [col for col in training_data.columns if col.startswith('target_')],
                     'sample_weight': sample_weight,
                     'save_models': self.config.save_models,
-                    'output_directory': f"{self.config.output_directory}/{signal_type}_ensemble_models",
+                    'output_directory': f"{self.config.output_directory}/ensemble_models",
                     'enable_full_integration': True,  # Enable all feature integration
                     'include_hmm_features': True,     # Include HMM regime features
                     'include_analyst_features': True, # Include Analyst model outputs
@@ -598,7 +541,7 @@ class TacticianDualTrainingStep:
                 # Log what features were included
                 if training_result.get('metadata'):
                     metadata = training_result['metadata']
-                    tprint_info(f"   📊 Ensemble training included:")
+                    tprint_info("   📊 Ensemble training included:")
                     tprint_info(f"      - Base features: {metadata.get('base_features_count', 'N/A')}")
                     tprint_info(f"      - HMM features: {metadata.get('hmm_features_count', 'N/A')}")
                     tprint_info(f"      - Analyst features: {metadata.get('analyst_features_count', 'N/A')}")
@@ -625,7 +568,7 @@ class TacticianDualTrainingStep:
                 }
 
         except Exception as e:
-            tprint_error(f"❌ Ensemble model training for {signal_type} failed: {e}")
+            tprint_error(f"❌ Ensemble model training failed: {e}")
             return {
                 'models': {},
                 'metrics': {},
@@ -634,7 +577,7 @@ class TacticianDualTrainingStep:
                 'feature_integration_complete': False
             }
 
-    async def _save_training_results(self, result: DualTrainingResult):
+    async def _save_training_results(self, result: TacticianTrainingResult):
         """Save training results to disk."""
         try:
             output_dir = Path(self.config.output_directory)
@@ -644,55 +587,45 @@ class TacticianDualTrainingStep:
             if result.orchestration_result:
                 orchestration_path = output_dir / "orchestration_results.json"
                 orchestration_data = {
-                    'total_long_samples': result.orchestration_result.total_long_samples,
-                    'total_short_samples': result.orchestration_result.total_short_samples,
+                    'total_samples': result.orchestration_result.total_samples,
                     'execution_time': result.orchestration_result.execution_time,
-                    'long_selected_features': result.orchestration_result.long_selected_features,
-                    'short_selected_features': result.orchestration_result.short_selected_features,
-                    'long_data_quality_score': result.orchestration_result.long_data_quality_score,
-                    'short_data_quality_score': result.orchestration_result.short_data_quality_score
+                    'selected_features': result.orchestration_result.selected_features,
+                    'data_quality_score': result.orchestration_result.data_quality_score
                 }
                 safe_json_dump(orchestration_data, orchestration_path)
                 tprint_debug(f"💾 Saved orchestration results: {orchestration_path}")
 
-            # Save long training results
-            if result.long_base_models or result.long_ensemble_models:
-                long_results = {
-                    'base_models_count': len(result.long_base_models) if result.long_base_models else 0,
-                    'ensemble_models_count': len(result.long_ensemble_models) if result.long_ensemble_models else 0,
-                    'training_metrics': result.long_training_metrics,
-                    'ensemble_metrics': result.long_ensemble_metrics,
-                    'samples_used': result.total_long_samples
+            # Save base model training results
+            if result.base_models:
+                base_results = {
+                    'base_models_count': len(result.base_models),
+                    'training_metrics': result.base_training_metrics,
+                    'samples_used': result.total_samples
                 }
-                long_path = output_dir / "long_training_results.json"
-                safe_json_dump(long_results, long_path)
-                tprint_debug(f"💾 Saved long training results: {long_path}")
+                base_path = output_dir / "base_training_results.json"
+                safe_json_dump(base_results, base_path)
+                tprint_debug(f"💾 Saved base training results: {base_path}")
 
-            # Save short training results
-            if result.short_base_models or result.short_ensemble_models:
-                short_results = {
-                    'base_models_count': len(result.short_base_models) if result.short_base_models else 0,
-                    'ensemble_models_count': len(result.short_ensemble_models) if result.short_ensemble_models else 0,
-                    'training_metrics': result.short_training_metrics,
-                    'ensemble_metrics': result.short_ensemble_metrics,
-                    'samples_used': result.total_short_samples
+            # Save ensemble model training results
+            if result.ensemble_models:
+                ensemble_results = {
+                    'ensemble_models_count': len(result.ensemble_models),
+                    'ensemble_metrics': result.ensemble_metrics,
+                    'samples_used': result.total_samples
                 }
-                short_path = output_dir / "short_training_results.json"
-                safe_json_dump(short_results, short_path)
-                tprint_debug(f"💾 Saved short training results: {short_path}")
+                ensemble_path = output_dir / "ensemble_training_results.json"
+                safe_json_dump(ensemble_results, ensemble_path)
+                tprint_debug(f"💾 Saved ensemble training results: {ensemble_path}")
 
             # Save metadata
             metadata = {
                 'execution_time': result.execution_time,
                 'training_phase': result.training_phase.value if hasattr(result.training_phase, 'value') else str(result.training_phase),
                 'pre_ml_orchestration_completed': result.pre_ml_orchestration_completed,
-                'long_base_training_completed': result.long_base_training_completed,
-                'short_base_training_completed': result.short_base_training_completed,
-                'long_ensemble_training_completed': result.long_ensemble_training_completed,
-                'short_ensemble_training_completed': result.short_ensemble_training_completed,
+                'base_training_completed': result.base_training_completed,
+                'ensemble_training_completed': result.ensemble_training_completed,
                 'validation_completed': result.validation_completed,
-                'total_long_samples': result.total_long_samples,
-                'total_short_samples': result.total_short_samples,
+                'total_samples': result.total_samples,
                 'config': {
                     'min_analyst_confidence': self.config.min_analyst_confidence,
                     'subsequent_minutes': self.config.subsequent_minutes,
@@ -704,7 +637,7 @@ class TacticianDualTrainingStep:
                 'timestamp': time.time()
             }
 
-            metadata_path = output_dir / "dual_training_metadata.json"
+            metadata_path = output_dir / "training_metadata.json"
             safe_json_dump(metadata, metadata_path)
             tprint_debug(f"💾 Saved training metadata: {metadata_path}")
 
@@ -737,7 +670,7 @@ class TacticianDualTrainingStep:
 
         return metrics
 
-    def _add_comprehensive_reporting(self, result: DualTrainingResult, start_time: float) -> DualTrainingResult:
+    def _add_comprehensive_reporting(self, result: TacticianTrainingResult, start_time: float) -> TacticianTrainingResult:
         """Add comprehensive reporting and metrics to dual training results."""
         try:
             total_time = time.time() - start_time
@@ -887,7 +820,7 @@ class TacticianDualTrainingStep:
             # Return result without reporting if it fails
             return result
 
-    def _evaluate_model_performance(self, result: DualTrainingResult) -> DualTrainingResult:
+    def _evaluate_model_performance(self, result: TacticianTrainingResult) -> TacticianTrainingResult:
         """Evaluate trained models and calculate comprehensive performance metrics."""
         try:
             tprint_info("🔍 Evaluating model performance across all trained models...")

@@ -115,21 +115,37 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             optimal_clustering_result = artifacts.get('optimal_regime_clustering_result', {})
             if optimal_clustering_result:
                 clustering_result = optimal_clustering_result.get('clustering_result')
-                if clustering_result and isinstance(clustering_result, dict):
-                    regime_labels = clustering_result.get('cluster_assignments')
-                    # Handle case where assignments are stored as string representation
-                    if isinstance(regime_labels, str):
-                        try:
-                            # Parse numpy array string representation
-                            # Remove brackets and split by spaces, then convert to int
-                            clean_str = regime_labels.strip('[]')
-                            regime_labels = np.array([int(x) for x in clean_str.split() if x.strip()])
-                            tprint("🔍 [REGIME_ENSEMBLE] Parsed regime labels from string representation", color="blue")
-                        except Exception as e:
-                            tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to parse regime labels string: {e}", color="yellow")
-                            regime_labels = None
-                    if regime_labels is not None:
-                        tprint("🔍 [REGIME_ENSEMBLE] Found regime labels in optimal_regime_clustering_result", color="blue")
+                if clustering_result:
+                    tprint(f"🔍 [REGIME_ENSEMBLE] clustering_result type: {type(clustering_result)}", color="blue")
+
+                    if isinstance(clustering_result, dict):
+                        # Handle dict case (normal structure)
+                        regime_labels = clustering_result.get('cluster_assignments')
+                        # Handle case where assignments are stored as string representation
+                        if isinstance(regime_labels, str):
+                            try:
+                                # Parse numpy array string representation (e.g., "[2 2 2 ... 4 6 6]")
+                                clean_str = regime_labels.strip('[]')
+                                regime_labels = np.array([int(x) for x in clean_str.split() if x.strip()])
+                                tprint("🔍 [REGIME_ENSEMBLE] Parsed regime labels from string representation", color="blue")
+                            except Exception as e:
+                                tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to parse regime labels string: {e}", color="yellow")
+                                regime_labels = None
+                        if regime_labels is not None:
+                            tprint("🔍 [REGIME_ENSEMBLE] Found regime labels in optimal_regime_clustering_result", color="blue")
+                    elif hasattr(clustering_result, 'cluster_assignments'):
+                        # Handle object case (fallback)
+                        regime_labels = clustering_result.cluster_assignments
+                        if isinstance(regime_labels, str):
+                            try:
+                                clean_str = regime_labels.strip('[]')
+                                regime_labels = np.array([int(x) for x in clean_str.split() if x.strip()])
+                                tprint("🔍 [REGIME_ENSEMBLE] Parsed regime labels from clustering_result object", color="blue")
+                            except Exception as e:
+                                tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to parse regime labels string: {e}", color="yellow")
+                                regime_labels = None
+                        if regime_labels is not None:
+                            tprint("🔍 [REGIME_ENSEMBLE] Found regime labels in clustering_result object", color="blue")
             
             # Fallback to old nas_tas_clustering_result structure
             if regime_labels is None:
@@ -148,8 +164,8 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 # Create synthetic regime labels based on data patterns
                 regime_labels = self._create_synthetic_regime_labels(data)
             
-            # Prepare training data from the input data DataFrame
-            tprint("🔧 [REGIME_ENSEMBLE] Preparing training data from input DataFrame", color="yellow")
+            # Prepare training data from the input data DataFrame with advanced regime features
+            tprint("🔧 [REGIME_ENSEMBLE] Preparing training data from input DataFrame with advanced regime features", color="yellow")
             X, y, feature_names = self._prepare_training_data(data, regime_labels, pipeline_state)
             
             # Validate required data
@@ -275,10 +291,24 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             tprint("✅ [REGIME_ENSEMBLE] Regime ensemble training completed successfully", color="green", bold=True)
             tprint(f"⏱️ [REGIME_ENSEMBLE] Total execution time: {(datetime.now() - start_time).total_seconds():.2f}s", color="blue")
             
+            # Save artifacts persistently using the artifact manager
+            try:
+                saved_files = await self.save_artifacts(results, {
+                    'component_type': 'regime_ensemble_training',
+                    'execution_time': (datetime.now() - start_time).total_seconds()
+                })
+                tprint(f"💾 [REGIME_ENSEMBLE] Artifacts saved persistently: {list(saved_files.keys())}", color="green")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to save artifacts persistently: {e}", color="yellow")
+            
             return ComponentResult(
                 success=True,
                 artifacts=results,
-                metadata={'component_type': 'regime_ensemble_training', 'execution_time': (datetime.now() - start_time).total_seconds()}
+                metadata={
+                    'component_type': 'regime_ensemble_training', 
+                    'execution_time': (datetime.now() - start_time).total_seconds(),
+                    'artifacts_saved_persistently': True
+                }
             )
             
         except Exception as e:
@@ -584,6 +614,9 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             # Calculate metrics
             accuracy = accuracy_score(y, y_pred)
             
+            # Calculate top-3 regime analysis with entropy metrics
+            top_3_analysis = self._calculate_top_regime_analysis(y_pred_proba)
+
             metrics['stacker_lgbm_calibrated'] = {
                 'accuracy': accuracy,
                 'classification_report': classification_report(y, y_pred, output_dict=True),
@@ -591,6 +624,7 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                     'mean': y_pred_proba.max(axis=1).mean(),
                     'std': y_pred_proba.max(axis=1).std()
                 },
+                'top_regime_analysis': top_3_analysis,
                 'calibration_method': stacker_result.get('calibration_method', 'none'),
                 'base_models_used': len(base_models),
                 'meta_features_shape': meta_features.shape
@@ -611,6 +645,20 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             tprint(f"🔧 Calibration Method: {stacker_result.get('calibration_method', 'none')}", color="green")
             tprint(f"🤖 Base Models Used: {len(base_models)}", color="green")
             tprint(f"📊 Meta-features Shape: {meta_features.shape}", color="green")
+
+            # Display top regime analysis summary
+            if 'top_regime_analysis' in metrics['stacker_lgbm_calibrated']:
+                top_analysis = metrics['stacker_lgbm_calibrated']['top_regime_analysis']
+                entropy_metrics = top_analysis['entropy_metrics']
+                confidence_gaps = top_analysis['confidence_gaps']
+                conf_dist = top_analysis['prediction_confidence_distribution']
+
+                tprint("🎯 TOP REGIME ANALYSIS", color="cyan", bold=True)
+                tprint(f"   📊 Avg Entropy: {entropy_metrics['mean_entropy']:.4f}", color="cyan")
+                tprint(f"   🎲 Confidence Gap (1st-2nd): {confidence_gaps['gap_1_2_mean']:.4f}", color="cyan")
+                tprint(f"   📈 High Confidence Samples: {conf_dist['high_confidence_ratio']:.1%}", color="cyan")
+                tprint(f"   📉 Low Confidence Samples: {conf_dist['low_confidence_ratio']:.1%}", color="cyan")
+
             tprint("="*50, color="green")
             
             # Add comparison with base models if available
@@ -651,6 +699,111 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
         
         tprint("✅ [REGIME_ENSEMBLE] Ensemble evaluation completed", color="green")
         return metrics
+
+    def _calculate_top_regime_analysis(self, y_pred_proba: np.ndarray) -> Dict[str, Any]:
+        """
+        Calculate comprehensive analysis of top regime predictions.
+
+        Args:
+            y_pred_proba: Probability predictions for each sample and regime
+
+        Returns:
+            Dictionary containing top-3 regime analysis with entropy metrics
+        """
+        try:
+            n_samples, n_regimes = y_pred_proba.shape
+
+            # Get top 3 predictions and probabilities for each sample
+            # Use argsort with descending order to get highest probabilities first
+            top_3_indices = np.argsort(y_pred_proba, axis=1)[:, -3:][:, ::-1]  # Get top 3, reverse to descending
+            top_3_probabilities = np.sort(y_pred_proba, axis=1)[:, -3:][:, ::-1]  # Get top 3 probs, descending
+
+            # Calculate entropy (measure of prediction uncertainty)
+            # Use small epsilon to avoid log(0)
+            epsilon = 1e-10
+            entropy = -np.sum(y_pred_proba * np.log(y_pred_proba + epsilon), axis=1)
+
+            # Calculate confidence gaps between predictions
+            confidence_gap_1_2 = top_3_probabilities[:, 0] - top_3_probabilities[:, 1]  # Gap between 1st and 2nd
+            confidence_gap_2_3 = top_3_probabilities[:, 1] - top_3_probabilities[:, 2]  # Gap between 2nd and 3rd
+
+            # Calculate relative confidence (how much more confident in 1st vs 2nd)
+            relative_confidence_1_2 = np.divide(
+                confidence_gap_1_2,
+                top_3_probabilities[:, 0],
+                out=np.zeros_like(confidence_gap_1_2),
+                where=top_3_probabilities[:, 0] != 0
+            )
+
+            # Identify high-confidence vs low-confidence predictions
+            high_confidence_threshold = 0.8
+            low_confidence_threshold = 0.4
+
+            high_confidence_samples = np.sum(top_3_probabilities[:, 0] >= high_confidence_threshold)
+            low_confidence_samples = np.sum(top_3_probabilities[:, 0] <= low_confidence_threshold)
+            uncertain_samples = n_samples - high_confidence_samples - low_confidence_samples
+
+            # Calculate regime frequency in top predictions
+            top_1_regime_counts = np.bincount(top_3_indices[:, 0], minlength=n_regimes)
+            top_2_regime_counts = np.bincount(top_3_indices[:, 1], minlength=n_regimes)
+            top_3_regime_counts = np.bincount(top_3_indices[:, 2], minlength=n_regimes)
+
+            return {
+                'top_predictions': {
+                    'regime_indices': top_3_indices.tolist(),
+                    'probabilities': top_3_probabilities.tolist()
+                },
+                'entropy_metrics': {
+                    'mean_entropy': float(entropy.mean()),
+                    'std_entropy': float(entropy.std()),
+                    'min_entropy': float(entropy.min()),
+                    'max_entropy': float(entropy.max()),
+                    'entropy_distribution': {
+                        'low_uncertainty': int(np.sum(entropy < 0.5)),
+                        'medium_uncertainty': int(np.sum((entropy >= 0.5) & (entropy < 1.0))),
+                        'high_uncertainty': int(np.sum(entropy >= 1.0))
+                    }
+                },
+                'confidence_gaps': {
+                    'gap_1_2_mean': float(confidence_gap_1_2.mean()),
+                    'gap_1_2_std': float(confidence_gap_1_2.std()),
+                    'gap_2_3_mean': float(confidence_gap_2_3.mean()),
+                    'gap_2_3_std': float(confidence_gap_2_3.std()),
+                    'relative_confidence_1_2_mean': float(relative_confidence_1_2.mean()),
+                    'relative_confidence_1_2_std': float(relative_confidence_1_2.std())
+                },
+                'prediction_confidence_distribution': {
+                    'high_confidence_samples': int(high_confidence_samples),
+                    'low_confidence_samples': int(low_confidence_samples),
+                    'uncertain_samples': int(uncertain_samples),
+                    'high_confidence_ratio': float(high_confidence_samples / n_samples),
+                    'low_confidence_ratio': float(low_confidence_samples / n_samples),
+                    'uncertain_ratio': float(uncertain_samples / n_samples)
+                },
+                'regime_frequency_analysis': {
+                    'top_1_regime_distribution': top_1_regime_counts.tolist(),
+                    'top_2_regime_distribution': top_2_regime_counts.tolist(),
+                    'top_3_regime_distribution': top_3_regime_counts.tolist(),
+                    'most_common_second_choice': int(np.argmax(top_2_regime_counts)),
+                    'most_common_third_choice': int(np.argmax(top_3_regime_counts))
+                },
+                'summary_statistics': {
+                    'total_samples': n_samples,
+                    'total_regimes': n_regimes,
+                    'avg_top_1_confidence': float(top_3_probabilities[:, 0].mean()),
+                    'avg_top_2_confidence': float(top_3_probabilities[:, 1].mean()),
+                    'avg_top_3_confidence': float(top_3_probabilities[:, 2].mean())
+                }
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error calculating top regime analysis: {e}")
+            return {
+                'error': str(e),
+                'entropy_metrics': {'mean_entropy': 0.0, 'std_entropy': 0.0},
+                'confidence_gaps': {'gap_1_2_mean': 0.0, 'gap_2_3_mean': 0.0},
+                'summary_statistics': {'total_samples': len(y_pred_proba), 'total_regimes': y_pred_proba.shape[1]}
+            }
     
     def _prepare_training_data(self, data: pd.DataFrame, regime_labels: np.ndarray, pipeline_state: Dict[str, Any] = None) -> Tuple[np.ndarray, np.ndarray, List[str]]:
         """Prepare training data from market data and regime labels."""

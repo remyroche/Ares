@@ -199,10 +199,10 @@ class ArtifactManager:
     def _json_serializer(self, obj: Any) -> Any:
         """
         Custom JSON serializer for complex objects.
-        
+
         Args:
             obj: Object to serialize
-            
+
         Returns:
             JSON-serializable representation
         """
@@ -218,6 +218,31 @@ class ArtifactManager:
             return obj.isoformat()
         elif hasattr(obj, '__dict__'):
             return obj.__dict__
+        elif isinstance(obj, dict):
+            # Handle dictionaries with numpy int64 keys
+            if NUMPY_AVAILABLE:
+                new_dict = {}
+                for key, value in obj.items():
+                    # Convert numpy int64 keys to regular Python int
+                    if isinstance(key, np.integer):
+                        key = int(key)
+                    elif isinstance(key, (str, int, float, bool)):
+                        pass  # Keep as-is
+                    else:
+                        # Convert other non-JSON-serializable keys to string
+                        key = str(key)
+
+                    # Recursively handle nested structures
+                    if isinstance(value, (dict, list, tuple)):
+                        value = self._json_serializer(value)
+                    new_dict[key] = value
+                return new_dict
+            return obj
+        elif isinstance(obj, (list, tuple)):
+            # Handle lists/tuples with numpy types
+            if NUMPY_AVAILABLE:
+                return [self._json_serializer(item) for item in obj]
+            return list(obj)
         else:
             return str(obj)
     
@@ -319,3 +344,216 @@ class ArtifactManager:
         except Exception as e:
             self.logger.error(f"Failed to validate artifacts for {component_name}: {e}")
             return False
+    
+    async def load_artifacts_from_previous_stage(self, previous_component_name: str, artifact_names: List[str]) -> Dict[str, Any]:
+        """
+        Load artifacts from a previous pipeline stage.
+        
+        Args:
+            previous_component_name: Name of the previous component
+            artifact_names: List of artifact names to load
+            
+        Returns:
+            Dictionary of loaded artifacts
+        """
+        loaded_artifacts = {}
+        
+        try:
+            # If directory doesn't exist, return empty dict
+            if not self.artifact_dir.exists():
+                self.logger.warning(f"Artifact directory doesn't exist: {self.artifact_dir}")
+                return loaded_artifacts
+            
+            for artifact_name in artifact_names:
+                try:
+                    # Look for the most recent artifact file
+                    pattern = f"{previous_component_name}_{artifact_name}_*"
+                    matching_files = list(self.artifact_dir.glob(pattern))
+                    
+                    if not matching_files:
+                        self.logger.warning(f"No artifact found for {previous_component_name}_{artifact_name}")
+                        continue
+                    
+                    # Get the most recent file
+                    latest_file = max(matching_files, key=lambda f: f.stat().st_mtime)
+                    
+                    # Load the artifact based on file extension
+                    artifact_data = await self._load_single_artifact(latest_file)
+                    loaded_artifacts[artifact_name] = artifact_data
+                    
+                    self.logger.info(f"✅ Loaded artifact {artifact_name} from {latest_file.name}")
+                    
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to load artifact {artifact_name}: {e}")
+                    continue
+            
+            return loaded_artifacts
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load artifacts from previous stage {previous_component_name}: {e}")
+            return loaded_artifacts
+    
+    async def _load_single_artifact(self, file_path: Path) -> Any:
+        """
+        Load a single artifact from file.
+        
+        Args:
+            file_path: Path to the artifact file
+            
+        Returns:
+            Loaded artifact data
+        """
+        try:
+            file_extension = file_path.suffix.lower()
+            
+            if file_extension == '.json':
+                with open(file_path, 'r') as f:
+                    data = json.load(f)
+                    # If it's a simple value wrapper, extract the actual value
+                    if isinstance(data, dict) and 'value' in data and len(data) == 2:
+                        return data['value']
+                    return data
+                    
+            elif file_extension == '.parquet' and PANDAS_AVAILABLE:
+                return pd.read_parquet(file_path)
+                
+            elif file_extension == '.npy' and NUMPY_AVAILABLE:
+                return np.load(file_path)
+                
+            else:
+                # Try to load as JSON as fallback
+                with open(file_path, 'r') as f:
+                    return json.load(f)
+                    
+        except Exception as e:
+            self.logger.error(f"Failed to load artifact from {file_path}: {e}")
+            raise
+    
+    def find_latest_artifact_session(self, symbol: str, exchange: str, timeframe: str) -> Optional[str]:
+        """
+        Find the most recent artifact session for the given parameters.
+        
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe
+            
+        Returns:
+            Session timestamp if found, None otherwise
+        """
+        try:
+            if not self.base_dir.exists():
+                return None
+            
+            # Look for directories matching the pattern
+            pattern = f"{symbol}_{exchange}_{timeframe}_*"
+            matching_dirs = [d for d in self.base_dir.glob(pattern) if d.is_dir()]
+            
+            if not matching_dirs:
+                return None
+            
+            # Sort by creation time and get the latest
+            latest_dir = max(matching_dirs, key=lambda d: d.stat().st_ctime)
+            
+            # Extract timestamp from directory name
+            timestamp_part = latest_dir.name.split('_')[-2:]  # Get last two parts (date and time)
+            return '_'.join(timestamp_part)
+            
+        except Exception as e:
+            self.logger.error(f"Failed to find latest artifact session: {e}")
+            return None
+    
+    def load_artifacts_from_latest_session(self, component_name: str, artifact_names: List[str]) -> Dict[str, Any]:
+        """
+        Load artifacts from the most recent session.
+        
+        Args:
+            component_name: Name of the component
+            artifact_names: List of artifact names to load
+            
+        Returns:
+            Dictionary of loaded artifacts
+        """
+        loaded_artifacts = {}
+        
+        try:
+            # Find the latest session
+            latest_session = self.find_latest_artifact_session(
+                self.symbol, self.exchange, self.timeframe
+            )
+            
+            if not latest_session:
+                self.logger.warning("No previous artifact session found")
+                return loaded_artifacts
+            
+            # Create artifact directory path for the latest session
+            latest_artifact_dir = self.base_dir / f"{self.symbol}_{self.exchange}_{self.timeframe}_{latest_session}"
+            
+            if not latest_artifact_dir.exists():
+                self.logger.warning(f"Latest artifact directory doesn't exist: {latest_artifact_dir}")
+                return loaded_artifacts
+            
+            # Load artifacts from the latest session
+            for artifact_name in artifact_names:
+                try:
+                    pattern = f"{component_name}_{artifact_name}_*"
+                    matching_files = list(latest_artifact_dir.glob(pattern))
+                    
+                    if not matching_files:
+                        self.logger.warning(f"No artifact found for {component_name}_{artifact_name}")
+                        continue
+                    
+                    # Get the most recent file
+                    latest_file = max(matching_files, key=lambda f: f.stat().st_mtime)
+                    
+                    # Load the artifact
+                    artifact_data = self._load_single_artifact_sync(latest_file)
+                    loaded_artifacts[artifact_name] = artifact_data
+                    
+                    self.logger.info(f"✅ Loaded artifact {artifact_name} from latest session: {latest_file.name}")
+                    
+                except Exception as e:
+                    self.logger.error(f"❌ Failed to load artifact {artifact_name}: {e}")
+                    continue
+            
+            return loaded_artifacts
+            
+        except Exception as e:
+            self.logger.error(f"Failed to load artifacts from latest session: {e}")
+            return loaded_artifacts
+    
+    def _load_single_artifact_sync(self, file_path: Path) -> Any:
+        """
+        Synchronous version of _load_single_artifact for use in non-async contexts.
+        
+        Args:
+            file_path: Path to the artifact file
+            
+        Returns:
+            Loaded artifact data
+        """
+        try:
+            file_extension = file_path.suffix.lower()
+            
+            if file_extension == '.json':
+                with open(file_path, 'r') as f:
+                    data = json.load(f)
+                    # If it's a simple value wrapper, extract the actual value
+                    if isinstance(data, dict) and 'value' in data and len(data) == 2:
+                        return data['value']
+                    return data
+                    
+            elif file_extension == '.parquet' and PANDAS_AVAILABLE:
+                return pd.read_parquet(file_path)
+                
+            elif file_extension == '.npy' and NUMPY_AVAILABLE:
+                return np.load(file_path)
+                
+            else:
+                # Try to load as JSON as fallback
+                with open(file_path, 'r') as f:
+                    return json.load(f)
+                    
+        except Exception as e:
+            self.logger.error(f"Failed to load artifact from {file_path}: {e}")
+            raise

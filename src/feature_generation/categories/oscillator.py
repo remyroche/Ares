@@ -131,7 +131,7 @@ class CCIGenerator(VectorizedFeatureGenerator):
     
     def __init__(self,
                  period: int = 20,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize CCI generator.
@@ -205,7 +205,7 @@ class ADXGenerator(VectorizedFeatureGenerator):
     
     def __init__(self,
                  period: int = 14,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize ADX generator.
@@ -292,7 +292,7 @@ class AroonGenerator(VectorizedFeatureGenerator):
     
     def __init__(self,
                  period: int = 14,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize Aroon generator.
@@ -366,7 +366,7 @@ class SARGenerator(VectorizedFeatureGenerator):
     def __init__(self,
                  acceleration: float = 0.02,
                  maximum: float = 0.2,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize Parabolic SAR generator.
@@ -443,7 +443,7 @@ class UltimateOscillatorGenerator(VectorizedFeatureGenerator):
                  period1: int = 7,
                  period2: int = 14,
                  period3: int = 28,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize Ultimate Oscillator generator.
@@ -534,7 +534,7 @@ class KSTGenerator(VectorizedFeatureGenerator):
                  sma2: int = 10,
                  sma3: int = 10,
                  sma4: int = 15,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize KST generator.
@@ -631,7 +631,7 @@ class APOGenerator(VectorizedFeatureGenerator):
     def __init__(self,
                  fast_period: int = 12,
                  slow_period: int = 26,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize APO generator.
@@ -693,7 +693,7 @@ class CMOGenerator(VectorizedFeatureGenerator):
     
     def __init__(self,
                  period: int = 14,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize CMO generator.
@@ -758,7 +758,7 @@ class NATRGenerator(VectorizedFeatureGenerator):
     
     def __init__(self,
                  period: int = 14,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize NATR generator.
@@ -830,7 +830,7 @@ class PFEGenerator(VectorizedFeatureGenerator):
     
     def __init__(self,
                  period: int = 10,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize PFE generator.
@@ -893,7 +893,7 @@ class T3Generator(VectorizedFeatureGenerator):
     def __init__(self,
                  period: int = 20,
                  volume_factor: float = 0.7,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize T3 generator.
@@ -953,7 +953,7 @@ class KAMAGenerator(VectorizedFeatureGenerator):
                  period: int = 30,
                  fast_period: int = 2,
                  slow_period: int = 30,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize KAMA generator.

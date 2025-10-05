@@ -19,7 +19,8 @@ All references to `cross_timeframe_analysis` have been updated to `pid_based_fea
 # NEW
 'sub_pipelines': ['sr_detection', 'sr_clustering', 'hmm_clustering',
                 'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
-                'feature_lookback_optimization', 'fractional_differentiation', 'pid_based_feature_generation',
+                'hybrid_nas_tas_regime_discovery', 'nas_tas_clustering', 'regime_models_training', 'regime_ensemble_training',
+                'regime_data_splitting', 'multi_horizon_profit_labeler', 'feature_lookback_optimization', 'pid_based_feature_generation', 'final_feature_selection',
                 'sr_feature_integration']
 ```
 

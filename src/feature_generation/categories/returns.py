@@ -697,6 +697,10 @@ def create_returns_generators(periods: Dict[str, List[int]] = None) -> List[Feat
     
     return generators
 
+class ReturnGenerator(SimpleReturnsGenerator):
+    """Legacy alias for SimpleReturnsGenerator for backward compatibility."""
+    pass
+
 def create_default_returns_generators() -> List[FeatureGenerator]:
     """Create default returns generators."""
     return create_returns_generators()

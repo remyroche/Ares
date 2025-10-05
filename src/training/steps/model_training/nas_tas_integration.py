@@ -32,7 +32,7 @@ from src.training.steps.model_training.tas_enhanced_tactician_training import (
 # Import existing training components
 from src.training.steps.model_training.analyst_models_training_refactored import AnalystModelsTrainingStep
 from src.training.steps.model_training.tactician_models_training_refactored import TacticianModelsTrainingStep
-from src.training.steps.model_training.tactician_dual_training_step import TacticianDualTrainingStep
+from src.training.steps.model_training.tactician_training_step import TacticianTrainingStep
 
 # Import NAS and TAS components
 from src.training.steps.market_analysis.nas_regime.core.perfect_nas_config import (
@@ -94,7 +94,7 @@ class NASTASIntegration:
         # Initialize base training steps
         self.base_analyst_training = AnalystModelsTrainingStep()
         self.base_tactician_training = TacticianModelsTrainingStep()
-        self.dual_tactician_training = TacticianDualTrainingStep()
+        self.tactician_training = TacticianTrainingStep()
         
         # Integration state
         self.integration_results = {}

@@ -1448,7 +1448,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 cv_config = {'folds': 5, 'test_size': 0.2}
             
             # Get lookback range from config
-            lookback_range = getattr(OptimizationConfig, 'DEFAULT_LOOKBACK_RANGE', (5, 100))
+            lookback_range = getattr(OptimizationConfig, 'DEFAULT_LOOKBACK_RANGE', (5, 300))
             
             config = FeatureOptimizationConfig(
                 min_lookback=lookback_range[0],
@@ -1486,7 +1486,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             # Return a simple config with two-step grid + TPE approach
             return {
                 'optimization_method': 'two_step_grid_tpe',
-                'lookback_range': getattr(OptimizationConfig, 'DEFAULT_LOOKBACK_RANGE', (5, 100)),
+                'lookback_range': getattr(OptimizationConfig, 'DEFAULT_LOOKBACK_RANGE', (5, 300)),
                 'coarse_grid_size': 5,
                 'fine_grid_size': 5,
                 'tpe_trials': 25,
@@ -1984,34 +1984,57 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 enable_directional = getattr(config, 'enable_directional_optimization', True)
                 use_new_directional = getattr(config, 'use_new_directional_approach', True)
                 
-                if DIRECTIONAL_OPTIMIZER_AVAILABLE and self.directional_optimizer and enable_directional and use_new_directional:
+                if True:  # Force use of grid search/bandit method
                     tprint('🎯 Using NEW directional optimization (1 period per feature per direction)...')
                     
-                    # Extract feature columns from prepared data
+                    # Extract feature columns from prepared data - use ALL features from feature bank
+                    # Exclude target columns, metadata columns, and unwanted feature types
+                    excluded_columns = ['returns', 'close_return', 'close_log_return', 'target', 'label', 'signal_direction', 
+                                      'regime_state', 'regime_confidence', 'open_time', 'close_time', 'symbol', 'interval', 
+                                      'day', 'exchange', 'timeframe', 'timestamp']
+                    
+                    # Include ALL feature bank features (200+ features) from all categories:
+                    # RETURNS, MOMENTUM, VOLUME, VOLATILITY, TREND, OSCILLATOR, 
+                    # SUPPORT_RESISTANCE, CANDLESTICK_PATTERN, MICROSTRUCTURE, ENTROPY, ORDER_FLOW
+                    # Exclude only: interaction, cross-timeframe, wavelets, autoencoders, regime-specific, nas_, tas_
                     feature_columns = [str(col) for col in prepared_data.columns
-                                     if col not in ['returns', 'close_return', 'close_log_return', 'target', 'label', 'signal_direction']]
+                                     if col not in excluded_columns 
+                                     and not any(unwanted in col.lower() for unwanted in [
+                                         'wavelet', 'autoencoder', 'regime_', 'nas_', 'tas_',
+                                         'interaction_', 'cross_timeframe_', 'cross_timeframe'
+                                     ])
+                                     and any(wanted in col.lower() for wanted in [
+                                         'rsi', 'macd', 'stochastic', 'williams', 'momentum', 'roc',
+                                         'volume_', 'vol_', 'vwap', 'obv', 'ad', 'mfi',
+                                         'bb_', 'atr', 'volatility', 'std', 'var',
+                                         'sma', 'ema', 'trend', 'slope', 'angle',
+                                         'entropy', 'hurst', 'fractal', 'complexity',
+                                         'support', 'resistance', 'pivot', 'fibonacci',
+                                         'doji', 'hammer', 'engulfing', 'pattern',
+                                         'bid', 'ask', 'spread', 'depth', 'flow'
+                                     ])]
                     
                     # Find optimal target column
                     target_column = self._select_optimal_target_column(prepared_data)
                     
-                    # Limit features to prevent excessive computation
-                    max_features_to_optimize = getattr(config, 'max_features_to_optimize', 30)
-                    feature_columns = feature_columns[:max_features_to_optimize]
+                    # Use all available features from feature bank (no limits)
+                    tprint(f'🔧 Processing {len(feature_columns)} features from feature bank')
                     
-                    # Run new directional optimization
-                    directional_result = self.directional_optimizer.optimize_features_directional(
-                        data=prepared_data,
-                        feature_columns=feature_columns,
-                        target_column=target_column
+                    # Apply grid search/bandit optimization
+                    tprint('🔍 Applying grid search/bandit optimization (1-200 periods)')
+                    optimized_features = self._optimize_features_with_grid_bandit(
+                        prepared_data, feature_columns, target_column
                     )
                     
-                    # Convert to standard format for compatibility
-                    optimization_result = self._convert_new_directional_to_standard_format(directional_result)
-                    optimization_result['optimization_method'] = 'new_directional_single_period'
-                    optimization_result['directional_analysis'] = directional_result.to_dict()
+                    # Use grid search/bandit optimization directly (no directional optimizer required)
+                    optimization_result = {
+                        'optimization_method': 'grid_search_bandit',
+                        'optimized_features': optimized_features,
+                        'feature_count': len(feature_columns),
+                        'target_column': target_column
+                    }
                     
-                    tprint(f'✅ NEW directional optimization completed: {directional_result.final_feature_count} features '
-                           f'({len(directional_result.selected_long_features)} long + {len(directional_result.selected_short_features)} short)')
+                    tprint(f'✅ Grid search/bandit optimization completed: {len(feature_columns)} features processed')
                     
                 elif MRMR_OPTIMIZER_AVAILABLE and self.mrmr_optimizer:
                     enable_directional = getattr(config, 'enable_directional_optimization', True)
@@ -2019,9 +2042,16 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                     if enable_directional:
                         tprint('🎯 Using LEGACY directional MRMR optimization (2 periods per feature)...')
                         
-                        # Extract feature columns from prepared data
+                        # Extract feature columns from prepared data - use ALL features from feature bank
+                        # Exclude target columns, metadata columns, and unwanted feature types
+                        excluded_columns = ['returns', 'close_return', 'close_log_return', 'target', 'label', 'signal_direction', 
+                                          'regime_state', 'regime_confidence', 'open_time', 'close_time', 'symbol', 'interval', 
+                                          'day', 'exchange', 'timeframe', 'timestamp']
+                        
+                        # Also exclude unwanted feature types: wavelets, autoencoders, regime-specific
                         feature_columns = [str(col) for col in prepared_data.columns
-                                         if col not in ['returns', 'close_return', 'close_log_return', 'target', 'label', 'signal_direction']]
+                                         if col not in excluded_columns 
+                                         and not any(unwanted in col.lower() for unwanted in ['wavelet', 'autoencoder', 'regime_', 'nas_', 'tas_'])]
                         
                         # Find optimal target column (prioritize multi-horizon targets)
                         target_column = self._select_optimal_target_column(prepared_data)
@@ -2035,7 +2065,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                             # First, run multi-target optimization to get consensus lookback periods
                             multi_target_result = self.optimize_lookback_periods_multi_target(
                                 data=prepared_data,
-                                feature_columns=feature_columns[:8],  # Limit for multi-target efficiency
+                                feature_columns=feature_columns,  # Use all features (no limits)
                                 multi_targets=None,  # Auto-detect
                                 optimization_config=None
                             )
@@ -2043,7 +2073,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                             # Then run directional optimization with the best target
                             directional_result = self.optimize_lookback_periods_mrmr_directional(
                                 data=prepared_data,
-                                feature_columns=feature_columns[:10],
+                                feature_columns=feature_columns,  # Use all features (no limits)
                                 target_column=target_column,
                                 optimization_config=None,
                                 enable_directional=True
@@ -2057,7 +2087,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                             # Use standard directional MRMR optimization
                             directional_result = self.optimize_lookback_periods_mrmr_directional(
                                 data=prepared_data,
-                                feature_columns=feature_columns[:10],  # Limit to first 10 features for performance
+                                feature_columns=feature_columns,  # Use all features (no limits)
                                 target_column=target_column,
                                 optimization_config=None,
                                 enable_directional=True
@@ -3157,49 +3187,626 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             tprint(f"❌ Multi-target optimization failed: {e}")
             return {'error': str(e)}
     
-    def _select_multi_horizon_targets(self, data: pd.DataFrame) -> List[str]:
-        """Select optimal set of multi-horizon targets for optimization."""
-        targets = []
+    def _select_multi_horizon_targets(self, data: pd.DataFrame) -> Dict[str, List[str]]:
+        """Select optimal set of multi-horizon targets with separate long/short pipelines."""
         
-        # Priority targets from configuration
-        priority_targets = [
-            'leverage_adjusted_score',
-            'overall_opportunity', 
-            'immediate_opportunity'
-        ]
+        # Separate targets for long and short pipelines
+        long_targets = []
+        short_targets = []
         
-        for target in priority_targets:
-            if target in data.columns:
-                targets.append(target)
+        # Multi-horizon profit labeler targets (aligned with actual labeler output)
+        # These are the targets that multi_horizon_profit_labeler actually generates
         
-        # Add directional targets if available
-        directional_targets = [
+        # LONG PIPELINE TARGETS - Updated for 20-40m horizons, micro disabled
+        long_target_candidates = [
             'long_overall_opportunity',
-            'short_overall_opportunity'
+            'long_immediate_opportunity',  # 20m horizon
+            'long_short_opportunity',      # 40m horizon
+            # Profit target combinations (micro disabled, focus on small/medium/good)
+            'long_small_immediate_prob',   # 0.5% target, 20m horizon
+            'long_medium_immediate_prob',  # 0.7% target, 20m horizon
+            'long_good_immediate_prob',    # 1.0% target, 20m horizon
+            'long_small_short_prob',       # 0.5% target, 40m horizon
+            'long_medium_short_prob',      # 0.7% target, 40m horizon
+            'long_good_short_prob'         # 1.0% target, 40m horizon
         ]
         
-        for target in directional_targets:
+        # SHORT PIPELINE TARGETS - Updated for 20-40m horizons, micro disabled
+        short_target_candidates = [
+            'short_overall_opportunity',
+            'short_immediate_opportunity', # 20m horizon
+            'short_short_opportunity',    # 40m horizon
+            # Profit target combinations (micro disabled, focus on small/medium/good)
+            'short_small_immediate_prob',  # 0.5% target, 20m horizon
+            'short_medium_immediate_prob', # 0.7% target, 20m horizon
+            'short_good_immediate_prob',   # 1.0% target, 20m horizon
+            'short_small_short_prob',      # 0.5% target, 40m horizon
+            'short_medium_short_prob',     # 0.7% target, 40m horizon
+            'short_good_short_prob'        # 1.0% target, 40m horizon
+        ]
+        
+        # Check which targets are actually available in the data
+        for target in long_target_candidates:
             if target in data.columns:
-                targets.append(target)
+                long_targets.append(target)
+                
+        for target in short_target_candidates:
+            if target in data.columns:
+                short_targets.append(target)
         
-        # Add best probability targets (limit to avoid over-optimization)
-        prob_patterns = ['micro_immediate', 'small_immediate']
-        for pattern in prob_patterns:
-            long_target = f"{pattern}_long_prob"
-            short_target = f"{pattern}_short_prob"
+        # If no directional targets found, use general targets for both
+        if not long_targets and not short_targets:
+            general_targets = ['leverage_adjusted_score', 'overall_opportunity', 'immediate_opportunity']
+            available_general = [t for t in general_targets if t in data.columns]
+            long_targets = available_general
+            short_targets = available_general
+        
+        # If no multi-horizon targets found, fallback to basic returns
+        if not long_targets and not short_targets:
+            fallback_targets = ['close_return', 'returns', 'target']
+            available_fallback = [t for t in fallback_targets if t in data.columns]
+            long_targets = available_fallback
+            short_targets = available_fallback
+        
+        result = {
+            'long_targets': long_targets,
+            'short_targets': short_targets
+        }
+        
+        tprint(f"🎯 Selected targets - Long: {len(long_targets)}, Short: {len(short_targets)}")
+        tprint(f"   Long targets: {long_targets}")
+        tprint(f"   Short targets: {short_targets}")
+        
+        return result
+    
+    def _optimize_features_with_grid_bandit(self, data: pd.DataFrame, feature_columns: List[str], target_column: str) -> Dict[str, Any]:
+        """Optimize features using grid search/bandit method."""
+        try:
+            tprint("🔍 Starting grid search/bandit optimization...")
             
-            if long_target in data.columns:
-                targets.append(long_target)
-            if short_target in data.columns:
-                targets.append(short_target)
+            # Separate long and short targets
+            target_info = self._select_multi_horizon_targets(data)
+            long_targets = target_info.get('long_targets', [])
+            short_targets = target_info.get('short_targets', [])
+            
+            # Horizon weights - Updated distribution
+            # Based on updated weight allocation for better balance
+            horizon_weights = {
+                'micro': 0.0,     # 0% - 0.3% profit target (net: 0.22% after fees)
+                'small': 0.6,     # 60% - 0.5% profit target (net: 0.42% after fees)  
+                'medium': 0.3,    # 30% - 0.7% profit target (net: 0.62% after fees)
+                'good': 0.1       # 10% - 1.0% profit target (net: 0.92% after fees)
+            }
+            
+            optimized_results = {
+                'long_features': {},
+                'short_features': {},
+                'optimization_method': 'grid_search_bandit'
+            }
+            
+            # Optimize for LONG pipeline
+            if long_targets:
+                tprint("🎯 Optimizing LONG pipeline features...")
+                long_results = self._grid_bandit_optimization(
+                    data, feature_columns, long_targets, horizon_weights, 'long'
+                )
+                optimized_results['long_features'] = long_results
+            
+            # Optimize for SHORT pipeline  
+            if short_targets:
+                tprint("🎯 Optimizing SHORT pipeline features...")
+                short_results = self._grid_bandit_optimization(
+                    data, feature_columns, short_targets, horizon_weights, 'short'
+                )
+                optimized_results['short_features'] = short_results
+            
+            tprint(f"✅ Grid search/bandit optimization completed")
+            tprint(f"   Long features optimized: {len(optimized_results['long_features'])}")
+            tprint(f"   Short features optimized: {len(optimized_results['short_features'])}")
+            
+            return optimized_results
+            
+        except Exception as e:
+            tprint(f"❌ Grid search/bandit optimization failed: {e}")
+            return {'error': str(e)}
+    
+    def _grid_bandit_optimization(self, data: pd.DataFrame, feature_columns: List[str], 
+                                 targets: List[str], horizon_weights: Dict[str, float], 
+                                 direction: str) -> Dict[str, Any]:
+        """Grid search/bandit optimization for feature lookback periods."""
+        try:
+            results = {}
+            
+            for feature in feature_columns:
+                if feature not in data.columns:
+                    continue
+                    
+                tprint(f"🎯 Optimizing feature: {feature}")
+                
+                # Find optimal lookback period using grid search/bandit
+                optimal_period, best_score = self._find_optimal_lookback_grid_bandit(
+                    data, feature, targets, horizon_weights, direction
+                )
+                
+                results[feature] = {
+                    'optimal_period': optimal_period,
+                    'grid_bandit_score': best_score,
+                    'direction': direction,
+                    'optimization_method': 'grid_search_bandit'
+                }
+                
+                tprint(f"✅ {feature}: optimal_period={optimal_period}, score={best_score:.4f}")
+            
+            return results
+            
+        except Exception as e:
+            tprint(f"❌ Grid search/bandit optimization failed for {direction}: {e}")
+            return {}
+    
+    def _find_optimal_lookback_grid_bandit(self, data: pd.DataFrame, feature: str, targets: List[str], 
+                                         horizon_weights: Dict[str, float], direction: str) -> Tuple[int, float]:
+        """Find optimal lookback period using grid search/bandit method."""
+        try:
+            # Grid search: test different lookback periods
+            grid_periods = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 200]  # Fibonacci-based grid
+            best_period = 1
+            best_score = 0.0
+            
+            for period in grid_periods:
+                # Calculate score for this period
+                score = self._calculate_grid_bandit_score(
+                    data, feature, targets, period, horizon_weights, direction
+                )
+                
+                if score > best_score:
+                    best_score = score
+                    best_period = period
+            
+            # Bandit refinement: search around best grid point
+            if best_period > 1:
+                refinement_periods = range(max(1, best_period - 5), min(201, best_period + 6))
+                for period in refinement_periods:
+                    if period in grid_periods:  # Skip already tested periods
+                        continue
+                        
+                    score = self._calculate_grid_bandit_score(
+                        data, feature, targets, period, horizon_weights, direction
+                    )
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_period = period
+            
+            return best_period, best_score
+            
+        except Exception as e:
+            tprint(f"❌ Grid search/bandit calculation failed for {feature}: {e}")
+            return 1, 0.0
+    
+    def _calculate_grid_bandit_score(self, data: pd.DataFrame, feature: str, targets: List[str], 
+                                    period: int, horizon_weights: Dict[str, float], direction: str) -> float:
+        """Calculate grid search/bandit score for a feature with given lookback period."""
+        try:
+            if feature not in data.columns:
+                return 0.0
+            
+            # Create feature with lookback period (rolling mean)
+            feature_series = data[feature].rolling(window=period).mean()
+            
+            total_score = 0.0
+            total_weight = 0.0
+            
+            for target in targets:
+                if target not in data.columns:
+                    continue
+                
+                # Determine horizon weight based on target name
+                price_horizon = self._classify_price_movement_horizon(target, data)
+                horizon_weight = horizon_weights.get(price_horizon, horizon_weights['small'])
+                
+                # Calculate correlation between feature and target
+                try:
+                    # Remove NaN values for correlation calculation
+                    valid_data = pd.DataFrame({
+                        'feature': feature_series,
+                        'target': data[target]
+                    }).dropna()
+                    
+                    if len(valid_data) < 10:  # Need minimum data points
+                        continue
+                    
+                    # Calculate correlation (grid search/bandit uses simple correlation)
+                    correlation = abs(valid_data['feature'].corr(valid_data['target']))
+                    if pd.isna(correlation):
+                        correlation = 0.0
+                    
+                    # Weighted score
+                    weighted_score = correlation * horizon_weight
+                    total_score += weighted_score
+                    total_weight += horizon_weight
+                    
+                except Exception:
+                    continue
+            
+            # Return average weighted score
+            return total_score / max(total_weight, 0.1)
+            
+        except Exception:
+            return 0.0
+    
+    def _mrmr_pearson_optimization(self, data: pd.DataFrame, feature_columns: List[str], 
+                                  targets: List[str], horizon_weights: Dict[str, float], 
+                                  direction: str) -> Dict[str, Any]:
+        """MRMR & Pearson correlation optimization for feature lookback periods."""
+        try:
+            results = {}
+            
+            for feature in feature_columns:
+                if feature not in data.columns:
+                    continue
+                    
+                tprint(f"🎯 Optimizing feature: {feature}")
+                
+                # Find optimal lookback period using MRMR & Pearson correlation
+                optimal_period, best_score = self._find_optimal_lookback_mrmr_pearson(
+                    data, feature, targets, horizon_weights, direction
+                )
+                
+                results[feature] = {
+                    'optimal_period': optimal_period,
+                    'mrmr_pearson_score': best_score,
+                    'direction': direction,
+                    'optimization_method': 'mrmr_pearson_correlation'
+                }
+                
+                tprint(f"✅ {feature}: optimal_period={optimal_period}, score={best_score:.4f}")
+            
+            return results
+            
+        except Exception as e:
+            tprint(f"❌ MRMR & Pearson optimization failed for {direction}: {e}")
+            return {}
+    
+    def _find_optimal_lookback_mrmr_pearson(self, data: pd.DataFrame, feature: str, targets: List[str], 
+                                        horizon_weights: Dict[str, float], direction: str) -> Tuple[int, float]:
+        """Find optimal lookback period using MRMR & Pearson correlation."""
+        try:
+            best_period = 1
+            best_score = 0.0
+            
+            # Test different lookback periods (1-200 for 5m timeframe)
+            for period in range(1, 201):
+                # Calculate MRMR & Pearson correlation score for this period
+                score = self._calculate_mrmr_pearson_score(
+                    data, feature, targets, period, horizon_weights, direction
+                )
+                
+                if score > best_score:
+                    best_score = score
+                    best_period = period
+            
+            return best_period, best_score
+            
+        except Exception as e:
+            tprint(f"❌ MRMR & Pearson calculation failed for {feature}: {e}")
+            return 1, 0.0
+    
+    def _calculate_mrmr_pearson_score(self, data: pd.DataFrame, feature: str, targets: List[str], 
+                                   period: int, horizon_weights: Dict[str, float], direction: str) -> float:
+        """Calculate MRMR & Pearson correlation score for a feature with given lookback period."""
+        try:
+            if feature not in data.columns:
+                return 0.0
+            
+            # Create feature with lookback period (rolling mean)
+            feature_series = data[feature].rolling(window=period).mean()
+            
+            total_score = 0.0
+            total_weight = 0.0
+            
+            for target in targets:
+                if target not in data.columns:
+                    continue
+                
+                # Determine horizon weight based on target name
+                price_horizon = self._classify_price_movement_horizon(target, data)
+                horizon_weight = horizon_weights.get(price_horizon, horizon_weights['small'])
+                
+                # Calculate Pearson correlation between feature and target
+                try:
+                    # Remove NaN values for correlation calculation
+                    valid_data = pd.DataFrame({
+                        'feature': feature_series,
+                        'target': data[target]
+                    }).dropna()
+                    
+                    if len(valid_data) < 10:  # Need minimum data points
+                        continue
+                    
+                    # Calculate Pearson correlation
+                    correlation = abs(valid_data['feature'].corr(valid_data['target']))
+                    if pd.isna(correlation):
+                        correlation = 0.0
+                    
+                    # Weighted score
+                    weighted_score = correlation * horizon_weight
+                    total_score += weighted_score
+                    total_weight += horizon_weight
+                    
+                except Exception:
+                    continue
+            
+            # Return average weighted score
+            return total_score / max(total_weight, 0.1)
+            
+        except Exception:
+            return 0.0
+    
+    def _multi_resolution_optimization(self, data: pd.DataFrame, feature_columns: List[str], 
+                                     targets: List[str], horizon_weights: Dict[str, float], 
+                                     direction: str) -> Dict[str, Any]:
+        """Multi-resolution optimization for feature lookback periods."""
+        try:
+            results = {}
+            
+            for feature in feature_columns:
+                if feature not in data.columns:
+                    continue
+                    
+                # Phase 1: Coarse grid search with log spacing
+                optimal_period, best_score = self._coarse_to_fine_search(
+                    data, feature, targets, horizon_weights, direction
+                )
+                
+                results[feature] = {
+                    'optimal_period': optimal_period,
+                    'mutual_info_score': best_score,
+                    'direction': direction,
+                    'optimization_method': 'multi_resolution'
+                }
+            
+            return results
+            
+        except Exception as e:
+            tprint(f"❌ Multi-resolution optimization failed for {direction}: {e}")
+            return {}
+    
+    def _coarse_to_fine_search(self, data: pd.DataFrame, feature: str, targets: List[str], 
+                              horizon_weights: Dict[str, float], direction: str) -> Tuple[int, float]:
+        """Coarse-to-fine multi-resolution search for optimal lookback period."""
+        try:
+            # Phase 1: Coarse grid with log spacing (15-25 points)
+            coarse_periods = self._generate_coarse_grid(1, 200)
+            coarse_scores = []
+            
+            tprint(f"🔍 Phase 1: Coarse grid search for {feature} ({len(coarse_periods)} points)")
+            
+            for period in coarse_periods:
+                score = self._calculate_mutual_info_score(
+                    data, feature, targets, period, horizon_weights, direction
+                )
+                coarse_scores.append((period, score))
+            
+            # Sort by score and get top-k candidates
+            coarse_scores.sort(key=lambda x: x[1], reverse=True)
+            top_k = 5  # Top 5 candidates
+            top_candidates = coarse_scores[:top_k]
+            
+            tprint(f"📊 Top {top_k} candidates from coarse search:")
+            for i, (period, score) in enumerate(top_candidates):
+                tprint(f"   {i+1}. Period {period}: Score {score:.4f}")
+            
+            # Phase 2: Fine search around top candidates
+            best_period, best_score = self._fine_search_around_candidates(
+                data, feature, targets, horizon_weights, direction, top_candidates
+            )
+            
+            # Phase 3: Stability check with time splits
+            stable_period, stable_score = self._stability_check(
+                data, feature, targets, horizon_weights, direction, best_period, best_score
+            )
+            
+            tprint(f"✅ Final result: Period {stable_period}, Score {stable_score:.4f}")
+            return stable_period, stable_score
+            
+        except Exception as e:
+            tprint(f"❌ Coarse-to-fine search failed for {feature}: {e}")
+            return 1, 0.0
+    
+    def _generate_coarse_grid(self, min_period: int, max_period: int) -> List[int]:
+        """Generate coarse grid with log spacing for better coverage."""
+        import numpy as np
         
-        # Limit total targets to prevent over-optimization
-        max_targets = 6
-        if len(targets) > max_targets:
-            tprint(f"⚠️ Limiting targets from {len(targets)} to {max_targets} to prevent over-optimization")
-            targets = targets[:max_targets]
+        # Log spacing: more points at short horizons, fewer at long
+        log_min = np.log(min_period)
+        log_max = np.log(max_period)
         
-        return targets
+        # Generate 20 points with log spacing
+        log_points = np.linspace(log_min, log_max, 20)
+        periods = [int(np.exp(p)) for p in log_points]
+        
+        # Ensure unique periods and add some linear spacing for very short periods
+        periods = list(set(periods))
+        periods.extend([1, 2, 3, 5, 10, 15, 20, 25, 30, 50, 100, 150, 200])
+        periods = sorted(list(set(periods)))
+        
+        return periods
+    
+    def _fine_search_around_candidates(self, data: pd.DataFrame, feature: str, targets: List[str],
+                                     horizon_weights: Dict[str, float], direction: str,
+                                     top_candidates: List[Tuple[int, float]]) -> Tuple[int, float]:
+        """Fine search around top candidates with dense neighborhoods."""
+        try:
+            best_period = 1
+            best_score = 0.0
+            
+            for candidate_period, candidate_score in top_candidates:
+                # Dense neighborhood: ±15 periods with step 2
+                neighborhood = range(
+                    max(1, candidate_period - 15),
+                    min(201, candidate_period + 16),
+                    2
+                )
+                
+                for period in neighborhood:
+                    score = self._calculate_mutual_info_score(
+                        data, feature, targets, period, horizon_weights, direction
+                    )
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_period = period
+            
+            return best_period, best_score
+            
+        except Exception as e:
+            tprint(f"❌ Fine search failed: {e}")
+            return top_candidates[0][0], top_candidates[0][1]
+    
+    def _stability_check(self, data: pd.DataFrame, feature: str, targets: List[str],
+                        horizon_weights: Dict[str, float], direction: str,
+                        candidate_period: int, candidate_score: float) -> Tuple[int, float]:
+        """Stability check using time splits to ensure robust selection."""
+        try:
+            # Split data into first half and second half
+            mid_point = len(data) // 2
+            first_half = data.iloc[:mid_point]
+            second_half = data.iloc[mid_point:]
+            
+            # Calculate scores on both halves
+            score_first = self._calculate_mutual_info_score(
+                first_half, feature, targets, candidate_period, horizon_weights, direction
+            )
+            score_second = self._calculate_mutual_info_score(
+                second_half, feature, targets, candidate_period, horizon_weights, direction
+            )
+            
+            # Stability metric: consistency across time splits
+            stability = 1.0 - abs(score_first - score_second) / max(score_first + score_second, 0.1)
+            
+            # If stability is good (>0.7), use the candidate
+            if stability > 0.7:
+                tprint(f"✅ Period {candidate_period} is stable (stability: {stability:.3f})")
+                return candidate_period, candidate_score
+            else:
+                # Try nearby periods for better stability
+                tprint(f"⚠️ Period {candidate_period} unstable (stability: {stability:.3f}), searching nearby...")
+                
+                best_stable_period = candidate_period
+                best_stable_score = candidate_score
+                
+                for offset in [-5, -3, -1, 1, 3, 5]:
+                    test_period = max(1, candidate_period + offset)
+                    if test_period > 200:
+                        continue
+                    
+                    test_score_first = self._calculate_mutual_info_score(
+                        first_half, feature, targets, test_period, horizon_weights, direction
+                    )
+                    test_score_second = self._calculate_mutual_info_score(
+                        second_half, feature, targets, test_period, horizon_weights, direction
+                    )
+                    
+                    test_stability = 1.0 - abs(test_score_first - test_score_second) / max(test_score_first + test_score_second, 0.1)
+                    
+                    if test_stability > stability:
+                        best_stable_period = test_period
+                        best_stable_score = (test_score_first + test_score_second) / 2
+                        stability = test_stability
+                
+                tprint(f"✅ Best stable period: {best_stable_period} (stability: {stability:.3f})")
+                return best_stable_period, best_stable_score
+                
+        except Exception as e:
+            tprint(f"❌ Stability check failed: {e}")
+            return candidate_period, candidate_score
+    
+    def _calculate_mutual_info_score(self, data: pd.DataFrame, feature: str, targets: List[str], 
+                                   period: int, horizon_weights: Dict[str, float], direction: str) -> float:
+        """Calculate weighted mutual information score for a feature with given lookback period."""
+        try:
+            if feature not in data.columns:
+                return 0.0
+            
+            # Create feature with lookback period
+            feature_series = data[feature].rolling(window=period).mean()
+            
+            total_score = 0.0
+            total_weight = 0.0
+            
+            for target in targets:
+                if target not in data.columns:
+                    continue
+                
+                # Determine horizon weight based on actual price movement classification
+                price_horizon = self._classify_price_movement_horizon(target, data)
+                horizon_weight = horizon_weights.get(price_horizon, horizon_weights['micro'])
+                
+                # Calculate mutual information between feature and target
+                try:
+                    # Remove NaN values for mutual information calculation
+                    valid_data = pd.DataFrame({
+                        'feature': feature_series,
+                        'target': data[target]
+                    }).dropna()
+                    
+                    if len(valid_data) < 10:  # Need minimum data points
+                        continue
+                    
+                    # Calculate correlation as proxy for mutual information
+                    correlation = abs(valid_data['feature'].corr(valid_data['target']))
+                    if pd.isna(correlation):
+                        correlation = 0.0
+                    
+                    # Weighted score
+                    weighted_score = correlation * horizon_weight
+                    total_score += weighted_score
+                    total_weight += horizon_weight
+                    
+                except Exception:
+                    continue
+            
+            # Return average weighted score
+            return total_score / max(total_weight, 0.1)
+            
+        except Exception:
+            return 0.0
+    
+    def _classify_price_movement_horizon(self, target_column: str, data: pd.DataFrame) -> str:
+        """Classify target based on actual price movement percentages in the data."""
+        try:
+            # Calculate price movement statistics for this target
+            if target_column not in data.columns:
+                return 'micro'  # Default to micro
+            
+            target_data = data[target_column].dropna()
+            if len(target_data) < 10:
+                return 'micro'
+            
+            # Calculate price movement percentage
+            # Assuming target represents price change percentage
+            movement_stats = {
+                'mean': abs(target_data.mean()),
+                'std': target_data.std(),
+                'max': abs(target_data.max()),
+                'percentile_75': abs(target_data.quantile(0.75))
+            }
+            
+            # Classify based on multi_horizon_profit_labeler profit targets
+            typical_movement = movement_stats['percentile_75']
+            
+            # Align with updated profit targets (micro disabled, focus on small/medium/good)
+            if typical_movement <= 0.005:  # 0.5% or less (small target - now primary)
+                return 'small'
+            elif typical_movement <= 0.007:  # 0.7% or less (medium target)
+                return 'medium'
+            elif typical_movement <= 0.010:  # 1.0% or less (good target)
+                return 'good'
+            else:
+                return 'good'  # Default to good for larger movements
+                
+        except Exception:
+            return 'small'  # Default to small on error (micro disabled)
     
     def _classify_target_type(self, target_column: str) -> str:
         """Classify the type of multi-horizon target."""

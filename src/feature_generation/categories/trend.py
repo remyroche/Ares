@@ -386,10 +386,10 @@ class TrendScoreGenerator(FeatureGenerator):
 
 class SMAGenerator(FeatureGenerator):
     """Generator for Simple Moving Average with different base calculations."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  period: int = 20,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize SMA generator.
@@ -438,10 +438,10 @@ class SMAGenerator(FeatureGenerator):
 
 class EMAGenerator(FeatureGenerator):
     """Generator for Exponential Moving Average with different base calculations."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  period: int = 20,
-                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.PRICE_RETURNS,
+                 base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.RETURNS_VWAP,
                  **base_kwargs):
         """
         Initialize EMA generator.
@@ -979,6 +979,6 @@ def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[Featur
 
     # Trend Score generators
     for period in periods.get('trend_score', [14]):
-        generators.append(TrendScoreGenerator(period))
+        generators.append(TrendScoreGenerator(adx_period=period))
 
     return generators

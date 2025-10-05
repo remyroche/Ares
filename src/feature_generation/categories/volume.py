@@ -357,6 +357,117 @@ class VolumeAccumulationDistributionGenerator(VectorizedFeatureGenerator):
         
         return mfv.cumsum()
 
+
+class VolumePriceCorrelationGenerator(VectorizedFeatureGenerator):
+    """Generator for volume-price correlation features."""
+
+    def __init__(self, period: int = 20):
+        config = FeatureConfig(
+            name=f"volume_price_correlation_{period}",
+            category=FeatureCategory.VOLUME,
+            description=f"Correlation between volume and price over {period} periods",
+            required_columns=["close", "volume"],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period * 2,
+            parameters={"period": period}
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Calculate volume-price correlation."""
+        close = data['close']
+        volume = data['volume']
+
+        # Rolling correlation between price returns and volume
+        price_returns = close.pct_change()
+        correlation = price_returns.rolling(window=self.config.parameters["period"]).corr(volume)
+
+        return correlation
+
+
+class VolumePriceDivergenceGenerator(VectorizedFeatureGenerator):
+    """Generator for volume-price divergence features."""
+
+    def __init__(self, period: int = 20):
+        config = FeatureConfig(
+            name=f"volume_price_divergence_{period}",
+            category=FeatureCategory.VOLUME,
+            description=f"Volume-price divergence indicator over {period} periods",
+            required_columns=["close", "volume"],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period * 2,
+            parameters={"period": period}
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Calculate enhanced volume-price divergence with regime awareness."""
+        close = data['close']
+        volume = data['volume']
+
+        # Price momentum with regime smoothing
+        price_ma = close.rolling(window=self.config.parameters["period"]).mean()
+        price_momentum = (close - price_ma) / (price_ma + 1e-8)  # Avoid division by zero
+
+        # Volume momentum with regime smoothing
+        volume_ma = volume.rolling(window=self.config.parameters["period"]).mean()
+        volume_momentum = (volume - volume_ma) / (volume_ma + 1e-8)  # Avoid division by zero
+
+        # Enhanced divergence with regime persistence
+        divergence = price_momentum * volume_momentum
+        
+        # Add regime stability measure
+        price_volatility = close.rolling(window=self.config.parameters["period"]).std()
+        volume_volatility = volume.rolling(window=self.config.parameters["period"]).std()
+        
+        # Regime strength indicator (higher when both price and volume show consistent trends)
+        regime_strength = np.abs(divergence) / (price_volatility * volume_volatility + 1e-8)
+        
+        # Combine divergence with regime strength for better clustering
+        enhanced_divergence = divergence * (1 + regime_strength)
+        
+        return enhanced_divergence
+
+
+class PriceVolumeOscillatorGenerator(VectorizedFeatureGenerator):
+    """Generator for price-volume oscillator features."""
+
+    def __init__(self, fast_period: int = 10, slow_period: int = 20):
+        config = FeatureConfig(
+            name=f"price_volume_oscillator_{fast_period}_{slow_period}",
+            category=FeatureCategory.VOLUME,
+            description=f"Price-volume oscillator ({fast_period}/{slow_period})",
+            required_columns=["close", "volume"],
+            default_lookback=slow_period,
+            min_lookback=slow_period,
+            max_lookback=slow_period * 2,
+            parameters={"fast_period": fast_period, "slow_period": slow_period}
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Calculate price-volume oscillator."""
+        close = data['close']
+        volume = data['volume']
+
+        # Price oscillator
+        fast_ma = close.rolling(window=self.config.parameters["fast_period"]).mean()
+        slow_ma = close.rolling(window=self.config.parameters["slow_period"]).mean()
+        price_osc = (fast_ma - slow_ma) / slow_ma
+
+        # Volume oscillator
+        volume_fast_ma = volume.rolling(window=self.config.parameters["fast_period"]).mean()
+        volume_slow_ma = volume.rolling(window=self.config.parameters["slow_period"]).mean()
+        volume_osc = (volume_fast_ma - volume_slow_ma) / volume_slow_ma
+
+        # Combined oscillator
+        combined_osc = price_osc * volume_osc
+
+        return combined_osc
+
+
 def create_default_volume_generators() -> List[FeatureGenerator]:
     """Create default volume feature generators."""
     generators = []
@@ -403,13 +514,22 @@ def create_default_volume_generators() -> List[FeatureGenerator]:
     
     # Volume Accumulation/Distribution
     generators.append(VolumeAccumulationDistributionGenerator())
-    
+
+    # Volume-Price Divergence features for regime identification
+    for period in [10, 20]:
+        generators.append(VolumePriceCorrelationGenerator(period))
+        generators.append(VolumePriceDivergenceGenerator(period))
+
+    # Price-Volume Oscillator
+    generators.append(PriceVolumeOscillatorGenerator(10, 20))
+    generators.append(PriceVolumeOscillatorGenerator(5, 15))
+
     return generators
 
 __all__ = [
     'VolumeFeatureGenerator',
     'VolumeSMAGenerator',
-    'VolumeEMAGenerator', 
+    'VolumeEMAGenerator',
     'VolumeRatioGenerator',
     'VolumeROCGenerator',
     'VolumeStdGenerator',
@@ -420,5 +540,8 @@ __all__ = [
     'VolumeVWAPGenerator',
     'VolumePriceTrendGenerator',
     'VolumeAccumulationDistributionGenerator',
+    'VolumePriceCorrelationGenerator',
+    'VolumePriceDivergenceGenerator',
+    'PriceVolumeOscillatorGenerator',
     'create_default_volume_generators'
 ]

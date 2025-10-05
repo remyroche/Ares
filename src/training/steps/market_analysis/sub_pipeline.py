@@ -11,9 +11,9 @@ This module provides the complete market analysis sub-pipeline with exactly 13 r
         6. regime_models_training - Regime detection models training (CatBoost, Bayesian Rule Lists, ExtraTrees)
         7. regime_ensemble_training - Meta-learner training (stacker_lgbm_calibrated)
 8. regime_data_splitting - Tag data by regimes
-9. feature_lookback_optimization - Optimize feature lookback periods
-10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
-11. multi_horizon_labeling - Apply multi-horizon profit labeling
+        9. multi_horizon_profit_labeler - Apply multi-horizon profit labeling
+        10. feature_lookback_optimization - Optimize feature lookback periods
+        11. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
 12. final_feature_selection - Final multi-stage feature selection (120→100→80→60)
 """
 
@@ -542,9 +542,17 @@ class MarketAnalysisSubPipeline:
                     if hasattr(clustering_result, 'context') and clustering_result.context:
                         context = clustering_result.context
                         if hasattr(context, 'optimized_assignments') and context.optimized_assignments is not None:
-                            clustering_data['cluster_assignments'] = context.optimized_assignments
+                            # Convert numpy array to list for proper JSON serialization
+                            assignments = context.optimized_assignments
+                            if hasattr(assignments, 'tolist'):  # numpy array
+                                clustering_data['cluster_assignments'] = assignments.tolist()
+                            else:  # already a list or other type
+                                clustering_data['cluster_assignments'] = assignments
                         if hasattr(context, 'optimal_k') and context.optimal_k is not None:
                             clustering_data['n_clusters'] = context.optimal_k
+                        if hasattr(context, 'final_k') and context.final_k is not None:
+                            clustering_data['final_k'] = context.final_k
+                            clustering_data['n_clusters'] = context.final_k  # Update n_clusters with final value
                         if hasattr(context, 'optimized_results') and context.optimized_results:
                             clustering_data.update(context.optimized_results)
                 
@@ -632,14 +640,14 @@ class MarketAnalysisSubPipeline:
         log_info('   1. sr_parameter_optimization - Optimize SR detection levels')
         log_info('   2. sr_detection - Detect Support/Resistance levels')
         log_info('   3. sr_clustering - Generate SR clusters')
-        log_info('   4. nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach')
+        log_info('   4. hybrid_nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach')
         log_info('   5. nas_tas_clustering - NAS-TAS-based regime clustering')
         log_info('   6. regime_models_training - Regime detection models training (CatBoost, Bayesian Rule Lists, ExtraTrees)')
         log_info('   7. regime_ensemble_training - Meta-learner training (stacker_lgbm_calibrated)')
         log_info('   8. regime_data_splitting - Tag data by regimes')
-        log_info('   9. feature_lookback_optimization - Optimize feature lookback periods')
-        log_info('   10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features')
-        log_info('   11. multi_horizon_profit_labeler - Apply multi-horizon profit labeling')
+        log_info('   9. multi_horizon_profit_labeler - Apply multi-horizon profit labeling')
+        log_info('   10. feature_lookback_optimization - Optimize feature lookback periods')
+        log_info('   11. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features')
         log_info('   12. final_feature_selection - Final feature selection (120→100→80→60)')
         log_info('=' * 80)
         
@@ -1260,10 +1268,16 @@ class MarketAnalysisSubPipeline:
             # Convert config to component config
             component_config = self._convert_to_component_config(config)
             # Enforce 15m timeframe for Regime components only (log warning if overriding)
-            if sub_pipeline_name in ('nas_tas_models_training', 'nas_tas_ensemble_training'):
+            if sub_pipeline_name in ('nas_tas_models_training', 'nas_tas_ensemble_training', 'regime_models_training'):
                 if component_config.timeframe != '15m':
                     self.logger.warning(f"⚠️ {sub_pipeline_name}: timeframe {component_config.timeframe} supplied; overriding to 15m")
                 component_config.timeframe = '15m'
+
+            # Enforce 1m timeframe for regime_data_splitting
+            if sub_pipeline_name == 'regime_data_splitting':
+                if component_config.timeframe != '1m':
+                    self.logger.warning(f"⚠️ {sub_pipeline_name}: timeframe {component_config.timeframe} supplied; overriding to 1m")
+                component_config.timeframe = '1m'
             
             # Create component using factory
             component = self.component_factory.create_component(sub_pipeline_name, component_config)
@@ -1306,6 +1320,12 @@ class MarketAnalysisSubPipeline:
             if component_result.success and component_result.artifacts:
                 self._accumulated_artifacts.update(component_result.artifacts)
                 self.logger.info(f'📦 Accumulated {len(component_result.artifacts)} artifacts from {sub_pipeline_name}')
+                
+                # Log artifact persistence status
+                if component_result.metadata.get('artifacts_saved_persistently', False):
+                    self.logger.info(f'💾 Artifacts from {sub_pipeline_name} saved persistently for cross-stage access')
+                else:
+                    self.logger.warning(f'⚠️ Artifacts from {sub_pipeline_name} may not be persistently saved')
             
             # Convert component result to sub-pipeline result
             end_time = datetime.now()
@@ -1367,14 +1387,17 @@ class MarketAnalysisSubPipeline:
                 'nas_tas_clustering',
                 'nas_regime_discovery',  # DEPRECATED
                 'nas_clustering',        # DEPRECATED
+                'regime_models_training',  # Regime detection models training (CatBoost, Bayesian Rule Lists, ExtraTrees)
+                'regime_ensemble_training', # Ensemble regime detection models training
                 'hmm_training',
                 'analyst_model_training',
                 'analyst_ensemble_training',
                 'tactician_pre_ml_orchestration',
-                'tactician_dual_training',
+                'tactician_training',
                 'regime_specific_training',
                 'regime_data_splitting',  # Tag data by regimes
                 'feature_lookback_optimization',  # Optimize feature lookback periods
+                'pid_based_feature_generation',   # PID-based feature generation
                 'model_validation',
                 'model_persistence',
                 'model_evaluation',
@@ -1406,14 +1429,14 @@ class MarketAnalysisSubPipeline:
         1. sr_parameter_optimization - Optimize SR detection levels
         2. sr_detection - Detect Support/Resistance levels
         3. sr_clustering - Generate SR clusters
-        4. nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach
+        4. hybrid_nas_tas_regime_discovery - Discover market regimes using hybrid NAS-TAS approach
         5. nas_tas_clustering - NAS-TAS-based regime clustering
         6. regime_models_training - Regime detection models training (CatBoost, Bayesian Rule Lists, ExtraTrees)
         7. regime_ensemble_training - Meta-learner training (stacker_lgbm_calibrated)
         8. regime_data_splitting - Tag data by regimes
-        9. feature_lookback_optimization - Optimize feature lookback periods
-        10. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
-        11. multi_horizon_profit_labeler - Apply multi-horizon profit labeling
+        9. multi_horizon_profit_labeler - Apply multi-horizon profit labeling
+        10. feature_lookback_optimization - Optimize feature lookback periods
+        11. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
         12. final_feature_selection - Final feature selection (120→100→80→60)
 
         When one step completes successfully, it automatically triggers the next step.
@@ -1458,10 +1481,14 @@ class MarketAnalysisSubPipeline:
         ]
         
         data_processing_steps = [
+            'hybrid_nas_tas_regime_discovery',
+            'nas_tas_clustering',
+            'regime_models_training',
+            'regime_ensemble_training',
             'regime_data_splitting',
-            'feature_lookback_optimization',
+            'multi_horizon_profit_labeler',  # Generate profit labels first - needed for feature optimization
+            'feature_lookback_optimization',  # Optimize features based on profit labels
             'pid_based_feature_generation',
-            'multi_horizon_profit_labeler',  # Uses regime-tagged data and generated features
             'final_feature_selection'
         ]
         
@@ -1581,12 +1608,65 @@ class MarketAnalysisSubPipeline:
             # Get date filtering from config if available
             start_date = None
             end_date = None
+
+            # Check for date attributes on config object
             if hasattr(config, 'start_date') and config.start_date:
                 start_date = datetime.strptime(config.start_date, '%Y-%m-%d')
                 self.logger.info(f'📅 Using start_date filter: {start_date} (mode: {config.mode.value})')
+
             if hasattr(config, 'end_date') and config.end_date:
                 end_date = datetime.strptime(config.end_date, '%Y-%m-%d')
                 self.logger.info(f'📅 Using end_date filter: {end_date} (mode: {config.mode.value})')
+
+            # For light mode, enforce strict 20-day limit regardless of configuration
+            if config.mode.value == 'light':
+                from datetime import timedelta
+                # For light mode, use the last 20 days of available data instead of current date
+                # This ensures we use actual historical data rather than future dates
+                try:
+                    # Try to determine the last available date from the data
+                    from src.utils.data.klines_parquet import KlinesParquetManager
+                    manager = KlinesParquetManager(data_dir=config.data_dir)
+
+                    # Load a small sample of recent data to determine the date range
+                    # Use last 30 days to get a representative sample without loading everything
+                    recent_start = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+                    recent_end = datetime.now().strftime('%Y-%m-%d')
+
+                    sample_data = manager.read_data(
+                        symbol=config.symbol.lower(),
+                        interval=config.timeframe,
+                        start_date=recent_start,
+                        end_date=recent_end,
+                        data_type="processed"
+                    )
+
+                    if sample_data is not None and not sample_data.empty:
+                        # Get the last available date from the data
+                        if 'timestamp' in sample_data.columns:
+                            timestamps = pd.to_datetime(sample_data['timestamp'], unit='s')
+                            end_date = timestamps.max()
+                        elif hasattr(sample_data.index, 'max'):
+                            end_date = sample_data.index.max()
+                        else:
+                            # Fallback to current date if we can't determine from data
+                            end_date = datetime.now()
+
+                        start_date = end_date - timedelta(days=20)
+                        self.logger.info(f'📅 Light mode: Using last 20 days of available data: {start_date.strftime("%Y-%m-%d")} to {end_date.strftime("%Y-%m-%d")}')
+                    else:
+                        # No data available, use current date as fallback
+                        end_date = datetime.now()
+                        start_date = end_date - timedelta(days=20)
+                        self.logger.info(f'📅 Light mode: No data available, using calculated range: {start_date.strftime("%Y-%m-%d")} to {end_date.strftime("%Y-%m-%d")}')
+                except Exception as e:
+                    # If there's any error, fall back to current date
+                    self.logger.warning(f"⚠️ Could not determine available data range for light mode: {e}")
+                    end_date = datetime.now()
+                    start_date = end_date - timedelta(days=20)
+                    self.logger.info(f'📅 Light mode: Using fallback date range: {start_date.strftime("%Y-%m-%d")} to {end_date.strftime("%Y-%m-%d")}')
+
+                self.logger.info(f'📅 Light mode: Exactly 20 days of data for regime diversity')
             
             # Load the klines data directly
             market_data = load_klines_from_parquet(

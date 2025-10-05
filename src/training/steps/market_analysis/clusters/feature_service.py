@@ -382,6 +382,18 @@ class FeatureService:
             start_time = time.time()
             tprint("🗺️ Applying dimensionality reduction", "INFO")
 
+            # Check memory pressure before dimensionality reduction
+            try:
+                from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+                memory_optimizer = get_m1_memory_optimizer()
+                memory_pressure = getattr(memory_optimizer, 'memory_pressure', 0.0)
+
+                if memory_pressure > 0.85:  # Very high memory pressure threshold
+                    tprint(f"🧠 Very high memory pressure detected ({memory_pressure:.2f}), skipping dimensionality reduction", "WARNING")
+                    return features, 0.0
+            except Exception as e:
+                tprint(f"Could not check memory pressure: {e}, proceeding with dimensionality reduction", "WARNING")
+
             # Check if dimensionality reduction is needed
             n_features = features.shape[1]
             n_samples = features.shape[0]
@@ -468,6 +480,20 @@ class FeatureService:
         try:
             from sklearn.decomposition import PCA
 
+            # Check memory pressure before PCA fitting
+            try:
+                from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+                memory_optimizer = get_m1_memory_optimizer()
+                memory_pressure = getattr(memory_optimizer, 'memory_pressure', 0.0)
+
+                if memory_pressure > 0.8:  # High memory pressure threshold
+                    tprint(f"🧠 High memory pressure detected ({memory_pressure:.2f}), using simplified PCA", "WARNING")
+                    # Use fewer components to reduce memory usage
+                    target_features = min(target_features, 5)
+                    tprint(f"📉 Reduced target components to {target_features} due to memory pressure", "INFO")
+            except Exception as e:
+                tprint(f"Could not check memory pressure: {e}, proceeding with normal PCA", "WARNING")
+
             # Log PCA initialization details
             n_samples, n_features = features.shape
             tprint(f"🔧 Initializing PCA reduction", "INFO")
@@ -480,7 +506,7 @@ class FeatureService:
 
             # Log PCA fitting process
             tprint(f"🔍 Fitting PCA to data...", "INFO")
-            
+
             # Fit and transform
             reduced_features = self.pca.fit_transform(features)
             

@@ -647,7 +647,7 @@ class EnhancedM1GPUManager(M1GPUManager):
         self.batch_manager.start_batch_processing()
         
         self.logger = logger.getChild('EnhancedM1GPUManager')
-        self.logger.info("🚀 Enhanced M1 GPU Manager initialized")
+        self.logger.debug("🚀 Enhanced M1 GPU Manager initialized")
         
     def _initialize_default_pools(self):
         """Initialize default memory pools."""

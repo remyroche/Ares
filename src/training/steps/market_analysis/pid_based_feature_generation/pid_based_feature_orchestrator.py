@@ -289,13 +289,14 @@ class OrchestratorResult:
     """Result of PID-based feature orchestration with common utilities integration."""
     # Individual Results
     interaction_result: Optional[InteractionResult] = None
+    polynomial_result: Optional[Any] = None  # Added missing polynomial_result attribute
     cross_timeframe_result: Optional[CrossTimeframeResult] = None
-    
+
     # Combined Results
     combined_features: Dict[str, np.ndarray] = field(default_factory=dict)
     combined_feature_names: List[str] = field(default_factory=list)
     feature_importance_scores: Dict[str, float] = field(default_factory=dict)
-    
+
     # Metadata
     total_features_generated: int = 0
     execution_time: float = 0.0
@@ -843,28 +844,9 @@ class PIDBasedFeatureOrchestrator:
                 
                 tprint_success(f"Combined {len([f for f in combined_names if f.startswith('interaction_')])} interaction features")
             
-            # Add polynomial features
-            if result.polynomial_result and hasattr(result.polynomial_result, 'polynomial_features') and result.polynomial_result.polynomial_features:
-                tprint_info(f"Combining {len(result.polynomial_result.polynomial_features)} polynomial features...")
-                for name, feature in result.polynomial_result.polynomial_features.items():
-                    try:
-                        # Validate feature data
-                        if feature is None or not hasattr(feature, 'shape'):
-                            tprint_warning(f"Skipping invalid polynomial feature: {name}")
-                            continue
-                        
-                        combined_features[f"polynomial_{name}"] = feature
-                        combined_names.append(f"polynomial_{name}")
-                        
-                        # Safe importance score extraction
-                        score = result.polynomial_result.polynomial_scores.get(name, 0.0) if hasattr(result.polynomial_result, 'polynomial_scores') else 0.0
-                        importance_scores[f"polynomial_{name}"] = validate_finite(score, f"polynomial_{name}_score")
-                        
-                    except Exception as e:
-                        tprint_warning(f"Failed to combine polynomial feature {name}: {e}")
-                        continue
-                
-                tprint_success(f"Combined {len([f for f in combined_names if f.startswith('polynomial_')])} polynomial features")
+            # Add polynomial features (skip since polynomial generator is disabled for NAS/TAS)
+            # Polynomial features are not generated for NAS/TAS clustering as per design decision
+            tprint_debug("Skipping polynomial features - not used for NAS/TAS clustering")
             
             # Add cross-timeframe features
             if result.cross_timeframe_result and hasattr(result.cross_timeframe_result, 'cross_timeframe_features') and result.cross_timeframe_result.cross_timeframe_features:

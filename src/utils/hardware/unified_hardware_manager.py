@@ -86,6 +86,14 @@ class HardwareConfig:
         'temperature': 85.0
     })
 
+    # Intensive workload thresholds for operations like clustering and feature generation
+    intensive_thresholds: Dict[str, float] = field(default_factory=lambda: {
+        'cpu_usage': 95.0,  # Allow higher CPU usage for intensive operations
+        'memory_usage': 95.0,
+        'gpu_usage': 85.0,
+        'temperature': 90.0
+    })
+
 @dataclass
 class PerformanceMetrics:
     """Performance metrics container."""
@@ -281,7 +289,21 @@ class HardwarePerformanceMonitor:
                 
     def add_alert_callback(self, callback: Callable):
         """Add alert callback function."""
-        self.alert_callbacks.append(callback)
+
+    def set_intensive_thresholds(self):
+        """Switch to intensive workload thresholds for CPU/GPU intensive operations."""
+        self.config.alert_thresholds = self.config.intensive_thresholds.copy()
+        self.logger.info("🔧 Switched to intensive workload thresholds")
+
+    def set_normal_thresholds(self):
+        """Switch back to normal thresholds."""
+        self.config.alert_thresholds = {
+            'cpu_usage': 85.0,
+            'memory_usage': 90.0,
+            'gpu_usage': 80.0,
+            'temperature': 85.0
+        }
+        self.logger.info("🔧 Switched back to normal thresholds")
         
     def get_performance_report(self) -> Dict[str, Any]:
         """Generate performance report."""
@@ -465,10 +487,20 @@ class UnifiedHardwareManager:
             self.is_initialized = True
             self.logger.info("✅ Unified Hardware Manager fully initialized")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize Unified Hardware Manager: {e}")
             return False
+
+    def set_intensive_thresholds(self):
+        """Switch to intensive workload thresholds for CPU/GPU intensive operations."""
+        self.performance_monitor.set_intensive_thresholds()
+        self.logger.info("🔧 Switched to intensive workload thresholds")
+
+    def set_normal_thresholds(self):
+        """Switch back to normal thresholds."""
+        self.performance_monitor.set_normal_thresholds()
+        self.logger.info("🔧 Switched back to normal thresholds")
             
     def shutdown(self):
         """Shutdown all components."""

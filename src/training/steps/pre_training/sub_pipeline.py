@@ -232,6 +232,23 @@ class PreTrainingSubPipeline:
         )
 
         try:
+            custom_params = config.custom_params or {}
+            precomputed_result = custom_params.get('precomputed_labeling_result')
+
+            if precomputed_result:
+                tprint('📥 Using precomputed entry labeling result for tactician pipeline')
+                result.status = SubPipelineStatus.COMPLETED
+                result.success = True
+                result.end_time = datetime.now()
+                result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+                result.artifacts = precomputed_result
+                result.metadata = {
+                    'component_type': 'multi_horizon_profit_labeler',
+                    'source': 'precomputed',
+                    'labeling_method': precomputed_result.get('multi_horizon_labeling_result', {}).get('method', 'tactician_entry_labeling')
+                }
+                return result
+
             # Convert config to component config
             component_config = ComponentConfig(
                 symbol=config.symbol,

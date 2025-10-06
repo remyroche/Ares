@@ -13,7 +13,7 @@ class StepDependencyValidator:
     def __init__(self) -> None:
         """Initialize the validator."""
         self.logger = system_logger
-        self.step_dependencies = {'step02_5_sr_optimization': ['step02_data_reading'], 'step02_data_reading': ['step01_5_data_converter'], 'step01_5_data_converter': ['step01_data_collection'], 'step03_hmm_regime_discovery': []}
+        self.step_dependencies = {'step02_5_sr_optimization': ['step02_data_reading'], 'step02_data_reading': ['step01_5_data_converter'], 'step01_5_data_converter': ['step01_data_collection']}
 
     def validate(self, step_name: str, pipeline_state: dict) -> bool:
         """Validate dependencies for a step."""

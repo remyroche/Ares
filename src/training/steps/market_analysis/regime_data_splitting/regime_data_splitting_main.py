@@ -1270,12 +1270,12 @@ class RegimeDataSplittingStep:
             except (AttributeError, KeyError):
                 pass
 
-            # Use optimized data loading with async processing and memory management
-            regime_data = await self._load_regime_data_optimized(symbol, exchange, timeframe, data_dir)
+            # Load market data for regime tagging using ensemble model
+            market_data = await self._load_market_data_for_ensemble_tagging(symbol, exchange, timeframe, data_dir)
 
-            if regime_data is None:
+            if market_data is None:
                 return RegimeDataResult.failure_result(
-                    error='regime_data_not_found',
+                    error='market_data_not_found',
                     error_type='DataNotFoundError',
                     metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
                 )
@@ -1294,7 +1294,7 @@ class RegimeDataSplittingStep:
                 # Perform comprehensive quality assessment
                 self.logger.info('📊 Performing comprehensive data quality assessment...')
                 quality_assessment = quality_scorer.assess_data_quality(
-                    regime_data,
+                    market_data,
                     context="market_analysis",
                     step_name="regime_data_splitting",
                     data_type="klines"
@@ -1385,7 +1385,28 @@ class RegimeDataSplittingStep:
                 current_memory = validate_positive_func(safe_float_func(current_memory, 0.0), "current_memory_mb")
                 self.logger.info(f'💾 Memory after loading: {current_memory:.1f}MB')
 
-            regime_ids = regime_data['composite_cluster_id'].unique()
+            # Use ensemble model to predict regime labels and probabilities
+            ensemble_result = await self._load_ensemble_model_result(symbol, exchange, timeframe)
+            if ensemble_result is None:
+                return RegimeDataResult.failure_result(
+                    error='ensemble_model_not_found',
+                    error_type='ModelNotFoundError',
+                    metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
+                )
+
+            # Predict regime labels and probabilities using the trained ensemble model
+            regime_predictions = await self._predict_regimes_with_ensemble_model(ensemble_result, market_data)
+            if regime_predictions is None:
+                return RegimeDataResult.failure_result(
+                    error='regime_prediction_failed',
+                    error_type='PredictionError',
+                    metadata={'symbol': symbol, 'exchange': exchange, 'timeframe': timeframe}
+                )
+
+            regime_labels = regime_predictions['labels']
+            regime_probabilities = regime_predictions['probabilities']
+
+            regime_ids = np.unique(regime_labels)
             num_regimes = len(regime_ids)
             num_regimes = validate_positive_func(safe_int_func(num_regimes, 0), "num_regimes")
             self.logger.info(f'📊 Found {num_regimes} regimes: {sorted(regime_ids)}')
@@ -1406,12 +1427,17 @@ class RegimeDataSplittingStep:
             else:
                 self.logger.info(f'📊 Standard regime count: {num_regimes}')
 
+            # Add regime information to market data
+            market_data_with_regimes = market_data.copy()
+            market_data_with_regimes['composite_cluster_id'] = regime_labels
+            market_data_with_regimes['regime_probabilities'] = [prob for prob in regime_probabilities]
+
             # Memory checkpoint: Before dataset creation
             if self.m1_optimizations_enabled and self.memory_optimizer:
                 with self.memory_optimizer.memory_checkpoint("dataset_creation"):
-                    dataset_info = await self._create_unified_regime_dataset(regime_data, regime_ids, data_dir, symbol, exchange, timeframe)
+                    dataset_info = await self._create_unified_regime_dataset(market_data_with_regimes, regime_ids, data_dir, symbol, exchange, timeframe)
             else:
-                dataset_info = await self._create_unified_regime_dataset(regime_data, regime_ids, data_dir, symbol, exchange, timeframe)
+                dataset_info = await self._create_unified_regime_dataset(market_data_with_regimes, regime_ids, data_dir, symbol, exchange, timeframe)
 
             if isinstance(dataset_info, dict):
                 # Log memory usage after dataset creation
@@ -1423,11 +1449,11 @@ class RegimeDataSplittingStep:
                     self.logger.info(f'💾 Memory after dataset creation: {current_memory:.1f}MB')
 
                 self._log_step_timing('Regime Data Tagging', step_start)
-                self.logger.info(f'✅ Successfully created unified dataset with {num_regimes} regime TAGS (100% data retention)')
-                
+                self.logger.info(f'✅ Successfully created unified dataset with {num_regimes} regime TAGS using ensemble model (100% data retention)')
+
                 # Demonstrate tagging approach benefits
                 if num_regimes > 0:
-                    demo_comparison = self.demonstrate_tagging_approach(regime_data, regime_ids[0])
+                    demo_comparison = self.demonstrate_tagging_approach(market_data_with_regimes, regime_ids[0])
                     if demo_comparison:
                         self.logger.info('🎯 Tagging approach demonstration completed')
                 
@@ -1657,10 +1683,15 @@ class RegimeDataSplittingStep:
             self.logger.warning(f'⚠️ Memory allocation failed for merge ({estimated_merge_memory:.1f}MB), using fallback')
 
         try:
+            # Check if regime probabilities are available in regime_df
+            regime_columns = ['timestamp', 'composite_cluster_id']
+            if 'regime_probabilities' in regime_df.columns:
+                regime_columns.append('regime_probabilities')
+
             if use_asof_merge:
                 merged_df = pd.merge_asof(
                     market_df,
-                    regime_df[['timestamp', 'composite_cluster_id']],
+                    regime_df[regime_columns],
                     on='timestamp',
                     direction='nearest',
                     tolerance=pd.Timedelta(milliseconds=merge_tolerance_ms)
@@ -1669,7 +1700,7 @@ class RegimeDataSplittingStep:
             else:
                 merged_df = pd.merge(
                     market_df,
-                    regime_df[['timestamp', 'composite_cluster_id']],
+                    regime_df[regime_columns],
                     on='timestamp',
                     how='inner'
                 )
@@ -2298,9 +2329,14 @@ class RegimeDataSplittingStep:
 
     @comprehensive_function_monitor
     async def _create_unified_regime_dataset(self, data: pd.DataFrame, regime_ids: List[int], data_dir: str, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any] | None:
-        """Create unified dataset with regime labels and return dataset info."""
+        """Create unified dataset with regime probabilities as features and return dataset info."""
         try:
             data = data.sort_values('timestamp').reset_index(drop = True)
+
+            # Convert regime probabilities to features if available
+            if 'regime_probabilities' in data.columns:
+                data = await self._convert_regime_probabilities_to_features(data, regime_ids)
+
             training_dir = ensure_directory(Path("generated/market_analysis") / exchange.lower() / symbol.lower() / 'regime_splits')
             models_dir = Path("generated/market_analysis") / exchange.lower() / symbol.lower() / 'models'
             if not self._save_unified_dataset(data, training_dir, exchange, symbol, timeframe):
@@ -2314,6 +2350,147 @@ class RegimeDataSplittingStep:
         except Exception as e:
             self.logger.exception(f'❌ Error creating unified regime dataset: {e}')
             return None
+
+    async def _load_market_data_for_ensemble_tagging(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
+        """Load market data for ensemble model regime tagging."""
+        try:
+            # Try historical_data path first (where HMM results are actually stored)
+            unified_data_path = Path(self.standards.build_path('historical_data', exchange, symbol)) / 'processed' / f'{symbol.lower()}_{timeframe}'
+            if not unified_data_path.exists():
+                # Fallback to standard unified_data path
+                unified_data_path = Path(self.standards.build_path('unified_data', exchange, symbol)) / timeframe
+                if not unified_data_path.exists():
+                    self.logger.error(f'❌ Unified data path not found: {unified_data_path}')
+                    return None
+
+            unified_files = list(unified_data_path.glob('**/*.parquet'))
+            if not unified_files:
+                self.logger.error(f'❌ No unified data files found in {unified_data_path}')
+                return None
+
+            # Process market data files concurrently
+            async def process_market_file(file_path: Path) -> pd.DataFrame:
+                df = self._read_parquet_with_cache(file_path)
+                df = self.standards.standardize_timestamp(df, 'timestamp')
+                df = self.standards.enforce_schema(df, 'unified')
+                df = df.sort_values('timestamp')
+                df = self.dtype_optimizer.optimize_dataframe_dtypes(df)
+                return df
+
+            # Process files concurrently
+            market_data_frames = await self.async_processor.process_files_concurrent(
+                unified_files,
+                lambda fp: asyncio.run(process_market_file(fp))
+            )
+
+            # Filter out any exceptions and combine data
+            valid_frames = [df for df in market_data_frames if isinstance(df, pd.DataFrame)]
+            if not valid_frames:
+                return pd.DataFrame()
+
+            # Memory-efficient concatenation
+            combined_df = pd.concat(valid_frames, ignore_index=True)
+            combined_df = self.dtype_optimizer.optimize_dataframe_dtypes(combined_df)
+
+            return combined_df
+
+        except Exception as e:
+            self.logger.exception(f'❌ Error loading market data for ensemble tagging: {e}')
+            return None
+
+    async def _load_ensemble_model_result(self, symbol: str, exchange: str, timeframe: str) -> Optional[Dict[str, Any]]:
+        """Load the trained ensemble model result from regime ensemble training."""
+        try:
+            # Try to load from artifacts directory
+            artifacts_dir = Path("generated/market_analysis") / exchange.lower() / symbol.lower() / "artifacts"
+
+            # Look for regime ensemble training result files
+            ensemble_files = list(artifacts_dir.glob("*regime_ensemble_training*"))
+            if not ensemble_files:
+                self.logger.error(f"❌ No regime ensemble training artifacts found in {artifacts_dir}")
+                return None
+
+            # Load the most recent ensemble training result
+            latest_file = max(ensemble_files, key=lambda x: x.stat().st_mtime)
+            ensemble_result = self._read_parquet_with_cache(latest_file)
+
+            if 'stacker_lgbm_calibrated' not in ensemble_result:
+                self.logger.error("❌ No trained ensemble model found in result")
+                return None
+
+            self.logger.info(f"✅ Loaded ensemble model result from {latest_file}")
+            return ensemble_result
+
+        except Exception as e:
+            self.logger.exception(f'❌ Error loading ensemble model result: {e}')
+            return None
+
+    async def _predict_regimes_with_ensemble_model(self, ensemble_result: Dict[str, Any], market_data: pd.DataFrame) -> Optional[Dict[str, Any]]:
+        """Use the trained ensemble model to predict regime labels and probabilities."""
+        try:
+            # Extract the trained model
+            if 'stacker_lgbm_calibrated' not in ensemble_result:
+                self.logger.error("❌ No trained ML model found in regime ensemble training result")
+                return None
+
+            model = ensemble_result['stacker_lgbm_calibrated']
+
+            # Extract feature names from metadata
+            metadata = ensemble_result.get('metadata', {})
+            feature_names = metadata.get('feature_names', [])
+
+            if not feature_names:
+                self.logger.error("❌ No feature names found in regime ensemble training metadata")
+                return None
+
+            # Prepare features for prediction
+            available_features = [f for f in feature_names if f in market_data.columns]
+
+            if not available_features:
+                self.logger.error("❌ No required features found in market data")
+                return None
+
+            # Prepare feature matrix
+            X = market_data[available_features].fillna(0).values
+
+            # Make predictions
+            regime_labels = model.predict(X)
+            regime_probabilities = model.predict_proba(X)
+
+            return {
+                'labels': regime_labels,
+                'probabilities': regime_probabilities
+            }
+
+        except Exception as e:
+            self.logger.exception(f'❌ Error predicting regimes with ensemble model: {e}')
+            return None
+
+    async def _convert_regime_probabilities_to_features(self, data: pd.DataFrame, regime_ids: List[int]) -> pd.DataFrame:
+        """Convert regime probabilities array into individual feature columns."""
+        try:
+            regime_probs = data['regime_probabilities']
+
+            # Handle different formats of regime probabilities
+            if regime_probs.dtype == 'object':
+                # Convert string representations to arrays if needed
+                regime_probs = regime_probs.apply(lambda x: np.array(x) if isinstance(x, (list, np.ndarray)) else np.array([x]))
+
+            # Create feature columns for each regime
+            for i, regime_id in enumerate(regime_ids):
+                col_name = f'regime_prob_{regime_id}'
+                data[col_name] = regime_probs.apply(lambda x: x[i] if i < len(x) else 0.0)
+
+            # Remove the original regime_probabilities column and composite_cluster_id if no longer needed
+            # Keep composite_cluster_id for backward compatibility but mark it as deprecated
+            data = data.drop(columns=['regime_probabilities'])
+
+            self.logger.info(f'✅ Converted regime probabilities to {len(regime_ids)} feature columns')
+            return data
+
+        except Exception as e:
+            self.logger.exception(f'❌ Error converting regime probabilities to features: {e}')
+            return data
 
     @comprehensive_function_monitor
     def _calculate_regime_statistics(self, data: pd.DataFrame, regime_ids: List[int]) -> Dict[str, Any]:

@@ -65,7 +65,7 @@ class AnalystPreMLConfig:
     data_dir: str = "historical_data"
     
     # Execution parameters
-    enable_per_regime_optimization: bool = True
+    enable_per_regime_optimization: bool = False  # Disabled - using regime probabilities as features instead
     enable_per_cluster_optimization: bool = True
     
     # Output configuration

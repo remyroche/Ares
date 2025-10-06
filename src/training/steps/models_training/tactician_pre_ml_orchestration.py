@@ -1,13 +1,13 @@
 """
-Tactician Pre-ML Orchestration - 5m Timeframe Feature Engineering
+Tactician Pre-ML Orchestration - 15m Timeframe Feature Engineering
 
 This orchestrator applies the complete pre-training pipeline for Tactician models:
 1. Applies differentiated horizon labeling + Optimizes feature lookback periods + Generates PID features + Selects final features
-2. Uses 5m timeframe with per-regime/cluster optimisation
+2. Uses 15m timeframe with per-regime/cluster optimisation
 3. Uses the pipeline present in src/training/steps/MODELS_TRAINING/
 
 TACTICIAN PRE-ML CONFIGURATION:
-- Timeframe: 5m (as specified for tactician_pre_ml_orchestration step)
+- Timeframe: 15m (as specified for tactician_pre_ml_orchestration step)
 - Training Data: All market data (processed through the standard pre-training pipeline)
 - Output: Features optimized for Tactician model training
 - Per-regime optimization: Yes, using regime assignments from market_analysis
@@ -81,7 +81,7 @@ class TacticianPreMLConfig:
     # Data configuration
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
-    timeframe: str = "5m"  # TACTICIAN PRE-ML USES 5m TIMEFRAME
+    timeframe: str = "15m"  # TACTICIAN PRE-ML USES 15m TIMEFRAME
     data_dir: str = "historical_data"
     
     # Analyst signal filtering
@@ -373,9 +373,9 @@ class TacticianPreMLOrchestrator:
     """
     Tactician Pre-ML Orchestration.
 
-    Orchestrates the complete pre-training pipeline for Tactician models on 5m timeframe.
+    Orchestrates the complete pre-training pipeline for Tactician models on 15m timeframe.
     Applies differentiated horizon labeling + Optimizes feature lookback periods + Generates PID features + Selects final features.
-    Uses 5m timeframe with per-regime/cluster optimisation using the pipeline in src/training/steps/MODELS_TRAINING/.
+    Uses 15m timeframe with per-regime/cluster optimisation using the pipeline in src/training/steps/MODELS_TRAINING/.
     """
     
     def __init__(self, config: Optional[TacticianPreMLConfig] = None):
@@ -397,8 +397,8 @@ class TacticianPreMLOrchestrator:
 
             tprint_success(f"✅ TacticianPreMLOrchestrator initialized (timeframe: {self.config.timeframe})")
             tprint_info(f"🎯 Analyst signal threshold: {self.config.analyst_confidence_threshold:.2%}")
-            tprint_info(f"⏰ Operating on 5m timeframe for feature engineering")
-
+            tprint_info(f"⏰ Operating on {self.config.timeframe} timeframe for feature engineering")
+            
         except Exception as e:
             tprint_error(f"❌ Failed to initialize TacticianPreMLOrchestrator: {e}")
             raise
@@ -560,15 +560,48 @@ class TacticianPreMLOrchestrator:
         Prepare training data for Tactician pre-ML orchestration.
 
         Args:
-            training_data: Input DataFrame (5m timeframe)
+            training_data: Input DataFrame (15m timeframe)
             analyst_predictions: Analyst ensemble predictions (for reference only)
 
         Returns:
-            Prepared DataFrame for 5m timeframe processing
+            Prepared DataFrame for 15m timeframe processing
         """
-        tprint_info("🔍 Preparing training data for 5m timeframe processing...")
+        tprint_info(f"🔍 Preparing training data for {self.config.timeframe} timeframe processing...")
         tprint_info(f"📊 Input data shape: {training_data.shape}")
         tprint_info(f"📊 Timeframe: {self.config.timeframe}")
+
+        expected_minutes: Optional[float] = None
+        if isinstance(self.config.timeframe, str) and self.config.timeframe.endswith('m'):
+            try:
+                expected_minutes = float(self.config.timeframe[:-1])
+            except ValueError:
+                expected_minutes = None
+
+        inferred_minutes: Optional[float] = None
+
+        if isinstance(training_data.index, pd.DatetimeIndex):
+            diffs = training_data.index.to_series().diff().dropna()
+            if not diffs.empty:
+                mode_delta = diffs.mode()
+                if not mode_delta.empty:
+                    inferred_minutes = mode_delta.iloc[0].total_seconds() / 60
+
+        if inferred_minutes is None and 'timestamp' in training_data.columns:
+            timestamp_series = pd.to_datetime(training_data['timestamp'], errors='coerce').dropna().sort_values()
+            diffs = timestamp_series.diff().dropna()
+            if not diffs.empty:
+                mode_delta = diffs.mode()
+                if not mode_delta.empty:
+                    inferred_minutes = mode_delta.iloc[0].total_seconds() / 60
+
+        if inferred_minutes is not None:
+            tprint_info(f"⏱️ Inferred candle interval: {inferred_minutes:.2f} minutes")
+            if expected_minutes is not None and abs(inferred_minutes - expected_minutes) > 0.1:
+                raise ValueError(
+                    f"Tactician Pre-ML expects {expected_minutes:.0f} minute candles but received {inferred_minutes:.2f} minute intervals."
+                )
+        else:
+            tprint_warning("⚠️ Unable to infer candle interval from training data; ensure it matches the configured timeframe.")
 
         # For tactician_pre_ml_orchestration, we use all the training data
         # The analyst signal filtering happens in the actual tactician training step
@@ -585,7 +618,7 @@ class TacticianPreMLOrchestrator:
         Execute the complete pre-ML orchestration for Tactician models.
 
         Args:
-            training_data: Input DataFrame with market data (5m timeframe)
+            training_data: Input DataFrame with market data (15m timeframe)
             analyst_predictions: Analyst ensemble predictions for filtering
             regime_assignments: Optional regime assignments for per-regime optimization
             **kwargs: Additional parameters
@@ -594,7 +627,7 @@ class TacticianPreMLOrchestrator:
             TacticianPreMLResult with orchestrated features and metadata
         """
         start_time = tprint_timer()
-        tprint_info("🚀 Starting Tactician Pre-ML Orchestration (5m timeframe)...")
+        tprint_info(f"🚀 Starting Tactician Pre-ML Orchestration ({self.config.timeframe} timeframe)...")
         tprint_info(f"📊 Input data shape: {training_data.shape}")
 
         result = TacticianPreMLResult()
@@ -605,8 +638,9 @@ class TacticianPreMLOrchestrator:
             if not self.pre_training_pipeline:
                 raise RuntimeError("Pre-training pipeline not available")
 
-            # Step 0: Prepare training data for 5m timeframe processing
-            tprint_info("🎯 Step 0/5: Preparing training data for 5m timeframe...")
+
+            # Step 0: Prepare training data for configured timeframe processing
+            tprint_info(f"🎯 Step 0/4: Preparing training data for {self.config.timeframe} timeframe...")
             result.phase = OrchestrationPhase.DATA_FILTERING
 
             prepared_data = self._prepare_training_data(training_data, analyst_predictions)
@@ -636,7 +670,7 @@ class TacticianPreMLOrchestrator:
             sub_config = SubPipelineConfig(
                 symbol=self.config.symbol,
                 exchange=self.config.exchange,
-                timeframe=self.config.timeframe,  # 5m for Tactician
+                timeframe=self.config.timeframe,  # 15m for Tactician
                 data_dir=self.config.data_dir,
                 parallel_processing=self.config.enable_parallel_processing,
                 custom_params={
@@ -654,7 +688,7 @@ class TacticianPreMLOrchestrator:
             )
             
             tprint_info("📋 Configuration:")
-            tprint_info(f"  - Timeframe: {self.config.timeframe} (5m for feature engineering)")
+            tprint_info(f"  - Timeframe: {self.config.timeframe} (feature engineering cadence)")
             tprint_info(f"  - Samples after preparation: {len(prepared_data)}")
             tprint_info(f"  - Per-regime optimization: {self.config.enable_per_regime_optimization}")
             tprint_info(f"  - Per-cluster optimization: {self.config.enable_per_cluster_optimization}")
@@ -757,7 +791,7 @@ async def execute_tactician_pre_ml_orchestration(
     Execute Tactician pre-ML orchestration.
 
     Args:
-        training_data: Input DataFrame with market data (5m timeframe)
+        training_data: Input DataFrame with market data (15m timeframe)
         analyst_predictions: Analyst ensemble predictions (for reference only)
         regime_assignments: Optional regime assignments for per-regime optimization
         config: Optional configuration

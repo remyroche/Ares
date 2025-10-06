@@ -29,10 +29,12 @@ tprint("🔧 Loading cross timeframe feature generator...")
 # Core dependencies with fallback support
 try:
     import numpy as np
+    from numpy.lib.stride_tricks import sliding_window_view
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
     np = None
+    sliding_window_view = None
 
 try:
     import pandas as pd
@@ -178,10 +180,15 @@ class CrossTimeframeFeatureGenerator:
         """Initialize the cross-timeframe feature generator."""
         self.config = config or CrossTimeframeConfig()
         self.logger = logger.getChild('CrossTimeframeFeatureGenerator')
-        
+
         # Initialize components
         self._initialize_components()
-        
+
+        # Rolling window cache for reusing statistics across feature computations
+        self._rolling_cache: Dict[Tuple[str, Tuple[Any, ...]], np.ndarray] = {}
+        self._rolling_cache_hits: int = 0
+        self._rolling_cache_misses: int = 0
+
         self.logger.info("🔧 CrossTimeframeFeatureGenerator initialized")
         self.logger.info(f"📊 Max cross-timeframe features: {self.config.max_cross_timeframe_features}")
         self.logger.info(f"📊 Timeframes: {self.config.timeframes}")
@@ -346,27 +353,128 @@ class CrossTimeframeFeatureGenerator:
             return result
     
     def _apply_optimized_lookback_periods(
-        self, 
-        X: np.ndarray, 
-        feature_names: List[str], 
+        self,
+        X: np.ndarray,
+        feature_names: List[str],
         optimized_lookback_periods: Dict[str, int]
     ) -> Tuple[np.ndarray, List[str]]:
         """Apply optimized lookback periods to features."""
         try:
-            # This is a placeholder for applying optimized lookback periods
-            # In practice, this would involve resampling or windowing the data
-            # based on the optimized periods from feature_lookback_optimization
-            
-            self.logger.info(f"📊 Applying optimized lookback periods: {optimized_lookback_periods}")
-            
-            # For now, we'll just log the optimization and return the original data
-            # In a full implementation, this would:
-            # 1. Identify which features correspond to which optimized periods
-            # 2. Apply the appropriate windowing/resampling
-            # 3. Update feature names to reflect the optimization
-            
-            return X, feature_names
-            
+            if not optimized_lookback_periods:
+                return X, feature_names
+
+            self.logger.info(
+                f"📊 Applying optimized lookback periods: {optimized_lookback_periods}"
+            )
+
+            if X.ndim != 2:
+                self.logger.warning(
+                    "⚠️ Expected 2D feature matrix when applying lookback periods"
+                )
+                return X, feature_names
+
+            feature_index_map = {name: idx for idx, name in enumerate(feature_names)}
+
+            valid_periods: Dict[str, Tuple[int, int]] = {}
+            for feature_name, period in optimized_lookback_periods.items():
+                if feature_name not in feature_index_map:
+                    self.logger.debug(
+                        "ℹ️ Optimized period provided for unknown feature '%s'", feature_name
+                    )
+                    continue
+
+                try:
+                    period_value = int(period)
+                except (TypeError, ValueError):
+                    self.logger.debug(
+                        "ℹ️ Invalid lookback period '%s' for feature '%s'", period, feature_name
+                    )
+                    continue
+
+                if period_value < 1:
+                    self.logger.debug(
+                        "ℹ️ Non-positive lookback period %s for feature '%s'", period_value, feature_name
+                    )
+                    continue
+
+                if 'validate_lookback_period' in globals():
+                    try:
+                        if not validate_lookback_period(period_value):
+                            self.logger.debug(
+                                "ℹ️ Lookback period %s for feature '%s' failed validation",
+                                period_value,
+                                feature_name,
+                            )
+                            continue
+                    except Exception as validation_error:  # pragma: no cover - defensive
+                        self.logger.debug(
+                            "ℹ️ Lookback validation failed for feature '%s': %s",
+                            feature_name,
+                            validation_error,
+                        )
+                        continue
+
+                valid_periods[feature_name] = (feature_index_map[feature_name], period_value)
+
+            if not valid_periods:
+                return X, feature_names
+
+            # Compute rolling transformations grouped by common window sizes to
+            # leverage vectorized operations.
+            transformed_columns: Dict[str, np.ndarray] = {}
+            if PANDAS_AVAILABLE:
+                df = pd.DataFrame(X, columns=feature_names)
+                for period_value in sorted({period for _, period in valid_periods.values()}):
+                    period_columns = [
+                        name
+                        for name, (_, p_value) in valid_periods.items()
+                        if p_value == period_value
+                    ]
+                    if not period_columns:
+                        continue
+
+                    rolled_df = df[period_columns].rolling(
+                        window=period_value,
+                        min_periods=1,
+                    ).mean()
+                    for column_name in period_columns:
+                        transformed_columns[column_name] = rolled_df[column_name].to_numpy(copy=True)
+            else:
+                for feature_name, (idx, period_value) in valid_periods.items():
+                    column_data = X[:, idx].astype(float, copy=False)
+
+                    if period_value == 1:
+                        transformed_columns[feature_name] = column_data.copy()
+                        continue
+
+                    # Vectorized cumulative sum approach to compute rolling mean
+                    cumsum = np.cumsum(column_data, dtype=float)
+                    rolling_sum = cumsum.copy()
+                    rolling_sum[period_value:] = (
+                        cumsum[period_value:] - cumsum[:-period_value]
+                    )
+                    counts = np.minimum(
+                        np.arange(1, column_data.shape[0] + 1),
+                        period_value,
+                    )
+                    transformed = rolling_sum / counts
+                    transformed_columns[feature_name] = transformed
+
+            updated_feature_arrays: List[np.ndarray] = []
+            updated_feature_names: List[str] = []
+
+            for feature_name in feature_names:
+                if feature_name in valid_periods and feature_name in transformed_columns:
+                    period_value = valid_periods[feature_name][1]
+                    updated_feature_arrays.append(transformed_columns[feature_name])
+                    updated_feature_names.append(f"{feature_name}_lb{period_value}")
+                else:
+                    updated_feature_arrays.append(X[:, feature_index_map[feature_name]])
+                    updated_feature_names.append(feature_name)
+
+            transformed_matrix = np.column_stack(updated_feature_arrays)
+            return transformed_matrix, updated_feature_names
+
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to apply optimized lookback periods: {e}")
             return X, feature_names
@@ -405,7 +513,7 @@ class CrossTimeframeFeatureGenerator:
         
         return timeframe_features
     
-    def _create_synthetic_timeframe_data(self, X: np.ndarray, feature_names: List[str], 
+    def _create_synthetic_timeframe_data(self, X: np.ndarray, feature_names: List[str],
                                        timeframe_features: List[str]) -> Tuple[np.ndarray, List[str]]:
         """Create synthetic multi-timeframe features from single timeframe data."""
         try:
@@ -432,15 +540,32 @@ class CrossTimeframeFeatureGenerator:
             for tf_name, base_idx in base_feature_indices.items():
                 base_data = X[:, base_idx]
                 
+                base_feature_name = feature_names[base_idx] if base_idx < len(feature_names) else tf_name
+
                 if 'short_tf' in tf_name:
                     # Short timeframe: 5-period rolling mean (represents ~5min aggregation)
-                    synthetic_data = self._rolling_aggregation(base_data, window=5, agg_type='mean')
+                    synthetic_data = self._rolling_aggregation(
+                        base_data,
+                        window=5,
+                        agg_type='mean',
+                        cache_params=('synthetic_mean', base_feature_name, 5)
+                    )
                 elif 'medium_tf' in tf_name:
-                    # Medium timeframe: 15-period rolling mean (represents ~15min aggregation)  
-                    synthetic_data = self._rolling_aggregation(base_data, window=15, agg_type='mean')
+                    # Medium timeframe: 15-period rolling mean (represents ~15min aggregation)
+                    synthetic_data = self._rolling_aggregation(
+                        base_data,
+                        window=15,
+                        agg_type='mean',
+                        cache_params=('synthetic_mean', base_feature_name, 15)
+                    )
                 elif 'long_tf' in tf_name:
                     # Long timeframe: 60-period rolling mean (represents ~1hour aggregation)
-                    synthetic_data = self._rolling_aggregation(base_data, window=60, agg_type='mean')
+                    synthetic_data = self._rolling_aggregation(
+                        base_data,
+                        window=60,
+                        agg_type='mean',
+                        cache_params=('synthetic_mean', base_feature_name, 60)
+                    )
                 else:
                     continue
                 
@@ -463,18 +588,58 @@ class CrossTimeframeFeatureGenerator:
             self.logger.error(f"❌ Error creating synthetic timeframe data: {e}")
             return X, feature_names
     
-    def _rolling_aggregation(self, data: np.ndarray, window: int, agg_type: str = 'mean') -> np.ndarray:
-        """Apply rolling aggregation to create synthetic timeframe data."""
+    def _rolling_aggregation(
+        self,
+        data: np.ndarray,
+        window: int,
+        agg_type: str = 'mean',
+        cache_params: Optional[Tuple[Any, ...]] = None
+    ) -> np.ndarray:
+        """Apply vectorized rolling aggregation to create synthetic timeframe data."""
+        if not NUMPY_AVAILABLE:
+            return data
+
+        use_cache = cache_params is not None
+        cached_result = None
+        if use_cache:
+            cached_result = self._cache_lookup('rolling_aggregation', cache_params)
+            if cached_result is not None:
+                return cached_result
+
         try:
-            if agg_type == 'mean':
-                # Simple rolling mean using numpy
-                result = np.zeros_like(data)
-                for i in range(len(data)):
-                    start_idx = max(0, i - window + 1)
-                    result[i] = np.mean(data[start_idx:i+1])
-                return result
+            if agg_type != 'mean':
+                return data
+
+            window = max(1, min(window, len(data)))
+
+            if self.matrix_ops and getattr(self.matrix_ops, 'vectorized_core', None) is not None and PANDAS_AVAILABLE:
+                df = pd.DataFrame({'value': data})
+                df = self._prepare_dataframe_for_vectorization(df)
+                try:
+                    vectorized_df = self.matrix_ops.vectorized_core.vectorized_rolling_features(
+                        df[['value']],
+                        windows=[window],
+                        features=['value']
+                    )
+                    column_name = f'value_rolling_mean_{window}'
+                    if column_name in vectorized_df:
+                        result = vectorized_df[column_name].to_numpy()
+                    else:
+                        result = vectorized_df['value'].rolling(window=window, min_periods=1).mean().to_numpy()
+                except Exception:
+                    result = pd.Series(data).rolling(window=window, min_periods=1).mean().to_numpy()
+            elif PANDAS_AVAILABLE:
+                result = pd.Series(data).rolling(window=window, min_periods=1).mean().to_numpy()
             else:
-                return data  # Fallback to original data
+                cumsum = np.cumsum(data, dtype=float)
+                result = cumsum / np.arange(1, len(data) + 1)
+                if window < len(data):
+                    numerator = cumsum[window:] - cumsum[:-window]
+                    result[window - 1:] = numerator / window
+
+            if use_cache:
+                self._cache_store('rolling_aggregation', cache_params, result)
+            return result
         except Exception as e:
             self.logger.warning(f"⚠️ Rolling aggregation failed: {e}")
             return data
@@ -599,9 +764,9 @@ class CrossTimeframeFeatureGenerator:
             return []
     
     def _generate_cross_timeframe_matrix(
-        self, 
-        X: np.ndarray, 
-        feature_names: List[str], 
+        self,
+        X: np.ndarray,
+        feature_names: List[str],
         significant_pairs: List[Tuple[str, str]]
     ) -> Tuple[np.ndarray, List[str]]:
         """Generate cross-timeframe feature matrix."""
@@ -647,12 +812,58 @@ class CrossTimeframeFeatureGenerator:
             return features_matrix, cross_timeframe_names
         else:
             return np.array([]).reshape(X.shape[0], 0), []
-    
+
+    def _cache_lookup(self, operation: str, params: Tuple[Any, ...]) -> Optional[np.ndarray]:
+        """Retrieve cached rolling window computations when available."""
+        if not params:
+            return None
+
+        key = (operation, params)
+        cached = self._rolling_cache.get(key)
+        if cached is not None:
+            self._rolling_cache_hits += 1
+            return cached
+
+        self._rolling_cache_misses += 1
+        return None
+
+    def _cache_store(self, operation: str, params: Tuple[Any, ...], value: np.ndarray) -> None:
+        """Store rolling window computations for reuse."""
+        if not params:
+            return
+
+        key = (operation, params)
+        self._rolling_cache[key] = value
+
+    def _prepare_dataframe_for_vectorization(self, df: 'pd.DataFrame') -> 'pd.DataFrame':
+        """Optimize DataFrame before passing it to matrix operations."""
+        if not PANDAS_AVAILABLE or df is None:
+            return df
+
+        if self.matrix_ops and getattr(self.matrix_ops, 'vectorized_core', None) is not None:
+            vectorized_core = self.matrix_ops.vectorized_core
+            try:
+                if hasattr(vectorized_core, 'optimize_dataframe_for_processing'):
+                    return vectorized_core.optimize_dataframe_for_processing(df.copy())
+                if hasattr(vectorized_core, 'optimize_dataframe'):
+                    return vectorized_core.optimize_dataframe(df.copy())
+            except Exception:
+                pass
+
+            try:
+                from src.utils.matrix_operations.convenience import optimize_dataframe  # type: ignore
+
+                return optimize_dataframe(df.copy())
+            except Exception:
+                return df
+
+        return df
+
     def _create_cross_timeframe_feature(
-        self, 
-        x1: np.ndarray, 
-        x2: np.ndarray, 
-        feat1: str, 
+        self,
+        x1: np.ndarray,
+        x2: np.ndarray,
+        feat1: str,
         feat2: str, 
         cross_timeframe_type: CrossTimeframeType
     ) -> Tuple[Optional[np.ndarray], str]:
@@ -682,11 +893,17 @@ class CrossTimeframeFeatureGenerator:
                 # Memory-efficient rolling correlation between timeframes
                 window = get_rolling_window_size(len(x1), COMPUTATION.DEFAULT_ROLLING_WINDOW)
                 if window >= COMPUTATION.MIN_ROLLING_WINDOW:
-                    feature = self._compute_rolling_correlation_efficient(x1, x2, window)
+                    cache_params = tuple(sorted((feat1, feat2))) + (window, 'corr')
+                    feature = self._compute_rolling_correlation_efficient(
+                        x1,
+                        x2,
+                        window,
+                        cache_params=cache_params
+                    )
                 else:
                     feature = np.zeros_like(x1, dtype=float)
                 name = f"{feat1}_rolling_corr_{feat2}"
-                
+
             elif cross_timeframe_type == CrossTimeframeType.LAG_CORRELATION:
                 # True lag-based rolling correlation
                 lag = min(CROSS_TIMEFRAME.MAX_LAG_PERIODS, len(x1) // 4)
@@ -725,30 +942,33 @@ class CrossTimeframeFeatureGenerator:
                 # Memory-efficient rolling volatility ratio between timeframes
                 window = min(20, len(x1))
                 if window >= 3:
-                    vol1 = self._compute_rolling_statistic_efficient(x1, window, np.std)
-                    vol2 = self._compute_rolling_statistic_efficient(x2, window, np.std)
+                    vol1 = self._compute_rolling_statistic_efficient(
+                        x1,
+                        window,
+                        np.std,
+                        cache_params=(feat1, window, 'std')
+                    )
+                    vol2 = self._compute_rolling_statistic_efficient(
+                        x2,
+                        window,
+                        np.std,
+                        cache_params=(feat2, window, 'std')
+                    )
                     feature = np.divide(vol1, vol2, out=np.zeros_like(vol1), where=(vol2 != 0))
                     name = f"{feat1}_rolling_vol_ratio_{feat2}"
                 else:
                     return None, ""
-                
+
             elif cross_timeframe_type == CrossTimeframeType.TREND_ALIGNMENT:
                 # Rolling trend alignment between timeframes using slope product
                 window = min(20, len(x1))
                 if window >= 3:
-                    idx = np.arange(window)
-                    idx_mean = idx.mean()
-                    denom = ((idx - idx_mean)**2).sum()
-                    slope_prod = np.zeros(len(x1), dtype=float)
-                    for t in range(window-1, len(x1)):
-                        s1 = x1[t-window+1:t+1]
-                        s2 = x2[t-window+1:t+1]
-                        s1_mean = s1.mean()
-                        s2_mean = s2.mean()
-                        slope1 = ((idx - idx_mean) * (s1 - s1_mean)).sum() / denom
-                        slope2 = ((idx - idx_mean) * (s2 - s2_mean)).sum() / denom
-                        slope_prod[t] = slope1 * slope2
-                    feature = slope_prod
+                    feature = self._compute_trend_alignment(
+                        x1,
+                        x2,
+                        window,
+                        cache_params=tuple(sorted((feat1, feat2))) + (window, 'trend_align')
+                    )
                     name = f"{feat1}_rolling_trend_align_{feat2}"
                 else:
                     return None, ""
@@ -775,11 +995,30 @@ class CrossTimeframeFeatureGenerator:
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to create {cross_timeframe_type.value} cross-timeframe feature: {e}")
             return None, ""
-    
+
+    def _apply_known_rolling_stat(self, rolling_obj, stat_func):
+        """Apply common rolling statistics using pandas-native implementations when possible."""
+        func_name = getattr(stat_func, '__name__', '') if hasattr(stat_func, '__name__') else ''
+
+        if func_name in {'std', 'nanstd'}:
+            return rolling_obj.std(ddof=0)
+        if func_name in {'var', 'nanvar'}:
+            return rolling_obj.var(ddof=0)
+        if func_name in {'mean', 'nanmean'}:
+            return rolling_obj.mean()
+        if func_name in {'min', 'amin'}:
+            return rolling_obj.min()
+        if func_name in {'max', 'amax'}:
+            return rolling_obj.max()
+        if func_name in {'median', 'nanmedian'}:
+            return rolling_obj.median()
+
+        return rolling_obj.apply(lambda arr: stat_func(arr), raw=True)
+
     def _calculate_cross_timeframe_scores(
-        self, 
-        cross_timeframe_features: np.ndarray, 
-        cross_timeframe_names: List[str], 
+        self,
+        cross_timeframe_features: np.ndarray,
+        cross_timeframe_names: List[str],
         target: Optional[np.ndarray]
     ) -> Dict[str, float]:
         """Calculate importance scores for cross-timeframe features."""
@@ -870,64 +1109,193 @@ class CrossTimeframeFeatureGenerator:
         except Exception:
             return 0.0
     
-    def _compute_rolling_correlation_efficient(self, x1: np.ndarray, x2: np.ndarray, window: int) -> np.ndarray:
-        """Compute rolling correlation efficiently to avoid memory issues."""
+    def _compute_rolling_correlation_efficient(
+        self,
+        x1: np.ndarray,
+        x2: np.ndarray,
+        window: int,
+        cache_params: Optional[Tuple[Any, ...]] = None
+    ) -> np.ndarray:
+        """Compute rolling correlation using vectorized operations."""
+        if not NUMPY_AVAILABLE:
+            return np.zeros_like(x1, dtype=float)
+
+        use_cache = cache_params is not None
+        cached_result = None
+        if use_cache:
+            cached_result = self._cache_lookup('rolling_corr', cache_params)
+            if cached_result is not None:
+                return cached_result
+
         try:
-            n = len(x1)
-            result = np.zeros(n, dtype=float)
-            
-            # Pre-allocate arrays for window calculations to avoid repeated allocations
-            x1_window = np.zeros(window)
-            x2_window = np.zeros(window)
-            
-            for i in range(window - 1, n):
-                start_idx = i - window + 1
-                
-                # Copy data to pre-allocated arrays
-                x1_window[:] = x1[start_idx:i + 1]
-                x2_window[:] = x2[start_idx:i + 1]
-                
-                # Compute correlation using numpy's built-in function (more efficient)
+            window = max(1, min(window, len(x1)))
+            if window <= 1:
+                return np.zeros_like(x1, dtype=float)
+
+            if self.matrix_ops and getattr(self.matrix_ops, 'vectorized_core', None) is not None and PANDAS_AVAILABLE:
+                df = pd.DataFrame({'x1': x1, 'x2': x2})
+                df = self._prepare_dataframe_for_vectorization(df)
                 try:
-                    corr_matrix = np.corrcoef(x1_window, x2_window)
-                    if corr_matrix.shape == (2, 2):
-                        corr_val = corr_matrix[0, 1]
-                        result[i] = corr_val if np.isfinite(corr_val) else 0.0
-                    else:
-                        result[i] = 0.0
-                except (np.linalg.LinAlgError, ValueError):
-                    result[i] = 0.0
-            
+                    corr_series = df['x1'].rolling(window=window, min_periods=window).corr(df['x2'])
+                except Exception:
+                    series1 = pd.Series(x1)
+                    series2 = pd.Series(x2)
+                    corr_series = series1.rolling(window=window, min_periods=window).corr(series2)
+                result = corr_series.fillna(0.0).to_numpy()
+            elif PANDAS_AVAILABLE:
+                series1 = pd.Series(x1)
+                series2 = pd.Series(x2)
+                corr_series = series1.rolling(window=window, min_periods=window).corr(series2)
+                result = corr_series.fillna(0.0).to_numpy()
+            else:
+                if sliding_window_view is None:
+                    return np.zeros_like(x1, dtype=float)
+
+                view1 = sliding_window_view(x1, window)
+                view2 = sliding_window_view(x2, window)
+                mean1 = view1.mean(axis=-1)
+                mean2 = view2.mean(axis=-1)
+                centered1 = view1 - mean1[:, None]
+                centered2 = view2 - mean2[:, None]
+                denom = (window - 1) if window > 1 else 1
+                cov = np.sum(centered1 * centered2, axis=-1) / denom
+                std1 = np.sqrt(np.sum(centered1 ** 2, axis=-1) / denom)
+                std2 = np.sqrt(np.sum(centered2 ** 2, axis=-1) / denom)
+                corr_valid = np.divide(
+                    cov,
+                    std1 * std2,
+                    out=np.zeros_like(cov),
+                    where=(std1 > 0) & (std2 > 0)
+                )
+                result = np.zeros_like(x1, dtype=float)
+                result[window - 1:] = corr_valid
+
+            if use_cache:
+                self._cache_store('rolling_corr', cache_params, result)
+
             return result
-            
+
         except Exception as e:
             self.logger.warning(f"Efficient rolling correlation failed: {e}, using fallback")
-            # Fallback to simple approach
             return np.zeros_like(x1, dtype=float)
     
-    def _compute_rolling_statistic_efficient(self, x: np.ndarray, window: int, stat_func) -> np.ndarray:
-        """Compute rolling statistics efficiently to avoid memory issues."""
+    def _compute_rolling_statistic_efficient(
+        self,
+        x: np.ndarray,
+        window: int,
+        stat_func,
+        cache_params: Optional[Tuple[Any, ...]] = None
+    ) -> np.ndarray:
+        """Compute rolling statistics with vectorized operations."""
+        if not NUMPY_AVAILABLE:
+            return np.zeros_like(x, dtype=float)
+
+        use_cache = cache_params is not None
+        cached_result = None
+        if use_cache:
+            cached_result = self._cache_lookup('rolling_stat', cache_params)
+            if cached_result is not None:
+                return cached_result
+
         try:
-            n = len(x)
-            result = np.zeros(n, dtype=float)
-            
-            # Pre-allocate window array
-            x_window = np.zeros(window)
-            
-            for i in range(window - 1, n):
-                start_idx = i - window + 1
-                x_window[:] = x[start_idx:i + 1]
-                
+            window = max(1, min(window, len(x)))
+            if window <= 1:
+                if len(x) == 0:
+                    return np.array([], dtype=float)
+
+                val = float(stat_func(np.asarray([x[0]], dtype=float)))
+                result_array = np.full_like(x, val, dtype=float)
+                if use_cache:
+                    self._cache_store('rolling_stat', cache_params, result_array)
+                return result_array
+
+            if self.matrix_ops and getattr(self.matrix_ops, 'vectorized_core', None) is not None and PANDAS_AVAILABLE:
+                df = pd.DataFrame({'value': x})
+                df = self._prepare_dataframe_for_vectorization(df)
                 try:
-                    result[i] = stat_func(x_window)
+                    rolling_obj = df['value'].rolling(window=window, min_periods=window)
+                    result_series = self._apply_known_rolling_stat(rolling_obj, stat_func)
                 except Exception:
-                    result[i] = 0.0
-            
-            return result
-            
+                    series = pd.Series(x)
+                    rolling_obj = series.rolling(window=window, min_periods=window)
+                    result_series = self._apply_known_rolling_stat(rolling_obj, stat_func)
+            elif PANDAS_AVAILABLE:
+                series = pd.Series(x)
+                rolling_obj = series.rolling(window=window, min_periods=window)
+                result_series = self._apply_known_rolling_stat(rolling_obj, stat_func)
+            else:
+                if sliding_window_view is None:
+                    return np.zeros_like(x, dtype=float)
+
+                windows = sliding_window_view(x, window)
+                stats = np.apply_along_axis(stat_func, 1, windows)
+                result_array = np.zeros_like(x, dtype=float)
+                result_array[window - 1:] = stats
+                if use_cache:
+                    self._cache_store('rolling_stat', cache_params, result_array)
+                return result_array
+
+            result_array = result_series.fillna(0.0).to_numpy()
+
+            if use_cache:
+                self._cache_store('rolling_stat', cache_params, result_array)
+
+            return result_array
+
         except Exception as e:
             self.logger.warning(f"Efficient rolling statistic failed: {e}")
             return np.zeros_like(x, dtype=float)
+
+    def _compute_trend_alignment(
+        self,
+        x1: np.ndarray,
+        x2: np.ndarray,
+        window: int,
+        cache_params: Optional[Tuple[Any, ...]] = None
+    ) -> np.ndarray:
+        """Compute rolling trend alignment via vectorized slope products."""
+        if not NUMPY_AVAILABLE or sliding_window_view is None:
+            return np.zeros_like(x1, dtype=float)
+
+        use_cache = cache_params is not None
+        cached_result = None
+        if use_cache:
+            cached_result = self._cache_lookup('trend_alignment', cache_params)
+            if cached_result is not None:
+                return cached_result
+
+        window = max(2, min(window, len(x1)))
+        if window <= 1:
+            return np.zeros_like(x1, dtype=float)
+
+        try:
+            idx = np.arange(window, dtype=float)
+            idx_centered = idx - idx.mean()
+            denom = np.sum(idx_centered ** 2)
+            if denom == 0:
+                return np.zeros_like(x1, dtype=float)
+
+            view1 = sliding_window_view(x1, window)
+            view2 = sliding_window_view(x2, window)
+
+            centered1 = view1 - view1.mean(axis=-1, keepdims=True)
+            centered2 = view2 - view2.mean(axis=-1, keepdims=True)
+
+            slope1 = centered1 @ idx_centered / denom
+            slope2 = centered2 @ idx_centered / denom
+            slope_prod = slope1 * slope2
+
+            result = np.zeros_like(x1, dtype=float)
+            result[window - 1:] = slope_prod
+
+            if use_cache:
+                self._cache_store('trend_alignment', cache_params, result)
+
+            return result
+
+        except Exception as exc:
+            self.logger.warning(f"⚠️ Trend alignment computation failed: {exc}")
+            return np.zeros_like(x1, dtype=float)
 
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics."""
@@ -935,7 +1303,9 @@ class CrossTimeframeFeatureGenerator:
             'pid_available': PID_AVAILABLE,
             'matrix_ops_available': MATRIX_OPS_AVAILABLE,
             'numpy_available': NUMPY_AVAILABLE,
-            'pandas_available': PANDAS_AVAILABLE
+            'pandas_available': PANDAS_AVAILABLE,
+            'rolling_cache_hits': self._rolling_cache_hits,
+            'rolling_cache_misses': self._rolling_cache_misses
         }
         
         if self.matrix_ops:

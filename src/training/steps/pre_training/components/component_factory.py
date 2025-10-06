@@ -25,7 +25,7 @@ except ImportError:
 
 # Import multi-horizon profit labeler
 try:
-    from ..multi_horizon_profit_labeler import MultiHorizonProfitLabelerComponent, MultiHorizonConfig
+    from ..multi_horizon_profit_labeler import MultiHorizonProfitLabelerComponent
     MULTI_HORIZON_AVAILABLE = True
 except ImportError:
     MULTI_HORIZON_AVAILABLE = False

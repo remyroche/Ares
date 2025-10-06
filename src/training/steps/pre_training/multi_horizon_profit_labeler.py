@@ -24,7 +24,7 @@ from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler im
 )
 
 # Import base component
-from .components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+from src.training.steps.pre_training.components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
 
 
 @dataclass
@@ -127,15 +127,20 @@ class MultiHorizonProfitLabeler:
                 # Use standard volatility-aware labeling
                 labeling_result = self.volatility_labeler.generate_labels(market_data)
 
-            # Generate comprehensive report
-            report = self._generate_labeling_report(labeling_result, symbol, exchange, timeframe)
+            # Generate comprehensive report using the profit labeling report generator
+            report = await self._generate_comprehensive_report(
+                labeling_result, symbol, exchange, timeframe, regime_data
+            )
+
+            # Map target columns to expected names for feature lookback optimization compatibility
+            mapped_labels = self._map_target_columns_for_feature_optimization(labeling_result.labels)
 
             # Create properly structured artifacts that feature lookback optimization expects
             # The feature lookback optimization expects 'labeled_data' or 'labels' keys
             artifacts = {
                 'multi_horizon_labeling_result': {
-                    'labeled_data': labeling_result.labels,  # This is what feature lookback optimization expects
-                    'labels': labeling_result.labels,  # Backward compatibility
+                    'labeled_data': mapped_labels,  # This is what feature lookback optimization expects
+                    'labels': mapped_labels,  # Backward compatibility
                     'confidence_scores': labeling_result.confidence_scores,
                     'eligibility_masks': labeling_result.eligibility_masks,
                     'quality_scores': labeling_result.quality_scores,
@@ -181,10 +186,58 @@ class MultiHorizonProfitLabeler:
     ) -> Optional[pd.DataFrame]:
         """Load market data for the specified symbol and timeframe."""
         try:
-            # This would typically load from your data management system
-            # For now, return a placeholder that indicates data loading is needed
-            tprint_warning("⚠️ Market data loading not implemented - would need data management integration")
-            return None
+            # Import data loading utilities
+            from src.training.steps.data_collection.unified_data_loader import UnifiedDataLoader
+
+            tprint_info(f"📊 Loading market data for {symbol} {timeframe} from {data_dir}")
+
+            # Initialize data loader
+            data_loader = UnifiedDataLoader()
+
+            # Construct file path pattern for the data
+            # This follows the standardized data structure
+            data_path = Path(data_dir) / exchange / symbol / timeframe
+
+            # Try to load the data using the unified loader
+            try:
+                # Use the data loader to find and load the appropriate data file
+                data = data_loader.load_unified_data(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    data_directory=data_dir
+                )
+
+                if data is not None and not data.empty:
+                    tprint_success(f"✅ Loaded {len(data)} data points for {symbol} {timeframe}")
+                    return data
+                else:
+                    tprint_warning(f"⚠️ No data found for {symbol} {timeframe}")
+                    return None
+
+            except Exception as e:
+                tprint_warning(f"⚠️ Unified data loader failed, trying alternative method: {e}")
+
+                # Fallback to direct file loading if unified loader fails
+                try:
+                    # Look for parquet files in the data directory
+                    import glob
+                    pattern = f"{data_path}/*.parquet"
+                    files = glob.glob(pattern)
+
+                    if files:
+                        # Load the most recent file
+                        latest_file = max(files, key=lambda f: Path(f).stat().st_mtime)
+                        data = pd.read_parquet(latest_file)
+                        tprint_success(f"✅ Loaded data from {latest_file}")
+                        return data
+                    else:
+                        tprint_warning(f"⚠️ No parquet files found in {data_path}")
+                        return None
+
+                except Exception as e2:
+                    tprint_error(f"❌ Fallback data loading also failed: {e2}")
+                    return None
 
         except Exception as e:
             tprint_error(f"❌ Error loading market data: {e}")
@@ -311,14 +364,214 @@ class MultiHorizonProfitLabeler:
             tprint_warning(f"⚠️ Error extracting regime assignments: {e}")
             return None
 
-    def _generate_labeling_report(
+    def _map_target_columns_for_feature_optimization(self, labels_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Map target column names to expected names for feature lookback optimization compatibility.
+
+        Feature lookback optimization expects specific target column names like:
+        - 'leverage_adjusted_score'
+        - 'immediate_opportunity'
+        - 'short_term_opportunity'
+
+        This method maps the generated target columns (like 'small_k0.50_a1.00') to these expected names.
+        """
+        try:
+            if labels_df is None or labels_df.empty:
+                tprint_warning("⚠️ No labels to map for feature optimization compatibility")
+                return labels_df
+
+            mapped_df = labels_df.copy()
+            tprint_info(f"🔄 Mapping {len(labels_df.columns)} target columns for feature optimization compatibility")
+
+            # Define mapping from generated column patterns to expected names
+            column_mappings = {
+                'leverage_adjusted_score': [],
+                'immediate_opportunity': [],
+                'short_term_opportunity': []
+            }
+
+            # Priority 1: Map small band targets to immediate_opportunity (shortest horizon)
+            # Handle both regular targets and regime-specific targets
+            small_targets = [col for col in labels_df.columns if 'small_' in col and '_regime_' not in col]
+            small_regime_targets = [col for col in labels_df.columns if 'small_' in col and '_regime_' in col]
+
+            # Use regular targets first, then regime targets if no regular targets available
+            if small_targets:
+                best_small_target = self._select_best_target_by_pattern(small_targets, labels_df, 'small')
+                if best_small_target:
+                    column_mappings['immediate_opportunity'].append(best_small_target)
+            elif small_regime_targets:
+                # Use the first regime target (could be improved to select best regime)
+                best_small_target = self._select_best_target_by_pattern(small_regime_targets, labels_df, 'small')
+                if best_small_target:
+                    column_mappings['immediate_opportunity'].append(best_small_target)
+
+            # Priority 2: Map medium band targets to short_term_opportunity (medium horizon)
+            medium_targets = [col for col in labels_df.columns if 'medium_' in col and '_regime_' not in col]
+            medium_regime_targets = [col for col in labels_df.columns if 'medium_' in col and '_regime_' in col]
+
+            if medium_targets:
+                best_medium_target = self._select_best_target_by_pattern(medium_targets, labels_df, 'medium')
+                if best_medium_target:
+                    column_mappings['short_term_opportunity'].append(best_medium_target)
+            elif medium_regime_targets:
+                best_medium_target = self._select_best_target_by_pattern(medium_regime_targets, labels_df, 'medium')
+                if best_medium_target:
+                    column_mappings['short_term_opportunity'].append(best_medium_target)
+
+            # Priority 3: Map high band targets to leverage_adjusted_score (longest horizon)
+            high_targets = [col for col in labels_df.columns if 'high_' in col and '_regime_' not in col]
+            high_regime_targets = [col for col in labels_df.columns if 'high_' in col and '_regime_' in col]
+
+            if high_targets:
+                best_high_target = self._select_best_target_by_pattern(high_targets, labels_df, 'high')
+                if best_high_target:
+                    column_mappings['leverage_adjusted_score'].append(best_high_target)
+            elif high_regime_targets:
+                best_high_target = self._select_best_target_by_pattern(high_regime_targets, labels_df, 'high')
+                if best_high_target:
+                    column_mappings['leverage_adjusted_score'].append(best_high_target)
+
+            # Apply the mappings
+            for expected_name, source_columns in column_mappings.items():
+                if source_columns:
+                    # Use the first (best) source column
+                    source_col = source_columns[0]
+                    if source_col in mapped_df.columns:
+                        mapped_df[expected_name] = mapped_df[source_col]
+                        tprint_info(f"✅ Mapped '{source_col}' → '{expected_name}'")
+
+            # Also add the original columns for backward compatibility and debugging
+            tprint_info(f"✅ Target column mapping completed. Original: {len(labels_df.columns)}, Mapped: {len(mapped_df.columns)}")
+
+            return mapped_df
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Error mapping target columns: {e}")
+            # Return original dataframe if mapping fails
+            return labels_df
+
+    def _select_best_target_by_pattern(self, target_columns: List[str], labels_df: pd.DataFrame, pattern: str) -> Optional[str]:
+        """
+        Select the best target column from a list of candidates based on pattern and data quality.
+
+        Args:
+            target_columns: List of column names matching the pattern
+            labels_df: DataFrame with the labels
+            pattern: Pattern type ('small', 'medium', 'high')
+
+        Returns:
+            Best column name or None if no suitable column found
+        """
+        try:
+            if not target_columns:
+                return None
+
+            # For now, select the first target in the list
+            # In a more sophisticated implementation, we could analyze label quality,
+            # balance, predictability, etc. to select the best target
+            selected_target = target_columns[0]
+
+            # Validate that the selected target has reasonable data
+            if selected_target in labels_df.columns:
+                target_data = labels_df[selected_target].dropna()
+
+                # Check if we have enough non-null values
+                if len(target_data) > 100:  # Minimum threshold for reliable analysis
+                    tprint_info(f"✅ Selected '{selected_target}' as best {pattern} target")
+                    return selected_target
+
+            tprint_warning(f"⚠️ No suitable {pattern} target found among {len(target_columns)} candidates")
+            return None
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Error selecting best target for pattern {pattern}: {e}")
+            return target_columns[0] if target_columns else None
+
+    async def _generate_comprehensive_report(
+        self,
+        labeling_result: LabelingResult,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        regime_data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Generate comprehensive labeling report with regime-aware analysis."""
+        try:
+            # Import the profit labeling report generator
+            from src.training.steps.pre_training.profit_labeling.profit_labeling_report_generator import (
+                ProfitLabelingReportGenerator, ProfitLabelingReport
+            )
+
+            tprint_info("📋 Generating comprehensive profit labeling report")
+
+            # Create the report generator
+            report_generator = ProfitLabelingReportGenerator()
+
+            # Prepare the labeling result data for the report generator
+            labeling_result_data = {
+                'multi_horizon_labeling_result': {
+                    'labeled_data': labeling_result.labels,
+                    'confidence_scores': labeling_result.confidence_scores,
+                    'eligibility_masks': labeling_result.eligibility_masks,
+                    'quality_scores': labeling_result.quality_scores,
+                    'metadata': {
+                        'symbol': symbol,
+                        'exchange': exchange,
+                        'timeframe': timeframe,
+                        'regime_aware': self.config.enable_regime_aware_labeling and regime_data is not None,
+                        'processing_time': labeling_result.processing_time,
+                        'n_samples': labeling_result.n_samples,
+                        'n_targets': labeling_result.n_targets,
+                        'n_horizons': labeling_result.n_horizons
+                    }
+                },
+                'labeling_report': self._generate_basic_labeling_report(labeling_result, symbol, exchange, timeframe)
+            }
+
+            # Generate the comprehensive report
+            comprehensive_report = report_generator.generate_report(
+                labeling_result=labeling_result_data,
+                regime_data=regime_data,
+                output_directory="profit_labeling_reports"
+            )
+
+            # Convert the report object to dictionary for pipeline compatibility
+            report_dict = {
+                'status': 'completed',
+                'symbol': comprehensive_report.symbol,
+                'exchange': comprehensive_report.exchange,
+                'timeframe': comprehensive_report.timeframe,
+                'timestamp': comprehensive_report.timestamp.isoformat(),
+                'processing_time': comprehensive_report.processing_time,
+                'statistics': {
+                    'n_samples': comprehensive_report.n_samples,
+                    'n_targets': comprehensive_report.n_targets,
+                    'n_horizons': comprehensive_report.n_horizons,
+                    'label_distribution': comprehensive_report.label_distribution
+                },
+                'quality_scores': comprehensive_report.quality_scores,
+                'regime_statistics': comprehensive_report.regime_statistics,
+                'feature_lookback_compatibility': comprehensive_report.feature_lookback_compatibility,
+                'recommendations': comprehensive_report.recommendations
+            }
+
+            tprint_success("✅ Comprehensive profit labeling report generated")
+            return report_dict
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Error generating comprehensive report: {e}")
+            # Fall back to basic report generation
+            return self._generate_basic_labeling_report(labeling_result, symbol, exchange, timeframe)
+
+    def _generate_basic_labeling_report(
         self,
         labeling_result: LabelingResult,
         symbol: str,
         exchange: str,
         timeframe: str
     ) -> Dict[str, Any]:
-        """Generate comprehensive labeling report."""
+        """Generate basic labeling report as fallback."""
         try:
             report = {
                 'status': 'completed',
@@ -353,7 +606,7 @@ class MultiHorizonProfitLabeler:
             return report
 
         except Exception as e:
-            tprint_warning(f"⚠️ Error generating report: {e}")
+            tprint_warning(f"⚠️ Error generating basic report: {e}")
             return {
                 'status': 'error',
                 'error': str(e),

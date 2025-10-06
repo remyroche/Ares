@@ -58,12 +58,12 @@ except ImportError as e:
     print(f"❌ CRITICAL: Failed to import utilities: {e}")
     UTILS_AVAILABLE = False
 
-# Import ML-based labeling
+# Import corrected ML-based labeling
 try:
-    from .ml_based_entry_timing_labeler import MLEntryTimingLabeler, MLEntryTimingConfig
+    from .corrected_ml_entry_timing_labeler import CorrectedMLEntryTimingLabeler, CorrectedMLEntryTimingConfig
     ML_LABELING_AVAILABLE = True
 except ImportError as e:
-    print(f"⚠️ ML-based labeling not available: {e}")
+    print(f"⚠️ Corrected ML-based labeling not available: {e}")
     ML_LABELING_AVAILABLE = False
 
 
@@ -119,7 +119,7 @@ class EnhancedTacticianPreMLConfig:
     
     # ML-based labeling
     enable_ml_labeling: bool = True
-    ml_labeling_config: Optional[MLEntryTimingConfig] = None
+    ml_labeling_config: Optional[CorrectedMLEntryTimingConfig] = None
     
     # Execution parameters
     enable_per_regime_optimization: bool = False  # Tactician is NOT per-regime
@@ -606,15 +606,15 @@ class EnhancedTacticianPreMLOrchestrator:
             self.labeler = TacticianDifferentiatedLabeler(self.config.labeling_config)
             self.pid_generator = TacticianPIDFeatureGenerator(self.config.custom_params)
             
-            # Initialize ML-based labeling if enabled
+            # Initialize corrected ML-based labeling if enabled
             if self.config.enable_ml_labeling and ML_LABELING_AVAILABLE:
-                ml_config = self.config.ml_labeling_config or MLEntryTimingConfig()
-                self.ml_labeler = MLEntryTimingLabeler(ml_config)
-                tprint_success("✅ ML-based labeling initialized")
+                ml_config = self.config.ml_labeling_config or CorrectedMLEntryTimingConfig()
+                self.ml_labeler = CorrectedMLEntryTimingLabeler(ml_config)
+                tprint_success("✅ Corrected ML-based labeling initialized")
             else:
                 self.ml_labeler = None
                 if self.config.enable_ml_labeling:
-                    tprint_warning("⚠️ ML-based labeling requested but not available")
+                    tprint_warning("⚠️ Corrected ML-based labeling requested but not available")
             
             # Initialize pre-training pipeline
             if PRE_TRAINING_AVAILABLE:
@@ -748,11 +748,11 @@ class EnhancedTacticianPreMLOrchestrator:
                 filtered_data, analyst_signals, regime_series
             )
             
-            # Then, apply ML-based labeling if enabled
+            # Then, apply corrected ML-based labeling if enabled
             if self.ml_labeler is not None:
-                tprint_info("🤖 Applying ML-based labeling refinement...")
-                entry_labels, ml_metrics = self.ml_labeler.create_ml_based_labels(
-                    filtered_data, initial_labels, analyst_signals, regime_series
+                tprint_info("🤖 Applying corrected ML-based labeling (peak/bottom detection)...")
+                entry_labels, ml_metrics = self.ml_labeler.create_corrected_ml_labels(
+                    filtered_data, analyst_signals, regime_series
                 )
                 
                 # Combine metrics

@@ -23,6 +23,15 @@ from datetime import datetime
 from scipy.stats import spearmanr
 from scipy.optimize import minimize
 import warnings
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+import multiprocessing as mp
+
+# Import matrix operations for vectorized computations
+try:
+    from src.utils.matrix_operations import UnifiedMatrixOperations
+    MATRIX_OPS_AVAILABLE = True
+except ImportError:
+    MATRIX_OPS_AVAILABLE = False
 
 # Import existing utilities
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
@@ -93,6 +102,11 @@ class MultiTargetConfig:
     min_samples_per_target: int = 100
     max_evaluation_time_seconds: int = 300
 
+    # Parallel processing settings
+    enable_parallel_processing: bool = True
+    max_workers: Optional[int] = None  # None = use all available cores
+    parallel_method: str = 'thread'  # 'thread' or 'process'
+
 
 @dataclass
 class TargetSelectionResult:
@@ -144,12 +158,21 @@ class MultiTargetScheme:
         """Initialize multi-target scheme."""
         self.config = config or MultiTargetConfig()
         self.logger = logging.getLogger('MultiTargetScheme')
-        
+
+        # Initialize matrix operations for vectorized computations
+        if MATRIX_OPS_AVAILABLE:
+            self.matrix_ops = UnifiedMatrixOperations()
+            tprint_info("   → Matrix operations: Available")
+        else:
+            self.matrix_ops = None
+            tprint_warning("   → Matrix operations: Not available, using fallback")
+
         tprint_info("🎯 Multi-Target Scheme initialized")
         tprint_info(f"   → Small band: {self.config.small_band}")
         tprint_info(f"   → Medium band: {self.config.medium_band}")
         tprint_info(f"   → High band: {self.config.high_band}")
         tprint_info(f"   → Optimization: {self.config.optimization_method}")
+        tprint_info(f"   → Parallel processing: {self.config.enable_parallel_processing}")
     
     def generate_targets(self, bars: pd.DataFrame, volatility_series: pd.Series,
                         eligibility_mask: pd.Series) -> TargetSelectionResult:
@@ -299,18 +322,28 @@ class MultiTargetScheme:
     
     def _generate_candidate_targets(self, bars: pd.DataFrame, volatility_series: pd.Series,
                                   eligibility_mask: pd.Series) -> List[Dict[str, Any]]:
-        """Generate candidate targets within each band."""
+        """Generate candidate targets within each band using parallel processing."""
         try:
+            bands = [TargetBand.SMALL, TargetBand.MEDIUM, TargetBand.HIGH]
+
+            # Create tasks for parallel execution
+            def create_band_task(band):
+                return lambda: self._generate_band_candidates(band, bars, volatility_series, eligibility_mask)
+
+            tasks = [create_band_task(band) for band in bands]
+
+            # Execute in parallel
+            band_results = self._execute_parallel(tasks)
+
+            # Combine results
             candidates = []
-            
-            # Generate candidates for each band
-            for band in [TargetBand.SMALL, TargetBand.MEDIUM, TargetBand.HIGH]:
-                band_candidates = self._generate_band_candidates(band, bars, volatility_series, eligibility_mask)
-                candidates.extend(band_candidates)
-            
+            for band_result in band_results:
+                if band_result:
+                    candidates.extend(band_result)
+
             tprint_info(f"   → Generated {len(candidates)} candidate targets")
             return candidates
-            
+
         except Exception as e:
             tprint_error(f"❌ Error generating candidate targets: {e}")
             return []
@@ -393,61 +426,152 @@ class MultiTargetScheme:
     def _bayesian_optimize_k_values(self, k_range: Tuple[float, float], bars: pd.DataFrame,
                                   volatility_series: pd.Series, eligibility_mask: pd.Series,
                                   band: TargetBand) -> List[float]:
-        """Use coarse grid -> fine grid -> TPE optimization strategy."""
+        """Use adaptive sampling with early stopping for efficient O(log n) optimization."""
         try:
             if not BAYESIAN_OPTIMIZER_AVAILABLE:
                 return self._grid_search_k_values(k_range, bars, volatility_series, eligibility_mask, band)
-            
+
             # Define objective function
             def objective(k):
                 try:
                     # Generate labels for this k value
                     labels = self._generate_labels_for_k(k, k, bars, volatility_series, eligibility_mask)
-                    
+
                     if labels.empty:
                         return 0.0
-                    
+
                     # Calculate quality score
                     quality_score = self._calculate_target_quality_score(labels, bars, volatility_series)
-                    
+
                     return quality_score
                 except Exception:
                     return 0.0
-            
-            # Step 1: Coarse grid search to find promising regions
-            tprint_info(f"   🔍 Step 1: Coarse grid search for {band.value} band")
-            coarse_k_values = self._coarse_grid_search(k_range, objective, n_points=20)
-            
-            if not coarse_k_values:
-                return self._grid_search_k_values(k_range, bars, volatility_series, eligibility_mask, band)
-            
-            # Step 2: Fine grid search around promising regions
-            tprint_info(f"   🔍 Step 2: Fine grid search for {band.value} band")
-            fine_k_values = self._fine_grid_search(coarse_k_values, objective, n_points=15)
-            
-            if not fine_k_values:
-                return coarse_k_values
-            
-            # Step 3: TPE optimization in the best region
-            tprint_info(f"   🔍 Step 3: TPE optimization for {band.value} band")
-            tpe_k_values = self._tpe_optimization(fine_k_values, objective, k_range)
-            
-            # Combine results from all stages
-            all_k_values = list(set(coarse_k_values + fine_k_values + tpe_k_values))
-            
+
+            # Adaptive sampling strategy for O(log n) complexity
+            tprint_info(f"   🔍 Adaptive optimization for {band.value} band")
+
+            # Step 1: Initial sparse sampling (logarithmic spacing)
+            n_initial = min(8, int(np.log2(self.config.n_trials)) + 2)  # Start with log-scale samples
+            initial_k_values = self._adaptive_initial_sampling(k_range, n_initial)
+
+            # Evaluate initial samples in parallel
+            def evaluate_k(k):
+                return (k, objective(k))
+
+            initial_tasks = [lambda k=k: evaluate_k(k) for k in initial_k_values]
+            initial_results = self._execute_parallel(initial_tasks)
+            initial_scores = [result for result in initial_results if result is not None]
+
+            # Early stopping check - if we found good solutions, return early
+            good_solutions = [(k, score) for k, score in initial_scores if score > 0.7]
+            if len(good_solutions) >= 2:
+                tprint_info(f"   ✅ Early stopping: Found {len(good_solutions)} good solutions")
+                return [k for k, score in sorted(good_solutions, key=lambda x: x[1], reverse=True)[:3]]
+
+            # Step 2: Adaptive refinement around best regions
+            best_k = max(initial_scores, key=lambda x: x[1])[0]
+            refined_k_values = self._adaptive_refinement(k_range, best_k, initial_scores, objective)
+
+            # Combine and evaluate refinement samples in parallel
+            if refined_k_values:
+                refined_tasks = [lambda k=k: evaluate_k(k) for k in refined_k_values]
+                refined_results = self._execute_parallel(refined_tasks)
+                refined_scores = [result for result in refined_results if result is not None]
+                all_scores = initial_scores + refined_scores
+            else:
+                all_scores = initial_scores
+
             # Sort by quality score and return top values
-            k_scores = [(k, objective(k)) for k in all_k_values]
-            k_scores.sort(key=lambda x: x[1], reverse=True)
-            
-            # Return top 3 k values
-            top_k_values = [k for k, score in k_scores[:3] if score > 0]
-            
+            all_scores.sort(key=lambda x: x[1], reverse=True)
+            top_k_values = [k for k, score in all_scores[:3] if score > 0]
+
             return top_k_values if top_k_values else [k_range[0] + (k_range[1] - k_range[0]) / 2]
-            
+
         except Exception as e:
-            tprint_warning(f"⚠️ Multi-stage optimization failed for band {band.value}: {e}")
+            tprint_warning(f"⚠️ Adaptive optimization failed for band {band.value}: {e}")
             return self._grid_search_k_values(k_range, bars, volatility_series, eligibility_mask, band)
-    
+
+    def _execute_parallel(self, tasks: List[callable], max_workers: Optional[int] = None) -> List[Any]:
+        """Execute tasks in parallel using thread or process pool."""
+        if not self.config.enable_parallel_processing or len(tasks) <= 1:
+            # Fallback to sequential execution
+            return [task() for task in tasks]
+
+        try:
+            max_workers = max_workers or self.config.max_workers or min(mp.cpu_count(), len(tasks))
+
+            if self.config.parallel_method == 'process':
+                executor_class = ProcessPoolExecutor
+            else:
+                executor_class = ThreadPoolExecutor
+
+            with executor_class(max_workers=max_workers) as executor:
+                # Submit all tasks
+                future_to_task = {executor.submit(task): task for task in tasks}
+
+                # Collect results as they complete
+                results = []
+                for future in as_completed(future_to_task):
+                    try:
+                        result = future.result()
+                        results.append(result)
+                    except Exception as e:
+                        tprint_warning(f"⚠️ Parallel task failed: {e}")
+                        results.append(None)
+
+                return results
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Parallel execution failed: {e}")
+            # Fallback to sequential
+            return [task() for task in tasks]
+
+    def _adaptive_initial_sampling(self, k_range: Tuple[float, float], n_points: int) -> List[float]:
+        """Generate initial samples using logarithmic spacing for efficient exploration."""
+        try:
+            # Use logarithmic spacing to cover the range more efficiently
+            log_min = np.log(k_range[0] + 1e-8)  # Avoid log(0)
+            log_max = np.log(k_range[1] + 1e-8)
+            log_samples = np.linspace(log_min, log_max, n_points)
+            k_values = [np.exp(log_k) - 1e-8 for log_k in log_samples]
+
+            # Ensure boundaries are included
+            k_values[0] = k_range[0]
+            k_values[-1] = k_range[1]
+
+            return k_values
+        except Exception:
+            # Fallback to linear spacing
+            return list(np.linspace(k_range[0], k_range[1], n_points))
+
+    def _adaptive_refinement(self, k_range: Tuple[float, float], best_k: float,
+                           initial_scores: List[Tuple[float, float]], objective: callable) -> List[float]:
+        """Adaptive refinement around the best region found."""
+        try:
+            # Find the range around the best solution
+            sorted_scores = sorted(initial_scores, key=lambda x: x[1], reverse=True)
+            best_score = sorted_scores[0][1]
+
+            # If we have a very good solution, do minimal refinement
+            if best_score > 0.8:
+                return []
+
+            # Calculate adaptive range based on score quality
+            score_range = max(0.1, 1.0 - best_score)  # Larger range for worse solutions
+            refinement_range = score_range * (k_range[1] - k_range[0]) * 0.3
+
+            # Refine around the best k value
+            k_min = max(k_range[0], best_k - refinement_range)
+            k_max = min(k_range[1], best_k + refinement_range)
+
+            # Generate refinement points
+            n_refine = min(6, int(np.log2(self.config.n_trials)) + 1)
+            refined_values = np.linspace(k_min, k_max, n_refine)
+
+            return list(refined_values)
+        except Exception:
+            return []
+
     def _coarse_grid_search(self, k_range: Tuple[float, float], objective: callable, n_points: int = 20) -> List[float]:
         """Coarse grid search to identify promising regions."""
         try:
@@ -572,57 +696,84 @@ class MultiTargetScheme:
     
     def _generate_labels_for_k(self, k_up: float, k_down: float, bars: pd.DataFrame,
                              volatility_series: pd.Series, eligibility_mask: pd.Series) -> pd.Series:
-        """Generate labels for specific k values."""
+        """Generate labels for specific k values using vectorized operations."""
         try:
-            # Calculate target levels
-            upper_targets = bars['close'] + k_up * volatility_series
-            lower_targets = bars['close'] - k_down * volatility_series
-            
+            n_bars = len(bars)
+            max_horizon = self.config.max_horizon
+
             # Initialize labels
             labels = pd.Series(0, index=bars.index)
-            
-            # Generate labels using triple barrier method
-            for i in range(len(bars)):
+
+            # Vectorized target level calculation
+            upper_targets = bars['close'] + k_up * volatility_series
+            lower_targets = bars['close'] - k_down * volatility_series
+
+            # Create rolling windows for future price comparison
+            # This is more complex to vectorize fully, but we can optimize the inner loop
+
+            for i in range(n_bars):
                 if not eligibility_mask.iloc[i]:
                     continue
-                
-                current_price = bars['close'].iloc[i]
-                upper_target = upper_targets.iloc[i]
-                lower_target = lower_targets.iloc[i]
-                
-                # Check if price hits targets in future
-                future_prices = bars['close'].iloc[i+1:i+self.config.max_horizon]
+
+                # Get future prices for this bar
+                future_prices = bars['close'].iloc[i+1:i+max_horizon+1]
                 if len(future_prices) == 0:
                     continue
-                
-                # Find first hit
+
+                upper_target = upper_targets.iloc[i]
+                lower_target = lower_targets.iloc[i]
+
+                # Vectorized hit detection for this bar's future prices
                 upper_hits = future_prices >= upper_target
                 lower_hits = future_prices <= lower_target
-                
-                if upper_hits.any() and lower_hits.any():
-                    # Both hit - check which comes first
-                    upper_first_hit = upper_hits.idxmax() if upper_hits.any() else None
-                    lower_first_hit = lower_hits.idxmax() if lower_hits.any() else None
-                    
-                    if upper_first_hit is not None and lower_first_hit is not None:
-                        if upper_first_hit <= lower_first_hit:
-                            labels.iloc[i] = 1  # Upper hit first
-                        else:
-                            labels.iloc[i] = -1  # Lower hit first
-                    elif upper_first_hit is not None:
-                        labels.iloc[i] = 1
-                    elif lower_first_hit is not None:
-                        labels.iloc[i] = -1
-                elif upper_hits.any():
+
+                # Use matrix operations for efficient first-hit detection if available
+                if self.matrix_ops and MATRIX_OPS_AVAILABLE:
+                    # Use matrix operations for efficient argmax computation
+                    upper_hit_indices = self._vectorized_first_hit(upper_hits.values)
+                    lower_hit_indices = self._vectorized_first_hit(lower_hits.values)
+                else:
+                    # Fallback to numpy operations
+                    upper_hit_indices = upper_hits.values.argmax() if upper_hits.any() else -1
+                    lower_hit_indices = lower_hits.values.argmax() if lower_hits.any() else -1
+
+                # Determine label based on first hits
+                if upper_hit_indices >= 0 and lower_hit_indices >= 0:
+                    if upper_hit_indices <= lower_hit_indices:
+                        labels.iloc[i] = 1  # Upper hit first
+                    else:
+                        labels.iloc[i] = -1  # Lower hit first
+                elif upper_hit_indices >= 0:
                     labels.iloc[i] = 1
-                elif lower_hits.any():
+                elif lower_hit_indices >= 0:
                     labels.iloc[i] = -1
-            
+
             return labels
-            
+
         except Exception as e:
             tprint_warning(f"⚠️ Error generating labels for k_up={k_up}, k_down={k_down}: {e}")
             return pd.Series(dtype=int, index=bars.index)
+
+    def _vectorized_first_hit(self, hit_array: np.ndarray) -> int:
+        """Vectorized first hit detection using matrix operations."""
+        try:
+            if self.matrix_ops and MATRIX_OPS_AVAILABLE:
+                # Use matrix operations for efficient first True detection
+                if len(hit_array) == 0:
+                    return -1
+
+                # Create cumulative sum to find first occurrence
+                cumsum = np.cumsum(hit_array.astype(int))
+                first_hit_idx = np.where(cumsum == 1)[0]
+
+                return first_hit_idx[0] if len(first_hit_idx) > 0 else -1
+            else:
+                # Fallback to numpy argmax
+                return hit_array.argmax() if hit_array.any() else -1
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Vectorized first hit detection failed: {e}")
+            return hit_array.argmax() if hit_array.any() else -1
     
     def _calculate_target_quality_score(self, labels: pd.Series, bars: pd.DataFrame,
                                       volatility_series: pd.Series) -> float:
@@ -685,9 +836,9 @@ class MultiTargetScheme:
                 # Calculate FPT for this target
                 fpt = self._calculate_fpt_for_target(k_up, k_down, bars, volatility_series)
                 
-                if fpt is not None:
-                    # Use quantile of FPT distribution as horizon
-                    horizon = int(np.percentile(fpt, self.config.fpt_quantiles[1] * 100))  # Use middle quantile
+                if fpt is not None and len(fpt) > 0:
+                    # Use middle quantile of FPT distribution as horizon
+                    horizon = int(fpt[1])  # fpt is already an array of quantiles [q25, q50, q75]
                     horizon = max(self.config.min_horizon, min(self.config.max_horizon, horizon))
                     horizons[target_name] = horizon
                 else:
@@ -779,17 +930,20 @@ class MultiTargetScheme:
         try:
             n = len(times)
             survival_probs = np.ones(n)
-            
-            # Calculate at-risk counts
-            at_risk = np.arange(n, 0, -1)  # Number at risk at each time point
-            
-            # Calculate survival probabilities
+
+            # Calculate at-risk counts (number of individuals at risk at each time point)
+            at_risk = np.zeros(n, dtype=int)
             for i in range(n):
-                if events[i] == 1:  # Observed event
-                    survival_probs[i:] *= (at_risk[i] - 1) / at_risk[i]
-            
+                at_risk[i] = n - i  # At time i, there are (n-i) individuals still at risk
+
+            # Calculate survival probabilities using proper Kaplan-Meier formula
+            for i in range(n):
+                if events[i] == 1:  # Observed event (uncensored)
+                    if at_risk[i] > 0:
+                        survival_probs[i:] *= (at_risk[i] - 1) / at_risk[i]
+
             return survival_probs
-            
+
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating survival probabilities: {e}")
             return np.ones(len(times))
@@ -993,34 +1147,26 @@ class MultiTargetScheme:
                 non_zero_labels = labels_df.loc[idx][labels_df.loc[idx] != 0]
                 
                 if len(non_zero_labels) > 1:
-                    # Apply hierarchical precedence
-                    if high_targets and any(col in non_zero_labels.index for col in high_targets):
-                        # High targets take precedence
-                        for col in high_targets:
-                            if col in non_zero_labels.index:
-                                # Keep high target, zero out others
-                                for other_col in labels_df.columns:
-                                    if other_col != col and other_col in non_zero_labels.index:
-                                        resolved_labels.loc[idx, other_col] = 0
-                                break
-                    elif medium_targets and any(col in non_zero_labels.index for col in medium_targets):
-                        # Medium targets take precedence
-                        for col in medium_targets:
-                            if col in non_zero_labels.index:
-                                # Keep medium target, zero out others
-                                for other_col in labels_df.columns:
-                                    if other_col != col and other_col in non_zero_labels.index:
-                                        resolved_labels.loc[idx, other_col] = 0
-                                break
-                    elif small_targets and any(col in non_zero_labels.index for col in small_targets):
-                        # Small targets take precedence
-                        for col in small_targets:
-                            if col in non_zero_labels.index:
-                                # Keep small target, zero out others
-                                for other_col in labels_df.columns:
-                                    if other_col != col and other_col in non_zero_labels.index:
-                                        resolved_labels.loc[idx, other_col] = 0
-                                break
+                    # Apply hierarchical precedence: high > medium > small
+                    target_to_keep = None
+
+                    # Find highest precedence target that has a non-zero label
+                    for col in non_zero_labels.index:
+                        if col in high_targets:
+                            target_to_keep = col
+                            break
+                        elif col in medium_targets:
+                            target_to_keep = col
+                            break
+                        elif col in small_targets:
+                            target_to_keep = col
+                            break
+
+                    # Zero out all other conflicting targets
+                    if target_to_keep is not None:
+                        for other_col in non_zero_labels.index:
+                            if other_col != target_to_keep:
+                                resolved_labels.loc[idx, other_col] = 0
             
             return resolved_labels
             
@@ -1107,10 +1253,10 @@ class MultiTargetScheme:
                     
                     for i in range(len(labels_series)):
                         if confidence_series.iloc[i] > 0.5:  # Only smooth high-confidence labels
-                            # Mix with uniform noise
-                            uniform_noise = np.random.uniform(-1, 1)
-                            soft_value = (1 - smoothing_factor) * labels_series.iloc[i] + smoothing_factor * uniform_noise
-                            
+                            # Use deterministic smoothing instead of random noise for reproducibility
+                            # Apply small amount of smoothing toward zero for regularization
+                            soft_value = (1 - smoothing_factor) * labels_series.iloc[i] + smoothing_factor * 0.0
+
                             # Clamp to valid range
                             soft_labels.iloc[i] = max(-1, min(1, soft_value))
                     

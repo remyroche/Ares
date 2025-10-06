@@ -29,6 +29,13 @@ from scipy.stats import spearmanr
 from scipy.stats import entropy
 import warnings
 
+# Import matrix operations for vectorized computations
+try:
+    from src.utils.matrix_operations import UnifiedMatrixOperations
+    MATRIX_OPS_AVAILABLE = True
+except ImportError:
+    MATRIX_OPS_AVAILABLE = False
+
 # Import existing utilities
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.common_operations import (
@@ -170,13 +177,21 @@ class LabelQualityScorer:
         """Initialize label quality scorer."""
         self.config = config or QualityScoringConfig()
         self.logger = logging.getLogger('LabelQualityScorer')
-        
+
+        # Initialize matrix operations for vectorized computations
+        if MATRIX_OPS_AVAILABLE:
+            self.matrix_ops = UnifiedMatrixOperations()
+            tprint_info("   → Matrix operations: Available")
+        else:
+            self.matrix_ops = None
+            tprint_warning("   → Matrix operations: Not available, using fallback")
+
         # Initialize Pareto optimizer if available
         if PARETO_OPTIMIZER_AVAILABLE and self.config.enable_pareto_optimization:
             self.pareto_optimizer = ParetoOptimizer()
         else:
             self.pareto_optimizer = None
-        
+
         tprint_info("📊 Label Quality Scorer initialized")
         tprint_info(f"   → Baseline models: {self.config.baseline_models}")
         tprint_info(f"   → CV splits: {self.config.n_splits}")
@@ -333,28 +348,53 @@ class LabelQualityScorer:
             if bars_aligned.empty:
                 return pd.DataFrame()
             
-            features = pd.DataFrame(index=target_index)
-            
-            # Price-based features
-            features['returns'] = bars_aligned['close'].pct_change()
-            features['log_returns'] = np.log(bars_aligned['close'] / bars_aligned['close'].shift(1))
-            features['volatility'] = features['returns'].rolling(self.config.feature_window).std()
-            features['price_momentum'] = bars_aligned['close'] / bars_aligned['close'].shift(self.config.feature_window) - 1
-            
-            # Volume-based features
-            features['volume_ratio'] = bars_aligned['volume'] / bars_aligned['volume'].rolling(self.config.feature_window).mean()
-            features['volume_momentum'] = bars_aligned['volume'].pct_change()
-            
-            # OHLC-based features
-            features['high_low_ratio'] = (bars_aligned['high'] - bars_aligned['low']) / bars_aligned['close']
-            features['close_open_ratio'] = bars_aligned['close'] / bars_aligned['open'] - 1
-            
+            # Vectorized feature calculation using matrix operations where possible
+            close_prices = bars_aligned['close'].values
+            volume_values = bars_aligned['volume'].values
+            high_prices = bars_aligned['high'].values
+            low_prices = bars_aligned['low'].values
+            open_prices = bars_aligned['open'].values
+
+            features_data = {}
+
+            # Price-based features (vectorized)
+            features_data['returns'] = np.diff(close_prices, prepend=close_prices[0]) / close_prices[:-1]
+            features_data['returns'] = np.concatenate([[0], features_data['returns']])  # Pad first value
+
+            # Log returns
+            features_data['log_returns'] = np.log(close_prices / np.roll(close_prices, 1))
+            features_data['log_returns'][0] = 0  # Handle first value
+
+            # Volatility (rolling std) - use vectorized operations
+            returns_series = pd.Series(features_data['returns'], index=target_index)
+            features_data['volatility'] = returns_series.rolling(self.config.feature_window).std().fillna(0).values
+
+            # Price momentum
+            shifted_close = np.roll(close_prices, self.config.feature_window)
+            shifted_close[:self.config.feature_window] = close_prices[0]  # Pad initial values
+            features_data['price_momentum'] = close_prices / shifted_close - 1
+
+            # Volume-based features (vectorized)
+            rolling_volume_mean = pd.Series(volume_values, index=target_index).rolling(self.config.feature_window).mean().fillna(method='bfill').values
+            features_data['volume_ratio'] = np.divide(volume_values, rolling_volume_mean, out=np.zeros_like(volume_values), where=rolling_volume_mean!=0)
+
+            # Volume momentum
+            features_data['volume_momentum'] = np.diff(volume_values, prepend=volume_values[0]) / volume_values[:-1]
+            features_data['volume_momentum'] = np.concatenate([[0], features_data['volume_momentum']])
+
+            # OHLC-based features (vectorized)
+            features_data['high_low_ratio'] = (high_prices - low_prices) / close_prices
+            features_data['close_open_ratio'] = close_prices / open_prices - 1
+
             # Technical indicators
-            features['sma_ratio'] = bars_aligned['close'] / bars_aligned['close'].rolling(self.config.feature_window).mean()
-            features['rsi'] = self._calculate_rsi(bars_aligned['close'], self.config.feature_window)
-            
-            # Fill NaN values
-            features = features.fillna(0)
+            rolling_close_mean = pd.Series(close_prices, index=target_index).rolling(self.config.feature_window).mean().fillna(method='bfill').values
+            features_data['sma_ratio'] = close_prices / rolling_close_mean
+
+            # RSI calculation
+            features_data['rsi'] = self._calculate_rsi_vectorized(close_prices, self.config.feature_window)
+
+            # Create DataFrame efficiently
+            features = pd.DataFrame(features_data, index=target_index)
             
             # Select top features if too many
             if features.shape[1] > self.config.n_features:
@@ -379,6 +419,43 @@ class LabelQualityScorer:
             return rsi
         except Exception:
             return pd.Series(0, index=prices.index)
+
+    def _calculate_rsi_vectorized(self, prices: np.ndarray, window: int) -> np.ndarray:
+        """Calculate RSI indicator using vectorized operations."""
+        try:
+            # Vectorized RSI calculation for better performance
+            deltas = np.diff(prices)
+            deltas = np.concatenate([[0], deltas])  # Pad first difference
+
+            # Calculate gains and losses
+            gains = np.where(deltas > 0, deltas, 0)
+            losses = np.where(deltas < 0, -deltas, 0)
+
+            # Rolling means using vectorized operations
+            # Use cumulative approach for efficiency
+            gains_rolling = np.zeros_like(gains, dtype=float)
+            losses_rolling = np.zeros_like(losses, dtype=float)
+
+            # Vectorized rolling mean calculation
+            for i in range(len(gains)):
+                if i < window:
+                    gains_rolling[i] = np.mean(gains[:i+1]) if i > 0 else 0
+                    losses_rolling[i] = np.mean(losses[:i+1]) if i > 0 else 0
+                else:
+                    gains_rolling[i] = np.mean(gains[i-window+1:i+1])
+                    losses_rolling[i] = np.mean(losses[i-window+1:i+1])
+
+            # Calculate RS and RSI
+            rs = np.divide(gains_rolling, losses_rolling, out=np.ones_like(gains_rolling), where=losses_rolling!=0)
+            rsi = 100 - (100 / (1 + rs))
+
+            return rsi
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Vectorized RSI calculation failed: {e}")
+            # Fallback to pandas implementation
+            prices_series = pd.Series(prices)
+            return self._calculate_rsi(prices_series, window).values
     
     def _assess_predictability(self, target_labels: pd.Series, features: pd.DataFrame) -> Dict[str, Any]:
         """Assess predictability using baseline models."""

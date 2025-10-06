@@ -61,6 +61,24 @@ except ImportError as e:
     print(f"⚠️ Warning: analyst_pre_ml_orchestration not available: {e}")
     ANALYST_PRE_ML_AVAILABLE = False
 
+# Import per-regime training integration
+try:
+    from .per_regime_training_integration import (
+        PerRegimeTrainingIntegration, PerRegimeTrainingResult,
+        get_per_regime_integration, train_analyst_per_regime_models,
+        train_tactician_per_regime_models, get_model_selector_for_trading
+    )
+    PER_REGIME_TRAINING_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Warning: per_regime_training_integration not available: {e}")
+    PER_REGIME_TRAINING_AVAILABLE = False
+    PerRegimeTrainingIntegration = None
+    PerRegimeTrainingResult = None
+    get_per_regime_integration = None
+    train_analyst_per_regime_models = None
+    train_tactician_per_regime_models = None
+    get_model_selector_for_trading = None
+
 try:
     from .analyst_training_pipeline import (
         AnalystTrainingPipeline, AnalystTrainingPipelineConfig, AnalystTrainingPipelineResult
@@ -839,6 +857,26 @@ class ModelTrainingSubPipeline:
                 regime_assignments=regime_assignments,
             )
 
+            # Execute per-regime training alongside base model training
+            per_regime_result = None
+            if PER_REGIME_TRAINING_AVAILABLE and training_result.base_training_completed:
+                try:
+                    self.logger.info('🎯 Executing Analyst per-regime training...')
+                    per_regime_result = train_analyst_per_regime_models(
+                        training_data=features_df,
+                        feature_columns=feature_columns,
+                        target_columns=['target_long', 'target_short'],
+                        regime_assignments=regime_assignments
+                    )
+                    
+                    if per_regime_result.success:
+                        self.logger.info('✅ Analyst per-regime training completed successfully')
+                    else:
+                        self.logger.warning(f'⚠️ Analyst per-regime training failed: {per_regime_result.error_message}')
+                        
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Analyst per-regime training failed: {e}')
+
             result.success = training_result.base_training_completed
             result.status = SubPipelineStatus.COMPLETED if result.success else SubPipelineStatus.FAILED
             result.artifacts = {
@@ -848,6 +886,9 @@ class ModelTrainingSubPipeline:
                 'training_data_path': feature_path,
                 'regime_feature_columns': regime_feature_columns,
                 'regime_assignments_path': regime_assignments_path,
+                'per_regime_models': per_regime_result.regime_models if per_regime_result else {},
+                'per_regime_metadata': per_regime_result.regime_metadata if per_regime_result else {},
+                'model_selector': per_regime_result.model_selector if per_regime_result else None,
             }
             result.metadata = {
                 'training_summary': getattr(training_result, 'training_summary', None),
@@ -1167,6 +1208,26 @@ class ModelTrainingSubPipeline:
                 regime_assignments=regime_assignments,
             )
 
+            # Execute per-regime training alongside base model training
+            per_regime_result = None
+            if PER_REGIME_TRAINING_AVAILABLE and training_result.base_training_completed:
+                try:
+                    self.logger.info('🎯 Executing Tactician per-regime training...')
+                    per_regime_result = train_tactician_per_regime_models(
+                        training_data=features_df,
+                        feature_columns=feature_columns,
+                        target_columns=['target_long', 'target_short'],
+                        regime_assignments=regime_assignments
+                    )
+                    
+                    if per_regime_result.success:
+                        self.logger.info('✅ Tactician per-regime training completed successfully')
+                    else:
+                        self.logger.warning(f'⚠️ Tactician per-regime training failed: {per_regime_result.error_message}')
+                        
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Tactician per-regime training failed: {e}')
+
             result.success = training_result.base_training_completed
             result.status = SubPipelineStatus.COMPLETED if result.success else SubPipelineStatus.FAILED
             result.artifacts = {
@@ -1177,6 +1238,9 @@ class ModelTrainingSubPipeline:
                 'regime_feature_columns': regime_feature_columns,
                 'analyst_feature_columns': analyst_feature_columns,
                 'regime_assignments_path': regime_assignments_path,
+                'per_regime_models': per_regime_result.regime_models if per_regime_result else {},
+                'per_regime_metadata': per_regime_result.regime_metadata if per_regime_result else {},
+                'model_selector': per_regime_result.model_selector if per_regime_result else None,
                 'analyst_predictions_path': predictions_path,
             }
             result.metadata = {

@@ -16,6 +16,7 @@ from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
 from ..config.regime_config import RegimeType
 from ..config.trading_config import TradingConfig
+from ..model_selection import get_model_selector_service, ModelSelectionResult
 
 logger = system_logger.getChild('SignalGenerationPipeline')
 
@@ -120,6 +121,9 @@ class SignalGenerationPipeline:
         self.tactician_base_models = []
         self.tactician_meta_model = None
         
+        # Model selection
+        self.model_selector_service = None
+        
         # Optimization parameters (from backtesting)
         self.optimization_params = {
             'analyst_confidence_weight': 0.6,
@@ -157,6 +161,9 @@ class SignalGenerationPipeline:
             
             # Initialize tactician models
             await self._initialize_tactician_models()
+            
+            # Initialize model selector service
+            await self._initialize_model_selector_service()
             
             # Load optimization parameters
             await self._load_optimization_parameters()
@@ -282,6 +289,18 @@ class SignalGenerationPipeline:
             self.logger.error(f"❌ Failed to initialize tactician models: {e}")
             raise
     
+    async def _initialize_model_selector_service(self):
+        """Initialize model selector service."""
+        try:
+            # Initialize model selector service
+            self.model_selector_service = get_model_selector_service()
+            
+            self.logger.info("✅ Model selector service initialized")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to initialize model selector service: {e}")
+            raise
+    
     async def _load_optimization_parameters(self):
         """Load optimization parameters from backtesting results."""
         try:
@@ -356,9 +375,14 @@ class SignalGenerationPipeline:
             # Step 1: HMM Regime Detection
             hmm_output = await self._detect_hmm_regime(market_data, timestamp)
             
+            # Step 1.5: Model Selection
+            model_selection_result = await self._select_models_for_trading(
+                market_data, symbol, timestamp
+            )
+            
             # Step 2: Analyst Base Models
             analyst_base_outputs = await self._run_analyst_base_models(
-                market_data, hmm_output, additional_features, timestamp
+                market_data, hmm_output, additional_features, timestamp, model_selection_result
             )
             
             # Step 3: Analyst Meta Model
@@ -477,12 +501,79 @@ class SignalGenerationPipeline:
             self.logger.error(f"❌ NAS/TAS regime detection failed: {e}")
             raise
     
+    async def _select_models_for_trading(
+        self, 
+        market_data: pd.DataFrame, 
+        symbol: str, 
+        timestamp: datetime
+    ) -> ModelSelectionResult:
+        """Step 1.5: Select best models for trading based on current regime."""
+        try:
+            if not self.model_selector_service:
+                # Fallback if model selector not available
+                return ModelSelectionResult(
+                    selected_models={'analyst': 'default', 'tactician': 'default'},
+                    ensemble_weights={'analyst': {'default': 1.0}, 'tactician': {'default': 1.0}},
+                    regime_id=0,
+                    confidence_score=0.5,
+                    selection_metadata={'fallback': True}
+                )
+            
+            # Select models for both timeframes
+            analyst_models = self.model_selector_service.select_models_for_trading(
+                market_data=market_data,
+                model_types=['random_forest', 'xgboost', 'lightgbm'],
+                symbol=symbol,
+                timeframe='15m'
+            )
+            
+            tactician_models = self.model_selector_service.select_models_for_trading(
+                market_data=market_data,
+                model_types=['random_forest', 'xgboost', 'lightgbm'],
+                symbol=symbol,
+                timeframe='5m'
+            )
+            
+            # Combine results
+            combined_result = ModelSelectionResult(
+                selected_models={
+                    'analyst': analyst_models.selected_models.get('random_forest', 'default'),
+                    'tactician': tactician_models.selected_models.get('random_forest', 'default')
+                },
+                ensemble_weights={
+                    'analyst': analyst_models.ensemble_weights.get('random_forest', {'default': 1.0}),
+                    'tactician': tactician_models.ensemble_weights.get('random_forest', {'default': 1.0})
+                },
+                regime_id=analyst_models.regime_id,
+                confidence_score=(analyst_models.confidence_score + tactician_models.confidence_score) / 2,
+                selection_metadata={
+                    'analyst_selection': analyst_models.selection_metadata,
+                    'tactician_selection': tactician_models.selection_metadata,
+                    'combined_timestamp': timestamp.isoformat()
+                }
+            )
+            
+            self.logger.info(f"✅ Model selection completed: {combined_result.selected_models}")
+            return combined_result
+            
+        except Exception as e:
+            self.logger.error(f"❌ Model selection failed: {e}")
+            # Return fallback result
+            return ModelSelectionResult(
+                selected_models={'analyst': 'default', 'tactician': 'default'},
+                ensemble_weights={'analyst': {'default': 1.0}, 'tactician': {'default': 1.0}},
+                regime_id=0,
+                confidence_score=0.5,
+                selection_metadata={'error': str(e), 'fallback': True}
+            )
+    
     async def _run_analyst_base_models(
         self,
         market_data: pd.DataFrame,
         hmm_output: HMMRegimeOutput,
         additional_features: Optional[Dict[str, Any]],
-        timestamp: datetime
+        timestamp: datetime,
+        model_selection_result: Optional[ModelSelectionResult] = None
     ) -> List[AnalystBaseOutput]:
         """Step 2: Run analyst base models sequentially."""
         try:
@@ -490,6 +581,12 @@ class SignalGenerationPipeline:
             
             # Run the trained analyst base models from training steps
             # These are the models trained in analyst_models_training_refactored.py
+            # Use model selection result if available
+            selected_analyst_model = None
+            if model_selection_result and 'analyst' in model_selection_result.selected_models:
+                selected_analyst_model = model_selection_result.selected_models['analyst']
+                self.logger.info(f"🎯 Using selected analyst model: {selected_analyst_model}")
+            
             for model in self.analyst_base_models:
                 try:
                     # Use the trained model to make predictions

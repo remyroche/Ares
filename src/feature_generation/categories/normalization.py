@@ -18,6 +18,14 @@ from typing import Any, Dict, List, Optional, Union, Tuple
 import logging
 
 from ..core.feature_generator import (
+
+# Optimization utilities
+try:
+    from ..utils.vectorization_optimizer import get_vectorization_optimizer
+    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
     FeatureGenerator,
     FeatureConfig,
     FeatureCategory,
@@ -39,7 +47,7 @@ class NormalizationFeatureGenerator(VectorizedFeatureGenerator):
     def __init__(self, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config()
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -67,6 +75,10 @@ class NormalizationFeatureGenerator(VectorizedFeatureGenerator):
         )
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate normalization features."""
         try:
             # Generate all normalization features
@@ -379,6 +391,22 @@ class NormalizationFeatureGenerator(VectorizedFeatureGenerator):
         return features
 
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class RollingZScoreGenerator(FeatureGenerator):
     """Generator for rolling z-score normalization features."""
 
@@ -393,11 +421,15 @@ class RollingZScoreGenerator(FeatureGenerator):
             max_lookback=window,
             parameters={"window": window, "column": column}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.column = column
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate rolling z-score feature."""
         if self.column not in data.columns:
             return pd.Series(np.zeros(len(data)), index=data.index)
@@ -409,6 +441,22 @@ class RollingZScoreGenerator(FeatureGenerator):
         zscore = (values - rolling_mean) / rolling_std
         return zscore.fillna(0)
 
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class VolatilityScalingGenerator(FeatureGenerator):
     """Generator for volatility scaling features."""
@@ -424,11 +472,15 @@ class VolatilityScalingGenerator(FeatureGenerator):
             max_lookback=window,
             parameters={"window": window, "column": column}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.column = column
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate volatility scaling feature."""
         if self.column not in data.columns or "close" not in data.columns:
             return pd.Series(np.zeros(len(data)), index=data.index)
@@ -445,6 +497,22 @@ class VolatilityScalingGenerator(FeatureGenerator):
         return scaled.fillna(0)
 
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class CrossSectionalNormalizer(FeatureGenerator):
     """Generator for cross-sectional normalization features."""
 
@@ -460,11 +528,15 @@ class CrossSectionalNormalizer(FeatureGenerator):
             max_lookback=100,
             parameters={"group_by": group_by, "method": method}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.group_by = group_by
         self.method = method
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate cross-sectional normalization feature."""
         # This is a simplified version - in practice would need multiple assets
         if self.group_by == "price":

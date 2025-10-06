@@ -11,6 +11,14 @@ from typing import Any, Dict, List, Optional, Union
 from scipy import stats
 
 from ..core.feature_generator import (
+
+# Optimization utilities
+try:
+    from ..utils.vectorization_optimizer import get_vectorization_optimizer
+    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
     FeatureGenerator, 
     FeatureConfig, 
     FeatureCategory,
@@ -49,7 +57,7 @@ class EntropyFeatureGenerator(VectorizedFeatureGenerator):
     def __init__(self, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config()
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -75,11 +83,31 @@ class EntropyFeatureGenerator(VectorizedFeatureGenerator):
         return cls()
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         close_prices = data['close'].values
         entropy = np.zeros_like(close_prices)
         return pd.Series(entropy, index=data.index, name='entropy_placeholder')
 
 # Price Entropy Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class PriceEntropyGenerator(VectorizedFeatureGenerator):
     """Generator for price entropy features."""
     
@@ -100,11 +128,15 @@ class PriceEntropyGenerator(VectorizedFeatureGenerator):
             max_lookback=window,
             parameters={'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate price entropy - OPTIMIZED."""
         base_values = self.base_calculator.calculate(data)
         
@@ -113,6 +145,22 @@ class PriceEntropyGenerator(VectorizedFeatureGenerator):
         return price_entropy
 
 # Volume Entropy Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class VolumeEntropyGenerator(VectorizedFeatureGenerator):
     """Generator for volume entropy features."""
     
@@ -133,11 +181,15 @@ class VolumeEntropyGenerator(VectorizedFeatureGenerator):
             max_lookback=window,
             parameters={'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate volume entropy - OPTIMIZED."""
         base_values = self.base_calculator.calculate(data)
         
@@ -146,6 +198,22 @@ class VolumeEntropyGenerator(VectorizedFeatureGenerator):
         return volume_entropy
 
 # Return Entropy Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class ReturnEntropyGenerator(VectorizedFeatureGenerator):
     """Generator for return entropy features."""
     
@@ -166,11 +234,15 @@ class ReturnEntropyGenerator(VectorizedFeatureGenerator):
             max_lookback=window,
             parameters={'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate return entropy - OPTIMIZED."""
         base_values = self.base_calculator.calculate(data)
         
@@ -179,6 +251,22 @@ class ReturnEntropyGenerator(VectorizedFeatureGenerator):
         return return_entropy
 
 # Price Entropy MA Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class PriceEntropyMAGenerator(VectorizedFeatureGenerator):
     """Generator for price entropy moving average features."""
     
@@ -199,12 +287,16 @@ class PriceEntropyMAGenerator(VectorizedFeatureGenerator):
             max_lookback=window,
             parameters={'window': window, 'ma_window': ma_window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.ma_window = ma_window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate price entropy MA - OPTIMIZED."""
         base_values = self.base_calculator.calculate(data)
         
@@ -214,6 +306,22 @@ class PriceEntropyMAGenerator(VectorizedFeatureGenerator):
         return price_entropy_ma
 
 # Volume Entropy MA Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class VolumeEntropyMAGenerator(VectorizedFeatureGenerator):
     """Generator for volume entropy moving average features."""
     
@@ -234,12 +342,16 @@ class VolumeEntropyMAGenerator(VectorizedFeatureGenerator):
             max_lookback=window,
             parameters={'window': window, 'ma_window': ma_window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.ma_window = ma_window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate volume entropy MA - OPTIMIZED."""
         base_values = self.base_calculator.calculate(data)
         
@@ -249,6 +361,22 @@ class VolumeEntropyMAGenerator(VectorizedFeatureGenerator):
         return volume_entropy_ma
 
 # Return Entropy MA Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class ReturnEntropyMAGenerator(VectorizedFeatureGenerator):
     """Generator for return entropy moving average features."""
     
@@ -269,12 +397,16 @@ class ReturnEntropyMAGenerator(VectorizedFeatureGenerator):
             max_lookback=window,
             parameters={'window': window, 'ma_window': ma_window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.ma_window = ma_window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate return entropy MA - OPTIMIZED."""
         base_values = self.base_calculator.calculate(data)
         
@@ -284,6 +416,22 @@ class ReturnEntropyMAGenerator(VectorizedFeatureGenerator):
         return return_entropy_ma
 
 # High-Low Entropy Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class HighLowEntropyGenerator(VectorizedFeatureGenerator):
     """Generator for high-low range entropy features."""
     
@@ -304,11 +452,15 @@ class HighLowEntropyGenerator(VectorizedFeatureGenerator):
             max_lookback=window,
             parameters={'window': window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate high-low range entropy - OPTIMIZED."""
         hl_range = (data['high'] - data['low']) / data['close']
         
@@ -317,6 +469,22 @@ class HighLowEntropyGenerator(VectorizedFeatureGenerator):
         return hl_entropy
 
 # Volatility Entropy Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class VolatilityEntropyGenerator(VectorizedFeatureGenerator):
     """Generator for volatility entropy features."""
     
@@ -337,12 +505,16 @@ class VolatilityEntropyGenerator(VectorizedFeatureGenerator):
             max_lookback=window + volatility_window,
             parameters={'window': window, 'volatility_window': volatility_window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.volatility_window = volatility_window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate volatility entropy - OPTIMIZED."""
         base_values = self.base_calculator.calculate(data)
         volatility = base_values.rolling(window=self.volatility_window).std()
@@ -352,6 +524,22 @@ class VolatilityEntropyGenerator(VectorizedFeatureGenerator):
         return volatility_entropy
 
 # Add 6 more entropy generators to reach 15 total
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class MomentumEntropyGenerator(VectorizedFeatureGenerator):
     """Generator for momentum entropy features."""
     
@@ -366,16 +554,36 @@ class MomentumEntropyGenerator(VectorizedFeatureGenerator):
             max_lookback=window + momentum_period,
             parameters={'window': window, 'momentum_period': momentum_period}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.momentum_period = momentum_period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate momentum entropy - OPTIMIZED."""
         momentum = data['close'].pct_change(self.momentum_period)
         
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         return calculate_vectorized_entropy(momentum, self.window)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class RSIEntropyGenerator(VectorizedFeatureGenerator):
     """Generator for RSI entropy features."""
@@ -391,11 +599,15 @@ class RSIEntropyGenerator(VectorizedFeatureGenerator):
             max_lookback=window + rsi_period,
             parameters={'window': window, 'rsi_period': rsi_period}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.rsi_period = rsi_period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate RSI entropy - OPTIMIZED."""
         delta = data['close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=self.rsi_period).mean()
@@ -405,6 +617,22 @@ class RSIEntropyGenerator(VectorizedFeatureGenerator):
         
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         return calculate_vectorized_entropy(rsi, self.window)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class MACDEntropyGenerator(VectorizedFeatureGenerator):
     """Generator for MACD entropy features."""
@@ -420,12 +648,16 @@ class MACDEntropyGenerator(VectorizedFeatureGenerator):
             max_lookback=window + slow,
             parameters={'window': window, 'fast': fast, 'slow': slow}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.fast = fast
         self.slow = slow
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate MACD entropy - OPTIMIZED."""
         ema_fast = data['close'].ewm(span=self.fast).mean()
         ema_slow = data['close'].ewm(span=self.slow).mean()
@@ -433,6 +665,22 @@ class MACDEntropyGenerator(VectorizedFeatureGenerator):
         
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         return calculate_vectorized_entropy(macd, self.window)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class BollingerBandsEntropyGenerator(VectorizedFeatureGenerator):
     """Generator for Bollinger Bands position entropy features."""
@@ -448,12 +696,16 @@ class BollingerBandsEntropyGenerator(VectorizedFeatureGenerator):
             max_lookback=window + bb_period,
             parameters={'window': window, 'bb_period': bb_period, 'bb_std': bb_std}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.bb_period = bb_period
         self.bb_std = bb_std
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate Bollinger Bands position entropy - OPTIMIZED."""
         sma = data['close'].rolling(window=self.bb_period).mean()
         std = data['close'].rolling(window=self.bb_period).std()
@@ -463,6 +715,22 @@ class BollingerBandsEntropyGenerator(VectorizedFeatureGenerator):
         
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         return calculate_vectorized_entropy(bb_position, self.window)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class CrossAssetEntropyGenerator(VectorizedFeatureGenerator):
     """Generator for cross-asset correlation entropy features."""
@@ -478,11 +746,15 @@ class CrossAssetEntropyGenerator(VectorizedFeatureGenerator):
             max_lookback=window + correlation_window,
             parameters={'window': window, 'correlation_window': correlation_window}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.correlation_window = correlation_window
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate cross-asset correlation entropy - OPTIMIZED."""
         price_returns = data['close'].pct_change()
         volume_returns = data['volume'].pct_change()
@@ -490,6 +762,22 @@ class CrossAssetEntropyGenerator(VectorizedFeatureGenerator):
         
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         return calculate_vectorized_entropy(correlation, self.window)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class RegimeEntropyGenerator(VectorizedFeatureGenerator):
     """Generator for regime transition entropy features."""
@@ -505,11 +793,15 @@ class RegimeEntropyGenerator(VectorizedFeatureGenerator):
             max_lookback=window + regime_window,
             parameters={'window': window, 'regime_window': regime_window}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.regime_window = regime_window
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate regime transition entropy - OPTIMIZED."""
         volatility = data['close'].rolling(window=20).std()
         regime = pd.cut(volatility.rolling(window=self.regime_window).rank(pct=True), 

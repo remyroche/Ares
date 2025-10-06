@@ -2,6 +2,14 @@
 import pandas as pd
 from typing import List
 from ..core.feature_generator import FeatureGenerator, FeatureConfig, FeatureCategory
+
+# Optimization utilities
+try:
+    from ..utils.vectorization_optimizer import get_vectorization_optimizer
+    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
 from ..base_calculations import BaseCalculationType, create_base_calculator
 
 class TakerBuyRatioGenerator(FeatureGenerator):
@@ -15,10 +23,14 @@ class TakerBuyRatioGenerator(FeatureGenerator):
             min_lookback=window,
             max_lookback=window
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         close = data['close']
         volume = data['volume']
         
@@ -29,6 +41,22 @@ class TakerBuyRatioGenerator(FeatureGenerator):
         buy_volume = buy_pressure.rolling(window=self.window).sum()
         
         return buy_volume / total_volume.replace(0, 1)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class TakerSellRatioGenerator(FeatureGenerator):
     def __init__(self, window: int = 20):
@@ -41,10 +69,14 @@ class TakerSellRatioGenerator(FeatureGenerator):
             min_lookback=window,
             max_lookback=window
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         close = data['close']
         volume = data['volume']
         
@@ -55,6 +87,22 @@ class TakerSellRatioGenerator(FeatureGenerator):
         sell_volume = sell_pressure.rolling(window=self.window).sum()
         
         return sell_volume / total_volume.replace(0, 1)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class MarketAggressionIndexGenerator(FeatureGenerator):
     def __init__(self, window: int = 20):
@@ -67,10 +115,14 @@ class MarketAggressionIndexGenerator(FeatureGenerator):
             min_lookback=window,
             max_lookback=window
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         close = data['close']
         volume = data['volume']
         
@@ -79,6 +131,22 @@ class MarketAggressionIndexGenerator(FeatureGenerator):
         aggression = price_velocity * volume
         
         return aggression.rolling(window=self.window).mean()
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class OrderFlowImbalanceGenerator(FeatureGenerator):
     def __init__(self, window: int = 20):
@@ -91,10 +159,14 @@ class OrderFlowImbalanceGenerator(FeatureGenerator):
             min_lookback=window,
             max_lookback=window
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         close = data['close']
         volume = data['volume']
         
@@ -127,6 +199,22 @@ def create_default_order_flow_generators() -> List[FeatureGenerator]:
     return generators
 
 # Analyst Features - Order flow generators
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AnalystBidAskImbalanceGenerator(FeatureGenerator):
     """Generator for bid-ask imbalance feature."""
 
@@ -141,9 +229,13 @@ class AnalystBidAskImbalanceGenerator(FeatureGenerator):
             max_lookback=100,
             parameters={}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate bid-ask imbalance feature."""
         if 'bid' in data.columns and 'ask' in data.columns:
             bid_size = data['bid']
@@ -154,6 +246,22 @@ class AnalystBidAskImbalanceGenerator(FeatureGenerator):
         else:
             # Return neutral value if bid/ask data not available
             return pd.Series([0.0] * len(data), index=data.index, name=self.config.name)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class AnalystMarketOrderFlowGenerator(FeatureGenerator):
     """Generator for market order flow feature."""
@@ -169,9 +277,13 @@ class AnalystMarketOrderFlowGenerator(FeatureGenerator):
             max_lookback=100,
             parameters={}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate market order flow feature."""
         if 'market_buys' in data.columns and 'market_sells' in data.columns:
             market_buys = data['market_buys']

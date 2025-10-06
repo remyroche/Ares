@@ -784,6 +784,7 @@ class FeatureBank:
                          features: Optional[List[str]] = None,
                          lookback_optimization: bool = False,
                          target_column: Optional[str] = None,
+                         use_optimized_pipeline: bool = True,
                          **kwargs) -> pd.DataFrame:
         """
         Generate features by category or specific feature names.
@@ -794,6 +795,7 @@ class FeatureBank:
             features: List of specific feature names to generate
             lookback_optimization: Whether to optimize lookback periods
             target_column: Target column for lookback optimization
+            use_optimized_pipeline: Whether to use the optimized pipeline
             **kwargs: Additional parameters
             
         Returns:
@@ -806,6 +808,42 @@ class FeatureBank:
             self.logger.warning("Empty data provided")
             return pd.DataFrame()
         
+        # Use optimized pipeline if requested and available
+        if use_optimized_pipeline:
+            try:
+                from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+                pipeline = get_optimized_feature_pipeline()
+                
+                # Convert categories to strings if needed
+                category_strings = []
+                if categories:
+                    for cat in categories:
+                        if isinstance(cat, FeatureCategory):
+                            category_strings.append(cat.value)
+                        else:
+                            category_strings.append(cat)
+                
+                result = pipeline.process_features(
+                    data=data,
+                    categories=category_strings if category_strings else None,
+                    features=features,
+                    target_column=target_column,
+                    **kwargs
+                )
+                
+                if result.success:
+                    self.logger.info(f"✅ Optimized pipeline completed in {result.processing_time:.3f}s")
+                    self.logger.info(f"📊 Generated {len(result.features.columns)} features")
+                    return result.features
+                else:
+                    self.logger.warning(f"Optimized pipeline failed: {result.error_message}")
+                    # Fall back to standard generation
+            except ImportError:
+                self.logger.warning("Optimized pipeline not available, using standard generation")
+            except Exception as e:
+                self.logger.warning(f"Optimized pipeline error: {e}, using standard generation")
+        
+        # Standard feature generation (fallback)
         # Determine which generators to use
         generators_to_use = self._select_generators(categories, features)
         

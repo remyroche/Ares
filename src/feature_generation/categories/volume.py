@@ -10,6 +10,14 @@ import pandas as pd
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import (
+
+# Optimization utilities
+try:
+    from ..utils.vectorization_optimizer import get_vectorization_optimizer
+    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
     FeatureGenerator, 
     FeatureConfig, 
     FeatureCategory,
@@ -26,7 +34,7 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator):
     def __init__(self, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config()
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -53,11 +61,31 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator):
         return cls()
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         volume = data['volume'].values
         # Placeholder - actual implementation would generate multiple volume features
         return pd.Series(volume, index=data.index, name='volume_placeholder')
 
 # Volume Simple Moving Average
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class VolumeSMAGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Simple Moving Average."""
     
@@ -72,15 +100,35 @@ class VolumeSMAGenerator(VectorizedFeatureGenerator):
             max_lookback=period,
             parameters={'period': period}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate Volume SMA."""
         volume = data['volume']
         return volume.rolling(window=self.period).mean()
 
 # Volume Exponential Moving Average
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class VolumeEMAGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Exponential Moving Average."""
     
@@ -98,16 +146,36 @@ class VolumeEMAGenerator(VectorizedFeatureGenerator):
             max_lookback=period,
             parameters={'period': period, 'alpha': alpha}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.alpha = alpha
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate Volume EMA."""
         volume = data['volume']
         return volume.ewm(alpha=self.alpha, adjust=False).mean()
 
 # Volume Ratio
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class VolumeRatioGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Ratio (current volume vs average volume)."""
     
@@ -122,16 +190,36 @@ class VolumeRatioGenerator(VectorizedFeatureGenerator):
             max_lookback=period,
             parameters={'period': period}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate Volume Ratio."""
         volume = data['volume']
         avg_volume = volume.rolling(window=self.period).mean()
         return volume / avg_volume.replace(0, 1)  # Avoid division by zero
 
 # Volume Rate of Change
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class VolumeROCGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Rate of Change."""
     
@@ -146,15 +234,35 @@ class VolumeROCGenerator(VectorizedFeatureGenerator):
             max_lookback=period,
             parameters={'period': period}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate Volume ROC."""
         volume = data['volume']
         return volume.pct_change(periods=self.period) * 100
 
 # Volume Standard Deviation
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class VolumeStdGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Standard Deviation."""
     
@@ -169,15 +277,35 @@ class VolumeStdGenerator(VectorizedFeatureGenerator):
             max_lookback=period,
             parameters={'period': period}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate Volume Standard Deviation."""
         volume = data['volume']
         return volume.rolling(window=self.period).std()
 
 # Volume Percentile Rank
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class VolumePercentileGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Percentile Rank."""
     
@@ -192,15 +320,35 @@ class VolumePercentileGenerator(VectorizedFeatureGenerator):
             max_lookback=period,
             parameters={'period': period}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate Volume Percentile Rank."""
         volume = data['volume']
         return volume.rolling(window=self.period).rank(pct=True) * 100
 
 # Volume Trend Strength
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class VolumeTrendStrengthGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Trend Strength."""
     
@@ -215,11 +363,15 @@ class VolumeTrendStrengthGenerator(VectorizedFeatureGenerator):
             max_lookback=long_period,
             parameters={'short_period': short_period, 'long_period': long_period}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.short_period = short_period
         self.long_period = long_period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate Volume Trend Strength."""
         volume = data['volume']
         short_ma = volume.rolling(window=self.short_period).mean()
@@ -227,6 +379,22 @@ class VolumeTrendStrengthGenerator(VectorizedFeatureGenerator):
         return (short_ma - long_ma) / long_ma.replace(0, 1) * 100
 
 # Volume Oscillator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class VolumeOscillatorGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Oscillator."""
     
@@ -241,11 +409,15 @@ class VolumeOscillatorGenerator(VectorizedFeatureGenerator):
             max_lookback=long_period,
             parameters={'short_period': short_period, 'long_period': long_period}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.short_period = short_period
         self.long_period = long_period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate Volume Oscillator."""
         volume = data['volume']
         short_ma = volume.rolling(window=self.short_period).mean()
@@ -253,6 +425,22 @@ class VolumeOscillatorGenerator(VectorizedFeatureGenerator):
         return short_ma - long_ma
 
 # Volume Momentum
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class VolumeMomentumGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Momentum."""
     
@@ -267,15 +455,35 @@ class VolumeMomentumGenerator(VectorizedFeatureGenerator):
             max_lookback=period,
             parameters={'period': period}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate Volume Momentum."""
         volume = data['volume']
         return volume - volume.shift(self.period)
 
 # Volume Weighted Average Price (VWAP)
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class VolumeVWAPGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Weighted Average Price."""
     
@@ -290,16 +498,36 @@ class VolumeVWAPGenerator(VectorizedFeatureGenerator):
             max_lookback=period,
             parameters={'period': period}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate Volume VWAP."""
         close = data['close']
         volume = data['volume']
         return (close * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
 
 # Volume Price Trend (VPT)
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class VolumePriceTrendGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Price Trend."""
     
@@ -314,9 +542,13 @@ class VolumePriceTrendGenerator(VectorizedFeatureGenerator):
             max_lookback=1,
             parameters={}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate Volume Price Trend."""
         close = data['close']
         volume = data['volume']
@@ -325,6 +557,22 @@ class VolumePriceTrendGenerator(VectorizedFeatureGenerator):
         return vpt
 
 # Volume Accumulation/Distribution
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class VolumeAccumulationDistributionGenerator(VectorizedFeatureGenerator):
     """Generator for Volume Accumulation/Distribution."""
     
@@ -339,9 +587,13 @@ class VolumeAccumulationDistributionGenerator(VectorizedFeatureGenerator):
             max_lookback=1,
             parameters={}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate Volume Accumulation/Distribution."""
         close = data['close']
         high = data['high']
@@ -358,6 +610,22 @@ class VolumeAccumulationDistributionGenerator(VectorizedFeatureGenerator):
         return mfv.cumsum()
 
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class VolumePriceCorrelationGenerator(VectorizedFeatureGenerator):
     """Generator for volume-price correlation features."""
 
@@ -372,9 +640,13 @@ class VolumePriceCorrelationGenerator(VectorizedFeatureGenerator):
             max_lookback=period * 2,
             parameters={"period": period}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Calculate volume-price correlation."""
         close = data['close']
         volume = data['volume']
@@ -385,6 +657,22 @@ class VolumePriceCorrelationGenerator(VectorizedFeatureGenerator):
 
         return correlation
 
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class VolumePriceDivergenceGenerator(VectorizedFeatureGenerator):
     """Generator for volume-price divergence features."""
@@ -400,9 +688,13 @@ class VolumePriceDivergenceGenerator(VectorizedFeatureGenerator):
             max_lookback=period * 2,
             parameters={"period": period}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Calculate enhanced volume-price divergence with regime awareness."""
         close = data['close']
         volume = data['volume']
@@ -431,6 +723,22 @@ class VolumePriceDivergenceGenerator(VectorizedFeatureGenerator):
         return enhanced_divergence
 
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class PriceVolumeOscillatorGenerator(VectorizedFeatureGenerator):
     """Generator for price-volume oscillator features."""
 
@@ -445,9 +753,13 @@ class PriceVolumeOscillatorGenerator(VectorizedFeatureGenerator):
             max_lookback=slow_period * 2,
             parameters={"fast_period": fast_period, "slow_period": slow_period}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Calculate price-volume oscillator."""
         close = data['close']
         volume = data['volume']
@@ -531,6 +843,22 @@ def create_default_volume_generators() -> List[FeatureGenerator]:
     return generators
 
 # Analyst Features - Volume pattern generators
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AnalystVolumePressureGenerator(VectorizedFeatureGenerator):
     """Generator for volume pressure feature."""
 
@@ -545,9 +873,13 @@ class AnalystVolumePressureGenerator(VectorizedFeatureGenerator):
             max_lookback=100,
             parameters={}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate volume pressure feature."""
         volume = data['volume']
         price_change = data['close'].pct_change()
@@ -558,6 +890,22 @@ class AnalystVolumePressureGenerator(VectorizedFeatureGenerator):
 
         volume_pressure = (volume_up - volume_down) / volume.replace(0, 1)
         return volume_pressure
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class AnalystVolumeTrendGenerator(VectorizedFeatureGenerator):
     """Generator for volume trend using linear regression."""
@@ -573,10 +921,14 @@ class AnalystVolumeTrendGenerator(VectorizedFeatureGenerator):
             max_lookback=100,
             parameters={"lookback": lookback}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.lookback = lookback
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate volume trend feature."""
         volume = data['volume']
 
@@ -614,3 +966,19 @@ __all__ = [
     'AnalystVolumeTrendGenerator',
     'create_default_volume_generators'
 ]
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+

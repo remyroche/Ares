@@ -28,6 +28,14 @@ import os
 from pathlib import Path
 
 from ..core.feature_generator import (
+
+# Optimization utilities
+try:
+    from ..utils.vectorization_optimizer import get_vectorization_optimizer
+    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
     FeatureGenerator,
     FeatureConfig,
     FeatureCategory,
@@ -145,7 +153,7 @@ class OptimizedGARCHFeatureGenerator(VectorizedFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=self.use_gpu
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.p = p
         self.q = q
         self.forecast_horizon = forecast_horizon
@@ -184,6 +192,10 @@ class OptimizedGARCHFeatureGenerator(VectorizedFeatureGenerator):
                 self.use_hardware_accel = False
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate optimized GARCH-based volatility features."""
         return self._generate_optimized_garch(data)
 
@@ -429,6 +441,22 @@ class OptimizedGARCHFeatureGenerator(VectorizedFeatureGenerator):
         }
 
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class OptimizedVolatilityFeatureGenerator(VectorizedFeatureGenerator):
     """Highly optimized volatility feature generator with GPU acceleration and matrix operations."""
 
@@ -457,7 +485,7 @@ class OptimizedVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         
         if config is None:
             config = self._create_default_config(period)
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
 
     def _initialize_hardware_components(self):
@@ -496,6 +524,10 @@ class OptimizedVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         )
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate optimized volatility features."""
         close_prices = data['close'].values
         
@@ -610,6 +642,22 @@ class OptimizedVolatilityFeatureGenerator(VectorizedFeatureGenerator):
         return pd.Series(padded_volatility, index=index, name=f'std_volatility_{self.period}')
 
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class MemoryEfficientVolatilityGenerator(VectorizedFeatureGenerator):
     """Memory-efficient volatility generator for large datasets with hardware acceleration."""
 
@@ -635,7 +683,7 @@ class MemoryEfficientVolatilityGenerator(VectorizedFeatureGenerator):
         
         if config is None:
             config = self._create_default_config(period)
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
 
     def _initialize_hardware_components(self):
@@ -673,6 +721,10 @@ class MemoryEfficientVolatilityGenerator(VectorizedFeatureGenerator):
         )
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate memory-efficient volatility features."""
         close_prices = data['close'].values
         
@@ -812,3 +864,19 @@ def benchmark_volatility_optimizations(data: pd.DataFrame,
         results['gpu_accelerated']['memory'] = 'N/A'
     
     return results
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+

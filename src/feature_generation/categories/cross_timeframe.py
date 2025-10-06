@@ -11,6 +11,14 @@ from typing import Any, Dict, List, Optional, Union
 from scipy import stats
 
 from ..core.feature_generator import (
+
+# Optimization utilities
+try:
+    from ..utils.vectorization_optimizer import get_vectorization_optimizer
+    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
     FeatureGenerator, 
     FeatureConfig, 
     FeatureCategory,
@@ -27,7 +35,7 @@ class CrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
     def __init__(self, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config()
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -55,6 +63,22 @@ class CrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
         )
 
 # Cross-Timeframe Momentum Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class CrossTimeframeMomentumGenerator(FeatureGenerator):
     """Generator for cross-timeframe momentum features."""
     
@@ -75,17 +99,37 @@ class CrossTimeframeMomentumGenerator(FeatureGenerator):
             max_lookback=timeframe,
             parameters={'timeframe': timeframe, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.timeframe = timeframe
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate cross-timeframe momentum."""
         base_values = self.base_calculator.calculate(data)
         momentum = base_values.pct_change(self.timeframe)
         return momentum
 
 # Cross-Timeframe Volatility Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class CrossTimeframeVolatilityGenerator(FeatureGenerator):
     """Generator for cross-timeframe volatility features."""
     
@@ -106,17 +150,37 @@ class CrossTimeframeVolatilityGenerator(FeatureGenerator):
             max_lookback=timeframe,
             parameters={'timeframe': timeframe, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.timeframe = timeframe
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate cross-timeframe volatility."""
         base_values = self.base_calculator.calculate(data)
         volatility = base_values.rolling(window=self.timeframe).std()
         return volatility
 
 # Cross-Timeframe Volume Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class CrossTimeframeVolumeGenerator(FeatureGenerator):
     """Generator for cross-timeframe volume features."""
     
@@ -137,17 +201,37 @@ class CrossTimeframeVolumeGenerator(FeatureGenerator):
             max_lookback=timeframe,
             parameters={'timeframe': timeframe, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.timeframe = timeframe
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate cross-timeframe volume."""
         base_values = self.base_calculator.calculate(data)
         volume_ma = base_values.rolling(window=self.timeframe).mean()
         return volume_ma
 
 # Cross-Timeframe Trend Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class CrossTimeframeTrendGenerator(FeatureGenerator):
     """Generator for cross-timeframe trend features."""
     
@@ -168,11 +252,15 @@ class CrossTimeframeTrendGenerator(FeatureGenerator):
             max_lookback=timeframe,
             parameters={'timeframe': timeframe, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.timeframe = timeframe
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate cross-timeframe trend."""
         base_values = self.base_calculator.calculate(data)
         
@@ -190,6 +278,22 @@ class CrossTimeframeTrendGenerator(FeatureGenerator):
         return trend
 
 # Cross-Timeframe High-Low Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class CrossTimeframeHighLowGenerator(FeatureGenerator):
     """Generator for cross-timeframe high-low range features."""
     
@@ -210,16 +314,36 @@ class CrossTimeframeHighLowGenerator(FeatureGenerator):
             max_lookback=timeframe,
             parameters={'timeframe': timeframe, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.timeframe = timeframe
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate cross-timeframe high-low range."""
         hl_range = (data['high'] - data['low']).rolling(window=self.timeframe).mean()
         return hl_range
 
 # Cross-Timeframe Ratio Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class CrossTimeframeRatioGenerator(FeatureGenerator):
     """Generator for cross-timeframe ratio features."""
     
@@ -240,13 +364,17 @@ class CrossTimeframeRatioGenerator(FeatureGenerator):
             max_lookback=long_timeframe,
             parameters={'short_timeframe': short_timeframe, 'long_timeframe': long_timeframe, 'feature_type': feature_type, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.short_timeframe = short_timeframe
         self.long_timeframe = long_timeframe
         self.feature_type = feature_type
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate cross-timeframe ratio."""
         base_values = self.base_calculator.calculate(data)
         
@@ -268,6 +396,22 @@ class CrossTimeframeRatioGenerator(FeatureGenerator):
         return ratio
 
 # Cross-Timeframe Correlation Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class CrossTimeframeCorrelationGenerator(FeatureGenerator):
     """Generator for cross-timeframe correlation features."""
     
@@ -288,7 +432,7 @@ class CrossTimeframeCorrelationGenerator(FeatureGenerator):
             max_lookback=max(timeframe1, timeframe2, correlation_window),
             parameters={'timeframe1': timeframe1, 'timeframe2': timeframe2, 'feature_type': feature_type, 'correlation_window': correlation_window, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.timeframe1 = timeframe1
         self.timeframe2 = timeframe2
         self.feature_type = feature_type
@@ -296,6 +440,10 @@ class CrossTimeframeCorrelationGenerator(FeatureGenerator):
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate cross-timeframe correlation."""
         base_values = self.base_calculator.calculate(data)
         
@@ -314,6 +462,22 @@ class CrossTimeframeCorrelationGenerator(FeatureGenerator):
         return correlation
 
 # Cross-Timeframe Divergence Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class CrossTimeframeDivergenceGenerator(FeatureGenerator):
     """Generator for cross-timeframe divergence features."""
     
@@ -334,13 +498,17 @@ class CrossTimeframeDivergenceGenerator(FeatureGenerator):
             max_lookback=long_timeframe,
             parameters={'short_timeframe': short_timeframe, 'long_timeframe': long_timeframe, 'feature_type': feature_type, 'base_calculation': base_calculation.value, **base_kwargs}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.short_timeframe = short_timeframe
         self.long_timeframe = long_timeframe
         self.feature_type = feature_type
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate cross-timeframe divergence."""
         base_values = self.base_calculator.calculate(data)
         
@@ -406,6 +574,22 @@ def create_default_cross_timeframe_generators() -> List[FeatureGenerator]:
 
 # Enhanced Cross-Timeframe Generators for Better Aggregation
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class CrossTimeframeFractionalChangeGenerator(FeatureGenerator):
     """Generator for fractional change features across timeframes."""
 
@@ -421,12 +605,16 @@ class CrossTimeframeFractionalChangeGenerator(FeatureGenerator):
             max_lookback=max(fast_tf, slow_tf),
             parameters={"fast_tf": fast_tf, "slow_tf": slow_tf, "feature_type": feature_type}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.fast_tf = fast_tf
         self.slow_tf = slow_tf
         self.feature_type = feature_type
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate fractional change feature across timeframes."""
         if self.feature_type == "volatility":
             fast_vol = data["close"].pct_change().rolling(window=self.fast_tf).std()
@@ -449,6 +637,22 @@ class CrossTimeframeFractionalChangeGenerator(FeatureGenerator):
         return fractional_change.fillna(0)
 
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class CrossTimeframeAlignmentGenerator(FeatureGenerator):
     """Generator for properly aligned cross-timeframe features."""
 
@@ -463,12 +667,16 @@ class CrossTimeframeAlignmentGenerator(FeatureGenerator):
             max_lookback=target_tf,
             parameters={"source_tf": source_tf, "target_tf": target_tf, "alignment_method": alignment_method}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.source_tf = source_tf
         self.target_tf = target_tf
         self.alignment_method = alignment_method
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate properly aligned cross-timeframe feature."""
         # Calculate lag needed for alignment
         lag_bars = self.target_tf // self.source_tf - 1
@@ -488,6 +696,22 @@ class CrossTimeframeAlignmentGenerator(FeatureGenerator):
             return pd.Series(np.zeros(len(data)), index=data.index)
 
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class CrossTimeframeLearnedProjectionGenerator(FeatureGenerator):
     """Generator for learned projections across timeframes using PCA/dimensionality reduction."""
 
@@ -503,11 +727,15 @@ class CrossTimeframeLearnedProjectionGenerator(FeatureGenerator):
             max_lookback=max(timeframes) * 20,
             parameters={"timeframes": timeframes, "n_components": n_components}
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.timeframes = timeframes
         self.n_components = n_components
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate learned projection features across timeframes."""
         try:
             from sklearn.decomposition import PCA
@@ -546,13 +774,29 @@ class CrossTimeframeLearnedProjectionGenerator(FeatureGenerator):
 
 # Enhanced Cross-Timeframe Features
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class EnhancedCrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
     """Enhanced cross-timeframe feature generator with proper lag handling and fractional changes."""
 
     def __init__(self, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config()
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -580,6 +824,10 @@ class EnhancedCrossTimeframeFeatureGenerator(VectorizedFeatureGenerator):
         )
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate enhanced cross-timeframe features."""
         try:
             # Generate all enhanced cross-timeframe features

@@ -18,6 +18,14 @@ from typing import Any, Dict, List, Optional, Union, Tuple
 import logging
 
 from ..core.feature_generator import (
+
+# Optimization utilities
+try:
+    from ..utils.vectorization_optimizer import get_vectorization_optimizer
+    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
     FeatureGenerator,
     FeatureConfig,
     FeatureCategory,
@@ -47,13 +55,17 @@ class PatchTSTRepresentationGenerator(FeatureGenerator):
                 "masking_ratio": 0.5
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.patch_length = patch_length
         self.num_patches = num_patches
         self.embedding_dim = embedding_dim
         self.masking_ratio = 0.5
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate PatchTST representation features."""
         try:
             # Extract price sequence
@@ -124,6 +136,22 @@ class PatchTSTRepresentationGenerator(FeatureGenerator):
         return representations
 
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class TFTEncoderRepresentationGenerator(FeatureGenerator):
     """Generator for TFT (Temporal Fusion Transformer) encoder representations."""
 
@@ -143,12 +171,16 @@ class TFTEncoderRepresentationGenerator(FeatureGenerator):
                 "num_heads": num_heads
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.seq_length = seq_length
         self.hidden_size = hidden_size
         self.num_heads = num_heads
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate TFT encoder representation features."""
         try:
             # Extract multi-variate time series
@@ -248,6 +280,22 @@ class TFTEncoderRepresentationGenerator(FeatureGenerator):
             return attention_output
 
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AutoencoderRepresentationGenerator(FeatureGenerator):
     """Generator for autoencoder-based representation learning."""
 
@@ -266,11 +314,15 @@ class AutoencoderRepresentationGenerator(FeatureGenerator):
                 "sequence_length": sequence_length
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.encoding_dim = encoding_dim
         self.sequence_length = sequence_length
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate autoencoder representation features."""
         try:
             # Create input features
@@ -343,6 +395,22 @@ class AutoencoderRepresentationGenerator(FeatureGenerator):
             return features.mean(axis=1, keepdims=True)
 
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class ContrastiveLearningGenerator(FeatureGenerator):
     """Generator for contrastive learning representations."""
 
@@ -361,11 +429,15 @@ class ContrastiveLearningGenerator(FeatureGenerator):
                 "temperature": temperature
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.embedding_dim = embedding_dim
         self.temperature = temperature
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate contrastive learning representation features."""
         try:
             # Create positive and negative samples

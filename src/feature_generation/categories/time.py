@@ -11,6 +11,14 @@ import numpy as np
 from typing import List
 from ..core.feature_generator import FeatureGenerator, FeatureConfig, FeatureCategory
 
+# Optimization utilities
+try:
+    from ..utils.vectorization_optimizer import get_vectorization_optimizer
+    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
+
 # Basic Hour Features
 class HourGenerator(FeatureGenerator):
     def __init__(self):
@@ -23,12 +31,32 @@ class HourGenerator(FeatureGenerator):
             min_lookback=1,
             max_lookback=1
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         return pd.Series(data.index.hour, index=data.index)
 
 # Cyclical Encodings for Machine Learning
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class HourSinGenerator(FeatureGenerator):
     def __init__(self):
         config = FeatureConfig(
@@ -40,11 +68,27 @@ class HourSinGenerator(FeatureGenerator):
             min_lookback=1,
             max_lookback=1
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         hour = data.index.hour
         return pd.Series(np.sin(2 * np.pi * hour / 24), index=data.index)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class HourCosGenerator(FeatureGenerator):
     def __init__(self):
@@ -57,13 +101,29 @@ class HourCosGenerator(FeatureGenerator):
             min_lookback=1,
             max_lookback=1
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         hour = data.index.hour
         return pd.Series(np.cos(2 * np.pi * hour / 24), index=data.index)
 
 # Intraday Pattern Features
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class MarketOpenGenerator(FeatureGenerator):
     def __init__(self):
         config = FeatureConfig(
@@ -75,13 +135,29 @@ class MarketOpenGenerator(FeatureGenerator):
             min_lookback=1,
             max_lookback=1
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         hour = data.index.hour
         # Market open: 9-11 AM (assuming 9 AM market open)
         market_open = ((hour >= 9) & (hour < 11)).astype(int)
         return pd.Series(market_open, index=data.index)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class LunchHourGenerator(FeatureGenerator):
     def __init__(self):
@@ -94,13 +170,29 @@ class LunchHourGenerator(FeatureGenerator):
             min_lookback=1,
             max_lookback=1
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         hour = data.index.hour
         # Lunch hour: 12-2 PM
         lunch_hour = ((hour >= 12) & (hour < 14)).astype(int)
         return pd.Series(lunch_hour, index=data.index)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class MarketCloseGenerator(FeatureGenerator):
     def __init__(self):
@@ -113,13 +205,29 @@ class MarketCloseGenerator(FeatureGenerator):
             min_lookback=1,
             max_lookback=1
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         hour = data.index.hour
         # Market close: 3-5 PM (assuming 5 PM market close)
         market_close = ((hour >= 15) & (hour < 17)).astype(int)
         return pd.Series(market_close, index=data.index)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class AfterHoursGenerator(FeatureGenerator):
     def __init__(self):
@@ -132,13 +240,29 @@ class AfterHoursGenerator(FeatureGenerator):
             min_lookback=1,
             max_lookback=1
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         hour = data.index.hour
         # After hours: before 9 AM or after 5 PM
         after_hours = ((hour < 9) | (hour >= 17)).astype(int)
         return pd.Series(after_hours, index=data.index)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class HighActivityHoursGenerator(FeatureGenerator):
     def __init__(self):
@@ -151,7 +275,7 @@ class HighActivityHoursGenerator(FeatureGenerator):
             min_lookback=1,
             max_lookback=1
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         hour = data.index.hour
@@ -160,6 +284,22 @@ class HighActivityHoursGenerator(FeatureGenerator):
         return pd.Series(high_activity.astype(int), index=data.index)
 
 # Day of Week Cyclical Encoding (important for weekly patterns)
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class DayOfWeekSinGenerator(FeatureGenerator):
     def __init__(self):
         config = FeatureConfig(
@@ -171,11 +311,27 @@ class DayOfWeekSinGenerator(FeatureGenerator):
             min_lookback=1,
             max_lookback=1
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         day_of_week = data.index.dayofweek
         return pd.Series(np.sin(2 * np.pi * day_of_week / 7), index=data.index)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class DayOfWeekCosGenerator(FeatureGenerator):
     def __init__(self):
@@ -188,7 +344,7 @@ class DayOfWeekCosGenerator(FeatureGenerator):
             min_lookback=1,
             max_lookback=1
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         day_of_week = data.index.dayofweek

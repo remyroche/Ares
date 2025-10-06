@@ -12,6 +12,14 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import (
+
+# Optimization utilities
+try:
+    from ..utils.vectorization_optimizer import get_vectorization_optimizer
+    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
     FeatureGenerator,
     FeatureConfig,
     FeatureCategory,
@@ -25,14 +33,14 @@ from ..base_calculations import (
 )
 
 class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
-    """Feature generator for volatility-based features with batch processing."""
+    """Feature generator for volatility-based features with batch processing and optimization."""
 
     def __init__(self, period: int = 20, config: Optional[FeatureConfig] = None, base_calculation: Optional[BaseCalculationType] = None):
         self.period = period
         self.base_calculation = base_calculation
         if config is None:
             config = self._create_default_config(period)
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     @classmethod
     def _create_default_config(cls, period: int = 20) -> FeatureConfig:
@@ -57,6 +65,10 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
         return cls()
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         close_prices = data['close'].values
         volatility = self._calculate_volatility(close_prices, period=self.period)
         return pd.Series(volatility, index=data.index, name=f'volatility_{self.period}')
@@ -109,6 +121,22 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
         
         return features
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class BollingerBandsGenerator(FeatureGenerator):
     """Generator for Bollinger Bands with different base calculations and batch processing."""
     
@@ -153,13 +181,17 @@ class BollingerBandsGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.std_dev = std_dev
         self.base_calculation = base_calculation
         self.band_type = band_type
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate Bollinger Bands based on the specified base calculation."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
@@ -232,6 +264,22 @@ class BollingerBandsGenerator(FeatureGenerator):
         
         return features
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class ATRGenerator(FeatureGenerator):
     """Generator for Average True Range with different base calculations and batch processing."""
     
@@ -270,11 +318,15 @@ class ATRGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate ATR based on the specified base calculation."""
         if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
             # Traditional ATR calculation on price levels
@@ -355,6 +407,22 @@ class ATRGenerator(FeatureGenerator):
         return features
 
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class VolatilityBandsGenerator(FeatureGenerator):
     """Generator for Volatility Bands with different base calculations."""
     
@@ -396,11 +464,15 @@ class VolatilityBandsGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.std_multiplier = std_multiplier
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate Volatility Bands upper band based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
         
@@ -415,6 +487,22 @@ class VolatilityBandsGenerator(FeatureGenerator):
         
         return upper_band
 
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class GARCHFeatureGenerator(FeatureGenerator):
     """Generator for GARCH-based volatility features."""
@@ -449,13 +537,17 @@ class GARCHFeatureGenerator(FeatureGenerator):
             },
             dependencies=["arch"]  # Require arch library for GARCH models
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.p = p
         self.q = q
         self.forecast_horizon = forecast_horizon
         self.garch_kwargs = garch_kwargs
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate GARCH-based volatility features using vectorized calculations."""
         return self._generate_garch_vectorized(data)
 
@@ -607,9 +699,13 @@ def create_volatility_generators(periods: Dict[str, List[int]] = None) -> List[F
                 max_lookback=200,
                 parameters={}
             )
-            super().__init__(config, enable_matrix_ops=True)
+            super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
         def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
             """Generate volatility ratio feature."""
             returns = data['close'].pct_change()
 
@@ -637,7 +733,7 @@ def create_volatility_generators(periods: Dict[str, List[int]] = None) -> List[F
                 max_lookback=300,
                 parameters={}
             )
-            super().__init__(config, enable_matrix_ops=True)
+            super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
         def _generate_feature(self, data: pd.DataFrame, regime_data: Optional[pd.DataFrame] = None, **kwargs) -> pd.Series:
             """Generate volatility regime deviation feature."""

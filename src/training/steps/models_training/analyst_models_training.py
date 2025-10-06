@@ -91,6 +91,8 @@ class AnalystModelType(Enum):
     RIDGE = "RIDGE"
     ELASTIC_NET = "ELASTIC_NET"
     RANDOM_FOREST = "RANDOM_FOREST"
+    NAS = "NAS"  # Neural Architecture Search
+    TAS = "TAS"  # Tree-based Architecture Search
 
 
 @dataclass
@@ -118,7 +120,9 @@ class AnalystModelsTrainingConfig:
                 AnalystModelType.LIGHTGBM,
                 AnalystModelType.RIDGE,
                 AnalystModelType.ELASTIC_NET,
-                AnalystModelType.RANDOM_FOREST
+                AnalystModelType.RANDOM_FOREST,
+                AnalystModelType.NAS,
+                AnalystModelType.TAS
             ]
 
 
@@ -321,6 +325,10 @@ class AnalystModelsTrainingStep:
                 return await self._train_elastic_net(X, y, sample_weight, **kwargs)
             elif model_type == AnalystModelType.RANDOM_FOREST:
                 return await self._train_random_forest(X, y, sample_weight, **kwargs)
+            elif model_type == AnalystModelType.NAS:
+                return await self._train_nas(X, y, sample_weight, **kwargs)
+            elif model_type == AnalystModelType.TAS:
+                return await self._train_tas(X, y, sample_weight, **kwargs)
             else:
                 raise ValueError(f"Unknown model type: {model_type}")
 
@@ -469,6 +477,65 @@ class AnalystModelsTrainingStep:
 
         except Exception as e:
             tprint_error(f"❌ Random Forest training failed: {e}")
+            return {'models': {}, 'metrics': {}}
+
+    async def _train_nas(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        sample_weight: np.ndarray,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Train NAS (Neural Architecture Search) model."""
+        try:
+            from sklearn.ensemble import ExtraTreesRegressor
+
+            # Use ExtraTrees as a placeholder for NAS
+            # In a real implementation, this would use neural architecture search
+            model = ExtraTreesRegressor(
+                n_estimators=100,
+                random_state=42,
+                n_jobs=-1 if self.config.enable_parallel_processing else 1
+            )
+
+            model.fit(X, y.ravel(), sample_weight=sample_weight)
+
+            return {
+                'models': {'nas': model},
+                'metrics': {'model_type': 'NAS'}
+            }
+
+        except Exception as e:
+            tprint_error(f"❌ NAS training failed: {e}")
+            return {'models': {}, 'metrics': {}}
+
+    async def _train_tas(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        sample_weight: np.ndarray,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Train TAS (Tree-based Architecture Search) model."""
+        try:
+            from sklearn.ensemble import GradientBoostingRegressor
+
+            # Use GradientBoosting as a placeholder for TAS
+            # In a real implementation, this would use tree-based architecture search
+            model = GradientBoostingRegressor(
+                n_estimators=100,
+                random_state=42
+            )
+
+            model.fit(X, y.ravel(), sample_weight=sample_weight)
+
+            return {
+                'models': {'tas': model},
+                'metrics': {'model_type': 'TAS'}
+            }
+
+        except Exception as e:
+            tprint_error(f"❌ TAS training failed: {e}")
             return {'models': {}, 'metrics': {}}
 
     def get_performance_metrics(self) -> Dict[str, Any]:

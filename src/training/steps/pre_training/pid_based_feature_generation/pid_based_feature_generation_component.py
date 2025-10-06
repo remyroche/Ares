@@ -569,24 +569,52 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
     async def _get_target_variable(self, pipeline_state: Dict[str, Any]) -> Optional[Dict[str, np.ndarray]]:
         """Get target variable from multi-horizon profit labeler (replaces triple barrier labeling)."""
         try:
-            # First, try to get multi-horizon labeling results (NEW SYSTEM)
-            multi_horizon_result = pipeline_state.get('multi_horizon_labeling_result', {})
-            self.logger.info(f"🔍 DEBUG: Pipeline state keys: {list(pipeline_state.keys())}")
-            self.logger.info(f"🔍 DEBUG: Multi-horizon result keys: {list(multi_horizon_result.keys()) if multi_horizon_result else 'None'}")
-            
-            # Check if multi-horizon results are in artifacts
-            artifacts = pipeline_state.get('artifacts', {})
-            self.logger.info(f"🔍 DEBUG: Artifacts keys: {list(artifacts.keys()) if artifacts else 'None'}")
-            if artifacts and 'multi_horizon_labeling_result' in artifacts:
-                self.logger.info("🔍 DEBUG: Found multi_horizon_labeling_result in artifacts!")
-                multi_horizon_result = artifacts['multi_horizon_labeling_result']
-            elif not multi_horizon_result:
-                # If not in pipeline state, try to load from latest outcome file
-                self.logger.info("🔍 DEBUG: Multi-horizon results not in pipeline state - loading from outcome file...")
-                multi_horizon_result = await self._load_latest_multi_horizon_outcome()
-                
-            if multi_horizon_result and 'labeled_data' in multi_horizon_result:
-                labeled_data = multi_horizon_result['labeled_data']
+            tprint_info("🎯 Getting target variable from multi-horizon profit labeler")
+
+            # First, try to get standardized output format (NEW SYSTEM)
+            standardized_output = None
+
+            # Check pipeline state for standardized output
+            if 'standardized_output' in pipeline_state:
+                tprint_info("📋 Found standardized output in pipeline state")
+                standardized_output = pipeline_state['standardized_output']
+            else:
+                # Check artifacts for standardized output
+                artifacts = pipeline_state.get('artifacts', {})
+                if artifacts and 'standardized_output' in artifacts:
+                    tprint_info("📋 Found standardized output in artifacts")
+                    standardized_output = artifacts['standardized_output']
+
+            # Extract target data from standardized format if available
+            if standardized_output and 'labels' in standardized_output:
+                tprint_success("✅ Using standardized output format from multi_horizon_profit_labeler")
+                labeled_data = standardized_output['labels']
+
+                # Extract target columns and weights for enhanced integration
+                target_columns = standardized_output.get('target_columns', [])
+                horizon_weights = standardized_output.get('weights', {})
+
+                tprint_info(f"🎯 Target columns from standardized format: {target_columns}")
+                tprint_info(f"⚖️ Horizon weights from standardized format: {horizon_weights}")
+
+            # Fallback to legacy format if standardized format not available
+            else:
+                tprint_info("📋 Using legacy format for target extraction")
+                multi_horizon_result = pipeline_state.get('multi_horizon_labeling_result', {})
+
+                # Check if multi-horizon results are in artifacts
+                artifacts = pipeline_state.get('artifacts', {})
+                if artifacts and 'multi_horizon_labeling_result' in artifacts:
+                    multi_horizon_result = artifacts['multi_horizon_labeling_result']
+                elif not multi_horizon_result:
+                    # If not in pipeline state, try to load from latest outcome file
+                    multi_horizon_result = await self._load_latest_multi_horizon_outcome()
+
+                if multi_horizon_result and 'labeled_data' in multi_horizon_result:
+                    labeled_data = multi_horizon_result['labeled_data']
+                else:
+                    tprint_warning("⚠️ No labeled data found in multi-horizon results")
+                    return None
                 
                 # Convert string representation to DataFrame if needed
                 if isinstance(labeled_data, str):

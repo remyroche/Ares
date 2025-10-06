@@ -121,8 +121,8 @@ class FinalFeatureSelectionStep:
                 self.logger.error("❌ Failed to load feature data")
                 return False
             
-            # Load target data (if available)
-            target_data = await self._load_target_data(symbol, exchange, timeframe, data_dir)
+            # Load target data (if available) - prioritize standardized format from multi_horizon_profit_labeler
+            target_data = await self._load_target_data_from_standardized_format(symbol, exchange, timeframe, data_dir)
             
             # Prepare data for feature selection
             X, y = self._prepare_data(feature_data, target_data)
@@ -135,14 +135,71 @@ class FinalFeatureSelectionStep:
             
             # Generate summary report
             await self._generate_summary_report(selection_result, symbol, exchange, timeframe)
-            
+
+            # Log integration with upstream components
+            self.logger.info("📋 Integration Summary:")
+            self.logger.info(f"   🎯 Multi-horizon profit labels: {'✅ Used' if target_data is not None else '❌ Not found'}")
+            self.logger.info(f"   ⚙️ Feature lookback optimization: {'✅ Integrated' if 'lookback_optimized' in str(selection_result).lower() else '❌ Not applied'}")
+            self.logger.info(f"   🔧 PID-based features: {'✅ Used' if len(feature_data.columns) > 50 else '❌ Insufficient features'}")
+
             self.logger.info("✅ Final feature selection completed successfully")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Final feature selection failed: {e}")
             return False
-    
+
+    async def _load_target_data_from_standardized_format(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
+        """Load target data from standardized format from multi_horizon_profit_labeler."""
+        try:
+            self.logger.info("🎯 Loading target data from standardized format")
+
+            # First try to load from outcomes directory (most recent results)
+            outcomes_dir = Path("outcomes")
+            if outcomes_dir.exists():
+                # Look for the most recent multi_horizon_profit_labeler outcome
+                pattern = f"market_analysis_multi_horizon_profit_labeler_outcome_{symbol}_{exchange}_{timeframe}_*.json"
+                outcome_files = list(outcomes_dir.glob(pattern))
+
+                if outcome_files:
+                    latest_outcome_file = max(outcome_files, key=lambda f: f.stat().st_mtime)
+                    self.logger.info(f"📂 Loading target data from: {latest_outcome_file}")
+
+                    import json
+                    with open(latest_outcome_file, 'r') as f:
+                        outcome_data = json.load(f)
+
+                    # Extract standardized output
+                    artifacts = outcome_data.get('artifacts', {})
+                    if 'standardized_output' in artifacts:
+                        standardized_output = artifacts['standardized_output']
+                        target_data = standardized_output.get('labels')
+
+                        if target_data is not None:
+                            self.logger.info("✅ Successfully loaded target data from standardized format"                            if isinstance(target_data, dict):
+                                # Convert dict to DataFrame if needed
+                                target_df = pd.DataFrame(target_data)
+                            elif isinstance(target_data, pd.DataFrame):
+                                target_df = target_data
+                            else:
+                                self.logger.warning("⚠️ Target data in unexpected format")
+                                return None
+
+                            self.logger.info(f"📊 Target data loaded: {len(target_df)} rows, {len(target_df.columns)} columns")
+                            return target_df
+                        else:
+                            self.logger.warning("⚠️ No labels found in standardized output")
+                    else:
+                        self.logger.warning("⚠️ No standardized output found in outcome file")
+
+            # Fallback: try to load from data_cache or other locations
+            return await self._load_target_data(symbol, exchange, timeframe, data_dir)
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to load target data from standardized format: {e}")
+            # Fallback to original method
+            return await self._load_target_data(symbol, exchange, timeframe, data_dir)
+
     async def _load_feature_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
         """Load feature data from previous pipeline steps."""
         

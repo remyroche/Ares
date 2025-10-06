@@ -2172,18 +2172,35 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                     return pd.DataFrame({'fallback_column': [0, 1, 2]})
             
             # Determine labeling method and extract labeled data
-            if 'labeled_data' in labeling_data:
-                # Multi-horizon labeling format
+            tprint_info("🔍 Determining labeling method and extracting labeled data")
+
+            if 'standardized_output' in labeling_data:
+                # New standardized format from multi_horizon_profit_labeler
+                tprint_info("📋 Using standardized output format from multi_horizon_profit_labeler")
+                standardized_output = labeling_data['standardized_output']
+                labeled_data = standardized_output['labels']
+                labeling_method = 'multi_horizon_profit_labeling_standardized'
+                horizon_weights = standardized_output.get('weights', {})
+                target_columns = standardized_output.get('target_columns', [])
+                tprint_success(f"✅ Loaded standardized format with {len(labeled_data.columns)} targets")
+                tprint_info(f"🎯 Target columns: {target_columns}")
+                tprint_info(f"⚖️ Horizon weights: {horizon_weights}")
+            elif 'labeled_data' in labeling_data:
+                # Multi-horizon labeling format (legacy)
                 labeled_data = labeling_data['labeled_data']
                 labeling_method = labeling_data.get('method', 'multi_horizon_profit_labeling')
-                tprint(f'📊 Using {labeling_method} labeled data for optimization')
+                horizon_weights = labeling_data.get('horizon_weights', {})
+                target_columns = labeling_data.get('target_columns', [])
+                tprint_info(f"📊 Using {labeling_method} labeled data for optimization")
             elif 'labels' in labeling_data:
                 # Triple barrier labeling format (backward compatibility)
                 labeled_data = labeling_data['labels']
                 labeling_method = 'triple_barrier_labeling'
-                tprint(f'📊 Using {labeling_method} labeled data for optimization')
+                horizon_weights = {}
+                target_columns = []
+                tprint_info(f"📊 Using {labeling_method} labeled data for optimization")
             else:
-                tprint("⚠️ No recognized labeling data format found")
+                tprint_warning("⚠️ No recognized labeling data format found")
                 return {
                     'market_data': data,
                     'labeling_data': labeling_data,
@@ -2194,6 +2211,8 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             prepared_data = data.copy()
             
             # Integrate multi-horizon profit targets from labeling data
+            tprint_info("🔄 Integrating multi-horizon profit targets from labeling data")
+
             if isinstance(labeled_data, str):
                 # Try to load the actual labeled data from the saved file
                 try:
@@ -2213,9 +2232,11 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                                 labeled_df = pd.read_parquet(latest_labeled_file)
                                 tprint(f'✅ Loaded labeled DataFrame with {len(labeled_df)} rows and {len(labeled_df.columns)} columns')
                                 
-                                # Extract target columns
-                                target_columns = ['leverage_adjusted_score', 'immediate_opportunity', 'short_term_opportunity']
-                                for target_col in target_columns:
+                                # Use target columns from standardized format if available, otherwise fallback
+                                integration_targets = target_columns if target_columns else ['leverage_adjusted_score', 'immediate_opportunity', 'short_term_opportunity']
+                                tprint_info(f"🎯 Using integration targets: {integration_targets}")
+
+                                for target_col in integration_targets:
                                     if target_col in labeled_df.columns:
                                         # Align the labeled data with prepared data by index/timestamp
                                         if len(labeled_df) == len(prepared_data):
@@ -3269,14 +3290,17 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             long_targets = target_info.get('long_targets', [])
             short_targets = target_info.get('short_targets', [])
             
-            # Horizon weights - Updated distribution
-            # Based on updated weight allocation for better balance
-            horizon_weights = {
-                'micro': 0.0,     # 0% - 0.3% profit target (net: 0.22% after fees)
-                'small': 0.6,     # 60% - 0.5% profit target (net: 0.42% after fees)  
-                'medium': 0.3,    # 30% - 0.7% profit target (net: 0.62% after fees)
-                'good': 0.1       # 10% - 1.0% profit target (net: 0.92% after fees)
-            }
+            # Use horizon weights from standardized format if available, otherwise use defaults
+            if horizon_weights:
+                tprint_info(f"⚖️ Using horizon weights from multi_horizon_profit_labeler: {horizon_weights}")
+            else:
+                tprint_warning("⚠️ No horizon weights from labeling data, using default weights")
+                horizon_weights = {
+                    'micro': 0.0,     # 0% - disabled for now
+                    'small': 0.6,     # 60% - immediate opportunities
+                    'medium': 0.3,    # 30% - short-term opportunities
+                    'high': 0.2       # 20% - longer-term opportunities
+                }
             
             optimized_results = {
                 'long_features': {},

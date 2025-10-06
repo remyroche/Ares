@@ -116,6 +116,10 @@ class PreTrainingSubPipeline:
         self.logger.info(f'⏰ Timeframe: {config.timeframe}, Mode: {config.mode.value}')
 
         start_time = datetime.now()
+        tprint(f"🚀 Starting Pre-Training Sub-Pipeline execution for {config.symbol} on {config.exchange}")
+        tprint(f"⏰ Timeframe: {config.timeframe}, Mode: {config.mode.value}")
+        tprint(f"📊 Configuration: force_rerun={config.force_rerun}, parallel={config.parallel_processing}")
+
         results = {
             'success': False,
             'execution_time': 0.0,
@@ -126,42 +130,58 @@ class PreTrainingSubPipeline:
 
         try:
             # Step 1: Multi-Horizon Profit Labeler
+            tprint("🎯 Step 1: Multi-Horizon Profit Labeler")
             self.logger.info('🎯 Step 1: Multi-Horizon Profit Labeler')
             mh_result = await self._execute_multi_horizon_profit_labeler(config)
             if not mh_result.success:
+                tprint(f"❌ Multi-horizon profit labeling failed: {mh_result.error_message}")
                 self.logger.error(f'❌ Multi-horizon profit labeling failed: {mh_result.error_message}')
                 return results
 
+            tprint(f"✅ Multi-horizon profit labeling completed for {config.symbol}")
+            tprint(f"   → Labels generated: {len(mh_result.artifacts.get('multi_horizon_labeling_result', {}).get('labeled_data', pd.DataFrame()).columns)}")
             results['results']['multi_horizon_profit_labeler'] = mh_result.artifacts
             self._current_pipeline_state.update(mh_result.artifacts)
 
             # Step 2: Feature Lookback Optimization
+            tprint("⚙️ Step 2: Feature Lookback Optimization")
             self.logger.info('⚙️ Step 2: Feature Lookback Optimization')
             flo_result = await self._execute_feature_lookback_optimization(config)
             if not flo_result.success:
+                tprint(f"❌ Feature lookback optimization failed: {flo_result.error_message}")
                 self.logger.error(f'❌ Feature lookback optimization failed: {flo_result.error_message}')
                 return results
 
+            tprint(f"✅ Feature lookback optimization completed for {config.symbol}")
+            tprint(f"   → Features optimized: {len(flo_result.artifacts.get('feature_lookback_optimization_result', {}).get('optimized_features', {}))}")
             results['results']['feature_lookback_optimization'] = flo_result.artifacts
             self._current_pipeline_state.update(flo_result.artifacts)
 
             # Step 3: PID-Based Feature Generation
+            tprint("🔧 Step 3: PID-Based Feature Generation")
             self.logger.info('🔧 Step 3: PID-Based Feature Generation')
             pid_result = await self._execute_pid_based_feature_generation(config)
             if not pid_result.success:
+                tprint(f"❌ PID-based feature generation failed: {pid_result.error_message}")
                 self.logger.error(f'❌ PID-based feature generation failed: {pid_result.error_message}')
                 return results
 
+            tprint(f"✅ PID-based feature generation completed for {config.symbol}")
+            tprint(f"   → Features generated: {len(pid_result.artifacts.get('pid_based_feature_generation_result', {}).get('generated_features', {}))}")
             results['results']['pid_based_feature_generation'] = pid_result.artifacts
             self._current_pipeline_state.update(pid_result.artifacts)
 
             # Step 4: Final Feature Selection
+            tprint("🎯 Step 4: Final Feature Selection")
             self.logger.info('🎯 Step 4: Final Feature Selection')
             ffs_result = await self._execute_final_feature_selection(config)
             if not ffs_result.success:
+                tprint(f"❌ Final feature selection failed: {ffs_result.error_message}")
                 self.logger.error(f'❌ Final feature selection failed: {ffs_result.error_message}')
                 return results
 
+            tprint(f"✅ Final feature selection completed for {config.symbol}")
+            tprint(f"   → Final features: {len(ffs_result.artifacts.get('final_feature_selection_result', {}).get('selected_features', []))}")
             results['results']['final_feature_selection'] = ffs_result.artifacts
             self._current_pipeline_state.update(ffs_result.artifacts)
 
@@ -170,6 +190,15 @@ class PreTrainingSubPipeline:
             results['success'] = True
             results['execution_time'] = (end_time - start_time).total_seconds()
             results['completed_steps'] = 4
+
+            tprint(f"🎉 Pre-Training Sub-Pipeline execution completed successfully for {config.symbol}")
+            tprint(f"⏱️ Total execution time: {results['execution_time']:.2f} seconds")
+            tprint(f"📊 All {results['completed_steps']} steps completed successfully")
+            tprint(f"📋 Pipeline summary:")
+            tprint(f"   🎯 Multi-horizon labeling: ✅ Complete")
+            tprint(f"   ⚙️ Feature optimization: ✅ Complete")
+            tprint(f"   🔧 PID-based features: ✅ Complete")
+            tprint(f"   🎯 Final selection: ✅ Complete")
 
             self.logger.info(f'🎉 Pre-Training Sub-Pipeline completed successfully in {results["execution_time"]:.2f}s')
 

@@ -52,7 +52,7 @@ class SubPipelineConfig:
     mode: ExecutionMode = ExecutionMode.FULL
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
-    timeframe: str = "30m"
+    timeframe: str = "15m"
     data_dir: str = "historical_data"
     start_date: Optional[str] = None
     end_date: Optional[str] = None
@@ -187,24 +187,33 @@ class PreTrainingSubPipeline:
             )
 
             mh_config = MultiHorizonConfig(
-                profit_take_multiplier=0.002,
-                stop_loss_multiplier=0.001,
-                time_barrier_minutes=30,
-                max_lookahead=100
+                timeframe=config.timeframe
             )
 
             labeler = MultiHorizonProfitLabeler(mh_config)
 
-            # This is a simplified execution - in practice you'd load data and apply labeling
-            labeling_result = {
-                'success': True,
-                'labeled_data': {},
-                'labeling_metrics': {
+            # Apply labeling to the current data
+            if self._current_data is not None:
+                labeled_data = labeler.generate_labels(self._current_data)
+                labeling_metrics = {
+                    'total_samples': len(labeled_data) if labeled_data is not None else 0,
+                    'labeled_samples': len(labeled_data) if labeled_data is not None else 0,
+                    'profit_labels': 0,
+                    'loss_labels': 0
+                }
+            else:
+                labeled_data = {}
+                labeling_metrics = {
                     'total_samples': 0,
                     'labeled_samples': 0,
                     'profit_labels': 0,
                     'loss_labels': 0
                 }
+
+            labeling_result = {
+                'success': True,
+                'labeled_data': labeled_data,
+                'labeling_metrics': labeling_metrics
             }
 
             result.status = SubPipelineStatus.COMPLETED
@@ -234,16 +243,17 @@ class PreTrainingSubPipeline:
 
             component = FeatureLookbackOptimizationComponent()
 
-            # This is a simplified execution - in practice you'd load data and optimize features
-            optimization_result = {
-                'success': True,
-                'optimized_features': {},
-                'optimization_metrics': {
-                    'total_features': 0,
-                    'optimized_features': 0,
-                    'optimization_time': 0.0
+            # Execute feature lookback optimization
+            component_result = await component.execute(self._current_data, self._current_pipeline_state)
+
+            if component_result.success:
+                optimization_result = {
+                    'success': True,
+                    'optimized_features': component_result.artifacts,
+                    'optimization_metrics': component_result.metadata or {}
                 }
-            }
+            else:
+                raise Exception(f"Component execution failed: {component_result.error_message}")
 
             result.status = SubPipelineStatus.COMPLETED
             result.success = True
@@ -268,29 +278,34 @@ class PreTrainingSubPipeline:
         )
 
         try:
-            from .pid_based_feature_generation.pid_based_feature_generation_component import PIDBasedFeatureGenerationComponent
+            from .pid_based_feature_generation import PIDBasedFeatureGeneration, PIDBasedFeatureGenerationConfig
 
-            component = PIDBasedFeatureGenerationComponent()
+            pid_config = PIDBasedFeatureGenerationConfig(
+                symbol=config.symbol,
+                exchange=config.exchange,
+                timeframe=config.timeframe,
+                data_dir=config.data_dir
+            )
 
-            # This is a simplified execution - in practice you'd load data and generate features
-            generation_result = {
-                'success': True,
-                'pid_based_features': {
-                    'combined_features': {},
-                    'feature_importance_scores': {},
-                    'total_features_generated': 0
-                },
-                'pid_feature_metrics': {
-                    'generation_summary': {},
-                    'total_features_generated': 0
+            generator = PIDBasedFeatureGeneration(pid_config)
+
+            # Generate PID-based features
+            generation_result = await generator.generate_features(self._current_data, self._current_pipeline_state)
+
+            if generation_result.success:
+                pid_result = {
+                    'success': True,
+                    'pid_based_features': generation_result.features,
+                    'pid_feature_metrics': generation_result.generation_metrics
                 }
-            }
+            else:
+                raise Exception(f"PID-based feature generation failed: {generation_result.error_message}")
 
             result.status = SubPipelineStatus.COMPLETED
             result.success = True
             result.end_time = datetime.now()
             result.duration_seconds = (result.end_time - result.start_time).total_seconds()
-            result.artifacts = generation_result
+            result.artifacts = pid_result
 
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
@@ -313,21 +328,16 @@ class PreTrainingSubPipeline:
 
             component = FinalFeatureSelectionComponent()
 
-            # This is a simplified execution - in practice you'd load data and select features
-            selection_result = {
-                'success': True,
-                'final_feature_selection': {
-                    'symbol': config.symbol,
-                    'exchange': config.exchange,
-                    'timeframe': config.timeframe,
-                    'stage_reduction': {
-                        'initial': 120,
-                        'stage_1': 100,
-                        'stage_2': 80,
-                        'stage_3': 60
-                    }
+            # Execute final feature selection
+            component_result = await component.execute(self._current_data, self._current_pipeline_state)
+
+            if component_result.success:
+                selection_result = {
+                    'success': True,
+                    'final_feature_selection': component_result.artifacts
                 }
-            }
+            else:
+                raise Exception(f"Component execution failed: {component_result.error_message}")
 
             result.status = SubPipelineStatus.COMPLETED
             result.success = True

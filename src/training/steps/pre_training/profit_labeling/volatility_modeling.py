@@ -84,6 +84,23 @@ class VolatilityConfig:
     min_volatility_samples: int = 50
     max_volatility_ratio: float = 10.0  # Max ratio between consecutive volatility values
 
+    def _validate_config(self) -> None:
+        """Basic validation for volatility configuration parameters."""
+        if self.rv_window < 1:
+            raise ValueError("rv_window must be at least 1")
+        if self.atr_window < 1:
+            raise ValueError("atr_window must be at least 1")
+        if not (0 < self.ewma_alpha <= 1):
+            raise ValueError("ewma_alpha must be between 0 and 1")
+        if self.volatility_floor <= 0:
+            raise ValueError("volatility_floor must be positive")
+        if self.volatility_cap <= 0:
+            raise ValueError("volatility_cap must be positive")
+        if self.min_volatility_samples < 1:
+            raise ValueError("min_volatility_samples must be at least 1")
+        if self.max_volatility_ratio <= 0:
+            raise ValueError("max_volatility_ratio must be positive")
+
 
 @dataclass
 class VolatilityResult:

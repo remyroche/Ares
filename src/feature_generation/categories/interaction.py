@@ -599,5 +599,10 @@ __all__ = [
     'FeatureRatioGenerator',
     'PolynomialFeatureGenerator',
     'CorrelationInteractionGenerator',
+    # Enhanced interaction generators
+    'RegimeDependentFeatureGenerator',
+    'CointegrationResidualGenerator',
+    'StructuralRatioGenerator',
+    'PairwiseInteractionGenerator',
     'create_default_interaction_generators'
 ]

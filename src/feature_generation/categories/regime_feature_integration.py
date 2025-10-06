@@ -19,6 +19,14 @@ from dataclasses import dataclass
 from collections import defaultdict
 
 from ..core.feature_generator import (
+
+# Optimization utilities
+try:
+    from ..utils.vectorization_optimizer import get_vectorization_optimizer
+    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
     FeatureGenerator, 
     FeatureConfig, 
     FeatureCategory,
@@ -91,6 +99,22 @@ class RegimeFeatureConfig:
         if self.min_temporal_stability is None:
             self.min_temporal_stability = quality_thresholds.get("min_temporal_stability", 0.1)
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class RegimeFeatureIntegration(VectorizedFeatureGenerator):
     """Unified regime feature generator that excludes trading features."""
     
@@ -150,6 +174,10 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
         super().__init__(base_config, enable_matrix_ops=True)
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate unified regime features as a single feature series."""
         try:
             # Generate all regime features
@@ -819,6 +847,22 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
         return summary
 
 # Analyst Features - Regime generators
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AnalystRegimeProbTrendingGenerator(VectorizedFeatureGenerator):
     """Generator for regime probability trending feature."""
 
@@ -833,7 +877,7 @@ class AnalystRegimeProbTrendingGenerator(VectorizedFeatureGenerator):
             max_lookback=200,
             parameters={}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
     def _generate_feature(self, data: pd.DataFrame, regime_data: Optional[pd.DataFrame] = None, **kwargs) -> pd.Series:
         """Generate regime probability trending feature."""
@@ -851,6 +895,22 @@ class AnalystRegimeProbTrendingGenerator(VectorizedFeatureGenerator):
         prob_trending_series = pd.Series([prob_trending] * len(data), index=data.index, name=self.config.name)
         return prob_trending_series
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AnalystRegimeProbChoppyGenerator(VectorizedFeatureGenerator):
     """Generator for regime probability choppy feature."""
 
@@ -865,7 +925,7 @@ class AnalystRegimeProbChoppyGenerator(VectorizedFeatureGenerator):
             max_lookback=200,
             parameters={}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
     def _generate_feature(self, data: pd.DataFrame, regime_data: Optional[pd.DataFrame] = None, **kwargs) -> pd.Series:
         """Generate regime probability choppy feature."""
@@ -883,6 +943,22 @@ class AnalystRegimeProbChoppyGenerator(VectorizedFeatureGenerator):
         prob_choppy_series = pd.Series([prob_choppy] * len(data), index=data.index, name=self.config.name)
         return prob_choppy_series
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AnalystRegimeStabilityGenerator(VectorizedFeatureGenerator):
     """Generator for regime stability feature."""
 
@@ -897,7 +973,7 @@ class AnalystRegimeStabilityGenerator(VectorizedFeatureGenerator):
             max_lookback=200,
             parameters={"lookback": lookback}
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.lookback = lookback
 
     def _generate_feature(self, data: pd.DataFrame, regime_data: Optional[pd.DataFrame] = None, **kwargs) -> pd.Series:

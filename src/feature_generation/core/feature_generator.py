@@ -381,19 +381,21 @@ class VectorizedFeatureGenerator(FeatureGenerator):
     Base class for vectorized feature generators that leverage matrix operations.
     
     This class provides optimized vectorized computation capabilities
-    using the matrix operations framework.
+    using the matrix operations framework and new optimization utilities.
     """
     
-    def __init__(self, config: FeatureConfig, enable_matrix_ops: bool = True):
+    def __init__(self, config: FeatureConfig, enable_matrix_ops: bool = True, enable_vectorization_optimization: bool = True):
         """
         Initialize vectorized feature generator.
         
         Args:
             config: Feature configuration
             enable_matrix_ops: Whether to enable matrix operations
+            enable_vectorization_optimization: Whether to enable vectorization optimization
         """
         super().__init__(config)
         self.enable_matrix_ops = enable_matrix_ops
+        self.enable_vectorization_optimization = enable_vectorization_optimization
         
         # Initialize matrix operations if available
         if enable_matrix_ops:
@@ -407,6 +409,19 @@ class VectorizedFeatureGenerator(FeatureGenerator):
                 self.logger.warning("Matrix operations not available")
         else:
             self.matrix_ops = None
+        
+        # Initialize vectorization optimizer if available
+        if enable_vectorization_optimization:
+            try:
+                from ..utils.vectorization_optimizer import get_vectorization_optimizer
+                self.vectorization_optimizer = get_vectorization_optimizer()
+                self.logger.debug("Vectorization optimizer enabled")
+            except ImportError:
+                self.vectorization_optimizer = None
+                self.enable_vectorization_optimization = False
+                self.logger.warning("Vectorization optimizer not available")
+        else:
+            self.vectorization_optimizer = None
     
     def _vectorized_operation(self, operation: str, data: np.ndarray, **kwargs) -> np.ndarray:
         """
@@ -429,6 +444,77 @@ class VectorizedFeatureGenerator(FeatureGenerator):
         except Exception as e:
             self.logger.warning(f"Matrix operation failed, using numpy fallback: {e}")
             return self._numpy_fallback(operation, data, **kwargs)
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Optimize DataFrame for vectorized processing using the vectorization optimizer.
+        
+        Args:
+            data: Input DataFrame
+            
+        Returns:
+            Optimized DataFrame
+        """
+        if self.enable_vectorization_optimization and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        else:
+            return data
+    
+    def vectorized_rolling_operations(self, 
+                                    data: pd.DataFrame,
+                                    operations: List[str],
+                                    windows: List[int],
+                                    columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """
+        Perform vectorized rolling operations with hardware optimization.
+        
+        Args:
+            data: Input DataFrame
+            operations: List of operations ('mean', 'std', 'var', 'min', 'max', 'sum')
+            windows: List of window sizes
+            columns: Columns to process (None = all numeric columns)
+            
+        Returns:
+            DataFrame with rolling features
+        """
+        if self.enable_vectorization_optimization and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        else:
+            return self._fallback_rolling_operations(data, operations, windows, columns)
+    
+    def _fallback_rolling_operations(self, 
+                                   data: pd.DataFrame,
+                                   operations: List[str],
+                                   windows: List[int],
+                                   columns: List[str]) -> pd.DataFrame:
+        """Fallback rolling operations without vectorization optimizer."""
+        result = data.copy()
+        
+        if columns is None:
+            columns = data.select_dtypes(include=[np.number]).columns.tolist()
+        
+        for window in windows:
+            for col in columns:
+                if col in data.columns:
+                    series = data[col]
+                    
+                    for operation in operations:
+                        if operation == 'mean':
+                            result[f'{col}_rolling_mean_{window}'] = series.rolling(window=window).mean()
+                        elif operation == 'std':
+                            result[f'{col}_rolling_std_{window}'] = series.rolling(window=window).std()
+                        elif operation == 'var':
+                            result[f'{col}_rolling_var_{window}'] = series.rolling(window=window).var()
+                        elif operation == 'min':
+                            result[f'{col}_rolling_min_{window}'] = series.rolling(window=window).min()
+                        elif operation == 'max':
+                            result[f'{col}_rolling_max_{window}'] = series.rolling(window=window).max()
+                        elif operation == 'sum':
+                            result[f'{col}_rolling_sum_{window}'] = series.rolling(window=window).sum()
+        
+        return result
     
     def _numpy_fallback(self, operation: str, data: np.ndarray, **kwargs) -> np.ndarray:
         """

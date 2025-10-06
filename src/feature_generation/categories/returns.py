@@ -10,6 +10,14 @@ import pandas as pd
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import (
+
+# Optimization utilities
+try:
+    from ..utils.vectorization_optimizer import get_vectorization_optimizer
+    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
     FeatureGenerator, 
     FeatureConfig, 
     FeatureCategory,
@@ -28,7 +36,7 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
     def __init__(self, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config()
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -55,6 +63,10 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
         return cls()
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         close_prices = data['close'].values
         returns = self._calculate_returns(close_prices, period=1)
         return pd.Series(returns, index=data.index, name='returns_1')
@@ -66,6 +78,22 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
         returns = (prices - np.roll(prices, period)) / np.roll(prices, period)
         returns[:period] = np.nan
         return returns
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class LogReturnsGenerator(VectorizedFeatureGenerator):
     """Generator for Log Returns with different base calculations - VECTORIZED."""
@@ -107,11 +135,15 @@ class LogReturnsGenerator(VectorizedFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=False
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate log returns based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
@@ -134,6 +166,22 @@ class LogReturnsGenerator(VectorizedFeatureGenerator):
         log_returns = np.log(ratio)
         
         return pd.Series(log_returns, index=data.index)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class SimpleReturnsGenerator(VectorizedFeatureGenerator):
     """Generator for Simple Returns with different base calculations - VECTORIZED."""
@@ -175,11 +223,15 @@ class SimpleReturnsGenerator(VectorizedFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=False
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate simple returns based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
@@ -203,6 +255,22 @@ class SimpleReturnsGenerator(VectorizedFeatureGenerator):
         )
         
         return pd.Series(simple_returns, index=data.index)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class CumulativeReturnsGenerator(VectorizedFeatureGenerator):
     """Generator for Cumulative Returns with different base calculations - VECTORIZED."""
@@ -244,11 +312,15 @@ class CumulativeReturnsGenerator(VectorizedFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=False
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate cumulative returns based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
@@ -275,6 +347,22 @@ class CumulativeReturnsGenerator(VectorizedFeatureGenerator):
                 cumulative_returns[i] = np.prod(1 + valid_returns) - 1
         
         return pd.Series(cumulative_returns, index=data.index)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class RollingReturnsGenerator(VectorizedFeatureGenerator):
     """Generator for Rolling Returns with different base calculations - VECTORIZED."""
@@ -316,11 +404,15 @@ class RollingReturnsGenerator(VectorizedFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=False
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate rolling returns based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
@@ -341,6 +433,22 @@ class RollingReturnsGenerator(VectorizedFeatureGenerator):
                 rolling_returns[i] = (window_values[-1] - window_values[0]) / window_values[0]
         
         return pd.Series(rolling_returns, index=data.index)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class ReturnsVolatilityGenerator(VectorizedFeatureGenerator):
     """Generator for Returns Volatility with different base calculations - VECTORIZED."""
@@ -382,11 +490,15 @@ class ReturnsVolatilityGenerator(VectorizedFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=False
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate returns volatility based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
@@ -413,6 +525,22 @@ class ReturnsVolatilityGenerator(VectorizedFeatureGenerator):
                 volatility[i] = np.std(valid_returns, ddof=1)
         
         return pd.Series(volatility, index=data.index)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class ReturnsSkewnessGenerator(VectorizedFeatureGenerator):
     """Generator for Returns Skewness with different base calculations - VECTORIZED."""
@@ -454,11 +582,15 @@ class ReturnsSkewnessGenerator(VectorizedFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=False
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate returns skewness based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
@@ -488,6 +620,22 @@ class ReturnsSkewnessGenerator(VectorizedFeatureGenerator):
                     skewness[i] = np.mean(((valid_returns - mean_ret) / std_ret) ** 3)
         
         return pd.Series(skewness, index=data.index)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class ReturnsKurtosisGenerator(VectorizedFeatureGenerator):
     """Generator for Returns Kurtosis with different base calculations - VECTORIZED."""
@@ -529,11 +677,15 @@ class ReturnsKurtosisGenerator(VectorizedFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=False
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate returns kurtosis based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
@@ -563,6 +715,22 @@ class ReturnsKurtosisGenerator(VectorizedFeatureGenerator):
                     kurtosis[i] = np.mean(((valid_returns - mean_ret) / std_ret) ** 4) - 3  # Excess kurtosis
         
         return pd.Series(kurtosis, index=data.index)
+
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
 
 class SharpeRatioGenerator(VectorizedFeatureGenerator):
     """Generator for Sharpe Ratio with different base calculations - VECTORIZED."""
@@ -607,12 +775,16 @@ class SharpeRatioGenerator(VectorizedFeatureGenerator):
             matrix_optimized=True,
             gpu_accelerated=False
         )
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.risk_free_rate = risk_free_rate
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate Sharpe ratio based on the specified base calculation - VECTORIZED."""
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
@@ -697,6 +869,22 @@ def create_returns_generators(periods: Dict[str, List[int]] = None) -> List[Feat
     
     return generators
 
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class ReturnGenerator(SimpleReturnsGenerator):
     """Legacy alias for SimpleReturnsGenerator for backward compatibility."""
     pass
@@ -704,3 +892,19 @@ class ReturnGenerator(SimpleReturnsGenerator):
 def create_default_returns_generators() -> List[FeatureGenerator]:
     """Create default returns generators."""
     return create_returns_generators()
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+

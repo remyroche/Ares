@@ -10,6 +10,14 @@ import pandas as pd
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import (
+
+# Optimization utilities
+try:
+    from ..utils.vectorization_optimizer import get_vectorization_optimizer
+    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
     FeatureGenerator, 
     FeatureConfig, 
     FeatureCategory,
@@ -41,7 +49,7 @@ class AutoencoderFeatureGenerator(VectorizedFeatureGenerator):
         if config is None:
             config = self._create_default_config()
         
-        super().__init__(config, enable_matrix_ops=True)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -69,12 +77,32 @@ class AutoencoderFeatureGenerator(VectorizedFeatureGenerator):
         return cls()
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         # Placeholder implementation
         close_prices = data['close'].values
         autoencoder = np.zeros_like(close_prices)
         return pd.Series(autoencoder, index=data.index, name='autoencoder_placeholder')
 
 # Autoencoder Encoded Feature Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AutoencoderEncodedGenerator(FeatureGenerator):
     """Generator for autoencoder encoded features."""
     
@@ -116,12 +144,16 @@ class AutoencoderEncodedGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.encoding_dimension = encoding_dimension
         self.window = window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate autoencoder encoded feature."""
         base_values = self.base_calculator.calculate(data)
         
@@ -134,6 +166,22 @@ class AutoencoderEncodedGenerator(FeatureGenerator):
         return encoded_feature
 
 # Autoencoder Reconstruction Error Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AutoencoderReconstructionErrorGenerator(FeatureGenerator):
     """Generator for autoencoder reconstruction error features."""
     
@@ -172,11 +220,15 @@ class AutoencoderReconstructionErrorGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate autoencoder reconstruction error."""
         base_values = self.base_calculator.calculate(data)
         
@@ -188,6 +240,22 @@ class AutoencoderReconstructionErrorGenerator(FeatureGenerator):
         return reconstruction_error
 
 # Autoencoder Reconstruction Error MA Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AutoencoderReconstructionErrorMAGenerator(FeatureGenerator):
     """Generator for autoencoder reconstruction error moving average features."""
     
@@ -229,12 +297,16 @@ class AutoencoderReconstructionErrorMAGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.ma_window = ma_window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate autoencoder reconstruction error MA."""
         base_values = self.base_calculator.calculate(data)
         
@@ -248,6 +320,22 @@ class AutoencoderReconstructionErrorMAGenerator(FeatureGenerator):
         return reconstruction_error_ma
 
 # Autoencoder Reconstruction Error Std Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AutoencoderReconstructionErrorStdGenerator(FeatureGenerator):
     """Generator for autoencoder reconstruction error standard deviation features."""
     
@@ -289,12 +377,16 @@ class AutoencoderReconstructionErrorStdGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.std_window = std_window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate autoencoder reconstruction error std."""
         base_values = self.base_calculator.calculate(data)
         
@@ -308,6 +400,22 @@ class AutoencoderReconstructionErrorStdGenerator(FeatureGenerator):
         return reconstruction_error_std
 
 # Autoencoder Reconstruction Error Skew Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AutoencoderReconstructionErrorSkewGenerator(FeatureGenerator):
     """Generator for autoencoder reconstruction error skewness features."""
     
@@ -349,12 +457,16 @@ class AutoencoderReconstructionErrorSkewGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.skew_window = skew_window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate autoencoder reconstruction error skew."""
         base_values = self.base_calculator.calculate(data)
         
@@ -368,6 +480,22 @@ class AutoencoderReconstructionErrorSkewGenerator(FeatureGenerator):
         return reconstruction_error_skew
 
 # Autoencoder Reconstruction Error Kurtosis Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AutoencoderReconstructionErrorKurtosisGenerator(FeatureGenerator):
     """Generator for autoencoder reconstruction error kurtosis features."""
     
@@ -409,12 +537,16 @@ class AutoencoderReconstructionErrorKurtosisGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.kurtosis_window = kurtosis_window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate autoencoder reconstruction error kurtosis."""
         base_values = self.base_calculator.calculate(data)
         
@@ -428,6 +560,22 @@ class AutoencoderReconstructionErrorKurtosisGenerator(FeatureGenerator):
         return reconstruction_error_kurtosis
 
 # Autoencoder Reconstruction Error Ratio Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AutoencoderReconstructionErrorRatioGenerator(FeatureGenerator):
     """Generator for autoencoder reconstruction error ratio features."""
     
@@ -469,12 +617,16 @@ class AutoencoderReconstructionErrorRatioGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.ratio_window = ratio_window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate autoencoder reconstruction error ratio."""
         base_values = self.base_calculator.calculate(data)
         
@@ -489,6 +641,22 @@ class AutoencoderReconstructionErrorRatioGenerator(FeatureGenerator):
         return reconstruction_error_ratio
 
 # Autoencoder Reconstruction Error Diff Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AutoencoderReconstructionErrorDiffGenerator(FeatureGenerator):
     """Generator for autoencoder reconstruction error difference features."""
     
@@ -530,12 +698,16 @@ class AutoencoderReconstructionErrorDiffGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.diff_window = diff_window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate autoencoder reconstruction error diff."""
         base_values = self.base_calculator.calculate(data)
         
@@ -549,6 +721,22 @@ class AutoencoderReconstructionErrorDiffGenerator(FeatureGenerator):
         return reconstruction_error_diff
 
 # Autoencoder Reconstruction Error Product Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AutoencoderReconstructionErrorProductGenerator(FeatureGenerator):
     """Generator for autoencoder reconstruction error product features."""
     
@@ -590,12 +778,16 @@ class AutoencoderReconstructionErrorProductGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.product_window = product_window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate autoencoder reconstruction error product."""
         base_values = self.base_calculator.calculate(data)
         
@@ -610,6 +802,22 @@ class AutoencoderReconstructionErrorProductGenerator(FeatureGenerator):
         return reconstruction_error_product
 
 # Autoencoder Reconstruction Error Squared Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AutoencoderReconstructionErrorSquaredGenerator(FeatureGenerator):
     """Generator for autoencoder reconstruction error squared features."""
     
@@ -648,11 +856,15 @@ class AutoencoderReconstructionErrorSquaredGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate autoencoder reconstruction error squared."""
         base_values = self.base_calculator.calculate(data)
         
@@ -666,6 +878,22 @@ class AutoencoderReconstructionErrorSquaredGenerator(FeatureGenerator):
         return reconstruction_error_squared
 
 # Autoencoder Reconstruction Error Cubed Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AutoencoderReconstructionErrorCubedGenerator(FeatureGenerator):
     """Generator for autoencoder reconstruction error cubed features."""
     
@@ -704,11 +932,15 @@ class AutoencoderReconstructionErrorCubedGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate autoencoder reconstruction error cubed."""
         base_values = self.base_calculator.calculate(data)
         
@@ -722,6 +954,22 @@ class AutoencoderReconstructionErrorCubedGenerator(FeatureGenerator):
         return reconstruction_error_cubed
 
 # Autoencoder Reconstruction Error Cross Timeframe Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AutoencoderReconstructionErrorCrossTimeframeGenerator(FeatureGenerator):
     """Generator for autoencoder reconstruction error cross timeframe features."""
     
@@ -763,12 +1011,16 @@ class AutoencoderReconstructionErrorCrossTimeframeGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.cross_timeframe = cross_timeframe
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate autoencoder reconstruction error cross timeframe."""
         base_values = self.base_calculator.calculate(data)
         
@@ -782,6 +1034,22 @@ class AutoencoderReconstructionErrorCrossTimeframeGenerator(FeatureGenerator):
         return reconstruction_error_cross_timeframe
 
 # Autoencoder Reconstruction Error Regime Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AutoencoderReconstructionErrorRegimeGenerator(FeatureGenerator):
     """Generator for autoencoder reconstruction error regime features."""
     
@@ -823,12 +1091,16 @@ class AutoencoderReconstructionErrorRegimeGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.regime_window = regime_window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate autoencoder reconstruction error regime."""
         base_values = self.base_calculator.calculate(data)
         
@@ -844,6 +1116,22 @@ class AutoencoderReconstructionErrorRegimeGenerator(FeatureGenerator):
         return reconstruction_error_regime
 
 # Autoencoder Reconstruction Error Interaction Generator
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
 class AutoencoderReconstructionErrorInteractionGenerator(FeatureGenerator):
     """Generator for autoencoder reconstruction error interaction features."""
     
@@ -885,12 +1173,16 @@ class AutoencoderReconstructionErrorInteractionGenerator(FeatureGenerator):
                 **base_kwargs
             }
         )
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.window = window
         self.interaction_window = interaction_window
         self.base_calculation = base_calculation
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        # Optimize DataFrame for processing
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+
         """Generate autoencoder reconstruction error interaction."""
         base_values = self.base_calculator.calculate(data)
         

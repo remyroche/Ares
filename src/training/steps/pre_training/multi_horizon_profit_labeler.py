@@ -143,6 +143,16 @@ class MultiHorizonProfitLabeler:
 
             # Create properly structured artifacts that feature lookback optimization expects
             # The feature lookback optimization expects 'labeled_data' or 'labels' keys
+            tprint_info("📋 Creating comprehensive artifacts structure for downstream components")
+
+            # Calculate horizon weights based on target quality and balance
+            horizon_weights = self._calculate_horizon_weights(labeling_result, mapped_labels)
+            tprint_info(f"⚖️ Calculated horizon weights: {horizon_weights}")
+
+            # Extract target columns for feature optimization
+            target_columns = self._extract_target_columns_for_optimization(mapped_labels)
+            tprint_info(f"🎯 Identified target columns for feature optimization: {target_columns}")
+
             artifacts = {
                 'multi_horizon_labeling_result': {
                     'labeled_data': mapped_labels,  # This is what feature lookback optimization expects
@@ -150,6 +160,8 @@ class MultiHorizonProfitLabeler:
                     'confidence_scores': labeling_result.confidence_scores,
                     'eligibility_masks': labeling_result.eligibility_masks,
                     'quality_scores': labeling_result.quality_scores,
+                    'horizon_weights': horizon_weights,  # New: weights for different horizons
+                    'target_columns': target_columns,    # New: target columns for optimization
                     'method': 'multi_horizon_profit_labeling',
                     'metadata': {
                         'symbol': symbol,
@@ -159,11 +171,28 @@ class MultiHorizonProfitLabeler:
                         'processing_time': labeling_result.processing_time,
                         'n_samples': labeling_result.n_samples,
                         'n_targets': labeling_result.n_targets,
-                        'n_horizons': labeling_result.n_horizons
+                        'n_horizons': labeling_result.n_horizons,
+                        'target_distribution': self._calculate_target_distribution(mapped_labels),
+                        'quality_summary': self._summarize_quality_scores(labeling_result.quality_scores)
                     }
                 },
-                'labeling_report': report
+                'labeling_report': report,
+                'standardized_output': {  # New: standardized format for all downstream steps
+                    'labels': mapped_labels,
+                    'weights': horizon_weights,
+                    'target_columns': target_columns,
+                    'quality_scores': labeling_result.quality_scores,
+                    'confidence_scores': labeling_result.confidence_scores,
+                    'eligibility_masks': labeling_result.eligibility_masks,
+                    'metadata': {
+                        'source_component': 'multi_horizon_profit_labeler',
+                        'creation_time': datetime.now().isoformat(),
+                        'pipeline_ready': True
+                    }
+                }
             }
+
+            tprint_success(f"✅ Comprehensive artifacts structure created with {len(artifacts)} main sections")
 
             tprint_success(f"✅ Multi-horizon labeling completed for {symbol}")
             tprint_info(f"   → Samples: {labeling_result.n_samples}")
@@ -585,6 +614,233 @@ class MultiHorizonProfitLabeler:
         except Exception as e:
             tprint_warning(f"⚠️ Error selecting best target for pattern {pattern}: {e}")
             return target_columns[0] if target_columns else None
+
+    def _calculate_horizon_weights(self, labeling_result: LabelingResult, labels_df: pd.DataFrame) -> Dict[str, float]:
+        """
+        Calculate weights for different horizons based on target quality and balance.
+
+        Args:
+            labeling_result: The labeling result object
+            labels_df: DataFrame with the labels
+
+        Returns:
+            Dictionary mapping horizon names to weights
+        """
+        try:
+            tprint_info("⚖️ Calculating horizon weights based on target quality and balance")
+
+            weights = {}
+
+            # Base weights for different horizons
+            base_weights = {
+                'micro': 0.0,   # 0% - disabled for now
+                'small': 0.5,   # 50% - immediate opportunities
+                'medium': 0.3,  # 30% - short-term opportunities
+                'high': 0.2     # 20% - longer-term opportunities
+            }
+
+            # Adjust weights based on quality scores if available
+            if labeling_result.quality_scores:
+                quality_scores = labeling_result.quality_scores
+
+                # Find targets for each horizon pattern
+                small_targets = [col for col in labels_df.columns if 'small_' in col]
+                medium_targets = [col for col in labels_df.columns if 'medium_' in col]
+                high_targets = [col for col in labels_df.columns if 'high_' in col]
+
+                # Calculate average quality for each horizon
+                small_quality = self._calculate_average_quality(small_targets, quality_scores)
+                medium_quality = self._calculate_average_quality(medium_targets, quality_scores)
+                high_quality = self._calculate_average_quality(high_targets, quality_scores)
+
+                # Normalize quality scores to weights
+                total_quality = small_quality + medium_quality + high_quality
+                if total_quality > 0:
+                    weights['small'] = small_quality / total_quality * 0.6  # 60% max allocation
+                    weights['medium'] = medium_quality / total_quality * 0.3  # 30% max allocation
+                    weights['high'] = high_quality / total_quality * 0.2   # 20% max allocation
+                else:
+                    weights = base_weights.copy()
+            else:
+                weights = base_weights.copy()
+
+            # Ensure minimum weights for active horizons
+            for horizon in ['small', 'medium', 'high']:
+                if weights.get(horizon, 0) < 0.1:
+                    weights[horizon] = 0.1
+
+            # Normalize to sum to 1.0
+            total_weight = sum(weights.values())
+            if total_weight > 0:
+                weights = {k: v / total_weight for k, v in weights.items()}
+
+            tprint_success(f"✅ Horizon weights calculated: {weights}")
+            return weights
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating horizon weights: {e}")
+            return {'small': 0.5, 'medium': 0.3, 'high': 0.2}
+
+    def _calculate_average_quality(self, target_columns: List[str], quality_scores: Dict[str, Any]) -> float:
+        """Calculate average quality score for a list of targets."""
+        if not target_columns or not quality_scores:
+            return 0.0
+
+        qualities = []
+        for target in target_columns:
+            if target in quality_scores:
+                quality = quality_scores[target]
+                if hasattr(quality, 'overall_quality'):
+                    qualities.append(quality.overall_quality)
+                elif isinstance(quality, dict) and 'overall_quality' in quality:
+                    qualities.append(quality['overall_quality'])
+
+        return np.mean(qualities) if qualities else 0.0
+
+    def _extract_target_columns_for_optimization(self, labels_df: pd.DataFrame) -> List[str]:
+        """
+        Extract target columns that should be used for feature optimization.
+
+        Args:
+            labels_df: DataFrame with the labels
+
+        Returns:
+            List of target column names for optimization
+        """
+        try:
+            tprint_info("🎯 Extracting target columns for feature optimization")
+
+            target_columns = []
+
+            # Priority order for target selection
+            priority_patterns = [
+                'immediate_opportunity',  # Mapped immediate targets
+                'short_term_opportunity', # Mapped short-term targets
+                'leverage_adjusted_score', # Mapped leverage targets
+                'small_',                 # Small horizon targets
+                'medium_',                # Medium horizon targets
+                'high_'                   # High horizon targets
+            ]
+
+            for pattern in priority_patterns:
+                matching_columns = [col for col in labels_df.columns if pattern in col]
+                if matching_columns:
+                    # Select the best target for this pattern
+                    if pattern in ['immediate_opportunity', 'short_term_opportunity', 'leverage_adjusted_score']:
+                        target_columns.append(matching_columns[0])  # Use mapped targets directly
+                    else:
+                        # For pattern-based targets, select the best one
+                        best_target = self._select_best_target_by_pattern(matching_columns, labels_df, pattern.replace('_', ''))
+                        if best_target:
+                            target_columns.append(best_target)
+
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_targets = []
+            for target in target_columns:
+                if target not in seen:
+                    seen.add(target)
+                    unique_targets.append(target)
+
+            tprint_success(f"✅ Extracted {len(unique_targets)} target columns for optimization: {unique_targets}")
+            return unique_targets
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Error extracting target columns: {e}")
+            # Fallback: return first few columns that look like targets
+            target_like_columns = [col for col in labels_df.columns if any(x in col.lower() for x in ['target', 'opportunity', 'score'])]
+            return target_like_columns[:3] if target_like_columns else []
+
+    def _calculate_target_distribution(self, labels_df: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate distribution statistics for targets."""
+        try:
+            if labels_df is None or labels_df.empty:
+                return {}
+
+            distribution = {}
+            for col in labels_df.columns:
+                if labels_df[col].dtype in [np.number, 'int64', 'float64']:
+                    values = labels_df[col].dropna()
+                    if len(values) > 0:
+                        distribution[col] = {
+                            'mean': float(values.mean()),
+                            'std': float(values.std()),
+                            'min': float(values.min()),
+                            'max': float(values.max()),
+                            'non_null_count': int(len(values)),
+                            'class_balance': self._calculate_class_balance(values)
+                        }
+
+            return distribution
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating target distribution: {e}")
+            return {}
+
+    def _calculate_class_balance(self, values: pd.Series) -> Dict[str, float]:
+        """Calculate class balance for a target series."""
+        try:
+            if len(values) == 0:
+                return {}
+
+            # For continuous targets, calculate balance across quantiles
+            quantiles = values.quantile([0.25, 0.5, 0.75])
+            balance = {
+                'positive_ratio': float((values > 0).mean()),
+                'negative_ratio': float((values < 0).mean()),
+                'zero_ratio': float((values == 0).mean()),
+                'q25': float(quantiles[0.25]),
+                'q50': float(quantiles[0.5]),
+                'q75': float(quantiles[0.75])
+            }
+
+            return balance
+
+        except Exception as e:
+            return {}
+
+    def _summarize_quality_scores(self, quality_scores: Dict[str, Any]) -> Dict[str, Any]:
+        """Summarize quality scores across all targets."""
+        try:
+            if not quality_scores:
+                return {}
+
+            summary = {
+                'n_targets_with_quality': len(quality_scores),
+                'average_quality': 0.0,
+                'quality_range': {'min': 1.0, 'max': 0.0},
+                'quality_distribution': {}
+            }
+
+            quality_values = []
+            for target_name, quality in quality_scores.items():
+                if hasattr(quality, 'overall_quality'):
+                    q_val = quality.overall_quality
+                elif isinstance(quality, dict) and 'overall_quality' in quality:
+                    q_val = quality['overall_quality']
+                else:
+                    continue
+
+                quality_values.append(q_val)
+                summary['quality_range']['min'] = min(summary['quality_range']['min'], q_val)
+                summary['quality_range']['max'] = max(summary['quality_range']['max'], q_val)
+
+            if quality_values:
+                summary['average_quality'] = float(np.mean(quality_values))
+
+                # Quality distribution
+                q25, q50, q75 = np.percentile(quality_values, [25, 50, 75])
+                summary['quality_distribution'] = {
+                    'q25': float(q25),
+                    'median': float(q50),
+                    'q75': float(q75)
+                }
+
+            return summary
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Error summarizing quality scores: {e}")
+            return {}
 
     async def _generate_comprehensive_report(
         self,

@@ -31,6 +31,7 @@ import time
 import traceback
 from dataclasses import dataclass
 from enum import Enum
+import os
 
 # Enhanced imports with comprehensive error handling
 try:
@@ -85,6 +86,17 @@ except ImportError as e:
     print(f"❌ CRITICAL ERROR: Math validation utilities are required but not available: {e}")
     MATH_VALIDATION_AVAILABLE = False
 
+try:
+    from .nas_tas.training_orchestrator import (
+        TrainingOrchestrator,
+        OrchestratorConfig,
+        OrchestrationMode
+    )
+    NAS_TAS_AVAILABLE = True
+except ImportError as e:
+    print(f"❌ CRITICAL: Failed to import NAS/TAS orchestrator components: {e}")
+    NAS_TAS_AVAILABLE = False
+
 
 class AnalystModelType(Enum):
     """Analyst model types."""
@@ -93,6 +105,8 @@ class AnalystModelType(Enum):
     RIDGE = "RIDGE"
     ELASTIC_NET = "ELASTIC_NET"
     RANDOM_FOREST = "RANDOM_FOREST"
+    NAS = "NAS"
+    TAS = "TAS"
 
 
 @dataclass
@@ -114,14 +128,40 @@ class AnalystModelsTrainingConfig:
 
     def __post_init__(self):
         """Post-initialization setup."""
+        supported_types = [
+            AnalystModelType.TCN,
+            AnalystModelType.LIGHTGBM,
+            AnalystModelType.RIDGE,
+            AnalystModelType.ELASTIC_NET,
+            AnalystModelType.RANDOM_FOREST,
+            AnalystModelType.NAS,
+            AnalystModelType.TAS,
+        ]
+
         if self.model_types is None:
-            self.model_types = [
-                AnalystModelType.TCN,
-                AnalystModelType.LIGHTGBM,
-                AnalystModelType.RIDGE,
-                AnalystModelType.ELASTIC_NET,
-                AnalystModelType.RANDOM_FOREST
-            ]
+            self.model_types = supported_types
+            return
+
+        normalized: List[AnalystModelType] = []
+        value_map = {model_type.value.upper(): model_type for model_type in supported_types}
+
+        for model_type in self.model_types:
+            if isinstance(model_type, AnalystModelType):
+                normalized.append(model_type)
+            elif isinstance(model_type, str):
+                enum_value = value_map.get(model_type.strip().upper())
+                if enum_value:
+                    normalized.append(enum_value)
+                else:
+                    tprint_warning(f"⚠️ Unsupported Analyst model type provided: {model_type}")
+            else:
+                tprint_warning(f"⚠️ Invalid Analyst model type provided: {model_type}")
+
+        if not normalized:
+            tprint_warning("⚠️ No valid Analyst model types provided; defaulting to supported set")
+            self.model_types = supported_types
+        else:
+            self.model_types = list(dict.fromkeys(normalized))
 
 
 @dataclass
@@ -155,6 +195,7 @@ class AnalystModelsTrainingStep:
         try:
             self.config = config or AnalystModelsTrainingConfig()
             self.logger = system_logger.getChild('AnalystModelsTrainingStep')
+            self._nas_tas_orchestrators: Dict[Tuple[str, str, str], 'TrainingOrchestrator'] = {}
 
             # Initialize hardware optimizers
             if COMMON_OPS_AVAILABLE:
@@ -216,6 +257,9 @@ class AnalystModelsTrainingStep:
             all_models = {}
             all_metrics = {}
 
+            regime_assignments = kwargs.get('regime_assignments')
+            timestamps = kwargs.get('timestamps')
+
             for model_type in self.config.model_types:
                 try:
                     tprint_info(f"🔧 Training {model_type.value} model...")
@@ -228,7 +272,9 @@ class AnalystModelsTrainingStep:
                         'target_columns': target_columns,
                         'sample_weight': sample_weight,
                         'save_models': self.config.save_models,
-                        'output_directory': f"{self.config.output_directory}/{model_type.value.lower()}"
+                        'output_directory': f"{self.config.output_directory}/{model_type.value.lower()}",
+                        'regime_assignments': regime_assignments,
+                        'timestamps': timestamps,
                     }
 
                     # Train model using existing trainer if available
@@ -238,7 +284,15 @@ class AnalystModelsTrainingStep:
                         )
                     else:
                         training_result = await self._train_model_directly(
-                            model_type, X, y, sample_weight, **kwargs
+                            model_type,
+                            X,
+                            y,
+                            sample_weight,
+                            training_data=training_data,
+                            feature_columns=feature_columns,
+                            target_columns=target_columns,
+                            regime_assignments=regime_assignments,
+                            timestamps=timestamps,
                         )
 
                     # Store results
@@ -289,10 +343,18 @@ class AnalystModelsTrainingStep:
         """Train model using existing trainer."""
         try:
             # Import and use the existing trainer
+            if model_type in {AnalystModelType.NAS, AnalystModelType.TAS}:
+                if not NAS_TAS_AVAILABLE:
+                    raise ImportError("NAS/TAS orchestrator components are not available")
+                return await self._train_nas_tas_models(model_type, training_config)
+
             from ..model_training.analyst_models_training_refactored import AnalystModelsTrainingStep
 
             trainer = AnalystModelsTrainingStep()
-            return await trainer.train_analyst_models(**training_config)
+            cleaned_config = dict(training_config)
+            cleaned_config.pop('regime_assignments', None)
+            cleaned_config.pop('timestamps', None)
+            return await trainer.train_analyst_models(**cleaned_config)
 
         except ImportError:
             tprint_warning(f"⚠️ Existing trainer not available, falling back to direct training")
@@ -300,7 +362,13 @@ class AnalystModelsTrainingStep:
                 model_type,
                 training_config['training_data'][training_config['feature_columns']].values,
                 training_config['training_data'][training_config['target_columns']].values,
-                training_config['sample_weight']
+                training_config['sample_weight'],
+                training_data=training_config['training_data'],
+                feature_columns=training_config['feature_columns'],
+                target_columns=training_config['target_columns'],
+                regime_assignments=training_config.get('regime_assignments'),
+                timestamps=training_config.get('timestamps'),
+                output_directory=training_config.get('output_directory'),
             )
 
     async def _train_model_directly(
@@ -323,6 +391,30 @@ class AnalystModelsTrainingStep:
                 return await self._train_elastic_net(X, y, sample_weight, **kwargs)
             elif model_type == AnalystModelType.RANDOM_FOREST:
                 return await self._train_random_forest(X, y, sample_weight, **kwargs)
+            elif model_type in {AnalystModelType.NAS, AnalystModelType.TAS}:
+                training_data = kwargs.get('training_data')
+                feature_columns = kwargs.get('feature_columns')
+                target_columns = kwargs.get('target_columns') or []
+                regime_assignments = kwargs.get('regime_assignments')
+                timestamps = kwargs.get('timestamps')
+                output_directory = kwargs.get('output_directory') or os.path.join(
+                    self.config.output_directory, model_type.value.lower()
+                )
+
+                if training_data is None or not feature_columns or not target_columns:
+                    raise ValueError("Training data, feature columns, and target columns are required for NAS/TAS training")
+
+                training_config = {
+                    'training_data': training_data,
+                    'feature_columns': feature_columns,
+                    'target_columns': target_columns,
+                    'regime_assignments': regime_assignments,
+                    'timestamps': timestamps,
+                    'output_directory': output_directory,
+                    'save_models': self.config.save_models,
+                }
+
+                return await self._train_nas_tas_models(model_type, training_config)
             else:
                 raise ValueError(f"Unknown model type: {model_type}")
 
@@ -491,6 +583,180 @@ class AnalystModelsTrainingStep:
         }
 
         return metrics
+
+    def _infer_direction_from_target(self, target_column: str) -> str:
+        """Infer trading direction from the target column name."""
+        target_lower = target_column.lower()
+        if 'long' in target_lower:
+            return 'long'
+        if 'short' in target_lower:
+            return 'short'
+        return 'combined'
+
+    def _get_nas_tas_orchestrator(
+        self,
+        model_type: AnalystModelType,
+        direction: str,
+        base_output_directory: str,
+    ) -> TrainingOrchestrator:
+        """Get or create a NAS/TAS orchestrator for the specified direction."""
+        if not NAS_TAS_AVAILABLE:
+            raise RuntimeError("NAS/TAS orchestrator components are not available")
+
+        direction_key = direction if direction in {'long', 'short'} else 'combined'
+        cache_key = (model_type.value, direction_key, base_output_directory)
+
+        if cache_key in self._nas_tas_orchestrators:
+            return self._nas_tas_orchestrators[cache_key]
+
+        output_directory = os.path.join(base_output_directory, direction_key)
+        os.makedirs(output_directory, exist_ok=True)
+
+        orchestrator_config = OrchestratorConfig(
+            mode=OrchestrationMode.TRAINING_ONLY,
+            enable_regime_detection=True,
+            enable_model_training=True,
+            enable_model_selection=True,
+            enable_model_management=False,
+            enable_performance_tracking=False,
+            output_directory=output_directory,
+            save_models=self.config.save_models,
+            save_results=self.config.save_models,
+            direction_mode=(
+                'long_only' if direction_key == 'long'
+                else 'short_only' if direction_key == 'short'
+                else 'both'
+            ),
+            separate_directional_features=False,
+        )
+        orchestrator_config.enable_parallel_processing = self.config.enable_parallel_processing
+        orchestrator_config.max_workers = max(1, os.cpu_count() or 1)
+
+        orchestrator = TrainingOrchestrator(orchestrator_config)
+        self._nas_tas_orchestrators[cache_key] = orchestrator
+        return orchestrator
+
+    async def _train_nas_tas_models(
+        self,
+        model_type: AnalystModelType,
+        training_config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Train NAS/TAS models using the unified orchestrator."""
+        if not NAS_TAS_AVAILABLE:
+            raise RuntimeError("NAS/TAS orchestrator components are not available")
+
+        training_data: pd.DataFrame = training_config['training_data']
+        feature_columns: List[str] = training_config['feature_columns']
+        target_columns: List[str] = training_config['target_columns']
+        regime_assignments = training_config.get('regime_assignments')
+        timestamps = training_config.get('timestamps')
+        base_output_directory = training_config.get('output_directory', self.config.output_directory)
+
+        if training_data is None or not feature_columns or not target_columns:
+            raise ValueError("Training data, feature columns, and target columns must be provided for NAS/TAS training")
+
+        models: Dict[str, Any] = {}
+        metrics: Dict[str, Any] = {}
+
+        for target_column in target_columns:
+            if target_column not in training_data.columns:
+                tprint_warning(f"⚠️ Target column '{target_column}' not found for {model_type.value}, skipping")
+                continue
+
+            direction = self._infer_direction_from_target(target_column)
+            direction_key = direction if direction in {'long', 'short'} else 'combined'
+
+            tprint_info(
+                f"🤖 Delegating {model_type.value} ({direction_key}) training to NAS/TAS orchestrator"
+            )
+
+            # Prepare dataset for orchestrator
+            feature_set = list(dict.fromkeys(feature_columns))
+            dataset = training_data[feature_set + [target_column]].dropna(subset=[target_column]).copy()
+
+            if dataset.empty:
+                tprint_warning(f"⚠️ No data available for {model_type.value} ({direction_key}) after cleaning, skipping")
+                continue
+
+            dataset = dataset.rename(columns={target_column: 'target'})
+
+            # Determine timestamps to maintain temporal ordering
+            timestamps_series = None
+            if timestamps is not None:
+                timestamps_series = timestamps
+            elif 'timestamp' in training_data.columns:
+                timestamps_series = training_data.loc[dataset.index, 'timestamp']
+
+            orchestrator = self._get_nas_tas_orchestrator(model_type, direction_key, base_output_directory)
+
+            context = {
+                'source': 'AnalystModelsTrainingStep',
+                'model_type': model_type.value,
+                'direction': direction_key,
+                'feature_count': len(feature_set),
+            }
+
+            if regime_assignments is not None:
+                context['regime_assignment_shape'] = getattr(regime_assignments, 'shape', None)
+
+            orchestration_result = await orchestrator.orchestrate_async(
+                market_data=dataset,
+                target_variable='target',
+                feature_columns=feature_set,
+                timestamps=timestamps_series,
+                context=context,
+            )
+
+            if not orchestration_result.success or not orchestration_result.training_result:
+                raise RuntimeError(
+                    f"NAS/TAS orchestrator failed for {model_type.value} ({direction_key}): "
+                    f"{orchestration_result.error_message}"
+                )
+
+            training_result = orchestration_result.training_result
+            if not training_result.success:
+                raise RuntimeError(
+                    f"NAS/TAS training unsuccessful for {model_type.value} ({direction_key}): "
+                    f"{training_result.error_message}"
+                )
+
+            direction_metrics = {
+                'direction': direction_key,
+                'overall_performance': training_result.overall_performance,
+                'regime_performance': training_result.regime_performance,
+                'execution_time': orchestration_result.execution_time,
+                'n_regimes': training_result.n_regimes_detected,
+            }
+
+            if training_result.directional_statistics:
+                direction_metrics['directional_statistics'] = training_result.directional_statistics.get(direction_key)
+
+            direction_models_metrics: Dict[str, Any] = {}
+
+            for regime_id, regime_models in training_result.models_trained.items():
+                for model_name, model_info in regime_models.items():
+                    combined_key = f"{direction_key}_regime_{regime_id}_{model_name}"
+                    models[combined_key] = model_info.get('model')
+                    direction_models_metrics[combined_key] = {
+                        'train_metrics': model_info.get('train_metrics'),
+                        'val_metrics': model_info.get('val_metrics'),
+                        'test_metrics': model_info.get('test_metrics'),
+                        'feature_importance': model_info.get('feature_importance'),
+                        'hyperparameters': model_info.get('hyperparameters'),
+                    }
+
+            if direction_models_metrics:
+                direction_metrics['models'] = direction_models_metrics
+
+            metrics[direction_key] = direction_metrics
+
+        if not models:
+            raise RuntimeError(f"NAS/TAS orchestrator did not return any trained models for {model_type.value}")
+
+        return {
+            'models': models,
+            'metrics': metrics,
+        }
 
 
 # Convenience function for external usage

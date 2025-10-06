@@ -276,10 +276,27 @@ class StepValidationValidator(BaseValidator):
             validator_orchestrator = ValidatorOrchestrator()
             
             # Prepare training input for validation
+            timeframe = kwargs.get('timeframe', '15m')
+            if timeframe not in {'15m', '5m'}:
+                self.logger.info(
+                    f"ℹ️ Using non-standard timeframe '{timeframe}' for validation."
+                )
+                tprint(
+                    f"ℹ️ [STEP_VALIDATION] Using caller-specified timeframe: {timeframe}"
+                )
+            elif timeframe == '15m':
+                tprint(
+                    "ℹ️ [STEP_VALIDATION] Defaulting to 15m Analyst timeframe; override to 5m for Tactician steps."
+                )
+            else:  # timeframe == '5m'
+                tprint(
+                    "ℹ️ [STEP_VALIDATION] Validating with 5m Tactician timeframe (requires Analyst green-signal filtered data)."
+                )
+
             training_input = {
                 "symbol": symbol,
                 "exchange": exchange,
-                "timeframe": "1m",
+                "timeframe": timeframe,
                 "data_dir": "data_cache",
             }
             

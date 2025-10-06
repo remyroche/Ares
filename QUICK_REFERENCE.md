@@ -56,6 +56,9 @@ python src/launcher/ares_launcher.py --mode sub_pipeline --sub_pipeline tacticia
 python src/launcher/ares_launcher.py --mode sub_pipeline --sub_pipeline tactician_ensemble_training --execution-mode full --timeframe 5m --symbol ETHUSDT
 ```
 
+> ℹ️ **Reminder**: Tactician steps must run on Analyst green-signal filtered 5m
+> datasets (Analyst confidence >0.4%) after the 15m Analyst pipeline completes.
+
 ---
 
 ## 📁 Files

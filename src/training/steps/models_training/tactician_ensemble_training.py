@@ -9,7 +9,9 @@ This module handles training of Tactician ensemble models that combine:
 - Technical indicators and market data
 - Multi-horizon target variables
 
-The ensemble operates on 1m timeframe and combines all inputs for final timing decisions.
+The ensemble operates on the 5m timeframe and combines all inputs filtered by
+Analyst green signals to produce the final timing decisions following 15m
+Analyst approval.
 
 ENHANCED FEATURES:
 - Comprehensive error handling with detailed failure reporting

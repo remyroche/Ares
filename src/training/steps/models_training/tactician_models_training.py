@@ -6,7 +6,9 @@ This module handles training of individual Tactician base models:
 - XGBoost model
 - ElasticNetCV model
 
-The Tactician operates on 1m timeframe and decides WHEN to trade based on Analyst's green light signals.
+The Tactician operates on the 5m timeframe and decides WHEN to trade using only
+Analyst-provided green-signal filtered windows, refining entries after the
+15m Analyst approval.
 
 ENHANCED FEATURES:
 - Comprehensive error handling with detailed failure reporting

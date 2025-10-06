@@ -51,20 +51,33 @@ class MultiHorizonComponentWrapper(BasePreTrainingComponent):
                     raise ImportError("Multi-horizon profit labeler not available")
                 
                 # Create config with timeframe support
-                mh_config = MultiHorizonConfig(
-                    profit_take_multiplier=0.002,
-                    stop_loss_multiplier=0.001,
-                    time_barrier_minutes=30,
-                    max_lookahead=100,
-                    timeframe=pipeline_state.get('timeframe', '15m')
-                )
+                timeframe = pipeline_state.get('timeframe')
+                config_kwargs: Dict[str, Any] = {}
+
+                if timeframe:
+                    config_kwargs['timeframe'] = timeframe
+
+                    # Align the base period with the requested timeframe when possible
+                    if timeframe.endswith('m') and timeframe[:-1].isdigit():
+                        config_kwargs['base_period_minutes'] = float(int(timeframe[:-1]))
+                    elif timeframe.endswith('h') and timeframe[:-1].isdigit():
+                        config_kwargs['base_period_minutes'] = float(int(timeframe[:-1]) * 60)
+                    elif timeframe.endswith('d') and timeframe[:-1].isdigit():
+                        config_kwargs['base_period_minutes'] = float(int(timeframe[:-1]) * 24 * 60)
+
+                mh_config = MultiHorizonConfig(**config_kwargs)
                 self.labeler = MultiHorizonProfitLabeler(mh_config)
             
             # Execute labeling with timeframe
+            labeling_timeframe = pipeline_state.get(
+                'timeframe',
+                getattr(getattr(self.labeler, 'config', None), 'timeframe', '15m')
+            )
+
             labeling_result = await self.labeler.execute_labeling(
                 symbol=pipeline_state.get('symbol', 'ETHUSDT'),
                 exchange=pipeline_state.get('exchange', 'binance'),
-                timeframe=pipeline_state.get('timeframe', '15m'),
+                timeframe=labeling_timeframe,
                 data_dir=pipeline_state.get('data_dir', 'historical_data')
             )
             

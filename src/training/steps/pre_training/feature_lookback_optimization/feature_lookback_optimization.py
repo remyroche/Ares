@@ -1126,7 +1126,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 tprint('🔍 No labeling data in pipeline state, loading from recent outcomes...')
                 symbol = pipeline_state.get('symbol', 'ETHUSDT')
                 exchange = pipeline_state.get('exchange', 'binance')
-                timeframe = pipeline_state.get('timeframe', '1m')
+                timeframe = pipeline_state.get('timeframe', '15m')
                 labeling_data = self._load_recent_labeling_results(symbol=symbol, exchange=exchange, timeframe=timeframe)
                 if labeling_data:
                     pipeline_state['multi_horizon_labeling_result'] = labeling_data

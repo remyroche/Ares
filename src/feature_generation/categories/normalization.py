@@ -56,7 +56,11 @@ class NormalizationFeatureGenerator(VectorizedFeatureGenerator):
                 "rolling_windows": [20, 50, 100],
                 "volatility_windows": [10, 20, 50],
                 "regime_windows": [30, 60, 120],
-                "cross_sectional_groups": ["price", "volume", "momentum"]
+                "cross_sectional_groups": ["price", "volume", "momentum"],
+                "normalization_methods": ["zscore", "robust", "minmax", "quantile"],
+                "regime_detection_methods": ["volatility", "momentum", "volume", "hybrid"],
+                "stationarity_tests": True,
+                "adaptive_normalization": True
             },
             matrix_optimized=True,
             gpu_accelerated=False
@@ -107,50 +111,169 @@ class NormalizationFeatureGenerator(VectorizedFeatureGenerator):
             return {}
 
     def _generate_rolling_zscore_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
-        """Generate rolling z-score normalization features."""
+        """Generate enhanced rolling z-score normalization features."""
         features = {}
         rolling_windows = self.config.parameters.get("rolling_windows", [20, 50, 100])
+        normalization_methods = self.config.parameters.get("normalization_methods", ["zscore", "robust", "minmax", "quantile"])
 
         for window in rolling_windows:
-            for column in ["close", "volume", "high", "low"]:
+            for column in ["close", "volume", "high", "low", "open"]:
                 if column in data.columns:
-                    # Rolling mean and std
-                    rolling_mean = data[column].rolling(window=window).mean()
-                    rolling_std = data[column].rolling(window=window).std()
+                    values = data[column]
+                    
+                    for method in normalization_methods:
+                        if method == "zscore":
+                            # Standard z-score
+                            rolling_mean = values.rolling(window=window).mean()
+                            rolling_std = values.rolling(window=window).std()
+                            zscore = (values - rolling_mean) / rolling_std
+                            features[f"zscore_{column}_{window}"] = zscore.fillna(0).values
 
-                    # Z-score normalization
-                    zscore = (data[column] - rolling_mean) / rolling_std
-                    features[f"zscore_{column}_{window}"] = zscore.fillna(0).values
+                        elif method == "robust":
+                            # Robust z-score using median and MAD
+                            rolling_median = values.rolling(window=window).median()
+                            rolling_mad = (values - rolling_median).abs().rolling(window=window).median()
+                            robust_zscore = (values - rolling_median) / (1.4826 * rolling_mad)  # 1.4826 for consistency with std
+                            features[f"robust_zscore_{column}_{window}"] = robust_zscore.fillna(0).values
 
-                    # Robust z-score (using median and MAD)
-                    rolling_median = data[column].rolling(window=window).median()
-                    rolling_mad = (data[column] - rolling_median).abs().rolling(window=window).median()
-                    robust_zscore = (data[column] - rolling_median) / rolling_mad
-                    features[f"robust_zscore_{column}_{window}"] = robust_zscore.fillna(0).values
+                        elif method == "minmax":
+                            # Min-max normalization
+                            rolling_min = values.rolling(window=window).min()
+                            rolling_max = values.rolling(window=window).max()
+                            minmax_norm = (values - rolling_min) / (rolling_max - rolling_min + 1e-8)
+                            features[f"minmax_{column}_{window}"] = minmax_norm.fillna(0).values
+
+                        elif method == "quantile":
+                            # Quantile normalization
+                            rolling_q25 = values.rolling(window=window).quantile(0.25)
+                            rolling_q75 = values.rolling(window=window).quantile(0.75)
+                            quantile_norm = (values - rolling_q25) / (rolling_q75 - rolling_q25 + 1e-8)
+                            features[f"quantile_{column}_{window}"] = quantile_norm.fillna(0).values
+
+                    # Adaptive z-score with regime awareness
+                    features.update(self._generate_adaptive_zscore_features(values, column, window))
+
+        return features
+
+    def _generate_adaptive_zscore_features(self, values: pd.Series, column: str, window: int) -> Dict[str, np.ndarray]:
+        """Generate adaptive z-score features that adjust to market regimes."""
+        features = {}
+
+        # Calculate volatility regime
+        returns = values.pct_change()
+        vol_regime = returns.rolling(window=window//2).std()
+        
+        # Define regime thresholds
+        low_vol_threshold = vol_regime.quantile(0.33)
+        high_vol_threshold = vol_regime.quantile(0.67)
+
+        # Low volatility regime normalization
+        low_vol_mask = vol_regime <= low_vol_threshold
+        if low_vol_mask.sum() > 0:
+            low_vol_values = values[low_vol_mask]
+            if len(low_vol_values) > window:
+                low_vol_mean = low_vol_values.rolling(window=window).mean()
+                low_vol_std = low_vol_values.rolling(window=window).std()
+                adaptive_zscore = np.zeros(len(values))
+                adaptive_zscore[low_vol_mask] = (low_vol_values - low_vol_mean) / low_vol_std
+                features[f"adaptive_zscore_{column}_{window}_low_vol"] = adaptive_zscore
+
+        # High volatility regime normalization
+        high_vol_mask = vol_regime >= high_vol_threshold
+        if high_vol_mask.sum() > 0:
+            high_vol_values = values[high_vol_mask]
+            if len(high_vol_values) > window:
+                high_vol_mean = high_vol_values.rolling(window=window).mean()
+                high_vol_std = high_vol_values.rolling(window=window).std()
+                adaptive_zscore = np.zeros(len(values))
+                adaptive_zscore[high_vol_mask] = (high_vol_values - high_vol_mean) / high_vol_std
+                features[f"adaptive_zscore_{column}_{window}_high_vol"] = adaptive_zscore
 
         return features
 
     def _generate_volatility_scaling_features(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
-        """Generate volatility scaling features."""
+        """Generate enhanced volatility scaling features."""
         features = {}
         volatility_windows = self.config.parameters.get("volatility_windows", [10, 20, 50])
 
         for window in volatility_windows:
-            # Calculate rolling volatility
+            # Calculate returns and volatility
             returns = data["close"].pct_change()
             rolling_vol = returns.rolling(window=window).std()
-
-            for column in ["close", "volume", "high", "low"]:
+            
+            # GARCH-like volatility estimation
+            garch_vol = self._estimate_garch_volatility(returns, window)
+            
+            for column in ["close", "volume", "high", "low", "open"]:
                 if column in data.columns:
-                    # Volatility-scaled returns
                     if column == "close":
-                        scaled_returns = returns / rolling_vol
-                        features[f"vol_scaled_returns_{window}"] = scaled_returns.fillna(0).values
+                        # Volatility-scaled returns
+                        vol_scaled_returns = returns / rolling_vol
+                        features[f"vol_scaled_returns_{window}"] = vol_scaled_returns.fillna(0).values
+                        
+                        # GARCH-scaled returns
+                        garch_scaled_returns = returns / garch_vol
+                        features[f"garch_scaled_returns_{window}"] = garch_scaled_returns.fillna(0).values
+                        
                     else:
                         # Volatility-scaled price changes
                         price_changes = data[column].pct_change()
-                        scaled_changes = price_changes / rolling_vol
-                        features[f"vol_scaled_{column}_{window}"] = scaled_changes.fillna(0).values
+                        vol_scaled_changes = price_changes / rolling_vol
+                        features[f"vol_scaled_{column}_{window}"] = vol_scaled_changes.fillna(0).values
+                        
+                        # GARCH-scaled changes
+                        garch_scaled_changes = price_changes / garch_vol
+                        features[f"garch_scaled_{column}_{window}"] = garch_scaled_changes.fillna(0).values
+
+                    # Volatility regime scaling
+                    features.update(self._generate_volatility_regime_scaling(data[column], column, window, rolling_vol))
+
+        return features
+
+    def _estimate_garch_volatility(self, returns: pd.Series, window: int) -> pd.Series:
+        """Estimate GARCH-like volatility using exponential weighting."""
+        # Simple GARCH(1,1) approximation
+        alpha = 0.1  # Weight for recent returns
+        beta = 0.85  # Weight for previous volatility
+        omega = 0.05  # Long-term variance
+        
+        garch_vol = pd.Series(index=returns.index, dtype=float)
+        garch_vol.iloc[0] = returns.rolling(window=window).std().iloc[0] ** 2
+        
+        for i in range(1, len(returns)):
+            if not pd.isna(returns.iloc[i-1]):
+                garch_vol.iloc[i] = omega + alpha * (returns.iloc[i-1] ** 2) + beta * garch_vol.iloc[i-1]
+            else:
+                garch_vol.iloc[i] = garch_vol.iloc[i-1]
+        
+        return np.sqrt(garch_vol)
+
+    def _generate_volatility_regime_scaling(self, values: pd.Series, column: str, window: int, rolling_vol: pd.Series) -> Dict[str, np.ndarray]:
+        """Generate volatility regime-aware scaling features."""
+        features = {}
+
+        # Define volatility regimes
+        vol_percentiles = rolling_vol.quantile([0.25, 0.75])
+        low_vol_threshold = vol_percentiles.iloc[0]
+        high_vol_threshold = vol_percentiles.iloc[1]
+
+        # Low volatility regime scaling
+        low_vol_mask = rolling_vol <= low_vol_threshold
+        if low_vol_mask.sum() > 0:
+            low_vol_values = values[low_vol_mask]
+            low_vol_vol = rolling_vol[low_vol_mask]
+            if len(low_vol_values) > 0:
+                low_vol_scaled = low_vol_values.pct_change() / low_vol_vol
+                features[f"low_vol_scaled_{column}_{window}"] = low_vol_scaled.fillna(0).values
+
+        # High volatility regime scaling
+        high_vol_mask = rolling_vol >= high_vol_threshold
+        if high_vol_mask.sum() > 0:
+            high_vol_values = values[high_vol_mask]
+            high_vol_vol = rolling_vol[high_vol_mask]
+            if len(high_vol_values) > 0:
+                high_vol_scaled = high_vol_values.pct_change() / high_vol_vol
+                features[f"high_vol_scaled_{column}_{window}"] = high_vol_scaled.fillna(0).values
 
         return features
 

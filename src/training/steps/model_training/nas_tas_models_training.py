@@ -72,6 +72,10 @@ except ImportError as e:
     tprint_warning(f"Model selection not available: {e}")
     MODEL_SELECTION_AVAILABLE = False
 
+# Import shared pre-training components for consistent data processing
+# Note: These components are used by Analyst/Tactician, but we access their results through pipeline state
+# to ensure consistent data processing and feature engineering
+
 # Import existing training utilities
 from src.utils.logger import system_logger
 
@@ -189,12 +193,16 @@ class NASTASModelsTrainingSubPipeline:
             self.model_selector = None
             tprint_warning("⚠️ Model selector not available")
 
+        # Note: We don't initialize the shared components directly since they run in pre-training
+        # Instead, we access their results through the pipeline state shared with Analyst/Tactician
+
         # Pipeline state
         self.current_pipeline_state = {}
         self.execution_history = []
 
         tprint_info(f"🎯 NAS/TAS Models Training initialized - Mode: {self.config.mode}")
         tprint_info(f"📊 Top K models: {self.config.top_k_models}, Selection strategy: {self.config.selection_strategy}")
+        tprint_info("🔗 Shared components integration: Using same data processing pipeline as Analyst/Tactician")
 
     async def execute_pipeline(self, config: NASTASModelsTrainingConfig) -> NASTASModelsTrainingResult:
         """
@@ -299,34 +307,193 @@ class NASTASModelsTrainingSubPipeline:
         self.execution_history.append(result)
         return result
 
-    async def _prepare_training_data(self, config: NASTASModelsTrainingConfig, result: NASTASModelsTrainingResult) -> bool:
-        """Prepare training data for NAS/TAS models."""
+    def _load_raw_market_data(self, config: NASTASModelsTrainingConfig, timeframe: str) -> pd.DataFrame:
+        """Load raw market data for the specified timeframe."""
         try:
-            # Load market data for different timeframes
-            training_data = {}
+            # First try to load from shared pre-training results if available
+            shared_data = self.current_pipeline_state.get('analyst_features') or self.current_pipeline_state.get('tactician_features')
+            if shared_data and isinstance(shared_data, dict):
+                processed_df = shared_data.get('final_features')
+                if processed_df is not None and not processed_df.empty:
+                    tprint_info(f"📥 Using shared pre-training data for {timeframe}: {processed_df.shape}")
+                    return processed_df
 
-            # Load 5m data for NAS training
-            if config.enable_nas_training:
-                tprint_info("📥 Loading 5m market data for NAS training")
-                # This would load the actual 5m data from the data pipeline
-                # For now, we'll use placeholder data structure
-                training_data['X_5m'] = None  # Would be actual features DataFrame
-                training_data['y_5m'] = None  # Would be actual targets DataFrame
-                training_data['regime_labels_5m'] = None  # Would be regime assignments
+            # Load processed data from the data pipeline (same as used by Analyst/Tactician)
+            base_dir = Path(config.output_directory).parent.parent.parent / "historical_data"
+            exchange_dir = base_dir / config.exchange.lower()
+            symbol_dir = exchange_dir / config.symbol.lower()
 
-            # Load 1m data for TAS training
-            if config.enable_tas_training:
-                tprint_info("📥 Loading 1m market data for TAS training")
-                training_data['X_1m'] = None  # Would be actual features DataFrame
-                training_data['y_1m'] = None  # Would be actual targets DataFrame
-                training_data['regime_labels_1m'] = None  # Would be regime assignments
+            # Look for processed data files
+            patterns = [
+                f"*{config.exchange.upper()}*{config.symbol.upper()}*{timeframe}*features*.parquet",
+                f"*{config.symbol.upper()}*{timeframe}*features*.parquet",
+                f"*{timeframe}*processed*.parquet"
+            ]
 
-            # Get analyst signals for TAS training
-            training_data['analyst_signals'] = None  # Would come from analyst ensemble
+            for pattern in patterns:
+                for data_file in symbol_dir.rglob(pattern):
+                    if data_file.exists():
+                        try:
+                            df = pd.read_parquet(data_file)
+                            if 'timestamp' not in df.columns and df.index.name in ('timestamp', 'datetime'):
+                                df = df.reset_index()
+                            tprint_info(f"📥 Loaded {timeframe} data from {data_file}: {df.shape}")
+                            return df
+                        except Exception as e:
+                            tprint_warning(f"⚠️ Failed to load {data_file}: {e}")
+                            continue
+
+            # If no processed data found, try to load raw OHLCV data
+            tprint_warning(f"⚠️ No processed {timeframe} data found, trying raw OHLCV")
+            try:
+                from src.utils.data.klines_parquet import get_klines_manager
+                klines_manager = get_klines_manager(data_dir=str(base_dir))
+
+                # Load raw OHLCV data
+                df = klines_manager.read_data(
+                    symbol=config.symbol,
+                    interval=timeframe,
+                    data_type="ohlcv"
+                )
+
+                if df is not None and not df.empty:
+                    tprint_info(f"📥 Loaded raw {timeframe} OHLCV data: {df.shape}")
+                    return df
+                else:
+                    tprint_warning(f"⚠️ No {timeframe} data available")
+                    return pd.DataFrame()
+
+            except Exception as e:
+                tprint_error(f"❌ Failed to load raw {timeframe} data: {e}")
+                return pd.DataFrame()
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to load {timeframe} market data: {e}")
+            return pd.DataFrame()
+
+    # Note: Lookback optimization is handled by the Analyst/Tactician pre-training pipeline
+    # and applied to the data before it reaches NAS/TAS training
+
+    async def _prepare_training_data(self, config: NASTASModelsTrainingConfig, result: NASTASModelsTrainingResult) -> bool:
+        """Prepare training data using shared pipeline state from Analyst/Tactician."""
+        try:
+            tprint_info("📋 Preparing training data using shared pipeline state from Analyst/Tactician")
+
+            # Check if we have access to processed data from Analyst/Tactician pre-training
+            analyst_features = self.current_pipeline_state.get('analyst_features')
+            tactician_features = self.current_pipeline_state.get('tactician_features')
+
+            if analyst_features and isinstance(analyst_features, dict):
+                analyst_processed_data = analyst_features.get('final_features')
+                if analyst_processed_data is not None and not analyst_processed_data.empty:
+                    tprint_info(f"📥 Using Analyst processed data: {analyst_processed_data.shape}")
+                    # Use Analyst's processed data as base for NAS (5m timeframe)
+                    nas_5m_data = analyst_processed_data.copy()
+                else:
+                    tprint_warning("⚠️ Analyst processed data not available or empty, loading raw data")
+                    nas_5m_data = self._load_raw_market_data(config, "5m")
+            else:
+                tprint_warning("⚠️ Analyst features not available in pipeline state, loading raw data")
+                nas_5m_data = self._load_raw_market_data(config, "5m")
+
+            if tactician_features and isinstance(tactician_features, dict):
+                tactician_processed_data = tactician_features.get('final_features')
+                if tactician_processed_data is not None and not tactician_processed_data.empty:
+                    tprint_info(f"📥 Using Tactician processed data: {tactician_processed_data.shape}")
+                    # Use Tactician's processed data as base for TAS (1m timeframe)
+                    tas_1m_data = tactician_processed_data.copy()
+                else:
+                    tprint_warning("⚠️ Tactician processed data not available or empty, loading raw data")
+                    tas_1m_data = self._load_raw_market_data(config, "1m")
+            else:
+                tprint_warning("⚠️ Tactician features not available in pipeline state, loading raw data")
+                tas_1m_data = self._load_raw_market_data(config, "1m")
+
+            # Validate that we have data for both timeframes
+            if nas_5m_data is None or nas_5m_data.empty:
+                tprint_error("❌ Failed to load 5m market data for NAS training")
+                result.error_message = "Failed to load 5m market data for NAS training"
+                return False
+
+            if tas_1m_data is None or tas_1m_data.empty:
+                tprint_error("❌ Failed to load 1m market data for TAS training")
+                result.error_message = "Failed to load 1m market data for TAS training"
+                return False
+
+            tprint_success(f"✅ Loaded processed data - NAS: {nas_5m_data.shape}, TAS: {tas_1m_data.shape}")
+
+            # Ensure consistent target variables (multi-horizon profit labels)
+            # The data should already have been processed by the multi_horizon_profit_labeler
+            # through the Analyst/Tactician pipeline
+
+            # Extract feature columns (excluding targets and metadata)
+            target_columns = ['target_long', 'target_short']
+            metadata_columns = ['timestamp', 'datetime']
+
+            # Get feature columns for NAS (5m)
+            nas_feature_columns = [col for col in nas_5m_data.columns
+                                 if col not in target_columns and col not in metadata_columns]
+
+            # Get feature columns for TAS (1m)
+            tas_feature_columns = [col for col in tas_1m_data.columns
+                                 if col not in target_columns and col not in metadata_columns]
+
+            # Validate that we have target variables
+            missing_targets_nas = [col for col in target_columns if col not in nas_5m_data.columns]
+            missing_targets_tas = [col for col in target_columns if col not in tas_1m_data.columns]
+
+            if missing_targets_nas:
+                tprint_warning(f"⚠️ Missing target columns in NAS data: {missing_targets_nas}")
+                result.warnings.append(f"Missing target columns in NAS data: {missing_targets_nas}")
+
+            if missing_targets_tas:
+                tprint_warning(f"⚠️ Missing target columns in TAS data: {missing_targets_tas}")
+                result.warnings.append(f"Missing target columns in TAS data: {missing_targets_tas}")
+
+            # Prepare final training data
+            training_data = {
+                'X_5m': nas_5m_data[nas_feature_columns] if nas_feature_columns else None,
+                'y_5m': nas_5m_data[target_columns] if not any(col not in nas_5m_data.columns for col in target_columns) else None,
+                'X_1m': tas_1m_data[tas_feature_columns] if tas_feature_columns else None,
+                'y_1m': tas_1m_data[target_columns] if not any(col not in tas_1m_data.columns for col in target_columns) else None,
+                'regime_labels_5m': None,  # Will be loaded from market analysis
+                'regime_labels_1m': None,  # Will be loaded from market analysis
+                'analyst_signals': None,   # Will come from analyst ensemble for TAS filtering
+                'selected_features_5m': nas_feature_columns,
+                'selected_features_1m': tas_feature_columns,
+                'data_quality_5m': not nas_5m_data.empty and len(nas_feature_columns) > 0,
+                'data_quality_1m': not tas_1m_data.empty and len(tas_feature_columns) > 0,
+                'shared_pipeline_used': analyst_features is not None or tactician_features is not None
+            }
 
             self.current_pipeline_state['training_data'] = training_data
+            self.current_pipeline_state['nas_5m_data'] = nas_5m_data
+            self.current_pipeline_state['tas_1m_data'] = tas_1m_data
 
-            tprint_success("✅ Training data prepared")
+            # Store metadata about the shared pipeline usage
+            result.metadata.update({
+                'shared_pipeline_integration': {
+                    'analyst_features_available': analyst_features is not None,
+                    'tactician_features_available': tactician_features is not None,
+                    'using_processed_data': training_data['shared_pipeline_used']
+                },
+                'data_shapes': {
+                    'nas_5m': nas_5m_data.shape,
+                    'tas_1m': tas_1m_data.shape
+                },
+                'feature_counts': {
+                    'nas_5m': len(nas_feature_columns),
+                    'tas_1m': len(tas_feature_columns)
+                },
+                'target_availability': {
+                    'nas_5m': not any(col not in nas_5m_data.columns for col in target_columns),
+                    'tas_1m': not any(col not in tas_1m_data.columns for col in target_columns)
+                }
+            })
+
+            tprint_success("✅ Training data prepared using shared Analyst/Tactician pipeline state")
+            tprint_info(f"📊 NAS features: {len(nas_feature_columns)}, TAS features: {len(tas_feature_columns)}")
+            tprint_info(f"🔗 Shared pipeline integration: {training_data['shared_pipeline_used']}")
             return True
 
         except Exception as e:

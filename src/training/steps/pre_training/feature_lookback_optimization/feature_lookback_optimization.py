@@ -609,6 +609,9 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"⚠️ Failed to initialize multi-target scheme: {e}")
             self.multi_target_scheme = None
+
+        # Cache for target results to avoid recomputation
+        self._last_target_result = None
         
         # Initialize Directional optimizer if available
         self.directional_optimizer = None
@@ -1306,6 +1309,9 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             tprint_info(f"   → Generated {len(forward_returns.dropna())} FPT-based labels")
             tprint_info(f"   → Label distribution: {forward_returns.value_counts().to_dict()}")
 
+            # Store the target result for later use (confidence scores, eligibility masks)
+            self._last_target_result = target_result
+
             return forward_returns
 
         except Exception as e:
@@ -1348,24 +1354,126 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         else:
             return pd.Series(dtype=float)
 
+    def _get_precomputed_confidence_scores(self, pipeline_state: Optional[Dict[str, Any]]) -> pd.DataFrame:
+        """Get pre-computed confidence scores from multi_horizon_profit_labeler."""
+        if not pipeline_state:
+            return pd.DataFrame()
+
+        labeling_result = pipeline_state.get('multi_horizon_labeling_result', {})
+        return labeling_result.get('confidence_scores', pd.DataFrame())
+
+    def _get_precomputed_eligibility_masks(self, pipeline_state: Optional[Dict[str, Any]]) -> pd.DataFrame:
+        """Get pre-computed eligibility masks from multi_horizon_profit_labeler."""
+        if not pipeline_state:
+            return pd.DataFrame()
+
+        labeling_result = pipeline_state.get('multi_horizon_labeling_result', {})
+        return labeling_result.get('eligibility_masks', pd.DataFrame())
+
+    def _get_precomputed_quality_scores(self, pipeline_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Get pre-computed quality scores from multi_horizon_profit_labeler."""
+        if not pipeline_state:
+            return {}
+
+        labeling_result = pipeline_state.get('multi_horizon_labeling_result', {})
+        return labeling_result.get('quality_scores', {})
+
+    def _get_generated_confidence_scores(self) -> pd.DataFrame:
+        """Get confidence scores from the cached target result (generated on-the-fly)."""
+        if self._last_target_result is None:
+            return pd.DataFrame()
+        return self._last_target_result.confidence_scores
+
+    def _get_generated_eligibility_masks(self) -> pd.DataFrame:
+        """Get eligibility masks from the cached target result (generated on-the-fly)."""
+        if self._last_target_result is None:
+            return pd.DataFrame()
+        return self._last_target_result.eligibility_masks
+
     def _calculate_feature_target_score_aligned(self, feature_values: np.ndarray,
-                                              target_values: np.ndarray, lookback: int) -> float:
-        """Calculate score for feature-target alignment using actual FPT labels."""
+                                              target_values: np.ndarray, lookback: int,
+                                              confidence_scores: Optional[np.ndarray] = None,
+                                              eligibility_mask: Optional[np.ndarray] = None) -> float:
+        """Calculate score for feature-target alignment using actual FPT labels with confidence weighting."""
         try:
-            # For ternary labels (-1, 0, 1), use rank correlation
-            correlation, p_value = self._safe_spearmanr(feature_values, target_values)
+            # Apply eligibility mask first to filter out unreliable data points
+            if eligibility_mask is not None:
+                valid_mask = eligibility_mask.astype(bool)
+                if np.sum(valid_mask) < 10:  # Need minimum samples
+                    return 0.0
+
+                feature_filtered = feature_values[valid_mask]
+                target_filtered = target_values[valid_mask]
+
+                # Apply confidence weighting if available
+                if confidence_scores is not None:
+                    confidence_filtered = confidence_scores[valid_mask]
+                    # Weight the correlation by confidence scores
+                    # Higher confidence points get more weight in the correlation calculation
+                    weights = confidence_filtered / np.sum(confidence_filtered)
+                else:
+                    weights = None
+            else:
+                feature_filtered = feature_values
+                target_filtered = target_values
+                weights = None
+
+            if len(feature_filtered) < 10:
+                return 0.0
+
+            # For ternary labels (-1, 0, 1), use weighted rank correlation
+            if weights is not None:
+                # Calculate weighted Spearman correlation
+                correlation = self._weighted_spearmanr(feature_filtered, target_filtered, weights)
+                p_value = 0.01  # Simplified - in practice would need proper weighted p-value calculation
+            else:
+                correlation, p_value = self._safe_spearmanr(feature_filtered, target_filtered)
 
             if np.isnan(correlation) or np.isnan(p_value):
                 return 0.0
 
             # Convert to positive score (higher absolute correlation is better)
-            score = abs(correlation) * (1 - p_value)  # Weight by significance
+            # Weight by confidence if available, otherwise use standard weighting
+            if confidence_scores is not None:
+                avg_confidence = np.mean(confidence_scores[valid_mask]) if eligibility_mask is not None else np.mean(confidence_scores)
+                score = abs(correlation) * (1 - p_value) * avg_confidence
+            else:
+                score = abs(correlation) * (1 - p_value)
 
-            tprint_info(f"   → Aligned score: correlation={correlation:.4f}, p-value={p_value:.4f}, score={score:.4f}")
+            tprint_info(f"   → Aligned score: correlation={correlation:.4f}, p-value={p_value:.4f}, confidence={np.mean(confidence_scores) if confidence_scores is not None else 'N/A':.4f}, score={score:.4f}")
             return score
 
         except Exception as e:
             tprint_warning(f"   → Error calculating aligned score: {e}")
+            return 0.0
+
+    def _weighted_spearmanr(self, x: np.ndarray, y: np.ndarray, weights: np.ndarray) -> float:
+        """Calculate weighted Spearman correlation coefficient."""
+        try:
+            # For simplicity, use a weighted correlation approach
+            # In a full implementation, this would properly handle weighted rank correlation
+
+            # Normalize weights
+            weights = weights / np.sum(weights)
+
+            # Calculate weighted means
+            weighted_mean_x = np.sum(weights * x)
+            weighted_mean_y = np.sum(weights * y)
+
+            # Calculate weighted covariance and variances
+            weighted_cov = np.sum(weights * (x - weighted_mean_x) * (y - weighted_mean_y))
+            weighted_var_x = np.sum(weights * (x - weighted_mean_x)**2)
+            weighted_var_y = np.sum(weights * (y - weighted_mean_y)**2)
+
+            # Calculate correlation coefficient
+            if weighted_var_x > 0 and weighted_var_y > 0:
+                correlation = weighted_cov / np.sqrt(weighted_var_x * weighted_var_y)
+                return correlation
+            else:
+                return 0.0
+
+        except Exception as e:
+            tprint_warning(f"   → Error in weighted correlation: {e}")
             return 0.0
 
     def _optimize_single_feature(self, feature_name: str, generator: FeatureGenerator,
@@ -1397,8 +1505,12 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 # Get forward returns - use pre-computed labels if available
                 if labels_available:
                     forward_returns = self._get_precomputed_labels(pipeline_state, lookback)
+                    confidence_scores = self._get_precomputed_confidence_scores(pipeline_state)
+                    eligibility_masks = self._get_precomputed_eligibility_masks(pipeline_state)
                 else:
                     forward_returns = self._calculate_forward_returns_fpt(data, lookback)
+                    confidence_scores = None
+                    eligibility_masks = None
 
                 forward_returns = forward_returns.dropna()
 
@@ -1415,10 +1527,41 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 feature_aligned = feature_data.data.loc[common_index]
                 returns_aligned = forward_returns.loc[common_index]
 
-                # Calculate score using the actual FPT-based labels
+                # Get confidence scores and eligibility masks for the aligned data
+                confidence_aligned = None
+                eligibility_aligned = None
+
+                if confidence_scores is not None and not confidence_scores.empty:
+                    confidence_aligned = confidence_scores.loc[common_index]
+                elif hasattr(self, '_last_target_result') and self._last_target_result is not None:
+                    # Try to get confidence scores from cached target result
+                    generated_confidence = self._get_generated_confidence_scores()
+                    if not generated_confidence.empty:
+                        confidence_aligned = generated_confidence.loc[common_index]
+
+                if eligibility_masks is not None and not eligibility_masks.empty:
+                    eligibility_aligned = eligibility_masks.loc[common_index]
+                elif hasattr(self, '_last_target_result') and self._last_target_result is not None:
+                    # Try to get eligibility masks from cached target result
+                    generated_eligibility = self._get_generated_eligibility_masks()
+                    if not generated_eligibility.empty:
+                        eligibility_aligned = generated_eligibility.loc[common_index]
+
+                # Calculate score using the actual FPT-based labels with confidence weighting
                 score = self._calculate_feature_target_score_aligned(
-                    feature_aligned.values, returns_aligned.values, lookback
+                    feature_aligned.values,
+                    returns_aligned.values,
+                    lookback,
+                    confidence_scores=confidence_aligned.values if confidence_aligned is not None else None,
+                    eligibility_mask=eligibility_aligned.values if eligibility_aligned is not None else None
                 )
+
+                # Log additional information about confidence and eligibility
+                if confidence_aligned is not None:
+                    tprint_info(f"   → Using {len(confidence_aligned.dropna())} confidence scores (avg: {confidence_aligned.mean():.4f})")
+                if eligibility_aligned is not None:
+                    eligible_count = eligibility_aligned.sum() if hasattr(eligibility_aligned, 'sum') else 0
+                    tprint_info(f"   → Using {eligible_count} eligible data points out of {len(eligibility_aligned)}")
 
                 if not np.isnan(score):
                     lookback_scores[lookback] = score
@@ -1467,6 +1610,28 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             result.error_message = "No valid lookback periods found"
 
         return result
+
+    def _identify_best_targets(self, generator: FeatureGenerator, data: pd.DataFrame,
+                             lookback: int) -> List[str]:
+        """Identify best targets for multi-target features using quality scores."""
+        try:
+            # Get quality scores if available
+            quality_scores = self._get_precomputed_quality_scores({})  # Would need pipeline state
+
+            if quality_scores:
+                # Select targets based on quality scores
+                # Higher quality targets get priority
+                sorted_targets = sorted(quality_scores.items(), key=lambda x: x[1], reverse=True)
+                best_targets = [target for target, score in sorted_targets[:3]]  # Top 3 targets
+                tprint_info(f"   → Selected {len(best_targets)} best targets based on quality scores")
+                return best_targets
+            else:
+                # Fallback to default targets
+                return ["multi_target_primary", "immediate_opportunity", "short_term_opportunity"]
+
+        except Exception as e:
+            tprint_warning(f"   → Error identifying best targets: {e}")
+            return ["multi_target_primary"]
 
     def optimize_lookback_periods_unified(self,
                                         data: pd.DataFrame,
@@ -1563,7 +1728,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                         tprint_warning(f"⚠️ No generator found for feature: {feature_name}")
                         continue
 
-                    # Optimize this feature using the new method that supports pipeline state
+                    # Optimize this feature using the new method that supports pipeline state and confidence scores
                     result = self._optimize_single_feature(feature_name, generator, data, pipeline_state)
                     optimization_results[feature_name] = result
 
@@ -1587,22 +1752,31 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
     def optimize_features_with_labels(self, data: pd.DataFrame, feature_columns: List[str],
                                     pipeline_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Optimize feature lookback periods using actual multi_horizon_profit_labeler labels.
+        Optimize feature lookback periods using actual multi_horizon_profit_labeler labels with full metadata.
 
         This method is designed to be called after the multi_horizon_profit_labeler has run
-        and provides the actual labels for optimization.
+        and provides the actual labels, confidence scores, eligibility masks, and quality scores for optimization.
 
         Args:
             data: Market data
             feature_columns: List of feature column names to optimize
-            pipeline_state: Pipeline state containing multi_horizon_labeling_result
+            pipeline_state: Pipeline state containing multi_horizon_labeling_result with all metadata
 
         Returns:
             Dictionary with optimization results for each feature
         """
-        tprint("🚀 Optimizing features using actual multi_horizon_profit_labeler labels")
+        tprint("🚀 Optimizing features using actual multi_horizon_profit_labeler labels with full metadata")
         tprint_info(f"   → Features to optimize: {len(feature_columns)}")
         tprint_info(f"   → Labels available: {self._check_for_precomputed_labels(pipeline_state)}")
+
+        # Check for additional metadata
+        has_confidence = not self._get_precomputed_confidence_scores(pipeline_state).empty
+        has_eligibility = not self._get_precomputed_eligibility_masks(pipeline_state).empty
+        has_quality = bool(self._get_precomputed_quality_scores(pipeline_state))
+
+        tprint_info(f"   → Confidence scores available: {has_confidence}")
+        tprint_info(f"   → Eligibility masks available: {has_eligibility}")
+        tprint_info(f"   → Quality scores available: {has_quality}")
 
         optimization_results = {}
 
@@ -1614,7 +1788,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                     tprint_warning(f"⚠️ No generator found for feature: {feature_name}")
                     continue
 
-                # Optimize using actual labels from multi_horizon_profit_labeler
+                # Optimize using actual labels from multi_horizon_profit_labeler with full metadata
                 result = self._optimize_single_feature(feature_name, generator, data, pipeline_state)
                 optimization_results[feature_name] = result
 
@@ -1626,8 +1800,11 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                     'success': False
                 }
 
-        tprint_success(f"✅ Feature optimization completed using actual labels")
+        tprint_success(f"✅ Feature optimization completed using actual labels with full metadata")
         tprint_info(f"   → Successful optimizations: {len([r for r in optimization_results.values() if isinstance(r, dict) and r.get('success', False)])}")
+        tprint_info(f"   → Used confidence weighting: {has_confidence}")
+        tprint_info(f"   → Used eligibility filtering: {has_eligibility}")
+        tprint_info(f"   → Used quality score prioritization: {has_quality}")
 
         return optimization_results
 

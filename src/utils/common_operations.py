@@ -501,6 +501,36 @@ def safe_std(series: pd.Series) -> float:
     except Exception:
         return 0.0
 
+def safe_correlation(x: Union[pd.Series, np.ndarray], y: Union[pd.Series, np.ndarray], default: float = 0.0) -> float:
+    """Safely compute correlation between two vectors."""
+    try:
+        x_arr = np.asarray(x, dtype=float)
+        y_arr = np.asarray(y, dtype=float)
+
+        if x_arr.ndim > 1:
+            x_arr = x_arr.reshape(-1)
+        if y_arr.ndim > 1:
+            y_arr = y_arr.reshape(-1)
+
+        valid_len = min(x_arr.size, y_arr.size)
+        if valid_len < 2:
+            return default
+
+        x_arr = x_arr[:valid_len]
+        y_arr = y_arr[:valid_len]
+
+        if not np.isfinite(x_arr).all() or not np.isfinite(y_arr).all():
+            return default
+
+        corr_matrix = np.corrcoef(x_arr, y_arr)
+        corr_value = corr_matrix[0, 1]
+        if np.isfinite(corr_value):
+            return float(corr_value)
+    except Exception:
+        return default
+
+    return default
+
 def safe_float(value: Any, default: float = 0.0) -> float:
     """Safely convert value to float."""
     try:

@@ -260,6 +260,7 @@ class AnalystEnsembleTrainingStep:
             enhanced_features = []
             metadata = {
                 'base_features_count': X_base.shape[1],
+                'base_prediction_features_count': 0,
                 'hmm_features_count': 0,
                 'nas_features_count': 0,
                 'total_features': X_base.shape[1]
@@ -267,6 +268,13 @@ class AnalystEnsembleTrainingStep:
 
             # Start with base features
             enhanced_features.append(X_base)
+
+            # Add base model predictions if available
+            if base_models:
+                base_prediction_features = self._extract_base_model_predictions(X_base, base_models)
+                if base_prediction_features is not None:
+                    enhanced_features.append(base_prediction_features)
+                    metadata['base_prediction_features_count'] = base_prediction_features.shape[1]
 
             # Add HMM regime features if available and enabled
             if self.config.include_hmm_features:
@@ -297,6 +305,44 @@ class AnalystEnsembleTrainingStep:
         except Exception as e:
             tprint_error(f"❌ Failed to create enhanced feature set: {e}")
             return X_base
+
+    def _extract_base_model_predictions(
+        self,
+        X_base: np.ndarray,
+        base_models: Dict[str, Any]
+    ) -> Optional[np.ndarray]:
+        """Extract predictions from base models to enrich feature set."""
+        try:
+            prediction_features = []
+
+            for model_name, model in base_models.items():
+                try:
+                    if hasattr(model, 'predict'):
+                        preds = model.predict(X_base)
+                        if len(preds.shape) == 1:
+                            preds = preds.reshape(-1, 1)
+                        prediction_features.append(preds)
+                        tprint_debug(f"📊 Collected base predictions from {model_name}")
+                    else:
+                        tprint_debug(f"📊 Model {model_name} does not support prediction")
+                except Exception as model_error:
+                    tprint_warning(
+                        f"⚠️ Failed to collect base predictions from {model_name}: {model_error}"
+                    )
+                    continue
+
+            if prediction_features:
+                combined_predictions = np.hstack(prediction_features)
+                tprint_debug(
+                    f"📊 Combined {len(prediction_features)} base model prediction feature sets"
+                )
+                return combined_predictions
+
+            tprint_debug("📊 No base model predictions available for feature enhancement")
+            return None
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to extract base model predictions: {e}")
+            return None
 
     def _extract_hmm_features(self, training_data: pd.DataFrame) -> Optional[np.ndarray]:
         """Extract HMM regime features."""
@@ -371,7 +417,18 @@ class AnalystEnsembleTrainingStep:
                 'include_nas_features': self.config.include_nas_features
             }
 
-            return await trainer.train_analyst_ensemble(**training_config)
+            training_result = await trainer.train_analyst_ensemble(**training_config)
+            if training_result is None:
+                training_result = {}
+
+            enhanced_metadata = getattr(self, '_enhanced_metadata', {})
+            if enhanced_metadata:
+                result_metadata = training_result.get('metadata', {}) or {}
+                # Ensure enriched metadata is included in persisted artifacts
+                result_metadata.update(enhanced_metadata)
+                training_result['metadata'] = result_metadata
+
+            return training_result
 
         except ImportError:
             tprint_warning(f"⚠️ Existing ensemble trainer not available, falling back to direct training")
@@ -400,6 +457,7 @@ class AnalystEnsembleTrainingStep:
             # Create metadata
             metadata = getattr(self, '_enhanced_metadata', {
                 'base_features_count': X.shape[1],
+                'base_prediction_features_count': 0,
                 'hmm_features_count': 0,
                 'nas_features_count': 0,
                 'total_features': X.shape[1]

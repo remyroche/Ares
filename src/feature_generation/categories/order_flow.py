@@ -1,7 +1,7 @@
 """Order Flow features"""
 import pandas as pd
 from typing import List
-from ..core.feature_generator import FeatureGenerator, FeatureConfig, FeatureCategory
+from ..core.feature_generator import FeatureGenerator, FeatureConfig, FeatureCategory, VectorizedFeatureGenerator
 
 # Optimization utilities
 try:
@@ -12,7 +12,7 @@ except ImportError:
     OPTIMIZATION_AVAILABLE = False
 from ..base_calculations import BaseCalculationType, create_base_calculator
 
-class TakerBuyRatioGenerator(FeatureGenerator):
+class TakerBuyRatioGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 20):
         config = FeatureConfig(
             name=f"taker_buy_ratio_{window}",

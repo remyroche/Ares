@@ -18,6 +18,11 @@ from typing import Any, Dict, List, Optional, Union, Tuple
 import logging
 
 from ..core.feature_generator import (
+    FeatureGenerator,
+    FeatureConfig,
+    FeatureCategory,
+    VectorizedFeatureGenerator
+)
 
 # Optimization utilities
 try:
@@ -26,16 +31,11 @@ try:
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
-    FeatureGenerator,
-    FeatureConfig,
-    FeatureCategory,
-    VectorizedFeatureGenerator
-)
 
 logger = logging.getLogger(__name__)
 
 
-class PatchTSTRepresentationGenerator(FeatureGenerator):
+class PatchTSTRepresentationGenerator(VectorizedFeatureGenerator):
     """Generator for PatchTST-based self-supervised representation learning."""
 
     def __init__(self, patch_length: int = 16, num_patches: int = 8, embedding_dim: int = 64):

@@ -9,7 +9,7 @@ Focus on the most important time features:
 import pandas as pd
 import numpy as np
 from typing import List
-from ..core.feature_generator import FeatureGenerator, FeatureConfig, FeatureCategory
+from ..core.feature_generator import FeatureGenerator, FeatureConfig, FeatureCategory, VectorizedFeatureGenerator
 
 # Optimization utilities
 try:
@@ -20,7 +20,7 @@ except ImportError:
     OPTIMIZATION_AVAILABLE = False
 
 # Basic Hour Features
-class HourGenerator(FeatureGenerator):
+class HourGenerator(VectorizedFeatureGenerator):
     def __init__(self):
         config = FeatureConfig(
             name="hour",

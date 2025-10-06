@@ -82,9 +82,9 @@ except ImportError as e:
     PRE_ML_ORCHESTRATOR_AVAILABLE = False
     tprint_warning(f"⚠️ Pre-ML orchestrator not available: {e}")
 
-# Import existing Tactician training components
+# Import new modular Tactician training components
 try:
-    from .tactician_models_training_refactored import TacticianModelsTrainingStep
+    from .tactician_models_training import TacticianModelsTrainingStep
     from .tactician_ensemble_training import TacticianEnsembleTrainingStep
     TACTICIAN_TRAINING_AVAILABLE = True
 except ImportError as e:

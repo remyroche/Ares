@@ -1,16 +1,14 @@
 """
-Tactician Pre-ML Orchestration - 5m Timeframe Feature Engineering
+Tactician Pre-ML Orchestration - 15m Timeframe Feature Engineering
 
 This orchestrator applies the complete pre-training pipeline for Tactician models:
-1. Filter data on Analyst "green" signals (>0.4% confidence threshold)
-2. Multi-horizon profit labeling with differentiated horizons
-3. Feature lookback period optimization per regime/cluster
-4. PID-based feature generation (interaction, polynomial, cross-timeframe)
-5. Final feature selection (multi-stage: 120→100→80→60)
+1. Applies differentiated horizon labeling + Optimizes feature lookback periods + Generates PID features + Selects final features
+2. Uses 15m timeframe with per-regime/cluster optimisation
+3. Uses the pipeline present in src/training/steps/MODELS_TRAINING/
 
-TACTICIAN CONFIGURATION:
-- Timeframe: 5m (lower timeframe for tactical WHEN-to-trade decisions)
-- Training Data: FILTERED on Analyst ensemble signals with >0.4% confidence
+TACTICIAN PRE-ML CONFIGURATION:
+- Timeframe: 15m (as specified for tactician_pre_ml_orchestration step)
+- Training Data: All market data (processed through the standard pre-training pipeline)
 - Output: Features optimized for Tactician model training
 - Per-regime optimization: Yes, using regime assignments from market_analysis
 """
@@ -63,7 +61,7 @@ class TacticianPreMLConfig:
     # Data configuration
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
-    timeframe: str = "5m"  # TACTICIAN USES 5m TIMEFRAME
+    timeframe: str = "15m"  # TACTICIAN PRE-ML USES 15m TIMEFRAME
     data_dir: str = "historical_data"
     
     # Analyst signal filtering
@@ -118,10 +116,10 @@ class TacticianPreMLResult:
 class TacticianPreMLOrchestrator:
     """
     Tactician Pre-ML Orchestration.
-    
-    Orchestrates the complete pre-training pipeline for Tactician models on 5m timeframe.
-    Filters data based on Analyst ensemble signals (>0.4% confidence) before training.
-    Applies per-regime/cluster optimization for all feature engineering steps.
+
+    Orchestrates the complete pre-training pipeline for Tactician models on 15m timeframe.
+    Applies differentiated horizon labeling + Optimizes feature lookback periods + Generates PID features + Selects final features.
+    Uses 15m timeframe with per-regime/cluster optimisation using the pipeline in src/training/steps/MODELS_TRAINING/.
     """
     
     def __init__(self, config: Optional[TacticianPreMLConfig] = None):
@@ -145,53 +143,28 @@ class TacticianPreMLOrchestrator:
             tprint_error(f"❌ Failed to initialize TacticianPreMLOrchestrator: {e}")
             raise
     
-    def _filter_on_analyst_signals(
+    def _prepare_training_data(
         self,
         training_data: pd.DataFrame,
         analyst_predictions: Optional[pd.DataFrame] = None
     ) -> pd.DataFrame:
         """
-        Filter training data to include only Analyst "green" signals.
-        
+        Prepare training data for Tactician pre-ML orchestration.
+
         Args:
-            training_data: Input DataFrame (5m timeframe)
-            analyst_predictions: Analyst ensemble predictions
-            
+            training_data: Input DataFrame (15m timeframe)
+            analyst_predictions: Analyst ensemble predictions (for reference only)
+
         Returns:
-            Filtered DataFrame with only high-confidence Analyst signals
+            Prepared DataFrame for 15m timeframe processing
         """
-        tprint_info("🔍 Filtering data on Analyst signals...")
-        
-        if analyst_predictions is None or not self.config.require_analyst_signals:
-            tprint_warning("⚠️ No Analyst predictions provided, using all data")
-            return training_data
-        
-        # Ensure both DataFrames have aligned indices
-        if not training_data.index.equals(analyst_predictions.index):
-            tprint_warning("⚠️ Aligning indices between training data and predictions")
-            analyst_predictions = analyst_predictions.reindex(training_data.index)
-        
-        # Filter based on confidence threshold
-        # Assuming analyst_predictions has columns like 'confidence_long' and 'confidence_short'
-        high_confidence_mask = (
-            (analyst_predictions.get('confidence_long', 0) >= self.config.analyst_confidence_threshold) |
-            (analyst_predictions.get('confidence_short', 0) >= self.config.analyst_confidence_threshold) |
-            (analyst_predictions.get('confidence', 0) >= self.config.analyst_confidence_threshold)
-        )
-        
-        filtered_data = training_data[high_confidence_mask].copy()
-        
-        filter_ratio = len(filtered_data) / len(training_data) if len(training_data) > 0 else 0
-        
-        tprint_info(f"📊 Filtering results:")
-        tprint_info(f"  - Original samples: {len(training_data)}")
-        tprint_info(f"  - Filtered samples: {len(filtered_data)}")
-        tprint_info(f"  - Filter ratio: {filter_ratio:.2%}")
-        
-        if len(filtered_data) == 0:
-            tprint_warning("⚠️ No samples passed Analyst confidence threshold!")
-        
-        return filtered_data
+        tprint_info("🔍 Preparing training data for 15m timeframe processing...")
+        tprint_info(f"📊 Input data shape: {training_data.shape}")
+        tprint_info(f"📊 Timeframe: {self.config.timeframe}")
+
+        # For tactician_pre_ml_orchestration, we use all the training data
+        # The analyst signal filtering happens in the actual tactician training step
+        return training_data
     
     async def orchestrate(
         self,
@@ -213,33 +186,29 @@ class TacticianPreMLOrchestrator:
             TacticianPreMLResult with orchestrated features and metadata
         """
         start_time = tprint_timer()
-        tprint_info("🚀 Starting Tactician Pre-ML Orchestration (5m timeframe)...")
+        tprint_info("🚀 Starting Tactician Pre-ML Orchestration (15m timeframe)...")
         tprint_info(f"📊 Input data shape: {training_data.shape}")
-        
+
         result = TacticianPreMLResult()
         result.total_samples_before_filter = len(training_data)
-        
+
         try:
             # Validate pre-training pipeline availability
             if not self.pre_training_pipeline:
                 raise RuntimeError("Pre-training pipeline not available")
-            
-            # Step 0: Filter data on Analyst signals
-            tprint_info("🎯 Step 0/4: Filtering on Analyst signals (>0.4% confidence)...")
+
+            # Step 0: Prepare training data for 15m timeframe processing
+            tprint_info("🎯 Step 0/4: Preparing training data for 15m timeframe...")
             result.phase = OrchestrationPhase.DATA_FILTERING
-            
-            filtered_data = self._filter_on_analyst_signals(training_data, analyst_predictions)
-            result.total_samples_after_filter = len(filtered_data)
+
+            prepared_data = self._prepare_training_data(training_data, analyst_predictions)
+            result.total_samples_after_filter = len(prepared_data)
             result.filter_ratio = (
                 result.total_samples_after_filter / result.total_samples_before_filter
                 if result.total_samples_before_filter > 0 else 0
             )
-            
-            tprint_success(f"✅ Data filtering completed ({result.filter_ratio:.2%} retained)")
-            
-            # If no samples pass the filter, return early
-            if len(filtered_data) == 0:
-                raise RuntimeError("No samples passed Analyst confidence threshold")
+
+            tprint_success(f"✅ Data preparation completed ({result.filter_ratio:.2%} retained)")
             
             # Create sub-pipeline configuration
             sub_config = SubPipelineConfig(
@@ -255,15 +224,14 @@ class TacticianPreMLOrchestrator:
                     'regime_assignments': regime_assignments,
                     'analyst_predictions': analyst_predictions,
                     'role': 'tactician',  # Mark as Tactician orchestration
-                    'filtered_data': filtered_data,  # Pass filtered data
+                    'prepared_data': prepared_data,  # Pass prepared data
                     **kwargs
                 }
             )
             
             tprint_info("📋 Configuration:")
             tprint_info(f"  - Timeframe: {self.config.timeframe}")
-            tprint_info(f"  - Analyst threshold: {self.config.analyst_confidence_threshold:.2%}")
-            tprint_info(f"  - Samples after filtering: {len(filtered_data)}")
+            tprint_info(f"  - Samples after preparation: {len(prepared_data)}")
             tprint_info(f"  - Per-regime optimization: {self.config.enable_per_regime_optimization}")
             tprint_info(f"  - Per-cluster optimization: {self.config.enable_per_cluster_optimization}")
             
@@ -322,7 +290,7 @@ class TacticianPreMLOrchestrator:
             
             tprint_success(f"✅ Tactician Pre-ML Orchestration completed in {result.execution_time:.2f}s")
             tprint_info(f"📊 Final feature count: {result.final_feature_count}")
-            tprint_info(f"📊 Data retention after filtering: {result.filter_ratio:.2%}")
+            tprint_info(f"📊 Data retention after preparation: {result.filter_ratio:.2%}")
             
             return result
             
@@ -363,14 +331,14 @@ async def execute_tactician_pre_ml_orchestration(
 ) -> TacticianPreMLResult:
     """
     Execute Tactician pre-ML orchestration.
-    
+
     Args:
-        training_data: Input DataFrame with market data (5m timeframe)
-        analyst_predictions: Analyst ensemble predictions for filtering
+        training_data: Input DataFrame with market data (15m timeframe)
+        analyst_predictions: Analyst ensemble predictions (for reference only)
         regime_assignments: Optional regime assignments for per-regime optimization
         config: Optional configuration
         **kwargs: Additional parameters
-        
+
     Returns:
         TacticianPreMLResult with orchestrated features and metadata
     """

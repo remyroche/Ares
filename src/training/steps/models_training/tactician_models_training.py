@@ -5,10 +5,12 @@ This module handles training of individual Tactician base models:
 - RandomSurvivalForest model
 - XGBoost model
 - ElasticNetCV model
+- NAS (Neural Architecture Search) model
+- TAS (Tree-based Architecture Search) model
 
 The Tactician operates on the 5m timeframe and decides WHEN to trade using only
-Analyst-provided green-signal filtered windows, refining entries after the
-15m Analyst approval.
+Analyst-provided green-signal filtered windows (>0.4% confidence threshold), refining entries after the
+15m Analyst approval. Integrates with Analyst ensemble outputs and regime features for enhanced 5m timeframe tactical decisions.
 
 ENHANCED FEATURES:
 - Comprehensive error handling with detailed failure reporting
@@ -19,6 +21,8 @@ ENHANCED FEATURES:
 - Health monitoring throughout training process
 - Integration with common utilities and hardware optimizers
 - Extensive logging with tprint at every step
+- Analyst ensemble integration for filtered training data
+- NAS and TAS support for advanced 5m timeframe analysis
 """
 
 import json

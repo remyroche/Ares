@@ -2,15 +2,16 @@
 Analyst Ensemble Training - Ensemble Model Training Module
 
 This module handles training of Analyst ensemble models that combine:
-- Base models (TCN, LightGBM, Ridge, ElasticNet, RandomForest)
+- Base models (TCN, LightGBM, Ridge, ElasticNet, RandomForest, NAS, TAS)
 - HMM regime features and probabilities
 - NAS models per-regime for enhanced trading signal generation
 - Multi-timeframe features and cross-timeframe analysis
 - Technical indicators and market data
+- Outputs from base Analyst models
 
 The ensemble operates on the dedicated 15m timeframe and combines all inputs to
 deliver the Analyst's final green-signal decisions that gate downstream
-Tactician processing.
+Tactician processing. Uses outputs from the base Analyst models trained on 15m timeframe.
 
 ENHANCED FEATURES:
 - Comprehensive error handling with detailed failure reporting
@@ -21,6 +22,7 @@ ENHANCED FEATURES:
 - Health monitoring throughout training process
 - Integration with common utilities and hardware optimizers
 - Extensive logging with tprint at every step
+- Integration with base Analyst model outputs
 """
 
 import numpy as np
@@ -105,7 +107,9 @@ class AnalystEnsembleTrainingConfig:
                 "LIGHTGBM",
                 "RIDGE",
                 "ELASTIC_NET",
-                "RANDOM_FOREST"
+                "RANDOM_FOREST",
+                "NAS",
+                "TAS"
             ]
 
 

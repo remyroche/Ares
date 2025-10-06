@@ -19,6 +19,9 @@ ENHANCED FEATURES:
 - Extensive logging with tprint at every step
 """
 
+import json
+import pickle
+from pathlib import Path
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -104,14 +107,17 @@ class TacticianModelType(Enum):
     RANDOM_SURVIVAL_FOREST = "RANDOM_SURVIVAL_FOREST"
     XGBOOST = "XGBOOST"
     ELASTIC_NET_CV = "ELASTIC_NET_CV"
+    NAS = "NAS"
+    TAS = "TAS"
 
 
 @dataclass
 class TacticianModelsTrainingConfig:
     """Configuration for Tactician base models training."""
     # Training parameters
-    model_types: List[TacticianModelType] = None
+    model_types: Optional[List[Union[str, TacticianModelType]]] = None
     save_models: bool = True
+    save_metrics: bool = True
     output_directory: str = "generated/tactician_models_training"
 
     # Hardware optimization
@@ -129,8 +135,32 @@ class TacticianModelsTrainingConfig:
             self.model_types = [
                 TacticianModelType.RANDOM_SURVIVAL_FOREST,
                 TacticianModelType.XGBOOST,
-                TacticianModelType.ELASTIC_NET_CV
+                TacticianModelType.ELASTIC_NET_CV,
+                TacticianModelType.NAS,
+                TacticianModelType.TAS,
             ]
+        else:
+            normalized_types: List[TacticianModelType] = []
+            for model_type in self.model_types:
+                if isinstance(model_type, TacticianModelType):
+                    normalized_types.append(model_type)
+                    continue
+
+                if isinstance(model_type, str):
+                    candidate = model_type.strip()
+                    try:
+                        normalized_types.append(TacticianModelType[candidate])
+                        continue
+                    except KeyError:
+                        try:
+                            normalized_types.append(TacticianModelType(candidate))
+                            continue
+                        except ValueError:
+                            pass
+
+                raise ValueError(f"Unsupported Tactician model type: {model_type!r}")
+
+            self.model_types = normalized_types
 
 
 @dataclass
@@ -229,26 +259,36 @@ class TacticianModelsTrainingStep:
                 try:
                     tprint_info(f"🔧 Training {model_type.value} model...")
 
-                    # Create training configuration
-                    training_config = {
-                        'model_type': model_type.value,
-                        'training_data': training_data,
-                        'feature_columns': feature_columns,
-                        'target_columns': target_columns,
-                        'sample_weight': sample_weight,
-                        'save_models': self.config.save_models,
-                        'output_directory': f"{self.config.output_directory}/{model_type.value.lower()}"
-                    }
-
-                    # Train model using existing trainer if available
-                    if TACTICIAN_TRAINING_AVAILABLE:
-                        training_result = await self._train_model_with_existing_trainer(
-                            model_type, training_config
+                    if model_type in {TacticianModelType.NAS, TacticianModelType.TAS}:
+                        training_result = await self._train_nas_tas_timing_models(
+                            model_type=model_type,
+                            training_data=training_data,
+                            feature_columns=feature_columns,
+                            target_columns=target_columns,
+                            sample_weight=sample_weight,
+                            **kwargs,
                         )
                     else:
-                        training_result = await self._train_model_directly(
-                            model_type, X, y, sample_weight, **kwargs
-                        )
+                        # Create training configuration
+                        training_config = {
+                            'model_type': model_type.value,
+                            'training_data': training_data,
+                            'feature_columns': feature_columns,
+                            'target_columns': target_columns,
+                            'sample_weight': sample_weight,
+                            'save_models': self.config.save_models,
+                            'output_directory': f"{self.config.output_directory}/{model_type.value.lower()}"
+                        }
+
+                        # Train model using existing trainer if available
+                        if TACTICIAN_TRAINING_AVAILABLE:
+                            training_result = await self._train_model_with_existing_trainer(
+                                model_type, training_config
+                            )
+                        else:
+                            training_result = await self._train_model_directly(
+                                model_type, X, y, sample_weight, **kwargs
+                            )
 
                     # Store results
                     if training_result.get('models'):
@@ -256,7 +296,17 @@ class TacticianModelsTrainingStep:
                             all_models[f"{model_type.value.lower()}_{model_name}"] = model
 
                     if training_result.get('metrics'):
-                        all_metrics[f"{model_type.value.lower()}"] = training_result['metrics']
+                        metrics_key = f"{model_type.value.lower()}"
+                        if (
+                            metrics_key in all_metrics
+                            and isinstance(all_metrics[metrics_key], dict)
+                            and isinstance(training_result['metrics'], dict)
+                        ):
+                            combined_metrics = all_metrics[metrics_key].copy()
+                            combined_metrics.update(training_result['metrics'])
+                            all_metrics[metrics_key] = combined_metrics
+                        else:
+                            all_metrics[metrics_key] = training_result['metrics']
 
                     tprint_success(f"✅ {model_type.value} model trained")
 
@@ -334,6 +384,252 @@ class TacticianModelsTrainingStep:
         except Exception as e:
             tprint_error(f"❌ Failed to train {model_type.value} directly: {e}")
             return {'models': {}, 'metrics': {}}
+
+    async def _train_nas_tas_timing_models(
+        self,
+        model_type: TacticianModelType,
+        training_data: pd.DataFrame,
+        feature_columns: List[str],
+        target_columns: List[str],
+        sample_weight: Optional[np.ndarray] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Train NAS/TAS timing models using the dedicated orchestrator."""
+
+        try:
+            from .nas_tas.training_orchestrator import (
+                TrainingOrchestrator,
+                OrchestratorConfig,
+                OrchestrationMode,
+            )
+        except ImportError as e:
+            tprint_warning(f"⚠️ NAS/TAS orchestrator not available: {e}")
+            return {'models': {}, 'metrics': {}, 'error': str(e)}
+
+        tprint_debug(
+            f"🧠 Preparing NAS/TAS training for {model_type.value} with {len(feature_columns)} features"
+        )
+
+        base_output_dir = Path(self.config.output_directory) / model_type.value.lower()
+        base_output_dir.mkdir(parents=True, exist_ok=True)
+
+        nas_tas_feature_columns: List[str] = list(dict.fromkeys(feature_columns))
+
+        def _extend_with_keyword(keyword: str) -> List[str]:
+            added_columns: List[str] = []
+            for column in training_data.columns:
+                lower_column = column.lower()
+                if keyword in lower_column and not lower_column.startswith('target'):
+                    if column not in nas_tas_feature_columns and column not in target_columns:
+                        nas_tas_feature_columns.append(column)
+                        added_columns.append(column)
+            return added_columns
+
+        pre_training_added = _extend_with_keyword('pre_training')
+        regime_added = _extend_with_keyword('regime')
+        analyst_added = _extend_with_keyword('analyst')
+
+        if pre_training_added or regime_added or analyst_added:
+            tprint_debug(
+                "🔗 NAS/TAS feature enrichment: added "
+                f"{len(pre_training_added)} pre-training, "
+                f"{len(regime_added)} regime, "
+                f"{len(analyst_added)} analyst columns"
+            )
+
+        feature_columns = nas_tas_feature_columns
+
+        direction_map: Dict[str, str] = {}
+        for column in target_columns:
+            lower_name = column.lower()
+            if 'long' in lower_name and 'long' not in direction_map:
+                direction_map['long'] = column
+            elif 'short' in lower_name and 'short' not in direction_map:
+                direction_map['short'] = column
+
+        if 'long' not in direction_map:
+            direction_map['long'] = 'target_long'
+        if 'short' not in direction_map:
+            direction_map['short'] = 'target_short'
+
+        models_to_return: Dict[str, Any] = {}
+        direction_metrics: Dict[str, Dict[str, Any]] = {}
+        aggregate_model_paths: Dict[str, str] = {}
+
+        for direction, target_column in direction_map.items():
+            if target_column not in training_data.columns:
+                tprint_warning(
+                    f"⚠️ Skipping {direction} NAS/TAS training - target column '{target_column}' not found"
+                )
+                continue
+
+            direction_frame = training_data[training_data[target_column].notna()].copy()
+            if direction_frame.empty:
+                tprint_warning(
+                    f"⚠️ Skipping {direction} NAS/TAS training - no samples after filtering"
+                )
+                continue
+
+            direction_output_dir = base_output_dir / direction
+            direction_output_dir.mkdir(parents=True, exist_ok=True)
+
+            try:
+                config = OrchestratorConfig(
+                    mode=OrchestrationMode.FULL_PIPELINE,
+                    output_directory=str(direction_output_dir),
+                    save_models=self.config.save_models,
+                    save_results=self.config.save_metrics,
+                    enable_model_selection=False,
+                    enable_model_management=False,
+                    enable_performance_tracking=False,
+                    enable_regime_detection=True,
+                    enable_model_training=True,
+                    data_validation=False,
+                    feature_engineering=False,
+                    data_preprocessing=False,
+                    enable_parallel_processing=self.config.enable_parallel_processing,
+                    direction_mode=f"{direction}_only",
+                    min_directional_samples=self.config.min_training_samples,
+                    enable_caching=False,
+                    cache_directory=str(direction_output_dir / "cache"),
+                    log_level="INFO",
+                    enable_logging=False,
+                )
+
+                try:
+                    unified_config = config.get_unified_config()
+                    if hasattr(unified_config, 'timeframe'):
+                        unified_config.timeframe = '5m'
+                    if hasattr(unified_config, 'data') and hasattr(unified_config.data, 'timeframe'):
+                        unified_config.data.timeframe = '5m'
+                    if hasattr(unified_config, 'enable_feature_engineering'):
+                        unified_config.enable_feature_engineering = False
+                    if hasattr(unified_config, 'enable_data_preprocessing'):
+                        unified_config.enable_data_preprocessing = False
+                except Exception as config_error:
+                    tprint_warning(f"⚠️ Failed to adjust NAS/TAS unified config: {config_error}")
+
+                orchestrator = TrainingOrchestrator(config)
+
+                timestamps = direction_frame['timestamp'] if 'timestamp' in direction_frame.columns else None
+                context = {
+                    'timeframe': '5m',
+                    'direction': direction,
+                    'model_type': model_type.value,
+                    'analyst_signal_filters_applied': True,
+                    'feature_columns': feature_columns,
+                }
+
+                orchestration_result = await orchestrator.orchestrate_async(
+                    market_data=direction_frame,
+                    target_variable=target_column,
+                    feature_columns=feature_columns,
+                    timestamps=timestamps,
+                    context=context,
+                )
+
+            except Exception as orchestration_error:
+                tprint_error(
+                    f"❌ NAS/TAS orchestrator failed for {direction} direction: {orchestration_error}"
+                )
+                continue
+
+            if not getattr(orchestration_result, 'success', False):
+                warning_message = getattr(orchestration_result, 'error_message', 'unknown error')
+                tprint_warning(
+                    f"⚠️ NAS/TAS training unsuccessful for {direction} direction: {warning_message}"
+                )
+                continue
+
+            training_result = getattr(orchestration_result, 'training_result', None)
+            if training_result is None:
+                tprint_warning(
+                    f"⚠️ NAS/TAS orchestrator returned no training result for {direction} direction"
+                )
+                continue
+
+            direction_models = {}
+            if getattr(training_result, 'directional_models', None):
+                direction_models = training_result.directional_models.get(direction, {}) or {}
+            if not direction_models:
+                direction_models = getattr(training_result, 'models_trained', {}) or {}
+
+            if not direction_models:
+                tprint_warning(
+                    f"⚠️ No models produced for {direction} direction by NAS/TAS orchestrator"
+                )
+                continue
+
+            saved_paths: Dict[str, str] = {}
+            for regime_id, regime_models in direction_models.items():
+                if not isinstance(regime_models, dict):
+                    continue
+                for model_name, model_obj in regime_models.items():
+                    model_key = f"{model_type.value.lower()}_{direction}_regime{regime_id}_{model_name}"
+                    models_to_return[model_key] = model_obj
+
+                    if self.config.save_models:
+                        model_path = direction_output_dir / f"{model_key}.pkl"
+                        try:
+                            with open(model_path, 'wb') as model_file:
+                                pickle.dump(model_obj, model_file)
+                            saved_paths[model_key] = str(model_path)
+                        except Exception as serialization_error:
+                            tprint_warning(
+                                f"⚠️ Failed to persist NAS/TAS model {model_key}: {serialization_error}"
+                            )
+
+            aggregate_model_paths.update(saved_paths)
+
+            performance_metrics = getattr(training_result, 'directional_performance', {}).get(direction, {})
+            if not performance_metrics:
+                performance_metrics = getattr(training_result, 'overall_performance', {})
+
+            regime_performance = getattr(training_result, 'regime_performance', {})
+            regime_stats = getattr(training_result, 'directional_statistics', {}).get(direction, {})
+            n_regimes_detected = getattr(training_result, 'n_regimes_detected', 0)
+
+            metrics_entry = {
+                'direction': direction,
+                'target_column': target_column,
+                'samples': int(len(direction_frame)),
+                'feature_columns': list(feature_columns),
+                'timeframe': '5m',
+                'analyst_features_integrated': True,
+                'performance': performance_metrics,
+                'regime_performance': regime_performance,
+                'regime_statistics': regime_stats,
+                'n_regimes_detected': int(n_regimes_detected),
+                'model_paths': saved_paths,
+            }
+
+            direction_metrics[direction] = metrics_entry
+
+            if self.config.save_metrics:
+                metrics_path = direction_output_dir / f"{model_type.value.lower()}_{direction}_metrics.json"
+                try:
+                    with open(metrics_path, 'w') as metrics_file:
+                        json.dump(metrics_entry, metrics_file, indent=2, default=str)
+                except Exception as metrics_error:
+                    tprint_warning(
+                        f"⚠️ Failed to persist NAS/TAS metrics for {direction}: {metrics_error}"
+                    )
+
+        if not models_to_return:
+            tprint_warning(f"⚠️ NAS/TAS training produced no models for {model_type.value}")
+            return {'models': {}, 'metrics': {}}
+
+        metrics_summary = {
+            'model_type': model_type.value,
+            'timeframe': '5m',
+            'directions': direction_metrics,
+            'model_paths': aggregate_model_paths,
+        }
+
+        return {
+            'models': models_to_return,
+            'metrics': metrics_summary,
+        }
 
     async def _train_random_survival_forest(
         self,
@@ -427,6 +723,7 @@ class TacticianModelsTrainingStep:
             'config': {
                 'model_types': [mt.value for mt in self.config.model_types],
                 'save_models': self.config.save_models,
+                'save_metrics': self.config.save_metrics,
                 'output_directory': self.config.output_directory,
                 'enable_parallel_processing': self.config.enable_parallel_processing,
                 'enable_gpu_acceleration': self.config.enable_gpu_acceleration

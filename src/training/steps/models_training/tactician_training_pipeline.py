@@ -31,7 +31,8 @@ from enum import Enum
 try:
     from .tactician_models_training import (
         TacticianModelsTrainingStep, TacticianModelsTrainingConfig,
-        TacticianModelsTrainingResult, execute_tactician_models_training
+        TacticianModelsTrainingResult, TacticianModelType,
+        execute_tactician_models_training
     )
     MODELS_TRAINING_AVAILABLE = True
 except ImportError as e:
@@ -99,7 +100,7 @@ class TacticianTrainingPipelineConfig:
     min_training_samples: int = 100
 
     # Base model configuration
-    base_model_types: List[str] = None
+    base_model_types: List[TacticianModelType] = None
 
     # Ensemble configuration
     enable_full_integration: bool = True
@@ -111,11 +112,36 @@ class TacticianTrainingPipelineConfig:
         """Post-initialization setup."""
         if self.base_model_types is None:
             self.base_model_types = [
-                "RANDOM_SURVIVAL_FOREST",
-                "XGBOOST",
-                "NAS",
-                "TAS"
+                TacticianModelType.RANDOM_SURVIVAL_FOREST,
+                TacticianModelType.XGBOOST,
+                TacticianModelType.ELASTIC_NET_CV,
+                TacticianModelType.NAS,
+                TacticianModelType.TAS,
             ]
+        else:
+            normalized_types: List[TacticianModelType] = []
+            for model_type in self.base_model_types:
+                if isinstance(model_type, TacticianModelType):
+                    normalized_types.append(model_type)
+                    continue
+
+                if isinstance(model_type, str):
+                    candidate = model_type.strip()
+                    try:
+                        normalized_types.append(TacticianModelType[candidate])
+                        continue
+                    except KeyError:
+                        try:
+                            normalized_types.append(TacticianModelType(candidate))
+                            continue
+                        except ValueError:
+                            pass
+
+                raise ValueError(
+                    f"Unsupported model type for Tactician pipeline: {model_type!r}"
+                )
+
+            self.base_model_types = normalized_types
 
 
 @dataclass
@@ -158,6 +184,7 @@ class TacticianTrainingPipeline:
                 base_config = TacticianModelsTrainingConfig(
                     model_types=self.config.base_model_types,
                     save_models=self.config.save_models,
+                    save_metrics=self.config.save_metrics,
                     output_directory=f"{self.config.output_directory}/base_models",
                     enable_parallel_processing=self.config.enable_parallel_processing,
                     enable_gpu_acceleration=self.config.enable_gpu_acceleration,

@@ -230,7 +230,6 @@ class MultiHorizonProfitLabeler:
         if self.cpu_optimizer:
             tprint("🔧 Optimizing CPU operations...")
             self.cpu_optimizer.optimize_numpy_operations()
-            self.cpu_optimizer.optimize_pandas_operations()
             tprint("✅ CPU operations optimized")
 
     def _validate_and_setup_configuration_refactored(self):

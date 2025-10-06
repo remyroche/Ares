@@ -17,6 +17,11 @@ from pathlib import Path
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.logger import system_logger
 
+try:
+    from src.utils.data.klines_parquet import get_klines_manager
+except Exception:  # pragma: no cover - defensive guard for optional dependency
+    get_klines_manager = None  # type: ignore[assignment]
+
 # Import the volatility-aware multi-horizon labeler
 from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler import (
     VolatilityAwareMultiHorizonLabeler,
@@ -186,63 +191,155 @@ class MultiHorizonProfitLabeler:
         data_dir: str
     ) -> Optional[pd.DataFrame]:
         """Load market data for the specified symbol and timeframe."""
-        try:
-            # Import data loading utilities
-            from src.training.steps.data_collection.unified_data_loader import UnifiedDataLoader
 
-            tprint_info(f"📊 Loading market data for {symbol} {timeframe} from {data_dir}")
+        if get_klines_manager is None:
+            message = (
+                "kline_parquet utilities are not available. "
+                "Ensure src.utils.data.klines_parquet can be imported."
+            )
+            self.logger.error(message)
+            tprint_error(f"❌ {message}")
+            raise RuntimeError(message)
 
-            # Initialize data loader
-            data_loader = UnifiedDataLoader()
+        tprint_info(f"📊 Loading market data for {symbol} {timeframe} from {data_dir}")
 
-            # Construct file path pattern for the data
-            # This follows the standardized data structure
-            data_path = Path(data_dir) / exchange / symbol / timeframe
+        manager = get_klines_manager(data_dir)
 
-            # Try to load the data using the unified loader
-            try:
-                # Use the data loader to find and load the appropriate data file
-                data = data_loader.load_unified_data(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    data_directory=data_dir
-                )
+        symbol_variants = list(dict.fromkeys([symbol, symbol.upper(), symbol.lower()]))
+        timeframe_variants = list(dict.fromkeys([timeframe, timeframe.lower(), timeframe.upper()]))
+        data_type_variants = ["processed", "raw"]
 
-                if data is not None and not data.empty:
-                    tprint_success(f"✅ Loaded {len(data)} data points for {symbol} {timeframe}")
-                    return data
-                else:
-                    tprint_warning(f"⚠️ No data found for {symbol} {timeframe}")
-                    return None
+        load_errors: List[str] = []
 
-            except Exception as e:
-                tprint_warning(f"⚠️ Unified data loader failed, trying alternative method: {e}")
+        for sym in symbol_variants:
+            for tf in timeframe_variants:
+                for data_type in data_type_variants:
+                    try:
+                        tprint_info(
+                            f"🔍 Attempting klines_parquet load for {sym}/{tf} [{data_type}]"
+                        )
+                        raw_df = await asyncio.to_thread(
+                            manager.read_data,
+                            sym,
+                            tf,
+                            None,
+                            None,
+                            data_type,
+                        )
+                    except Exception as load_error:  # pragma: no cover - defensive guard
+                        error_msg = (
+                            f"Failed to load {sym}/{tf} ({data_type}) via klines_parquet: {load_error}"
+                        )
+                        self.logger.warning(error_msg)
+                        load_errors.append(error_msg)
+                        continue
 
-                # Fallback to direct file loading if unified loader fails
-                try:
-                    # Look for parquet files in the data directory
-                    import glob
-                    pattern = f"{data_path}/*.parquet"
-                    files = glob.glob(pattern)
+                    if raw_df is None or raw_df.empty:
+                        info_msg = (
+                            f"klines_parquet returned no data for {sym}/{tf} ({data_type})"
+                        )
+                        self.logger.info(info_msg)
+                        load_errors.append(info_msg)
+                        continue
 
-                    if files:
-                        # Load the most recent file
-                        latest_file = max(files, key=lambda f: Path(f).stat().st_mtime)
-                        data = pd.read_parquet(latest_file)
-                        tprint_success(f"✅ Loaded data from {latest_file}")
-                        return data
-                    else:
-                        tprint_warning(f"⚠️ No parquet files found in {data_path}")
-                        return None
+                    try:
+                        prepared = self._prepare_market_data_frame(raw_df)
+                    except Exception as prep_error:
+                        prep_msg = (
+                            f"Loaded data for {sym}/{tf} ({data_type}) could not be prepared: {prep_error}"
+                        )
+                        self.logger.warning(prep_msg)
+                        load_errors.append(prep_msg)
+                        continue
 
-                except Exception as e2:
-                    tprint_error(f"❌ Fallback data loading also failed: {e2}")
-                    return None
+                    tprint_success(
+                        f"✅ Loaded {len(prepared)} rows via klines_parquet for {sym} {tf}"
+                    )
+                    return prepared
 
-        except Exception as e:
-            tprint_error(f"❌ Error loading market data: {e}")
-            return None
+        error_message = (
+            f"No market data available for {symbol} on {exchange} with timeframe {timeframe}."
+        )
+        if load_errors:
+            for msg in load_errors[-5:]:  # Log the most recent errors for context
+                self.logger.error(msg)
+        self.logger.error(error_message)
+        tprint_error(f"❌ {error_message}")
+        raise FileNotFoundError(error_message)
+
+    def _prepare_market_data_frame(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Ensure loaded market data is indexed and typed as expected by the labeler."""
+        if data is None or data.empty:
+            raise ValueError("Loaded market data is empty")
+
+        df = data.copy()
+
+        if "timestamp" in df.columns:
+            timestamp_series = df.pop("timestamp")
+        elif "open_time" in df.columns:
+            timestamp_series = df.pop("open_time")
+        elif df.index.name == "timestamp":
+            timestamp_series = df.index
+        else:
+            timestamp_series = df.index
+
+        ts = pd.to_datetime(timestamp_series, utc=True, errors="coerce")
+        if ts.isnull().any():
+            # Try integer timestamps (milliseconds/seconds)
+            numeric_ts = pd.to_numeric(timestamp_series, errors="coerce")
+            if numeric_ts.notnull().all():
+                unit = "ms" if numeric_ts.max() > 10**12 else "s"
+                ts = pd.to_datetime(numeric_ts, unit=unit, utc=True, errors="coerce")
+        if ts.isnull().all():
+            raise ValueError("Unable to parse timestamps for market data")
+
+        ts_index = pd.DatetimeIndex(ts)
+
+        valid_mask = ~pd.isna(ts_index)
+        if not valid_mask.all():
+            df = df.loc[valid_mask]
+            ts_index = ts_index[valid_mask]
+        if ts_index.empty:
+            raise ValueError("Market data contains no valid timestamps")
+
+        if ts_index.tz is not None:
+            ts_index = ts_index.tz_convert(None)
+        else:
+            ts_index = ts_index.tz_localize(None)
+
+        df.index = ts_index
+
+        # Normalize column names
+        normalized_columns = {col: col.lower() for col in df.columns}
+        df = df.rename(columns=normalized_columns)
+
+        volume_candidates = [
+            "volume",
+            "volume_usdt",
+            "quote_volume",
+            "vol",
+        ]
+        if "volume" not in df.columns:
+            for candidate in volume_candidates:
+                if candidate in df.columns:
+                    df["volume"] = df.pop(candidate)
+                    break
+
+        required_columns = ["open", "high", "low", "close", "volume"]
+        missing = [col for col in required_columns if col not in df.columns]
+        if missing:
+            raise ValueError(f"Market data missing required columns: {missing}")
+
+        df = df.sort_index()
+        df = df[~df.index.duplicated(keep="first")]
+
+        for col in required_columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df = df.dropna(subset=required_columns)
+        if df.empty:
+            raise ValueError("Market data contains no valid OHLCV rows after cleaning")
+
+        return df
 
     async def _execute_regime_aware_labeling(self, market_data: pd.DataFrame, regime_data: Dict[str, Any]) -> LabelingResult:
         """

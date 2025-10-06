@@ -31,7 +31,8 @@ from enum import Enum
 try:
     from .analyst_models_training import (
         AnalystModelsTrainingStep, AnalystModelsTrainingConfig,
-        AnalystModelsTrainingResult, execute_analyst_models_training
+        AnalystModelsTrainingResult, AnalystModelType,
+        execute_analyst_models_training
     )
     MODELS_TRAINING_AVAILABLE = True
 except ImportError as e:
@@ -99,7 +100,7 @@ class AnalystTrainingPipelineConfig:
     min_training_samples: int = 100
 
     # Base model configuration
-    base_model_types: List[str] = None
+    base_model_types: List[AnalystModelType] = None
 
     # Ensemble configuration
     enable_full_integration: bool = True
@@ -108,14 +109,48 @@ class AnalystTrainingPipelineConfig:
 
     def __post_init__(self):
         """Post-initialization setup."""
+        supported_types = [
+            AnalystModelType.TCN,
+            AnalystModelType.LIGHTGBM,
+            AnalystModelType.RIDGE,
+            AnalystModelType.ELASTIC_NET,
+            AnalystModelType.RANDOM_FOREST,
+            AnalystModelType.NAS,
+            AnalystModelType.TAS,
+        ]
+
         if self.base_model_types is None:
-            self.base_model_types = [
-                "ELASTIC_NET",
-                "RANDOM_FOREST",
-                "NAS",
-                "TAS",
-                "MULTISCALE_NBEATS"
-            ]
+            self.base_model_types = supported_types
+            return
+
+        normalized_types: List[AnalystModelType] = []
+        value_map = {model_type.value.upper(): model_type for model_type in supported_types}
+
+        for model_type in self.base_model_types:
+            if isinstance(model_type, AnalystModelType):
+                normalized_types.append(model_type)
+            elif isinstance(model_type, str):
+                enum_value = value_map.get(model_type.strip().upper())
+                if enum_value:
+                    normalized_types.append(enum_value)
+                else:
+                    logging.getLogger(__name__).warning(
+                        "Unsupported model type '%s' provided to AnalystTrainingPipelineConfig; ignoring.",
+                        model_type,
+                    )
+            else:
+                logging.getLogger(__name__).warning(
+                    "Invalid model type %s provided to AnalystTrainingPipelineConfig; ignoring.",
+                    model_type,
+                )
+
+        if not normalized_types:
+            logging.getLogger(__name__).warning(
+                "No valid base model types provided; defaulting to supported Analyst model types."
+            )
+            self.base_model_types = supported_types
+        else:
+            self.base_model_types = list(dict.fromkeys(normalized_types))
 
 
 @dataclass

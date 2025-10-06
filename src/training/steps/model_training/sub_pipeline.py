@@ -17,17 +17,39 @@ TACTICIAN PIPELINE (5m timeframe - WHEN we trade):
 Each model type (short/long) is trained separately.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass, field
 from pathlib import Path
+import json
 import pickle
 import pandas as pd
 import numpy as np
 
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error, tprint_warning
+from src.utils.tprint import (
+    tprint,
+    tprint_info,
+    tprint_success,
+    tprint_error,
+    tprint_warning,
+)
+
+try:
+    from src.utils.common_operations import (
+        ensure_directory,
+        safe_read_parquet,
+        safe_to_parquet,
+        safe_json_dump,
+    )
+    COMMON_IO_AVAILABLE = True
+except ImportError:
+    COMMON_IO_AVAILABLE = False
+    ensure_directory = None
+    safe_read_parquet = None
+    safe_to_parquet = None
+    safe_json_dump = None
 
 # Import orchestration and training steps
 try:
@@ -49,6 +71,16 @@ except ImportError as e:
     ANALYST_TRAINING_AVAILABLE = False
 
 try:
+    from .analyst_ensemble_training import (
+        AnalystEnsembleTrainingStep,
+        AnalystEnsembleTrainingConfig,
+    )
+    ANALYST_ENSEMBLE_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Warning: analyst_ensemble_training not available: {e}")
+    ANALYST_ENSEMBLE_AVAILABLE = False
+
+try:
     from .tactician_pre_ml_orchestration import (
         TacticianPreMLOrchestrator, TacticianPreMLConfig, TacticianPreMLResult
     )
@@ -65,6 +97,16 @@ try:
 except ImportError as e:
     print(f"⚠️ Warning: tactician_training_pipeline not available: {e}")
     TACTICIAN_TRAINING_AVAILABLE = False
+
+try:
+    from .tactician_ensemble_training import (
+        TacticianEnsembleTrainingStep,
+        TacticianEnsembleTrainingConfig,
+    )
+    TACTICIAN_ENSEMBLE_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Warning: tactician_ensemble_training not available: {e}")
+    TACTICIAN_ENSEMBLE_AVAILABLE = False
 
 logger = system_logger.getChild('ModelTrainingSubPipeline')
 
@@ -154,19 +196,39 @@ class ModelTrainingSubPipeline:
             self.analyst_pre_ml = None
             
         if ANALYST_TRAINING_AVAILABLE:
-            self.analyst_training = AnalystTrainingPipeline()
+            analyst_training_config = AnalystTrainingPipelineConfig(
+                train_ensemble_models=False
+            )
+            self.analyst_training = AnalystTrainingPipeline(analyst_training_config)
         else:
             self.analyst_training = None
-            
+
+        if ANALYST_ENSEMBLE_AVAILABLE:
+            self.analyst_ensemble_trainer = AnalystEnsembleTrainingStep(
+                AnalystEnsembleTrainingConfig()
+            )
+        else:
+            self.analyst_ensemble_trainer = None
+
         if TACTICIAN_PRE_ML_AVAILABLE:
             self.tactician_pre_ml = TacticianPreMLOrchestrator()
         else:
             self.tactician_pre_ml = None
-            
+
         if TACTICIAN_TRAINING_AVAILABLE:
-            self.tactician_training = TacticianTrainingPipeline()
+            tactician_training_config = TacticianTrainingPipelineConfig(
+                train_ensemble_models=False
+            )
+            self.tactician_training = TacticianTrainingPipeline(tactician_training_config)
         else:
             self.tactician_training = None
+
+        if TACTICIAN_ENSEMBLE_AVAILABLE:
+            self.tactician_ensemble_trainer = TacticianEnsembleTrainingStep(
+                TacticianEnsembleTrainingConfig()
+            )
+        else:
+            self.tactician_ensemble_trainer = None
 
     # ------------------------------------------------------------------
     # Persistence helpers
@@ -194,6 +256,15 @@ class ModelTrainingSubPipeline:
         try:
             step_dir = self._get_step_directory(config, step_name, create=True)
 
+            if COMMON_IO_AVAILABLE and isinstance(artifacts, dict):
+                # Persist any dataframes explicitly referenced by path keys
+                for key, value in list(artifacts.items()):
+                    if isinstance(value, pd.DataFrame):
+                        dataframe_path = step_dir / f"{key}.parquet"
+                        safe_to_parquet(value, dataframe_path)
+                        artifacts[key + '_path'] = str(dataframe_path)
+                        artifacts.pop(key)
+
             artifact_path = step_dir / "artifacts.pkl"
             with artifact_path.open('wb') as artifact_file:
                 pickle.dump(artifacts, artifact_file)
@@ -209,6 +280,221 @@ class ModelTrainingSubPipeline:
             self.logger.warning(f"⚠️ Failed to persist artifacts for {step_name}: {exc}")
 
         return saved_paths
+
+    # ------------------------------------------------------------------
+    # Data loading helpers
+    # ------------------------------------------------------------------
+    def _ensure_directory(self, directory: Path) -> None:
+        """Ensure a directory exists on disk."""
+        if COMMON_IO_AVAILABLE:
+            ensure_directory(directory)
+        else:
+            directory.mkdir(parents=True, exist_ok=True)
+
+    def _load_dataframe(self, path: Path) -> pd.DataFrame:
+        """Load a DataFrame from parquet with graceful fallback."""
+        if COMMON_IO_AVAILABLE and path.exists():
+            df = safe_read_parquet(path)
+            if df is not None:
+                return df
+        if not path.exists():
+            raise FileNotFoundError(f"Dataframe file not found: {path}")
+        return pd.read_parquet(path)
+
+    def _serialize_dataframe(
+        self,
+        df: pd.DataFrame,
+        directory: Path,
+        filename: str
+    ) -> Path:
+        """Serialize a DataFrame to parquet and return the path."""
+        self._ensure_directory(directory)
+        file_path = directory / filename
+        if COMMON_IO_AVAILABLE:
+            safe_to_parquet(df, file_path)
+        else:
+            df.to_parquet(file_path)
+        return file_path
+
+    def _persist_metadata(self, metadata: Dict[str, Any], directory: Path, filename: str) -> Path:
+        """Persist metadata dictionary to JSON."""
+        self._ensure_directory(directory)
+        file_path = directory / filename
+        if COMMON_IO_AVAILABLE:
+            safe_json_dump(metadata, file_path)
+        else:
+            with file_path.open('w', encoding='utf-8') as fh:
+                json.dump(metadata, fh, indent=2, default=str)
+        return file_path
+
+    def _candidate_paths(self, directory: Path, patterns: Sequence[str]) -> List[Path]:
+        """Return candidate files matching the given patterns ordered by recency."""
+        candidates: List[Tuple[float, Path]] = []
+        for pattern in patterns:
+            for path in directory.glob(pattern):
+                try:
+                    candidates.append((path.stat().st_mtime, path))
+                except FileNotFoundError:
+                    continue
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        return [path for _, path in candidates]
+
+    def _load_market_data(
+        self,
+        config: SubPipelineConfig,
+        timeframe: str
+    ) -> pd.DataFrame:
+        """Load market data for the requested timeframe."""
+        base_dir = Path(config.data_dir)
+        exchange_dir = base_dir / config.exchange.lower()
+        symbol_dir = exchange_dir / config.symbol.lower()
+
+        candidate_dirs = [symbol_dir / 'training', symbol_dir]
+        patterns = [
+            f"*{config.exchange.upper()}*{config.symbol.upper()}*{timeframe}*features*.parquet",
+            f"*{config.symbol.upper()}*{timeframe}*features*.parquet",
+            f"*{timeframe}*unified_regime_data.parquet",
+        ]
+
+        for directory in candidate_dirs:
+            if not directory.exists():
+                continue
+            for candidate in self._candidate_paths(directory, patterns):
+                try:
+                    df = self._load_dataframe(candidate)
+                    if 'timestamp' not in df.columns and df.index.name in ('timestamp', 'datetime'):
+                        df = df.reset_index()
+                    return df
+                except Exception as exc:
+                    self.logger.debug(f"⚠️ Failed to load market data from {candidate}: {exc}")
+
+        raise FileNotFoundError(
+            f"Market data for timeframe {timeframe} not found in {candidate_dirs}."
+        )
+
+    def _load_regime_assignments(
+        self,
+        config: SubPipelineConfig,
+        timeframe: str
+    ) -> Optional[pd.DataFrame]:
+        """Load NAS/TAS regime assignments generated by market analysis."""
+        search_directories = [
+            Path('generated/market_analysis'),
+            Path(config.data_dir) / config.exchange.lower() / config.symbol.lower(),
+        ]
+        patterns = [
+            f"**/*{timeframe}*regime_assignments*.parquet",
+            "**/nas_tas_regime_assignments_*.parquet",
+        ]
+
+        for base_dir in search_directories:
+            if not base_dir.exists():
+                continue
+            for pattern in patterns:
+                for candidate in sorted(base_dir.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True):
+                    try:
+                        regime_df = self._load_dataframe(candidate)
+                        if 'timestamp' not in regime_df.columns:
+                            if 'datetime' in regime_df.columns:
+                                regime_df['timestamp'] = pd.to_datetime(regime_df['datetime'])
+                            elif regime_df.index.name in ('timestamp', 'datetime'):
+                                regime_df = regime_df.reset_index()
+                        if 'timestamp' not in regime_df.columns:
+                            # Ensure timestamp column exists for merging
+                            regime_df['timestamp'] = regime_df.index
+                        regime_df['timestamp'] = pd.to_datetime(regime_df['timestamp'])
+                        return regime_df
+                    except Exception as exc:
+                        self.logger.debug(f"⚠️ Failed to load regime assignments from {candidate}: {exc}")
+                        continue
+
+        self.logger.warning(
+            f"⚠️ Regime assignments not found for timeframe {timeframe}."
+        )
+        return None
+
+    def _extract_regime_feature_columns(self, regime_df: Optional[pd.DataFrame]) -> List[str]:
+        """Extract columns that should be treated as regime features."""
+        if regime_df is None:
+            return []
+
+        ignore_columns = {'timestamp', 'datetime', 'regime_id', 'cluster_id', 'composite_cluster_id'}
+        return [
+            column for column in regime_df.columns
+            if column not in ignore_columns and np.issubdtype(regime_df[column].dtype, np.number)
+        ]
+
+    def _merge_features_with_regime(
+        self,
+        features_df: pd.DataFrame,
+        regime_df: Optional[pd.DataFrame],
+        regime_feature_columns: Sequence[str]
+    ) -> pd.DataFrame:
+        """Merge selected features with regime feature columns on timestamp."""
+        if regime_df is None or not regime_feature_columns:
+            return features_df
+
+        if 'timestamp' not in features_df.columns:
+            if features_df.index.name == 'timestamp':
+                features_df = features_df.reset_index()
+            else:
+                raise ValueError('Features dataframe is missing timestamp column required for regime merge')
+
+        merge_columns = ['timestamp'] + list(regime_feature_columns)
+        available_columns = [col for col in merge_columns if col in regime_df.columns]
+        if len(available_columns) <= 1:
+            return features_df
+
+        merged = features_df.merge(
+            regime_df[available_columns].drop_duplicates(subset=['timestamp']),
+            on='timestamp',
+            how='left'
+        )
+        return merged
+
+    def _filter_analyst_predictions(
+        self,
+        predictions: Optional[Any],
+        threshold: float
+    ) -> Optional[pd.DataFrame]:
+        """Filter analyst predictions using the configured confidence threshold."""
+        if predictions is None:
+            return None
+
+        if isinstance(predictions, pd.DataFrame):
+            predictions_df = predictions.copy()
+        elif isinstance(predictions, dict):
+            predictions_df = pd.DataFrame(predictions)
+        else:
+            predictions_df = pd.DataFrame(predictions)
+
+        if predictions_df.empty:
+            return predictions_df
+
+        if 'timestamp' not in predictions_df.columns:
+            predictions_df['timestamp'] = predictions_df.index
+
+        signal_columns = [
+            column for column in predictions_df.columns
+            if any(keyword in column.lower() for keyword in ['signal', 'score', 'prob', 'prediction'])
+            and column != 'timestamp'
+        ]
+
+        if not signal_columns:
+            return predictions_df
+
+        mask = np.zeros(len(predictions_df), dtype=bool)
+        for column in signal_columns:
+            try:
+                values = pd.to_numeric(predictions_df[column], errors='coerce')
+                mask |= values.abs() >= threshold
+            except Exception as exc:
+                self.logger.debug(f"⚠️ Failed to evaluate prediction column {column}: {exc}")
+
+        if not mask.any():
+            return predictions_df
+
+        return predictions_df.loc[mask].copy()
 
     def _load_step_artifacts(
         self,
@@ -410,27 +696,64 @@ class ModelTrainingSubPipeline:
             status=SubPipelineStatus.RUNNING,
             start_time=datetime.now()
         )
-        
+
         try:
             if not self.analyst_pre_ml:
                 raise RuntimeError("Analyst pre-ML orchestrator not available")
-            
+
             self.logger.info('🔧 Executing Analyst Pre-ML Orchestration (15m)...')
-            
+
+            training_data = self._load_market_data(config, config.analyst_timeframe)
+            regime_assignments = self._load_regime_assignments(config, config.analyst_timeframe)
+
+            regime_feature_columns = self._extract_regime_feature_columns(regime_assignments)
+
             # Execute orchestration
             orchestration_result = await self.analyst_pre_ml.orchestrate(
-                training_data=None,  # TODO: Load from artifacts
-                regime_assignments=None,  # TODO: Load from market_analysis
+                training_data=training_data,
+                regime_assignments=regime_assignments,
             )
 
             result.success = orchestration_result.success
             result.status = SubPipelineStatus.COMPLETED if orchestration_result.success else SubPipelineStatus.FAILED
             result.error_message = orchestration_result.error_message
-            result.artifacts = {
-                'final_features': orchestration_result.final_features,
-                'selected_features': orchestration_result.selected_feature_names,
-                'feature_count': orchestration_result.final_feature_count
+            artifacts: Dict[str, Any] = {
+                'selected_features': orchestration_result.selected_feature_names or [],
+                'feature_count': orchestration_result.final_feature_count,
+                'regime_feature_columns': regime_feature_columns,
             }
+
+            step_dir = self._get_step_directory(config, 'analyst_pre_ml_orchestration', create=True)
+
+            if orchestration_result.final_features is not None:
+                feature_path = self._serialize_dataframe(
+                    orchestration_result.final_features,
+                    step_dir,
+                    'final_features.parquet'
+                )
+                artifacts['final_features_path'] = str(feature_path)
+
+            if regime_assignments is not None:
+                regime_path = self._serialize_dataframe(
+                    regime_assignments,
+                    step_dir,
+                    'regime_assignments.parquet'
+                )
+                artifacts['regime_assignments_path'] = str(regime_path)
+
+            metadata_payload = {
+                'selected_feature_count': len(orchestration_result.selected_feature_names or []),
+                'regime_feature_columns': regime_feature_columns,
+                'total_samples': getattr(orchestration_result, 'total_samples', len(training_data)),
+                'final_feature_count': getattr(orchestration_result, 'final_feature_count', None),
+            }
+            metadata_path = self._persist_metadata(
+                metadata_payload,
+                step_dir,
+                'metadata.json'
+            )
+            artifacts['metadata_path'] = str(metadata_path)
+            result.artifacts = artifacts
             result.metadata = {
                 'total_samples': getattr(orchestration_result, 'total_samples', None),
                 'final_feature_count': getattr(orchestration_result, 'final_feature_count', None),
@@ -441,9 +764,12 @@ class ModelTrainingSubPipeline:
                 result.output_files = self._save_step_artifacts(
                     config,
                     'analyst_pre_ml_orchestration',
-                    result.artifacts,
+                    artifacts,
                     result.metadata
                 )
+
+                self._current_pipeline_state['analyst_regime_assignments'] = regime_assignments
+                self._current_pipeline_state['analyst_feature_frame_path'] = artifacts.get('final_features_path')
 
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
@@ -467,25 +793,66 @@ class ModelTrainingSubPipeline:
         try:
             if not self.analyst_training:
                 raise RuntimeError("Analyst training pipeline not available")
-            
+
             self.logger.info('📈 Executing Analyst Models Training...')
-            
+
+            artifacts = pre_ml_result.artifacts
+            feature_path = artifacts.get('final_features_path')
+            if feature_path:
+                features_df = self._load_dataframe(Path(feature_path))
+            else:
+                features_df = artifacts.get('final_features')
+                if isinstance(features_df, pd.DataFrame):
+                    features_df = features_df.copy()
+                else:
+                    raise ValueError('Final features not available for analyst training')
+
+            regime_assignments_path = artifacts.get('regime_assignments_path')
+            regime_assignments = None
+            if regime_assignments_path:
+                try:
+                    regime_assignments = self._load_dataframe(Path(regime_assignments_path))
+                except FileNotFoundError:
+                    regime_assignments = self._current_pipeline_state.get('analyst_regime_assignments')
+            else:
+                regime_assignments = self._current_pipeline_state.get('analyst_regime_assignments')
+
+            regime_feature_columns = artifacts.get('regime_feature_columns', [])
+            if regime_feature_columns:
+                features_df = self._merge_features_with_regime(
+                    features_df,
+                    regime_assignments,
+                    regime_feature_columns
+                )
+
+            selected_features = artifacts.get('selected_features', [])
+            feature_columns = list(dict.fromkeys(selected_features + regime_feature_columns))
+
+            if not feature_columns:
+                raise ValueError('No feature columns available for analyst training')
+
             # Execute training
             training_result = await self.analyst_training.train_analyst_models(
-                training_data=pre_ml_result.artifacts.get('final_features'),
-                feature_columns=pre_ml_result.artifacts.get('selected_features', []),
-                target_columns=['target_long', 'target_short'],  # TODO: Get from config
+                training_data=features_df,
+                feature_columns=feature_columns,
+                target_columns=['target_long', 'target_short'],
+                regime_assignments=regime_assignments,
             )
 
             result.success = training_result.base_training_completed
             result.status = SubPipelineStatus.COMPLETED if result.success else SubPipelineStatus.FAILED
             result.artifacts = {
                 'base_models': training_result.base_models,
-                'metrics': training_result.base_training_metrics
+                'metrics': training_result.base_training_metrics,
+                'feature_columns': feature_columns,
+                'training_data_path': feature_path,
+                'regime_feature_columns': regime_feature_columns,
+                'regime_assignments_path': regime_assignments_path,
             }
             result.metadata = {
                 'training_summary': getattr(training_result, 'training_summary', None),
-                'metrics': training_result.base_training_metrics
+                'metrics': training_result.base_training_metrics,
+                'ensemble_available': getattr(training_result, 'ensemble_models', None) is not None,
             }
 
             if result.success:
@@ -495,6 +862,10 @@ class ModelTrainingSubPipeline:
                     result.artifacts,
                     result.metadata
                 )
+
+                self._current_pipeline_state['analyst_base_models'] = training_result.base_models
+                self._current_pipeline_state['analyst_feature_columns'] = feature_columns
+                self._current_pipeline_state['analyst_training_frame'] = feature_path
 
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
@@ -516,29 +887,91 @@ class ModelTrainingSubPipeline:
         )
         
         try:
-            if not self.analyst_training:
-                raise RuntimeError("Analyst training pipeline not available")
-            
+            if not self.analyst_ensemble_trainer:
+                raise RuntimeError("Analyst ensemble training step not available")
+
             self.logger.info('🔄 Executing Analyst Ensemble Training...')
-            
-            # Ensemble training is handled within the analyst_training pipeline
-            # The result is already available from the models training step
-            result.success = True
-            result.status = SubPipelineStatus.COMPLETED
-            result.artifacts = {
-                'ensemble_models': models_result.artifacts.get('base_models'),  # Placeholder
-                'predictions': None  # TODO: Generate predictions
+
+            base_models = models_result.artifacts.get('base_models')
+            feature_columns = models_result.artifacts.get('feature_columns', [])
+            feature_path = models_result.artifacts.get('training_data_path')
+
+            if not base_models:
+                raise ValueError('Analyst base models missing for ensemble training')
+            if not feature_columns:
+                raise ValueError('Feature columns missing for analyst ensemble training')
+
+            if feature_path:
+                training_data = self._load_dataframe(Path(feature_path))
+            else:
+                training_data = self._current_pipeline_state.get('analyst_features')
+                if isinstance(training_data, dict):
+                    training_data = training_data.get('final_features')
+            if training_data is None:
+                raise ValueError('Training data not available for analyst ensemble training')
+
+            if 'timestamp' not in training_data.columns and training_data.index.name == 'timestamp':
+                training_data = training_data.reset_index()
+
+            ensemble_result = await self.analyst_ensemble_trainer.train_analyst_ensemble(
+                training_data=training_data,
+                base_models=base_models,
+                feature_columns=feature_columns,
+                target_columns=['target_long', 'target_short'],
+            )
+
+            ensemble_models = ensemble_result.get('models', {})
+            predictions_df = None
+            if ensemble_models:
+                feature_frame = training_data[feature_columns].copy()
+                timestamps = training_data['timestamp'] if 'timestamp' in training_data.columns else pd.RangeIndex(len(feature_frame))
+                predictions_data: Dict[str, Any] = {'timestamp': timestamps}
+                for name, model in ensemble_models.items():
+                    try:
+                        model_obj = model.get('model') if isinstance(model, dict) else model
+                        if hasattr(model_obj, 'predict'):
+                            preds = model_obj.predict(feature_frame)
+                            predictions_data[f'{name}_prediction'] = preds
+                    except Exception as pred_exc:
+                        self.logger.warning(f"⚠️ Failed to generate predictions for {name}: {pred_exc}")
+                if len(predictions_data) > 1:
+                    predictions_df = pd.DataFrame(predictions_data)
+
+            step_dir = self._get_step_directory(config, 'analyst_ensemble_training', create=True)
+            artifacts: Dict[str, Any] = {
+                'ensemble_models': ensemble_models,
+                'metrics': ensemble_result.get('metrics', {}),
             }
+
+            if predictions_df is not None:
+                predictions_path = self._serialize_dataframe(
+                    predictions_df,
+                    step_dir,
+                    'ensemble_predictions.parquet'
+                )
+                artifacts['predictions_path'] = str(predictions_path)
+                artifacts['predictions'] = predictions_df
+            else:
+                artifacts['predictions'] = None
+
+            result.success = bool(ensemble_models)
+            result.status = SubPipelineStatus.COMPLETED if result.success else SubPipelineStatus.FAILED
+            result.artifacts = artifacts
             result.metadata = {
-                'source_models_available': bool(models_result.artifacts.get('base_models'))
+                'samples_used': ensemble_result.get('samples_used'),
+                'feature_integration_complete': ensemble_result.get('feature_integration_complete', False),
             }
 
             result.output_files = self._save_step_artifacts(
                 config,
                 'analyst_ensemble_training',
-                result.artifacts,
+                artifacts,
                 result.metadata
             )
+
+            if predictions_df is not None:
+                self._current_pipeline_state['analyst_ensemble_predictions'] = predictions_df
+            self._current_pipeline_state['analyst_ensemble_models'] = ensemble_models
 
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
@@ -562,25 +995,62 @@ class ModelTrainingSubPipeline:
         try:
             if not self.tactician_pre_ml:
                 raise RuntimeError("Tactician pre-ML orchestrator not available")
-            
+
             self.logger.info('🔧 Executing Tactician Pre-ML Orchestration (5m, filtered)...')
-            
+
+            training_data = self._load_market_data(config, config.tactician_timeframe)
+            regime_assignments = self._load_regime_assignments(config, config.tactician_timeframe)
+            regime_feature_columns = self._extract_regime_feature_columns(regime_assignments)
+
+            filtered_predictions = self._filter_analyst_predictions(
+                analyst_predictions,
+                config.analyst_confidence_threshold
+            )
+
             # Execute orchestration with Analyst filtering
             orchestration_result = await self.tactician_pre_ml.orchestrate(
-                training_data=None,  # TODO: Load from artifacts
-                analyst_predictions=analyst_predictions,
-                regime_assignments=None,  # TODO: Load from market_analysis
+                training_data=training_data,
+                analyst_predictions=filtered_predictions,
+                regime_assignments=regime_assignments,
             )
-            
+
             result.success = orchestration_result.success
             result.status = SubPipelineStatus.COMPLETED if orchestration_result.success else SubPipelineStatus.FAILED
             result.error_message = orchestration_result.error_message
-            result.artifacts = {
-                'final_features': orchestration_result.final_features,
-                'selected_features': orchestration_result.selected_feature_names,
+            artifacts: Dict[str, Any] = {
+                'selected_features': orchestration_result.selected_feature_names or [],
                 'feature_count': orchestration_result.final_feature_count,
-                'filter_ratio': orchestration_result.filter_ratio
+                'filter_ratio': orchestration_result.filter_ratio,
+                'regime_feature_columns': regime_feature_columns,
             }
+
+            step_dir = self._get_step_directory(config, 'tactician_pre_ml_orchestration', create=True)
+
+            if orchestration_result.final_features is not None:
+                feature_path = self._serialize_dataframe(
+                    orchestration_result.final_features,
+                    step_dir,
+                    'final_features.parquet'
+                )
+                artifacts['final_features_path'] = str(feature_path)
+
+            if regime_assignments is not None:
+                regime_path = self._serialize_dataframe(
+                    regime_assignments,
+                    step_dir,
+                    'regime_assignments.parquet'
+                )
+                artifacts['regime_assignments_path'] = str(regime_path)
+
+            if filtered_predictions is not None:
+                predictions_path = self._serialize_dataframe(
+                    filtered_predictions,
+                    step_dir,
+                    'analyst_predictions.parquet'
+                )
+                artifacts['analyst_predictions_path'] = str(predictions_path)
+
+            result.artifacts = artifacts
             result.metadata = {
                 'total_samples': getattr(orchestration_result, 'total_samples', None),
                 'filter_ratio': getattr(orchestration_result, 'filter_ratio', None)
@@ -590,9 +1060,13 @@ class ModelTrainingSubPipeline:
                 result.output_files = self._save_step_artifacts(
                     config,
                     'tactician_pre_ml_orchestration',
-                    result.artifacts,
+                    artifacts,
                     result.metadata
                 )
+
+                self._current_pipeline_state['tactician_regime_assignments'] = regime_assignments
+                self._current_pipeline_state['tactician_filtered_predictions_path'] = artifacts.get('analyst_predictions_path')
+                self._current_pipeline_state['tactician_feature_frame_path'] = artifacts.get('final_features_path')
 
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
@@ -616,21 +1090,94 @@ class ModelTrainingSubPipeline:
         try:
             if not self.tactician_training:
                 raise RuntimeError("Tactician training pipeline not available")
-            
+
             self.logger.info('📈 Executing Tactician Models Training...')
-            
+
+            artifacts = pre_ml_result.artifacts
+            feature_path = artifacts.get('final_features_path')
+            if feature_path:
+                features_df = self._load_dataframe(Path(feature_path))
+            else:
+                features_df = artifacts.get('final_features')
+                if isinstance(features_df, pd.DataFrame):
+                    features_df = features_df.copy()
+                else:
+                    raise ValueError('Final tactician features not available')
+
+            regime_assignments_path = artifacts.get('regime_assignments_path')
+            regime_assignments = None
+            if regime_assignments_path:
+                try:
+                    regime_assignments = self._load_dataframe(Path(regime_assignments_path))
+                except FileNotFoundError:
+                    regime_assignments = self._current_pipeline_state.get('tactician_regime_assignments')
+            else:
+                regime_assignments = self._current_pipeline_state.get('tactician_regime_assignments')
+
+            regime_feature_columns = artifacts.get('regime_feature_columns', [])
+            if regime_feature_columns:
+                features_df = self._merge_features_with_regime(
+                    features_df,
+                    regime_assignments,
+                    regime_feature_columns
+                )
+
+            analyst_predictions_df = None
+            predictions_path = artifacts.get('analyst_predictions_path')
+            if analyst_predictions is not None:
+                analyst_predictions_df = self._filter_analyst_predictions(
+                    analyst_predictions,
+                    config.analyst_confidence_threshold
+                )
+            elif predictions_path:
+                analyst_predictions_df = self._load_dataframe(Path(predictions_path))
+            elif self._current_pipeline_state.get('analyst_ensemble_predictions') is not None:
+                analyst_predictions_df = self._filter_analyst_predictions(
+                    self._current_pipeline_state.get('analyst_ensemble_predictions'),
+                    config.analyst_confidence_threshold
+                )
+
+            analyst_feature_columns: List[str] = []
+            if analyst_predictions_df is not None and not analyst_predictions_df.empty:
+                if 'timestamp' not in analyst_predictions_df.columns:
+                    analyst_predictions_df['timestamp'] = analyst_predictions_df.index
+                value_columns = [
+                    column for column in analyst_predictions_df.columns
+                    if column != 'timestamp'
+                ]
+                analyst_feature_columns = value_columns
+                features_df = features_df.merge(
+                    analyst_predictions_df[['timestamp'] + value_columns],
+                    on='timestamp',
+                    how='left'
+                )
+
+            feature_columns = list(dict.fromkeys(
+                artifacts.get('selected_features', []) + regime_feature_columns + analyst_feature_columns
+            ))
+
+            if not feature_columns:
+                raise ValueError('No features available for tactician training')
+
             # Execute training
             training_result = await self.tactician_training.train_tactician_models(
-                training_data=pre_ml_result.artifacts.get('final_features'),
-                feature_columns=pre_ml_result.artifacts.get('selected_features', []),
-                target_columns=['target_long', 'target_short'],  # TODO: Get from config
+                training_data=features_df,
+                feature_columns=feature_columns,
+                target_columns=['target_long', 'target_short'],
+                regime_assignments=regime_assignments,
             )
 
             result.success = training_result.base_training_completed
             result.status = SubPipelineStatus.COMPLETED if result.success else SubPipelineStatus.FAILED
             result.artifacts = {
                 'base_models': training_result.base_models,
-                'metrics': training_result.base_training_metrics
+                'metrics': training_result.base_training_metrics,
+                'feature_columns': feature_columns,
+                'training_data_path': feature_path,
+                'regime_feature_columns': regime_feature_columns,
+                'analyst_feature_columns': analyst_feature_columns,
+                'regime_assignments_path': regime_assignments_path,
+                'analyst_predictions_path': predictions_path,
             }
             result.metadata = {
                 'training_summary': getattr(training_result, 'training_summary', None),
@@ -644,6 +1191,10 @@ class ModelTrainingSubPipeline:
                     result.artifacts,
                     result.metadata
                 )
+
+                self._current_pipeline_state['tactician_base_models'] = training_result.base_models
+                self._current_pipeline_state['tactician_feature_columns'] = feature_columns
+                self._current_pipeline_state['tactician_training_frame'] = feature_path
 
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
@@ -665,29 +1216,112 @@ class ModelTrainingSubPipeline:
         )
         
         try:
-            if not self.tactician_training:
-                raise RuntimeError("Tactician training pipeline not available")
-            
+            if not self.tactician_ensemble_trainer:
+                raise RuntimeError("Tactician ensemble training step not available")
+
             self.logger.info('🔄 Executing Tactician Ensemble Training...')
-            
-            # Ensemble training is handled within the tactician_training pipeline
-            # The result is already available from the models training step
-            result.success = True
-            result.status = SubPipelineStatus.COMPLETED
-            result.artifacts = {
-                'ensemble_models': models_result.artifacts.get('base_models'),  # Placeholder
-                'predictions': None  # TODO: Generate predictions
+
+            base_models = models_result.artifacts.get('base_models')
+            feature_columns = models_result.artifacts.get('feature_columns', [])
+            feature_path = models_result.artifacts.get('training_data_path')
+
+            if not base_models:
+                raise ValueError('Tactician base models missing for ensemble training')
+            if not feature_columns:
+                raise ValueError('Tactician feature columns missing for ensemble training')
+
+            if feature_path:
+                training_data = self._load_dataframe(Path(feature_path))
+            else:
+                training_data = self._current_pipeline_state.get('tactician_features')
+                if isinstance(training_data, dict):
+                    training_data = training_data.get('final_features')
+            if training_data is None:
+                raise ValueError('Training data not available for tactician ensemble training')
+
+            if 'timestamp' not in training_data.columns and training_data.index.name == 'timestamp':
+                training_data = training_data.reset_index()
+
+            training_frame = training_data.copy()
+            base_prediction_columns: List[str] = []
+            for regime_key, model_mapping in (base_models or {}).items():
+                if not isinstance(model_mapping, dict):
+                    continue
+                for model_name, model_container in model_mapping.items():
+                    try:
+                        model_obj = model_container.get('model') if isinstance(model_container, dict) else model_container
+                        if not hasattr(model_obj, 'predict'):
+                            continue
+                        preds = model_obj.predict(training_frame[feature_columns])
+                        prediction_column = f"{model_name}_regime_{regime_key}_prediction"
+                        training_frame[prediction_column] = preds
+                        base_prediction_columns.append(prediction_column)
+                    except Exception as prediction_exc:
+                        self.logger.debug(f"⚠️ Failed to compute predictions for {model_name} ({regime_key}): {prediction_exc}")
+
+            augmented_feature_columns = list(dict.fromkeys(feature_columns + base_prediction_columns))
+
+            ensemble_result = await self.tactician_ensemble_trainer.train_tactician_ensemble(
+                training_data=training_frame,
+                base_models=base_models,
+                feature_columns=augmented_feature_columns,
+                target_columns=['target_long', 'target_short'],
+            )
+
+            ensemble_models = ensemble_result.get('models', {})
+            predictions_df = None
+            if ensemble_models:
+                feature_subset = training_frame[augmented_feature_columns]
+                timestamps = training_frame['timestamp'] if 'timestamp' in training_frame.columns else pd.RangeIndex(len(feature_subset))
+                predictions_data: Dict[str, Any] = {'timestamp': timestamps}
+                for name, model in ensemble_models.items():
+                    try:
+                        model_obj = model.get('model') if isinstance(model, dict) else model
+                        if hasattr(model_obj, 'predict'):
+                            preds = model_obj.predict(feature_subset)
+                            predictions_data[f'{name}_prediction'] = preds
+                    except Exception as pred_exc:
+                        self.logger.warning(f"⚠️ Failed to generate tactician ensemble predictions for {name}: {pred_exc}")
+                if len(predictions_data) > 1:
+                    predictions_df = pd.DataFrame(predictions_data)
+
+            step_dir = self._get_step_directory(config, 'tactician_ensemble_training', create=True)
+            artifacts: Dict[str, Any] = {
+                'ensemble_models': ensemble_models,
+                'metrics': ensemble_result.get('metrics', {}),
+                'feature_columns': augmented_feature_columns,
+                'base_prediction_columns': base_prediction_columns,
             }
+
+            if predictions_df is not None:
+                predictions_path = self._serialize_dataframe(
+                    predictions_df,
+                    step_dir,
+                    'ensemble_predictions.parquet'
+                )
+                artifacts['predictions_path'] = str(predictions_path)
+                artifacts['predictions'] = predictions_df
+            else:
+                artifacts['predictions'] = None
+
+            result.success = bool(ensemble_models)
+            result.status = SubPipelineStatus.COMPLETED if result.success else SubPipelineStatus.FAILED
+            result.artifacts = artifacts
             result.metadata = {
-                'source_models_available': bool(models_result.artifacts.get('base_models'))
+                'samples_used': ensemble_result.get('samples_used'),
+                'feature_integration_complete': ensemble_result.get('feature_integration_complete', False),
             }
 
             result.output_files = self._save_step_artifacts(
                 config,
                 'tactician_ensemble_training',
-                result.artifacts,
+                artifacts,
                 result.metadata
             )
+
+            if predictions_df is not None:
+                self._current_pipeline_state['tactician_ensemble_predictions'] = predictions_df
+            self._current_pipeline_state['tactician_ensemble_models'] = ensemble_models
 
         except Exception as e:
             result.status = SubPipelineStatus.FAILED

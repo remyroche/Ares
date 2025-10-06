@@ -19,6 +19,8 @@ from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.metrics import mean_squared_error, accuracy_score
 import joblib
+from functools import lru_cache
+import hashlib
 
 # Try to import SHAP, fallback if not available
 try:
@@ -251,7 +253,7 @@ class FeatureSelectionResult:
     stability_scores: Dict[str, float] = field(default_factory=dict)
 
 class MultiStageFeatureSelector:
-    """Multi-stage feature selection using RandomForest and SHAP."""
+    """Multi-stage feature selection using RandomForest and SHAP with vectorization and caching."""
 
     def __init__(self, config: Optional[FeatureSelectionConfig] = None, execution_mode_config: Optional[Dict[str, Any]] = None):
         self.config = config or FeatureSelectionConfig()
@@ -296,16 +298,27 @@ class MultiStageFeatureSelector:
             self.long_results = FeatureSelectionResult()
             self.short_results = FeatureSelectionResult()
 
-        self.logger.info("🚀 MultiStageFeatureSelector initialized")
-        self.logger.info(f"🎯 Model Type: {self.config.model_type}")
-        self.logger.info(f"📊 Feature Range: {self.config.min_features}-{self.config.max_features} (target: {self.config.target_features})")
-        self.logger.info(f"🎯 Direction Mode: {self.config.direction_mode}")
-        self.logger.info(f"🎯 Separate Features: {self.config.separate_directional_features}")
-        self.logger.info(f"⚡ Early Termination: {self.config.enable_early_termination}")
-        self.logger.info(f"⚡ LightGBM: {LIGHTGBM_AVAILABLE}")
-        self.logger.info(f"⚡ RFE: {self.config.enable_rfe}")
-        self.logger.info(f"⚡ Mutual Information: {self.config.enable_mutual_information}")
-        self.logger.info(f"⚡ Chunked Processing: {self.config.enable_chunked_processing}")
+        # Initialize caching system for vectorized operations
+        self._cache = {}
+        self._cache_hits = 0
+        self._cache_misses = 0
+
+        # Initialize vectorized computation arrays
+        self._vectorized_arrays = {}
+        self._computation_cache = {}
+
+        tprint("🚀 MultiStageFeatureSelector initialized with vectorization and caching")
+        tprint(f"🎯 Model Type: {self.config.model_type}")
+        tprint(f"📊 Feature Range: {self.config.min_features}-{self.config.max_features} (target: {self.config.target_features})")
+        tprint(f"🎯 Direction Mode: {self.config.direction_mode}")
+        tprint(f"🎯 Separate Features: {self.config.separate_directional_features}")
+        tprint(f"⚡ Early Termination: {self.config.enable_early_termination}")
+        tprint(f"⚡ LightGBM: {LIGHTGBM_AVAILABLE}")
+        tprint(f"⚡ RFE: {self.config.enable_rfe}")
+        tprint(f"⚡ Mutual Information: {self.config.enable_mutual_information}")
+        tprint(f"⚡ Chunked Processing: {self.config.enable_chunked_processing}")
+        tprint(f"⚡ Vectorization: Enabled")
+        tprint(f"⚡ Caching: Enabled")
 
     def _set_model_specific_parameters(self):
         """Set model-specific feature selection parameters."""
@@ -344,16 +357,231 @@ class MultiStageFeatureSelector:
             params = model_specific_params[self.config.model_type]
             for param, value in params.items():
                 setattr(self.config, param, value)
-            self.logger.info(f"✅ Applied {self.config.model_type} specific parameters")
+            tprint(f"✅ Applied {self.config.model_type} specific parameters")
+
+    def _get_cache_key(self, operation: str, data_hash: str, params: Dict[str, Any] = None) -> str:
+        """Generate a cache key for an operation."""
+        params_str = str(sorted(params.items())) if params else ""
+        return f"{operation}_{data_hash}_{params_str}"
+
+    def _get_data_hash(self, X: pd.DataFrame, y: pd.Series = None) -> str:
+        """Generate a hash for the input data."""
+        data_str = f"{X.shape}_{X.columns.tolist()}"
+        if y is not None:
+            data_str += f"_{y.shape}_{y.dtype}"
+        return hashlib.md5(data_str.encode()).hexdigest()[:16]
+
+    def _vectorized_correlation_analysis(self, X: pd.DataFrame) -> np.ndarray:
+        """Vectorized correlation analysis using numpy operations."""
+        cache_key = self._get_cache_key("correlation", self._get_data_hash(X))
+        
+        if cache_key in self._cache:
+            self._cache_hits += 1
+            tprint(f"📊 Cache hit for correlation analysis (hit rate: {self._cache_hits/(self._cache_hits+self._cache_misses):.2%})")
+            return self._cache[cache_key]
+        
+        self._cache_misses += 1
+        tprint("🔄 Computing vectorized correlation matrix...")
+        
+        # Use numpy for vectorized correlation computation
+        X_numeric = X.select_dtypes(include=[np.number])
+        corr_matrix = np.corrcoef(X_numeric.T)
+        
+        # Cache the result
+        self._cache[cache_key] = corr_matrix
+        tprint(f"✅ Vectorized correlation computed: {corr_matrix.shape}")
+        
+        return corr_matrix
+
+    def _vectorized_variance_analysis(self, X: pd.DataFrame) -> np.ndarray:
+        """Vectorized variance analysis using numpy operations."""
+        cache_key = self._get_cache_key("variance", self._get_data_hash(X))
+        
+        if cache_key in self._cache:
+            self._cache_hits += 1
+            return self._cache[cache_key]
+        
+        self._cache_misses += 1
+        tprint("🔄 Computing vectorized variance analysis...")
+        
+        # Use numpy for vectorized variance computation
+        X_numeric = X.select_dtypes(include=[np.number])
+        variances = np.var(X_numeric.values, axis=0, ddof=1)
+        
+        # Cache the result
+        self._cache[cache_key] = variances
+        tprint(f"✅ Vectorized variance computed: {len(variances)} features")
+        
+        return variances
+
+    def _vectorized_feature_importance(self, X: pd.DataFrame, y: pd.Series, model_type: str = 'rf') -> np.ndarray:
+        """Vectorized feature importance computation."""
+        cache_key = self._get_cache_key("importance", self._get_data_hash(X, y), {"model_type": model_type})
+        
+        if cache_key in self._cache:
+            self._cache_hits += 1
+            return self._cache[cache_key]
+        
+        self._cache_misses += 1
+        tprint(f"🔄 Computing vectorized feature importance using {model_type}...")
+        
+        # Train model and get importance
+        if model_type == 'rf':
+            model = self._train_random_forest(X, y)
+        elif model_type == 'lightgbm' and LIGHTGBM_AVAILABLE:
+            model = self._train_lightgbm_model(X, y)
+        else:
+            model = self._train_random_forest(X, y)
+        
+        if hasattr(model, 'feature_importances_'):
+            importance = model.feature_importances_
+        else:
+            # Fallback to variance-based importance
+            importance = np.var(X.values, axis=0)
+        
+        # Cache the result
+        self._cache[cache_key] = importance
+        tprint(f"✅ Vectorized importance computed: {len(importance)} features")
+        
+        return importance
+
+    def _vectorized_mutual_information(self, X: pd.DataFrame, y: pd.Series) -> np.ndarray:
+        """Vectorized mutual information computation."""
+        if not self.config.enable_mutual_information:
+            return np.zeros(len(X.columns))
+        
+        cache_key = self._get_cache_key("mutual_info", self._get_data_hash(X, y))
+        
+        if cache_key in self._cache:
+            self._cache_hits += 1
+            return self._cache[cache_key]
+        
+        self._cache_misses += 1
+        tprint("🔄 Computing vectorized mutual information...")
+        
+        try:
+            from sklearn.feature_selection import mutual_info_regression, mutual_info_classif
+            
+            if self._is_classification(y):
+                mi_scores = mutual_info_classif(X, y, random_state=42)
+            else:
+                mi_scores = mutual_info_regression(X, y, random_state=42)
+            
+            # Normalize scores
+            max_mi = np.max(mi_scores) if len(mi_scores) > 0 else 1.0
+            normalized_scores = mi_scores / max_mi if max_mi > 0 else mi_scores
+            
+            # Cache the result
+            self._cache[cache_key] = normalized_scores
+            tprint(f"✅ Vectorized mutual information computed: {len(normalized_scores)} features")
+            
+            return normalized_scores
+            
+        except ImportError:
+            tprint("⚠️ sklearn not available for mutual information calculation")
+            return np.zeros(len(X.columns))
+        except Exception as e:
+            tprint(f"⚠️ Mutual information calculation failed: {e}")
+            return np.zeros(len(X.columns))
+
+    def _vectorized_stability_analysis(self, X: pd.DataFrame, y: pd.Series) -> np.ndarray:
+        """Vectorized stability analysis across time periods."""
+        if len(X) < 100:
+            return np.ones(len(X.columns))  # Default stability for small datasets
+        
+        cache_key = self._get_cache_key("stability", self._get_data_hash(X, y))
+        
+        if cache_key in self._cache:
+            self._cache_hits += 1
+            return self._cache[cache_key]
+        
+        self._cache_misses += 1
+        tprint("🔄 Computing vectorized stability analysis...")
+        
+        try:
+            # Split data into chunks for stability analysis
+            chunk_size = min(500, len(X) // 3)
+            if chunk_size < 50:
+                return np.ones(len(X.columns))
+            
+            # Create overlapping chunks
+            chunk_indices = []
+            for i in range(0, len(X) - chunk_size + 1, chunk_size // 2):
+                chunk_indices.append((i, i + chunk_size))
+            
+            if len(chunk_indices) < 2:
+                return np.ones(len(X.columns))
+            
+            # Calculate importance for each chunk using vectorized operations
+            chunk_importances = []
+            for start_idx, end_idx in chunk_indices:
+                try:
+                    X_chunk = X.iloc[start_idx:end_idx]
+                    y_chunk = y.iloc[start_idx:end_idx]
+                    
+                    # Use vectorized importance calculation
+                    importance = self._vectorized_feature_importance(X_chunk, y_chunk)
+                    chunk_importances.append(importance)
+                except Exception:
+                    continue
+            
+            if len(chunk_importances) < 2:
+                return np.ones(len(X.columns))
+            
+            # Calculate stability as consistency across chunks
+            chunk_importances = np.array(chunk_importances)
+            
+            # Normalize each chunk's importance
+            normalized_chunks = chunk_importances / (np.max(chunk_importances, axis=1, keepdims=True) + 1e-8)
+            
+            # Calculate stability as 1 - coefficient of variation
+            mean_importance = np.mean(normalized_chunks, axis=0)
+            std_importance = np.std(normalized_chunks, axis=0)
+            stability_scores = 1.0 / (1.0 + std_importance / (mean_importance + 1e-8))
+            
+            # Cache the result
+            self._cache[cache_key] = stability_scores
+            tprint(f"✅ Vectorized stability analysis computed: {len(stability_scores)} features")
+            
+            return stability_scores
+            
+        except Exception as e:
+            tprint(f"⚠️ Stability analysis failed: {e}")
+            return np.ones(len(X.columns))
+
+    def _clear_cache(self):
+        """Clear the computation cache."""
+        cache_size = len(self._cache)
+        self._cache.clear()
+        self._computation_cache.clear()
+        tprint(f"🧹 Cache cleared: {cache_size} entries removed")
+
+    def _get_cache_stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        total_requests = self._cache_hits + self._cache_misses
+        hit_rate = self._cache_hits / total_requests if total_requests > 0 else 0.0
+        
+        return {
+            'cache_size': len(self._cache),
+            'cache_hits': self._cache_hits,
+            'cache_misses': self._cache_misses,
+            'hit_rate': hit_rate,
+            'computation_cache_size': len(self._computation_cache)
+        }
     
     def select_features(self,
                        X: pd.DataFrame,
                        y: pd.Series,
                        feature_names: Optional[List[str]] = None) -> FeatureSelectionResult:
-        """Perform multi-stage feature selection with directional support."""
+        """Perform multi-stage feature selection with directional support and vectorization."""
 
         start_time = time.time()
-        self.logger.info("🔍 Starting multi-stage feature selection")
+        tprint("🔍 Starting multi-stage feature selection with vectorization and caching")
+        tprint(f"📊 Input data: {X.shape[0]} samples, {X.shape[1]} features")
+        tprint(f"🎯 Target variable: {y.shape[0]} samples, type: {'classification' if self._is_classification(y) else 'regression'}")
+
+        # Clear cache at start of new selection
+        self._clear_cache()
 
         # Apply execution mode data windowing if configured
         X_processed = X.copy()
@@ -361,7 +589,7 @@ class MultiStageFeatureSelector:
             window_days = self.execution_mode_config.get('window_days', 1460)
             if len(X_processed) > window_days:
                 X_processed = X_processed.tail(window_days).copy()
-                self.logger.info(f"📊 Applied execution mode window: using last {window_days} samples for feature selection")
+                tprint(f"📊 Applied execution mode window: using last {window_days} samples for feature selection")
 
         # Apply execution mode stage targets if configured
         default_stage_targets = (
@@ -390,17 +618,41 @@ class MultiStageFeatureSelector:
             else:
                 stage_targets = default_stage_targets
 
-            self.logger.info(f"📊 Using execution mode stage targets: {stage_targets}")
+            tprint(f"📊 Using execution mode stage targets: {stage_targets}")
+
+        # Log the feature reduction pipeline
+        tprint("🎯 FEATURE REDUCTION PIPELINE:")
+        tprint(f"   📊 Initial Features: {stage_targets[0]}")
+        tprint(f"   📊 Stage 1 Target: {stage_targets[1]} features")
+        tprint(f"   📊 Stage 2 Target: {stage_targets[2]} features")
+        tprint(f"   📊 Stage 3 Target: {stage_targets[3]} features")
+        tprint(f"   📊 Final Target: {stage_targets[3]} features")
 
         # Determine which directions to process based on mode
         directions_to_process = self._get_directions_to_process()
 
         # Handle separate directional feature selection
         if self.config.separate_directional_features and self.config.direction_mode in ['both', 'long_only', 'short_only']:
-            return self._select_directional_features(X_processed, y, feature_names, directions_to_process, stage_targets)
+            tprint(f"🎯 Processing directional features: {directions_to_process}")
+            result = self._select_directional_features(X_processed, y, feature_names, directions_to_process, stage_targets)
+        else:
+            tprint("🎯 Processing unified feature selection")
+            result = self._select_unified_features(X_processed, y, feature_names, stage_targets)
 
-        # Original unified feature selection (for backward compatibility)
-        return self._select_unified_features(X_processed, y, feature_names, stage_targets)
+        # Log final cache statistics
+        cache_stats = self._get_cache_stats()
+        tprint("📊 CACHE STATISTICS:")
+        tprint(f"   💾 Cache size: {cache_stats['cache_size']} entries")
+        tprint(f"   ✅ Cache hits: {cache_stats['cache_hits']}")
+        tprint(f"   ❌ Cache misses: {cache_stats['cache_misses']}")
+        tprint(f"   📈 Hit rate: {cache_stats['hit_rate']:.2%}")
+
+        # Log execution time
+        execution_time = time.time() - start_time
+        result.selection_time = execution_time
+        tprint(f"⏱️ Total execution time: {execution_time:.3f} seconds")
+
+        return result
 
     def _get_directions_to_process(self) -> List[str]:
         """Determine which directions to process based on configuration."""
@@ -538,39 +790,74 @@ class MultiStageFeatureSelector:
         return self.results
     
     def _prepare_initial_features(self, X: pd.DataFrame, y: pd.Series, feature_names: Optional[List[str]] = None) -> pd.DataFrame:
-        """Prepare initial features for selection."""
+        """Prepare initial features for selection using vectorized operations."""
+        
+        tprint("🔄 Preparing initial features with vectorized operations...")
+        tprint(f"📊 Input: {X.shape[0]} samples, {X.shape[1]} features")
         
         # Handle feature names
         if feature_names is not None:
             X = X[feature_names] if len(feature_names) <= len(X.columns) else X
+            tprint(f"📊 After feature name filtering: {X.shape[1]} features")
         
-        # Remove low variance features
+        # Remove low variance features using vectorized operations
+        tprint("🔄 Computing vectorized variance analysis...")
+        variance_array = self._vectorized_variance_analysis(X)
         variance_threshold = self.config.min_variance_threshold
-        low_variance_mask = X.var() < variance_threshold
+        
+        low_variance_mask = variance_array < variance_threshold
         low_variance_features = X.columns[low_variance_mask].tolist()
         
-        if low_variance_features:
-            self.logger.info(f"🗑️ Removing {len(low_variance_features)} low variance features")
+        if len(low_variance_features) > 0:
+            tprint(f"🗑️ Removing {len(low_variance_features)} low variance features (threshold: {variance_threshold})")
             X = X.drop(columns=low_variance_features)
+            tprint(f"📊 After variance filtering: {X.shape[1]} features")
+        else:
+            tprint("✅ No low variance features to remove")
         
-        # Remove highly correlated features using optimized correlation computation
+        # Remove highly correlated features using vectorized correlation computation
+        tprint("🔄 Computing vectorized correlation analysis...")
         correlation_threshold = self.config.min_correlation_threshold
-        high_corr_features = self._find_highly_correlated_features(X, correlation_threshold)
+        high_corr_features = self._find_highly_correlated_features_vectorized(X, correlation_threshold)
 
-        if high_corr_features:
-            self.logger.info(f"🗑️ Removing {len(high_corr_features)} highly correlated features")
+        if len(high_corr_features) > 0:
+            tprint(f"🗑️ Removing {len(high_corr_features)} highly correlated features (threshold: {correlation_threshold})")
             X = X.drop(columns=high_corr_features)
+            tprint(f"📊 After correlation filtering: {X.shape[1]} features")
+        else:
+            tprint("✅ No highly correlated features to remove")
         
-        # Select top features if we have too many
+        # Select top features if we have too many using vectorized operations
         if len(X.columns) > self.config.initial_features:
-            self.logger.info(f"📊 Selecting top {self.config.initial_features} features initially")
-            # Use simple variance-based selection for initial filtering
-            feature_variance = X.var().sort_values(ascending=False)
-            top_features = feature_variance.head(self.config.initial_features).index.tolist()
+            tprint(f"📊 Selecting top {self.config.initial_features} features initially")
+            # Use vectorized variance-based selection for initial filtering
+            remaining_variance = self._vectorized_variance_analysis(X)
+            sorted_indices = np.argsort(remaining_variance)[::-1]
+            top_indices = sorted_indices[:self.config.initial_features]
+            top_features = X.columns[top_indices].tolist()
             X = X[top_features]
+            tprint(f"📊 After top feature selection: {X.shape[1]} features")
         
-        self.logger.info(f"✅ Prepared {len(X.columns)} features for selection")
+        tprint(f"✅ Prepared {len(X.columns)} features for selection")
         return X
+
+    def _find_highly_correlated_features_vectorized(self, X: pd.DataFrame, threshold: float) -> List[str]:
+        """Find and remove highly correlated features using vectorized correlation computation."""
+        tprint(f"🔄 Computing vectorized correlation matrix for {len(X.columns)} features...")
+        
+        # Use vectorized correlation computation
+        corr_matrix = self._vectorized_correlation_analysis(X)
+        
+        # Find features to drop using vectorized operations
+        corr_matrix_abs = np.abs(corr_matrix)
+        upper_triangle = np.triu(corr_matrix_abs, k=1)
+        
+        # Find features to drop
+        to_drop_mask = np.any(upper_triangle > threshold, axis=0)
+        to_drop = X.columns[to_drop_mask].tolist()
+        
+        tprint(f"📊 Correlation analysis: {len(to_drop)} features above threshold {threshold}")
+        return to_drop
     
     def _find_highly_correlated_features(self, X: pd.DataFrame, threshold: float) -> List[str]:
         """Find and remove highly correlated features using optimized correlation computation."""
@@ -978,9 +1265,9 @@ class MultiStageFeatureSelector:
             return variances.head(target_count).index.tolist()
     
     def _stage_1_selection(self, X: pd.DataFrame, y: pd.Series, target_count: Optional[int] = None) -> Tuple[List[str], Dict[str, float]]:
-        """Stage 1: Initial → target features using optimized model selection."""
+        """Stage 1: Initial → target features using vectorized operations and optimized model selection."""
 
-        tprint("🚀 Starting Stage 1 Feature Selection")
+        tprint("🚀 Starting Stage 1 Feature Selection (Vectorized)")
         tprint(f"📊 Input: {len(X)} samples, {len(X.columns)} features")
 
         if self._is_classification(y):
@@ -997,20 +1284,14 @@ class MultiStageFeatureSelector:
             tprint(f"📦 Applying chunked processing for {len(X.columns)} features")
             X = self._process_features_in_chunks(X, y)
 
-        # Train optimized model (LightGBM or RandomForest)
-        tprint("🤖 Training optimized model...")
-        model = self._train_optimized_model(X, y)
-        model_type = type(model).__name__
-        tprint(f"✅ Model trained: {model_type}")
-
-        # Get feature importance
-        if hasattr(model, 'feature_importances_'):
-            feature_importance = dict(zip(X.columns, model.feature_importances_))
-            tprint(f"📈 Feature importance range: [{min(feature_importance.values()):.6f}, {max(feature_importance.values()):.6f}]")
-        else:
-            # Fallback to simple variance-based importance
-            feature_importance = dict(zip(X.columns, X.var().values))
-            tprint("📊 Using variance-based importance (fallback)")
+        # Use vectorized feature importance computation
+        tprint("🔄 Computing vectorized feature importance...")
+        feature_importance_array = self._vectorized_feature_importance(X, y, 'rf')
+        feature_importance = dict(zip(X.columns, feature_importance_array))
+        
+        tprint(f"📈 Feature importance range: [{np.min(feature_importance_array):.6f}, {np.max(feature_importance_array):.6f}]")
+        tprint(f"📊 Feature importance mean: {np.mean(feature_importance_array):.6f}")
+        tprint(f"📊 Feature importance std: {np.std(feature_importance_array):.6f}")
 
         # Apply early termination if enabled
         if self.config.enable_early_termination:
@@ -1024,57 +1305,58 @@ class MultiStageFeatureSelector:
             X = X[rfe_features]
             tprint(f"✅ RFE completed: {len(X.columns)} features remaining")
 
-        # Select top features
-        sorted_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
-        selected_features = [f[0] for f in sorted_features[:actual_target]]
+        # Select top features using vectorized operations
+        tprint("🏆 Selecting top features using vectorized operations...")
+        sorted_indices = np.argsort(feature_importance_array)[::-1]
+        selected_indices = sorted_indices[:actual_target]
+        selected_features = [X.columns[i] for i in selected_indices]
 
         tprint(f"🏆 Final selection: {len(selected_features)} features")
-        tprint(f"📈 Top feature importance: {sorted_features[0][1]:.6f}" if sorted_features else "N/A")
+        tprint(f"📈 Top feature importance: {feature_importance_array[sorted_indices[0]]:.6f}" if len(sorted_indices) > 0 else "N/A")
 
-        # Calculate enhanced scores including mutual information
+        # Calculate enhanced scores using vectorized operations
+        tprint("📊 Computing enhanced scores...")
+        selected_importance = feature_importance_array[selected_indices]
+        
         scores = {
-            'model_importance_score': np.mean(list(feature_importance.values())),
-            'feature_variance': X[selected_features].var().mean(),
+            'model_importance_score': np.mean(selected_importance),
+            'feature_variance': np.mean(X[selected_features].var().values),
             'selection_quality': len(selected_features) / len(X.columns),
-            'model_type': model_type
+            'model_type': 'vectorized_rf',
+            'importance_std': np.std(selected_importance),
+            'importance_range': np.max(selected_importance) - np.min(selected_importance)
         }
 
         # Add mutual information scores if enabled
         if self.config.enable_mutual_information:
-            tprint("🔗 Calculating mutual information...")
-            mi_scores = self._calculate_mutual_information_correlation(X[selected_features], y)
-            scores['mutual_information'] = np.mean(list(mi_scores.values())) if mi_scores else 0.0
+            tprint("🔗 Calculating vectorized mutual information...")
+            mi_scores_array = self._vectorized_mutual_information(X[selected_features], y)
+            scores['mutual_information'] = np.mean(mi_scores_array)
+            scores['mutual_information_std'] = np.std(mi_scores_array)
             tprint(f"📊 Mutual information average: {scores['mutual_information']:.4f}")
 
         tprint(f"✅ Stage 1 completed: {len(selected_features)}/{len(X.columns)} features selected")
+        tprint(f"📊 Selection quality: {scores['selection_quality']:.2%}")
         return selected_features, scores
     
     def _stage_2_selection(self, X: pd.DataFrame, y: pd.Series, target_count: Optional[int] = None) -> Tuple[List[str], Dict[str, float]]:
-        """Stage 2: Previous → target features using enhanced selection methods."""
+        """Stage 2: Previous → target features using vectorized enhanced selection methods."""
 
         # Use provided target count or fall back to config
         actual_target = target_count or self.config.stage_2_target
 
-        tprint("🚀 Starting Stage 2 Feature Selection")
+        tprint("🚀 Starting Stage 2 Feature Selection (Vectorized Enhanced)")
         tprint(f"📊 Input: {len(X)} samples, {len(X.columns)} features")
-
-        # Use provided target count or fall back to config
-        actual_target = target_count or self.config.stage_2_target
         tprint(f"🎯 Target features: {actual_target}")
 
-        # Train optimized model for this stage
-        tprint("🤖 Training optimized model for Stage 2...")
-        model = self._train_optimized_model(X, y)
-        model_type = type(model).__name__
-        tprint(f"✅ Model trained: {model_type}")
-
-        # Get feature importance
-        if hasattr(model, 'feature_importances_'):
-            feature_importance = dict(zip(X.columns, model.feature_importances_))
-            tprint(f"📈 Feature importance range: [{min(feature_importance.values()):.6f}, {max(feature_importance.values()):.6f}]")
-        else:
-            feature_importance = dict(zip(X.columns, X.var().values))
-            tprint("📊 Using variance-based importance (fallback)")
+        # Use vectorized feature importance computation with LightGBM if available
+        model_type = 'lightgbm' if LIGHTGBM_AVAILABLE else 'rf'
+        tprint(f"🔄 Computing vectorized feature importance using {model_type}...")
+        feature_importance_array = self._vectorized_feature_importance(X, y, model_type)
+        feature_importance = dict(zip(X.columns, feature_importance_array))
+        
+        tprint(f"📈 Feature importance range: [{np.min(feature_importance_array):.6f}, {np.max(feature_importance_array):.6f}]")
+        tprint(f"📊 Feature importance mean: {np.mean(feature_importance_array):.6f}")
 
         # Apply early termination if enabled
         if self.config.enable_early_termination:
@@ -1088,25 +1370,33 @@ class MultiStageFeatureSelector:
             X = X[rfe_features]
             tprint(f"✅ RFE completed: {len(X.columns)} features remaining")
 
-        # Select top features
-        sorted_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
-        selected_features = [f[0] for f in sorted_features[:actual_target]]
+        # Select top features using vectorized operations
+        tprint("🏆 Selecting top features using vectorized operations...")
+        sorted_indices = np.argsort(feature_importance_array)[::-1]
+        selected_indices = sorted_indices[:actual_target]
+        selected_features = [X.columns[i] for i in selected_indices]
 
         tprint(f"🏆 Stage 2 selection: {len(selected_features)} features")
 
-        # Calculate enhanced scores
+        # Calculate enhanced scores using vectorized operations
+        tprint("📊 Computing enhanced scores...")
+        selected_importance = feature_importance_array[selected_indices]
+        
         scores = {
-            'model_importance_score': np.mean(list(feature_importance.values())),
-            'feature_variance': X[selected_features].var().mean(),
+            'model_importance_score': np.mean(selected_importance),
+            'feature_variance': np.mean(X[selected_features].var().values),
             'selection_quality': len(selected_features) / len(X.columns),
-            'model_type': model_type
+            'model_type': f'vectorized_{model_type}',
+            'importance_std': np.std(selected_importance),
+            'importance_range': np.max(selected_importance) - np.min(selected_importance)
         }
 
         # Add mutual information scores if enabled
         if self.config.enable_mutual_information:
-            tprint("🔗 Calculating mutual information...")
-            mi_scores = self._calculate_mutual_information_correlation(X[selected_features], y)
-            scores['mutual_information'] = np.mean(list(mi_scores.values())) if mi_scores else 0.0
+            tprint("🔗 Calculating vectorized mutual information...")
+            mi_scores_array = self._vectorized_mutual_information(X[selected_features], y)
+            scores['mutual_information'] = np.mean(mi_scores_array)
+            scores['mutual_information_std'] = np.std(mi_scores_array)
             tprint(f"📊 Mutual information average: {scores['mutual_information']:.4f}")
 
         # Use SHAP if available for final refinement
@@ -1124,110 +1414,108 @@ class MultiStageFeatureSelector:
                 tprint(f"⚠️ SHAP refinement failed: {e}")
 
         tprint(f"✅ Stage 2 completed: {len(selected_features)} features selected")
+        tprint(f"📊 Selection quality: {scores['selection_quality']:.2%}")
         return selected_features, scores
 
     def _stage_3_selection(self, X: pd.DataFrame, y: pd.Series, target_count: Optional[int] = None) -> Tuple[List[str], Dict[str, float]]:
-        """Stage 3: Previous → target features using combined importance and cross-validation with optimizations."""
+        """Stage 3: Previous → target features using vectorized combined importance and cross-validation."""
 
         # Use provided target count or fall back to config
         actual_target = target_count or self.config.stage_3_target
 
-        tprint("🚀 Starting Stage 3 Feature Selection")
+        tprint("🚀 Starting Stage 3 Feature Selection (Vectorized Combined)")
         tprint(f"📊 Input: {len(X)} samples, {len(X.columns)} features")
-
-
-        # Use provided target count or fall back to config
-        actual_target = target_count or self.config.stage_3_target
         tprint(f"🎯 Target features: {actual_target}")
 
-        # Train optimized model for this stage
-        tprint("🤖 Training optimized model for Stage 3...")
-        model = self._train_optimized_model(X, y)
-        model_type = type(model).__name__
-        tprint(f"✅ Model trained: {model_type}")
+        # Use vectorized feature importance computation
+        tprint("🔄 Computing vectorized model importance...")
+        model_importance_array = self._vectorized_feature_importance(X, y, 'rf')
+        model_importance = dict(zip(X.columns, model_importance_array))
 
-        model_importance = dict(zip(X.columns, model.feature_importances_))
-
-        # Cross-validation based selection using optimized model
-        tprint("🔄 Performing cross-validation feature importance...")
+        # Cross-validation based selection using vectorized operations
+        tprint("🔄 Performing vectorized cross-validation feature importance...")
         cv_scores = self._cross_validate_feature_importance_optimized(X, y)
+        cv_scores_array = np.array([cv_scores.get(f, 0) for f in X.columns])
         tprint(f"✅ CV completed for {len(cv_scores)} features")
 
-        # Calculate non-linear quality metrics
-        mi_scores: Dict[str, float] = {}
-        if self.config.enable_mutual_information:
-            tprint("🔗 Calculating mutual information...")
-            mi_scores = self._calculate_mutual_information_correlation(X, y)
-            tprint(f"✅ MI calculated for {len(mi_scores)} features")
+        # Calculate non-linear quality metrics using vectorized operations
+        tprint("🔗 Calculating vectorized mutual information...")
+        mi_scores_array = self._vectorized_mutual_information(X, y)
+        tprint(f"✅ MI calculated for {len(mi_scores_array)} features")
 
-        # Calculate feature stability across time periods
-        tprint("🛡️ Analyzing feature stability...")
-        stability_scores = self._calculate_feature_stability_score(X, y)
-        tprint(f"✅ Stability analyzed for {len(stability_scores)} features")
+        # Calculate feature stability across time periods using vectorized operations
+        tprint("🛡️ Analyzing vectorized feature stability...")
+        stability_scores_array = self._vectorized_stability_analysis(X, y)
+        tprint(f"✅ Stability analyzed for {len(stability_scores_array)} features")
 
-        # Combine importance scores with non-linear awareness (model + CV + MI + stability)
-        tprint("⚖️ Combining importance scores with non-linear awareness...")
-        combined_scores: Dict[str, float] = {}
-        for feature in X.columns:
-            model_score = model_importance.get(feature, 0)
-            cv_score = cv_scores.get(feature, 0)
-            mi_score = mi_scores.get(feature, 0)
-            stability_score = stability_scores.get(feature, 0.5)  # Default stability if not calculated
+        # Combine importance scores with non-linear awareness using vectorized operations
+        tprint("⚖️ Combining importance scores with vectorized non-linear awareness...")
+        
+        # Vectorized combination: model + CV + MI + stability
+        base_scores = (model_importance_array * 0.3 + cv_scores_array * 0.3 + mi_scores_array * 0.2)
+        stability_multipliers = 0.5 + (stability_scores_array * 0.5)  # Range: 0.5-1.0
+        combined_scores_array = base_scores * stability_multipliers
+        
+        combined_scores = dict(zip(X.columns, combined_scores_array))
 
-            base_score = (model_score * 0.3 + cv_score * 0.3 + mi_score * 0.2)
-            stability_multiplier = 0.5 + (stability_score * 0.5)  # Range: 0.5-1.0
-            combined_scores[feature] = base_score * stability_multiplier
+        tprint(f"📊 Non-linear combined scores range: [{np.min(combined_scores_array):.6f}, {np.max(combined_scores_array):.6f}]")
+        tprint(f"📊 Combined scores mean: {np.mean(combined_scores_array):.6f}")
 
-        if combined_scores:
-            tprint(
-                f"📊 Non-linear combined scores range: "
-                f"[{min(combined_scores.values()):.6f}, {max(combined_scores.values()):.6f}]"
-            )
-        else:
-            tprint("⚠️ No combined scores calculated")
+        # Analyze stability features
+        high_stability_mask = stability_scores_array > 0.8
+        low_stability_mask = stability_scores_array < 0.3
+        high_stability_features = X.columns[high_stability_mask].tolist()
+        low_stability_features = X.columns[low_stability_mask].tolist()
 
-        high_stability_features = [f for f, score in stability_scores.items() if score > 0.8]
-        if high_stability_features:
+        if len(high_stability_features) > 0:
             tprint(f"🎯 High stability features: {len(high_stability_features)} (consistently valuable)")
 
-        low_stability_features = [f for f, score in stability_scores.items() if score < 0.3]
-        if low_stability_features:
+        if len(low_stability_features) > 0:
             tprint(f"⚠️ Low stability features: {len(low_stability_features)} (context-dependent)")
 
         # Apply early termination if enabled and we have many features
         if self.config.enable_early_termination and len(X.columns) > actual_target * 2:
             tprint("🗑️ Applying early termination...")
             X = self._apply_early_termination(X, combined_scores)
-            combined_scores = {f: combined_scores.get(f, 0) for f in X.columns}
+            # Update arrays to match remaining features
+            remaining_indices = [X.columns.get_loc(f) for f in X.columns if f in combined_scores]
+            combined_scores_array = combined_scores_array[remaining_indices]
 
         # Apply final RFE if enabled
         if self.config.enable_rfe and len(X.columns) > actual_target:
             tprint(f"🔄 Applying final RFE to reduce from {len(X.columns)} to {actual_target} features")
             rfe_features = self._recursive_feature_elimination(X, y)
             X = X[rfe_features]
-            combined_scores = {f: combined_scores.get(f, 0) for f in X.columns}
             tprint(f"✅ Final RFE completed: {len(X.columns)} features remaining")
 
-        # Select top features
-        sorted_features = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
-        selected_features = [f[0] for f in sorted_features[:actual_target]]
+        # Select top features using vectorized operations
+        tprint("🏆 Selecting final features using vectorized operations...")
+        sorted_indices = np.argsort(combined_scores_array)[::-1]
+        selected_indices = sorted_indices[:actual_target]
+        selected_features = [X.columns[i] for i in selected_indices]
 
         tprint(f"🏆 Final Stage 3 selection: {len(selected_features)} features")
-        tprint(f"📈 Top combined score: {sorted_features[0][1]:.6f}" if sorted_features else "N/A")
+        tprint(f"📈 Top combined score: {combined_scores_array[sorted_indices[0]]:.6f}" if len(sorted_indices) > 0 else "N/A")
 
-        # Calculate comprehensive scores with non-linear awareness
+        # Calculate comprehensive scores with vectorized operations
+        selected_combined_scores = combined_scores_array[selected_indices]
+        selected_stability = stability_scores_array[selected_indices]
+        
         scores = {
-            'combined_importance_score': np.mean(list(combined_scores.values())) if combined_scores else 0.0,
+            'combined_importance_score': np.mean(selected_combined_scores),
             'model_cv_agreement': self._calculate_agreement(model_importance, cv_scores),
-            'final_stability': np.std(list(combined_scores.values())) if combined_scores else 0.0,
-            'model_type': model_type,
-            'mutual_information_avg': np.mean(list(mi_scores.values())) if mi_scores else 0.0,
-            'stability_avg': np.mean(list(stability_scores.values())) if stability_scores else 0.0,
+            'final_stability': np.std(selected_combined_scores),
+            'model_type': 'vectorized_combined',
+            'mutual_information_avg': np.mean(mi_scores_array),
+            'stability_avg': np.mean(selected_stability),
             'high_stability_features': len(high_stability_features),
-            'low_stability_features': len(low_stability_features)
+            'low_stability_features': len(low_stability_features),
+            'combined_std': np.std(selected_combined_scores),
+            'combined_range': np.max(selected_combined_scores) - np.min(selected_combined_scores)
         }
 
         tprint(f"📊 Final scores - Combined: {scores['combined_importance_score']:.4f}, Stability: {scores['final_stability']:.4f}")
+        tprint(f"📊 Selection quality: {len(selected_features)/len(X.columns):.2%}")
         tprint(f"✅ Stage 3 completed: {len(selected_features)} features selected")
         return selected_features, scores
 

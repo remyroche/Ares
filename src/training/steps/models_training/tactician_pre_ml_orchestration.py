@@ -24,10 +24,10 @@ ML-BASED ENTRY OPTIMIZATION METHODS FOR TACTICIAN:
    - Custom architectures for entry timing prediction
    - Adaptive to different market conditions
 
-3. TEMPORAL ATTENTION SEARCH (TAS):
-   - Attention-based models for temporal pattern recognition
-   - Focus on relevant time periods for entry decisions
-   - Advanced feature extraction from price sequences
+3. TREE ATTENTION SEARCH (TAS):
+   - Tree-based attention mechanism for feature selection
+   - Attention weights applied to tree ensemble predictions
+   - Advanced ensemble learning with attention mechanisms
 
 TACTICIAN (5M) ENTRY OPTIMIZATION:
 - Tactician operates exclusively on 5m timeframe data
@@ -85,7 +85,7 @@ class EntryOptimizationMethod(Enum):
     """Entry optimization methods for Tactician."""
     RANDOM_FOREST_SURVIVAL = "random_forest_survival"  # Random Forest Survival model
     NAS = "nas"                                        # Neural Architecture Search
-    TAS = "tas"                                        # Temporal Attention Search
+    TAS = "tas"                                        # Tree Attention Search
 
 
 @dataclass
@@ -691,12 +691,12 @@ class Tactician5mEntryOptimizer:
             return None
 
     def _load_tas_model(self):
-        """Load TAS (Temporal Attention Search) model."""
+        """Load TAS (Tree Attention Search) model."""
         try:
-            # Import TAS model - this would be a custom temporal attention model
+            # Import TAS model - this would be a custom tree attention model
             # For now, return a placeholder
             tprint_info("✅ TAS model loaded")
-            # In production, this would load a trained temporal attention model
+            # In production, this would load a trained tree attention model
             return None
 
         except Exception as e:

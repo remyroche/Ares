@@ -185,8 +185,8 @@ class MainPipelineConfig:
             'pid_based_feature_generation', 'final_feature_selection'
         ],
         PipelineStage.MODEL_TRAINING: [
-            'analyst_model_training', 'analyst_ensemble_training',
-            'tactician_lookback_optimization', 'tactician_models_training', 'tactician_ensemble_training'
+            'analyst_pre_ml_orchestration', 'analyst_models_training', 'analyst_ensemble_training',
+            'tactician_pre_ml_orchestration', 'tactician_models_training', 'tactician_ensemble_training'
         ],
         PipelineStage.BACKTESTING: [
             'basic_backtesting_pre', 'final_parameters_optimization', 'basic_backtesting_post', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',

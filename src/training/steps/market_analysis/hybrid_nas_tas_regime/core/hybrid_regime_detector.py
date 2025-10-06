@@ -713,21 +713,33 @@ class HybridNASTASRegimeDetector:
                                       labels: np.ndarray) -> np.ndarray:
         """Calculate probability of each data point belonging to each regime."""
         try:
-
+            tprint("📊 Calculating regime probabilities using GMM", color="blue")
+            
             # Use Gaussian Mixture Model to estimate probabilities
             gmm = GaussianMixture(n_components=self.config.n_regimes, random_state=42)
             gmm.fit(features)
 
             probabilities = gmm.predict_proba(features)
-
+            
+            # Ensure probabilities sum to 1 for each sample
+            probabilities = probabilities / np.sum(probabilities, axis=1, keepdims=True)
+            
+            # Add small epsilon to avoid log(0) issues
+            probabilities = np.clip(probabilities, 1e-10, 1.0)
+            
+            tprint(f"✅ Regime probabilities calculated: {probabilities.shape}", color="green")
+            tprint(f"📈 Probability range: [{probabilities.min():.4f}, {probabilities.max():.4f}]", color="cyan")
+            
             return probabilities
 
         except Exception as e:
             self.logger.warning(f"Probability calculation failed: {e}")
+            tprint_warning(f"⚠️ Probability calculation failed: {e}, using fallback")
             # Fallback to uniform probabilities
             n_samples = len(labels)
             uniform_prob = 1.0 / self.config.n_regimes
             probabilities = np.full((n_samples, self.config.n_regimes), uniform_prob)
+            tprint("🔄 Using uniform probability fallback", color="yellow")
             return probabilities
 
     def _calculate_transition_probabilities(self,

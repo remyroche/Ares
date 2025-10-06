@@ -39,39 +39,29 @@ from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error, 
 
 # Import orchestration and training steps
 try:
-    from ..models_training.analyst_pre_ml_orchestration import (
-        AnalystPreMLOrchestrator, AnalystPreMLConfig, AnalystPreMLResult
+    from ..models_training import (
+        AnalystPreMLConfig,
+        AnalystPreMLOrchestrator,
+        AnalystPreMLResult,
+        AnalystTrainingPipeline,
+        AnalystTrainingPipelineConfig,
+        AnalystTrainingPipelineResult,
+        TacticianPreMLConfig,
+        TacticianPreMLOrchestrator,
+        TacticianPreMLResult,
+        TacticianTrainingPipeline,
+        TacticianTrainingPipelineConfig,
+        TacticianTrainingPipelineResult,
     )
     ANALYST_PRE_ML_AVAILABLE = True
-except ImportError as e:
-    print(f"⚠️ Warning: analyst_pre_ml_orchestration not available: {e}")
-    ANALYST_PRE_ML_AVAILABLE = False
-
-try:
-    from ..models_training.analyst_training_pipeline import (
-        AnalystTrainingPipeline, AnalystTrainingPipelineConfig, AnalystTrainingPipelineResult
-    )
     ANALYST_TRAINING_AVAILABLE = True
-except ImportError as e:
-    print(f"⚠️ Warning: analyst_training_pipeline not available: {e}")
-    ANALYST_TRAINING_AVAILABLE = False
-
-try:
-    from ..models_training.tactician_pre_ml_orchestration import (
-        TacticianPreMLOrchestrator, TacticianPreMLConfig, TacticianPreMLResult
-    )
     TACTICIAN_PRE_ML_AVAILABLE = True
-except ImportError as e:
-    print(f"⚠️ Warning: tactician_pre_ml_orchestration not available: {e}")
-    TACTICIAN_PRE_ML_AVAILABLE = False
-
-try:
-    from ..models_training.tactician_training_pipeline import (
-        TacticianTrainingPipeline, TacticianTrainingPipelineConfig, TacticianTrainingPipelineResult
-    )
     TACTICIAN_TRAINING_AVAILABLE = True
 except ImportError as e:
-    print(f"⚠️ Warning: tactician_training_pipeline not available: {e}")
+    print(f"⚠️ Warning: model training orchestrators not available: {e}")
+    ANALYST_PRE_ML_AVAILABLE = False
+    ANALYST_TRAINING_AVAILABLE = False
+    TACTICIAN_PRE_ML_AVAILABLE = False
     TACTICIAN_TRAINING_AVAILABLE = False
 
 logger = system_logger.getChild('ModelTrainingSubPipeline')
@@ -605,6 +595,7 @@ class ModelTrainingSubPipeline:
                 'regime_features': regime_features,
                 'metadata': metadata
             }
+            result.metadata = metadata
             result.output_files = saved_files
 
             self._current_pipeline_state['analyst_training_frame'] = final_features
@@ -705,6 +696,12 @@ class ModelTrainingSubPipeline:
                 'feature_columns': feature_columns,
                 'target_columns': target_columns
             }
+            result.metadata = {
+                'feature_columns': feature_columns,
+                'target_columns': target_columns,
+                'training_frame_rows': len(training_frame),
+                'training_frame_columns': training_frame.shape[1]
+            }
             result.output_files = saved_files
 
             self._current_pipeline_state['analyst_training_frame'] = training_frame
@@ -781,6 +778,12 @@ class ModelTrainingSubPipeline:
                 'ensemble_metrics': ensemble_metrics,
                 'metadata': ensemble_metadata,
                 'predictions': predictions_df
+            }
+            result.metadata = {
+                'feature_columns': feature_columns,
+                'training_frame_rows': len(training_frame),
+                'training_frame_columns': training_frame.shape[1],
+                'ensemble_metrics': ensemble_metrics
             }
             result.output_files = saved_files
 
@@ -890,6 +893,7 @@ class ModelTrainingSubPipeline:
                 'regime_features': regime_features,
                 'metadata': metadata
             }
+            result.metadata = metadata
             result.output_files = saved_files
 
             self._current_pipeline_state['tactician_training_frame'] = final_features
@@ -991,6 +995,12 @@ class ModelTrainingSubPipeline:
                 'feature_columns': feature_columns,
                 'target_columns': target_columns
             }
+            result.metadata = {
+                'feature_columns': feature_columns,
+                'target_columns': target_columns,
+                'training_frame_rows': len(training_frame),
+                'training_frame_columns': training_frame.shape[1]
+            }
             result.output_files = saved_files
 
             self._current_pipeline_state['tactician_training_frame'] = training_frame
@@ -1069,6 +1079,12 @@ class ModelTrainingSubPipeline:
                 'ensemble_metrics': ensemble_metrics,
                 'metadata': ensemble_metadata,
                 'predictions': predictions_df
+            }
+            result.metadata = {
+                'feature_columns': feature_columns,
+                'training_frame_rows': len(training_frame),
+                'training_frame_columns': training_frame.shape[1],
+                'ensemble_metrics': ensemble_metrics
             }
             result.output_files = saved_files
 

@@ -1633,129 +1633,14 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             tprint_warning(f"   → Error identifying best targets: {e}")
             return ["multi_target_primary"]
 
-    def optimize_lookback_periods_unified(self,
-                                        data: pd.DataFrame,
-                                        feature_columns: List[str],
-                                        target_column: str = 'returns',
-                                        optimization_config: Optional[Any] = None,
-                                        enable_directional: bool = True,
-                                        enable_multi_target: bool = True) -> Dict[str, Any]:
-        """
-        Unified lookback optimization method that consolidates MRMR, directional, and multi-target approaches.
-
-        This method eliminates duplicate logic by providing a single entry point that handles:
-        - MRMR-based optimization
-        - Directional differentiation (longs vs shorts)
-        - Multi-target scheme alignment
-
-        Args:
-            data: Input data with features and target
-            feature_columns: List of feature columns to optimize
-            target_column: Name of the target column
-            optimization_config: Optional configuration for optimization
-            enable_directional: Whether to differentiate between longs and shorts
-            enable_multi_target: Whether to use multi-target scheme
-
-        Returns:
-            Dictionary with unified optimization results
-        """
-        tprint("🚀 Starting unified lookback period optimization...")
-        start_time = time.time()
-
-        optimization_results = {}
-
-        try:
-            # Create optimization config if not provided
-            if optimization_config is None:
-                optimization_config = LookbackOptimizationConfig(
-                    n_trials=50,
-                    min_lookback=5,
-                    max_lookback=50,
-                    max_correlation_threshold=0.7,
-                    min_mutual_info_threshold=0.1,
-                    enable_pruning=True,
-                    enable_parallel=True
-                )
-
-            # Unified approach: combine directional and multi-target logic
-            if enable_directional and enable_multi_target:
-                # Get multi-horizon targets (consolidated from duplicate methods)
-                target_info = self._select_multi_horizon_targets(data)
-
-                # Process each direction with multi-target optimization
-                for direction in ['long', 'short']:
-                    tprint(f"🎯 Optimizing for {direction} direction with multi-target scheme")
-
-                    direction_targets = target_info.get(f'{direction}_targets', [])
-                    if not direction_targets:
-                        tprint_warning(f"⚠️ No {direction} targets found, skipping")
-                        continue
-
-                    # Use consolidated multi-target optimization logic
-                    direction_results = self._optimize_direction_multi_target(
-                        data, feature_columns, direction_targets, optimization_config
-                    )
-                    optimization_results[f'{direction}_multi_target'] = direction_results
-
-            elif enable_directional:
-                # Simple directional optimization without multi-target
-                long_data, short_data = self._split_data_by_direction(data, target_column)
-                tprint(f"📊 Split data: {len(long_data)} long samples, {len(short_data)} short samples")
-
-                directions = [('long', long_data), ('short', short_data)]
-
-            elif enable_multi_target:
-                # Multi-target optimization only
-                tprint("🎯 Optimizing with multi-target scheme only")
-                target_info = self._select_multi_horizon_targets(data)
-                all_targets = target_info.get('long_targets', []) + target_info.get('short_targets', [])
-
-                if all_targets:
-                    optimization_results['multi_target'] = self._optimize_multi_target_only(
-                        data, feature_columns, all_targets, optimization_config
-                    )
-                else:
-                    tprint_warning("⚠️ No multi-targets available, falling back to standard optimization")
-
-            # Process all features using the unified approach
-            tprint_info(f"📊 Processing {len(feature_columns)} features with unified optimization")
-
-            for feature_name in feature_columns:
-                try:
-                    # Get the generator for this feature
-                    generator = self.feature_bank.get_generator_by_name(feature_name)
-                    if not generator:
-                        tprint_warning(f"⚠️ No generator found for feature: {feature_name}")
-                        continue
-
-                    # Optimize this feature using the new method that supports pipeline state and confidence scores
-                    result = self._optimize_single_feature(feature_name, generator, data, pipeline_state)
-                    optimization_results[feature_name] = result
-
-                except Exception as e:
-                    tprint_error(f"❌ Failed to optimize feature {feature_name}: {e}")
-                    optimization_results[feature_name] = {
-                        'error': str(e),
-                        'optimal_lookback': self.config.min_lookback,
-                        'success': False
-                    }
-
-        except Exception as e:
-            tprint_error(f"❌ Unified optimization failed: {e}")
-            optimization_results['error'] = str(e)
-
-        optimization_time = time.time() - start_time
-        tprint_success(f"✅ Unified optimization completed in {optimization_time:.2f}s")
-
-        return optimization_results
 
     def optimize_features_with_labels(self, data: pd.DataFrame, feature_columns: List[str],
                                     pipeline_state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Optimize feature lookback periods using actual multi_horizon_profit_labeler labels with full metadata.
 
-        This method is designed to be called after the multi_horizon_profit_labeler has run
-        and provides the actual labels, confidence scores, eligibility masks, and quality scores for optimization.
+        This method REQUIRES pre-computed labels from multi_horizon_profit_labeler.
+        Fast fails if labels are not available - no fallback to on-the-fly generation.
 
         Args:
             data: Market data
@@ -1764,10 +1649,20 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
 
         Returns:
             Dictionary with optimization results for each feature
+
+        Raises:
+            ValueError: If required labeling results are not available
         """
         tprint("🚀 Optimizing features using actual multi_horizon_profit_labeler labels with full metadata")
+
+        # Validate that we have the required labeling results - FAST FAIL if not available
+        if not self._check_for_precomputed_labels(pipeline_state):
+            error_msg = "❌ No pre-computed labels available from multi_horizon_profit_labeler. " \
+                       "This method requires proper labeling results - run multi_horizon_profit_labeler first."
+            tprint_error(error_msg)
+            raise ValueError(error_msg)
+
         tprint_info(f"   → Features to optimize: {len(feature_columns)}")
-        tprint_info(f"   → Labels available: {self._check_for_precomputed_labels(pipeline_state)}")
 
         # Check for additional metadata
         has_confidence = not self._get_precomputed_confidence_scores(pipeline_state).empty
@@ -1777,6 +1672,9 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         tprint_info(f"   → Confidence scores available: {has_confidence}")
         tprint_info(f"   → Eligibility masks available: {has_eligibility}")
         tprint_info(f"   → Quality scores available: {has_quality}")
+
+        if not has_confidence or not has_eligibility:
+            tprint_warning("⚠️ Missing confidence scores or eligibility masks - optimization quality may be reduced")
 
         optimization_results = {}
 
@@ -1800,163 +1698,21 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                     'success': False
                 }
 
+        successful_count = len([r for r in optimization_results.values() if isinstance(r, dict) and r.get('success', False)])
         tprint_success(f"✅ Feature optimization completed using actual labels with full metadata")
-        tprint_info(f"   → Successful optimizations: {len([r for r in optimization_results.values() if isinstance(r, dict) and r.get('success', False)])}")
+        tprint_info(f"   → Successful optimizations: {successful_count}/{len(feature_columns)}")
         tprint_info(f"   → Used confidence weighting: {has_confidence}")
         tprint_info(f"   → Used eligibility filtering: {has_eligibility}")
         tprint_info(f"   → Used quality score prioritization: {has_quality}")
 
         return optimization_results
 
-    def _optimize_direction_multi_target(self, data: pd.DataFrame, feature_columns: List[str],
-                                       targets: List[str], config: Any) -> Dict[str, Any]:
-        """Consolidated directional multi-target optimization logic."""
-        tprint_info(f"   → Optimizing {len(feature_columns)} features against {len(targets)} targets")
 
-        # Implementation would consolidate logic from multiple methods
-        # This removes duplication by having a single implementation
-        results = {}
 
-        for feature in feature_columns:
-            feature_results = {}
-            for target in targets:
-                # Consolidated optimization logic
-                optimal_lookback = self._find_optimal_lookback_for_feature_target(
-                    data, feature, target, config
-                )
-                feature_results[target] = optimal_lookback
 
-            results[feature] = feature_results
 
-        return results
 
-    def _optimize_multi_target_only(self, data: pd.DataFrame, feature_columns: List[str],
-                                  targets: List[str], config: Any) -> Dict[str, Any]:
-        """Multi-target only optimization (consolidated logic)."""
-        tprint_info(f"   → Multi-target optimization for {len(targets)} targets")
 
-        # Consolidated multi-target logic
-        results = {}
-
-        for feature in feature_columns:
-            # Find best lookback across all targets
-            best_lookback = self._find_best_lookback_across_targets(data, feature, targets, config)
-            results[feature] = best_lookback
-
-        return results
-
-    def _optimize_standard_mrmr(self, data: pd.DataFrame, feature_columns: List[str],
-                              target_column: str, config: Any) -> Dict[str, Any]:
-        """Standard MRMR optimization (fallback method)."""
-        tprint_info("   → Standard MRMR optimization")
-
-        # Standard MRMR logic (consolidated)
-        results = {}
-
-        for feature in feature_columns:
-            optimal_lookback = self._find_optimal_lookback_mrmr(data, feature, target_column, config)
-            results[feature] = optimal_lookback
-
-        return results
-
-    def _find_optimal_lookback_for_feature_target(self, data: pd.DataFrame, feature: str,
-                                                target: str, config: Any) -> int:
-        """Find optimal lookback for a specific feature-target pair (consolidated logic)."""
-        # This consolidates lookback finding logic used across multiple methods
-        best_lookback = config.min_lookback
-        best_score = -np.inf
-
-        for lookback in range(config.min_lookback, config.max_lookback + 1, 5):
-            try:
-                # Calculate score for this lookback
-                score = self._calculate_feature_target_score(data, feature, target, lookback)
-                if score > best_score:
-                    best_score = score
-                    best_lookback = lookback
-            except Exception as e:
-                tprint_warning(f"   → Error testing lookback {lookback} for {feature}-{target}: {e}")
-                continue
-
-        return best_lookback
-
-    def _find_best_lookback_across_targets(self, data: pd.DataFrame, feature: str,
-                                         targets: List[str], config: Any) -> int:
-        """Find best lookback across multiple targets (consolidated logic)."""
-        # Find lookback that works best across all targets
-        lookback_scores = {}
-
-        for lookback in range(config.min_lookback, config.max_lookback + 1, 5):
-            total_score = 0
-            valid_targets = 0
-
-            for target in targets:
-                try:
-                    score = self._calculate_feature_target_score(data, feature, target, lookback)
-                    if not np.isnan(score):
-                        total_score += score
-                        valid_targets += 1
-                except Exception:
-                    continue
-
-            if valid_targets > 0:
-                lookback_scores[lookback] = total_score / valid_targets
-
-        if lookback_scores:
-            return max(lookback_scores, key=lookback_scores.get)
-        else:
-            return config.min_lookback
-
-    def _find_optimal_lookback_mrmr(self, data: pd.DataFrame, feature: str,
-                                   target_column: str, config: Any) -> int:
-        """Find optimal lookback using MRMR approach (consolidated logic)."""
-        # MRMR-based lookback finding logic
-        if MRMR_OPTIMIZER_AVAILABLE and self.mrmr_optimizer:
-            try:
-                # Use MRMR optimizer to find best lookback
-                return self.mrmr_optimizer.optimize_lookback(data, feature, target_column, config)
-            except Exception as e:
-                tprint_warning(f"   → MRMR optimization failed: {e}")
-
-        # Fallback to simple scoring
-        return self._find_optimal_lookback_for_feature_target(data, feature, target_column, config)
-
-    def _calculate_feature_target_score(self, data: pd.DataFrame, feature: str,
-                                      target: str, lookback: int) -> float:
-        """Calculate score for feature-target-lookback combination using multi_horizon_profit_labeler methodology."""
-        try:
-            # Generate the actual FPT-based labels for this feature-lookback combination
-            fpt_labels = self._calculate_forward_returns_fpt(data, lookback)
-
-            # Align feature data with FPT labels
-            feature_data = data[feature].rolling(lookback).mean().shift(1)
-            target_data = fpt_labels
-
-            # Remove NaN values
-            valid_data = ~(feature_data.isna() | target_data.isna())
-            if valid_data.sum() < 10:
-                return np.nan
-
-            feature_clean = feature_data[valid_data]
-            target_clean = target_data[valid_data]
-
-            # For ternary labels (-1, 0, 1), use mutual information or rank correlation
-            # since correlation may not be appropriate for discrete labels
-
-            # Calculate rank correlation (Spearman) which works better with ordinal/ternary data
-            try:
-                correlation, p_value = self._safe_spearmanr(feature_clean.values, target_clean.values)
-                # Convert to positive score (higher absolute correlation is better)
-                score = abs(correlation) * (1 - p_value)  # Weight by significance
-                tprint_info(f"   → Feature-target correlation: {correlation:.4f}, p-value: {p_value:.4f}")
-                return score if not np.isnan(score) else 0.0
-            except Exception:
-                # Fallback to simple correlation
-                correlation = feature_clean.corr(target_clean)
-                return abs(correlation) if not np.isnan(correlation) else 0.0
-
-        except Exception as e:
-            tprint_warning(f"   → Error calculating feature-target score: {e}")
-            return np.nan
 
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
@@ -2866,61 +2622,60 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 enable_directional = getattr(config, 'enable_directional_optimization', True)
                 use_new_directional = getattr(config, 'use_new_directional_approach', True)
                 
-                if True:  # Use the new unified optimization approach
-                    tprint('🎯 Using UNIFIED optimization with actual multi_horizon_profit_labeler labels...')
+                # Use the new optimization approach that REQUIRES actual labels from multi_horizon_profit_labeler
+                tprint('🎯 Using optimization with actual multi_horizon_profit_labeler labels (fast fail if not available)...')
 
-                    # Extract feature columns from prepared data - use ALL features from feature bank
-                    # Exclude target columns, metadata columns, and unwanted feature types
-                    excluded_columns = ['returns', 'close_return', 'close_log_return', 'target', 'label', 'signal_direction',
-                                      'regime_state', 'regime_confidence', 'open_time', 'close_time', 'symbol', 'interval',
-                                      'day', 'exchange', 'timeframe', 'timestamp']
+                # Extract feature columns from prepared data - use ALL features from feature bank
+                # Exclude target columns, metadata columns, and unwanted feature types
+                excluded_columns = ['returns', 'close_return', 'close_log_return', 'target', 'label', 'signal_direction',
+                                  'regime_state', 'regime_confidence', 'open_time', 'close_time', 'symbol', 'interval',
+                                  'day', 'exchange', 'timeframe', 'timestamp']
 
-                    # Include ALL feature bank features (200+ features) from all categories:
-                    # RETURNS, MOMENTUM, VOLUME, VOLATILITY, TREND, OSCILLATOR,
-                    # SUPPORT_RESISTANCE, CANDLESTICK_PATTERN, MICROSTRUCTURE, ENTROPY, ORDER_FLOW
-                    # Exclude only: interaction, cross-timeframe, wavelets, autoencoders, regime-specific, nas_, tas_
-                    feature_columns = [str(col) for col in prepared_data.columns
-                                     if col not in excluded_columns
-                                     and not any(unwanted in col.lower() for unwanted in [
-                                         'wavelet', 'autoencoder', 'regime_', 'nas_', 'tas_',
-                                         'interaction_', 'cross_timeframe_', 'cross_timeframe'
-                                     ])
-                                     and any(wanted in col.lower() for wanted in [
-                                         'rsi', 'macd', 'stochastic', 'williams', 'momentum', 'roc',
-                                         'volume_', 'vol_', 'vwap', 'obv', 'ad', 'mfi',
-                                         'bb_', 'atr', 'volatility', 'std', 'var',
-                                         'sma', 'ema', 'trend', 'slope', 'angle',
-                                         'entropy', 'hurst', 'fractal', 'complexity',
-                                         'support', 'resistance', 'pivot', 'fibonacci',
-                                         'doji', 'hammer', 'engulfing', 'pattern',
-                                         'bid', 'ask', 'spread', 'depth', 'flow'
-                                     ])]
+                # Include ALL feature bank features (200+ features) from all categories:
+                # RETURNS, MOMENTUM, VOLUME, VOLATILITY, TREND, OSCILLATOR,
+                # SUPPORT_RESISTANCE, CANDLESTICK_PATTERN, MICROSTRUCTURE, ENTROPY, ORDER_FLOW
+                # Exclude only: interaction, cross-timeframe, wavelets, autoencoders, regime-specific, nas_, tas_
+                feature_columns = [str(col) for col in prepared_data.columns
+                                 if col not in excluded_columns
+                                 and not any(unwanted in col.lower() for unwanted in [
+                                     'wavelet', 'autoencoder', 'regime_', 'nas_', 'tas_',
+                                     'interaction_', 'cross_timeframe_', 'cross_timeframe'
+                                 ])
+                                 and any(wanted in col.lower() for wanted in [
+                                     'rsi', 'macd', 'stochastic', 'williams', 'momentum', 'roc',
+                                     'volume_', 'vol_', 'vwap', 'obv', 'ad', 'mfi',
+                                     'bb_', 'atr', 'volatility', 'std', 'var',
+                                     'sma', 'ema', 'trend', 'slope', 'angle',
+                                     'entropy', 'hurst', 'fractal', 'complexity',
+                                     'support', 'resistance', 'pivot', 'fibonacci',
+                                     'doji', 'hammer', 'engulfing', 'pattern',
+                                     'bid', 'ask', 'spread', 'depth', 'flow'
+                                 ])]
 
-                    # Use all available features from feature bank (no limits)
-                    tprint(f'🔧 Processing {len(feature_columns)} features from feature bank')
+                # Use all available features from feature bank (no limits)
+                tprint(f'🔧 Processing {len(feature_columns)} features from feature bank')
 
-                    # Use the new unified optimization approach that works with actual labels
+                try:
+                    # Use the optimization approach that REQUIRES actual labels (fast fail if not available)
                     optimized_features = self.optimize_features_with_labels(
                         prepared_data, feature_columns, {'multi_horizon_labeling_result': labeling_data}
                     )
-                    
-                    # Use unified optimization with actual labels
+
+                    # Optimization with actual labels
                     optimization_result = {
-                        'optimization_method': 'unified_with_actual_labels',
+                        'optimization_method': 'with_actual_labels',
                         'optimized_features': optimized_features,
                         'feature_count': len(feature_columns),
                         'target_column': target_column
                     }
-                    
-                    tprint(f'✅ Unified optimization with actual labels completed: {len(feature_columns)} features processed')
-                    
-                else:
-                    # Fallback to legacy optimization if needed
-                    tprint('🔄 Falling back to legacy optimization...')
-                    optimization_result = await feature_optimizer.optimize_features(prepared_data, config)
-                    optimization_result['optimization_method'] = 'legacy_fallback'
-                    optimization_result['intelligent_feature_selection'] = feature_selection_result
-                    tprint('✅ Legacy optimization completed')
+
+                    tprint(f'✅ Optimization with actual labels completed: {len(feature_columns)} features processed')
+
+                except ValueError as e:
+                    # Fast fail - no fallback to on-the-fly generation
+                    tprint_error(f"❌ {str(e)}")
+                    tprint_error("💥 FAST FAIL: No pre-computed labels available. Cannot proceed with optimization.")
+                    raise ValueError(f"Feature lookback optimization requires pre-computed labels from multi_horizon_profit_labeler. {str(e)}")
 
             self._monitor_performance('optimization_executed')
 

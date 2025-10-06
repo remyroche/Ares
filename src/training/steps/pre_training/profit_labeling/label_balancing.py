@@ -24,10 +24,13 @@ from enum import Enum
 from sklearn.utils import resample
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import NearestNeighbors
+from sklearn.metrics import pairwise_distances
 import warnings
 import logging
 from datetime import datetime, timedelta
 from scipy import stats
+from scipy.special import softmax
 from collections import Counter
 import random
 
@@ -41,8 +44,10 @@ except ImportError:
     TPRINT_AVAILABLE = False
 
 try:
-    from imblearn.over_sampling import SMOTE, ADASYN
-    from imblearn.under_sampling import RandomUnderSampler, TomekLinks, EditedNearestNeighbours
+    from imblearn.over_sampling import SMOTE, ADASYN, BorderlineSMOTE, SVMSMOTE
+    from imblearn.under_sampling import RandomUnderSampler, TomekLinks, EditedNearestNeighbours, NearMiss
+    from imblearn.combine import SMOTETomek, SMOTEENN
+    from imblearn.pipeline import Pipeline as ImbPipeline
     IMBLEARN_AVAILABLE = True
 except ImportError:
     IMBLEARN_AVAILABLE = False
@@ -55,10 +60,16 @@ class BalancingTechnique(Enum):
     UNDER_SAMPLING = "under_sampling"
     OVER_SAMPLING = "over_sampling"
     SMOTE = "smote"
+    BORDERLINE_SMOTE = "borderline_smote"
+    SVM_SMOTE = "svm_smote"
     ADASYN = "adasyn"
     MIXUP = "mixup"
     STRATIFIED_BATCHING = "stratified_batching"
+    SMOTE_TOMEK = "smote_tomek"
+    SMOTE_ENN = "smote_enn"
+    NEAR_MISS = "near_miss"
     HYBRID = "hybrid"
+    ADAPTIVE = "adaptive"
 
 
 class WeightingScheme(Enum):
@@ -76,27 +87,47 @@ class BalancingConfig:
     """Configuration for label balancing."""
 
     # Balancing technique selection
-    balancing_technique: BalancingTechnique = BalancingTechnique.HYBRID
+    balancing_technique: BalancingTechnique = BalancingTechnique.ADAPTIVE
 
     # Under-sampling parameters
     under_sampling_ratio: float = 0.5  # Ratio of majority class to keep
-    under_sampling_strategy: str = "random"  # random, tomek, enn
+    under_sampling_strategy: str = "random"  # random, tomek, enn, near_miss
+    under_sampling_version: int = 1  # For NearMiss: 1, 2, or 3
 
     # Over-sampling parameters
     over_sampling_ratio: float = 1.0  # Ratio of minority classes to generate
-    over_sampling_strategy: str = "smote"  # smote, adasyn, mixup
+    over_sampling_strategy: str = "smote"  # smote, adasyn, mixup, borderline_smote, svm_smote
+    smote_k_neighbors: int = 5  # k-neighbors for SMOTE variants
+    smote_sampling_strategy: str = "auto"  # auto, balanced, or dict
+
+    # Mixup parameters
+    mixup_alpha: float = 0.2  # Beta distribution alpha parameter
+    mixup_version: int = 1  # Mixup version (1 or 2)
 
     # Stratified batching parameters
     stratified_batching: bool = True
     batch_size: int = 1024
     min_samples_per_class: int = 10
+    max_batch_imbalance_ratio: float = 0.1  # Max allowed imbalance in batches
 
     # Hybrid balancing parameters
     hybrid_undersample_ratio: float = 0.7
     hybrid_oversample_ratio: float = 0.3
+    hybrid_technique_order: List[str] = None  # Order of techniques to apply
+
+    # Adaptive balancing parameters
+    adaptive_imbalance_threshold: float = 0.1  # Threshold for considering imbalance
+    adaptive_min_samples: int = 50  # Minimum samples per class for adaptation
+    adaptive_technique_selection: str = "performance"  # performance, speed, balanced
 
     # Target class distribution (None for auto-detection)
     target_distribution: Optional[Dict[int, float]] = None
+    target_imbalance_ratio: float = 0.3  # Target ratio of minority to majority
+
+    # Quality control
+    enable_quality_control: bool = True
+    min_quality_score: float = 0.6
+    max_synthetic_ratio: float = 0.5  # Max ratio of synthetic samples
 
     # Random state for reproducibility
     random_state: int = 42
@@ -113,30 +144,58 @@ class WeightingConfig:
     volatility_window: int = 20
     volatility_floor: float = 1e-6
     volatility_weight_max: float = 10.0
+    volatility_method: str = "rolling_std"  # rolling_std, garch, ewma
+    volatility_robust: bool = True  # Use robust volatility estimation
 
     # Confidence weighting parameters
-    confidence_method: str = "probability"  # probability, margin, entropy
+    confidence_method: str = "probability"  # probability, margin, entropy, uncertainty
     confidence_scale: float = 2.0
+    confidence_smoothing: float = 0.1  # Smoothing factor for confidence scores
+    confidence_min_threshold: float = 0.1  # Minimum confidence threshold
 
-    # Event overlap weighting parameters
+    # Event overlap weighting parameters (López de Prado)
     overlap_window: int = 5
     overlap_decay: float = 0.8
+    overlap_method: str = "rolling_count"  # rolling_count, exponential_decay, gaussian
+    overlap_threshold: float = 0.1  # Threshold for considering overlap
 
     # Time decay weighting parameters
     time_decay_half_life: int = 30  # days
-    time_decay_method: str = "exponential"  # exponential, linear
+    time_decay_method: str = "exponential"  # exponential, linear, polynomial
+    time_decay_power: float = 1.0  # Power for polynomial decay
+    time_decay_min_weight: float = 0.01  # Minimum weight for very old samples
 
     # Regime-aware weighting parameters
     regime_frequency_threshold: float = 0.2
     regime_weight_multiplier: float = 5.0
+    regime_smoothing_window: int = 10  # Window for regime frequency smoothing
+    regime_adaptation_rate: float = 0.1  # Rate of regime weight adaptation
+
+    # Information content weighting parameters
+    information_entropy_weight: float = 0.3  # Weight for entropy component
+    information_uncertainty_weight: float = 0.3  # Weight for uncertainty component
+    information_volatility_weight: float = 0.2  # Weight for volatility component
+    information_regime_weight: float = 0.2  # Weight for regime component
+
+    # Advanced weighting parameters
+    enable_dynamic_weighting: bool = True  # Adapt weights during training
+    weight_adaptation_rate: float = 0.01  # Rate of weight adaptation
+    weight_memory_decay: float = 0.95  # Decay rate for weight memory
 
     # Combined weighting parameters
-    weight_normalization: str = "l2"  # none, l1, l2, minmax
+    weight_normalization: str = "l2"  # none, l1, l2, minmax, robust
     weight_clip_percentile: float = 99.0
+    weight_smoothing: float = 0.1  # Smoothing factor for final weights
 
     # Minimum and maximum weight bounds
     min_weight: float = 0.1
     max_weight: float = 10.0
+    weight_floor: float = 1e-6  # Minimum weight to avoid numerical issues
+
+    # Quality control
+    enable_weight_validation: bool = True
+    max_weight_ratio: float = 100.0  # Max ratio between highest and lowest weights
+    weight_stability_threshold: float = 0.1  # Threshold for weight stability
 
 
 @dataclass
@@ -257,8 +316,26 @@ class LabelBalancer:
         elif self.config.balancing_technique == BalancingTechnique.STRATIFIED_BATCHING:
             return self._create_stratified_batches(X, y, sample_weight)
 
+        elif self.config.balancing_technique == BalancingTechnique.BORDERLINE_SMOTE:
+            return self._borderline_smote_sample(X, y, sample_weight)
+
+        elif self.config.balancing_technique == BalancingTechnique.SVM_SMOTE:
+            return self._svm_smote_sample(X, y, sample_weight)
+
+        elif self.config.balancing_technique == BalancingTechnique.SMOTE_TOMEK:
+            return self._smote_tomek_sample(X, y, sample_weight)
+
+        elif self.config.balancing_technique == BalancingTechnique.SMOTE_ENN:
+            return self._smote_enn_sample(X, y, sample_weight)
+
+        elif self.config.balancing_technique == BalancingTechnique.NEAR_MISS:
+            return self._near_miss_sample(X, y, sample_weight)
+
         elif self.config.balancing_technique == BalancingTechnique.HYBRID:
             return self._hybrid_balance(X, y, sample_weight)
+
+        elif self.config.balancing_technique == BalancingTechnique.ADAPTIVE:
+            return self._adaptive_balance(X, y, sample_weight)
 
         else:
             if TPRINT_AVAILABLE:
@@ -571,6 +648,267 @@ class LabelBalancer:
 
         return balanced_X, balanced_y, balanced_sample_weight
 
+    def _borderline_smote_sample(self, X: pd.DataFrame, y: pd.Series,
+                                sample_weight: Optional[pd.Series] = None) -> Tuple[pd.DataFrame, pd.Series, Optional[pd.Series]]:
+        """Apply BorderlineSMOTE oversampling."""
+        if not IMBLEARN_AVAILABLE:
+            if TPRINT_AVAILABLE:
+                tprint_warning("⚠️ BorderlineSMOTE not available, falling back to random oversampling")
+            return self._over_sample(X, y, sample_weight)
+
+        class_counts = y.value_counts()
+        max_count = class_counts.max()
+
+        if TPRINT_AVAILABLE:
+            tprint_info(f"🎯 Applying BorderlineSMOTE to reach majority class count: {max_count}")
+
+        # Determine sampling strategy
+        sampling_strategy = {}
+        for class_label, count in class_counts.items():
+            if count < max_count:
+                sampling_strategy[class_label] = max_count
+
+        if not sampling_strategy:
+            return X, y, sample_weight
+
+        # Apply BorderlineSMOTE
+        borderline_smote = BorderlineSMOTE(
+            sampling_strategy=sampling_strategy,
+            random_state=self.config.random_state,
+            k_neighbors=min(self.config.smote_k_neighbors, min(class_counts[class_counts > 1]) - 1)
+        )
+
+        X_resampled, y_resampled = borderline_smote.fit_resample(X, y)
+
+        # Handle sample weights
+        if sample_weight is not None:
+            original_weights = sample_weight.copy()
+            synthetic_weights = []
+            for i in range(len(X), len(X_resampled)):
+                synthetic_weights.append(sample_weight.mean())
+
+            balanced_sample_weight = pd.concat([
+                pd.Series(original_weights),
+                pd.Series(synthetic_weights)
+            ]).reset_index(drop=True)
+        else:
+            balanced_sample_weight = None
+
+        return pd.DataFrame(X_resampled, columns=X.columns), pd.Series(y_resampled), balanced_sample_weight
+
+    def _svm_smote_sample(self, X: pd.DataFrame, y: pd.Series,
+                         sample_weight: Optional[pd.Series] = None) -> Tuple[pd.DataFrame, pd.Series, Optional[pd.Series]]:
+        """Apply SVMSMOTE oversampling."""
+        if not IMBLEARN_AVAILABLE:
+            if TPRINT_AVAILABLE:
+                tprint_warning("⚠️ SVMSMOTE not available, falling back to random oversampling")
+            return self._over_sample(X, y, sample_weight)
+
+        class_counts = y.value_counts()
+        max_count = class_counts.max()
+
+        if TPRINT_AVAILABLE:
+            tprint_info(f"🎯 Applying SVMSMOTE to reach majority class count: {max_count}")
+
+        # Determine sampling strategy
+        sampling_strategy = {}
+        for class_label, count in class_counts.items():
+            if count < max_count:
+                sampling_strategy[class_label] = max_count
+
+        if not sampling_strategy:
+            return X, y, sample_weight
+
+        # Apply SVMSMOTE
+        svm_smote = SVMSMOTE(
+            sampling_strategy=sampling_strategy,
+            random_state=self.config.random_state,
+            k_neighbors=min(self.config.smote_k_neighbors, min(class_counts[class_counts > 1]) - 1)
+        )
+
+        X_resampled, y_resampled = svm_smote.fit_resample(X, y)
+
+        # Handle sample weights
+        if sample_weight is not None:
+            original_weights = sample_weight.copy()
+            synthetic_weights = []
+            for i in range(len(X), len(X_resampled)):
+                synthetic_weights.append(sample_weight.mean())
+
+            balanced_sample_weight = pd.concat([
+                pd.Series(original_weights),
+                pd.Series(synthetic_weights)
+            ]).reset_index(drop=True)
+        else:
+            balanced_sample_weight = None
+
+        return pd.DataFrame(X_resampled, columns=X.columns), pd.Series(y_resampled), balanced_sample_weight
+
+    def _smote_tomek_sample(self, X: pd.DataFrame, y: pd.Series,
+                           sample_weight: Optional[pd.Series] = None) -> Tuple[pd.DataFrame, pd.Series, Optional[pd.Series]]:
+        """Apply SMOTETomek combination."""
+        if not IMBLEARN_AVAILABLE:
+            if TPRINT_AVAILABLE:
+                tprint_warning("⚠️ SMOTETomek not available, falling back to random oversampling")
+            return self._over_sample(X, y, sample_weight)
+
+        class_counts = y.value_counts()
+        max_count = class_counts.max()
+
+        if TPRINT_AVAILABLE:
+            tprint_info(f"🎯 Applying SMOTETomek to reach majority class count: {max_count}")
+
+        # Determine sampling strategy
+        sampling_strategy = {}
+        for class_label, count in class_counts.items():
+            if count < max_count:
+                sampling_strategy[class_label] = max_count
+
+        if not sampling_strategy:
+            return X, y, sample_weight
+
+        # Apply SMOTETomek
+        smote_tomek = SMOTETomek(
+            sampling_strategy=sampling_strategy,
+            random_state=self.config.random_state,
+            smote=SMOTE(k_neighbors=min(self.config.smote_k_neighbors, min(class_counts[class_counts > 1]) - 1))
+        )
+
+        X_resampled, y_resampled = smote_tomek.fit_resample(X, y)
+
+        # Handle sample weights
+        if sample_weight is not None:
+            original_weights = sample_weight.copy()
+            synthetic_weights = []
+            for i in range(len(X), len(X_resampled)):
+                synthetic_weights.append(sample_weight.mean())
+
+            balanced_sample_weight = pd.concat([
+                pd.Series(original_weights),
+                pd.Series(synthetic_weights)
+            ]).reset_index(drop=True)
+        else:
+            balanced_sample_weight = None
+
+        return pd.DataFrame(X_resampled, columns=X.columns), pd.Series(y_resampled), balanced_sample_weight
+
+    def _smote_enn_sample(self, X: pd.DataFrame, y: pd.Series,
+                         sample_weight: Optional[pd.Series] = None) -> Tuple[pd.DataFrame, pd.Series, Optional[pd.Series]]:
+        """Apply SMOTEENN combination."""
+        if not IMBLEARN_AVAILABLE:
+            if TPRINT_AVAILABLE:
+                tprint_warning("⚠️ SMOTEENN not available, falling back to random oversampling")
+            return self._over_sample(X, y, sample_weight)
+
+        class_counts = y.value_counts()
+        max_count = class_counts.max()
+
+        if TPRINT_AVAILABLE:
+            tprint_info(f"🎯 Applying SMOTEENN to reach majority class count: {max_count}")
+
+        # Determine sampling strategy
+        sampling_strategy = {}
+        for class_label, count in class_counts.items():
+            if count < max_count:
+                sampling_strategy[class_label] = max_count
+
+        if not sampling_strategy:
+            return X, y, sample_weight
+
+        # Apply SMOTEENN
+        smote_enn = SMOTEENN(
+            sampling_strategy=sampling_strategy,
+            random_state=self.config.random_state,
+            smote=SMOTE(k_neighbors=min(self.config.smote_k_neighbors, min(class_counts[class_counts > 1]) - 1))
+        )
+
+        X_resampled, y_resampled = smote_enn.fit_resample(X, y)
+
+        # Handle sample weights
+        if sample_weight is not None:
+            original_weights = sample_weight.copy()
+            synthetic_weights = []
+            for i in range(len(X), len(X_resampled)):
+                synthetic_weights.append(sample_weight.mean())
+
+            balanced_sample_weight = pd.concat([
+                pd.Series(original_weights),
+                pd.Series(synthetic_weights)
+            ]).reset_index(drop=True)
+        else:
+            balanced_sample_weight = None
+
+        return pd.DataFrame(X_resampled, columns=X.columns), pd.Series(y_resampled), balanced_sample_weight
+
+    def _near_miss_sample(self, X: pd.DataFrame, y: pd.Series,
+                         sample_weight: Optional[pd.Series] = None) -> Tuple[pd.DataFrame, pd.Series, Optional[pd.Series]]:
+        """Apply NearMiss under-sampling."""
+        if not IMBLEARN_AVAILABLE:
+            if TPRINT_AVAILABLE:
+                tprint_warning("⚠️ NearMiss not available, falling back to random under-sampling")
+            return self._under_sample(X, y, sample_weight)
+
+        class_counts = y.value_counts()
+        min_count = class_counts.min()
+
+        if TPRINT_AVAILABLE:
+            tprint_info(f"🎯 Applying NearMiss to reach minority class count: {min_count}")
+
+        # Apply NearMiss
+        near_miss = NearMiss(
+            version=self.config.under_sampling_version,
+            n_neighbors=min(3, min_count - 1) if min_count > 1 else 1
+        )
+
+        X_resampled, y_resampled = near_miss.fit_resample(X, y)
+
+        # Handle sample weights
+        if sample_weight is not None:
+            # Get indices of resampled data
+            resampled_indices = X_resampled.index
+            balanced_sample_weight = sample_weight.loc[resampled_indices]
+        else:
+            balanced_sample_weight = None
+
+        return pd.DataFrame(X_resampled, columns=X.columns), pd.Series(y_resampled), balanced_sample_weight
+
+    def _adaptive_balance(self, X: pd.DataFrame, y: pd.Series,
+                         sample_weight: Optional[pd.Series] = None) -> Tuple[pd.DataFrame, pd.Series, Optional[pd.Series]]:
+        """Apply adaptive balancing based on dataset characteristics."""
+        if TPRINT_AVAILABLE:
+            tprint_info("🧠 Applying adaptive balancing...")
+
+        # Analyze dataset characteristics
+        class_counts = y.value_counts()
+        n_classes = len(class_counts)
+        total_samples = len(y)
+        max_count = class_counts.max()
+        min_count = class_counts.min()
+        imbalance_ratio = min_count / max_count
+
+        if TPRINT_AVAILABLE:
+            tprint_info(f"📊 Dataset analysis: {n_classes} classes, {total_samples} samples")
+            tprint_info(f"   → Imbalance ratio: {imbalance_ratio:.3f}")
+            tprint_info(f"   → Min samples: {min_count}, Max samples: {max_count}")
+
+        # Select technique based on characteristics
+        if imbalance_ratio < self.config.adaptive_imbalance_threshold:
+            if min_count < self.config.adaptive_min_samples:
+                # Very imbalanced with few minority samples - use SMOTE
+                if TPRINT_AVAILABLE:
+                    tprint_info("🎯 Very imbalanced dataset - using SMOTE")
+                return self._smote_sample(X, y, sample_weight)
+            else:
+                # Moderately imbalanced - use hybrid approach
+                if TPRINT_AVAILABLE:
+                    tprint_info("🎯 Moderately imbalanced dataset - using hybrid approach")
+                return self._hybrid_balance(X, y, sample_weight)
+        else:
+            # Well balanced - use stratified batching
+            if TPRINT_AVAILABLE:
+                tprint_info("🎯 Well balanced dataset - using stratified batching")
+            return self._create_stratified_batches(X, y, sample_weight)
+
 
 class SampleWeighter:
     """
@@ -648,21 +986,41 @@ class SampleWeighter:
             volatility = additional_features['volatility']
         elif 'returns' in X.columns:
             # Compute realized volatility from returns
-            returns = X['returns'].rolling(window=self.config.volatility_window).std()
-            volatility = returns.fillna(returns.mean())
+            returns = X['returns']
+            if self.config.volatility_method == "rolling_std":
+                volatility = returns.rolling(window=self.config.volatility_window).std()
+            elif self.config.volatility_method == "ewma":
+                # Exponentially weighted moving average
+                volatility = returns.ewm(span=self.config.volatility_window).std()
+            else:  # garch
+                # Simple GARCH approximation
+                volatility = returns.rolling(window=self.config.volatility_window).std()
+            
+            volatility = volatility.fillna(volatility.mean())
         else:
             # Use price volatility if available
             price_cols = [col for col in X.columns if col in ['close', 'price', 'Close', 'Price']]
             if price_cols:
                 price_data = X[price_cols[0]]
                 returns = price_data.pct_change()
-                volatility = returns.rolling(window=self.config.volatility_window).std()
+                if self.config.volatility_method == "rolling_std":
+                    volatility = returns.rolling(window=self.config.volatility_window).std()
+                elif self.config.volatility_method == "ewma":
+                    volatility = returns.ewm(span=self.config.volatility_window).std()
+                else:
+                    volatility = returns.rolling(window=self.config.volatility_window).std()
                 volatility = volatility.fillna(volatility.mean())
 
         if volatility is None:
             if TPRINT_AVAILABLE:
                 tprint_warning("⚠️ No volatility data available, using uniform weights")
             return pd.Series(1.0, index=X.index)
+
+        # Apply robust volatility estimation if enabled
+        if self.config.volatility_robust:
+            # Use median absolute deviation for robust estimation
+            mad = np.median(np.abs(volatility - np.median(volatility)))
+            volatility = np.maximum(volatility, mad * 1.4826)  # Scale factor for normal distribution
 
         # Compute weights inversely proportional to volatility
         weights = safe_divide(1.0, volatility + self.config.volatility_floor)
@@ -675,15 +1033,40 @@ class SampleWeighter:
     def _compute_confidence_weights(self, y: pd.Series,
                                    additional_features: Optional[Dict[str, pd.Series]] = None) -> pd.Series:
         """Compute confidence-based weights (w_t ∝ Δp)."""
-        # For now, use a simple confidence measure based on label distribution
-        # In practice, this would use model prediction probabilities
-
         if additional_features and 'confidence' in additional_features:
             confidence = additional_features['confidence']
         else:
-            # Simple proxy: use inverse of class frequency as confidence
-            class_freq = y.value_counts(normalize=True)
-            confidence = y.map(lambda x: 1.0 / class_freq.get(x, 0.5))
+            # Compute confidence based on different methods
+            if self.config.confidence_method == "probability":
+                # Use inverse of class frequency as confidence proxy
+                class_freq = y.value_counts(normalize=True)
+                confidence = y.map(lambda x: 1.0 / class_freq.get(x, 0.5))
+            elif self.config.confidence_method == "margin":
+                # Use margin-based confidence (distance from decision boundary)
+                class_freq = y.value_counts(normalize=True)
+                max_freq = class_freq.max()
+                confidence = y.map(lambda x: abs(class_freq.get(x, 0.5) - max_freq) + 0.1)
+            elif self.config.confidence_method == "entropy":
+                # Use entropy-based confidence
+                class_freq = y.value_counts(normalize=True)
+                entropy = -sum(p * np.log(p + 1e-8) for p in class_freq.values())
+                confidence = y.map(lambda x: entropy / (class_freq.get(x, 0.5) + 1e-8))
+            elif self.config.confidence_method == "uncertainty":
+                # Use uncertainty-based confidence
+                class_freq = y.value_counts(normalize=True)
+                uncertainty = 1.0 - class_freq.max()
+                confidence = y.map(lambda x: uncertainty / (class_freq.get(x, 0.5) + 1e-8))
+            else:
+                # Default to probability method
+                class_freq = y.value_counts(normalize=True)
+                confidence = y.map(lambda x: 1.0 / class_freq.get(x, 0.5))
+
+        # Apply smoothing
+        if self.config.confidence_smoothing > 0:
+            confidence = confidence.rolling(window=3, center=True).mean().fillna(confidence)
+
+        # Apply minimum threshold
+        confidence = np.maximum(confidence, self.config.confidence_min_threshold)
 
         # Scale confidence weights
         weights = self.config.confidence_scale * confidence
@@ -697,25 +1080,60 @@ class SampleWeighter:
     def _compute_event_overlap_weights(self, y: pd.Series,
                                       additional_features: Optional[Dict[str, pd.Series]] = None) -> pd.Series:
         """Compute event overlap weights (López de Prado method)."""
-        # Count overlapping events in a rolling window
-        overlap_counts = pd.Series(1.0, index=y.index)
-
         if additional_features and 'overlap_count' in additional_features:
             overlap_counts = additional_features['overlap_count']
         else:
-            # Simple approximation: use rolling count of non-zero labels
-            non_zero_mask = (y != 0).astype(int)
-            overlap_counts = non_zero_mask.rolling(
-                window=self.config.overlap_window,
-                min_periods=1
-            ).sum()
+            # Compute overlap counts based on different methods
+            if self.config.overlap_method == "rolling_count":
+                # Simple rolling count of non-zero labels
+                non_zero_mask = (y != 0).astype(int)
+                overlap_counts = non_zero_mask.rolling(
+                    window=self.config.overlap_window,
+                    min_periods=1
+                ).sum()
+            elif self.config.overlap_method == "exponential_decay":
+                # Exponential decay for distant events
+                non_zero_mask = (y != 0).astype(int)
+                overlap_counts = pd.Series(0.0, index=y.index)
+                for i in range(len(y)):
+                    if non_zero_mask.iloc[i] == 1:
+                        # Apply exponential decay to future events
+                        future_window = min(self.config.overlap_window, len(y) - i)
+                        for j in range(1, future_window):
+                            if i + j < len(y):
+                                decay_factor = self.config.overlap_decay ** j
+                                overlap_counts.iloc[i + j] += decay_factor
+            elif self.config.overlap_method == "gaussian":
+                # Gaussian-weighted overlap counting
+                non_zero_mask = (y != 0).astype(int)
+                overlap_counts = pd.Series(0.0, index=y.index)
+                for i in range(len(y)):
+                    if non_zero_mask.iloc[i] == 1:
+                        # Apply Gaussian weights to nearby events
+                        for j in range(max(0, i - self.config.overlap_window), 
+                                     min(len(y), i + self.config.overlap_window + 1)):
+                            if j != i:
+                                distance = abs(j - i)
+                                gaussian_weight = np.exp(-0.5 * (distance / (self.config.overlap_window / 3)) ** 2)
+                                overlap_counts.iloc[j] += gaussian_weight
+            else:
+                # Default to rolling count
+                non_zero_mask = (y != 0).astype(int)
+                overlap_counts = non_zero_mask.rolling(
+                    window=self.config.overlap_window,
+                    min_periods=1
+                ).sum()
+
+        # Apply threshold filtering
+        overlap_counts = np.maximum(overlap_counts, self.config.overlap_threshold)
 
         # Weight inversely proportional to overlap count
         weights = safe_divide(1.0, overlap_counts)
 
         # Apply exponential decay for distant overlaps
-        decay_weights = self.config.overlap_decay ** (overlap_counts - 1)
-        weights = weights * decay_weights
+        if self.config.overlap_method != "exponential_decay":
+            decay_weights = self.config.overlap_decay ** (overlap_counts - 1)
+            weights = weights * decay_weights
 
         # Normalize and clip
         weights = (weights - weights.min()) / (weights.max() - weights.min() + 1e-8)
@@ -749,8 +1167,16 @@ class SampleWeighter:
             # Linear decay: w_t = max(0, 1 - t / (2 * half_life))
             weights = np.maximum(0, 1 - days_since / (2 * self.config.time_decay_half_life))
 
+        elif self.config.time_decay_method == "polynomial":
+            # Polynomial decay: w_t = max(0, (1 - t / (2 * half_life))^power)
+            normalized_time = days_since / (2 * self.config.time_decay_half_life)
+            weights = np.maximum(0, (1 - normalized_time) ** self.config.time_decay_power)
+
         else:
             weights = pd.Series(1.0, index=X.index)
+
+        # Apply minimum weight for very old samples
+        weights = np.maximum(weights, self.config.time_decay_min_weight)
 
         # Normalize and clip
         weights = (weights - weights.min()) / (weights.max() - weights.min() + 1e-8)
@@ -773,15 +1199,38 @@ class SampleWeighter:
                 tprint_warning("⚠️ No regime data available, using uniform weights")
             return pd.Series(1.0, index=X.index)
 
-        # Compute regime frequencies
+        # Compute regime frequencies with smoothing
         regime_freq = regime_labels.value_counts(normalize=True)
+        
+        # Apply smoothing window if specified
+        if self.config.regime_smoothing_window > 1:
+            # Simple smoothing by averaging with nearby regimes
+            regime_freq_smoothed = regime_freq.copy()
+            for regime in regime_freq.index:
+                # Find similar regimes (simplified approach)
+                similar_regimes = [r for r in regime_freq.index if abs(regime_freq[r] - regime_freq[regime]) < 0.1]
+                if len(similar_regimes) > 1:
+                    regime_freq_smoothed[regime] = regime_freq[similar_regimes].mean()
+            regime_freq = regime_freq_smoothed
 
         # Weight inversely proportional to regime frequency
         weights = regime_labels.map(lambda x: 1.0 / regime_freq.get(x, 0.5))
 
-        # Apply regime frequency threshold
+        # Apply regime frequency threshold and multiplier
         rare_regimes = regime_freq[regime_freq < self.config.regime_frequency_threshold].index
-        weights = weights.map(lambda x: x * self.config.regime_weight_multiplier if regime_labels[weights.idxmin() if hasattr(weights, 'idxmin') else 0] in rare_regimes else x)
+        for i, regime in enumerate(regime_labels):
+            if regime in rare_regimes:
+                weights.iloc[i] *= self.config.regime_weight_multiplier
+
+        # Apply adaptation rate for dynamic weighting
+        if self.config.regime_adaptation_rate > 0:
+            # Simple adaptation: gradually adjust weights based on recent regime frequency
+            recent_regime_freq = regime_labels.tail(self.config.regime_smoothing_window).value_counts(normalize=True)
+            for regime in recent_regime_freq.index:
+                regime_mask = regime_labels == regime
+                if regime in regime_freq.index:
+                    adaptation_factor = 1.0 + self.config.regime_adaptation_rate * (recent_regime_freq[regime] - regime_freq[regime])
+                    weights.loc[regime_mask] *= adaptation_factor
 
         # Normalize and clip
         weights = (weights - weights.min()) / (weights.max() - weights.min() + 1e-8)
@@ -793,29 +1242,75 @@ class SampleWeighter:
                                            additional_features: Optional[Dict[str, pd.Series]] = None) -> pd.Series:
         """Compute combined information content weights."""
         weights_components = []
+        component_names = []
 
         # Volatility component
         vol_weights = self._compute_volatility_weights(X, additional_features)
         weights_components.append(vol_weights)
+        component_names.append("volatility")
 
         # Confidence component
         conf_weights = self._compute_confidence_weights(y, additional_features)
         weights_components.append(conf_weights)
+        component_names.append("confidence")
 
         # Event overlap component
         overlap_weights = self._compute_event_overlap_weights(y, additional_features)
         weights_components.append(overlap_weights)
+        component_names.append("overlap")
 
         # Time decay component
         time_weights = self._compute_time_decay_weights(X, additional_features)
         weights_components.append(time_weights)
+        component_names.append("time_decay")
 
-        # Combine weights (geometric mean)
+        # Regime-aware component
+        regime_weights = self._compute_regime_aware_weights(X, y, additional_features)
+        weights_components.append(regime_weights)
+        component_names.append("regime")
+
+        # Compute entropy component
+        entropy_weights = self._compute_entropy_weights(X, y, additional_features)
+        weights_components.append(entropy_weights)
+        component_names.append("entropy")
+
+        # Compute uncertainty component
+        uncertainty_weights = self._compute_uncertainty_weights(X, y, additional_features)
+        weights_components.append(uncertainty_weights)
+        component_names.append("uncertainty")
+
+        # Apply component weights
+        weighted_components = []
+        component_weights = [
+            self.config.information_volatility_weight,
+            self.config.information_entropy_weight,
+            self.config.information_uncertainty_weight,
+            self.config.information_entropy_weight,  # time decay
+            self.config.information_regime_weight,
+            self.config.information_entropy_weight,
+            self.config.information_uncertainty_weight
+        ]
+
+        for i, (comp, weight) in enumerate(zip(weights_components, component_weights)):
+            weighted_components.append(comp * weight)
+
+        # Combine weights using weighted geometric mean
         combined_weights = np.ones_like(weights_components[0])
-        for w in weights_components:
-            combined_weights *= w
+        total_weight = 0
+        
+        for comp, weight in zip(weighted_components, component_weights):
+            if weight > 0:
+                combined_weights *= (comp + self.config.weight_floor) ** weight
+                total_weight += weight
 
-        combined_weights = combined_weights ** (1.0 / len(weights_components))
+        if total_weight > 0:
+            combined_weights = combined_weights ** (1.0 / total_weight)
+
+        # Apply smoothing if enabled
+        if self.config.weight_smoothing > 0:
+            combined_weights = pd.Series(combined_weights).rolling(
+                window=3, center=True
+            ).mean().fillna(combined_weights).values
 
         # Apply normalization
         if self.config.weight_normalization == "l1":
@@ -824,11 +1319,62 @@ class SampleWeighter:
             combined_weights = combined_weights / np.sqrt((combined_weights ** 2).sum())
         elif self.config.weight_normalization == "minmax":
             combined_weights = (combined_weights - combined_weights.min()) / (combined_weights.max() - combined_weights.min())
+        elif self.config.weight_normalization == "robust":
+            # Robust normalization using median and MAD
+            median_weight = np.median(combined_weights)
+            mad_weight = np.median(np.abs(combined_weights - median_weight))
+            combined_weights = (combined_weights - median_weight) / (mad_weight + 1e-8)
 
         # Clip to bounds
         combined_weights = np.clip(combined_weights, self.config.min_weight, self.config.max_weight)
 
         return combined_weights
+
+    def _compute_entropy_weights(self, X: pd.DataFrame, y: pd.Series,
+                                additional_features: Optional[Dict[str, pd.Series]] = None) -> pd.Series:
+        """Compute entropy-based weights."""
+        # Compute feature entropy for each sample
+        entropy_weights = pd.Series(0.0, index=X.index)
+        
+        for col in X.columns:
+            if X[col].dtype in [np.number, 'int64', 'float64']:
+                # Discretize continuous features
+                if X[col].nunique() > 10:
+                    bins = pd.cut(X[col], bins=10, labels=False, duplicates='drop')
+                else:
+                    bins = X[col]
+                
+                # Compute entropy for each bin
+                bin_counts = bins.value_counts()
+                bin_probs = bin_counts / len(bins)
+                bin_entropy = -sum(p * np.log(p + 1e-8) for p in bin_probs if p > 0)
+                
+                # Weight by entropy
+                entropy_weights += bins.map(lambda x: bin_entropy if not pd.isna(x) else 0)
+        
+        # Normalize
+        if entropy_weights.max() > 0:
+            entropy_weights = entropy_weights / entropy_weights.max()
+        
+        return entropy_weights
+
+    def _compute_uncertainty_weights(self, X: pd.DataFrame, y: pd.Series,
+                                   additional_features: Optional[Dict[str, pd.Series]] = None) -> pd.Series:
+        """Compute uncertainty-based weights."""
+        # Use variance as uncertainty proxy
+        uncertainty_weights = pd.Series(0.0, index=X.index)
+        
+        for col in X.columns:
+            if X[col].dtype in [np.number, 'int64', 'float64']:
+                # Compute rolling variance as uncertainty measure
+                rolling_var = X[col].rolling(window=5, center=True).var().fillna(X[col].var())
+                uncertainty_weights += rolling_var
+        
+        # Normalize
+        if uncertainty_weights.max() > 0:
+            uncertainty_weights = uncertainty_weights / uncertainty_weights.max()
+        
+        return uncertainty_weights
 
 
 class RegimeAwareBalancer:
@@ -1117,12 +1663,19 @@ class ComprehensiveBalancingSystem:
 
 # Default configurations for common use cases
 DEFAULT_BALANCING_CONFIG = BalancingConfig(
-    balancing_technique=BalancingTechnique.HYBRID,
+    balancing_technique=BalancingTechnique.ADAPTIVE,
     under_sampling_ratio=0.7,
     over_sampling_ratio=0.3,
+    under_sampling_strategy="random",
+    over_sampling_strategy="smote",
+    smote_k_neighbors=5,
+    mixup_alpha=0.2,
     stratified_batching=True,
     batch_size=1024,
     min_samples_per_class=10,
+    adaptive_imbalance_threshold=0.1,
+    adaptive_min_samples=50,
+    enable_quality_control=True,
     random_state=42
 )
 
@@ -1130,16 +1683,30 @@ DEFAULT_WEIGHTING_CONFIG = WeightingConfig(
     weighting_scheme=WeightingScheme.INFORMATION_CONTENT,
     volatility_window=20,
     volatility_floor=1e-6,
+    volatility_method="rolling_std",
+    volatility_robust=True,
+    confidence_method="probability",
     confidence_scale=2.0,
+    confidence_smoothing=0.1,
     overlap_window=5,
     overlap_decay=0.8,
+    overlap_method="rolling_count",
     time_decay_half_life=30,
     time_decay_method="exponential",
+    time_decay_min_weight=0.01,
     regime_frequency_threshold=0.2,
     regime_weight_multiplier=5.0,
+    regime_smoothing_window=10,
+    information_entropy_weight=0.3,
+    information_uncertainty_weight=0.3,
+    information_volatility_weight=0.2,
+    information_regime_weight=0.2,
+    enable_dynamic_weighting=True,
     weight_normalization="l2",
+    weight_smoothing=0.1,
     min_weight=0.1,
-    max_weight=10.0
+    max_weight=10.0,
+    enable_weight_validation=True
 )
 
 DEFAULT_REGIME_CONFIG = RegimeConfig(

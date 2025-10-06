@@ -26,7 +26,10 @@ except Exception:  # pragma: no cover - defensive guard for optional dependency
 from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler import (
     VolatilityAwareMultiHorizonLabeler,
     VolatilityAwareConfig,
-    LabelingResult
+    LabelingResult,
+    create_enhanced_analyst_labeler,
+    create_enhanced_tactician_labeler,
+    LabelDefinitionType
 )
 
 # Import base component
@@ -50,6 +53,10 @@ class MultiHorizonConfig:
     # Regime integration settings
     enable_regime_aware_labeling: bool = True
     regime_column: str = "regime_state"
+
+    # Enhanced label settings
+    enable_enhanced_labels: bool = True
+    label_definition_type: str = "analyst"  # "analyst", "tactician"
 
     # Output settings
     min_data_points: int = 1000
@@ -79,7 +86,19 @@ class MultiHorizonProfitLabeler:
         self.logger = logging.getLogger('MultiHorizonProfitLabeler')
 
         # Initialize the volatility-aware labeler
-        self.volatility_labeler = VolatilityAwareMultiHorizonLabeler(self._create_volatility_config())
+        if self.config.enable_enhanced_labels:
+            if self.config.label_definition_type.lower() == "analyst":
+                self.volatility_labeler = create_enhanced_analyst_labeler()
+                tprint_info("   → Enhanced Analyst labels: Enabled")
+            elif self.config.label_definition_type.lower() == "tactician":
+                self.volatility_labeler = create_enhanced_tactician_labeler()
+                tprint_info("   → Enhanced Tactician labels: Enabled")
+            else:
+                self.volatility_labeler = VolatilityAwareMultiHorizonLabeler(self._create_volatility_config())
+                tprint_warning(f"   → Unknown label type '{self.config.label_definition_type}', using standard labels")
+        else:
+            self.volatility_labeler = VolatilityAwareMultiHorizonLabeler(self._create_volatility_config())
+            tprint_info("   → Enhanced labels: Disabled")
 
         tprint_success("🚀 Multi-Horizon Profit Labeler initialized")
         tprint_info(f"   → Timeframe: {self.config.timeframe}")

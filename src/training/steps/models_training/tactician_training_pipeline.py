@@ -29,7 +29,7 @@ from enum import Enum
 
 # Import new modular training components
 try:
-    from .tactician_models_training_pipeline import (
+    from .tactician_models_training import (
         TacticianModelsTrainingPipeline, TacticianModelsTrainingPipelineConfig,
         TacticianModelsTrainingPipelineResult, TimeFrame as ModelsTimeFrame,
         execute_tactician_models_training_pipeline
@@ -40,7 +40,7 @@ except ImportError as e:
     MODELS_PIPELINE_AVAILABLE = False
 
 try:
-    from .tactician_ensemble_training_pipeline import (
+    from .tactician_ensemble_training import (
         TacticianEnsembleTrainingPipeline, TacticianEnsembleTrainingPipelineConfig,
         TacticianEnsembleTrainingPipelineResult, TimeFrame as EnsembleTimeFrame,
         execute_tactician_ensemble_training_pipeline

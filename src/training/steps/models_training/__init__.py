@@ -10,8 +10,8 @@ This package contains all models training components including:
 - Short/Long timeframe differentiation support
 """
 
-# Core pipeline exports
-from .tactician_models_training_pipeline import (
+# Core pipeline exports - now integrated into existing training modules
+from .tactician_models_training import (
     TacticianModelsTrainingPipeline,
     TacticianModelsTrainingPipelineConfig,
     TacticianModelsTrainingPipelineResult,
@@ -19,7 +19,7 @@ from .tactician_models_training_pipeline import (
     execute_tactician_models_training_pipeline
 )
 
-from .tactician_ensemble_training_pipeline import (
+from .tactician_ensemble_training import (
     TacticianEnsembleTrainingPipeline,
     TacticianEnsembleTrainingPipelineConfig,
     TacticianEnsembleTrainingPipelineResult,

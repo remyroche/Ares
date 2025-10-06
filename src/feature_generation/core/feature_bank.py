@@ -57,6 +57,8 @@ class FeatureBank:
         
         # Initialize matrix operations if enabled
         self.matrix_ops = None
+        self.matrix_accelerator = None
+
         if self.config.enable_matrix_operations:
             try:
                 from ...utils.matrix_operations import get_unified_matrix_operations
@@ -64,6 +66,17 @@ class FeatureBank:
                 self.logger.debug("✅ Matrix operations enabled")
             except ImportError:
                 self.logger.warning("⚠️ Matrix operations not available")
+
+            # Initialize enhanced matrix accelerator
+            try:
+                from ..utils.enhanced_matrix_accelerator import get_enhanced_matrix_accelerator
+                self.matrix_accelerator = get_enhanced_matrix_accelerator(
+                    enable_gpu=self.config.enable_gpu_acceleration,
+                    enable_parallel=self.config.enable_parallel_processing
+                )
+                self.logger.debug("✅ Enhanced matrix accelerator enabled")
+            except ImportError:
+                self.logger.warning("⚠️ Enhanced matrix accelerator not available")
         
         # Initialize lookback optimizer if enabled
         self.lookback_optimizer = None
@@ -83,7 +96,18 @@ class FeatureBank:
             'categories_used': set(),
             'features_generated': 0,
             'average_generation_time': 0.0,
-            'total_generation_time': 0.0
+            'total_generation_time': 0.0,
+            'normalization_applied': 0,
+            'matrix_accelerations': 0
+        }
+
+        # Normalization configuration
+        self.auto_normalize = self.config.get('auto_normalize', True)
+        self.normalization_method = self.config.get('normalization_method', 'zscore')
+        self.normalization_config = {
+            'exclude_categories': self.config.get('normalization_exclude_categories', []),
+            'exclude_features': self.config.get('normalization_exclude_features', []),
+            'rolling_windows': self.config.get('normalization_rolling_windows', [20, 50, 100])
         }
         
         # Cache for generated features
@@ -734,16 +758,144 @@ class FeatureBank:
         
         # Combine results
         feature_df = self._combine_results(results, data.index)
-        
+
+        # Apply automatic normalization if enabled
+        if self.auto_normalize and not feature_df.empty:
+            feature_df = self._apply_automatic_normalization(feature_df, categories)
+
         # Update performance stats
         generation_time = time.time() - start_time
         self._update_performance_stats(generation_time, len(results), categories)
-        
+
         self.logger.info(f"✅ Feature generation completed in {generation_time:.3f}s")
         self.logger.info(f"📊 Generated {len(feature_df.columns)} features")
-        
+
         return feature_df
-    
+
+    def _apply_automatic_normalization(self, feature_df: pd.DataFrame,
+                                     categories: Optional[List[Union[str, FeatureCategory]]] = None) -> pd.DataFrame:
+        """
+        Apply automatic normalization to generated features.
+
+        Args:
+            feature_df: DataFrame with generated features
+            categories: Categories that were generated (for exclusion logic)
+
+        Returns:
+            Normalized feature DataFrame
+        """
+        if feature_df.empty:
+            return feature_df
+
+        normalized_df = feature_df.copy()
+
+        try:
+            # Determine which features to normalize
+            features_to_normalize = self._select_features_for_normalization(feature_df, categories)
+
+            if not features_to_normalize:
+                self.logger.debug("No features selected for normalization")
+                return normalized_df
+
+            self.logger.info(f"🔧 Applying {self.normalization_method} normalization to {len(features_to_normalize)} features")
+
+            # Apply normalization using matrix accelerator if available
+            if self.matrix_accelerator:
+                transformations = [{
+                    'type': self.normalization_method,
+                    'params': {'columns': features_to_normalize}
+                }]
+
+                normalized_df = self.matrix_accelerator.vectorized_feature_transformations(
+                    normalized_df, transformations
+                )
+
+                self.performance_stats['normalization_applied'] += 1
+                self.performance_stats['matrix_accelerations'] += 1
+
+            else:
+                # Fallback to manual normalization
+                for feature in features_to_normalize:
+                    if feature in normalized_df.columns:
+                        if self.normalization_method == 'zscore':
+                            mean_val = normalized_df[feature].mean()
+                            std_val = normalized_df[feature].std()
+                            if std_val > 0:
+                                normalized_df[feature] = (normalized_df[feature] - mean_val) / std_val
+
+                        elif self.normalization_method == 'minmax':
+                            min_val = normalized_df[feature].min()
+                            max_val = normalized_df[feature].max()
+                            if max_val > min_val:
+                                normalized_df[feature] = (normalized_df[feature] - min_val) / (max_val - min_val)
+
+                        elif self.normalization_method == 'robust':
+                            median_val = normalized_df[feature].median()
+                            mad_val = (normalized_df[feature] - median_val).abs().median()
+                            if mad_val > 0:
+                                normalized_df[feature] = (normalized_df[feature] - median_val) / mad_val
+
+                self.performance_stats['normalization_applied'] += 1
+
+            self.logger.info(f"✅ Normalization applied to {len(features_to_normalize)} features")
+
+        except Exception as e:
+            self.logger.error(f"Error applying automatic normalization: {e}")
+            # Return original dataframe if normalization fails
+
+        return normalized_df
+
+    def _select_features_for_normalization(self, feature_df: pd.DataFrame,
+                                         categories: Optional[List[Union[str, FeatureCategory]]] = None) -> List[str]:
+        """Select which features should be normalized."""
+        features_to_normalize = []
+
+        # Get numeric columns
+        numeric_columns = feature_df.select_dtypes(include=[np.number]).columns.tolist()
+
+        for feature in numeric_columns:
+            # Skip excluded features
+            if feature in self.normalization_config['exclude_features']:
+                continue
+
+            # Skip features from excluded categories if categories are specified
+            if categories:
+                feature_category = self._get_feature_category(feature)
+                if feature_category and str(feature_category) in self.normalization_config['exclude_categories']:
+                    continue
+
+            # Only normalize features that are not already normalized or bounded
+            if not self._is_already_normalized(feature):
+                features_to_normalize.append(feature)
+
+        return features_to_normalize
+
+    def _get_feature_category(self, feature_name: str) -> Optional[FeatureCategory]:
+        """Get the category of a feature based on its name."""
+        # This is a simple heuristic - in practice, we'd maintain a registry
+        if 'zscore' in feature_name.lower() or 'normalized' in feature_name.lower():
+            return FeatureCategory.NORMALIZATION
+        elif 'rsi' in feature_name.lower() or 'momentum' in feature_name.lower():
+            return FeatureCategory.MOMENTUM
+        elif 'volume' in feature_name.lower():
+            return FeatureCategory.VOLUME
+        elif 'volatility' in feature_name.lower() or 'atr' in feature_name.lower():
+            return FeatureCategory.VOLATILITY
+        elif 'trend' in feature_name.lower() or 'ma_' in feature_name.lower():
+            return FeatureCategory.TREND
+        else:
+            return None
+
+    def _is_already_normalized(self, feature_name: str) -> bool:
+        """Check if a feature is already normalized or bounded."""
+        # Features that are already bounded or normalized
+        normalized_indicators = [
+            'rsi', 'stoch', 'williams', 'macd_hist', 'bb_percent',
+            'adx', 'cci', 'momentum', 'roc', 'zscore', 'normalized'
+        ]
+
+        return any(indicator in feature_name.lower() for indicator in normalized_indicators)
+
     def generate_features_by_category(self, 
                                     data: pd.DataFrame,
                                     category: Union[str, FeatureCategory],

@@ -398,6 +398,146 @@ def create_default_cross_timeframe_generators() -> List[FeatureGenerator]:
     """Create default set of cross-timeframe generators."""
     return create_cross_timeframe_generators()
 
+# Enhanced Cross-Timeframe Generators for Better Aggregation
+
+class CrossTimeframeFractionalChangeGenerator(FeatureGenerator):
+    """Generator for fractional change features across timeframes."""
+
+    def __init__(self, fast_tf: int = 5, slow_tf: int = 15, feature_type: str = "volatility"):
+        config = FeatureConfig(
+            name=f"ctf_fractional_{feature_type}_{fast_tf}m_{slow_tf}m",
+            category=FeatureCategory.CROSS_TIMEFRAME,
+            description=f"Fractional change of {feature_type} from {fast_tf}m to {slow_tf}m timeframe",
+            required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
+            default_lookback=max(fast_tf, slow_tf),
+            min_lookback=max(fast_tf, slow_tf),
+            max_lookback=max(fast_tf, slow_tf),
+            parameters={"fast_tf": fast_tf, "slow_tf": slow_tf, "feature_type": feature_type}
+        )
+        super().__init__(config)
+        self.fast_tf = fast_tf
+        self.slow_tf = slow_tf
+        self.feature_type = feature_type
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate fractional change feature across timeframes."""
+        if self.feature_type == "volatility":
+            fast_vol = data["close"].pct_change().rolling(window=self.fast_tf).std()
+            slow_vol = data["close"].pct_change().rolling(window=self.slow_tf).std()
+            fractional_change = fast_vol / slow_vol
+        elif self.feature_type == "momentum":
+            fast_momentum = data["close"].pct_change(self.fast_tf)
+            slow_momentum = data["close"].pct_change(self.slow_tf)
+            fractional_change = fast_momentum / slow_momentum
+        elif self.feature_type == "volume":
+            if "volume" in data.columns:
+                fast_volume = data["volume"].rolling(window=self.fast_tf).mean()
+                slow_volume = data["volume"].rolling(window=self.slow_tf).mean()
+                fractional_change = fast_volume / slow_volume
+            else:
+                fractional_change = pd.Series(np.zeros(len(data)), index=data.index)
+        else:
+            fractional_change = pd.Series(np.zeros(len(data)), index=data.index)
+
+        return fractional_change.fillna(0)
+
+
+class CrossTimeframeAlignmentGenerator(FeatureGenerator):
+    """Generator for properly aligned cross-timeframe features."""
+
+    def __init__(self, source_tf: int = 1, target_tf: int = 5, alignment_method: str = "lag"):
+        config = FeatureConfig(
+            name=f"ctf_aligned_{source_tf}m_to_{target_tf}m",
+            category=FeatureCategory.CROSS_TIMEFRAME,
+            description=f"Align {source_tf}m features to {target_tf}m timeframe using {alignment_method}",
+            required_columns=["close"],
+            default_lookback=target_tf,
+            min_lookback=target_tf,
+            max_lookback=target_tf,
+            parameters={"source_tf": source_tf, "target_tf": target_tf, "alignment_method": alignment_method}
+        )
+        super().__init__(config)
+        self.source_tf = source_tf
+        self.target_tf = target_tf
+        self.alignment_method = alignment_method
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate properly aligned cross-timeframe feature."""
+        # Calculate lag needed for alignment
+        lag_bars = self.target_tf // self.source_tf - 1
+
+        if self.alignment_method == "lag":
+            # Lag fast timeframe features by appropriate number of bars
+            returns = data["close"].pct_change()
+            aligned_returns = returns.shift(lag_bars)
+            return aligned_returns.fillna(0)
+        elif self.alignment_method == "resample":
+            # Resample to target timeframe
+            resampled = data["close"].resample(f'{self.target_tf}min').last()
+            # Forward fill to original frequency
+            aligned = resampled.reindex(data.index, method='ffill')
+            return (aligned / aligned.shift(1) - 1).fillna(0)
+        else:
+            return pd.Series(np.zeros(len(data)), index=data.index)
+
+
+class CrossTimeframeLearnedProjectionGenerator(FeatureGenerator):
+    """Generator for learned projections across timeframes using PCA/dimensionality reduction."""
+
+    def __init__(self, timeframes: List[int] = [1, 5, 15], n_components: int = 3):
+        config = FeatureConfig(
+            name=f"ctf_learned_projection_{'_'.join(map(str, timeframes))}_{n_components}",
+            category=FeatureCategory.CROSS_TIMEFRAME,
+            description=f"Learned projection across {timeframes} timeframes using {n_components} components",
+            required_columns=["close"],
+            optional_columns=["high", "low", "open", "volume"],
+            default_lookback=max(timeframes) * 10,
+            min_lookback=max(timeframes) * 5,
+            max_lookback=max(timeframes) * 20,
+            parameters={"timeframes": timeframes, "n_components": n_components}
+        )
+        super().__init__(config)
+        self.timeframes = timeframes
+        self.n_components = n_components
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate learned projection features across timeframes."""
+        try:
+            from sklearn.decomposition import PCA
+
+            # Create features for each timeframe
+            tf_features = []
+            for tf in self.timeframes:
+                # Calculate returns for this timeframe
+                returns = data["close"].pct_change(tf)
+
+                # Calculate volatility for this timeframe
+                volatility = returns.rolling(window=tf).std()
+
+                # Calculate momentum for this timeframe
+                momentum = data["close"].pct_change(tf * 5)
+
+                tf_features.append(pd.concat([returns, volatility, momentum], axis=1))
+
+            # Combine features from all timeframes
+            feature_matrix = pd.concat(tf_features, axis=1).fillna(0)
+
+            # Apply PCA for dimensionality reduction
+            if len(feature_matrix.columns) >= self.n_components:
+                pca = PCA(n_components=self.n_components)
+                pca_result = pca.fit_transform(feature_matrix)
+
+                # Return first principal component as representative feature
+                return pd.Series(pca_result[:, 0], index=data.index)
+            else:
+                return pd.Series(np.zeros(len(data)), index=data.index)
+
+        except Exception as e:
+            logger.warning(f"Error in learned projection: {e}")
+            return pd.Series(np.zeros(len(data)), index=data.index)
+
+
 # Export all generators
 __all__ = [
     'CrossTimeframeFeatureGenerator',
@@ -409,6 +549,9 @@ __all__ = [
     'CrossTimeframeRatioGenerator',
     'CrossTimeframeCorrelationGenerator',
     'CrossTimeframeDivergenceGenerator',
+    'CrossTimeframeFractionalChangeGenerator',
+    'CrossTimeframeAlignmentGenerator',
+    'CrossTimeframeLearnedProjectionGenerator',
     'create_cross_timeframe_generators',
     'create_default_cross_timeframe_generators'
 ]

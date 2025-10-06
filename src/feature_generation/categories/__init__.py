@@ -51,6 +51,12 @@ from .momentum import (
 )
 from .volume import VolumeFeatureGenerator, create_default_volume_generators
 from .volatility import VolatilityFeatureGenerator
+from .normalization import (
+    NormalizationFeatureGenerator,
+    RollingZScoreGenerator,
+    VolatilityScalingGenerator,
+    CrossSectionalNormalizer
+)
 from .trend import TrendFeatureGenerator
 from .oscillator import OscillatorFeatureGenerator
 from .support_resistance import SupportResistanceFeatureGenerator
@@ -85,6 +91,11 @@ from .interaction import (
     FeatureRatioGenerator,
     PolynomialFeatureGenerator,
     CorrelationInteractionGenerator,
+    # Enhanced interaction generators
+    RegimeDependentFeatureGenerator,
+    CointegrationResidualGenerator,
+    StructuralRatioGenerator,
+    PairwiseInteractionGenerator,
     create_default_interaction_generators
 )
 from .cross_timeframe import (
@@ -97,6 +108,9 @@ from .cross_timeframe import (
     CrossTimeframeRatioGenerator,
     CrossTimeframeCorrelationGenerator,
     CrossTimeframeDivergenceGenerator,
+    CrossTimeframeFractionalChangeGenerator,
+    CrossTimeframeAlignmentGenerator,
+    CrossTimeframeLearnedProjectionGenerator,
     create_cross_timeframe_generators
 )
 from .entropy import (
@@ -130,6 +144,12 @@ from .advanced_regime_features import (
 
 from .microstructure import create_default_microstructure_generators
 from .autoencoder import create_default_autoencoder_generators
+from .representation_learning import (
+    PatchTSTRepresentationGenerator,
+    TFTEncoderRepresentationGenerator,
+    AutoencoderRepresentationGenerator,
+    ContrastiveLearningGenerator
+)
 from .order_flow import create_default_order_flow_generators
 from .cross_timeframe import create_default_cross_timeframe_generators
 # regime.py deleted - replaced by advanced HMM regime system
@@ -165,6 +185,10 @@ __all__ = [
     "VolumeFeatureGenerator",
     "VolatilityFeatureGenerator",
     "GARCHFeatureGenerator",
+    "NormalizationFeatureGenerator",
+    "RollingZScoreGenerator",
+    "VolatilityScalingGenerator",
+    "CrossSectionalNormalizer",
     "TrendFeatureGenerator",
     "OscillatorFeatureGenerator",
     "SupportResistanceFeatureGenerator",
@@ -203,6 +227,9 @@ __all__ = [
     "CrossTimeframeRatioGenerator",
     "CrossTimeframeCorrelationGenerator",
     "CrossTimeframeDivergenceGenerator",
+    "CrossTimeframeFractionalChangeGenerator",
+    "CrossTimeframeAlignmentGenerator",
+    "CrossTimeframeLearnedProjectionGenerator",
     "create_cross_timeframe_generators",
     
     "EntropyFeatureGenerator",
@@ -227,6 +254,10 @@ __all__ = [
     "FeatureRatioGenerator",
     "PolynomialFeatureGenerator",
     "CorrelationInteractionGenerator",
+    "RegimeDependentFeatureGenerator",
+    "CointegrationResidualGenerator",
+    "StructuralRatioGenerator",
+    "PairwiseInteractionGenerator",
     "create_default_interaction_generators",
     
     # Other categories
@@ -238,6 +269,10 @@ __all__ = [
     "create_default_microstructure_generators",
     "create_default_entropy_generators",
     "create_default_autoencoder_generators",
+    "PatchTSTRepresentationGenerator",
+    "TFTEncoderRepresentationGenerator",
+    "AutoencoderRepresentationGenerator",
+    "ContrastiveLearningGenerator",
     "create_default_order_flow_generators",
     "create_default_cross_timeframe_generators",
     "create_default_legacy_generators",

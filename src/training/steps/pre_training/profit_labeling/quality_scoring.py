@@ -45,6 +45,13 @@ except ImportError:
     BAYESIAN_OPTIMIZER_AVAILABLE = False
     tprint_warning("⚠️ Bayesian TPE optimizer not available, using grid search")
 
+try:
+    from src.utils.ml_common.optimization.pareto import ParetoOptimizer, Solution
+    PARETO_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    PARETO_OPTIMIZER_AVAILABLE = False
+    tprint_warning("⚠️ Pareto optimizer not available, using weighted sum")
+
 
 class QualityMetric(Enum):
     """Enumeration of quality metrics."""
@@ -53,6 +60,7 @@ class QualityMetric(Enum):
     CONSISTENCY = "consistency"  # Mutual information between labels
     BALANCE = "balance"  # Class balance
     SNR_PROXY = "snr_proxy"  # |IC| between features and labels
+    SPARSITY = "sparsity"  # Label sparsity (minimum positive class ratio)
 
 
 @dataclass
@@ -77,15 +85,23 @@ class QualityScoringConfig:
     max_flip_rate_threshold: float = 0.15
     min_balance_threshold: float = 0.35
     max_balance_threshold: float = 0.65
+    min_sparsity_threshold: float = 0.05  # Minimum 5% positive class
     
     # LQS calculation
     lqs_weights: Dict[str, float] = field(default_factory=lambda: {
-        'predictability': 0.3,
+        'predictability': 0.25,
         'stability': 0.2,
         'consistency': 0.2,
         'balance': 0.2,
-        'snr_proxy': 0.1
+        'snr_proxy': 0.1,
+        'sparsity': 0.05
     })
+    
+    # Pareto optimization
+    enable_pareto_optimization: bool = True
+    pareto_objectives: List[str] = field(default_factory=lambda: [
+        'predictability', 'stability', 'consistency', 'balance', 'sparsity'
+    ])
     
     # Optimization settings
     enable_optimization: bool = True
@@ -108,6 +124,7 @@ class QualityMetrics:
     consistency: float = 0.0
     balance: float = 0.0
     snr_proxy: float = 0.0
+    sparsity: float = 0.0
     
     # Composite score
     lqs_score: float = 0.0
@@ -154,10 +171,17 @@ class LabelQualityScorer:
         self.config = config or QualityScoringConfig()
         self.logger = logging.getLogger('LabelQualityScorer')
         
+        # Initialize Pareto optimizer if available
+        if PARETO_OPTIMIZER_AVAILABLE and self.config.enable_pareto_optimization:
+            self.pareto_optimizer = ParetoOptimizer()
+        else:
+            self.pareto_optimizer = None
+        
         tprint_info("📊 Label Quality Scorer initialized")
         tprint_info(f"   → Baseline models: {self.config.baseline_models}")
         tprint_info(f"   → CV splits: {self.config.n_splits}")
         tprint_info(f"   → Optimization: {self.config.enable_optimization}")
+        tprint_info(f"   → Pareto optimization: {self.config.enable_pareto_optimization}")
     
     def assess_quality(self, labels: pd.DataFrame, confidence_scores: pd.DataFrame,
                       eligibility_masks: pd.DataFrame, bars: pd.DataFrame) -> Dict[str, QualityMetrics]:
@@ -280,7 +304,12 @@ class LabelQualityScorer:
             metrics.snr_proxy = snr_metrics['snr_proxy']
             metrics.information_coefficient = snr_metrics['information_coefficient']
             
-            # 6. Calculate composite LQS score
+            # 6. Sparsity assessment
+            tprint_info(f"   📊 Assessing sparsity for {target_name}")
+            sparsity_metrics = self._assess_sparsity(target_labels)
+            metrics.sparsity = sparsity_metrics['sparsity']
+            
+            # 7. Calculate composite LQS score
             metrics.lqs_score = self._calculate_lqs_score(metrics)
             
             # Calculate processing time
@@ -704,6 +733,31 @@ class LabelQualityScorer:
             tprint_warning(f"⚠️ Error in SNR proxy assessment: {e}")
             return {'snr_proxy': 0.0, 'information_coefficient': 0.0}
     
+    def _assess_sparsity(self, target_labels: pd.Series) -> Dict[str, float]:
+        """Assess label sparsity (minimum positive class ratio)."""
+        try:
+            if len(target_labels) == 0:
+                return {'sparsity': 0.0}
+            
+            # Calculate positive class ratio
+            positive_ratio = (target_labels > 0).sum() / len(target_labels)
+            
+            # Sparsity score: higher is better, penalize if below threshold
+            if positive_ratio >= self.config.min_sparsity_threshold:
+                sparsity_score = 1.0
+            else:
+                # Penalize based on how far below threshold
+                penalty = (self.config.min_sparsity_threshold - positive_ratio) / self.config.min_sparsity_threshold
+                sparsity_score = max(0.0, 1.0 - penalty)
+            
+            return {
+                'sparsity': sparsity_score
+            }
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error in sparsity assessment: {e}")
+            return {'sparsity': 0.0}
+    
     def _calculate_lqs_score(self, metrics: QualityMetrics) -> float:
         """Calculate composite Label Quality Score (LQS)."""
         try:
@@ -716,7 +770,8 @@ class LabelQualityScorer:
                 weights['stability'] * metrics.stability +
                 weights['consistency'] * metrics.consistency +
                 weights['balance'] * metrics.balance +
-                weights['snr_proxy'] * metrics.snr_proxy
+                weights['snr_proxy'] * metrics.snr_proxy +
+                weights['sparsity'] * metrics.sparsity
             )
             
             return max(0.0, min(1.0, lqs_score))
@@ -724,6 +779,73 @@ class LabelQualityScorer:
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating LQS score: {e}")
             return 0.0
+    
+    def optimize_target_selection_pareto(self, quality_results: Dict[str, QualityMetrics]) -> List[str]:
+        """Use Pareto optimization to select optimal targets."""
+        try:
+            if not self.pareto_optimizer or not quality_results:
+                # Fallback to LQS-based selection
+                return self._select_targets_by_lqs(quality_results)
+            
+            # Convert quality results to Pareto solutions
+            solutions = []
+            for target_name, metrics in quality_results.items():
+                solution_metrics = {
+                    'predictability': metrics.predictability,
+                    'stability': metrics.stability,
+                    'consistency': metrics.consistency,
+                    'balance': metrics.balance,
+                    'sparsity': metrics.sparsity
+                }
+                
+                solution = Solution(
+                    metrics=solution_metrics,
+                    params={'target_name': target_name}
+                )
+                solutions.append(solution)
+            
+            # Define objectives (all maximization)
+            objectives = {
+                'predictability': 'max',
+                'stability': 'max',
+                'consistency': 'max',
+                'balance': 'max',
+                'sparsity': 'max'
+            }
+            
+            # Compute Pareto front
+            pareto_solutions = self.pareto_optimizer.optimize(solutions, objectives)
+            
+            # Extract target names from Pareto solutions
+            selected_targets = []
+            for solution in pareto_solutions:
+                if solution.params and 'target_name' in solution.params:
+                    selected_targets.append(solution.params['target_name'])
+            
+            tprint_info(f"📊 Pareto optimization selected {len(selected_targets)} targets")
+            return selected_targets
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Pareto optimization failed: {e}")
+            return self._select_targets_by_lqs(quality_results)
+    
+    def _select_targets_by_lqs(self, quality_results: Dict[str, QualityMetrics]) -> List[str]:
+        """Fallback method: select targets by LQS score."""
+        try:
+            # Sort by LQS score
+            sorted_targets = sorted(
+                quality_results.items(),
+                key=lambda x: x[1].lqs_score,
+                reverse=True
+            )
+            
+            # Select top targets
+            selected_targets = [name for name, _ in sorted_targets[:5]]  # Top 5
+            return selected_targets
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ LQS-based selection failed: {e}")
+            return list(quality_results.keys())
 
 
 # Convenience functions

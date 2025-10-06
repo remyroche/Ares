@@ -331,7 +331,7 @@ class VolatilityModeler:
     
     def _combine_volatility_estimates(self, rv_series: pd.Series, atr_series: pd.Series, 
                                     ewma_series: pd.Series) -> pd.Series:
-        """Intelligently combine multiple volatility estimates."""
+        """Intelligently combine multiple volatility estimates using hybrid approach."""
         try:
             # Align all series to the same index
             common_index = rv_series.index.intersection(atr_series.index).intersection(ewma_series.index)
@@ -344,24 +344,16 @@ class VolatilityModeler:
             atr_aligned = atr_series.loc[common_index]
             ewma_aligned = ewma_series.loc[common_index]
             
-            # Calculate weights based on reliability
-            rv_weight = self._calculate_volatility_weight(rv_aligned, 'rv')
-            atr_weight = self._calculate_volatility_weight(atr_aligned, 'atr')
-            ewma_weight = self._calculate_volatility_weight(ewma_aligned, 'ewma')
+            # Use hybrid RV+ATR approach as suggested
+            # σ_t = 0.5·RV_t + 0.5·ATR_t for better balance of responsiveness and smoothness
+            hybrid_volatility = 0.5 * rv_aligned + 0.5 * atr_aligned
             
-            # Normalize weights
-            total_weight = rv_weight + atr_weight + ewma_weight
-            if total_weight > 0:
-                rv_weight /= total_weight
-                atr_weight /= total_weight
-                ewma_weight /= total_weight
-            else:
-                rv_weight = atr_weight = ewma_weight = 1/3
+            # Add EWMA as a smoothing component (smaller weight)
+            ewma_weight = 0.2
+            hybrid_weight = 0.8
             
-            # Combine estimates
-            combined = (rv_weight * rv_aligned + 
-                       atr_weight * atr_aligned + 
-                       ewma_weight * ewma_aligned)
+            # Final combination: 80% hybrid (RV+ATR) + 20% EWMA
+            combined = hybrid_weight * hybrid_volatility + ewma_weight * ewma_aligned
             
             return combined
             

@@ -224,6 +224,18 @@ class MultiTargetScheme:
                 selected_targets, bars_aligned, vol_aligned, elig_aligned
             )
             
+            # Step 6: Apply label smoothing and conflict resolution
+            tprint_info("🔧 Step 6: Applying label smoothing and conflict resolution")
+            if not final_result['labels'].empty:
+                # Resolve conflicts
+                final_result['labels'] = self._resolve_label_conflicts(final_result['labels'])
+                
+                # Apply label smoothing
+                final_result['labels'] = self._apply_label_smoothing(
+                    final_result['labels'], 
+                    final_result['confidence_scores']
+                )
+            
             # Update result
             result.labels = final_result['labels']
             result.confidence_scores = final_result['confidence_scores']
@@ -305,7 +317,7 @@ class MultiTargetScheme:
     
     def _generate_band_candidates(self, band: TargetBand, bars: pd.DataFrame,
                                 volatility_series: pd.Series, eligibility_mask: pd.Series) -> List[Dict[str, Any]]:
-        """Generate candidates for a specific band."""
+        """Generate candidates for a specific band with conditional thresholds."""
         try:
             candidates = []
             
@@ -316,6 +328,8 @@ class MultiTargetScheme:
                 k_range = self.config.medium_band
             else:  # HIGH
                 k_range = self.config.high_band
+                # Apply conditional thresholds for high targets based on volatility
+                k_range = self._apply_conditional_thresholds(k_range, volatility_series, band)
             
             # Generate k values within the band
             if self.config.optimization_method == 'bayesian' and BAYESIAN_OPTIMIZER_AVAILABLE:
@@ -345,10 +359,41 @@ class MultiTargetScheme:
             tprint_warning(f"⚠️ Error generating candidates for band {band.value}: {e}")
             return []
     
+    def _apply_conditional_thresholds(self, k_range: Tuple[float, float], 
+                                    volatility_series: pd.Series, band: TargetBand) -> Tuple[float, float]:
+        """Apply conditional thresholds for high targets based on volatility."""
+        try:
+            if band != TargetBand.HIGH:
+                return k_range
+            
+            # Calculate volatility percentiles
+            vol_25 = volatility_series.quantile(0.25)
+            vol_75 = volatility_series.quantile(0.75)
+            vol_median = volatility_series.median()
+            
+            # Adjust k range based on volatility
+            if vol_median < vol_25:
+                # Low volatility: use higher k values (2.0)
+                adjusted_range = (max(k_range[0], 1.8), min(k_range[1], 2.2))
+            elif vol_median > vol_75:
+                # High volatility: use lower k values (1.5)
+                adjusted_range = (max(k_range[0], 1.2), min(k_range[1], 1.8))
+            else:
+                # Medium volatility: use original range
+                adjusted_range = k_range
+            
+            tprint_info(f"   📊 Adjusted {band.value} band range: {adjusted_range} (volatility: {vol_median:.4f})")
+            
+            return adjusted_range
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error applying conditional thresholds: {e}")
+            return k_range
+    
     def _bayesian_optimize_k_values(self, k_range: Tuple[float, float], bars: pd.DataFrame,
                                   volatility_series: pd.Series, eligibility_mask: pd.Series,
                                   band: TargetBand) -> List[float]:
-        """Use Bayesian optimization to find optimal k values."""
+        """Use coarse grid -> fine grid -> TPE optimization strategy."""
         try:
             if not BAYESIAN_OPTIMIZER_AVAILABLE:
                 return self._grid_search_k_values(k_range, bars, volatility_series, eligibility_mask, band)
@@ -369,35 +414,129 @@ class MultiTargetScheme:
                 except Exception:
                     return 0.0
             
-            # Set up optimization
+            # Step 1: Coarse grid search to find promising regions
+            tprint_info(f"   🔍 Step 1: Coarse grid search for {band.value} band")
+            coarse_k_values = self._coarse_grid_search(k_range, objective, n_points=20)
+            
+            if not coarse_k_values:
+                return self._grid_search_k_values(k_range, bars, volatility_series, eligibility_mask, band)
+            
+            # Step 2: Fine grid search around promising regions
+            tprint_info(f"   🔍 Step 2: Fine grid search for {band.value} band")
+            fine_k_values = self._fine_grid_search(coarse_k_values, objective, n_points=15)
+            
+            if not fine_k_values:
+                return coarse_k_values
+            
+            # Step 3: TPE optimization in the best region
+            tprint_info(f"   🔍 Step 3: TPE optimization for {band.value} band")
+            tpe_k_values = self._tpe_optimization(fine_k_values, objective, k_range)
+            
+            # Combine results from all stages
+            all_k_values = list(set(coarse_k_values + fine_k_values + tpe_k_values))
+            
+            # Sort by quality score and return top values
+            k_scores = [(k, objective(k)) for k in all_k_values]
+            k_scores.sort(key=lambda x: x[1], reverse=True)
+            
+            # Return top 3 k values
+            top_k_values = [k for k, score in k_scores[:3] if score > 0]
+            
+            return top_k_values if top_k_values else [k_range[0] + (k_range[1] - k_range[0]) / 2]
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Multi-stage optimization failed for band {band.value}: {e}")
+            return self._grid_search_k_values(k_range, bars, volatility_series, eligibility_mask, band)
+    
+    def _coarse_grid_search(self, k_range: Tuple[float, float], objective: callable, n_points: int = 20) -> List[float]:
+        """Coarse grid search to identify promising regions."""
+        try:
+            k_values = np.linspace(k_range[0], k_range[1], n_points)
+            scores = []
+            
+            for k in k_values:
+                score = objective(k)
+                scores.append(score)
+            
+            # Find regions with high scores
+            scores = np.array(scores)
+            threshold = np.percentile(scores, 70)  # Top 30% of scores
+            
+            promising_k_values = k_values[scores >= threshold].tolist()
+            
+            return promising_k_values
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Coarse grid search failed: {e}")
+            return []
+    
+    def _fine_grid_search(self, promising_k_values: List[float], objective: callable, n_points: int = 15) -> List[float]:
+        """Fine grid search around promising regions."""
+        try:
+            if not promising_k_values:
+                return []
+            
+            # Create fine grid around promising values
+            fine_k_values = []
+            
+            for k in promising_k_values:
+                # Create local grid around this k value
+                local_range = 0.1 * (max(promising_k_values) - min(promising_k_values))
+                local_k_values = np.linspace(
+                    max(k - local_range, min(promising_k_values)),
+                    min(k + local_range, max(promising_k_values)),
+                    n_points
+                )
+                fine_k_values.extend(local_k_values)
+            
+            # Remove duplicates and evaluate
+            fine_k_values = list(set(fine_k_values))
+            scores = [objective(k) for k in fine_k_values]
+            
+            # Return top values
+            k_scores = list(zip(fine_k_values, scores))
+            k_scores.sort(key=lambda x: x[1], reverse=True)
+            
+            return [k for k, score in k_scores[:5] if score > 0]
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Fine grid search failed: {e}")
+            return []
+    
+    def _tpe_optimization(self, fine_k_values: List[float], objective: callable, k_range: Tuple[float, float]) -> List[float]:
+        """TPE optimization in the best region."""
+        try:
+            if not fine_k_values or not BAYESIAN_OPTIMIZER_AVAILABLE:
+                return []
+            
+            # Define search space around fine grid results
+            k_min = min(fine_k_values)
+            k_max = max(fine_k_values)
+            
+            # Expand range slightly for TPE
+            range_expansion = 0.1 * (k_max - k_min)
+            tpe_k_min = max(k_min - range_expansion, k_range[0])
+            tpe_k_max = min(k_max + range_expansion, k_range[1])
+            
+            # Set up TPE optimizer
             optimizer = BayesianTPEOptimizer(
-                n_trials=self.config.n_trials,
+                n_trials=min(50, self.config.n_trials // 2),
                 random_state=42
             )
             
             # Define search space
             search_space = {
-                'k': (k_range[0], k_range[1])
+                'k': (tpe_k_min, tpe_k_max)
             }
             
-            # Run optimization
+            # Run TPE optimization
             best_params = optimizer.optimize(objective, search_space)
             
-            # Extract k values
-            k_values = [best_params['k']]
-            
-            # Add some additional k values around the optimal
-            k_step = (k_range[1] - k_range[0]) / 10
-            for offset in [-k_step, k_step]:
-                k_val = best_params['k'] + offset
-                if k_range[0] <= k_val <= k_range[1]:
-                    k_values.append(k_val)
-            
-            return k_values
+            return [best_params['k']]
             
         except Exception as e:
-            tprint_warning(f"⚠️ Bayesian optimization failed for band {band.value}: {e}")
-            return self._grid_search_k_values(k_range, bars, volatility_series, eligibility_mask, band)
+            tprint_warning(f"⚠️ TPE optimization failed: {e}")
+            return []
     
     def _grid_search_k_values(self, k_range: Tuple[float, float], bars: pd.DataFrame,
                             volatility_series: pd.Series, eligibility_mask: pd.Series,
@@ -562,12 +701,13 @@ class MultiTargetScheme:
     
     def _calculate_fpt_for_target(self, k_up: float, k_down: float, bars: pd.DataFrame,
                                 volatility_series: pd.Series) -> Optional[np.ndarray]:
-        """Calculate first-passage time for a specific target."""
+        """Calculate first-passage time for a specific target using survival analysis approach."""
         try:
             if len(bars) < self.config.fpt_min_samples:
                 return None
             
             fpt_values = []
+            censored_values = []  # For survival analysis
             
             for i in range(len(bars) - self.config.fpt_window):
                 current_price = bars['close'].iloc[i]
@@ -582,16 +722,77 @@ class MultiTargetScheme:
                 # Look ahead for first hit
                 future_prices = bars['close'].iloc[i+1:i+self.config.fpt_window]
                 
+                hit_time = None
                 for j, future_price in enumerate(future_prices):
                     if future_price >= upper_target or future_price <= lower_target:
-                        fpt_values.append(j + 1)  # +1 because j is 0-indexed
+                        hit_time = j + 1  # +1 because j is 0-indexed
                         break
+                
+                if hit_time is not None:
+                    fpt_values.append(hit_time)
+                else:
+                    # Censored observation (no hit within window)
+                    censored_values.append(self.config.fpt_window)
             
-            return np.array(fpt_values) if fpt_values else None
+            # Use survival analysis approach for better FPT estimation
+            if fpt_values:
+                # Calculate Kaplan-Meier-like estimator for FPT distribution
+                fpt_array = np.array(fpt_values)
+                censored_array = np.array(censored_values) if censored_values else np.array([])
+                
+                # Combine observed and censored times
+                all_times = np.concatenate([fpt_array, censored_array])
+                event_indicators = np.concatenate([
+                    np.ones(len(fpt_array)),  # 1 for observed events
+                    np.zeros(len(censored_array))  # 0 for censored
+                ])
+                
+                # Sort by time
+                sort_idx = np.argsort(all_times)
+                sorted_times = all_times[sort_idx]
+                sorted_events = event_indicators[sort_idx]
+                
+                # Calculate survival probabilities
+                survival_probs = self._calculate_survival_probabilities(sorted_times, sorted_events)
+                
+                # Use quantiles of survival distribution for FPT estimation
+                quantile_times = []
+                for q in self.config.fpt_quantiles:
+                    # Find time where survival probability drops below (1-q)
+                    target_survival = 1 - q
+                    idx = np.where(survival_probs <= target_survival)[0]
+                    if len(idx) > 0:
+                        quantile_times.append(sorted_times[idx[0]])
+                    else:
+                        quantile_times.append(sorted_times[-1])
+                
+                return np.array(quantile_times)
+            else:
+                return None
             
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating FPT for target: {e}")
             return None
+    
+    def _calculate_survival_probabilities(self, times: np.ndarray, events: np.ndarray) -> np.ndarray:
+        """Calculate survival probabilities using Kaplan-Meier estimator."""
+        try:
+            n = len(times)
+            survival_probs = np.ones(n)
+            
+            # Calculate at-risk counts
+            at_risk = np.arange(n, 0, -1)  # Number at risk at each time point
+            
+            # Calculate survival probabilities
+            for i in range(n):
+                if events[i] == 1:  # Observed event
+                    survival_probs[i:] *= (at_risk[i] - 1) / at_risk[i]
+            
+            return survival_probs
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating survival probabilities: {e}")
+            return np.ones(len(times))
     
     def _generate_candidate_labels(self, candidate_targets: List[Dict[str, Any]],
                                  horizons: Dict[str, int], bars: pd.DataFrame,
@@ -622,7 +823,7 @@ class MultiTargetScheme:
     
     def _generate_labels_with_horizon(self, k_up: float, k_down: float, horizon: int,
                                     bars: pd.DataFrame, volatility_series: pd.Series,
-                                    eligibility_mask: pd.Series) -> pd.Series:
+                                    eligibility_mask: pd.Series) -> pd.DataFrame:
         """Generate labels with specific horizon."""
         try:
             # Calculate target levels
@@ -694,6 +895,232 @@ class MultiTargetScheme:
         except Exception as e:
             tprint_warning(f"⚠️ Error generating labels with horizon: {e}")
             return pd.DataFrame()
+    
+    def _generate_confidence_features(self, bars: pd.DataFrame, volatility_series: pd.Series) -> pd.DataFrame:
+        """Generate features for probabilistic confidence scoring."""
+        try:
+            features = pd.DataFrame(index=bars.index)
+            
+            # Price-based features
+            features['returns'] = bars['close'].pct_change()
+            features['volatility'] = volatility_series
+            features['volatility_ratio'] = volatility_series / volatility_series.rolling(20).mean()
+            
+            # Volume features
+            features['volume_ratio'] = bars['volume'] / bars['volume'].rolling(20).mean()
+            features['volume_trend'] = bars['volume'].pct_change()
+            
+            # OHLC features
+            features['high_low_ratio'] = (bars['high'] - bars['low']) / bars['close']
+            features['close_open_ratio'] = (bars['close'] - bars['open']) / bars['open']
+            
+            # Technical indicators
+            features['price_momentum'] = bars['close'] / bars['close'].shift(5) - 1
+            features['volatility_momentum'] = volatility_series / volatility_series.shift(5) - 1
+            
+            # Fill NaN values
+            features = features.fillna(0)
+            
+            return features
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error generating confidence features: {e}")
+            return pd.DataFrame()
+    
+    def _calculate_probabilistic_confidence(self, features: pd.Series, label: int, 
+                                          volatility: float, hit_time: int) -> float:
+        """Calculate probabilistic confidence using features."""
+        try:
+            # Simple logistic regression-like approach
+            # In practice, this would be trained on historical data
+            
+            # Feature weights (would be learned from data)
+            weights = {
+                'returns': 0.3,
+                'volatility': 0.2,
+                'volatility_ratio': 0.15,
+                'volume_ratio': 0.1,
+                'high_low_ratio': 0.1,
+                'close_open_ratio': 0.1,
+                'price_momentum': 0.05
+            }
+            
+            # Calculate weighted sum
+            weighted_sum = 0.0
+            for feature_name, weight in weights.items():
+                if feature_name in features:
+                    weighted_sum += weight * features[feature_name]
+            
+            # Apply sigmoid function
+            confidence = 1 / (1 + np.exp(-weighted_sum))
+            
+            # Adjust for volatility (higher vol = lower confidence)
+            vol_adjustment = 1 / (1 + volatility * 10)
+            
+            # Adjust for hit time (faster hits = higher confidence)
+            time_adjustment = 1 / (1 + hit_time * 0.1)
+            
+            # Combine adjustments
+            final_confidence = confidence * vol_adjustment * time_adjustment
+            
+            return max(0.0, min(1.0, final_confidence))
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating probabilistic confidence: {e}")
+            return 0.5
+    
+    def _resolve_label_conflicts(self, labels_df: pd.DataFrame) -> pd.DataFrame:
+        """Resolve conflicts between different target labels at the same timestamp."""
+        try:
+            if labels_df.empty:
+                return labels_df
+            
+            # Create conflict resolution rules
+            # 1. Hierarchical precedence: small < medium < high
+            # 2. Confidence-based selection within same level
+            # 3. Multi-task output for complementary signals
+            
+            resolved_labels = labels_df.copy()
+            
+            # Group by target bands
+            small_targets = [col for col in labels_df.columns if 'small' in col.lower()]
+            medium_targets = [col for col in labels_df.columns if 'medium' in col.lower()]
+            high_targets = [col for col in labels_df.columns if 'high' in col.lower()]
+            
+            # Apply hierarchical precedence
+            for idx in labels_df.index:
+                # Check for conflicts (multiple non-zero labels)
+                non_zero_labels = labels_df.loc[idx][labels_df.loc[idx] != 0]
+                
+                if len(non_zero_labels) > 1:
+                    # Apply hierarchical precedence
+                    if high_targets and any(col in non_zero_labels.index for col in high_targets):
+                        # High targets take precedence
+                        for col in high_targets:
+                            if col in non_zero_labels.index:
+                                # Keep high target, zero out others
+                                for other_col in labels_df.columns:
+                                    if other_col != col and other_col in non_zero_labels.index:
+                                        resolved_labels.loc[idx, other_col] = 0
+                                break
+                    elif medium_targets and any(col in non_zero_labels.index for col in medium_targets):
+                        # Medium targets take precedence
+                        for col in medium_targets:
+                            if col in non_zero_labels.index:
+                                # Keep medium target, zero out others
+                                for other_col in labels_df.columns:
+                                    if other_col != col and other_col in non_zero_labels.index:
+                                        resolved_labels.loc[idx, other_col] = 0
+                                break
+                    elif small_targets and any(col in non_zero_labels.index for col in small_targets):
+                        # Small targets take precedence
+                        for col in small_targets:
+                            if col in non_zero_labels.index:
+                                # Keep small target, zero out others
+                                for other_col in labels_df.columns:
+                                    if other_col != col and other_col in non_zero_labels.index:
+                                        resolved_labels.loc[idx, other_col] = 0
+                                break
+            
+            return resolved_labels
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error resolving label conflicts: {e}")
+            return labels_df
+    
+    def _apply_label_smoothing(self, labels_df: pd.DataFrame, confidence_df: pd.DataFrame) -> pd.DataFrame:
+        """Apply label smoothing for better model calibration."""
+        try:
+            if labels_df.empty:
+                return labels_df
+            
+            smoothed_labels = labels_df.copy()
+            
+            # Apply temporal smoothing to reduce micro-flips
+            for col in labels_df.columns:
+                if col in labels_df.columns:
+                    labels_series = labels_df[col]
+                    smoothed_series = self._temporal_smoothing(labels_series, confidence_df.get(col, pd.Series()))
+                    smoothed_labels[col] = smoothed_series
+            
+            # Apply soft label smoothing (mix with uniform noise)
+            if not confidence_df.empty:
+                smoothed_labels = self._soft_label_smoothing(smoothed_labels, confidence_df)
+            
+            return smoothed_labels
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error applying label smoothing: {e}")
+            return labels_df
+    
+    def _temporal_smoothing(self, labels_series: pd.Series, confidence_series: pd.Series) -> pd.Series:
+        """Apply temporal smoothing to reduce micro-flips."""
+        try:
+            if len(labels_series) < 3:
+                return labels_series
+            
+            smoothed = labels_series.copy()
+            window_size = 3  # Small window for temporal smoothing
+            
+            for i in range(window_size, len(labels_series)):
+                # Get recent labels and confidences
+                recent_labels = labels_series.iloc[i-window_size:i]
+                recent_confidences = confidence_series.iloc[i-window_size:i] if not confidence_series.empty else pd.Series(1.0, index=recent_labels.index)
+                
+                # Weight by confidence
+                if not recent_confidences.empty:
+                    weights = recent_confidences / recent_confidences.sum()
+                    weighted_labels = recent_labels * weights
+                    smoothed_value = weighted_labels.sum()
+                else:
+                    smoothed_value = recent_labels.mean()
+                
+                # Apply smoothing only if confidence is high enough
+                current_confidence = confidence_series.iloc[i] if not confidence_series.empty else 1.0
+                if current_confidence > 0.5:
+                    # Blend current label with smoothed value
+                    alpha = 0.3  # Smoothing strength
+                    smoothed.iloc[i] = (1 - alpha) * labels_series.iloc[i] + alpha * smoothed_value
+            
+            return smoothed
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error in temporal smoothing: {e}")
+            return labels_series
+    
+    def _soft_label_smoothing(self, labels_df: pd.DataFrame, confidence_df: pd.DataFrame) -> pd.DataFrame:
+        """Apply soft label smoothing by mixing with uniform noise."""
+        try:
+            if labels_df.empty or confidence_df.empty:
+                return labels_df
+            
+            smoothed_labels = labels_df.copy()
+            smoothing_factor = 0.1  # 10% uniform noise
+            
+            for col in labels_df.columns:
+                if col in labels_df.columns and col in confidence_df.columns:
+                    labels_series = labels_df[col]
+                    confidence_series = confidence_df[col]
+                    
+                    # Create soft labels
+                    soft_labels = labels_series.copy()
+                    
+                    for i in range(len(labels_series)):
+                        if confidence_series.iloc[i] > 0.5:  # Only smooth high-confidence labels
+                            # Mix with uniform noise
+                            uniform_noise = np.random.uniform(-1, 1)
+                            soft_value = (1 - smoothing_factor) * labels_series.iloc[i] + smoothing_factor * uniform_noise
+                            
+                            # Clamp to valid range
+                            soft_labels.iloc[i] = max(-1, min(1, soft_value))
+                    
+                    smoothed_labels[col] = soft_labels
+            
+            return smoothed_labels
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error in soft label smoothing: {e}")
+            return labels_df
     
     def _select_optimal_targets(self, candidate_labels: Dict[str, pd.DataFrame],
                               candidate_targets: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:

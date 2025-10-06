@@ -1769,7 +1769,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             if not outcomes_dir.exists():
                 tprint("⚠️ No outcomes directory found")
                 return None
-            
+
             # Search for multi-horizon profit labeler outcome files
             pattern = f"market_analysis_multi_horizon_profit_labeler_outcome_*.json"
             outcome_files = list(outcomes_dir.glob(pattern))
@@ -1788,9 +1788,9 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             # Check if the outcome is for the same symbol/exchange/timeframe
             config_data = outcome_data.get('config', {})
             tprint(f"🔍 Checking match: file has {config_data.get('symbol')}/{config_data.get('exchange')}/{config_data.get('timeframe')}, looking for {symbol}/{exchange}/{timeframe}")
-            
-            if (config_data.get('symbol') == symbol and 
-                config_data.get('exchange') == exchange and 
+
+            if (config_data.get('symbol') == symbol and
+                config_data.get('exchange') == exchange and
                 config_data.get('timeframe') == timeframe):
                 
                 # Extract the artifacts

@@ -25,7 +25,7 @@ except ImportError:
 
 # Import multi-horizon profit labeler
 try:
-    from ..multi_horizon_profit_labeler import MultiHorizonProfitLabeler, MultiHorizonConfig
+    from ..multi_horizon_profit_labeler import MultiHorizonProfitLabelerComponent, MultiHorizonConfig
     MULTI_HORIZON_AVAILABLE = True
 except ImportError:
     MULTI_HORIZON_AVAILABLE = False
@@ -33,60 +33,28 @@ except ImportError:
 
 class MultiHorizonComponentWrapper(BasePreTrainingComponent):
     """Wrapper for Multi-Horizon Profit Labeler to work as a component."""
-    
+
     def __init__(self, config: Optional[ComponentConfig] = None):
         super().__init__(config)
-        self.labeler = None
-    
+        self.component = None
+
     def get_required_artifacts(self) -> list[str]:
         """Get list of required artifacts this component must produce."""
-        return ['multi_horizon_labeling_result']
-    
+        return ['multi_horizon_labeling_result', 'labeling_report']
+
     async def execute(self, data, pipeline_state: Dict[str, Any]) -> 'ComponentResult':
         """Execute multi-horizon labeling as a component."""
         try:
-            # Create labeler instance if not exists
-            if self.labeler is None:
+            # Create component instance if not exists
+            if self.component is None:
                 if not MULTI_HORIZON_AVAILABLE:
                     raise ImportError("Multi-horizon profit labeler not available")
-                
-                # Create config with timeframe support
-                timeframe = pipeline_state.get('timeframe')
-                config_kwargs: Dict[str, Any] = {}
 
-                if timeframe:
-                    config_kwargs['timeframe'] = timeframe
+                self.component = MultiHorizonProfitLabelerComponent(self.config)
 
-                    # Align the base period with the requested timeframe when possible
-                    if timeframe.endswith('m') and timeframe[:-1].isdigit():
-                        config_kwargs['base_period_minutes'] = float(int(timeframe[:-1]))
-                    elif timeframe.endswith('h') and timeframe[:-1].isdigit():
-                        config_kwargs['base_period_minutes'] = float(int(timeframe[:-1]) * 60)
-                    elif timeframe.endswith('d') and timeframe[:-1].isdigit():
-                        config_kwargs['base_period_minutes'] = float(int(timeframe[:-1]) * 24 * 60)
+            # Execute component
+            return await self.component.execute(data, pipeline_state)
 
-                mh_config = MultiHorizonConfig(**config_kwargs)
-                self.labeler = MultiHorizonProfitLabeler(mh_config)
-            
-            # Execute labeling with timeframe
-            labeling_timeframe = pipeline_state.get(
-                'timeframe',
-                getattr(getattr(self.labeler, 'config', None), 'timeframe', '15m')
-            )
-
-            labeling_result = await self.labeler.execute_labeling(
-                symbol=pipeline_state.get('symbol', 'ETHUSDT'),
-                exchange=pipeline_state.get('exchange', 'binance'),
-                timeframe=labeling_timeframe,
-                data_dir=pipeline_state.get('data_dir', 'historical_data')
-            )
-            
-            return ComponentResult(
-                success=True,
-                artifacts=labeling_result,
-                metadata={'component_type': 'multi_horizon_profit_labeler'}
-            )
-                
         except Exception as e:
             return ComponentResult(
                 success=False,

@@ -101,14 +101,10 @@ class BasePreTrainingComponent(ABC):
                 }
                 
                 # Save artifact
-                file_path = await self.artifact_manager.save_artifact(
-                    artifact_name=artifact_name,
-                    artifact_data=artifact_data,
-                    metadata=artifact_metadata,
-                    component_name=self.__class__.__name__,
-                    symbol=self.config.symbol,
-                    exchange=self.config.exchange,
-                    timeframe=self.config.timeframe
+                file_path = self.artifact_manager.save_artifact(
+                    data=artifact_data,
+                    base_name=artifact_name,
+                    extension=".json"
                 )
                 
                 saved_files[artifact_name] = file_path

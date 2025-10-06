@@ -59,6 +59,12 @@ from .multi_target_scheme import (
     TargetSelectionResult
 )
 
+from .profit_labeling_report_generator import (
+    ProfitLabelingReportGenerator,
+    generate_profit_labeling_report,
+    ProfitLabelingReport
+)
+
 __version__ = "1.0.0"
 __author__ = "Ares Trading System"
 
@@ -93,4 +99,9 @@ __all__ = [
     "MultiTargetScheme",
     "MultiTargetConfig",
     "TargetSelectionResult",
+
+    # Report generation
+    "ProfitLabelingReportGenerator",
+    "generate_profit_labeling_report",
+    "ProfitLabelingReport",
 ]

@@ -1276,6 +1276,12 @@ Examples:
   # Execute walk-forward validation (after post-optimization basic backtesting)
   python ares_launcher.py --mode sub_pipeline --sub_pipeline walk_forward_validation --execution-mode full --symbol ETHUSDT
 
+  # Shortcut: Execute Analyst pre-ML orchestration
+  python ares_launcher.py --analyst-pre-ml --symbol ETHUSDT
+
+  # Shortcut: Execute Tactician ensemble training in light mode
+  python ares_launcher.py --tactician-ensemble --execution-mode light --symbol ETHUSDT
+
   # Blank mode for testing (180 days, 10% intensity)
   python ares_launcher.py --mode blank --symbol ETHUSDT
         """
@@ -1325,9 +1331,55 @@ Examples:
         help='Specific stage to execute (for stage mode)'
     )
     
+    parser.set_defaults(shortcut_sub_pipeline=None)
+
+    shortcut_group = parser.add_mutually_exclusive_group()
+    shortcut_group.add_argument(
+        '--analyst-pre-ml',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='analyst_pre_ml_orchestration',
+        help='Shortcut for Analyst pre-ML orchestration sub-pipeline.'
+    )
+    shortcut_group.add_argument(
+        '--analyst-models',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='analyst_models_training',
+        help='Shortcut for Analyst models training sub-pipeline.'
+    )
+    shortcut_group.add_argument(
+        '--analyst-ensemble',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='analyst_ensemble_training',
+        help='Shortcut for Analyst ensemble training sub-pipeline.'
+    )
+    shortcut_group.add_argument(
+        '--tactician-pre-ml',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='tactician_pre_ml_orchestration',
+        help='Shortcut for Tactician pre-ML orchestration sub-pipeline.'
+    )
+    shortcut_group.add_argument(
+        '--tactician-models',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='tactician_models_training',
+        help='Shortcut for Tactician models training sub-pipeline.'
+    )
+    shortcut_group.add_argument(
+        '--tactician-ensemble',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='tactician_ensemble_training',
+        help='Shortcut for Tactician ensemble training sub-pipeline.'
+    )
+
     parser.add_argument(
         '--sub-pipeline', '--sub_pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: analyst_pre_ml_orchestration, analyst_models_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_models_training, tactician_ensemble_training, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, feature_lookback_optimization, pid_based_feature_generation, final_feature_selection, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: analyst_pre_ml_orchestration, analyst_models_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_models_training, tactician_ensemble_training, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, feature_lookback_optimization, pid_based_feature_generation, final_feature_selection, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc. You can also use shortcut flags like --analyst-pre-ml or --tactician-ensemble.'
     )
     
     parser.add_argument(
@@ -1362,7 +1414,17 @@ async def main():
     tprint(f"🎯 [MAIN] Symbol: {args.symbol}")
     tprint(f"🎯 [MAIN] Exchange: {args.exchange}")
     tprint(f"🎯 [MAIN] Timeframe: {args.timeframe}")
-    
+
+    shortcut_sub_pipeline = getattr(args, 'shortcut_sub_pipeline', None)
+    selected_sub_pipeline = args.sub_pipeline
+    if shortcut_sub_pipeline:
+        tprint(f"🎯 [MAIN] Shortcut flag selected: {shortcut_sub_pipeline}")
+        if selected_sub_pipeline and selected_sub_pipeline != shortcut_sub_pipeline:
+            parser.error(
+                "Shortcut sub-pipeline flags cannot be combined with a conflicting --sub-pipeline value"
+            )
+        selected_sub_pipeline = shortcut_sub_pipeline
+
     # Initialize launcher
     tprint("🎯 [MAIN] Initializing AresLauncher...")
     launcher = AresLauncher()
@@ -1409,6 +1471,11 @@ async def main():
         'sub_pipeline': LauncherMode.SUB_PIPELINE
     }
     mode = mode_map[args.mode]
+
+    if shortcut_sub_pipeline:
+        mode = LauncherMode.SUB_PIPELINE
+        tprint("🎯 [MAIN] Launcher mode overridden to sub_pipeline due to shortcut flag")
+
     tprint(f"✅ [MAIN] Launcher mode converted: {mode.value}")
     
     # Convert execution mode to enum
@@ -1419,7 +1486,7 @@ async def main():
     }
     execution_mode = execution_mode_map[args.execution_mode]
     tprint(f"✅ [MAIN] Execution mode converted: {execution_mode.value}")
-    
+
     # Convert string stage to enum if provided
     stage = None
     if args.stage:
@@ -1435,6 +1502,11 @@ async def main():
         tprint(f"✅ [MAIN] Stage converted: {stage.value}")
     else:
         tprint("📋 [MAIN] No specific stage provided")
+
+    if selected_sub_pipeline:
+        tprint(f"📋 [MAIN] Sub-pipeline selected: {selected_sub_pipeline}")
+    else:
+        tprint("📋 [MAIN] No specific sub-pipeline provided")
     
     # Execute pipeline
     tprint("🚀 [MAIN] Starting pipeline execution...")
@@ -1446,7 +1518,7 @@ async def main():
             timeframe=args.timeframe,
             data_dir=args.data_dir,
             stage=stage,
-            sub_pipeline=args.sub_pipeline,
+            sub_pipeline=selected_sub_pipeline,
             execution_mode=execution_mode,
             custom_config=custom_config
         )

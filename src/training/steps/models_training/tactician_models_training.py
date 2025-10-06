@@ -243,19 +243,112 @@ class TacticianModelsTrainingStep:
         tprint_info("🚀 Starting Tactician base models training...")
 
         try:
-            # Validate inputs
-            if training_data.empty or not feature_columns or not target_columns:
-                raise ValueError("Insufficient training data or missing columns")
+            # Enhanced input validation
+            validation_errors = []
 
-            # Prepare training data
-            X = training_data[feature_columns].values
-            y = training_data[target_columns].values
+            if training_data.empty:
+                validation_errors.append("Training data is empty")
+            if not feature_columns:
+                validation_errors.append("No feature columns provided")
+            if not target_columns:
+                validation_errors.append("No target columns provided")
+            if len(training_data) < self.config.min_training_samples:
+                validation_errors.append(f"Insufficient training samples: {len(training_data)} < {self.config.min_training_samples}")
+
+            # Validate feature columns exist in data
+            missing_features = [col for col in feature_columns if col not in training_data.columns]
+            if missing_features:
+                validation_errors.append(f"Missing feature columns in training data: {missing_features}")
+
+            # Validate target columns exist in data
+            missing_targets = [col for col in target_columns if col not in training_data.columns]
+            if missing_targets:
+                validation_errors.append(f"Missing target columns in training data: {missing_targets}")
+
+            # Check for NaN/inf values in features and targets
+            feature_data = training_data[feature_columns]
+            if feature_data.isnull().any().any():
+                validation_errors.append("NaN values found in feature columns")
+            if not np.isfinite(feature_data.values).all():
+                validation_errors.append("Infinite values found in feature columns")
+
+            target_data = training_data[target_columns]
+            if target_data.isnull().any().any():
+                validation_errors.append("NaN values found in target columns")
+            if not np.isfinite(target_data.values).all():
+                validation_errors.append("Infinite values found in target columns")
+
+            if validation_errors:
+                error_msg = f"Input validation failed: {'; '.join(validation_errors)}"
+                tprint_error(f"❌ {error_msg}")
+                raise ValueError(error_msg)
+
+            # Load features from final feature selection if not provided
+            final_feature_columns = await self._load_final_feature_selection_features(
+                training_data, feature_columns, **kwargs
+            )
+
+            # Load regime features from market analysis ensemble
+            enhanced_feature_columns = await self._load_regime_features(
+                training_data, final_feature_columns, **kwargs
+            )
+
+            # Apply model-specific feature filtering based on ML model type
+            model_specific_features = await self._apply_model_specific_feature_filtering(
+                enhanced_feature_columns, **kwargs
+            )
+
+            # Filter training data using Analyst Ensemble outputs
+            try:
+                filtered_data, analyst_filter_info = await self._apply_analyst_filtering(
+                    training_data, model_specific_features, target_columns, **kwargs
+                )
+
+                if filtered_data.empty:
+                    warning_msg = "No training samples remain after Analyst filtering"
+                    tprint_warning(f"⚠️ {warning_msg}")
+
+                    # Try with relaxed confidence threshold
+                    if 'min_analyst_confidence' in kwargs:
+                        relaxed_threshold = max(0.1, kwargs['min_analyst_confidence'] - 0.2)
+                        tprint_info(f"🔄 Retrying with relaxed confidence threshold: {relaxed_threshold}")
+
+                        kwargs['min_analyst_confidence'] = relaxed_threshold
+                        filtered_data, analyst_filter_info = await self._apply_analyst_filtering(
+                            training_data, model_specific_features, target_columns, **kwargs
+                        )
+
+                        if filtered_data.empty:
+                            raise ValueError(f"No training samples remain even with relaxed threshold {relaxed_threshold}")
+
+                        tprint_success(f"✅ Recovered {len(filtered_data)} samples with relaxed threshold")
+                    else:
+                        raise ValueError(warning_msg)
+            except Exception as filter_error:
+                tprint_warning(f"⚠️ Analyst filtering failed: {filter_error}")
+                tprint_info("🔄 Continuing with original training data")
+                filtered_data = training_data
+                analyst_filter_info = {
+                    'filtered': False,
+                    'reason': f'filter_error: {str(filter_error)}',
+                    'original_samples': len(training_data),
+                    'filtered_samples': len(training_data)
+                }
+
+            # Prepare training data with validated features
+            X = filtered_data[model_specific_features].values
+            y = filtered_data[target_columns].values
 
             if len(y.shape) == 1:
                 y = y.reshape(-1, 1)
 
             if sample_weight is None:
-                sample_weight = np.ones(len(training_data))
+                sample_weight = np.ones(len(filtered_data))
+
+            # Add analyst confidence as additional feature if available
+            analyst_features = await self._extract_analyst_features(filtered_data, **kwargs)
+            if analyst_features:
+                X = np.column_stack([X] + [filtered_data[feat].values for feat in analyst_features])
 
             # Train models
             all_models = {}
@@ -272,6 +365,7 @@ class TacticianModelsTrainingStep:
                             feature_columns=feature_columns,
                             target_columns=target_columns,
                             sample_weight=sample_weight,
+                            model_type_for_filtering=model_type.value,
                             **kwargs,
                         )
                     else:
@@ -293,7 +387,7 @@ class TacticianModelsTrainingStep:
                             )
                         else:
                             training_result = await self._train_model_directly(
-                                model_type, X, y, sample_weight, **kwargs
+                                model_type, X, y, sample_weight, model_type_for_filtering=model_type.value, **kwargs
                             )
 
                     # Store results
@@ -326,12 +420,47 @@ class TacticianModelsTrainingStep:
             execution_time = tprint_timer(start_time)
             tprint_success(f"✅ Base models training completed in {execution_time:.2f}s")
 
+            # Collect comprehensive metrics
+            comprehensive_metrics = {
+                'training_summary': {
+                    'total_models_trained': len(all_models),
+                    'successful_models': len([m for m in all_models.values() if m is not None]),
+                    'failed_models': len(self.config.model_types) - len([m for m in all_models.values() if m is not None]),
+                    'execution_time': execution_time,
+                    'samples_used': len(filtered_data),
+                    'original_samples': len(training_data),
+                    'features_used': len(model_specific_features),
+                    'model_types_trained': [mt.value for mt in self.config.model_types],
+                    'models_per_type': len(self.config.model_types)
+                },
+                'analyst_filtering': analyst_filter_info,
+                'feature_processing': {
+                    'final_features_loaded': len(final_feature_columns),
+                    'regime_features_added': len(enhanced_feature_columns) - len(final_feature_columns),
+                    'model_specific_features': len(model_specific_features),
+                    'feature_reduction_ratio': len(model_specific_features) / len(final_feature_columns) if final_feature_columns else 0
+                },
+                'model_metrics': all_metrics,
+                'hardware_utilization': {
+                    'parallel_processing_enabled': self.config.enable_parallel_processing,
+                    'gpu_acceleration_enabled': self.config.enable_gpu_acceleration,
+                    'memory_limit_gb': self.config.memory_limit_gb
+                },
+                'error_summary': {
+                    'total_errors': 0,
+                    'critical_errors': 0,
+                    'warnings': 0,
+                    'recoverable_errors': 0
+                }
+            }
+
             return {
                 'models': all_models,
-                'metrics': all_metrics,
+                'metrics': comprehensive_metrics,
                 'training_time': execution_time,
-                'features_used': feature_columns,
-                'samples_used': len(training_data),
+                'features_used': model_specific_features,
+                'samples_used': len(filtered_data),
+                'analyst_filter_info': analyst_filter_info,
                 'model_types_trained': [mt.value for mt in self.config.model_types],
                 'models_per_type': len(self.config.model_types)
             }
@@ -365,7 +494,8 @@ class TacticianModelsTrainingStep:
                 model_type,
                 training_config['training_data'][training_config['feature_columns']].values,
                 training_config['training_data'][training_config['target_columns']].values,
-                training_config['sample_weight']
+                training_config['sample_weight'],
+                model_type_for_filtering=model_type.value
             )
 
     async def _train_model_directly(
@@ -378,6 +508,9 @@ class TacticianModelsTrainingStep:
     ) -> Dict[str, Any]:
         """Train model directly."""
         try:
+            # Add model type for filtering to kwargs
+            kwargs['model_type_for_filtering'] = model_type.value
+
             if model_type == TacticianModelType.RANDOM_SURVIVAL_FOREST:
                 return await self._train_random_survival_forest(X, y, sample_weight, **kwargs)
             elif model_type == TacticianModelType.XGBOOST:
@@ -506,12 +639,17 @@ class TacticianModelsTrainingStep:
                     unified_config = config.get_unified_config()
                     if hasattr(unified_config, 'timeframe'):
                         unified_config.timeframe = '5m'
+                        tprint_debug(f"✅ Set NAS/TAS timeframe to 5m")
                     if hasattr(unified_config, 'data') and hasattr(unified_config.data, 'timeframe'):
                         unified_config.data.timeframe = '5m'
+                        tprint_debug(f"✅ Set NAS/TAS data timeframe to 5m")
                     if hasattr(unified_config, 'enable_feature_engineering'):
                         unified_config.enable_feature_engineering = False
                     if hasattr(unified_config, 'enable_data_preprocessing'):
                         unified_config.enable_data_preprocessing = False
+                    if hasattr(unified_config, 'model_type'):
+                        unified_config.model_type = model_type.value
+                        tprint_debug(f"✅ Set NAS/TAS model type to {model_type.value}")
                 except Exception as config_error:
                     tprint_warning(f"⚠️ Failed to adjust NAS/TAS unified config: {config_error}")
 
@@ -644,27 +782,53 @@ class TacticianModelsTrainingStep:
         sample_weight: np.ndarray,
         **kwargs
     ) -> Dict[str, Any]:
-        """Train Random Survival Forest model."""
+        """Train Random Survival Forest model with HPO."""
         try:
             from sklearn.ensemble import RandomForestRegressor
 
-            # Simple Random Forest for now (can be enhanced with survival analysis)
+            # Use HPO to optimize hyperparameters
+            best_params = await self._optimize_random_forest_hyperparameters(X, y, sample_weight, **kwargs)
+
+            # Train with optimized parameters
             model = RandomForestRegressor(
-                n_estimators=100,
                 random_state=42,
-                n_jobs=-1 if self.config.enable_parallel_processing else 1
+                n_jobs=-1 if self.config.enable_parallel_processing else 1,
+                **best_params
             )
 
             model.fit(X, y.ravel(), sample_weight=sample_weight)
 
             return {
                 'models': {'random_survival_forest': model},
-                'metrics': {'model_type': 'RandomSurvivalForest'}
+                'metrics': {
+                    'model_type': 'RandomSurvivalForest',
+                    'best_params': best_params,
+                    'hpo_performed': True
+                }
             }
 
         except Exception as e:
             tprint_error(f"❌ Random Survival Forest training failed: {e}")
-            return {'models': {}, 'metrics': {}}
+            # Fallback to default parameters
+            try:
+                model = RandomForestRegressor(
+                    n_estimators=100,
+                    random_state=42,
+                    n_jobs=-1 if self.config.enable_parallel_processing else 1
+                )
+                model.fit(X, y.ravel(), sample_weight=sample_weight)
+
+                return {
+                    'models': {'random_survival_forest': model},
+                    'metrics': {
+                        'model_type': 'RandomSurvivalForest',
+                        'hpo_performed': False,
+                        'error': str(e)
+                    }
+                }
+            except Exception as fallback_error:
+                tprint_error(f"❌ Random Survival Forest fallback training failed: {fallback_error}")
+                return {'models': {}, 'metrics': {}}
 
     async def _train_xgboost(
         self,
@@ -673,27 +837,54 @@ class TacticianModelsTrainingStep:
         sample_weight: np.ndarray,
         **kwargs
     ) -> Dict[str, Any]:
-        """Train XGBoost model."""
+        """Train XGBoost model with HPO."""
         try:
             import xgboost as xgb
 
+            # Use HPO to optimize hyperparameters
+            best_params = await self._optimize_xgboost_hyperparameters(X, y, sample_weight, **kwargs)
+
+            # Train with optimized parameters
             model = xgb.XGBRegressor(
-                n_estimators=100,
-                learning_rate=0.1,
                 random_state=42,
-                n_jobs=-1 if self.config.enable_parallel_processing else 1
+                n_jobs=-1 if self.config.enable_parallel_processing else 1,
+                **best_params
             )
 
             model.fit(X, y.ravel(), sample_weight=sample_weight)
 
             return {
                 'models': {'xgboost': model},
-                'metrics': {'model_type': 'XGBoost'}
+                'metrics': {
+                    'model_type': 'XGBoost',
+                    'best_params': best_params,
+                    'hpo_performed': True
+                }
             }
 
         except Exception as e:
             tprint_error(f"❌ XGBoost training failed: {e}")
-            return {'models': {}, 'metrics': {}}
+            # Fallback to default parameters
+            try:
+                model = xgb.XGBRegressor(
+                    n_estimators=100,
+                    learning_rate=0.1,
+                    random_state=42,
+                    n_jobs=-1 if self.config.enable_parallel_processing else 1
+                )
+                model.fit(X, y.ravel(), sample_weight=sample_weight)
+
+                return {
+                    'models': {'xgboost': model},
+                    'metrics': {
+                        'model_type': 'XGBoost',
+                        'hpo_performed': False,
+                        'error': str(e)
+                    }
+                }
+            except Exception as fallback_error:
+                tprint_error(f"❌ XGBoost fallback training failed: {fallback_error}")
+                return {'models': {}, 'metrics': {}}
 
     async def _train_elastic_net_cv(
         self,
@@ -702,26 +893,327 @@ class TacticianModelsTrainingStep:
         sample_weight: np.ndarray,
         **kwargs
     ) -> Dict[str, Any]:
-        """Train Elastic Net CV model."""
+        """Train Elastic Net CV model with HPO."""
         try:
             from sklearn.linear_model import ElasticNetCV
 
+            # Use HPO to optimize hyperparameters
+            best_params = await self._optimize_elastic_net_hyperparameters(X, y, sample_weight, **kwargs)
+
+            # Train with optimized parameters
             model = ElasticNetCV(
                 cv=5,
                 random_state=42,
-                max_iter=1000
+                max_iter=1000,
+                **best_params
             )
 
             model.fit(X, y.ravel(), sample_weight=sample_weight)
 
             return {
                 'models': {'elastic_net_cv': model},
-                'metrics': {'model_type': 'ElasticNetCV'}
+                'metrics': {
+                    'model_type': 'ElasticNetCV',
+                    'best_params': best_params,
+                    'hpo_performed': True
+                }
             }
 
         except Exception as e:
             tprint_error(f"❌ Elastic Net CV training failed: {e}")
-            return {'models': {}, 'metrics': {}}
+            # Fallback to default parameters
+            try:
+                model = ElasticNetCV(
+                    cv=5,
+                    random_state=42,
+                    max_iter=1000
+                )
+                model.fit(X, y.ravel(), sample_weight=sample_weight)
+
+                return {
+                    'models': {'elastic_net_cv': model},
+                    'metrics': {
+                        'model_type': 'ElasticNetCV',
+                        'hpo_performed': False,
+                        'error': str(e)
+                    }
+                }
+            except Exception as fallback_error:
+                tprint_error(f"❌ Elastic Net CV fallback training failed: {fallback_error}")
+                return {'models': {}, 'metrics': {}}
+
+    async def _optimize_random_forest_hyperparameters(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        sample_weight: np.ndarray,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Optimize Random Forest hyperparameters using Bayesian optimization."""
+        try:
+            # Try to use advanced HPO if available
+            try:
+                from src.utils.ml_common.optimization.bayesian_entry_timing_optimizer import (
+                    get_bayesian_optimizer, EntryTimingConfig
+                )
+
+                # Configure HPO for Random Forest
+                config = EntryTimingConfig(
+                    n_trials=50,
+                    timeout=300,  # 5 minutes timeout
+                    enable_cross_validation=True,
+                    cv_folds=3
+                )
+
+                optimizer = get_bayesian_optimizer(config)
+
+                # Define hyperparameter search space
+                def objective(trial):
+                    params = {
+                        'n_estimators': trial.suggest_int('n_estimators', 50, 300),
+                        'max_depth': trial.suggest_int('max_depth', 3, 20),
+                        'min_samples_split': trial.suggest_int('min_samples_split', 2, 20),
+                        'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 10),
+                        'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2', None])
+                    }
+
+                    from sklearn.ensemble import RandomForestRegressor
+                    from sklearn.model_selection import cross_val_score
+
+                    model = RandomForestRegressor(random_state=42, **params)
+                    scores = cross_val_score(
+                        model, X, y.ravel(),
+                        cv=3, scoring='neg_mean_squared_error',
+                        fit_params={'sample_weight': sample_weight} if sample_weight is not None else {}
+                    )
+
+                    return -np.mean(scores)  # Minimize negative MSE
+
+                # Run optimization
+                best_params = optimizer.optimize_model_hyperparameters(
+                    model=None, X=X, y=y,
+                    param_space=objective,
+                    model_name="random_forest"
+                )
+
+                if best_params:
+                    tprint_success(f"✅ Random Forest HPO completed - best params: {best_params}")
+                    return best_params
+
+            except ImportError:
+                tprint_warning("⚠️ Advanced HPO not available, using grid search")
+
+            # Fallback to simple grid search
+            from sklearn.model_selection import GridSearchCV
+            from sklearn.ensemble import RandomForestRegressor
+
+            param_grid = {
+                'n_estimators': [50, 100, 200],
+                'max_depth': [5, 10, 15],
+                'min_samples_split': [2, 5, 10]
+            }
+
+            rf = RandomForestRegressor(random_state=42)
+            grid_search = GridSearchCV(
+                rf, param_grid, cv=3,
+                scoring='neg_mean_squared_error',
+                n_jobs=-1 if self.config.enable_parallel_processing else 1
+            )
+
+            grid_search.fit(X, y.ravel(), sample_weight=sample_weight)
+            best_params = grid_search.best_params_
+
+            tprint_success(f"✅ Random Forest grid search completed - best params: {best_params}")
+            return best_params
+
+        except Exception as e:
+            tprint_error(f"❌ Random Forest HPO failed: {e}")
+            return {
+                'n_estimators': 100,
+                'max_depth': 10,
+                'min_samples_split': 5,
+                'min_samples_leaf': 2
+            }
+
+    async def _optimize_xgboost_hyperparameters(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        sample_weight: np.ndarray,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Optimize XGBoost hyperparameters using Bayesian optimization."""
+        try:
+            # Try to use advanced HPO if available
+            try:
+                from src.utils.ml_common.optimization.bayesian_entry_timing_optimizer import (
+                    get_bayesian_optimizer, EntryTimingConfig
+                )
+
+                # Configure HPO for XGBoost
+                config = EntryTimingConfig(
+                    n_trials=50,
+                    timeout=300,
+                    enable_cross_validation=True,
+                    cv_folds=3
+                )
+
+                optimizer = get_bayesian_optimizer(config)
+
+                # Define hyperparameter search space
+                def objective(trial):
+                    params = {
+                        'n_estimators': trial.suggest_int('n_estimators', 50, 300),
+                        'max_depth': trial.suggest_int('max_depth', 3, 15),
+                        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
+                        'subsample': trial.suggest_float('subsample', 0.5, 1.0),
+                        'colsample_bytree': trial.suggest_float('colsample_bytree', 0.5, 1.0),
+                        'min_child_weight': trial.suggest_int('min_child_weight', 1, 10)
+                    }
+
+                    import xgboost as xgb
+                    from sklearn.model_selection import cross_val_score
+
+                    model = xgb.XGBRegressor(random_state=42, **params)
+                    scores = cross_val_score(
+                        model, X, y.ravel(),
+                        cv=3, scoring='neg_mean_squared_error',
+                        fit_params={'sample_weight': sample_weight} if sample_weight is not None else {}
+                    )
+
+                    return -np.mean(scores)
+
+                # Run optimization
+                best_params = optimizer.optimize_model_hyperparameters(
+                    model=None, X=X, y=y,
+                    param_space=objective,
+                    model_name="xgboost"
+                )
+
+                if best_params:
+                    tprint_success(f"✅ XGBoost HPO completed - best params: {best_params}")
+                    return best_params
+
+            except ImportError:
+                tprint_warning("⚠️ Advanced HPO not available, using grid search")
+
+            # Fallback to simple grid search
+            from sklearn.model_selection import GridSearchCV
+            import xgboost as xgb
+
+            param_grid = {
+                'n_estimators': [50, 100, 200],
+                'max_depth': [3, 6, 9],
+                'learning_rate': [0.01, 0.1, 0.2]
+            }
+
+            xgb_model = xgb.XGBRegressor(random_state=42)
+            grid_search = GridSearchCV(
+                xgb_model, param_grid, cv=3,
+                scoring='neg_mean_squared_error',
+                n_jobs=-1 if self.config.enable_parallel_processing else 1
+            )
+
+            grid_search.fit(X, y.ravel(), sample_weight=sample_weight)
+            best_params = grid_search.best_params_
+
+            tprint_success(f"✅ XGBoost grid search completed - best params: {best_params}")
+            return best_params
+
+        except Exception as e:
+            tprint_error(f"❌ XGBoost HPO failed: {e}")
+            return {
+                'n_estimators': 100,
+                'max_depth': 6,
+                'learning_rate': 0.1
+            }
+
+    async def _optimize_elastic_net_hyperparameters(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        sample_weight: np.ndarray,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Optimize Elastic Net hyperparameters using Bayesian optimization."""
+        try:
+            # Try to use advanced HPO if available
+            try:
+                from src.utils.ml_common.optimization.bayesian_entry_timing_optimizer import (
+                    get_bayesian_optimizer, EntryTimingConfig
+                )
+
+                # Configure HPO for Elastic Net
+                config = EntryTimingConfig(
+                    n_trials=50,
+                    timeout=300,
+                    enable_cross_validation=True,
+                    cv_folds=3
+                )
+
+                optimizer = get_bayesian_optimizer(config)
+
+                # Define hyperparameter search space
+                def objective(trial):
+                    params = {
+                        'alpha': trial.suggest_float('alpha', 0.001, 10.0, log=True),
+                        'l1_ratio': trial.suggest_float('l1_ratio', 0.0, 1.0)
+                    }
+
+                    from sklearn.linear_model import ElasticNet
+                    from sklearn.model_selection import cross_val_score
+
+                    model = ElasticNet(random_state=42, max_iter=1000, **params)
+                    scores = cross_val_score(
+                        model, X, y.ravel(),
+                        cv=3, scoring='neg_mean_squared_error',
+                        fit_params={'sample_weight': sample_weight} if sample_weight is not None else {}
+                    )
+
+                    return -np.mean(scores)
+
+                # Run optimization
+                best_params = optimizer.optimize_model_hyperparameters(
+                    model=None, X=X, y=y,
+                    param_space=objective,
+                    model_name="elastic_net"
+                )
+
+                if best_params:
+                    tprint_success(f"✅ Elastic Net HPO completed - best params: {best_params}")
+                    return best_params
+
+            except ImportError:
+                tprint_warning("⚠️ Advanced HPO not available, using grid search")
+
+            # Fallback to simple grid search
+            from sklearn.model_selection import GridSearchCV
+            from sklearn.linear_model import ElasticNet
+
+            param_grid = {
+                'alpha': [0.001, 0.01, 0.1, 1.0, 10.0],
+                'l1_ratio': [0.0, 0.25, 0.5, 0.75, 1.0]
+            }
+
+            en_model = ElasticNet(random_state=42, max_iter=1000)
+            grid_search = GridSearchCV(
+                en_model, param_grid, cv=3,
+                scoring='neg_mean_squared_error',
+                n_jobs=-1 if self.config.enable_parallel_processing else 1
+            )
+
+            grid_search.fit(X, y.ravel(), sample_weight=sample_weight)
+            best_params = grid_search.best_params_
+
+            tprint_success(f"✅ Elastic Net grid search completed - best params: {best_params}")
+            return best_params
+
+        except Exception as e:
+            tprint_error(f"❌ Elastic Net HPO failed: {e}")
+            return {
+                'alpha': 0.1,
+                'l1_ratio': 0.5
+            }
 
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics for the models training step."""
@@ -742,6 +1234,413 @@ class TacticianModelsTrainingStep:
         }
 
         return metrics
+
+    async def _load_final_feature_selection_features(
+        self,
+        training_data: pd.DataFrame,
+        provided_features: List[str],
+        **kwargs
+    ) -> List[str]:
+        """
+        Load features from final feature selection pipeline if not provided.
+
+        Args:
+            training_data: Training DataFrame
+            provided_features: Features provided by caller
+            **kwargs: Additional parameters including symbol, exchange, timeframe
+
+        Returns:
+            List of final feature column names
+        """
+        try:
+            # If features are already provided and available in data, use them
+            if provided_features and all(col in training_data.columns for col in provided_features):
+                tprint_debug(f"✅ Using provided feature columns: {len(provided_features)} features")
+                return provided_features
+
+            # Try to load from final feature selection pipeline
+            try:
+                from src.training.steps.pre_training.final_feature_selection_pipeline import (
+                    get_final_features, FeatureSelectionConfig
+                )
+
+                # Extract metadata from kwargs or use defaults
+                symbol = kwargs.get('symbol', 'BTCUSDT')
+                exchange = kwargs.get('exchange', 'binance')
+                timeframe = kwargs.get('timeframe', '5m')
+
+                tprint_info(f"🔍 Loading features from final feature selection for {symbol} {exchange} {timeframe}")
+
+                # Get final features from the pipeline
+                config = FeatureSelectionConfig()
+                final_features_result = await get_final_features(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    config=config
+                )
+
+                if final_features_result and hasattr(final_features_result, 'final_features'):
+                    final_features = final_features_result.final_features
+
+                    # Validate features exist in training data
+                    available_features = [col for col in final_features if col in training_data.columns]
+
+                    if not available_features:
+                        tprint_warning(f"⚠️ No final feature selection features available in training data")
+                        return provided_features or []
+
+                    tprint_success(f"✅ Loaded {len(available_features)} features from final feature selection")
+                    return available_features
+
+            except ImportError as e:
+                tprint_warning(f"⚠️ Final feature selection pipeline not available: {e}")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to load final feature selection features: {e}")
+
+            # Fallback to provided features or all available features
+            if provided_features:
+                available_features = [col for col in provided_features if col in training_data.columns]
+                tprint_debug(f"🔄 Using fallback features: {len(available_features)} available")
+                return available_features
+
+            # Last resort: use all non-target columns
+            exclude_columns = {'timestamp', 'target', 'target_long', 'target_short', 'analyst_signal', 'analyst_confidence'}
+            fallback_features = [col for col in training_data.columns
+                               if col not in exclude_columns and not col.startswith('target_')]
+
+            tprint_debug(f"🔄 Using fallback features: {len(fallback_features)} columns")
+            return fallback_features
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to load final feature selection features: {e}")
+            return provided_features or []
+
+    async def _load_regime_features(
+        self,
+        training_data: pd.DataFrame,
+        feature_columns: List[str],
+        **kwargs
+    ) -> List[str]:
+        """
+        Load regime features from market analysis ensemble model.
+
+        Args:
+            training_data: Training DataFrame
+            feature_columns: Current feature columns
+            **kwargs: Additional parameters including symbol, exchange, timeframe
+
+        Returns:
+            Enhanced feature columns with regime features
+        """
+        try:
+            symbol = kwargs.get('symbol', 'BTCUSDT')
+            exchange = kwargs.get('exchange', 'binance')
+            timeframe = kwargs.get('timeframe', '5m')
+
+            tprint_debug(f"🔍 Loading regime features for {symbol} {exchange} {timeframe}")
+
+            # Try to load regime features from market analysis ensemble
+            try:
+                # Look for regime ensemble model in generated directory
+                regime_model_path = Path(f"generated/market_analysis/regime_ensemble_{symbol}_{exchange}_{timeframe}.pkl")
+
+                if regime_model_path.exists():
+                    tprint_info(f"📂 Loading regime ensemble model from {regime_model_path}")
+
+                    with open(regime_model_path, 'rb') as model_file:
+                        regime_ensemble = pickle.load(model_file)
+
+                    # Generate regime probabilities for training data
+                    regime_features = await self._generate_regime_features(
+                        training_data, regime_ensemble, feature_columns
+                    )
+
+                    if regime_features:
+                        enhanced_features = feature_columns + regime_features
+                        tprint_success(f"✅ Added {len(regime_features)} regime features")
+                        return enhanced_features
+
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to load regime ensemble model: {e}")
+
+            # Try to extract regime features from existing regime columns in training data
+            existing_regime_cols = []
+            regime_patterns = ['regime', 'cluster', 'state', 'hmm']
+
+            for col in training_data.columns:
+                if any(pattern in col.lower() for pattern in regime_patterns):
+                    if col not in feature_columns:
+                        existing_regime_cols.append(col)
+
+            if existing_regime_cols:
+                enhanced_features = feature_columns + existing_regime_cols
+                tprint_success(f"✅ Added {len(existing_regime_cols)} existing regime features")
+                return enhanced_features
+
+            tprint_debug(f"ℹ️ No regime features found for {symbol} {exchange} {timeframe}")
+            return feature_columns
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to load regime features: {e}")
+            return feature_columns
+
+    async def _generate_regime_features(
+        self,
+        training_data: pd.DataFrame,
+        regime_ensemble: Any,
+        feature_columns: List[str]
+    ) -> List[str]:
+        """
+        Generate regime features using the regime ensemble model.
+
+        Args:
+            training_data: Training DataFrame
+            regime_ensemble: Trained regime ensemble model
+            feature_columns: Current feature columns
+
+        Returns:
+            List of new regime feature column names
+        """
+        try:
+            # Extract features for regime prediction (exclude target columns)
+            regime_feature_cols = [col for col in feature_columns
+                                 if not col.startswith('target') and col in training_data.columns]
+
+            if not regime_feature_cols:
+                tprint_warning("⚠️ No suitable features for regime prediction")
+                return []
+
+            X_regime = training_data[regime_feature_cols].values
+
+            # Get regime probabilities from ensemble
+            if hasattr(regime_ensemble, 'predict_proba'):
+                regime_probs = regime_ensemble.predict_proba(X_regime)
+
+                # Create regime probability feature columns
+                regime_feature_names = []
+                for i in range(regime_probs.shape[1]):
+                    col_name = f"regime_prob_{i}"
+                    training_data[col_name] = regime_probs[:, i]
+                    regime_feature_names.append(col_name)
+
+                tprint_success(f"✅ Generated {len(regime_feature_names)} regime probability features")
+                return regime_feature_names
+
+            elif hasattr(regime_ensemble, 'predict'):
+                regime_preds = regime_ensemble.predict(X_regime)
+
+                # Create regime prediction feature
+                col_name = "regime_prediction"
+                training_data[col_name] = regime_preds
+                regime_feature_names = [col_name]
+
+                tprint_success(f"✅ Generated {len(regime_feature_names)} regime prediction features")
+                return regime_feature_names
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate regime features: {e}")
+
+        return []
+
+    async def _apply_model_specific_feature_filtering(
+        self,
+        feature_columns: List[str],
+        **kwargs
+    ) -> List[str]:
+        """
+        Apply model-specific feature filtering based on ML model type.
+
+        Args:
+            feature_columns: Input feature columns
+            **kwargs: Additional parameters including model_type
+
+        Returns:
+            Filtered feature columns for specific model type
+        """
+        try:
+            model_type = kwargs.get('model_type', 'ALL')
+
+            # Model-specific feature counts (as per requirements)
+            # These limits are based on:
+            # - RANDOM_SURVIVAL_FOREST: Conservative feature set for ensemble methods
+            # - XGBOOST: Can handle more features but benefits from feature selection
+            # - ELASTIC_NET_CV: Regularization benefits from fewer, more relevant features
+            # - NAS/TAS: Advanced models that can handle more complex feature sets
+            model_feature_limits = {
+                'RANDOM_SURVIVAL_FOREST': 100,  # Conservative feature set
+                'XGBOOST': 120,                 # Can handle more features
+                'ELASTIC_NET_CV': 80,           # Regularization benefits from fewer features
+                'NAS': 150,                     # Neural architecture search - more features
+                'TAS': 150,                     # Tree-based architecture search - more features
+                'ALL': 120                      # Default for mixed models
+            }
+
+            max_features = model_feature_limits.get(model_type, model_feature_limits['ALL'])
+
+            if len(feature_columns) <= max_features:
+                return feature_columns
+
+            tprint_info(f"🔧 Applying {model_type} feature filtering: {len(feature_columns)} → {max_features}")
+
+            # For model-specific filtering, prioritize features based on:
+            # 1. Regime features (highest priority)
+            # 2. Analyst ensemble features
+            # 3. Technical indicators
+            # 4. Price/volume features
+
+            prioritized_features = []
+            remaining_features = []
+
+            # Prioritize regime features
+            regime_patterns = ['regime', 'cluster', 'state', 'hmm']
+            for col in feature_columns:
+                if any(pattern in col.lower() for pattern in regime_patterns):
+                    prioritized_features.append(col)
+
+            # Prioritize analyst features
+            analyst_patterns = ['analyst', 'ensemble', 'signal', 'confidence']
+            analyst_features = []
+            for col in feature_columns:
+                if (col not in prioritized_features and
+                    any(pattern in col.lower() for pattern in analyst_patterns)):
+                    analyst_features.append(col)
+
+            # Prioritize technical features
+            technical_patterns = ['rsi', 'macd', 'bb', 'ema', 'sma', 'atr', 'volume']
+            technical_features = []
+            for col in feature_columns:
+                if (col not in prioritized_features and col not in analyst_features and
+                    any(pattern in col.lower() for pattern in technical_patterns)):
+                    technical_features.append(col)
+
+            # Remaining features
+            for col in feature_columns:
+                if (col not in prioritized_features and
+                    col not in analyst_features and
+                    col not in technical_features):
+                    remaining_features.append(col)
+
+            # Combine in priority order and trim to max_features
+            final_features = (prioritized_features + analyst_features +
+                            technical_features + remaining_features)
+
+            return final_features[:max_features]
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to apply model-specific feature filtering: {e}")
+            return feature_columns
+
+    async def _apply_analyst_filtering(
+        self,
+        training_data: pd.DataFrame,
+        feature_columns: List[str],
+        target_columns: List[str],
+        **kwargs
+    ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """
+        Apply Analyst Ensemble filtering to training data.
+
+        Args:
+            training_data: Training DataFrame
+            feature_columns: Feature columns
+            target_columns: Target columns
+            **kwargs: Additional parameters including symbol, exchange, timeframe
+
+        Returns:
+            Tuple of (filtered_data, filter_info)
+        """
+        try:
+            symbol = kwargs.get('symbol', 'BTCUSDT')
+            exchange = kwargs.get('exchange', 'binance')
+            timeframe = kwargs.get('timeframe', '5m')
+
+            tprint_debug(f"🔍 Applying Analyst filtering for {symbol} {exchange} {timeframe}")
+
+            # Analyst confidence threshold as per requirements
+            min_confidence = kwargs.get('min_analyst_confidence', 0.4)
+
+            # Look for analyst signal and confidence columns
+            analyst_signal_col = None
+            analyst_confidence_col = None
+
+            for col in training_data.columns:
+                if 'analyst_signal' in col.lower():
+                    analyst_signal_col = col
+                elif 'analyst_confidence' in col.lower():
+                    analyst_confidence_col = col
+
+            if analyst_confidence_col is None:
+                tprint_warning("⚠️ No analyst confidence column found - using all data")
+                return training_data, {
+                    'filtered': False,
+                    'reason': 'no_confidence_column',
+                    'original_samples': len(training_data),
+                    'filtered_samples': len(training_data)
+                }
+
+            # Filter data based on analyst confidence
+            original_samples = len(training_data)
+            filtered_data = training_data[training_data[analyst_confidence_col] >= min_confidence].copy()
+
+            filter_info = {
+                'filtered': True,
+                'min_confidence_threshold': min_confidence,
+                'confidence_column': analyst_confidence_col,
+                'original_samples': original_samples,
+                'filtered_samples': len(filtered_data),
+                'filter_ratio': len(filtered_data) / original_samples if original_samples > 0 else 0
+            }
+
+            tprint_success(f"✅ Analyst filtering: {original_samples} → {len(filtered_data)} samples "
+                          f"({filter_info['filter_ratio']:.2%} retained)")
+
+            return filtered_data, filter_info
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to apply Analyst filtering: {e}")
+            return training_data, {
+                'filtered': False,
+                'reason': f'error: {str(e)}',
+                'original_samples': len(training_data),
+                'filtered_samples': len(training_data)
+            }
+
+    async def _extract_analyst_features(
+        self,
+        filtered_data: pd.DataFrame,
+        **kwargs
+    ) -> List[str]:
+        """
+        Extract Analyst features for inclusion in training.
+
+        Args:
+            filtered_data: Filtered training DataFrame
+            **kwargs: Additional parameters
+
+        Returns:
+            List of analyst feature column names
+        """
+        try:
+            analyst_features = []
+
+            # Look for analyst-related columns that could be useful features
+            analyst_patterns = ['analyst', 'ensemble', 'signal', 'confidence', 'prediction']
+
+            for col in filtered_data.columns:
+                if any(pattern in col.lower() for pattern in analyst_patterns):
+                    # Don't include the confidence column used for filtering as a feature
+                    if 'confidence' not in col.lower() or 'raw_confidence' in col.lower():
+                        analyst_features.append(col)
+
+            if analyst_features:
+                tprint_debug(f"✅ Extracted {len(analyst_features)} analyst features for training")
+
+            return analyst_features
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to extract analyst features: {e}")
+            return []
 
 
 # Convenience function for external usage

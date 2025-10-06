@@ -995,11 +995,11 @@ class AresLauncher:
             
             # Model Training (6 sub-pipelines - Analyst & Tactician orchestration)
             'analyst_pre_ml_orchestration': "Analyst Pre-ML: Apply horizon labeling, optimize features, generate PID features, select features (15m timeframe, per-regime/cluster)",
-            'analyst_models_training': "Train Analyst base models per-regime (TCN, LightGBM, Ridge, ElasticNet, RandomForest) on 15m timeframe",
-            'analyst_ensemble_training': "Train Analyst ensemble models with full feature integration (HMM, NAS features)",
+            'analyst_models_training': "Train Analyst base models per-regime (ElasticNet, RandomForest, NAS, TAS, N-BEATS) on 15m timeframe - 8 regimes × 5 models = 40 base models",
+            'analyst_ensemble_training': "Train Analyst per-regime ensemble models (8 ensembles combining 5 base models each) with regime features",
             'tactician_pre_ml_orchestration': "Tactician Pre-ML: Apply horizon labeling, optimize features, generate PID features, select features (5m timeframe, filtered on Analyst signals >0.4%)",
-            'tactician_models_training': "Train Tactician base models (RandomSurvivalForest, XGBoost, ElasticNetCV) on 5m timeframe with Analyst features",
-            'tactician_ensemble_training': "Train Tactician ensemble models with Analyst features and base model outputs",
+            'tactician_models_training': "Train Tactician unified base models (RandomSurvivalForest, XGBoost, NAS, TAS) on 5m timeframe with Analyst + regime features - 4 models total",
+            'tactician_ensemble_training': "Train Tactician unified ensemble model (1 ensemble combining 4 base models) with Analyst features and base model outputs",
             # Legacy/deprecated entries
             'hmm_training': "HMM-based model training",
             'ensemble_training': "Ensemble model training",
@@ -1124,12 +1124,12 @@ class AresLauncher:
             'final_feature_selection': ['final_features.parquet'],
 
             # Model Training outputs
-            'analyst_pre_ml_orchestration': ['analyst_features_15m.parquet', 'analyst_selected_features.json'],
-            'analyst_models_training': ['analyst_base_models.pkl', 'analyst_nas_model.pkl', 'analyst_tas_model.pkl'],
-            'analyst_ensemble_training': ['analyst_ensemble.pkl', 'analyst_predictions.parquet'],
-            'tactician_pre_ml_orchestration': ['tactician_features_5m.parquet', 'tactician_selected_features.json', 'filtered_data_report.json'],
-            'tactician_models_training': ['tactician_base_models.pkl', 'tactician_nas_model.pkl', 'tactician_tas_model.pkl'],
-            'tactician_ensemble_training': ['tactician_ensemble.pkl', 'tactician_predictions.parquet'],
+            'analyst_pre_ml_orchestration': ['analyst_features_15m.parquet', 'analyst_selected_features.json', 'regime_features_added.json'],
+            'analyst_models_training': ['analyst_base_models_per_regime.pkl', 'analyst_nas_models.pkl', 'analyst_tas_models.pkl', 'analyst_nbeats_models.pkl'],
+            'analyst_ensemble_training': ['analyst_ensemble_per_regime.pkl', 'analyst_predictions.parquet'],
+            'tactician_pre_ml_orchestration': ['tactician_features_5m.parquet', 'tactician_selected_features.json', 'filtered_data_report.json', 'regime_features_added.json'],
+            'tactician_models_training': ['tactician_base_models_unified.pkl', 'tactician_nas_model.pkl', 'tactician_tas_model.pkl'],
+            'tactician_ensemble_training': ['tactician_ensemble_unified.pkl', 'tactician_predictions.parquet'],
             # Legacy outputs
             'hmm_training': ['hmm_model.pkl'],
             'regime_specific_training': ['regime_models.pkl'],

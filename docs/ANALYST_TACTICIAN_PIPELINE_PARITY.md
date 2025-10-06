@@ -43,11 +43,11 @@ Train models to decide **IF** we should trade (strategic decision-making)
 **Location**: `src/training/steps/models_training/analyst_models_training.py`
 
 **Models Trained**:
-- TCN (Temporal Convolutional Network)
-- LightGBM
-- Ridge Regression
 - ElasticNet
 - RandomForest
+- NAS (Neural Architecture Search)
+- TAS (Tree-based Architecture Search)
+- MultiHorizon N-BEATS
 
 **Features Used**:
 - All selected features from pre-ML orchestration
@@ -107,7 +107,8 @@ Train models to decide **WHEN** to execute trades (tactical execution timing)
 **Models Trained**:
 - RandomSurvivalForest
 - XGBoost
-- ElasticNetCV
+- NAS (Neural Architecture Search)
+- TAS (Tree-based Architecture Search)
 
 **Features Used**:
 - All selected features from pre-ML orchestration

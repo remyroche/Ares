@@ -240,20 +240,22 @@ default_model_types = [
 
 ### Analyst Models (15m timeframe, per-regime)
 ```python
-# Base Models
-- TCN
-- LightGBM
-- Ridge Regression
-- ElasticNet
-- RandomForest
+# Base Models (5 types)
+- ElasticNet (L1+L2 regularization)
+- RandomForest (tree ensemble)
 
-# Advanced Models
+# Advanced Models (3 types)
 - NAS (Neural Architecture Search)
 - TAS (Tree-based Architecture Search)  
-- MultiHorizon N-BEATS
+- MultiHorizon N-BEATS (time series forecasting)
 
 # Ensemble
-- Analyst Ensemble (combining all above)
+- Analyst Ensemble (combining all 5 base models)
+
+# Training Structure
+- 8 regimes × 5 models = 40 base models
+- 8 per-regime ensemble models
+- Total: 48 models per direction
 
 # Features
 - Selected features from pre-ML orchestration
@@ -263,17 +265,21 @@ default_model_types = [
 
 ### Tactician Models (5m timeframe, NOT per-regime)
 ```python
-# Base Models
-- RandomSurvivalForest
-- XGBoost
-- ElasticNetCV
+# Base Models (4 types)
+- RandomSurvivalForest (survival analysis)
+- XGBoost (gradient boosting)
 
-# Advanced Models
+# Advanced Models (2 types)
 - NAS (Neural Architecture Search)
 - TAS (Tree-based Architecture Search)
 
 # Ensemble
-- Tactician Ensemble (combining all above)
+- Tactician Ensemble (combining all 4 base models)
+
+# Training Structure
+- 4 unified models (no regime splitting)
+- 1 unified ensemble model
+- Total: 5 models per direction
 
 # Features
 - Selected features from pre-ML orchestration

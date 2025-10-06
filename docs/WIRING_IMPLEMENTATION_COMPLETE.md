@@ -13,9 +13,6 @@ This document provides the complete implementation for wiring NAS/TAS models, ad
 class AnalystModelType(Enum):
     """Analyst model types."""
     # Base models
-    TCN = "TCN"
-    LIGHTGBM = "LIGHTGBM"
-    RIDGE = "RIDGE"
     ELASTIC_NET = "ELASTIC_NET"
     RANDOM_FOREST = "RANDOM_FOREST"
     
@@ -30,9 +27,6 @@ class AnalystModelsTrainingConfig:
     """Configuration for Analyst base models training."""
     # Default model types for Analyst (IF we trade - 15m)
     model_types: List[AnalystModelType] = field(default_factory=lambda: [
-        AnalystModelType.TCN,
-        AnalystModelType.LIGHTGBM,
-        AnalystModelType.RIDGE,
         AnalystModelType.ELASTIC_NET,
         AnalystModelType.RANDOM_FOREST,
         AnalystModelType.NAS,
@@ -71,7 +65,6 @@ class TacticianModelType(Enum):
     # Base models
     RANDOM_SURVIVAL_FOREST = "RANDOM_SURVIVAL_FOREST"
     XGBOOST = "XGBOOST"
-    ELASTIC_NET_CV = "ELASTIC_NET_CV"
     
     # Advanced models
     NAS = "NAS"  # Neural Architecture Search
@@ -85,7 +78,6 @@ class TacticianModelsTrainingConfig:
     model_types: List[TacticianModelType] = field(default_factory=lambda: [
         TacticianModelType.RANDOM_SURVIVAL_FOREST,
         TacticianModelType.XGBOOST,
-        TacticianModelType.ELASTIC_NET_CV,
         TacticianModelType.NAS,
         TacticianModelType.TAS
     ])

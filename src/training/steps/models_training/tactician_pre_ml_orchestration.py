@@ -23,7 +23,7 @@ import traceback
 
 # Import pre-training sub-pipeline
 try:
-    from ..pre_training.sub_pipeline import (
+    from ...pre_training.sub_pipeline import (
         PreTrainingSubPipeline, SubPipelineConfig, SubPipelineResult, SubPipelineStatus
     )
     PRE_TRAINING_AVAILABLE = True

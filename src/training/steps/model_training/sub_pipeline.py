@@ -21,6 +21,8 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass, field
+from pathlib import Path
+import pickle
 import pandas as pd
 import numpy as np
 
@@ -165,6 +167,109 @@ class ModelTrainingSubPipeline:
             self.tactician_training = TacticianTrainingPipeline()
         else:
             self.tactician_training = None
+
+    # ------------------------------------------------------------------
+    # Persistence helpers
+    # ------------------------------------------------------------------
+    def _get_step_directory(self, config: SubPipelineConfig, step_name: str, create: bool = False) -> Path:
+        """Return the directory used to persist artifacts for a given step."""
+        base_dir = Path(config.output_directory)
+        step_dir = base_dir / step_name
+        if create:
+            step_dir.mkdir(parents=True, exist_ok=True)
+        return step_dir
+
+    def _save_step_artifacts(
+        self,
+        config: SubPipelineConfig,
+        step_name: str,
+        artifacts: Optional[Dict[str, Any]],
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> List[str]:
+        """Persist step artifacts and metadata so later executions can reload them."""
+        if not artifacts:
+            return []
+
+        saved_paths: List[str] = []
+        try:
+            step_dir = self._get_step_directory(config, step_name, create=True)
+
+            artifact_path = step_dir / "artifacts.pkl"
+            with artifact_path.open('wb') as artifact_file:
+                pickle.dump(artifacts, artifact_file)
+            saved_paths.append(str(artifact_path))
+
+            metadata_path = step_dir / "metadata.pkl"
+            with metadata_path.open('wb') as metadata_file:
+                pickle.dump(metadata or {}, metadata_file)
+            saved_paths.append(str(metadata_path))
+
+            self.logger.debug(f"💾 Saved artifacts for {step_name} to {artifact_path}")
+        except Exception as exc:
+            self.logger.warning(f"⚠️ Failed to persist artifacts for {step_name}: {exc}")
+
+        return saved_paths
+
+    def _load_step_artifacts(
+        self,
+        config: SubPipelineConfig,
+        step_name: str
+    ) -> Optional[Dict[str, Any]]:
+        """Load previously saved artifacts for a step, if available."""
+        step_dir = self._get_step_directory(config, step_name)
+        artifact_path = step_dir / "artifacts.pkl"
+        if not artifact_path.exists():
+            self.logger.info(
+                f"📂 No persisted artifacts found for {step_name} in {artifact_path.parent}"
+            )
+            return None
+
+        try:
+            with artifact_path.open('rb') as artifact_file:
+                artifacts = pickle.load(artifact_file)
+            self.logger.debug(f"📥 Loaded artifacts for {step_name} from {artifact_path}")
+            return artifacts
+        except Exception as exc:
+            self.logger.error(f"❌ Failed to load artifacts for {step_name}: {exc}")
+            return None
+
+    def _load_step_metadata(
+        self,
+        config: SubPipelineConfig,
+        step_name: str
+    ) -> Dict[str, Any]:
+        """Load previously saved metadata for a step, if available."""
+        step_dir = self._get_step_directory(config, step_name)
+        metadata_path = step_dir / "metadata.pkl"
+        if not metadata_path.exists():
+            return {}
+
+        try:
+            with metadata_path.open('rb') as metadata_file:
+                metadata = pickle.load(metadata_file)
+            return metadata if isinstance(metadata, dict) else {}
+        except Exception as exc:
+            self.logger.warning(f"⚠️ Failed to load metadata for {step_name}: {exc}")
+            return {}
+
+    def _build_loaded_result(
+        self,
+        step_name: str,
+        artifacts: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> SubPipelineResult:
+        """Create a SubPipelineResult object from persisted artifacts."""
+        now = datetime.now()
+        return SubPipelineResult(
+            sub_pipeline_name=step_name,
+            status=SubPipelineStatus.COMPLETED,
+            start_time=now,
+            end_time=now,
+            duration_seconds=0.0,
+            success=True,
+            artifacts=artifacts or {},
+            metadata=metadata or {}
+        )
     
     async def execute_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """
@@ -317,7 +422,7 @@ class ModelTrainingSubPipeline:
                 training_data=None,  # TODO: Load from artifacts
                 regime_assignments=None,  # TODO: Load from market_analysis
             )
-            
+
             result.success = orchestration_result.success
             result.status = SubPipelineStatus.COMPLETED if orchestration_result.success else SubPipelineStatus.FAILED
             result.error_message = orchestration_result.error_message
@@ -326,7 +431,20 @@ class ModelTrainingSubPipeline:
                 'selected_features': orchestration_result.selected_feature_names,
                 'feature_count': orchestration_result.final_feature_count
             }
-            
+            result.metadata = {
+                'total_samples': getattr(orchestration_result, 'total_samples', None),
+                'final_feature_count': getattr(orchestration_result, 'final_feature_count', None),
+                'selection_phase': getattr(orchestration_result, 'phase', None)
+            }
+
+            if result.success:
+                result.output_files = self._save_step_artifacts(
+                    config,
+                    'analyst_pre_ml_orchestration',
+                    result.artifacts,
+                    result.metadata
+                )
+
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
@@ -358,14 +476,26 @@ class ModelTrainingSubPipeline:
                 feature_columns=pre_ml_result.artifacts.get('selected_features', []),
                 target_columns=['target_long', 'target_short'],  # TODO: Get from config
             )
-            
+
             result.success = training_result.base_training_completed
             result.status = SubPipelineStatus.COMPLETED if result.success else SubPipelineStatus.FAILED
             result.artifacts = {
                 'base_models': training_result.base_models,
                 'metrics': training_result.base_training_metrics
             }
-            
+            result.metadata = {
+                'training_summary': getattr(training_result, 'training_summary', None),
+                'metrics': training_result.base_training_metrics
+            }
+
+            if result.success:
+                result.output_files = self._save_step_artifacts(
+                    config,
+                    'analyst_models_training',
+                    result.artifacts,
+                    result.metadata
+                )
+
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
@@ -399,7 +529,17 @@ class ModelTrainingSubPipeline:
                 'ensemble_models': models_result.artifacts.get('base_models'),  # Placeholder
                 'predictions': None  # TODO: Generate predictions
             }
-            
+            result.metadata = {
+                'source_models_available': bool(models_result.artifacts.get('base_models'))
+            }
+
+            result.output_files = self._save_step_artifacts(
+                config,
+                'analyst_ensemble_training',
+                result.artifacts,
+                result.metadata
+            )
+
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
@@ -441,7 +581,19 @@ class ModelTrainingSubPipeline:
                 'feature_count': orchestration_result.final_feature_count,
                 'filter_ratio': orchestration_result.filter_ratio
             }
-            
+            result.metadata = {
+                'total_samples': getattr(orchestration_result, 'total_samples', None),
+                'filter_ratio': getattr(orchestration_result, 'filter_ratio', None)
+            }
+
+            if result.success:
+                result.output_files = self._save_step_artifacts(
+                    config,
+                    'tactician_pre_ml_orchestration',
+                    result.artifacts,
+                    result.metadata
+                )
+
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
@@ -473,14 +625,26 @@ class ModelTrainingSubPipeline:
                 feature_columns=pre_ml_result.artifacts.get('selected_features', []),
                 target_columns=['target_long', 'target_short'],  # TODO: Get from config
             )
-            
+
             result.success = training_result.base_training_completed
             result.status = SubPipelineStatus.COMPLETED if result.success else SubPipelineStatus.FAILED
             result.artifacts = {
                 'base_models': training_result.base_models,
                 'metrics': training_result.base_training_metrics
             }
-            
+            result.metadata = {
+                'training_summary': getattr(training_result, 'training_summary', None),
+                'metrics': training_result.base_training_metrics
+            }
+
+            if result.success:
+                result.output_files = self._save_step_artifacts(
+                    config,
+                    'tactician_models_training',
+                    result.artifacts,
+                    result.metadata
+                )
+
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
@@ -514,7 +678,17 @@ class ModelTrainingSubPipeline:
                 'ensemble_models': models_result.artifacts.get('base_models'),  # Placeholder
                 'predictions': None  # TODO: Generate predictions
             }
-            
+            result.metadata = {
+                'source_models_available': bool(models_result.artifacts.get('base_models'))
+            }
+
+            result.output_files = self._save_step_artifacts(
+                config,
+                'tactician_ensemble_training',
+                result.artifacts,
+                result.metadata
+            )
+
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
@@ -537,21 +711,137 @@ class ModelTrainingSubPipeline:
     
     async def execute_sub_pipeline(self, sub_pipeline_name: str, config: SubPipelineConfig) -> SubPipelineResult:
         """Execute a specific sub-pipeline."""
+        result: Optional[SubPipelineResult] = None
+
         if sub_pipeline_name == 'analyst_pre_ml_orchestration':
-            return await self._execute_analyst_pre_ml_orchestration(config)
+            result = await self._execute_analyst_pre_ml_orchestration(config)
         elif sub_pipeline_name == 'analyst_models_training':
-            # Need pre-ML result, TODO: load from artifacts
-            raise NotImplementedError("Individual execution not yet supported, use full pipeline")
+            pre_ml_artifacts = self._load_step_artifacts(config, 'analyst_pre_ml_orchestration')
+            if pre_ml_artifacts is None:
+                raise FileNotFoundError(
+                    "Analyst pre-ML artifacts not found. Run 'analyst_pre_ml_orchestration' first or provide persisted artifacts."
+                )
+
+            pre_ml_metadata = self._load_step_metadata(config, 'analyst_pre_ml_orchestration')
+            pre_ml_result = self._build_loaded_result(
+                'analyst_pre_ml_orchestration',
+                pre_ml_artifacts,
+                pre_ml_metadata
+            )
+
+            result = await self._execute_analyst_models_training(config, pre_ml_result)
         elif sub_pipeline_name == 'analyst_ensemble_training':
-            raise NotImplementedError("Individual execution not yet supported, use full pipeline")
+            models_artifacts = self._load_step_artifacts(config, 'analyst_models_training')
+            if models_artifacts is None:
+                raise FileNotFoundError(
+                    "Analyst model artifacts not found. Run 'analyst_models_training' first or provide persisted artifacts."
+                )
+
+            models_metadata = self._load_step_metadata(config, 'analyst_models_training')
+            models_result = self._build_loaded_result(
+                'analyst_models_training',
+                models_artifacts,
+                models_metadata
+            )
+
+            result = await self._execute_analyst_ensemble_training(config, models_result)
         elif sub_pipeline_name == 'tactician_pre_ml_orchestration':
-            return await self._execute_tactician_pre_ml_orchestration(config, None)
+            analyst_artifacts = self._load_step_artifacts(config, 'analyst_ensemble_training')
+            analyst_metadata = self._load_step_metadata(config, 'analyst_ensemble_training') if analyst_artifacts is not None else {}
+            analyst_result = None
+            if analyst_artifacts is not None:
+                analyst_result = self._build_loaded_result(
+                    'analyst_ensemble_training',
+                    analyst_artifacts,
+                    analyst_metadata
+                )
+
+            analyst_predictions = None
+            if analyst_result:
+                analyst_predictions = analyst_result.artifacts.get('predictions')
+
+            result = await self._execute_tactician_pre_ml_orchestration(
+                config,
+                analyst_predictions
+            )
         elif sub_pipeline_name == 'tactician_models_training':
-            raise NotImplementedError("Individual execution not yet supported, use full pipeline")
+            pre_ml_artifacts = self._load_step_artifacts(config, 'tactician_pre_ml_orchestration')
+            if pre_ml_artifacts is None:
+                raise FileNotFoundError(
+                    "Tactician pre-ML artifacts not found. Run 'tactician_pre_ml_orchestration' first or provide persisted artifacts."
+                )
+
+            pre_ml_metadata = self._load_step_metadata(config, 'tactician_pre_ml_orchestration')
+            pre_ml_result = self._build_loaded_result(
+                'tactician_pre_ml_orchestration',
+                pre_ml_artifacts,
+                pre_ml_metadata
+            )
+
+            analyst_artifacts = self._load_step_artifacts(config, 'analyst_ensemble_training')
+            analyst_metadata = self._load_step_metadata(config, 'analyst_ensemble_training') if analyst_artifacts is not None else {}
+            analyst_result = None
+            if analyst_artifacts is not None:
+                analyst_result = self._build_loaded_result(
+                    'analyst_ensemble_training',
+                    analyst_artifacts,
+                    analyst_metadata
+                )
+
+            analyst_predictions = analyst_result.artifacts.get('predictions') if analyst_result else None
+
+            result = await self._execute_tactician_models_training(
+                config,
+                pre_ml_result,
+                analyst_predictions
+            )
         elif sub_pipeline_name == 'tactician_ensemble_training':
-            raise NotImplementedError("Individual execution not yet supported, use full pipeline")
+            models_artifacts = self._load_step_artifacts(config, 'tactician_models_training')
+            if models_artifacts is None:
+                raise FileNotFoundError(
+                    "Tactician model artifacts not found. Run 'tactician_models_training' first or provide persisted artifacts."
+                )
+
+            models_metadata = self._load_step_metadata(config, 'tactician_models_training')
+            models_result = self._build_loaded_result(
+                'tactician_models_training',
+                models_artifacts,
+                models_metadata
+            )
+
+            analyst_artifacts = self._load_step_artifacts(config, 'analyst_ensemble_training')
+            analyst_predictions = None
+            if analyst_artifacts is not None:
+                analyst_predictions = analyst_artifacts.get('predictions')
+
+            result = await self._execute_tactician_ensemble_training(
+                config,
+                models_result,
+                analyst_predictions
+            )
         else:
             raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
+
+        if result:
+            self.results.append(result)
+
+            if result.success:
+                if sub_pipeline_name == 'analyst_pre_ml_orchestration':
+                    self._current_pipeline_state['analyst_features'] = result.artifacts
+                elif sub_pipeline_name == 'analyst_models_training':
+                    self._current_pipeline_state['analyst_models'] = result.artifacts
+                elif sub_pipeline_name == 'analyst_ensemble_training':
+                    self._current_pipeline_state['analyst_ensemble'] = result.artifacts
+                elif sub_pipeline_name == 'tactician_pre_ml_orchestration':
+                    self._current_pipeline_state['tactician_features'] = result.artifacts
+                elif sub_pipeline_name == 'tactician_models_training':
+                    self._current_pipeline_state['tactician_models'] = result.artifacts
+                elif sub_pipeline_name == 'tactician_ensemble_training':
+                    self._current_pipeline_state['tactician_ensemble'] = result.artifacts
+
+            return result
+
+        raise RuntimeError(f"Sub-pipeline '{sub_pipeline_name}' did not return a result")
     
     def get_execution_summary(self) -> Dict[str, Any]:
         """Get execution summary."""

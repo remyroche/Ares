@@ -605,8 +605,35 @@ class AresLauncher:
         # Enable only the target stage and sub-pipeline
         tprint(f"🔧 [SUB_PIPELINE_CONFIG] Enabling stage: {target_stage.value}")
         config.enabled_stages = [target_stage]
-        tprint(f"🔧 [SUB_PIPELINE_CONFIG] Enabling sub-pipeline: {sub_pipeline}")
-        config.enabled_sub_pipelines[target_stage] = [sub_pipeline]
+
+        stage_sub_pipelines = self.pipeline.get_available_sub_pipelines(target_stage)
+        stage_dependency_names: set = set()
+        visited_dependencies: set = set()
+
+        def _collect_stage_dependencies(name: str):
+            if name in visited_dependencies:
+                return
+            visited_dependencies.add(name)
+            dependencies = self._get_sub_pipeline_dependencies(name)
+            for dep in dependencies:
+                if dep in stage_dependency_names:
+                    continue
+                _collect_stage_dependencies(dep)
+                if dep in stage_sub_pipelines:
+                    stage_dependency_names.add(dep)
+
+        _collect_stage_dependencies(sub_pipeline)
+
+        enabled_sequence = [
+            candidate for candidate in stage_sub_pipelines
+            if candidate in stage_dependency_names or candidate == sub_pipeline
+        ]
+
+        if sub_pipeline not in enabled_sequence:
+            enabled_sequence.append(sub_pipeline)
+
+        tprint(f"🔧 [SUB_PIPELINE_CONFIG] Enabling sub-pipelines for stage: {enabled_sequence}")
+        config.enabled_sub_pipelines[target_stage] = enabled_sequence
         tprint("✅ [SUB_PIPELINE_CONFIG] Stage and sub-pipeline enabled")
         
         # Set single stage execution mode for individual sub-pipeline execution
@@ -1300,7 +1327,7 @@ Examples:
     
     parser.add_argument(
         '--sub-pipeline', '--sub_pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, feature_lookback_optimization, pid_based_feature_generation, final_feature_selection, nas_tas_models_training, nas_tas_ensemble_training, hmm_training, analyst_model_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_training, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: analyst_pre_ml_orchestration, analyst_models_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_models_training, tactician_ensemble_training, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, feature_lookback_optimization, pid_based_feature_generation, final_feature_selection, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
     )
     
     parser.add_argument(

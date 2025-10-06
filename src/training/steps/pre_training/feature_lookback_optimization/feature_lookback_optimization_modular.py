@@ -5,6 +5,7 @@ This is the main component that uses the modular architecture with separate
 modules for validation, error handling, performance monitoring, and optimization.
 """
 
+import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
@@ -251,7 +252,8 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             labeling_data = self._load_recent_labeling_results(
                 pipeline_state.get('symbol', 'UNKNOWN'),
                 pipeline_state.get('exchange', 'UNKNOWN'),
-                pipeline_state.get('timeframe', 'UNKNOWN')
+                pipeline_state.get('timeframe', 'UNKNOWN'),
+                pipeline_state=pipeline_state
             )
 
             # Apply execution mode data windowing
@@ -486,18 +488,236 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             # Fail fast - don't fallback to basic features
             raise RuntimeError(f"Failed to generate features using feature bank: {e}")
 
-    def _load_recent_labeling_results(self, symbol: str, exchange: str, timeframe: str) -> Optional[Dict[str, Any]]:
-        """Load recent labeling results."""
+    def _coerce_to_dataframe(self, value: Any) -> Optional[pd.DataFrame]:
+        """Safely convert a value to a pandas DataFrame when possible."""
+        if value is None:
+            return None
+
+        if isinstance(value, pd.DataFrame):
+            return value.copy()
+
+        if isinstance(value, pd.Series):
+            return value.to_frame()
+
+        if isinstance(value, dict):
+            try:
+                df = pd.DataFrame(value)
+                return df if not df.empty else None
+            except Exception:
+                return None
+
+        if isinstance(value, list):
+            try:
+                df = pd.DataFrame(value)
+                return df if not df.empty else None
+            except Exception:
+                return None
+
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, (list, dict)):
+                    df = pd.DataFrame(parsed)
+                    return df if not df.empty else None
+            except json.JSONDecodeError:
+                return None
+
+        return None
+
+    def _normalize_labeling_result(self, labeling_source: Any) -> Optional[Dict[str, Any]]:
+        """Normalize labeling payload into a standardized dictionary with DataFrame values."""
+        if not labeling_source:
+            return None
+
+        if isinstance(labeling_source, dict) and 'labeled_data' in labeling_source:
+            result = dict(labeling_source)
+        elif isinstance(labeling_source, dict) and 'labels' in labeling_source:
+            result = dict(labeling_source)
+        else:
+            result = {'labeled_data': labeling_source}
+
+        labeled_df = self._coerce_to_dataframe(result.get('labeled_data') or result.get('labels'))
+        if labeled_df is None or labeled_df.empty:
+            return None
+
+        result['labeled_data'] = labeled_df
+        if 'labels' in result:
+            result['labels'] = labeled_df
+
+        return result
+
+    def _merge_labeling_into_data(
+        self,
+        base_df: pd.DataFrame,
+        labels_df: pd.DataFrame,
+        dataset_name: str = 'labeled_data'
+    ) -> pd.DataFrame:
+        """Merge labeling-derived columns into the working dataset."""
+        if labels_df is None or labels_df.empty:
+            return base_df
+
+        merged_df = base_df.copy()
+        incoming = labels_df.copy()
+
+        # Track columns before merge for logging
+        pre_columns = set(merged_df.columns)
+
+        if 'timestamp' in merged_df.columns and 'timestamp' in incoming.columns:
+            try:
+                merged_df['timestamp'] = pd.to_datetime(merged_df['timestamp'])
+                incoming['timestamp'] = pd.to_datetime(incoming['timestamp'])
+            except Exception:
+                # Keep original values if conversion fails
+                pass
+
+            incoming = incoming.drop_duplicates(subset=['timestamp'], keep='last')
+            merged_df = merged_df.merge(
+                incoming,
+                on='timestamp',
+                how='left',
+                suffixes=('', '_mh')
+            )
+
+            # Resolve duplicate columns produced by merge suffixes
+            for col in list(merged_df.columns):
+                if col.endswith('_mh'):
+                    original_col = col[:-3]
+                    merged_df[original_col] = merged_df[col].combine_first(merged_df.get(original_col))
+                    merged_df.drop(columns=[col], inplace=True)
+        else:
+            merged_df = merged_df.reset_index(drop=True)
+            incoming = incoming.reset_index(drop=True)
+
+            if len(incoming) > len(merged_df):
+                incoming = incoming.iloc[-len(merged_df):].reset_index(drop=True)
+            elif len(incoming) < len(merged_df):
+                pad = len(merged_df) - len(incoming)
+                pad_frame = pd.DataFrame({col: [np.nan] * pad for col in incoming.columns})
+                incoming = pd.concat([pad_frame, incoming], ignore_index=True)
+
+            for col in incoming.columns:
+                if col == 'timestamp':
+                    continue
+                merged_df[col] = incoming[col].to_numpy(copy=False)
+
+            merged_df.index = base_df.index
+
+        new_columns = sorted(set(merged_df.columns) - pre_columns)
+        if new_columns:
+            preview = ', '.join(new_columns[:5])
+            if len(new_columns) > 5:
+                preview += ', …'
+            self.logger.info(
+                f"📊 Integrated {len(new_columns)} columns from {dataset_name}: {preview}"
+            )
+
+        return merged_df
+
+    def _load_labeling_from_outcomes(
+        self,
+        symbol: str,
+        exchange: str,
+        timeframe: str
+    ) -> Optional[Dict[str, Any]]:
+        """Fallback loader that inspects saved outcomes for labeling results."""
+        outcomes_dir = Path("outcomes")
+        if not outcomes_dir.exists():
+            return None
+
         try:
-            # This would load from storage in a real implementation
-            return {}
+            pattern = "market_analysis_multi_horizon_profit_labeler_outcome_*.json"
+            outcome_files = list(outcomes_dir.glob(pattern))
+            if not outcome_files:
+                return None
+
+            latest_file = max(outcome_files, key=lambda f: f.stat().st_mtime)
+            with open(latest_file, 'r') as f:
+                outcome_data = json.load(f)
+
+            config_data = outcome_data.get('config', {})
+            if (
+                config_data.get('symbol') == symbol and
+                config_data.get('exchange') == exchange and
+                config_data.get('timeframe') == timeframe
+            ):
+                artifacts = outcome_data.get('artifacts', {})
+                mh_result = artifacts.get('multi_horizon_labeling_result')
+                normalized = self._normalize_labeling_result(mh_result)
+                if normalized:
+                    self.logger.info(
+                        f"📂 Loaded multi-horizon labeling result from outcomes file {latest_file.name}"
+                    )
+                    return normalized
+        except Exception as exc:
+            self.logger.warning(f"⚠️ Failed to load labeling results from outcomes: {exc}")
+
+        return None
+
+    def _load_recent_labeling_results(
+        self,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        pipeline_state: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Load the most recent multi-horizon labeling results from available sources."""
+        try:
+            candidate_sources: List[Tuple[str, Any]] = []
+
+            if pipeline_state:
+                state_result = pipeline_state.get('multi_horizon_labeling_result')
+                if state_result:
+                    candidate_sources.append(("pipeline_state.multi_horizon_labeling_result", state_result))
+
+                artifacts = pipeline_state.get('artifacts', {})
+                if isinstance(artifacts, dict):
+                    artifact_result = artifacts.get('multi_horizon_labeling_result')
+                    if artifact_result:
+                        candidate_sources.append(("pipeline_state.artifacts.multi_horizon_labeling_result", artifact_result))
+
+            for source_name, raw_result in candidate_sources:
+                normalized = self._normalize_labeling_result(raw_result)
+                if normalized:
+                    self.logger.info(f"📊 Using multi-horizon labeling result from {source_name}")
+                    return normalized
+
+            # Try loading from persistent artifacts managed by the artifact manager
+            try:
+                artifact_payload, metadata = self.artifact_manager.load_most_recent_artifact(
+                    base_name="multi_horizon_labeling_result",
+                    directory="artifacts",
+                    extension=".json"
+                )
+            except Exception:
+                artifact_payload, metadata = (None, None)
+
+            if artifact_payload:
+                if isinstance(artifact_payload, dict) and 'multi_horizon_labeling_result' in artifact_payload:
+                    artifact_payload = artifact_payload['multi_horizon_labeling_result']
+                normalized = self._normalize_labeling_result(artifact_payload)
+                if normalized:
+                    source = metadata.filename if metadata else 'artifact_storage'
+                    self.logger.info(f"📊 Loaded multi-horizon labeling result from artifact {source}")
+                    return normalized
+
+            # Final fallback: inspect outcomes directory
+            outcome_result = self._load_labeling_from_outcomes(symbol, exchange, timeframe)
+            if outcome_result:
+                return outcome_result
+
+            message = (
+                "Multi-horizon labeling results are unavailable; cannot proceed with feature lookback optimization"
+            )
+            self.logger.error(f"❌ {message}")
+            raise RuntimeError(message)
+
         except Exception as e:
             self.error_handler.handle_error(
                 e,
                 "_load_recent_labeling_results",
-                return_value={}
+                return_value=None
             )
-            return {}
+            raise
 
     async def _perform_feature_optimization(
         self,
@@ -616,20 +836,39 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             )
             return {'feature_results': {}, 'error': str(e)}
 
-    def _prepare_data_for_optimization(self, data: Any, labeling_data: Dict[str, Any]) -> pd.DataFrame:
-        """Prepare data for optimization."""
+    def _prepare_data_for_optimization(self, data: Any, labeling_data: Optional[Dict[str, Any]]) -> pd.DataFrame:
+        """Prepare and enrich market data with multi-horizon labeling targets."""
         try:
             if not isinstance(data, pd.DataFrame):
                 return pd.DataFrame()
 
-            # Basic data preparation
             prepared_data = data.copy()
 
-            # Add any labeling data if available
-            if labeling_data:
-                for key, value in labeling_data.items():
-                    if isinstance(value, pd.Series) and len(value) == len(prepared_data):
-                        prepared_data[key] = value
+            normalized_labeling = self._normalize_labeling_result(labeling_data) if labeling_data else None
+
+            if not normalized_labeling:
+                message = (
+                    "Multi-horizon labeling results are required to prepare optimization targets"
+                )
+                self.logger.error(f"❌ {message}")
+                raise RuntimeError(message)
+
+            labels_df = normalized_labeling.get('labeled_data')
+            if labels_df is not None:
+                prepared_data = self._merge_labeling_into_data(prepared_data, labels_df, 'multi_horizon_labels')
+
+            # Attach auxiliary scoring matrices when available
+            for ancillary_key in ['confidence_scores', 'eligibility_masks', 'quality_scores']:
+                ancillary_df = self._coerce_to_dataframe(normalized_labeling.get(ancillary_key))
+                if ancillary_df is not None and not ancillary_df.empty:
+                    prepared_data = self._merge_labeling_into_data(
+                        prepared_data,
+                        ancillary_df,
+                        ancillary_key
+                    )
+
+            if normalized_labeling.get('metadata'):
+                prepared_data.attrs['labeling_metadata'] = normalized_labeling['metadata']
 
             return prepared_data
 
@@ -639,7 +878,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 "_prepare_data_for_optimization",
                 return_value=pd.DataFrame()
             )
-            return pd.DataFrame()
+            raise
 
     def _create_optimization_metrics(self, optimization_results: Dict[str, Any]) -> OptimizationMetrics:
         """Create optimization metrics for differentiated long/short pipelines."""

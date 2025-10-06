@@ -606,7 +606,194 @@ class TacticianPreMLOrchestrator:
         # For tactician_pre_ml_orchestration, we use all the training data
         # The analyst signal filtering happens in the actual tactician training step
         return training_data
-    
+
+    def _prepare_training_data_per_regime(
+        self,
+        training_data: pd.DataFrame,
+        regime_splits: Dict[str, Any]
+    ) -> Dict[str, pd.DataFrame]:
+        """Prepare training data for per-regime processing."""
+        tprint_info("🏷️ Preparing training data for per-regime processing...")
+
+        if not regime_splits or 'unified_data' not in regime_splits:
+            tprint_warning("⚠️ No unified regime data found; using single dataset")
+            return {'default': training_data}
+
+        unified_data = regime_splits['unified_data']
+        regime_assignments = unified_data.get('regime_assignments')
+
+        if regime_assignments is None:
+            tprint_warning("⚠️ No regime assignments found; using single dataset")
+            return {'default': training_data}
+
+        # Split data by regime
+        regime_datasets = {}
+        unique_regimes = regime_assignments.unique()
+
+        tprint_info(f"🏷️ Found {len(unique_regimes)} unique regimes: {list(unique_regimes)}")
+
+        for regime in unique_regimes:
+            regime_mask = regime_assignments == regime
+            regime_data = training_data[regime_mask]
+
+            if not regime_data.empty:
+                regime_datasets[f'regime_{regime}'] = regime_data
+                tprint_info(f"🏷️ Regime {regime}: {len(regime_data)} samples ({len(regime_data)/len(training_data)*100:.1f}%)")
+
+        if not regime_datasets:
+            tprint_warning("⚠️ No valid regime datasets created; using single dataset")
+            return {'default': training_data}
+
+        return regime_datasets
+
+    async def _orchestrate_per_regime(
+        self,
+        regime_datasets: Dict[str, pd.DataFrame],
+        analyst_predictions: Optional[pd.DataFrame] = None,
+        regime_assignments: Optional[pd.DataFrame] = None,
+        regime_data_splitting_result: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> TacticianPreMLResult:
+        """Orchestrate feature engineering per regime with regime-specific optimization."""
+        tprint_info("🏷️ Starting per-regime feature engineering orchestration...")
+
+        result = TacticianPreMLResult()
+        result.total_samples_before_filter = sum(len(df) for df in regime_datasets.values())
+
+        regime_results = {}
+        all_selected_features = set()
+
+        for regime_name, regime_data in regime_datasets.items():
+            tprint_info(f"🏷️ Processing regime: {regime_name} ({len(regime_data)} samples)")
+
+            try:
+                # Create regime-specific configuration
+                regime_config = SubPipelineConfig(
+                    symbol=self.config.symbol,
+                    exchange=self.config.exchange,
+                    timeframe=self.config.timeframe,
+                    data_dir=self.config.data_dir,
+                    parallel_processing=self.config.enable_parallel_processing,
+                    custom_params={
+                        **self.config.custom_params,
+                        'enable_per_regime_optimization': True,
+                        'enable_per_cluster_optimization': self.config.enable_per_cluster_optimization,
+                        'regime_assignments': regime_assignments,
+                        'analyst_predictions': analyst_predictions,
+                        'regime_name': regime_name,
+                        'prepared_data': regime_data,
+                        'role': 'tactician_regime_specific',
+                        **kwargs
+                    }
+                )
+
+                # Step 1: Entry Label Integration for this regime
+                tprint_info(f"📈 Step 1/5: Regime-specific entry labeling for {regime_name}...")
+                result.phase = OrchestrationPhase.ENTRY_LABELING
+                horizon_result = await self.pre_training_pipeline._execute_multi_horizon_profit_labeler(regime_config)
+
+                if not horizon_result.success:
+                    tprint_warning(f"⚠️ Horizon labeling failed for {regime_name}: {horizon_result.error_message}")
+                    continue
+
+                # Step 2: Feature Lookback Optimization for this regime
+                tprint_info(f"⚙️ Step 2/5: Regime-specific lookback optimization for {regime_name}...")
+                result.phase = OrchestrationPhase.LOOKBACK_OPTIMIZATION
+                lookback_result = await self.pre_training_pipeline._execute_feature_lookback_optimization(regime_config)
+
+                if not lookback_result.success:
+                    tprint_warning(f"⚠️ Lookback optimization failed for {regime_name}: {lookback_result.error_message}")
+                    continue
+
+                # Step 3: PID-Based Feature Generation for this regime
+                tprint_info(f"🔧 Step 3/5: Regime-specific PID generation for {regime_name}...")
+                result.phase = OrchestrationPhase.PID_GENERATION
+                pid_result = await self.pre_training_pipeline._execute_pid_based_feature_generation(regime_config)
+
+                if not pid_result.success:
+                    tprint_warning(f"⚠️ PID generation failed for {regime_name}: {pid_result.error_message}")
+                    continue
+
+                # Step 4: Final Feature Selection for this regime
+                tprint_info(f"🎯 Step 4/5: Regime-specific feature selection for {regime_name}...")
+                result.phase = OrchestrationPhase.FEATURE_SELECTION
+                selection_result = await self.pre_training_pipeline._execute_final_feature_selection(regime_config)
+
+                if not selection_result.success:
+                    tprint_warning(f"⚠️ Feature selection failed for {regime_name}: {selection_result.error_message}")
+                    continue
+
+                # Collect results for this regime
+                regime_results[regime_name] = {
+                    'horizon_result': horizon_result,
+                    'lookback_result': lookback_result,
+                    'pid_result': pid_result,
+                    'selection_result': selection_result,
+                    'final_features': selection_result.artifacts.get('final_features'),
+                    'selected_features': selection_result.artifacts.get('selected_features', [])
+                }
+
+                # Track all selected features across regimes
+                if regime_results[regime_name]['selected_features']:
+                    all_selected_features.update(regime_results[regime_name]['selected_features'])
+
+                tprint_success(f"✅ Regime {regime_name} processing completed")
+
+            except Exception as e:
+                tprint_error(f"❌ Failed to process regime {regime_name}: {e}")
+                continue
+
+        # Combine results from all regimes
+        if regime_results:
+            result.success = True
+            result.phase = OrchestrationPhase.COMPLETED
+
+            # Create combined final features by concatenating regime-specific results
+            combined_features_list = []
+            for regime_name, regime_result in regime_results.items():
+                if regime_result['final_features'] is not None:
+                    # Add regime identifier column
+                    features_with_regime = regime_result['final_features'].copy()
+                    features_with_regime['regime'] = regime_name
+                    combined_features_list.append(features_with_regime)
+
+            if combined_features_list:
+                result.final_features = pd.concat(combined_features_list, ignore_index=True)
+                result.final_feature_count = len(all_selected_features)
+                result.selected_feature_names = list(all_selected_features)
+            else:
+                result.final_features = None
+                result.final_feature_count = 0
+                result.selected_feature_names = []
+
+            # Store regime-specific results in artifacts
+            result.lookback_optimization_result = {
+                'regime_results': {k: v['lookback_result'].artifacts for k, v in regime_results.items()},
+                'combined_features': len(all_selected_features)
+            }
+            result.pid_generation_result = {
+                'regime_results': {k: v['pid_result'].artifacts for k, v in regime_results.items()},
+                'total_regimes_processed': len(regime_results)
+            }
+            result.feature_selection_result = {
+                'regime_results': {k: v['selection_result'].artifacts for k, v in regime_results.items()},
+                'combined_selected_features': list(all_selected_features)
+            }
+        else:
+            result.success = False
+            result.phase = OrchestrationPhase.FAILED
+            result.error_message = "No regimes processed successfully"
+
+        result.total_samples_after_filter = (
+            sum(len(df) for df in regime_datasets.values()) if regime_datasets else 0
+        )
+        result.execution_time = tprint_timer(start_time)
+
+        tprint_success(f"✅ Per-regime orchestration completed: {len(regime_results)}/{len(regime_datasets)} regimes successful")
+        tprint_info(f"📊 Combined feature count: {result.final_feature_count}")
+
+        return result
+
     async def orchestrate(
         self,
         training_data: pd.DataFrame,
@@ -616,7 +803,7 @@ class TacticianPreMLOrchestrator:
         **kwargs
     ) -> TacticianPreMLResult:
         """
-        Execute the complete pre-ML orchestration for Tactician models.
+        Execute the complete pre-ML orchestration for Tactician models with per-regime optimization.
 
         Args:
             training_data: Input DataFrame with market data (15m timeframe)
@@ -631,6 +818,7 @@ class TacticianPreMLOrchestrator:
         start_time = tprint_timer()
         tprint_info(f"🚀 Starting Tactician Pre-ML Orchestration ({self.config.timeframe} timeframe)...")
         tprint_info(f"📊 Input data shape: {training_data.shape}")
+        tprint_info(f"🏷️ Per-regime optimization enabled: {self.config.enable_per_regime_optimization}")
 
         result = TacticianPreMLResult()
         result.total_samples_before_filter = len(training_data)
@@ -640,12 +828,34 @@ class TacticianPreMLOrchestrator:
             if not self.pre_training_pipeline:
                 raise RuntimeError("Pre-training pipeline not available")
 
-
             # Step 0: Prepare training data for configured timeframe processing
-            tprint_info(f"🎯 Step 0/4: Preparing training data for {self.config.timeframe} timeframe...")
+            tprint_info(f"🎯 Step 0/6: Preparing training data for {self.config.timeframe} timeframe...")
             result.phase = OrchestrationPhase.DATA_FILTERING
 
-            prepared_data = self._prepare_training_data(training_data, analyst_predictions)
+            # Check if we have regime data splitting results for per-regime processing
+            if (self.config.enable_per_regime_optimization and
+                regime_data_splitting_result and
+                'unified_data' in regime_data_splitting_result):
+
+                tprint_info("🏷️ Per-regime processing enabled - preparing regime-specific datasets...")
+                regime_datasets = self._prepare_training_data_per_regime(training_data, regime_data_splitting_result)
+
+                if len(regime_datasets) > 1:
+                    tprint_success(f"🏷️ Created {len(regime_datasets)} regime-specific datasets")
+                    return await self._orchestrate_per_regime(
+                        regime_datasets,
+                        analyst_predictions,
+                        regime_assignments,
+                        regime_data_splitting_result,
+                        **kwargs
+                    )
+                else:
+                    tprint_warning("⚠️ Only one regime dataset created; falling back to single dataset processing")
+                    prepared_data = list(regime_datasets.values())[0]
+            else:
+                tprint_info("🏷️ Single dataset processing (per-regime optimization disabled or no regime data)")
+                prepared_data = self._prepare_training_data(training_data, analyst_predictions)
+
             result.total_samples_after_filter = len(prepared_data)
             result.filter_ratio = (
                 result.total_samples_after_filter / result.total_samples_before_filter

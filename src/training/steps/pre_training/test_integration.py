@@ -17,7 +17,7 @@ from src.training.steps.pre_training.multi_horizon_profit_labeler import (
     MultiHorizonConfig,
     MultiHorizonProfitLabelerComponent
 )
-from src.training.steps.pre_training.profit_labeling_report_generator import (
+from src.training.steps.pre_training.profit_labeling.profit_labeling_report_generator import (
     generate_profit_labeling_report,
     ProfitLabelingReportGenerator
 )

@@ -9,8 +9,8 @@ ANALYST PIPELINE (15m timeframe - IF we trade):
 2. analyst_models_training - Train base models (per-regime)
 3. analyst_ensemble_training - Train ensemble models
 
-TACTICIAN PIPELINE (5m timeframe - WHEN we trade):
-4. tactician_pre_ml_orchestration - Feature engineering on 5m data (filtered on Analyst signals)
+TACTICIAN PIPELINE (15m timeframe - WHEN we trade):
+4. tactician_pre_ml_orchestration - Feature engineering on 15m data (filtered on Analyst signals)
 5. tactician_models_training - Train base models
 6. tactician_ensemble_training - Train ensemble models
 
@@ -134,7 +134,7 @@ class SubPipelineConfig:
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
     analyst_timeframe: str = "15m"  # Analyst uses 15m
-    tactician_timeframe: str = "5m"  # Tactician uses 5m
+    tactician_timeframe: str = "15m"  # Tactician pre-ML uses 15m
     data_dir: str = "historical_data"
     
     # Training configuration
@@ -628,10 +628,10 @@ class ModelTrainingSubPipeline:
                 
                 self.logger.info('✅ Analyst pipeline completed successfully')
             
-            # ==================== TACTICIAN PIPELINE (5m) ====================
+            # ==================== TACTICIAN PIPELINE (15m) ====================
             if config.train_tactician:
                 self.logger.info('=' * 80)
-                self.logger.info('🎯 TACTICIAN PIPELINE (5m timeframe - WHEN we trade)')
+                self.logger.info('🎯 TACTICIAN PIPELINE (15m timeframe - WHEN we trade)')
                 self.logger.info('=' * 80)
                 
                 # Get Analyst predictions for filtering
@@ -985,7 +985,7 @@ class ModelTrainingSubPipeline:
     async def _execute_tactician_pre_ml_orchestration(
         self, config: SubPipelineConfig, analyst_predictions: Optional[pd.DataFrame]
     ) -> SubPipelineResult:
-        """Execute Tactician pre-ML orchestration (5m timeframe, filtered on Analyst signals)."""
+        """Execute Tactician pre-ML orchestration (15m timeframe, filtered on Analyst signals)."""
         result = SubPipelineResult(
             sub_pipeline_name='tactician_pre_ml_orchestration',
             status=SubPipelineStatus.RUNNING,
@@ -996,7 +996,7 @@ class ModelTrainingSubPipeline:
             if not self.tactician_pre_ml:
                 raise RuntimeError("Tactician pre-ML orchestrator not available")
 
-            self.logger.info('🔧 Executing Tactician Pre-ML Orchestration (5m, filtered)...')
+            self.logger.info('🔧 Executing Tactician Pre-ML Orchestration (15m, filtered)...')
 
             training_data = self._load_market_data(config, config.tactician_timeframe)
             regime_assignments = self._load_regime_assignments(config, config.tactician_timeframe)

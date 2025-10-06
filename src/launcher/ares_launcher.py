@@ -1024,7 +1024,7 @@ class AresLauncher:
             'analyst_pre_ml_orchestration': "Analyst Pre-ML: Apply horizon labeling, optimize features, generate PID features, select features (15m timeframe, per-regime/cluster)",
             'analyst_models_training': "Train Analyst base models per-regime (ElasticNet, RandomForest, NAS, TAS, N-BEATS) on 15m timeframe - 8 regimes × 5 models = 40 base models",
             'analyst_ensemble_training': "Train Analyst per-regime ensemble models (8 ensembles combining 5 base models each) on 15m timeframe to produce final green-signal approvals consumed by Tactician",
-            'tactician_pre_ml_orchestration': "Tactician Pre-ML: Apply horizon labeling, optimize features, generate PID features, select features (5m timeframe, filtered on Analyst signals >0.4%)",
+            'tactician_pre_ml_orchestration': "Tactician Pre-ML: Apply horizon labeling, optimize features, generate PID features, select features (15m timeframe, filtered on Analyst signals >0.4%)",
             'tactician_models_training': "Train Tactician unified base models (RandomSurvivalForest, XGBoost, NAS, TAS) on 5m timeframe using Analyst green-signal filtered data with regime + Analyst features - 4 models total",
             'tactician_ensemble_training': "Train Tactician unified ensemble model (1 ensemble combining 4 base models) on 5m timeframe with Analyst green-signal filtered data and base model outputs",
             # Legacy/deprecated entries

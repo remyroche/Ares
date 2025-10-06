@@ -592,6 +592,83 @@ def create_volatility_generators(periods: Dict[str, List[int]] = None) -> List[F
         p, q, h = garch_config
         generators.append(GARCHFeatureGenerator(p=p, q=q, forecast_horizon=h))
 
+    # Analyst Features - Volatility structure generators
+    class AnalystVolatilityRatio5m15mGenerator(VectorizedFeatureGenerator):
+        """Generator for volatility ratio between 5m and 15m timeframes."""
+
+        def __init__(self):
+            config = FeatureConfig(
+                name="analyst_vol_ratio_5m_15m",
+                category=FeatureCategory.VOLATILITY,
+                description="Analyst volatility ratio between 5m and 15m timeframes",
+                required_columns=["close"],
+                default_lookback=60,
+                min_lookback=20,
+                max_lookback=200,
+                parameters={}
+            )
+            super().__init__(config, enable_matrix_ops=True)
+
+        def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+            """Generate volatility ratio feature."""
+            returns = data['close'].pct_change()
+
+            # 5m volatility (20 periods)
+            vol_5m = returns.rolling(20).std()
+
+            # 15m volatility (60 periods)
+            vol_15m = returns.rolling(60).std()
+
+            # Volatility ratio
+            vol_ratio = vol_5m / vol_15m.replace(0, 1)
+            return vol_ratio
+
+    class AnalystVolatilityRegimeDeviationGenerator(VectorizedFeatureGenerator):
+        """Generator for volatility regime deviation feature."""
+
+        def __init__(self):
+            config = FeatureConfig(
+                name="analyst_vol_regime_deviation",
+                category=FeatureCategory.VOLATILITY,
+                description="Analyst current volatility relative to regime average",
+                required_columns=["close"],
+                default_lookback=100,
+                min_lookback=50,
+                max_lookback=300,
+                parameters={}
+            )
+            super().__init__(config, enable_matrix_ops=True)
+
+        def _generate_feature(self, data: pd.DataFrame, regime_data: Optional[pd.DataFrame] = None, **kwargs) -> pd.Series:
+            """Generate volatility regime deviation feature."""
+            returns = data['close'].pct_change()
+            current_vol = returns.rolling(20).std()
+
+            if regime_data is not None and 'regime' in regime_data.columns:
+                # Calculate regime-specific volatility averages
+                regime_vol_avgs = {}
+                for regime in regime_data['regime'].unique():
+                    regime_mask = regime_data['regime'] == regime
+                    regime_vol_avgs[regime] = current_vol[regime_mask].mean()
+
+                # Current regime deviation
+                current_regime = regime_data['regime'].iloc[-1] if len(regime_data) > 0 else None
+                if current_regime is not None and current_regime in regime_vol_avgs:
+                    regime_avg_vol = regime_vol_avgs[current_regime]
+                    regime_deviation = current_vol.iloc[-1] / regime_avg_vol if regime_avg_vol > 0 else 1.0
+                else:
+                    regime_deviation = 1.0
+            else:
+                # Default to 1.0 if no regime data available
+                regime_deviation = 1.0
+
+            # Create series with the same index as input data
+            regime_deviation_series = pd.Series([regime_deviation] * len(data), index=data.index, name=self.config.name)
+            return regime_deviation_series
+
+    generators.append(AnalystVolatilityRatio5m15mGenerator())
+    generators.append(AnalystVolatilityRegimeDeviationGenerator())
+
     return generators
 
 def create_default_volatility_generators() -> List[FeatureGenerator]:

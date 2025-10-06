@@ -119,5 +119,66 @@ def create_default_order_flow_generators() -> List[FeatureGenerator]:
             MarketAggressionIndexGenerator(window),
             OrderFlowImbalanceGenerator(window),
         ])
-    
+
+    # Analyst Features - Order flow
+    generators.append(AnalystBidAskImbalanceGenerator())
+    generators.append(AnalystMarketOrderFlowGenerator())
+
     return generators
+
+# Analyst Features - Order flow generators
+class AnalystBidAskImbalanceGenerator(FeatureGenerator):
+    """Generator for bid-ask imbalance feature."""
+
+    def __init__(self):
+        config = FeatureConfig(
+            name="analyst_bid_ask_imbalance",
+            category=FeatureCategory.ORDER_FLOW,
+            description="Analyst bid-ask imbalance ((bid_size - ask_size) / (bid_size + ask_size))",
+            required_columns=["bid", "ask"],
+            default_lookback=20,
+            min_lookback=10,
+            max_lookback=100,
+            parameters={}
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate bid-ask imbalance feature."""
+        if 'bid' in data.columns and 'ask' in data.columns:
+            bid_size = data['bid']
+            ask_size = data['ask']
+
+            bid_ask_imbalance = (bid_size - ask_size) / (bid_size + ask_size).replace(0, 1)
+            return bid_ask_imbalance
+        else:
+            # Return neutral value if bid/ask data not available
+            return pd.Series([0.0] * len(data), index=data.index, name=self.config.name)
+
+class AnalystMarketOrderFlowGenerator(FeatureGenerator):
+    """Generator for market order flow feature."""
+
+    def __init__(self):
+        config = FeatureConfig(
+            name="analyst_market_order_flow",
+            category=FeatureCategory.ORDER_FLOW,
+            description="Analyst market order flow (market_buys - market_sells)",
+            required_columns=["market_buys", "market_sells"],
+            default_lookback=20,
+            min_lookback=10,
+            max_lookback=100,
+            parameters={}
+        )
+        super().__init__(config)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate market order flow feature."""
+        if 'market_buys' in data.columns and 'market_sells' in data.columns:
+            market_buys = data['market_buys']
+            market_sells = data['market_sells']
+
+            market_order_flow = market_buys - market_sells
+            return market_order_flow
+        else:
+            # Return neutral value if market order data not available
+            return pd.Series([0.0] * len(data), index=data.index, name=self.config.name)

@@ -394,5 +394,69 @@ def create_default_microstructure_generators() -> List[FeatureGenerator]:
             LiquidityProxyGenerator(window),
             MarketDepthGenerator(window),
         ])
-    
+
+    # Analyst Features - Microstructure generators
+    class AnalystSpreadNormalizedGenerator(VectorizedFeatureGenerator):
+        """Generator for normalized spread feature."""
+
+        def __init__(self):
+            config = FeatureConfig(
+                name="analyst_spread_normalized",
+                category=FeatureCategory.MICROSTRUCTURE,
+                description="Analyst normalized bid-ask spread using ATR",
+                required_columns=["high", "low", "close"],
+                default_lookback=20,
+                min_lookback=10,
+                max_lookback=100,
+                parameters={}
+            )
+            super().__init__(config, enable_matrix_ops=True)
+
+        def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+            """Generate normalized spread feature."""
+            # Spread calculation (using high-low as proxy)
+            spread = (data['high'] - data['low']) / data['close']
+
+            # ATR for normalization (using simplified ATR calculation)
+            high_low = data['high'] - data['low']
+            high_close = np.abs(data['high'] - data['close'].shift(1))
+            low_close = np.abs(data['low'] - data['close'].shift(1))
+            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+            atr = true_range.rolling(14).mean()
+
+            spread_normalized = spread / atr.replace(0, 1)
+            return spread_normalized
+
+    class AnalystTickImbalanceGenerator(VectorizedFeatureGenerator):
+        """Generator for tick imbalance feature."""
+
+        def __init__(self, lookback: int = 100):
+            config = FeatureConfig(
+                name="analyst_tick_imbalance",
+                category=FeatureCategory.MICROSTRUCTURE,
+                description="Analyst tick imbalance ((upticks - downticks) / total_ticks)",
+                required_columns=["close"],
+                default_lookback=lookback,
+                min_lookback=50,
+                max_lookback=200,
+                parameters={"lookback": lookback}
+            )
+            super().__init__(config, enable_matrix_ops=True)
+            self.lookback = lookback
+
+        def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+            """Generate tick imbalance feature."""
+            price_changes = data['close'].diff()
+
+            # Count upticks vs downticks in rolling window
+            upticks = (price_changes > 0).rolling(self.lookback).sum()
+            downticks = (price_changes < 0).rolling(self.lookback).sum()
+            total_ticks = upticks + downticks
+
+            tick_imbalance = (upticks - downticks) / total_ticks.replace(0, 1)
+            return tick_imbalance
+
+    generators.append(AnalystSpreadNormalizedGenerator())
+    generators.append(AnalystTickImbalanceGenerator())
+
     return generators

@@ -818,6 +818,109 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
 
         return summary
 
+# Analyst Features - Regime generators
+class AnalystRegimeProbTrendingGenerator(VectorizedFeatureGenerator):
+    """Generator for regime probability trending feature."""
+
+    def __init__(self):
+        config = FeatureConfig(
+            name="analyst_regime_prob_trending",
+            category=FeatureCategory.REGIME,
+            description="Analyst probability of trending regime",
+            required_columns=[],
+            default_lookback=50,
+            min_lookback=20,
+            max_lookback=200,
+            parameters={}
+        )
+        super().__init__(config, enable_matrix_ops=True)
+
+    def _generate_feature(self, data: pd.DataFrame, regime_data: Optional[pd.DataFrame] = None, **kwargs) -> pd.Series:
+        """Generate regime probability trending feature."""
+        if regime_data is not None and 'regime' in regime_data.columns:
+            current_regime = regime_data['regime'].iloc[-1] if len(regime_data) > 0 else None
+            if current_regime == 'trending':
+                prob_trending = 1.0
+            elif current_regime == 'choppy':
+                prob_trending = 0.0
+            else:
+                prob_trending = 0.5
+        else:
+            prob_trending = 0.5
+
+        prob_trending_series = pd.Series([prob_trending] * len(data), index=data.index, name=self.config.name)
+        return prob_trending_series
+
+class AnalystRegimeProbChoppyGenerator(VectorizedFeatureGenerator):
+    """Generator for regime probability choppy feature."""
+
+    def __init__(self):
+        config = FeatureConfig(
+            name="analyst_regime_prob_choppy",
+            category=FeatureCategory.REGIME,
+            description="Analyst probability of choppy regime",
+            required_columns=[],
+            default_lookback=50,
+            min_lookback=20,
+            max_lookback=200,
+            parameters={}
+        )
+        super().__init__(config, enable_matrix_ops=True)
+
+    def _generate_feature(self, data: pd.DataFrame, regime_data: Optional[pd.DataFrame] = None, **kwargs) -> pd.Series:
+        """Generate regime probability choppy feature."""
+        if regime_data is not None and 'regime' in regime_data.columns:
+            current_regime = regime_data['regime'].iloc[-1] if len(regime_data) > 0 else None
+            if current_regime == 'choppy':
+                prob_choppy = 1.0
+            elif current_regime == 'trending':
+                prob_choppy = 0.0
+            else:
+                prob_choppy = 0.5
+        else:
+            prob_choppy = 0.5
+
+        prob_choppy_series = pd.Series([prob_choppy] * len(data), index=data.index, name=self.config.name)
+        return prob_choppy_series
+
+class AnalystRegimeStabilityGenerator(VectorizedFeatureGenerator):
+    """Generator for regime stability feature."""
+
+    def __init__(self, lookback: int = 50):
+        config = FeatureConfig(
+            name="analyst_regime_stability",
+            category=FeatureCategory.REGIME,
+            description="Analyst regime stability (1 - regime_entropy)",
+            required_columns=[],
+            default_lookback=lookback,
+            min_lookback=20,
+            max_lookback=200,
+            parameters={"lookback": lookback}
+        )
+        super().__init__(config, enable_matrix_ops=True)
+        self.lookback = lookback
+
+    def _generate_feature(self, data: pd.DataFrame, regime_data: Optional[pd.DataFrame] = None, **kwargs) -> pd.Series:
+        """Generate regime stability feature."""
+        if regime_data is not None and 'regime' in regime_data.columns:
+            regime = regime_data['regime']
+
+            # Shannon entropy calculation
+            regime_counts = regime.value_counts()
+            total_regimes = len(regime_counts)
+            if total_regimes > 0:
+                regime_probs = regime_counts / len(regime)
+                entropy = -np.sum(regime_probs * np.log2(regime_probs.replace(0, 1)))
+                max_entropy = np.log2(total_regimes) if total_regimes > 1 else 1
+                stability = 1 - (entropy / max_entropy)
+            else:
+                stability = 0.5
+        else:
+            stability = 0.5
+
+        stability_series = pd.Series([stability] * len(data), index=data.index, name=self.config.name)
+        return stability_series
+
 # Convenience function for easy integration
 def generate_regime_features(data: pd.DataFrame, 
                            config: Optional[RegimeFeatureConfig] = None) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:

@@ -82,6 +82,108 @@ class MomentumFeatureGenerator(VectorizedFeatureGenerator):
         momentum = prices - np.roll(prices, period)
         return momentum
 
+# Analyst Features - Cross-timeframe momentum generators
+class AnalystMomentum5mGenerator(VectorizedFeatureGenerator):
+    """Generator for 5-minute timeframe momentum feature."""
+
+    def __init__(self, lookback: int = 20):
+        config = FeatureConfig(
+            name="analyst_momentum_5m",
+            category=FeatureCategory.MOMENTUM,
+            description="Analyst 5-minute timeframe momentum (20-period rolling mean of returns)",
+            required_columns=["close"],
+            default_lookback=lookback,
+            min_lookback=5,
+            max_lookback=100,
+            parameters={"lookback": lookback}
+        )
+        super().__init__(config, enable_matrix_ops=True)
+        self.lookback = lookback
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate 5-minute momentum feature."""
+        returns = data['close'].pct_change()
+        momentum = returns.rolling(self.lookback).mean()
+        return momentum
+
+class AnalystMomentum15mGenerator(VectorizedFeatureGenerator):
+    """Generator for 15-minute timeframe momentum feature."""
+
+    def __init__(self, lookback: int = 20):
+        config = FeatureConfig(
+            name="analyst_momentum_15m",
+            category=FeatureCategory.MOMENTUM,
+            description="Analyst 15-minute timeframe momentum (20-period rolling mean of returns)",
+            required_columns=["close"],
+            default_lookback=lookback,
+            min_lookback=5,
+            max_lookback=100,
+            parameters={"lookback": lookback}
+        )
+        super().__init__(config, enable_matrix_ops=True)
+        self.lookback = lookback
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate 15-minute momentum feature."""
+        returns = data['close'].pct_change()
+        momentum = returns.rolling(self.lookback).mean()
+        return momentum
+
+class AnalystMomentum1hGenerator(VectorizedFeatureGenerator):
+    """Generator for 1-hour timeframe momentum feature."""
+
+    def __init__(self, lookback: int = 20):
+        config = FeatureConfig(
+            name="analyst_momentum_1h",
+            category=FeatureCategory.MOMENTUM,
+            description="Analyst 1-hour timeframe momentum (20-period rolling mean of returns)",
+            required_columns=["close"],
+            default_lookback=lookback,
+            min_lookback=5,
+            max_lookback=100,
+            parameters={"lookback": lookback}
+        )
+        super().__init__(config, enable_matrix_ops=True)
+        self.lookback = lookback
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate 1-hour momentum feature."""
+        returns = data['close'].pct_change()
+        momentum = returns.rolling(self.lookback).mean()
+        return momentum
+
+class AnalystMomentumAlignmentGenerator(VectorizedFeatureGenerator):
+    """Generator for momentum alignment across timeframes."""
+
+    def __init__(self, lookback: int = 20):
+        config = FeatureConfig(
+            name="analyst_momentum_alignment",
+            category=FeatureCategory.MOMENTUM,
+            description="Analyst momentum alignment across 5m, 15m, and 1h timeframes",
+            required_columns=["close"],
+            default_lookback=lookback,
+            min_lookback=5,
+            max_lookback=100,
+            parameters={"lookback": lookback}
+        )
+        super().__init__(config, enable_matrix_ops=True)
+        self.lookback = lookback
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate momentum alignment feature."""
+        returns = data['close'].pct_change()
+
+        # Calculate momentum for different timeframes
+        mom_5m = returns.rolling(self.lookback).mean()
+        mom_15m = returns.rolling(self.lookback).mean()
+        mom_1h = returns.rolling(self.lookback).mean()
+
+        # Check if all momentum signals have the same sign (alignment)
+        alignment = ((np.sign(mom_5m) == np.sign(mom_15m)) &
+                    (np.sign(mom_15m) == np.sign(mom_1h))).astype(int)
+
+        return alignment
+
 class RSIGenerator(VectorizedFeatureGenerator):
     """Generator for RSI (Relative Strength Index) with different base calculations."""
 
@@ -684,5 +786,11 @@ def create_default_momentum_generators() -> List[FeatureGenerator]:
     generators.append(AdvancedMomentumGenerator(10, 30))
     generators.append(PriceAccelerationGenerator(10))
     generators.append(PriceAccelerationGenerator(20))
+
+    # Analyst Features - Cross-timeframe momentum
+    generators.append(AnalystMomentum5mGenerator())
+    generators.append(AnalystMomentum15mGenerator())
+    generators.append(AnalystMomentum1hGenerator())
+    generators.append(AnalystMomentumAlignmentGenerator())
 
     return generators

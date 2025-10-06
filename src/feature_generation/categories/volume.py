@@ -524,7 +524,74 @@ def create_default_volume_generators() -> List[FeatureGenerator]:
     generators.append(PriceVolumeOscillatorGenerator(10, 20))
     generators.append(PriceVolumeOscillatorGenerator(5, 15))
 
+    # Analyst Features - Volume patterns
+    generators.append(AnalystVolumePressureGenerator())
+    generators.append(AnalystVolumeTrendGenerator())
+
     return generators
+
+# Analyst Features - Volume pattern generators
+class AnalystVolumePressureGenerator(VectorizedFeatureGenerator):
+    """Generator for volume pressure feature."""
+
+    def __init__(self):
+        config = FeatureConfig(
+            name="analyst_volume_pressure",
+            category=FeatureCategory.VOLUME,
+            description="Analyst volume pressure ((buy_volume - sell_volume) / total_volume)",
+            required_columns=["volume", "close"],
+            default_lookback=20,
+            min_lookback=10,
+            max_lookback=100,
+            parameters={}
+        )
+        super().__init__(config, enable_matrix_ops=True)
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate volume pressure feature."""
+        volume = data['volume']
+        price_change = data['close'].pct_change()
+
+        # Use price movement direction as proxy for buy/sell pressure
+        volume_up = volume.where(price_change > 0, 0)
+        volume_down = volume.where(price_change < 0, 0)
+
+        volume_pressure = (volume_up - volume_down) / volume.replace(0, 1)
+        return volume_pressure
+
+class AnalystVolumeTrendGenerator(VectorizedFeatureGenerator):
+    """Generator for volume trend using linear regression."""
+
+    def __init__(self, lookback: int = 20):
+        config = FeatureConfig(
+            name="analyst_volume_trend",
+            category=FeatureCategory.VOLUME,
+            description="Analyst volume trend using linear regression slope",
+            required_columns=["volume"],
+            default_lookback=lookback,
+            min_lookback=10,
+            max_lookback=100,
+            parameters={"lookback": lookback}
+        )
+        super().__init__(config, enable_matrix_ops=True)
+        self.lookback = lookback
+
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Generate volume trend feature."""
+        volume = data['volume']
+
+        def volume_trend(x):
+            if len(x) < 10:
+                return 0.0
+            try:
+                from scipy.stats import linregress
+                slope, _, _, _, _ = linregress(range(len(x)), x.values)
+                return slope
+            except:
+                return 0.0
+
+        volume_trend_values = volume.rolling(self.lookback).apply(volume_trend)
+        return volume_trend_values
 
 __all__ = [
     'VolumeFeatureGenerator',
@@ -543,5 +610,7 @@ __all__ = [
     'VolumePriceCorrelationGenerator',
     'VolumePriceDivergenceGenerator',
     'PriceVolumeOscillatorGenerator',
+    'AnalystVolumePressureGenerator',
+    'AnalystVolumeTrendGenerator',
     'create_default_volume_generators'
 ]

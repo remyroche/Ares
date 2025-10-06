@@ -19,7 +19,7 @@ from .optimization_config import (
 )
 
 # Import multi-horizon components
-from src.training.steps.market_analysis.multi_horizon_profit_labeler import MultiHorizonConfig
+from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonConfig
 
 logger = logging.getLogger(__name__)
 

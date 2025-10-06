@@ -76,7 +76,7 @@ from .performance.monitor import PerformanceMonitor, MetricType, MetricLevel
 from ..components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
 
 # Import optimized process engine
-from ....market_analysis.optimized_process_engines import OptimizedFeatureLookbackEngine, ProcessType
+from ...market_analysis.optimized_process_engines import OptimizedFeatureLookbackEngine, ProcessType
 
 # Import dependencies with fallbacks
 from .dependency_manager import get_dependency, is_dependency_available
@@ -88,7 +88,7 @@ pd, _ = get_dependency('pandas')
 # Import logger
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
-from ....market_analysis.logging_standards import (
+from ...market_analysis.logging_standards import (
     get_logger, log_info, log_warning, log_error, log_success, log_debug,
     LoggingContext, log_step_progress, log_data_info, log_validation_result
 )

@@ -96,14 +96,14 @@ _install_component_stub(
     ArtifactManager=_ArtifactManagerStub,
 )
 
-from src.training.steps.market_analysis.pid_based_feature_generation.pid_based_feature_generation_component import (
+from src.training.steps.pre_training.pid_based_feature_generation.pid_based_feature_generation_component import (
     PIDBasedFeatureGenerationComponent,
 )
-from src.training.steps.market_analysis.pid_based_feature_generation.optimized_lookback_integration import (
+from src.training.steps.pre_training.pid_based_feature_generation.optimized_lookback_integration import (
     IntegrationStatus,
     LookbackIntegrationResult,
 )
-from src.training.steps.market_analysis.pid_based_feature_generation.pid_based_feature_orchestrator import (
+from src.training.steps.pre_training.pid_based_feature_generation.pid_based_feature_orchestrator import (
     GenerationStatus,
     OrchestratorResult,
 )

@@ -209,7 +209,7 @@ def example_4_comparative_analysis():
     market_data = generate_sample_market_data(1600)
     
     # Define test configurations
-    from src.training.steps.market_analysis.multi_horizon_profit_labeler import MultiHorizonConfig
+    from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonConfig
     
     test_configs = {
         'conservative': MultiHorizonConfig(),

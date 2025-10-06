@@ -47,7 +47,7 @@ except ImportError:
     OPTUNA_AVAILABLE = False
 
 from src.utils.logger import get_logger
-from src.training.steps.market_analysis.multi_horizon_profit_labeler import MultiHorizonConfig
+from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonConfig
 
 
 class OptimizationObjective(Enum):

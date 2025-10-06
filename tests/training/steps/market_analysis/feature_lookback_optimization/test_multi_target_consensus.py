@@ -70,7 +70,7 @@ if "torch" not in sys.modules:
     sys.modules["torch.nn.utils.prune"] = torch_stub.nn.utils.prune
     sys.modules["torch.optim"] = torch_stub.optim
 
-from src.training.steps.market_analysis.feature_lookback_optimization.feature_lookback_optimization import (
+from src.training.steps.pre_training.feature_lookback_optimization.feature_lookback_optimization import (
     FeatureLookbackOptimizationComponent,
 )
 

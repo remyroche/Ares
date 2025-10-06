@@ -635,8 +635,10 @@ class Step03HMMRegimeDiscovery(BaseStep):
             # Parallel prediction using CPU optimizer
             if self.cpu_optimizer and features.shape[0] > 5000:
                 regime_labels = await self._parallel_predict(model, features)
+                regime_probabilities = await self._parallel_predict_proba(model, features)
             else:
                 regime_labels = model.predict(features)
+                regime_probabilities = model.predict_proba(features)
 
             # Enhanced parallel statistics calculation using ML Common utilities
             regime_stats = await self._calculate_regime_statistics_parallel_enhanced(features, regime_labels, data)
@@ -647,6 +649,7 @@ class Step03HMMRegimeDiscovery(BaseStep):
 
             return {
                 'regime_labels': regime_labels.tolist(),
+                'regime_probabilities': regime_probabilities.tolist(),
                 'regime_stats': regime_stats,
                 'model_params': {
                     'n_components': n_components,
@@ -697,6 +700,33 @@ class Step03HMMRegimeDiscovery(BaseStep):
                 return model.predict(features)
         else:
             return model.predict(features)
+
+    async def _parallel_predict_proba(self, model, features: np.ndarray) -> np.ndarray:
+        """Predict regime probabilities using parallel processing."""
+        if self.cpu_optimizer and features.shape[0] > 10000:
+            # Split features into chunks for parallel prediction
+            chunk_size = self.cpu_optimizer.calculate_optimal_chunk_size(features.shape)
+            num_workers = self.cpu_optimizer.get_optimal_workers_for_task('cpu_bound')
+
+            if num_workers > 1:
+                self.logger.info(f'⚡ Parallel probability prediction with {num_workers} workers')
+
+                # Split data into chunks
+                chunks = []
+                for i in range(0, len(features), chunk_size):
+                    end_idx = min(i + chunk_size, len(features))
+                    chunks.append(features[i:end_idx])
+
+                # Predict probabilities in background threads
+                tasks = [asyncio.to_thread(model.predict_proba, chunk) for chunk in chunks]
+                results = await asyncio.gather(*tasks)
+
+                # Combine results
+                return np.concatenate(results)
+            else:
+                return model.predict_proba(features)
+        else:
+            return model.predict_proba(features)
 
 
     async def _calculate_regime_statistics_parallel_enhanced(self, features: np.ndarray,

@@ -1,17 +1,18 @@
-# Per-Regime ML Model Training Integration Summary
+# Regime-Aware ML Model Training Integration Summary
 
 ## Overview
 
-This document summarizes the successful integration of per-regime ML model training into the existing Analyst and Tactician training pipeline, and the wiring of DataDrivenModelSelector into the trading system for real-time model selection.
+This document summarizes the successful integration of regime-aware ML model training into the existing Analyst and Tactician training pipeline, where the Analyst uses regime probabilities as features instead of per-regime training, and the wiring of DataDrivenModelSelector into the trading system for real-time model selection.
 
 ## ✅ Completed Implementation
 
-### 1. Per-Regime Training Integration
+### 1. Regime-Aware Feature Integration
 
 **File**: `src/training/steps/model_training/per_regime_training_integration.py`
 
 **Key Features**:
 - **Seamless Integration**: Integrates with existing Analyst and Tactician training pipelines
+- **Regime Probabilities as Features**: Analyst uses regime probabilities as input features (not per-regime training)
 - **NAS/TAS Regime Detection**: Uses NAS/TAS regime detection (not HMM clustering)
 - **Dual Timeframe Support**: Supports both 5m (Tactician) and 15m (Analyst) timeframes
 - **Model Selection**: Provides DataDrivenModelSelector for trading system
@@ -19,8 +20,8 @@ This document summarizes the successful integration of per-regime ML model train
 
 **Integration Points**:
 - Called alongside base model training in `sub_pipeline.py`
-- Uses same training data and feature columns as base models
-- Provides regime-specific models for each detected regime
+- Uses same training data and feature columns as base models, with regime probabilities as additional features
+- Analyst models are trained on unified data with regime probabilities as input features
 - Updates model selector with performance data
 
 ### 2. Updated Training Pipeline

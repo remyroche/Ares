@@ -1657,10 +1657,15 @@ class RegimeDataSplittingStep:
             self.logger.warning(f'⚠️ Memory allocation failed for merge ({estimated_merge_memory:.1f}MB), using fallback')
 
         try:
+            # Check if regime probabilities are available in regime_df
+            regime_columns = ['timestamp', 'composite_cluster_id']
+            if 'regime_probabilities' in regime_df.columns:
+                regime_columns.append('regime_probabilities')
+
             if use_asof_merge:
                 merged_df = pd.merge_asof(
                     market_df,
-                    regime_df[['timestamp', 'composite_cluster_id']],
+                    regime_df[regime_columns],
                     on='timestamp',
                     direction='nearest',
                     tolerance=pd.Timedelta(milliseconds=merge_tolerance_ms)
@@ -1669,7 +1674,7 @@ class RegimeDataSplittingStep:
             else:
                 merged_df = pd.merge(
                     market_df,
-                    regime_df[['timestamp', 'composite_cluster_id']],
+                    regime_df[regime_columns],
                     on='timestamp',
                     how='inner'
                 )
@@ -2298,9 +2303,14 @@ class RegimeDataSplittingStep:
 
     @comprehensive_function_monitor
     async def _create_unified_regime_dataset(self, data: pd.DataFrame, regime_ids: List[int], data_dir: str, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any] | None:
-        """Create unified dataset with regime labels and return dataset info."""
+        """Create unified dataset with regime probabilities as features and return dataset info."""
         try:
             data = data.sort_values('timestamp').reset_index(drop = True)
+
+            # Convert regime probabilities to features if available
+            if 'regime_probabilities' in data.columns:
+                data = await self._convert_regime_probabilities_to_features(data, regime_ids)
+
             training_dir = ensure_directory(Path("generated/market_analysis") / exchange.lower() / symbol.lower() / 'regime_splits')
             models_dir = Path("generated/market_analysis") / exchange.lower() / symbol.lower() / 'models'
             if not self._save_unified_dataset(data, training_dir, exchange, symbol, timeframe):
@@ -2314,6 +2324,32 @@ class RegimeDataSplittingStep:
         except Exception as e:
             self.logger.exception(f'❌ Error creating unified regime dataset: {e}')
             return None
+
+    async def _convert_regime_probabilities_to_features(self, data: pd.DataFrame, regime_ids: List[int]) -> pd.DataFrame:
+        """Convert regime probabilities array into individual feature columns."""
+        try:
+            regime_probs = data['regime_probabilities']
+
+            # Handle different formats of regime probabilities
+            if regime_probs.dtype == 'object':
+                # Convert string representations to arrays if needed
+                regime_probs = regime_probs.apply(lambda x: np.array(x) if isinstance(x, (list, np.ndarray)) else np.array([x]))
+
+            # Create feature columns for each regime
+            for i, regime_id in enumerate(regime_ids):
+                col_name = f'regime_prob_{regime_id}'
+                data[col_name] = regime_probs.apply(lambda x: x[i] if i < len(x) else 0.0)
+
+            # Remove the original regime_probabilities column and composite_cluster_id if no longer needed
+            # Keep composite_cluster_id for backward compatibility but mark it as deprecated
+            data = data.drop(columns=['regime_probabilities'])
+
+            self.logger.info(f'✅ Converted regime probabilities to {len(regime_ids)} feature columns')
+            return data
+
+        except Exception as e:
+            self.logger.exception(f'❌ Error converting regime probabilities to features: {e}')
+            return data
 
     @comprehensive_function_monitor
     def _calculate_regime_statistics(self, data: pd.DataFrame, regime_ids: List[int]) -> Dict[str, Any]:

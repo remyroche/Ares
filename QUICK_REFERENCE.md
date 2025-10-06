@@ -2,10 +2,10 @@
 
 ## ⚡ TL;DR
 
-Successfully orchestrated Analyst (15m, per-regime) and Tactician (5m, unified) training pipelines with:
+Successfully orchestrated Analyst (15m, regime-aware) and Tactician (5m, unified) training pipelines with:
 - ✅ NAS & TAS models integrated
 - ✅ Short/long separation enabled
-- ✅ Analyst: per-regime training (8 regimes)
+- ✅ Analyst: uses regime probabilities as features (not per-regime training)
 - ✅ Tactician: unified training (across regimes)
 - ✅ MultiHorizon N-BEATS added to Analyst
 - ✅ Regime features (top 3) fed to both

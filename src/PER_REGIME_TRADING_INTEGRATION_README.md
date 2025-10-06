@@ -8,11 +8,12 @@ This document provides a comprehensive overview of the complete per-regime ML mo
 
 ### Completed Components
 
-1. **✅ Per-Regime Training Integration**
-   - Integrated with existing Analyst and Tactician training pipelines
+1. **✅ Regime-Aware Feature Integration**
+   - Analyst uses regime probabilities as features (not per-regime training)
+   - Tactician remains unified (not per-regime)
    - Uses NAS/TAS regime detection (not HMM clustering)
    - Supports both 5m and 15m timeframes
-   - Trains alongside base models during training phase
+   - Trains with regime probabilities as input features
 
 2. **✅ DataDrivenModelSelector Integration**
    - Wired into trading system for real-time model selection

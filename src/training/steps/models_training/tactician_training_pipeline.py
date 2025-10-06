@@ -29,6 +29,29 @@ from enum import Enum
 
 # Import new modular training components
 try:
+    from .tactician_models_training_pipeline import (
+        TacticianModelsTrainingPipeline, TacticianModelsTrainingPipelineConfig,
+        TacticianModelsTrainingPipelineResult, TimeFrame as ModelsTimeFrame,
+        execute_tactician_models_training_pipeline
+    )
+    MODELS_PIPELINE_AVAILABLE = True
+except ImportError as e:
+    print(f"❌ CRITICAL: Failed to import models training pipeline: {e}")
+    MODELS_PIPELINE_AVAILABLE = False
+
+try:
+    from .tactician_ensemble_training_pipeline import (
+        TacticianEnsembleTrainingPipeline, TacticianEnsembleTrainingPipelineConfig,
+        TacticianEnsembleTrainingPipelineResult, TimeFrame as EnsembleTimeFrame,
+        execute_tactician_ensemble_training_pipeline
+    )
+    ENSEMBLE_PIPELINE_AVAILABLE = True
+except ImportError as e:
+    print(f"❌ CRITICAL: Failed to import ensemble training pipeline: {e}")
+    ENSEMBLE_PIPELINE_AVAILABLE = False
+
+# Legacy imports for backward compatibility
+try:
     from .tactician_models_training import (
         TacticianModelsTrainingStep, TacticianModelsTrainingConfig,
         TacticianModelsTrainingResult, TacticianModelType,
@@ -77,12 +100,22 @@ class TrainingPhase(Enum):
     FAILED = "failed"
 
 
+class TimeFrame(Enum):
+    """Timeframe enumeration for short/long differentiation."""
+    SHORT = "short"
+    LONG = "long"
+
+
 @dataclass
 class TacticianTrainingPipelineConfig:
     """Configuration for Tactician training pipeline."""
     # Training parameters
     train_base_models: bool = True
     train_ensemble_models: bool = True
+
+    # Timeframe configuration
+    base_models_timeframe: TimeFrame = TimeFrame.SHORT
+    ensemble_timeframe: TimeFrame = TimeFrame.SHORT
 
     # Output configuration
     output_directory: str = "generated/tactician_training_pipeline"
@@ -107,6 +140,10 @@ class TacticianTrainingPipelineConfig:
     include_hmm_features: bool = True
     include_analyst_features: bool = True
     include_oof_predictions: bool = True
+
+    # Analyst integration
+    analyst_confidence_threshold: float = 0.4
+    use_analyst_filtered_data: bool = True
 
     def __post_init__(self):
         """Post-initialization setup."""
@@ -179,8 +216,26 @@ class TacticianTrainingPipeline:
             self.config = config or TacticianTrainingPipelineConfig()
             self.logger = system_logger.getChild('TacticianTrainingPipeline')
 
-            # Initialize training components
-            if MODELS_TRAINING_AVAILABLE:
+            # Initialize training components - prefer new pipeline architecture
+            if MODELS_PIPELINE_AVAILABLE:
+                base_config = TacticianModelsTrainingPipelineConfig(
+                    model_types=self.config.base_model_types,
+                    timeframe=self.config.base_models_timeframe,
+                    save_models=self.config.save_models,
+                    save_metrics=self.config.save_metrics,
+                    output_directory=f"{self.config.output_directory}/base_models",
+                    enable_parallel_processing=self.config.enable_parallel_processing,
+                    enable_gpu_acceleration=self.config.enable_gpu_acceleration,
+                    memory_limit_gb=self.config.memory_limit_gb,
+                    validation_split=self.config.validation_split,
+                    min_training_samples=self.config.min_training_samples,
+                    analyst_confidence_threshold=self.config.analyst_confidence_threshold,
+                    use_analyst_filtered_data=self.config.use_analyst_filtered_data
+                )
+                self.base_pipeline = TacticianModelsTrainingPipeline(base_config)
+                tprint_success(f"✅ Base models pipeline ({self.config.base_models_timeframe.value}) initialized")
+            elif MODELS_TRAINING_AVAILABLE:
+                # Fallback to legacy trainer
                 base_config = TacticianModelsTrainingConfig(
                     model_types=self.config.base_model_types,
                     save_models=self.config.save_models,
@@ -193,11 +248,32 @@ class TacticianTrainingPipeline:
                     min_training_samples=self.config.min_training_samples
                 )
                 self.base_trainer = TacticianModelsTrainingStep(base_config)
-                tprint_success("✅ Base models trainer initialized")
+                tprint_success("✅ Base models trainer (legacy) initialized")
             else:
+                self.base_pipeline = None
                 self.base_trainer = None
 
-            if ENSEMBLE_TRAINING_AVAILABLE:
+            if ENSEMBLE_PIPELINE_AVAILABLE:
+                ensemble_config = TacticianEnsembleTrainingPipelineConfig(
+                    timeframe=self.config.ensemble_timeframe,
+                    enable_full_integration=self.config.enable_full_integration,
+                    include_hmm_features=self.config.include_hmm_features,
+                    include_analyst_features=self.config.include_analyst_features,
+                    include_oof_predictions=self.config.include_oof_predictions,
+                    save_models=self.config.save_models,
+                    output_directory=f"{self.config.output_directory}/ensemble_models",
+                    enable_parallel_processing=self.config.enable_parallel_processing,
+                    enable_gpu_acceleration=self.config.enable_gpu_acceleration,
+                    memory_limit_gb=self.config.memory_limit_gb,
+                    validation_split=self.config.validation_split,
+                    min_training_samples=self.config.min_training_samples,
+                    analyst_confidence_threshold=self.config.analyst_confidence_threshold,
+                    use_analyst_filtered_data=self.config.use_analyst_filtered_data
+                )
+                self.ensemble_pipeline = TacticianEnsembleTrainingPipeline(ensemble_config)
+                tprint_success(f"✅ Ensemble pipeline ({self.config.ensemble_timeframe.value}) initialized")
+            elif ENSEMBLE_TRAINING_AVAILABLE:
+                # Fallback to legacy trainer
                 ensemble_config = TacticianEnsembleTrainingConfig(
                     enable_full_integration=self.config.enable_full_integration,
                     include_hmm_features=self.config.include_hmm_features,
@@ -212,8 +288,9 @@ class TacticianTrainingPipeline:
                     min_training_samples=self.config.min_training_samples
                 )
                 self.ensemble_trainer = TacticianEnsembleTrainingStep(ensemble_config)
-                tprint_success("✅ Ensemble trainer initialized")
+                tprint_success("✅ Ensemble trainer (legacy) initialized")
             else:
+                self.ensemble_pipeline = None
                 self.ensemble_trainer = None
 
             tprint_success("✅ TacticianTrainingPipeline initialized successfully")
@@ -228,6 +305,7 @@ class TacticianTrainingPipeline:
         feature_columns: List[str],
         target_columns: List[str],
         sample_weight: Optional[np.ndarray] = None,
+        analyst_predictions: Optional[pd.DataFrame] = None,
         **kwargs
     ) -> TacticianTrainingPipelineResult:
         """
@@ -238,6 +316,7 @@ class TacticianTrainingPipeline:
             feature_columns: List of feature column names
             target_columns: List of target column names
             sample_weight: Optional sample weights
+            analyst_predictions: Optional Analyst predictions for filtering
             **kwargs: Additional parameters
 
         Returns:
@@ -251,44 +330,66 @@ class TacticianTrainingPipeline:
 
         try:
             # Step 1: Train base models
-            if self.config.train_base_models and self.base_trainer:
-                tprint_info("📈 Step 1: Training base models...")
-                base_result = await self.base_trainer.train_tactician_models(
-                    training_data, feature_columns, target_columns, sample_weight, **kwargs
-                )
+            if self.config.train_base_models and (self.base_pipeline or self.base_trainer):
+                tprint_info(f"📈 Step 1: Training {self.config.base_models_timeframe.value} base models...")
+
+                if self.base_pipeline:
+                    # Use new pipeline architecture
+                    base_result = await self.base_pipeline.train_tactician_models(
+                        training_data, feature_columns, target_columns, sample_weight, analyst_predictions, **kwargs
+                    )
+                else:
+                    # Fallback to legacy trainer
+                    base_result = await self.base_trainer.train_tactician_models(
+                        training_data, feature_columns, target_columns, sample_weight, **kwargs
+                    )
 
                 if base_result.get('models'):
                     result.base_models = base_result['models']
                     result.base_training_metrics = base_result['metrics']
                     result.base_training_completed = True
                     result.total_samples = base_result['samples_used']
-                    tprint_success("✅ Base model training completed")
+                    tprint_success(f"✅ {self.config.base_models_timeframe.value.title()} base model training completed")
                 else:
-                    tprint_warning("⚠️ Base model training failed or returned no models")
+                    tprint_warning(f"⚠️ {self.config.base_models_timeframe.value.title()} base model training failed or returned no models")
             else:
                 tprint_info("⏭️ Skipping base model training")
 
             # Step 2: Train ensemble models
-            if (self.config.train_ensemble_models and self.ensemble_trainer and
+            if (self.config.train_ensemble_models and (self.ensemble_pipeline or self.ensemble_trainer) and
                 result.base_models and result.total_samples >= self.config.min_training_samples):
 
-                tprint_info("🔄 Step 2: Training ensemble models...")
-                ensemble_result = await self.ensemble_trainer.train_tactician_ensemble(
-                    training_data=training_data,
-                    base_models=result.base_models,
-                    feature_columns=feature_columns,
-                    target_columns=target_columns,
-                    sample_weight=sample_weight,
-                    **kwargs
-                )
+                tprint_info(f"🔄 Step 2: Training {self.config.ensemble_timeframe.value} ensemble models...")
+
+                if self.ensemble_pipeline:
+                    # Use new pipeline architecture
+                    ensemble_result = await self.ensemble_pipeline.train_tactician_ensemble(
+                        training_data=training_data,
+                        base_models=result.base_models,
+                        feature_columns=feature_columns,
+                        target_columns=target_columns,
+                        sample_weight=sample_weight,
+                        analyst_predictions=analyst_predictions,
+                        **kwargs
+                    )
+                else:
+                    # Fallback to legacy trainer
+                    ensemble_result = await self.ensemble_trainer.train_tactician_ensemble(
+                        training_data=training_data,
+                        base_models=result.base_models,
+                        feature_columns=feature_columns,
+                        target_columns=target_columns,
+                        sample_weight=sample_weight,
+                        **kwargs
+                    )
 
                 if ensemble_result.get('models'):
                     result.ensemble_models = ensemble_result['models']
                     result.ensemble_metrics = ensemble_result['metrics']
                     result.ensemble_training_completed = True
-                    tprint_success("✅ Ensemble model training completed")
+                    tprint_success(f"✅ {self.config.ensemble_timeframe.value.title()} ensemble model training completed")
                 else:
-                    tprint_warning("⚠️ Ensemble model training failed or returned no models")
+                    tprint_warning(f"⚠️ {self.config.ensemble_timeframe.value.title()} ensemble model training failed or returned no models")
             else:
                 tprint_info("⏭️ Skipping ensemble model training")
 
@@ -311,13 +412,19 @@ class TacticianTrainingPipeline:
             'config': {
                 'train_base_models': self.config.train_base_models,
                 'train_ensemble_models': self.config.train_ensemble_models,
+                'base_models_timeframe': self.config.base_models_timeframe.value,
+                'ensemble_timeframe': self.config.ensemble_timeframe.value,
                 'output_directory': self.config.output_directory,
                 'save_models': self.config.save_models,
                 'enable_parallel_processing': self.config.enable_parallel_processing,
-                'enable_gpu_acceleration': self.config.enable_gpu_acceleration
+                'enable_gpu_acceleration': self.config.enable_gpu_acceleration,
+                'analyst_confidence_threshold': self.config.analyst_confidence_threshold,
+                'use_analyst_filtered_data': self.config.use_analyst_filtered_data
             },
             'component_availability': {
+                'base_pipeline': self.base_pipeline is not None,
                 'base_trainer': self.base_trainer is not None,
+                'ensemble_pipeline': self.ensemble_pipeline is not None,
                 'ensemble_trainer': self.ensemble_trainer is not None
             }
         }
@@ -331,6 +438,7 @@ async def execute_tactician_training_pipeline(
     feature_columns: List[str],
     target_columns: List[str],
     sample_weight: Optional[np.ndarray] = None,
+    analyst_predictions: Optional[pd.DataFrame] = None,
     config: Optional[TacticianTrainingPipelineConfig] = None,
     **kwargs
 ) -> TacticianTrainingPipelineResult:
@@ -342,6 +450,7 @@ async def execute_tactician_training_pipeline(
         feature_columns: List of feature column names
         target_columns: List of target column names
         sample_weight: Optional sample weights
+        analyst_predictions: Optional Analyst predictions for filtering
         config: Optional configuration
         **kwargs: Additional parameters
 
@@ -350,5 +459,5 @@ async def execute_tactician_training_pipeline(
     """
     pipeline = TacticianTrainingPipeline(config)
     return await pipeline.train_tactician_models(
-        training_data, feature_columns, target_columns, sample_weight, **kwargs
+        training_data, feature_columns, target_columns, sample_weight, analyst_predictions, **kwargs
     )

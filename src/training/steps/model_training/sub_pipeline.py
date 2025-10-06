@@ -1,304 +1,78 @@
 """
-Model Training Sub-Pipeline - Enhanced with Comprehensive Debugging and NAS/TAS Integration
+Model Training Sub-Pipeline - Orchestration of Analyst and Tactician Training
 
-This module provides the final model training sub-pipeline with enhanced NAS/TAS integration:
+This module orchestrates the complete model training pipeline with distinct
+workflows for Analyst and Tactician models:
 
-1. nas_training - Neural Architecture Search training per-regime on 5m timeframe
-2. tas_training - Tree Architecture Search training per-regime on 1m timeframe
-3. analyst_models_training - Per-regime individual model training with HPO, saving, and metrics
-4. analyst_ensemble_training - Per-regime ensemble training with NAS integration
-5. tactician_pre_ml_orchestration - Pre-ML processing: unified signal processing, optimize features, generate PID features, apply horizon labeling, select features
-6. tactician_training - Train Tactician models on unified dataset: 3 base models + 1 ensemble (4 total models)
-7. tactician_ensemble_training - Per-regime ensemble training with TAS integration
-8. regime_specific_training - Regime-specific model training (legacy)
-9. model_validation - Model validation and testing (legacy)
-10. model_persistence - Model persistence and storage (legacy)
-11. model_evaluation - Model evaluation and reporting (legacy)
+ANALYST PIPELINE (15m timeframe - IF we trade):
+1. analyst_pre_ml_orchestration - Feature engineering on 15m data
+2. analyst_models_training - Train base models (per-regime)
+3. analyst_ensemble_training - Train ensemble models
 
-ENHANCED FEATURES:
-- Comprehensive debugging and error tracking
-- Detailed validation at each step
-- Enhanced error reporting with system context
-- Dependency validation before execution
-- Data quality checks throughout pipeline
-- Resource monitoring and optimization
-- Silent failure prevention with explicit error propagation
-- NEW: Tactician unified training with integrated long/short processing
+TACTICIAN PIPELINE (5m timeframe - WHEN we trade):
+4. tactician_pre_ml_orchestration - Feature engineering on 5m data (filtered on Analyst signals)
+5. tactician_models_training - Train base models
+6. tactician_ensemble_training - Train ensemble models
+
+Each model type (short/long) is trained separately.
 """
 
-import asyncio
-import json
-import logging
-import numpy as np
-import pandas as pd
-import traceback
-import time
-import importlib
-import inspect
-from typing import Any, Dict, List, Optional, Union, Callable, Mapping, Sequence, Protocol, runtime_checkable, TypedDict
+from typing import Any, Dict, List, Optional
 from datetime import datetime
-from pathlib import Path
 from enum import Enum
 from dataclasses import dataclass, field
+import pandas as pd
+import numpy as np
 
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_error, tprint_warning
 
-# Import additional tprint functions - fail fast if not available
+# Import orchestration and training steps
 try:
-    from src.utils.tprint import tprint_warning, tprint_error, tprint_info, tprint_success, tprint_debug
-except ImportError as e:
-    raise ImportError(f"Extended tprint functions required but not available: {e}. "
-                     f"Please ensure src.utils.tprint is properly installed.")
-
-# Import enhanced debugging utilities
-try:
-    from src.training.utils.debug_utilities import TrainingDebugger, create_enhanced_error_handler
-    DEBUG_UTILITIES_AVAILABLE = True
-except ImportError as e:
-    tprint_warning(f"Debug utilities not available: {e}")
-    DEBUG_UTILITIES_AVAILABLE = False
-
-# Import universal validation integration for comprehensive validation
-try:
-    from src.utils.ml_common.training.universal_validation_integration import (
-        get_validation_integrator,
-        ValidationIntegrationConfig,
-        intelligently_select_utilities,
-        perform_data_leakage_check,
-        perform_enhanced_validation,
-        perform_complexity_analysis
+    from .analyst_pre_ml_orchestration import (
+        AnalystPreMLOrchestrator, AnalystPreMLConfig, AnalystPreMLResult
     )
-    UNIVERSAL_VALIDATION_AVAILABLE = True
+    ANALYST_PRE_ML_AVAILABLE = True
 except ImportError as e:
-    tprint_warning(f"Universal validation integration not available: {e}")
-    UNIVERSAL_VALIDATION_AVAILABLE = False
-    get_validation_integrator = None
-    ValidationIntegrationConfig = None
-    intelligently_select_utilities = None
-    perform_data_leakage_check = None
-    perform_enhanced_validation = None
-    perform_complexity_analysis = None
+    print(f"⚠️ Warning: analyst_pre_ml_orchestration not available: {e}")
+    ANALYST_PRE_ML_AVAILABLE = False
 
-# Enhanced TrainingDebugger with universal validation integration
-class EnhancedTrainingDebugger:
-    """Enhanced training debugger with universal validation integration."""
+try:
+    from .analyst_training_pipeline import (
+        AnalystTrainingPipeline, AnalystTrainingPipelineConfig, AnalystTrainingPipelineResult
+    )
+    ANALYST_TRAINING_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Warning: analyst_training_pipeline not available: {e}")
+    ANALYST_TRAINING_AVAILABLE = False
 
-    def __init__(self, step_name, config=None):
-        """Initialize enhanced training debugger."""
-        self.step_name = step_name
-        self.config = config
-        self.validation_integrator = None
+try:
+    from .tactician_pre_ml_orchestration import (
+        TacticianPreMLOrchestrator, TacticianPreMLConfig, TacticianPreMLResult
+    )
+    TACTICIAN_PRE_ML_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Warning: tactician_pre_ml_orchestration not available: {e}")
+    TACTICIAN_PRE_ML_AVAILABLE = False
 
-        # Initialize universal validation if available
-        if UNIVERSAL_VALIDATION_AVAILABLE:
-            try:
-                validation_config = ValidationIntegrationConfig(
-                    enable_validation=True,
-                    enable_overfitting_detection=True,
-                    enable_temporal_validation=True,
-                    enable_data_leakage_prevention=True,
-                    enable_enhanced_validation=True,
-                    enable_model_complexity_analysis=True,
-                    save_validation_reports=True,
-                    validation_report_directory=f"reports/validation/{step_name}",
-                    enable_validation_logging=True,
-                    auto_select_utilities=True
-                )
-                self.validation_integrator = get_validation_integrator(validation_config)
-                tprint_debug(f"✅ Universal validation integrated into {step_name} debugger")
-            except Exception as e:
-                tprint_warning(f"⚠️ Failed to initialize universal validation in debugger: {e}")
-
-    def comprehensive_validation(self, **kwargs) -> bool:
-        """Perform comprehensive validation using universal validation system."""
-        try:
-            # Use universal validation if available
-            if self.validation_integrator and 'data_dir' in kwargs:
-                data_dir = kwargs['data_dir']
-                symbol = kwargs.get('symbol', 'BTCUSDT')
-                timeframe = kwargs.get('timeframe', '1m')
-                exchange = kwargs.get('exchange', 'binance')
-
-                tprint_debug(f"🔍 Running comprehensive validation for {self.step_name}")
-
-                # Check data directory
-                data_path = Path(data_dir)
-                if not data_path.exists():
-                    tprint_warning(f"⚠️ Data directory does not exist: {data_dir}")
-                    return False
-
-                # Additional validation checks
-                validation_checks = []
-
-                # Check for required data files
-                required_files = [
-                    f"{data_dir}/processed/{symbol}_{exchange}_{timeframe}.parquet",
-                    f"{data_dir}/raw/{symbol}_{exchange}_{timeframe}.parquet"
-                ]
-
-                for file_path in required_files:
-                    if Path(file_path).exists():
-                        validation_checks.append(f"✅ {file_path.split('/')[-1]} found")
-                    else:
-                        validation_checks.append(f"❌ {file_path.split('/')[-1]} missing")
-
-                # Log validation results
-                for check in validation_checks:
-                    if "❌" in check:
-                        tprint_warning(check)
-                    else:
-                        tprint_debug(check)
-
-                # Check system resources
-                try:
-                    import psutil
-                    memory = psutil.virtual_memory()
-                    disk = psutil.disk_usage('/')
-
-                    if memory.available < 1024 * 1024 * 1024:  # Less than 1GB
-                        tprint_warning("⚠️ Low memory available")
-                    else:
-                        tprint_debug(f"✅ Memory available: {memory.available / 1024 / 1024 / 1024:.1f} GB")
-
-                    if disk.free < 1024 * 1024 * 1024:  # Less than 1GB
-                        tprint_warning("⚠️ Low disk space")
-                    else:
-                        tprint_debug(f"✅ Disk space available: {disk.free / 1024 / 1024 / 1024:.1f} GB")
-
-                except ImportError:
-                    tprint_debug("ℹ️ psutil not available for system checks")
-
-                return True
-
-            # Fallback to basic validation
-            tprint_debug(f"🔍 Running basic validation for {self.step_name}")
-            return True
-
-        except Exception as e:
-            tprint_error(f"❌ Validation failed for {self.step_name}: {e}")
-            return False
-
-    def validate_training_data(self, training_data: pd.DataFrame) -> object:
-        """Validate training data using universal validation system."""
-        class ValidationResult:
-            def __init__(self, is_valid: bool, error_message: str = "", suggestions: List[str] = None):
-                self.is_valid = is_valid
-                self.error_message = error_message
-                self.suggestions = suggestions or []
-
-        try:
-            if training_data is None:
-                return ValidationResult(False, "Training data is None", ["Check data loading"])
-
-            if training_data.empty:
-                return ValidationResult(False, "Training data is empty", ["Check data source"])
-
-            # Basic data quality checks
-            if training_data.isnull().sum().sum() > 0:
-                null_count = training_data.isnull().sum().sum()
-                suggestions = ["Handle missing values before training", "Check data preprocessing"]
-                return ValidationResult(False, f"Found {null_count} missing values", suggestions)
-
-            # Check for temporal integrity if timestamps exist
-            if 'timestamp' in training_data.columns or training_data.index.name == 'timestamp':
-                try:
-                    if UNIVERSAL_VALIDATION_AVAILABLE and self.validation_integrator:
-                        # Use universal validation for temporal checks
-                        if 'timestamp' in training_data.columns:
-                            timestamp_col = 'timestamp'
-                        else:
-                            timestamp_col = training_data.index.name
-
-                        leakage_result = perform_data_leakage_check(
-                            training_data, timestamp_col, dataset_name=f"{self.step_name}_data"
-                        )
-
-                        if leakage_result['leakage_detected']:
-                            return ValidationResult(
-                                False,
-                                f"Data leakage detected: {leakage_result['severity']}",
-                                [f"Fix data leakage: {rec}" for rec in leakage_result['recommendations']]
-                            )
-
-                except Exception as temporal_error:
-                    tprint_warning(f"⚠️ Temporal validation failed: {temporal_error}")
-
-            return ValidationResult(True, "", ["Data validation passed"])
-
-        except Exception as e:
-            return ValidationResult(False, str(e), ["Check data quality and format"])
-
-    def debug_context(self, operation_name: str):
-        """Create debug context for operations."""
-        from contextlib import contextmanager
-        @contextmanager
-        def debug_context():
-            start_time = time.time()
-            tprint_debug(f"🔄 Starting {operation_name} in {self.step_name}")
-
-            try:
-                yield
-                duration = time.time() - start_time
-                tprint_debug(f"✅ {operation_name} completed in {duration:.3f}s")
-            except Exception as e:
-                duration = time.time() - start_time
-                tprint_error(f"❌ {operation_name} failed after {duration:.3f}s: {e}")
-                raise
-
-        return debug_context
-
-    def create_debug_report(self) -> Dict[str, Any]:
-        """Create comprehensive debug report."""
-        return {
-            'step_name': self.step_name,
-            'config': self.config,
-            'universal_validation_available': UNIVERSAL_VALIDATION_AVAILABLE,
-            'validation_integrator_available': self.validation_integrator is not None,
-            'timestamp': datetime.now().isoformat()
-        }
-
-# Use EnhancedTrainingDebugger if available, otherwise fallback to basic
-if DEBUG_UTILITIES_AVAILABLE:
-    TrainingDebugger = TrainingDebugger  # Use the imported one
-else:
-    TrainingDebugger = EnhancedTrainingDebugger  # Use our enhanced version
+try:
+    from .tactician_training_pipeline import (
+        TacticianTrainingPipeline, TacticianTrainingPipelineConfig, TacticianTrainingPipelineResult
+    )
+    TACTICIAN_TRAINING_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Warning: tactician_training_pipeline not available: {e}")
+    TACTICIAN_TRAINING_AVAILABLE = False
 
 logger = system_logger.getChild('ModelTrainingSubPipeline')
 
-# ==========================
-# Protocols and type helpers
-# ==========================
-
-class TrainingResult(TypedDict, total=False):
-    models: List[str]
-    metrics: Dict[str, Any]
-    performance: Dict[str, Any]
-    optimization_metrics: Dict[str, Any]
-    convergence_analysis: Dict[str, Any]
-    feature_analysis: Dict[str, Any]
-    metadata: Dict[str, Any]
-
-@runtime_checkable
-class SupportsExecute(Protocol):
-    def execute(self, *args: Any, **kwargs: Any) -> Union[TrainingResult, Any]:
-        ...
-
-@runtime_checkable
-class SupportsAnalystEnsemble(Protocol):
-    def execute_analyst_ensemble_training(self, *args: Any, **kwargs: Any) -> Union[TrainingResult, Any]:
-        ...
-
-@runtime_checkable
-class SupportsTacticianEnsemble(Protocol):
-    def execute_tactician_ensemble_training(self, *args: Any, **kwargs: Any) -> Union[TrainingResult, Any]:
-        ...
 
 class ExecutionMode(Enum):
     """Execution modes for sub-pipelines."""
-    FULL = "full"          # Complete execution with all features
-    LIGHT = "light"        # Lightweight execution with essential features only
-    BLANK = "blank"        # Minimal execution for testing/validation
+    FULL = "full"
+    LIGHT = "light"
+    BLANK = "blank"
+
 
 class SubPipelineStatus(Enum):
     """Status of sub-pipeline execution."""
@@ -308,61 +82,39 @@ class SubPipelineStatus(Enum):
     FAILED = "failed"
     SKIPPED = "skipped"
 
-@dataclass
-class CVConfig:
-    """Cross-validation configuration for downstream trainers."""
-    strategy: str = "kfold"  # one of: kfold, stratified, purged
-    n_splits: int = 5
-    shuffle: bool = True
-    random_state: int = 42
-    purge_gap: int = 0  # used if purged
-
-@dataclass
-class MetricsConfig:
-    """Metrics configuration for unified scoring in trainers."""
-    names: List[str] = field(default_factory=lambda: ["accuracy"])  # e.g., ["f1", "roc_auc"]
-    average: str = "binary"  # used for f1/precision/recall
-    greater_is_better: bool = True
-
-@dataclass
-class SearchConfig:
-    """Hyperparameter search configuration abstraction."""
-    strategy: str = "none"  # one of: none, grid, random, halving
-    n_iter: int = 25  # for random
-    n_jobs: int = -1
-    refit: bool = True
-    random_state: int = 42
-
-@dataclass
-class LoggingConfig:
-    """Logging configuration for the sub-pipeline and trainers."""
-    level: str = "INFO"
-    enable_console: bool = True
-    enable_file: bool = False
-    log_file: Optional[str] = None
 
 @dataclass
 class SubPipelineConfig:
-    """Configuration for sub-pipeline execution."""
+    """Configuration for model training sub-pipeline execution."""
     mode: ExecutionMode = ExecutionMode.FULL
-    symbol: str = "BTCUSDT"
+    symbol: str = "ETHUSDT"
     exchange: str = "binance"
-    timeframe: str = "1m"
+    analyst_timeframe: str = "15m"  # Analyst uses 15m
+    tactician_timeframe: str = "5m"  # Tactician uses 5m
     data_dir: str = "historical_data"
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
+    
+    # Training configuration
+    train_analyst: bool = True
+    train_tactician: bool = True
+    train_short_models: bool = True
+    train_long_models: bool = True
+    
+    # Analyst configuration
+    analyst_confidence_threshold: float = 0.004  # 0.4% threshold for Tactician filtering
+    
+    # Execution parameters
     force_rerun: bool = False
     parallel_processing: bool = True
     max_workers: int = 4
     validation_enabled: bool = True
-    monitoring_enabled: bool = True
-    single_stage_only: bool = False
+    
+    # Output configuration
+    output_directory: str = "generated/model_training"
+    save_models: bool = True
+    
+    # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
-    # Centralized nested configs
-    cv: CVConfig = field(default_factory=CVConfig)
-    metrics_cfg: MetricsConfig = field(default_factory=MetricsConfig)
-    search: SearchConfig = field(default_factory=SearchConfig)
-    logging: LoggingConfig = field(default_factory=LoggingConfig)
+
 
 @dataclass
 class SubPipelineResult:
@@ -371,2627 +123,458 @@ class SubPipelineResult:
     status: SubPipelineStatus
     start_time: datetime
     end_time: Optional[datetime] = None
-    duration_seconds: Optional[float] = None
+    duration_seconds: float = 0.0
+    success: bool = False
     output_files: List[str] = field(default_factory=list)
+    artifacts: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
     error_message: Optional[str] = None
-    artifacts: Dict[str, Any] = field(default_factory=dict)
 
-    @property
-    def success(self) -> bool:
-        """Convenience property to check if the sub-pipeline completed successfully."""
-        return self.status == SubPipelineStatus.COMPLETED
 
 class ModelTrainingSubPipeline:
     """
-    Model Training Sub-Pipeline Manager.
+    Model Training Sub-Pipeline.
     
-    Provides granular control over model training processes with different
-    execution modes and comprehensive monitoring.
+    Orchestrates the complete training workflow for both Analyst and Tactician models
+    with proper timeframe separation and data filtering.
     """
     
-    def __init__(self, config: Optional[SubPipelineConfig] = None):
+    def __init__(self):
         """Initialize the model training sub-pipeline."""
-        self.config = config or SubPipelineConfig()
         self.logger = logger.getChild('ModelTrainingSubPipeline')
         self.results: List[SubPipelineResult] = []
+        self._current_pipeline_state: Dict[str, Any] = {}
         
-        # Initialize sub-pipeline registry - will be populated lazily
-        self._sub_pipelines = None
-        
-        # Initialize temporal feature integration
-        self.temporal_features_available = False
-        self.temporal_features = {}
-        self.temporal_feature_metadata = {}
-
-        # Apply logging configuration
-        self._apply_logging_config(self.config.logging)
-
-    @property
-    def sub_pipelines(self):
-        """Lazy initialization of sub-pipelines."""
-        if self._sub_pipelines is None:
-            self._initialize_sub_pipelines()
-        return self._sub_pipelines
-
-    def _initialize_sub_pipelines(self):
-        """Initialize sub-pipeline registry with all available pipelines."""
-        self._sub_pipelines = {
-            'nas_training': self._nas_training_pipeline,
-            'tas_training': self._tas_training_pipeline,
-            'analyst_model_training': self._analyst_model_training_pipeline,
-            'analyst_ensemble_training': self._analyst_ensemble_training_pipeline,
-            'tactician_pre_ml_orchestration': self._tactician_pre_ml_orchestration_pipeline,
-            'tactician_training': self._tactician_training_pipeline,
-            'tactician_lookback_optimization': self._tactician_lookback_optimization_pipeline,
-            'tactician_models_training': self._tactician_models_training_pipeline,
-            'tactician_ensemble_training': self._tactician_ensemble_training_pipeline,
-        }
-
-        # Add aliases for backward compatibility
-        self._sub_pipelines['tactician_model_training'] = self._tactician_models_training_pipeline
-        self._sub_pipelines['tactician_ensemble_training'] = self._tactician_ensemble_training_pipeline
-
-    # ==========================
-    # NAS/TAS Training Pipelines
-    # ==========================
-    
-    async def _nas_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """NAS training sub-pipeline for neural architecture search."""
-        tprint(f"   🧠 NAS TRAINING PIPELINE STARTED")
-        self.logger.info("🧠 Executing NAS training pipeline")
-        
-        try:
-            # Import NAS training step
-            from .nas_training_step import NASTrainingStep, NASTrainingConfig
-            
-            # Initialize NAS training step
-            nas_config = NASTrainingConfig()
-            nas_training_step = NASTrainingStep(nas_config)
-            
-            # Get training data (assuming it's available in the pipeline state)
-            # This would need to be passed from the main pipeline
-            training_data = getattr(self, 'training_data', {})
-            
-            if not training_data:
-                raise ValueError("Training data not available for NAS training")
-            
-            # Execute NAS training
-            results = await nas_training_step.execute(
-                X_5m=training_data.get('X_5m'),
-                y_5m=training_data.get('y_5m'),
-                regime_labels=training_data.get('regime_labels')
-            )
-            
-            tprint(f"   ✅ NAS TRAINING PIPELINE COMPLETED")
-            self.logger.info("✅ NAS training pipeline completed successfully")
-            
-            return {
-                'status': 'completed',
-                'nas_models': results.get('trained_models', {}),
-                'nas_architectures': results.get('architectures', {}),
-                'training_metrics': results.get('training_metrics', {}),
-                'timestamp': self._generate_datetime_stamp()
-            }
-            
-        except Exception as e:
-            error_msg = f"❌ NAS training pipeline failed: {str(e)}"
-            tprint_error(error_msg)
-            self.logger.error(error_msg, exc_info=True)
-            raise
-    
-    async def _tas_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """TAS training sub-pipeline for tree architecture search."""
-        tprint(f"   🌳 TAS TRAINING PIPELINE STARTED")
-        self.logger.info("🌳 Executing TAS training pipeline")
-        
-        try:
-            # Import TAS training step
-            from .tas_training_step import TASTrainingStep, TASTrainingConfig
-            
-            # Initialize TAS training step
-            tas_config = TASTrainingConfig()
-            tas_training_step = TASTrainingStep(tas_config)
-            
-            # Get training data (assuming it's available in the pipeline state)
-            training_data = getattr(self, 'training_data', {})
-            
-            if not training_data:
-                raise ValueError("Training data not available for TAS training")
-            
-            # Execute TAS training
-            results = await tas_training_step.execute(
-                X_1m=training_data.get('X_1m'),
-                y_1m=training_data.get('y_1m'),
-                analyst_signals=training_data.get('analyst_signals')
-            )
-            
-            tprint(f"   ✅ TAS TRAINING PIPELINE COMPLETED")
-            self.logger.info("✅ TAS training pipeline completed successfully")
-            
-            return {
-                'status': 'completed',
-                'tas_models': results.get('trained_models', {}),
-                'tas_architectures': results.get('architectures', {}),
-                'training_metrics': results.get('training_metrics', {}),
-                'timestamp': self._generate_datetime_stamp()
-            }
-            
-        except Exception as e:
-            error_msg = f"❌ TAS training pipeline failed: {str(e)}"
-            tprint_error(error_msg)
-            self.logger.error(error_msg, exc_info=True)
-            raise
-
-    # ==========================
-    # Centralized helper methods
-    # ==========================
-
-    def _apply_logging_config(self, logging_cfg: LoggingConfig) -> None:
-        try:
-            level = getattr(logging, str(logging_cfg.level).upper(), logging.INFO)
-            self.logger.setLevel(level)
-            # Attach file handler if enabled and not already attached
-            if logging_cfg.enable_file and logging_cfg.log_file:
-                has_same_file = any(
-                    isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', None) == str(Path(logging_cfg.log_file).resolve())
-                    for h in self.logger.handlers
-                )
-                if not has_same_file:
-                    Path(logging_cfg.log_file).parent.mkdir(parents=True, exist_ok=True)
-                    fh = logging.FileHandler(logging_cfg.log_file)
-                    fh.setLevel(level)
-                    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-                    fh.setFormatter(formatter)
-                    self.logger.addHandler(fh)
-        except Exception:
-            # Fail silently; logging misconfig should not break pipeline
-            pass
-
-    def _make_cv(self, cfg: CVConfig) -> Optional[Any]:
-        """Create a CV splitter object based on configuration. Returns None if sklearn is unavailable."""
-        try:
-            if cfg.strategy.lower() == "purged":
-                # Optional purged K-Fold if available in project
-                from src.utils.purged_kfold import PurgedKFold  # type: ignore
-                return PurgedKFold(n_splits=cfg.n_splits, purge_gap=cfg.purge_gap)
-            from sklearn.model_selection import KFold, StratifiedKFold  # type: ignore
-            if cfg.strategy.lower() == "stratified":
-                return StratifiedKFold(n_splits=cfg.n_splits, shuffle=cfg.shuffle, random_state=cfg.random_state)
-            # default kfold
-            return KFold(n_splits=cfg.n_splits, shuffle=cfg.shuffle, random_state=cfg.random_state)
-        except Exception:
-            return None
-
-    def _make_scorers(self, metrics_cfg: MetricsConfig) -> Optional[Dict[str, Any]]:
-        """Create scorer mapping when sklearn is available; otherwise return None."""
-        try:
-            from sklearn.metrics import make_scorer, f1_score, roc_auc_score, accuracy_score, precision_score, recall_score  # type: ignore
-            scorers: Dict[str, Any] = {}
-            for name in metrics_cfg.names:
-                key = name.lower()
-                if key == "f1":
-                    scorers[name] = make_scorer(f1_score, average=metrics_cfg.average, greater_is_better=metrics_cfg.greater_is_better)
-                elif key in ("roc_auc", "auc"):
-                    scorers[name] = make_scorer(roc_auc_score, needs_proba=True, greater_is_better=metrics_cfg.greater_is_better)
-                elif key == "accuracy":
-                    scorers[name] = make_scorer(accuracy_score, greater_is_better=metrics_cfg.greater_is_better)
-                elif key == "precision":
-                    scorers[name] = make_scorer(precision_score, average=metrics_cfg.average, greater_is_better=metrics_cfg.greater_is_better)
-                elif key == "recall":
-                    scorers[name] = make_scorer(recall_score, average=metrics_cfg.average, greater_is_better=metrics_cfg.greater_is_better)
-            return scorers or None
-        except Exception:
-            return None
-
-    def _build_enhanced_config(self, config: SubPipelineConfig, include_temporal: bool = False) -> Dict[str, Any]:
-        """Build a unified enhanced config passed to training steps, centralizing CV/search/metrics/logging."""
-        enhanced_config: Dict[str, Any] = {}
-        if config.custom_params:
-            enhanced_config.update(config.custom_params)
-
-        # CV and scoring
-        enhanced_config["cv_config"] = {
-            "strategy": config.cv.strategy,
-            "n_splits": config.cv.n_splits,
-            "shuffle": config.cv.shuffle,
-            "random_state": config.cv.random_state,
-            "purge_gap": config.cv.purge_gap,
-        }
-        enhanced_config["cv_object"] = self._make_cv(config.cv)
-
-        enhanced_config["metrics_config"] = {
-            "names": list(config.metrics_cfg.names),
-            "average": config.metrics_cfg.average,
-            "greater_is_better": config.metrics_cfg.greater_is_better,
-        }
-        enhanced_config["scorers"] = self._make_scorers(config.metrics_cfg)
-
-        # Search configuration
-        enhanced_config["search_config"] = {
-            "strategy": config.search.strategy,
-            "n_iter": config.search.n_iter,
-            "n_jobs": config.search.n_jobs,
-            "refit": config.search.refit,
-            "random_state": config.search.random_state,
-        }
-
-        # Logging configuration
-        enhanced_config["logging_config"] = {
-            "level": config.logging.level,
-            "enable_console": config.logging.enable_console,
-            "enable_file": config.logging.enable_file,
-            "log_file": config.logging.log_file,
-        }
-
-        # Temporal features
-        if include_temporal and self.temporal_features_available:
-            enhanced_config["temporal_features_available"] = True
-            enhanced_config["temporal_feature_columns"] = list(self.temporal_features.keys())
-            enhanced_config["temporal_feature_metadata"] = self.temporal_feature_metadata
-
-        return enhanced_config
-
-    def _prepare_artifacts(self, config: SubPipelineConfig, report_basename: str, timestamp: str, include_temporal_fields: bool = False) -> Dict[str, Any]:
-        artifacts: Dict[str, Any] = {
-            'models': [],
-            'metrics': {},
-            'performance': {},
-            'training_report': f"{report_basename}_{config.symbol}_{config.exchange}_{config.timeframe}_{timestamp}.json"
-        }
-        if include_temporal_fields:
-            artifacts['temporal_features_used'] = False
-            artifacts['temporal_feature_info'] = {}
-        return artifacts
-
-    def _standardize_model_names(self, models: List[str], timestamp: str) -> List[str]:
-        return [f"{m}_{timestamp}.pkl" if not m.endswith('.pkl') else f"{m.replace('.pkl', '')}_{timestamp}.pkl" for m in models]
-
-    def _import_trainer_class(self, module_relative: str, class_name: str) -> Any:
-        """Dynamically import a trainer class from a module in the same package."""
-        module_path = f"{__package__}.{module_relative}" if __package__ else module_relative
-        module = importlib.import_module(module_path)
-        return getattr(module, class_name)
-
-    async def _invoke_trainer_method(self, trainer: Any, method_name: str, **kwargs: Any) -> Dict[str, Any]:
-        method = getattr(trainer, method_name)
-        result = method(**kwargs)
-        if inspect.isawaitable(result):
-            return await result
-        return result
-    
-    def _generate_datetime_stamp(self) -> str:
-        """Generate a consistent datetime stamp for artifacts."""
-        return datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    def _create_comprehensive_report(
-        self, 
-        sub_pipeline_name: str, 
-        config: SubPipelineConfig, 
-        artifacts: Dict[str, Any],
-        execution_time: float,
-        status: str = "SUCCESS"
-    ) -> str:
-        """Create a comprehensive report with datetime stamp."""
-        timestamp = self._generate_datetime_stamp()
-        report_filename = f"{sub_pipeline_name}_report_{config.symbol}_{config.exchange}_{config.timeframe}_{timestamp}.json"
-        report_path = f"outcomes/model_training/{report_filename}"
-        
-        # Ensure reports directory exists
-        Path("outcomes/model_training").mkdir(parents=True, exist_ok=True)
-        
-        # Create comprehensive report
-        report_data = {
-            "metadata": {
-                "sub_pipeline_name": sub_pipeline_name,
-                "timestamp": timestamp,
-                "execution_time_seconds": execution_time,
-                "status": status,
-                "config": {
-                    "symbol": config.symbol,
-                    "exchange": config.exchange,
-                    "timeframe": config.timeframe,
-                    "mode": config.mode.value,
-                    "data_dir": config.data_dir
-                }
-            },
-            "artifacts": artifacts,
-            "summary": {
-                "total_artifacts": len(artifacts),
-                "artifact_types": list(artifacts.keys()),
-                "models_generated": sum(1 for v in artifacts.values() if isinstance(v, list) and any('model' in str(item).lower() for item in v)),
-                "reports_generated": sum(1 for v in artifacts.values() if isinstance(v, list) and any('report' in str(item).lower() for item in v)),
-                "silent_failures_detected": len(artifacts.get('silent_failures', [])),
-                "silent_failures": artifacts.get('silent_failures', [])
-            }
-        }
-        
-        # Save report
-        try:
-            with open(report_path, 'w') as f:
-                json.dump(report_data, f, indent=2, default=str)
-            self.logger.info(f"📋 Comprehensive report saved: {report_path}")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to save report: {e}")
-            report_path = None
-        
-        return report_path
-    
-    def _log_sub_pipeline_completion(
-        self, 
-        sub_pipeline_name: str, 
-        config: SubPipelineConfig, 
-        artifacts: Dict[str, Any],
-        execution_time: float,
-        status: str = "SUCCESS"
-    ):
-        """Enhanced logging with comprehensive reporting."""
-        # Create comprehensive report
-        report_path = self._create_comprehensive_report(
-            sub_pipeline_name, config, artifacts, execution_time, status
-        )
-        
-        # Enhanced console logging
-        tprint("\n" + "="*80)
-        tprint(f"🎉 {sub_pipeline_name.upper().replace('_', ' ')} SUB-PIPELINE COMPLETED!")
-        tprint(f"⏱️  Execution Time: {execution_time:.2f} seconds")
-        tprint(f"📊 Status: {status}")
-        tprint("="*80)
-        
-        if report_path:
-            tprint(f"📋 Comprehensive Report: {report_path}")
-        
-        tprint(f"📁 Generated Artifacts:")
-        
-        # Log different types of artifacts with appropriate emojis
-        for key, value in artifacts.items():
-            if isinstance(value, list) and value:
-                if 'model' in key.lower():
-                    for item in value:
-                        tprint(f"   🤖 {key.title()}: {config.data_dir}/models/{item}")
-                elif 'report' in key.lower():
-                    for item in value:
-                        tprint(f"   📋 {key.title()}: {config.data_dir}/{item}")
-                else:
-                    for item in value:
-                        tprint(f"   📊 {key.title()}: {config.data_dir}/{item}")
-            elif isinstance(value, dict) and value:
-                tprint(f"   📊 {key.title()}: {config.data_dir}/{key}.json")
-        
-        tprint(f"📊 Total Artifacts: {len(artifacts)} types generated")
-        
-        # Report silent failures if any
-        silent_failures = artifacts.get('silent_failures', [])
-        if silent_failures:
-            tprint(f"⚠️  Silent Failures Detected: {len(silent_failures)}")
-            for i, failure in enumerate(silent_failures, 1):
-                tprint(f"   {i}. {failure}")
+        # Initialize orchestrators
+        if ANALYST_PRE_ML_AVAILABLE:
+            self.analyst_pre_ml = AnalystPreMLOrchestrator()
         else:
-            tprint(f"✅ No Silent Failures Detected")
-        
-        tprint("="*80 + "\n")
-        
-        # Enhanced logger output
-        self.logger.info(f"🎉 {sub_pipeline_name.upper().replace('_', ' ')} SUB-PIPELINE COMPLETED!")
-        self.logger.info(f"⏱️  Execution Time: {execution_time:.2f} seconds")
-        self.logger.info(f"📊 Status: {status}")
-        if report_path:
-            self.logger.info(f"📋 Comprehensive Report: {report_path}")
-        self.logger.info(f"📊 Total Artifacts: {len(artifacts)} types generated")
-        if silent_failures:
-            self.logger.warning(f"⚠️ Silent Failures: {len(silent_failures)} detected")
+            self.analyst_pre_ml = None
+            
+        if ANALYST_TRAINING_AVAILABLE:
+            self.analyst_training = AnalystTrainingPipeline()
+        else:
+            self.analyst_training = None
+            
+        if TACTICIAN_PRE_ML_AVAILABLE:
+            self.tactician_pre_ml = TacticianPreMLOrchestrator()
+        else:
+            self.tactician_pre_ml = None
+            
+        if TACTICIAN_TRAINING_AVAILABLE:
+            self.tactician_training = TacticianTrainingPipeline()
+        else:
+            self.tactician_training = None
     
-    async def execute_sub_pipeline(
-        self,
-        sub_pipeline_name: str,
-        config: Optional[SubPipelineConfig] = None
-    ) -> SubPipelineResult:
+    async def execute_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """
-        Execute a specific sub-pipeline with comprehensive debugging and validation.
+        Execute the complete model training pipeline.
         
         Args:
-            sub_pipeline_name: Name of the sub-pipeline to execute
-            config: Optional configuration override
+            config: Configuration for pipeline execution
             
         Returns:
-            SubPipelineResult with execution details
-            
-        Raises:
-            ValueError: If sub-pipeline name is invalid
-            RuntimeError: If execution fails (fast-fail)
+            Dictionary containing execution results
         """
-        config = config or self.config
-        
-        # Initialize enhanced debugger
-        debugger = TrainingDebugger(sub_pipeline_name, config.__dict__ if config else {})
-        
-        # Step 1: Initialization and validation
-        tprint(f"\n{'='*80}")
-        tprint(f"🚀 STARTING MODEL TRAINING SUB-PIPELINE: {sub_pipeline_name.upper()}")
-        tprint(f"📊 Mode: {config.mode.value.upper()} | Symbol: {config.symbol} | Exchange: {config.exchange} | Timeframe: {config.timeframe}")
-        tprint(f"{'='*80}")
-        
-        self.logger.info(f"🚀 Starting model training sub-pipeline: {sub_pipeline_name} (mode: {config.mode.value})")
+        self.logger.info('🚀 Starting Model Training Sub-Pipeline execution')
+        self.logger.info(f'📊 Symbol: {config.symbol}, Exchange: {config.exchange}')
+        self.logger.info(f'⏰ Analyst timeframe: {config.analyst_timeframe}, Tactician timeframe: {config.tactician_timeframe}')
         
         start_time = datetime.now()
-        result = SubPipelineResult(
-            sub_pipeline_name=sub_pipeline_name,
-            status=SubPipelineStatus.RUNNING,
-            start_time=start_time
-        )
+        results = {
+            'success': False,
+            'execution_time': 0.0,
+            'analyst_results': {},
+            'tactician_results': {},
+            'completed_steps': 0,
+            'total_steps': 0
+        }
+        
+        # Count total steps
+        total_steps = 0
+        if config.train_analyst:
+            total_steps += 3  # pre_ml, models, ensemble
+        if config.train_tactician:
+            total_steps += 3  # pre_ml, models, ensemble
+        results['total_steps'] = total_steps
         
         try:
-            with debugger.debug_context("sub_pipeline_execution"):
-                # Step 1: Pre-execution validation
-                tprint(f"🔍 STEP 1/8: Running comprehensive pre-execution validation...")
+            # ==================== ANALYST PIPELINE (15m) ====================
+            if config.train_analyst:
+                self.logger.info('=' * 80)
+                self.logger.info('🎯 ANALYST PIPELINE (15m timeframe - IF we trade)')
+                self.logger.info('=' * 80)
                 
-                if not debugger.comprehensive_validation(
-                    data_dir=config.data_dir,
-                    symbol=config.symbol,
-                    timeframe=config.timeframe,
-                    exchange=config.exchange
-                ):
-                    raise RuntimeError(f"Pre-execution validation failed for {sub_pipeline_name}")
+                # Step 1: Analyst Pre-ML Orchestration
+                analyst_pre_ml_result = await self._execute_analyst_pre_ml_orchestration(config)
+                if not analyst_pre_ml_result.success:
+                    self.logger.error(f'❌ Analyst pre-ML orchestration failed: {analyst_pre_ml_result.error_message}')
+                    return results
                 
-                tprint(f"✅ Pre-execution validation completed successfully")
+                results['analyst_results']['pre_ml'] = analyst_pre_ml_result.artifacts
+                self._current_pipeline_state['analyst_features'] = analyst_pre_ml_result.artifacts
+                results['completed_steps'] += 1
                 
-                # Step 2: Validate sub-pipeline exists
-                tprint(f"🔍 STEP 2/8: Validating sub-pipeline name...")
-                if sub_pipeline_name not in self.sub_pipelines:
-                    error_msg = f"Unknown sub-pipeline: {sub_pipeline_name}. Available: {list(self.sub_pipelines.keys())}"
-                    tprint_error(f"❌ VALIDATION FAILED: {error_msg}")
-                    self.logger.error(f"❌ {error_msg}")
-                    raise ValueError(error_msg)
-                tprint_success(f"✅ Sub-pipeline '{sub_pipeline_name}' validated successfully")
+                # Step 2: Analyst Models Training
+                analyst_models_result = await self._execute_analyst_models_training(config, analyst_pre_ml_result)
+                if not analyst_models_result.success:
+                    self.logger.error(f'❌ Analyst models training failed: {analyst_models_result.error_message}')
+                    return results
                 
-                # Enforce mandatory tactician lookback optimization before tactician training steps
-                if sub_pipeline_name in ('tactician_models_training', 'tactician_ensemble_training'):
-                    lookback_completed = any(
-                        r.sub_pipeline_name == 'tactician_lookback_optimization' and r.status == SubPipelineStatus.COMPLETED
-                        for r in self.results
-                    )
-                    if not lookback_completed:
-                        error_msg = (
-                            "Tactician lookback optimization is mandatory before running '"
-                            f"{sub_pipeline_name}'. Run 'tactician_lookback_optimization' first."
-                        )
-                        tprint_error(f"❌ {error_msg}")
-                        self.logger.error(f"❌ {error_msg}")
-                        raise RuntimeError(error_msg)
-
-                # Step 3: Validate configuration
-                tprint(f"🔍 STEP 3/8: Validating configuration...")
-                if not self._validate_config(config):
-                    error_msg = "Invalid configuration provided"
-                    tprint_error(f"❌ CONFIGURATION VALIDATION FAILED: {error_msg}")
-                    self.logger.error(f"❌ {error_msg}")
-                    raise ValueError(error_msg)
-                tprint_success(f"✅ Configuration validated successfully")
+                results['analyst_results']['models'] = analyst_models_result.artifacts
+                self._current_pipeline_state['analyst_models'] = analyst_models_result.artifacts
+                results['completed_steps'] += 1
                 
-                # Step 4: Load and validate training data
-                tprint(f"🔍 STEP 4/8: Loading and validating training data...")
-                training_data = await self._load_training_data(config)
+                # Step 3: Analyst Ensemble Training
+                analyst_ensemble_result = await self._execute_analyst_ensemble_training(config, analyst_models_result)
+                if not analyst_ensemble_result.success:
+                    self.logger.error(f'❌ Analyst ensemble training failed: {analyst_ensemble_result.error_message}')
+                    return results
                 
-                data_validation = debugger.validate_training_data(training_data)
-                if not data_validation.is_valid:
-                    error_msg = f"Training data validation failed: {data_validation.error_message}"
-                    tprint_error(f"❌ DATA VALIDATION FAILED: {error_msg}")
-                    
-                    # Log detailed suggestions
-                    if data_validation.suggestions:
-                        tprint_info("💡 Suggestions:")
-                        for suggestion in data_validation.suggestions:
-                            tprint_info(f"   - {suggestion}")
-                    
-                    raise RuntimeError(error_msg)
+                results['analyst_results']['ensemble'] = analyst_ensemble_result.artifacts
+                self._current_pipeline_state['analyst_ensemble'] = analyst_ensemble_result.artifacts
+                results['completed_steps'] += 1
                 
-                tprint_success(f"✅ Training data validated: {len(training_data)} rows, {len(training_data.columns)} columns")
+                self.logger.info('✅ Analyst pipeline completed successfully')
+            
+            # ==================== TACTICIAN PIPELINE (5m) ====================
+            if config.train_tactician:
+                self.logger.info('=' * 80)
+                self.logger.info('🎯 TACTICIAN PIPELINE (5m timeframe - WHEN we trade)')
+                self.logger.info('=' * 80)
                 
-                # Step 5: System resource check
-                tprint(f"🔍 STEP 5/8: Checking system resources...")
-                resource_check = debugger.validate_system_resources(min_memory_gb=0.5, min_disk_gb=0.1)
-                if not resource_check.is_valid:
-                    tprint_warning(f"⚠️  System resources warning: {resource_check.error_message}")
-                else:
-                    tprint_success(f"✅ System resources sufficient")
+                # Get Analyst predictions for filtering
+                analyst_predictions = self._current_pipeline_state.get('analyst_ensemble', {}).get('predictions')
                 
-                # Step 6: Execute the sub-pipeline
-                tprint(f"🔍 STEP 6/8: Executing {sub_pipeline_name} pipeline...")
-                pipeline_func = self.sub_pipelines[sub_pipeline_name]
-                
-                # Log execution start with timing
-                execution_start = datetime.now()
-                tprint_info(f"⏱️  Pipeline execution started at: {execution_start.strftime('%H:%M:%S')}")
-                
-                # Execute with detailed error tracking
-                try:
-                    artifacts = await pipeline_func(config)
-                except Exception as e:
-                    tprint_error(f"❌ Pipeline function execution failed: {str(e)}")
-                    tprint_debug(f"📋 Traceback:\n{traceback.format_exc()}")
-                    raise RuntimeError(f"Pipeline function '{sub_pipeline_name}' execution failed: {str(e)}") from e
-                
-                execution_end = datetime.now()
-                execution_duration = (execution_end - execution_start).total_seconds()
-                tprint_success(f"⏱️  Pipeline execution completed in: {execution_duration:.2f} seconds")
-                
-                # Step 7: Validate artifacts
-                tprint(f"🔍 STEP 7/8: Validating generated artifacts...")
-                if not self._validate_artifacts(artifacts, sub_pipeline_name):
-                    error_msg = f"Invalid artifacts generated by {sub_pipeline_name}"
-                    tprint_error(f"❌ ARTIFACT VALIDATION FAILED: {error_msg}")
-                    tprint_debug(f"📋 Generated artifacts: {artifacts}")
-                    self.logger.error(f"❌ {error_msg}")
-                    raise RuntimeError(error_msg)
-                tprint_success(f"✅ Artifacts validated successfully - {len(artifacts)} artifact types generated")
-                
-                # Log artifact details
-                for key, value in artifacts.items():
-                    if isinstance(value, (list, dict)) and value:
-                        tprint_debug(f"   📊 {key}: {len(value) if isinstance(value, (list, dict)) else 'N/A'} items")
-                
-                # Step 8: Detect silent failures
-                tprint(f"🔍 STEP 8/8: Detecting silent failures...")
-                silent_failures = self._detect_silent_failures(artifacts, sub_pipeline_name)
-                if silent_failures:
-                    tprint_warning(f"⚠️  {len(silent_failures)} silent failures detected:")
-                    for i, failure in enumerate(silent_failures, 1):
-                        tprint_warning(f"   {i}. {failure}")
-                    # Add silent failures to artifacts for reporting
-                    artifacts['silent_failures'] = silent_failures
-                else:
-                    tprint_success(f"✅ No silent failures detected")
-                
-                # Finalize result
-                end_time = datetime.now()
-                result.status = SubPipelineStatus.COMPLETED
-                result.end_time = end_time
-                result.duration_seconds = (end_time - start_time).total_seconds()
-                result.artifacts = artifacts
-                result.metadata = {
-                    'mode': config.mode.value,
-                    'symbol': config.symbol,
-                    'exchange': config.exchange,
-                    'timeframe': config.timeframe,
-                    'execution_duration_seconds': execution_duration,
-                    'data_rows': len(training_data) if training_data is not None else 0,
-                    'data_columns': len(training_data.columns) if training_data is not None else 0
-                }
-                
-                tprint_success(f"✅ All steps completed successfully!")
-                
-                # Enhanced logging with comprehensive reporting
-                self._log_sub_pipeline_completion(
-                    sub_pipeline_name, config, artifacts, result.duration_seconds, "SUCCESS"
+                # Step 4: Tactician Pre-ML Orchestration (with Analyst filtering)
+                tactician_pre_ml_result = await self._execute_tactician_pre_ml_orchestration(
+                    config, analyst_predictions
                 )
+                if not tactician_pre_ml_result.success:
+                    self.logger.error(f'❌ Tactician pre-ML orchestration failed: {tactician_pre_ml_result.error_message}')
+                    return results
+                
+                results['tactician_results']['pre_ml'] = tactician_pre_ml_result.artifacts
+                self._current_pipeline_state['tactician_features'] = tactician_pre_ml_result.artifacts
+                results['completed_steps'] += 1
+                
+                # Step 5: Tactician Models Training
+                tactician_models_result = await self._execute_tactician_models_training(
+                    config, tactician_pre_ml_result, analyst_predictions
+                )
+                if not tactician_models_result.success:
+                    self.logger.error(f'❌ Tactician models training failed: {tactician_models_result.error_message}')
+                    return results
+                
+                results['tactician_results']['models'] = tactician_models_result.artifacts
+                self._current_pipeline_state['tactician_models'] = tactician_models_result.artifacts
+                results['completed_steps'] += 1
+                
+                # Step 6: Tactician Ensemble Training
+                tactician_ensemble_result = await self._execute_tactician_ensemble_training(
+                    config, tactician_models_result, analyst_predictions
+                )
+                if not tactician_ensemble_result.success:
+                    self.logger.error(f'❌ Tactician ensemble training failed: {tactician_ensemble_result.error_message}')
+                    return results
+                
+                results['tactician_results']['ensemble'] = tactician_ensemble_result.artifacts
+                self._current_pipeline_state['tactician_ensemble'] = tactician_ensemble_result.artifacts
+                results['completed_steps'] += 1
+                
+                self.logger.info('✅ Tactician pipeline completed successfully')
             
-        except Exception as e:
+            # Success
             end_time = datetime.now()
-            result.status = SubPipelineStatus.FAILED
-            result.end_time = end_time
-            result.duration_seconds = (end_time - start_time).total_seconds()
-            result.error_message = str(e)
+            results['success'] = True
+            results['execution_time'] = (end_time - start_time).total_seconds()
             
-            # Enhanced error logging with comprehensive details
-            tprint_error(f"\n❌ SUB-PIPELINE EXECUTION FAILED!")
-            tprint_error(f"⏱️  Failed after: {result.duration_seconds:.2f} seconds")
-            tprint_error(f"🚨 Error Type: {type(e).__name__}")
-            tprint_error(f"🚨 Error Message: {str(e)}")
-            tprint_debug(f"📋 Full Traceback:\n{traceback.format_exc()}")
-            tprint_error(f"{'='*80}\n")
-            
-            self.logger.error(f"❌ Model training sub-pipeline {sub_pipeline_name} FAILED after {result.duration_seconds:.2f}s")
-            self.logger.error(f"❌ Error Type: {type(e).__name__}")
-            self.logger.error(f"❌ Error: {str(e)}")
-            self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
-            
-            # Create comprehensive failure report
-            failure_artifacts = {
-                'error_type': type(e).__name__,
-                'error_message': str(e),
-                'traceback': traceback.format_exc(),
-                'debug_report': debugger.create_debug_report(),
-                'silent_failures': []
-            }
-            
-            result.artifacts = failure_artifacts
-            
-            self._log_sub_pipeline_completion(
-                sub_pipeline_name, config, failure_artifacts, result.duration_seconds, "FAILED"
-            )
-            
-            # Fast-fail: Re-raise the exception with enhanced context
-            raise RuntimeError(f"Sub-pipeline {sub_pipeline_name} failed: {str(e)}") from e
-        
-        self.results.append(result)
-        return result
-    
-    async def _load_training_data(self, config: SubPipelineConfig) -> Optional[pd.DataFrame]:
-        """Load training data for validation and processing."""
-        try:
-            tprint_debug(f"   📂 Loading training data from {config.data_dir}")
-            
-            # Import data loading utilities
-            try:
-                from src.utils.data.klines_parquet import get_klines_manager
-            except ImportError as e:
-                tprint_error(f"   ❌ Cannot import klines_parquet: {e}")
-                return None
-            
-            # Initialize data manager
-            klines_manager = get_klines_manager(data_dir=config.data_dir)
-            
-            # Parse date filters if provided
-            start_date = None
-            end_date = None
-            if hasattr(config, 'start_date') and config.start_date:
-                try:
-                    start_date = pd.to_datetime(config.start_date)
-                    tprint_debug(f"   📅 Using start_date filter: {start_date}")
-                except Exception as e:
-                    tprint_warning(f"   ⚠️  Invalid start_date format: {e}")
-            
-            if hasattr(config, 'end_date') and config.end_date:
-                try:
-                    end_date = pd.to_datetime(config.end_date)
-                    tprint_debug(f"   📅 Using end_date filter: {end_date}")
-                except Exception as e:
-                    tprint_warning(f"   ⚠️  Invalid end_date format: {e}")
-            
-            # Load data with date filtering
-            data = klines_manager.read_data(
-                symbol=config.symbol,
-                interval=config.timeframe,
-                data_type="processed",  # Use processed data
-                start_date=start_date,
-                end_date=end_date
-            )
-            
-            if data is None:
-                tprint_warning(f"   ⚠️  No data returned from klines_manager")
-                return None
-            
-            if data.empty:
-                tprint_warning(f"   ⚠️  Empty dataset returned")
-                return None
-            
-            tprint_debug(f"   ✅ Loaded {len(data)} rows with {len(data.columns)} columns")
-            tprint_debug(f"   📅 Date range: {data.index.min()} to {data.index.max()}")
-            
-            return data
+            self.logger.info(f'🎉 Model Training Sub-Pipeline completed successfully in {results["execution_time"]:.2f}s')
+            self.logger.info(f'📊 Completed steps: {results["completed_steps"]}/{results["total_steps"]}')
             
         except Exception as e:
-            tprint_error(f"   ❌ Error loading training data: {str(e)}")
-            tprint_debug(f"   📋 Traceback: {traceback.format_exc()}")
-            return None
-    
-    def _validate_config(self, config: SubPipelineConfig) -> bool:
-        """Validate configuration parameters with detailed logging."""
-        try:
-            tprint(f"   🔍 Checking required fields...")
-            # Check required fields
-            if not config.symbol or not config.exchange or not config.timeframe:
-                missing_fields = []
-                if not config.symbol:
-                    missing_fields.append("symbol")
-                if not config.exchange:
-                    missing_fields.append("exchange")
-                if not config.timeframe:
-                    missing_fields.append("timeframe")
-                tprint(f"   ❌ Missing required fields: {missing_fields}")
-                self.logger.error(f"❌ Missing required config fields: {missing_fields}")
-                return False
-            tprint(f"   ✅ Required fields present: symbol={config.symbol}, exchange={config.exchange}, timeframe={config.timeframe}")
-            
-            tprint(f"   🔍 Checking data directory...")
-            # Check data directory exists
-            if not Path(config.data_dir).exists():
-                tprint(f"   ❌ Data directory does not exist: {config.data_dir}")
-                self.logger.error(f"❌ Data directory does not exist: {config.data_dir}")
-                return False
-            tprint(f"   ✅ Data directory exists: {config.data_dir}")
-            
-            tprint(f"   🔍 Validating timeframe...")
-            # Check valid timeframe
-            valid_timeframes = ['1m', '5m', '15m', '30m', '1h', '4h', '1d']
-            if config.timeframe not in valid_timeframes:
-                tprint(f"   ❌ Invalid timeframe: {config.timeframe}. Valid options: {valid_timeframes}")
-                self.logger.error(f"❌ Invalid timeframe: {config.timeframe}. Valid: {valid_timeframes}")
-                return False
-            tprint(f"   ✅ Timeframe is valid: {config.timeframe}")
-            
-            tprint(f"   🔍 Checking execution mode...")
-            # Check valid execution mode
-            if not isinstance(config.mode, ExecutionMode):
-                tprint(f"   ❌ Invalid execution mode: {config.mode}")
-                self.logger.error(f"❌ Invalid execution mode: {config.mode}")
-                return False
-            tprint(f"   ✅ Execution mode is valid: {config.mode.value}")
-            
-            return True
-        except Exception as e:
-            tprint(f"   ❌ Configuration validation failed with exception: {e}")
-            self.logger.error(f"❌ Config validation failed: {e}")
-            return False
-    
-    def _validate_artifacts(self, artifacts: Dict[str, Any], sub_pipeline_name: str) -> bool:
-        """Validate generated artifacts with detailed logging."""
-        try:
-            tprint(f"   🔍 Checking if artifacts were generated...")
-            if not artifacts:
-                tprint(f"   ❌ No artifacts generated by {sub_pipeline_name}")
-                self.logger.error(f"❌ No artifacts generated by {sub_pipeline_name}")
-                return False
-            tprint(f"   ✅ {len(artifacts)} artifact types generated")
-            
-            tprint(f"   🔍 Checking artifact types...")
-            for artifact_type, artifact_value in artifacts.items():
-                if isinstance(artifact_value, list):
-                    tprint(f"   📊 {artifact_type}: {len(artifact_value)} items")
-                elif isinstance(artifact_value, dict):
-                    tprint(f"   📊 {artifact_type}: {len(artifact_value)} keys")
-                else:
-                    tprint(f"   📊 {artifact_type}: {type(artifact_value).__name__}")
-            
-            # Check for required artifact types based on sub-pipeline
-            tprint(f"   🔍 Validating required artifacts for {sub_pipeline_name}...")
-            required_artifacts = {
-                'analyst_model_training': ['models', 'metrics'],
-            'analyst_ensemble_training': ['models', 'metrics'],
-            'tactician_pre_ml_orchestration': ['orchestration_result', 'unified_training_data', 'tagged_market_data'],
-            'tactician_training': ['training_result', 'unified_base_models', 'unified_ensemble_models', 'models', 'metrics']
-            }
-            
-            if sub_pipeline_name in required_artifacts:
-                required = required_artifacts[sub_pipeline_name]
-                tprint(f"   📋 Required artifacts: {required}")
-                
-                missing = [req for req in required if req not in artifacts]
-                if missing:
-                    tprint(f"   ❌ Missing required artifacts: {missing}")
-                    self.logger.error(f"❌ Missing required artifacts for {sub_pipeline_name}: {missing}")
-                    return False
-                
-                # Check if required artifacts have content
-                for req_artifact in required:
-                    if req_artifact in artifacts:
-                        artifact_content = artifacts[req_artifact]
-                        if isinstance(artifact_content, list) and len(artifact_content) == 0:
-                            tprint(f"   ⚠️  Warning: {req_artifact} is empty list")
-                        elif isinstance(artifact_content, dict) and len(artifact_content) == 0:
-                            tprint(f"   ⚠️  Warning: {req_artifact} is empty dict")
-                        else:
-                            tprint(f"   ✅ {req_artifact} has content")
-                
-                tprint(f"   ✅ All required artifacts present and validated")
-            else:
-                tprint(f"   ℹ️  No specific requirements defined for {sub_pipeline_name}")
-            
-            return True
-        except Exception as e:
-            tprint(f"   ❌ Artifact validation failed with exception: {e}")
-            self.logger.error(f"❌ Artifact validation failed: {e}")
-            return False
-    
-    async def execute_multiple_sub_pipelines(
-        self,
-        sub_pipeline_names: List[str],
-        config: Optional[SubPipelineConfig] = None,
-        sequential: bool = False
-    ) -> List[SubPipelineResult]:
-        """
-        Execute multiple sub-pipelines with comprehensive logging.
-        
-        Args:
-            sub_pipeline_names: List of sub-pipeline names to execute
-            config: Optional configuration override
-            sequential: Whether to execute sequentially or in parallel
-            
-        Returns:
-            List of SubPipelineResult objects
-        """
-        config = config or self.config
-        
-        tprint(f"\n{'='*80}")
-        tprint(f"🚀 STARTING MULTIPLE SUB-PIPELINE EXECUTION")
-        tprint(f"📊 Pipelines: {len(sub_pipeline_names)} | Mode: {'SEQUENTIAL' if sequential else 'PARALLEL'}")
-        tprint(f"📋 Pipeline List: {', '.join(sub_pipeline_names)}")
-        tprint(f"{'='*80}")
-        
-        self.logger.info(f"🚀 Starting {len(sub_pipeline_names)} model training sub-pipelines (sequential: {sequential})")
-        
-        start_time = datetime.now()
-        
-        if sequential:
-            tprint(f"🔄 Executing pipelines sequentially...")
-            results = []
-            for i, name in enumerate(sub_pipeline_names, 1):
-                tprint(f"\n📋 PIPELINE {i}/{len(sub_pipeline_names)}: {name}")
-                result = await self.execute_sub_pipeline(name, config)
-                results.append(result)
-                
-                if result.status == SubPipelineStatus.FAILED:
-                    tprint(f"❌ Sequential execution stopped due to failure in {name}")
-                    self.logger.warning(f"⚠️ Stopping sequential execution due to failure in {name}")
-                    break
-                else:
-                    tprint(f"✅ Pipeline {i}/{len(sub_pipeline_names)} completed successfully")
-            
-            end_time = datetime.now()
-            total_duration = (end_time - start_time).total_seconds()
-            tprint(f"\n⏱️  Sequential execution completed in {total_duration:.2f} seconds")
-            
-        else:
-            tprint(f"🔄 Executing pipelines in parallel...")
-            # Execute in parallel
-            tasks = [self.execute_sub_pipeline(name, config) for name in sub_pipeline_names]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            end_time = datetime.now()
-            total_duration = (end_time - start_time).total_seconds()
-            tprint(f"\n⏱️  Parallel execution completed in {total_duration:.2f} seconds")
-        
-        # Summary logging
-        successful = sum(1 for r in results if hasattr(r, 'status') and r.status == SubPipelineStatus.COMPLETED)
-        failed = sum(1 for r in results if hasattr(r, 'status') and r.status == SubPipelineStatus.FAILED)
-        exceptions = sum(1 for r in results if isinstance(r, Exception))
-        
-        tprint(f"\n📊 EXECUTION SUMMARY:")
-        tprint(f"   ✅ Successful: {successful}")
-        tprint(f"   ❌ Failed: {failed}")
-        tprint(f"   🚨 Exceptions: {exceptions}")
-        tprint(f"   ⏱️  Total Duration: {total_duration:.2f} seconds")
-        tprint(f"{'='*80}\n")
+            self.logger.error(f'❌ Model Training Sub-Pipeline failed with exception: {e}')
+            results['error_message'] = str(e)
         
         return results
     
-    async def _load_temporal_features(self, config: SubPipelineConfig) -> bool:
-        """Load temporal features from MARKET_ANALYSIS stage with detailed logging."""
-        try:
-            tprint(f"   🔍 Searching for temporal features...")
-            
-            # Try to load temporal features from various sources
-            temporal_feature_sources = [
-                f"{config.data_dir}/temporal_features_{config.symbol}_{config.exchange}_{config.timeframe}.parquet",
-                f"{config.data_dir}/training/temporal_features_{config.symbol}_{config.exchange}_{config.timeframe}.parquet",
-                f"{config.data_dir}/processed/temporal_features_{config.symbol}_{config.exchange}_{config.timeframe}.parquet"
-            ]
-            
-            tprint(f"   📂 Checking {len(temporal_feature_sources)} potential temporal feature locations...")
-            
-            for i, feature_path in enumerate(temporal_feature_sources, 1):
-                tprint(f"   🔍 [{i}/{len(temporal_feature_sources)}] Checking: {feature_path}")
-                
-                if Path(feature_path).exists():
-                    tprint(f"   ✅ Found temporal features file: {feature_path}")
-                    self.logger.info(f"📊 Loading temporal features from: {feature_path}")
-                    
-                    try:
-                        temporal_df = pd.read_parquet(feature_path)
-                        tprint(f"   📊 Loaded parquet file with shape: {temporal_df.shape}")
-                        
-                        if not temporal_df.empty:
-                            self.temporal_features = temporal_df.to_dict('series')
-                            self.temporal_features_available = True
-                            tprint(f"   ✅ Successfully loaded {len(self.temporal_features)} temporal features")
-                            self.logger.info(f"✅ Loaded {len(self.temporal_features)} temporal features")
-                            
-                            # Load metadata if available
-                            metadata_path = feature_path.replace('temporal_features_', 'temporal_feature_metadata_').replace('.parquet', '.json')
-                            tprint(f"   🔍 Checking for metadata file: {metadata_path}")
-                            
-                            if Path(metadata_path).exists():
-                                tprint(f"   ✅ Found metadata file, loading...")
-                                with open(metadata_path, 'r') as f:
-                                    self.temporal_feature_metadata = json.load(f)
-                                tprint(f"   ✅ Loaded temporal feature metadata with {len(self.temporal_feature_metadata)} entries")
-                                self.logger.info(f"✅ Loaded temporal feature metadata")
-                            else:
-                                tprint(f"   ℹ️  No metadata file found (optional)")
-                            
-                            return True
-                        else:
-                            tprint(f"   ⚠️  Temporal features file is empty")
-                    except Exception as e:
-                        tprint(f"   ❌ Failed to read temporal features file: {e}")
-                        continue
-                else:
-                    tprint(f"   ❌ File not found")
-            
-            tprint(f"   ❌ No valid temporal features found in any location")
-            raise RuntimeError("No temporal features found - temporal features are required for training")
-            
-        except Exception as e:
-            tprint(f"   ❌ Failed to load temporal features: {e}")
-            self.logger.error(f"❌ Failed to load temporal features: {e}")
-            return False
-    
-    def _get_enhanced_feature_columns(self, base_features: List[str]) -> List[str]:
-        """Get enhanced feature columns including temporal features."""
-        if not self.temporal_features_available:
-            return base_features
-        
-        # Combine base features with temporal features
-        temporal_feature_names = list(self.temporal_features.keys())
-        enhanced_features = base_features + temporal_feature_names
-        
-        self.logger.info(f"📊 Enhanced features: {len(base_features)} base + {len(temporal_feature_names)} temporal = {len(enhanced_features)} total")
-        return enhanced_features
-    
-    def _get_temporal_feature_info(self) -> Dict[str, Any]:
-        """Get information about available temporal features."""
-        if not self.temporal_features_available:
-            return {'available': False, 'count': 0, 'types': {}}
-        
-        # Analyze temporal feature types
-        lookback_features = [name for name in self.temporal_features.keys() if name.startswith('lookback_')]
-        cross_tf_features = [name for name in self.temporal_features.keys() if name.startswith('cross_tf_')]
-        
-        return {
-            'available': True,
-            'count': len(self.temporal_features),
-            'lookback_features': len(lookback_features),
-            'cross_timeframe_features': len(cross_tf_features),
-            'types': {
-                'lookback': lookback_features,
-                'cross_timeframe': cross_tf_features
-            },
-            'metadata_available': bool(self.temporal_feature_metadata)
-        }
-    
-    def _detect_silent_failures(self, artifacts: Dict[str, Any], sub_pipeline_name: str) -> List[str]:
-        """
-        Detect potential silent failures in training results.
-        
-        Args:
-            artifacts: Generated artifacts from training
-            sub_pipeline_name: Name of the sub-pipeline
-            
-        Returns:
-            List of potential silent failure warnings
-        """
-        warnings = []
+    async def _execute_analyst_pre_ml_orchestration(self, config: SubPipelineConfig) -> SubPipelineResult:
+        """Execute Analyst pre-ML orchestration (15m timeframe)."""
+        result = SubPipelineResult(
+            sub_pipeline_name='analyst_pre_ml_orchestration',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
         
         try:
-            tprint(f"   🔍 Checking for silent failures in {sub_pipeline_name}...")
+            if not self.analyst_pre_ml:
+                raise RuntimeError("Analyst pre-ML orchestrator not available")
             
-            # Check 1: Empty or missing models
-            models = artifacts.get('models', [])
-            if not models:
-                warning = f"No models generated in {sub_pipeline_name}"
-                warnings.append(warning)
-                tprint(f"   ⚠️  SILENT FAILURE DETECTED: {warning}")
-            elif len(models) == 0:
-                warning = f"Empty models list in {sub_pipeline_name}"
-                warnings.append(warning)
-                tprint(f"   ⚠️  SILENT FAILURE DETECTED: {warning}")
-            else:
-                tprint(f"   ✅ Models check passed: {len(models)} models generated")
+            self.logger.info('🔧 Executing Analyst Pre-ML Orchestration (15m)...')
             
-            # Check 2: Missing or empty metrics
-            metrics = artifacts.get('metrics', {})
-            if not metrics:
-                warning = f"No metrics generated in {sub_pipeline_name}"
-                warnings.append(warning)
-                tprint(f"   ⚠️  SILENT FAILURE DETECTED: {warning}")
-            elif len(metrics) == 0:
-                warning = f"Empty metrics in {sub_pipeline_name}"
-                warnings.append(warning)
-                tprint(f"   ⚠️  SILENT FAILURE DETECTED: {warning}")
-            else:
-                tprint(f"   ✅ Metrics check passed: {len(metrics)} metrics generated")
+            # Execute orchestration
+            orchestration_result = await self.analyst_pre_ml.orchestrate(
+                training_data=None,  # TODO: Load from artifacts
+                regime_assignments=None,  # TODO: Load from market_analysis
+            )
             
-            # Check 3: Missing performance indicators
-            performance = artifacts.get('performance', {})
-            if not performance:
-                warning = f"No performance indicators in {sub_pipeline_name}"
-                warnings.append(warning)
-                tprint(f"   ⚠️  SILENT FAILURE DETECTED: {warning}")
-            else:
-                tprint(f"   ✅ Performance check passed: {len(performance)} indicators")
-            
-            # Check 4: Check for NaN or infinite values in metrics
-            if metrics:
-                for metric_name, metric_value in metrics.items():
-                    if isinstance(metric_value, (int, float)):
-                        if pd.isna(metric_value) or np.isinf(metric_value):
-                            warning = f"Invalid metric value in {sub_pipeline_name}: {metric_name} = {metric_value}"
-                            warnings.append(warning)
-                            tprint(f"   ⚠️  SILENT FAILURE DETECTED: {warning}")
-                    elif isinstance(metric_value, dict):
-                        for sub_metric, sub_value in metric_value.items():
-                            if isinstance(sub_value, (int, float)):
-                                if pd.isna(sub_value) or np.isinf(sub_value):
-                                    warning = f"Invalid sub-metric value in {sub_pipeline_name}: {metric_name}.{sub_metric} = {sub_value}"
-                                    warnings.append(warning)
-                                    tprint(f"   ⚠️  SILENT FAILURE DETECTED: {warning}")
-            
-            # Check 5: Check for suspiciously low model counts
-            expected_model_counts = {
-                'analyst_model_training': 4,  # TEMPORAL_FUSION_TRANSFORMER, TABNET, HIST_GRADIENT_BOOSTING, EXTRA_TREES
-        'analyst_ensemble_training': 1,  # Single ensemble model
-        'tactician_pre_ml_orchestration': 0,  # No models, just orchestration
-        'tactician_training': 4  # 3 base models + 1 ensemble (XGBOOST, LIGHTGBM, DEEPSCALER_1M, FINANCIAL_RESNET)
+            result.success = orchestration_result.success
+            result.status = SubPipelineStatus.COMPLETED if orchestration_result.success else SubPipelineStatus.FAILED
+            result.error_message = orchestration_result.error_message
+            result.artifacts = {
+                'final_features': orchestration_result.final_features,
+                'selected_features': orchestration_result.selected_feature_names,
+                'feature_count': orchestration_result.final_feature_count
             }
             
-            if sub_pipeline_name in expected_model_counts:
-                expected_count = expected_model_counts[sub_pipeline_name]
-                actual_count = len(models)
-                if actual_count < expected_count:
-                    warning = f"Lower than expected model count in {sub_pipeline_name}: {actual_count} < {expected_count}"
-                    warnings.append(warning)
-                    tprint(f"   ⚠️  SILENT FAILURE DETECTED: {warning}")
-                else:
-                    tprint(f"   ✅ Model count check passed: {actual_count} >= {expected_count}")
-            
-            if warnings:
-                tprint(f"   🚨 Total silent failures detected: {len(warnings)}")
-                self.logger.warning(f"⚠️ Silent failures detected in {sub_pipeline_name}: {len(warnings)} warnings")
-            else:
-                tprint(f"   ✅ No silent failures detected")
-                
         except Exception as e:
-            error_msg = f"Silent failure detection failed: {e}"
-            tprint(f"   ❌ {error_msg}")
-            self.logger.error(f"❌ {error_msg}")
-            warnings.append(error_msg)
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = str(e)
+            self.logger.error(f'❌ Analyst pre-ML orchestration failed: {e}')
         
-        return warnings
+        result.end_time = datetime.now()
+        result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+        return result
     
-    # Sub-pipeline implementations
-    
-    async def _analyst_model_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Analyst model training sub-pipeline with centralized helpers and configuration."""
-        tprint(f"   📊 ANALYST MODEL TRAINING PIPELINE STARTED")
-        self.logger.info("📊 Executing analyst model training pipeline")
-
-        timestamp = self._generate_datetime_stamp()
-        artifacts = self._prepare_artifacts(config, "analyst_models_training_report", timestamp, include_temporal_fields=True)
-
+    async def _execute_analyst_models_training(
+        self, config: SubPipelineConfig, pre_ml_result: SubPipelineResult
+    ) -> SubPipelineResult:
+        """Execute Analyst models training (base models)."""
+        result = SubPipelineResult(
+            sub_pipeline_name='analyst_models_training',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
+        
         try:
-            # Step 1: Load temporal features
-            tprint(f"   🔍 Loading temporal features from MARKET_ANALYSIS stage...")
-            temporal_loaded = await self._load_temporal_features(config)
-            if temporal_loaded:
-                temporal_info = self._get_temporal_feature_info()
-                artifacts['temporal_features_used'] = True
-                artifacts['temporal_feature_info'] = temporal_info
-                tprint(f"   ✅ Loaded {temporal_info['count']} temporal features")
-                self.logger.info(f"✅ Using {temporal_info['count']} temporal features in analyst model training")
-            else:
-                tprint(f"   ⚠️  No temporal features loaded - proceeding with base features only")
-
-            # Step 2: Mode validation
-            if config.mode == ExecutionMode.BLANK:
-                tprint_error("❌ BLANK mode not supported - actual training required")
-                raise ValueError("BLANK mode is not supported. Actual model training is required for production use.")
-
-            # Step 3: Build enhanced configuration
-            tprint(f"   🔍 Creating enhanced configuration...")
-            enhanced_config = self._build_enhanced_config(config, include_temporal=temporal_loaded)
-            tprint(f"   ✅ Configuration prepared (cv={enhanced_config['cv_config']['strategy']}, metrics={len(enhanced_config['metrics_config']['names'])})")
-
-            # Step 4: Initialize trainer
-            tprint(f"   🔍 Initializing analyst models trainer...")
-            TrainerClass = self._import_trainer_class('analyst_models_training_refactored', 'AnalystModelsTrainingStepRefactored')
-            trainer = TrainerClass()
-            tprint(f"   ✅ Trainer initialized successfully")
-
-            # Step 5: Execute training (supports sync or async)
-            tprint(f"   🔍 Executing analyst model training...")
-            training_start = datetime.now()
-            training_result = await self._invoke_trainer_method(
-                trainer,
-                'execute',
-                training_input={
-                    'symbol': config.symbol,
-                    'exchange': config.exchange,
-                    'timeframe': config.timeframe,
-                    'data_dir': config.data_dir
-                },
-                pipeline_state=enhanced_config
-            )
-            training_duration = (datetime.now() - training_start).total_seconds()
-            tprint(f"   ✅ Training completed in {training_duration:.2f} seconds")
-
-            # Step 6: Process results
-            tprint(f"   🔍 Processing training results...")
-            models = training_result.get('models', [])
-            artifacts['models'] = self._standardize_model_names(models, timestamp)
-            artifacts['metrics'] = training_result.get('metrics', {})
-            artifacts['performance'] = training_result.get('performance', {})
-
-            tprint(f"   ✅ Processed {len(artifacts['models'])} models, {len(artifacts['metrics'])} metrics, {len(artifacts['performance'])} performance indicators")
-            self.logger.info(f"✅ Analyst model training completed with {len(artifacts['models'])} models")
-
-        except Exception as e:
-            error_msg = f"Analyst model training failed: {e}"
-            tprint(f"   ❌ TRAINING FAILED: {error_msg}")
-            self.logger.error(f"❌ {error_msg}")
-            raise RuntimeError(error_msg) from e
-
-        tprint(f"   ✅ ANALYST MODEL TRAINING PIPELINE COMPLETED")
-        return artifacts
-    
-    async def _analyst_ensemble_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Analyst Ensemble Training with centralized helpers and configuration."""
-        tprint(f"   🎭 ANALYST ENSEMBLE TRAINING PIPELINE STARTED")
-        self.logger.info("🎭 Executing analyst ensemble training pipeline (per-regime ensemble models)")
-
-        timestamp = self._generate_datetime_stamp()
-        artifacts = self._prepare_artifacts(config, "analyst_ensemble_training_report", timestamp)
-
-        try:
-            if config.mode == ExecutionMode.BLANK:
-                tprint_error("❌ BLANK mode not supported - actual ensemble training required")
-                raise ValueError("BLANK mode is not supported. Actual ensemble training is required for production use.")
-
-            # Enhanced configuration
-            tprint(f"   🔍 Creating enhanced configuration...")
-            enhanced_config = self._build_enhanced_config(config)
-            tprint(f"   ✅ Configuration prepared (cv={enhanced_config['cv_config']['strategy']}, metrics={len(enhanced_config['metrics_config']['names'])})")
-
-            # Initialize trainer
-            tprint(f"   🔍 Initializing analyst ensemble trainer...")
-            TrainerClass = self._import_trainer_class('analyst_ensemble_training', 'AnalystEnsembleTrainingStep')
-            trainer = TrainerClass()
-            tprint(f"   ✅ Trainer initialized successfully")
-
+            if not self.analyst_training:
+                raise RuntimeError("Analyst training pipeline not available")
+            
+            self.logger.info('📈 Executing Analyst Models Training...')
+            
             # Execute training
-            tprint(f"   🔍 Executing analyst ensemble training...")
-            training_start = datetime.now()
-            training_result = await self._invoke_trainer_method(
-                trainer,
-                'execute_analyst_ensemble_training',
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe,
-                data_dir=config.data_dir,
-                force_rerun=config.force_rerun,
-                enhanced_config=enhanced_config
+            training_result = await self.analyst_training.train_analyst_models(
+                training_data=pre_ml_result.artifacts.get('final_features'),
+                feature_columns=pre_ml_result.artifacts.get('selected_features', []),
+                target_columns=['target_long', 'target_short'],  # TODO: Get from config
             )
-            training_duration = (datetime.now() - training_start).total_seconds()
-            tprint(f"   ✅ Ensemble training completed in {training_duration:.2f} seconds")
-
-            # Process results
-            tprint(f"   🔍 Processing ensemble training results...")
-            models = training_result.get('models', [])
-            artifacts['models'] = self._standardize_model_names(models, timestamp)
-            artifacts['metrics'] = training_result.get('metrics', {})
-            artifacts['performance'] = training_result.get('performance', {})
-
-            tprint(f"   ✅ Processed {len(artifacts['models'])} ensemble models, {len(artifacts['metrics'])} metrics, {len(artifacts['performance'])} performance indicators")
-            self.logger.info(f"✅ Analyst ensemble training completed with {len(artifacts['models'])} models")
-
+            
+            result.success = training_result.base_training_completed
+            result.status = SubPipelineStatus.COMPLETED if result.success else SubPipelineStatus.FAILED
+            result.artifacts = {
+                'base_models': training_result.base_models,
+                'metrics': training_result.base_training_metrics
+            }
+            
         except Exception as e:
-            error_msg = f"Analyst ensemble training failed: {e}"
-            tprint(f"   ❌ ENSEMBLE TRAINING FAILED: {error_msg}")
-            self.logger.error(f"❌ {error_msg}")
-            raise RuntimeError(error_msg) from e
-
-        tprint(f"   ✅ ANALYST ENSEMBLE TRAINING PIPELINE COMPLETED")
-        return artifacts
-    
-    async def _tactician_lookback_optimization_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Tactician lookback optimization sub-pipeline with enhanced error handling and reporting."""
-        tprint(f"   🎯 TACTICIAN LOOKBACK OPTIMIZATION PIPELINE STARTED")
-        self.logger.info("🎯 Executing tactician lookback optimization pipeline")
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = str(e)
+            self.logger.error(f'❌ Analyst models training failed: {e}')
         
-        # Initialize artifacts with datetime-stamped filenames
-        timestamp = self._generate_datetime_stamp()
-        artifacts = {
-            'optimization_results': {},
-            'optimized_lookbacks': {},
-            'performance_metrics': {},
-            'optimization_report': f"tactician_lookback_optimization_report_{config.symbol}_{config.exchange}_{config.timeframe}_{timestamp}.json"
-        }
+        result.end_time = datetime.now()
+        result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+        return result
+    
+    async def _execute_analyst_ensemble_training(
+        self, config: SubPipelineConfig, models_result: SubPipelineResult
+    ) -> SubPipelineResult:
+        """Execute Analyst ensemble training."""
+        result = SubPipelineResult(
+            sub_pipeline_name='analyst_ensemble_training',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
         
         try:
-            # Step 1: Check execution mode
-            if config.mode == ExecutionMode.BLANK:
-                tprint_error("❌ BLANK mode not supported - actual optimization required")
-                raise ValueError("BLANK mode is not supported. Actual lookback optimization is required for production use.")
+            if not self.analyst_training:
+                raise RuntimeError("Analyst training pipeline not available")
             
-            # Step 2: Import optimization module
-            tprint(f"   🔍 Importing tactician lookback optimization module...")
-            try:
-                # This import may not be available - it's optional
-                from .tactician_lookback_optimization_step import TacticianLookbackOptimizationStep  # type: ignore
-                tprint(f"   ✅ Successfully imported tactician lookback optimization module")
-            except ImportError as e:
-                error_msg = f"Tactician lookback optimization not available: {e}"
-                tprint(f"   ❌ IMPORT FAILED: {error_msg}")
-                self.logger.error(f"❌ {error_msg}")
-                raise RuntimeError(error_msg) from e
+            self.logger.info('🔄 Executing Analyst Ensemble Training...')
             
-            # Step 3: Create optimization configuration
-            tprint(f"   🔍 Creating optimization configuration...")
-            optimization_config = {
-                'symbol': config.symbol,
-                'exchange': config.exchange,
-                'timeframe': '1m',  # Tactician operates on 1m
-                'optimization_method': 'two_step_grid_tpe',
-                'tpe_trials': 25,
-                'optimization_timeout': 3600,
-                'save_results': True,
-                'results_path': f'./results/tactician_lookback_optimization/{config.symbol}_{config.exchange}'
+            # Ensemble training is handled within the analyst_training pipeline
+            # The result is already available from the models training step
+            result.success = True
+            result.status = SubPipelineStatus.COMPLETED
+            result.artifacts = {
+                'ensemble_models': models_result.artifacts.get('base_models'),  # Placeholder
+                'predictions': None  # TODO: Generate predictions
             }
-            
-            # Add custom parameters if provided
-            if config.custom_params:
-                optimization_config.update(config.custom_params)
-            
-            tprint(f"   ✅ Configuration prepared for {optimization_config['timeframe']} timeframe")
-            
-            # Step 4: Initialize optimization step
-            tprint(f"   🔍 Initializing tactician lookback optimization step...")
-            optimization_step = TacticianLookbackOptimizationStep(optimization_config)
-            tprint(f"   ✅ Optimization step initialized successfully")
-            
-            # Step 5: Prepare inputs
-            tprint(f"   🔍 Preparing optimization inputs...")
-            
-            # Load market data (1m timeframe for Tactician)
-            market_data_1m = await self._load_market_data_1m(config)
-            if market_data_1m is None or market_data_1m.empty:
-                raise ValueError("1m market data is required for Tactician lookback optimization")
-            
-            # Load Analyst models and outputs from previous steps
-            analyst_models, analyst_ensemble = await self._load_analyst_models_for_optimization(config)
-            
-            tprint(f"   ✅ Inputs prepared: {len(market_data_1m)} data points, "
-                  f"{len(analyst_models) if analyst_models else 0} analyst models")
-            
-            # Step 6: Execute optimization
-            tprint(f"   🔍 Executing tactician lookback optimization...")
-            optimization_start = datetime.now()
-            
-            optimization_result = await optimization_step.execute(
-                market_data_1m=market_data_1m,
-                analyst_models=analyst_models,
-                analyst_ensemble=analyst_ensemble
-            )
-            
-            optimization_duration = (datetime.now() - optimization_start).total_seconds()
-            tprint(f"   ✅ Optimization completed in {optimization_duration:.2f} seconds")
-            
-            # Step 7: Process results
-            tprint(f"   🔍 Processing optimization results...")
-            
-            optimized_lookbacks = optimization_result.get('optimized_lookbacks', {})
-            optimization_score = optimization_result.get('optimization_score', 0.0)
-            
-            # Generate comprehensive pipeline-level artifacts
-            pipeline_artifacts = self._generate_pipeline_optimization_artifacts(
-                optimization_result, optimization_duration, timestamp
-            )
-            
-            artifacts.update({
-                'optimization_results': optimization_result,
-                'optimized_lookbacks': optimized_lookbacks,
-                'optimization_score': optimization_score,
-                'execution_time': optimization_duration,
-                'pipeline_artifacts': pipeline_artifacts,
-                'performance_metrics': {
-                    'optimization_score': optimization_score,
-                    'optimized_indicators': len(optimized_lookbacks),
-                    'execution_time_seconds': optimization_duration,
-                    'timestamp': optimization_start.isoformat(),
-                    'evaluation_statistics': optimization_result.get('optimization_metrics', {}),
-                    'convergence_metrics': optimization_result.get('convergence_analysis', {}),
-                    'feature_distribution': optimization_result.get('feature_analysis', {}),
-                    'quality_assessment': {
-                        'optimization_quality': (
-                            'excellent' if optimization_score > 0.8 else
-                            'good' if optimization_score > 0.6 else
-                            'fair' if optimization_score > 0.4 else 'poor'
-                        ),
-                        'execution_efficiency': 'good' if optimization_duration < 1800 else 'extended',
-                        'data_sufficiency': 'adequate' if optimization_result.get('metadata', {}).get('data_samples', 0) > 1000 else 'limited'
-                    }
-                },
-                'detailed_metrics': {
-                    'optimization_method_performance': optimization_result.get('performance_analysis', {}),
-                    'feature_category_analysis': optimization_result.get('feature_analysis', {}).get('category_analysis', {}),
-                    'convergence_pattern': optimization_result.get('convergence_analysis', {}).get('convergence_pattern', {}),
-                    'analyst_integration_metrics': {
-                        'analyst_models_used': optimization_result.get('metadata', {}).get('analyst_models_count', 0),
-                        'ensemble_integration': optimization_result.get('metadata', {}).get('has_analyst_ensemble', False),
-                        'integration_quality': optimization_result.get('quality_assessment', {}).get('analyst_integration_quality', 'unknown')
-                    }
-                }
-            })
-            
-            tprint(f"   ✅ Results processed: {len(optimized_lookbacks)} optimized lookback periods")
-            
-            # Step 8: Generate comprehensive report
-            tprint(f"   🔍 Generating optimization report...")
-            report = self._create_tactician_optimization_report(
-                optimization_result, config, optimization_duration
-            )
-            
-            # Save report
-            report_path = Path(f"reports/tactician_optimization/{artifacts['optimization_report']}")
-            report_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(report_path, 'w') as f:
-                json.dump(report, f, indent=2, default=str)
-            
-            artifacts['report_path'] = str(report_path)
-            tprint(f"   ✅ Report saved to {report_path}")
-            
-            # Step 9: Log summary
-            tprint(f"   📊 OPTIMIZATION SUMMARY:")
-            tprint(f"      🎯 Optimized Indicators: {len(optimized_lookbacks)}")
-            tprint(f"      📈 Optimization Score: {optimization_score:.4f}")
-            tprint(f"      ⏱️  Execution Time: {optimization_duration:.2f}s")
-            tprint(f"      💾 Report: {artifacts['optimization_report']}")
-            
-            tprint(f"   ✅ TACTICIAN LOOKBACK OPTIMIZATION PIPELINE COMPLETED SUCCESSFULLY")
-            return artifacts
             
         except Exception as e:
-            error_msg = f"Tactician lookback optimization pipeline failed: {e}"
-            tprint(f"   ❌ PIPELINE FAILED: {error_msg}")
-            self.logger.error(f"❌ {error_msg}")
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = str(e)
+            self.logger.error(f'❌ Analyst ensemble training failed: {e}')
+        
+        result.end_time = datetime.now()
+        result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+        return result
+    
+    async def _execute_tactician_pre_ml_orchestration(
+        self, config: SubPipelineConfig, analyst_predictions: Optional[pd.DataFrame]
+    ) -> SubPipelineResult:
+        """Execute Tactician pre-ML orchestration (5m timeframe, filtered on Analyst signals)."""
+        result = SubPipelineResult(
+            sub_pipeline_name='tactician_pre_ml_orchestration',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
+        
+        try:
+            if not self.tactician_pre_ml:
+                raise RuntimeError("Tactician pre-ML orchestrator not available")
             
-            # Add error information to artifacts
-            artifacts['error'] = {
-                'message': str(e),
-                'timestamp': datetime.now().isoformat(),
-                'stage': 'tactician_lookback_optimization'
+            self.logger.info('🔧 Executing Tactician Pre-ML Orchestration (5m, filtered)...')
+            
+            # Execute orchestration with Analyst filtering
+            orchestration_result = await self.tactician_pre_ml.orchestrate(
+                training_data=None,  # TODO: Load from artifacts
+                analyst_predictions=analyst_predictions,
+                regime_assignments=None,  # TODO: Load from market_analysis
+            )
+            
+            result.success = orchestration_result.success
+            result.status = SubPipelineStatus.COMPLETED if orchestration_result.success else SubPipelineStatus.FAILED
+            result.error_message = orchestration_result.error_message
+            result.artifacts = {
+                'final_features': orchestration_result.final_features,
+                'selected_features': orchestration_result.selected_feature_names,
+                'feature_count': orchestration_result.final_feature_count,
+                'filter_ratio': orchestration_result.filter_ratio
             }
             
-            raise RuntimeError(error_msg) from e
+        except Exception as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = str(e)
+            self.logger.error(f'❌ Tactician pre-ML orchestration failed: {e}')
+        
+        result.end_time = datetime.now()
+        result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+        return result
     
-    async def _tactician_models_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Tactician model training with centralized helpers and configuration."""
-        tprint(f"   ⚔️ TACTICIAN MODELS TRAINING PIPELINE STARTED")
-        self.logger.info("⚔️ Executing tactician model training pipeline")
-
-        timestamp = self._generate_datetime_stamp()
-        artifacts = self._prepare_artifacts(config, "tactician_models_training_report", timestamp)
-
+    async def _execute_tactician_models_training(
+        self, config: SubPipelineConfig, pre_ml_result: SubPipelineResult, analyst_predictions: Optional[pd.DataFrame]
+    ) -> SubPipelineResult:
+        """Execute Tactician models training (base models with Analyst features)."""
+        result = SubPipelineResult(
+            sub_pipeline_name='tactician_models_training',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
+        
         try:
-            if config.mode == ExecutionMode.BLANK:
-                tprint_error("❌ BLANK mode not supported - actual tactician training required")
-                raise ValueError("BLANK mode is not supported. Actual tactician model training is required for production use.")
-
-            # Enhanced configuration
-            tprint(f"   🔍 Creating enhanced configuration...")
-            enhanced_config = self._build_enhanced_config(config)
-            tprint(f"   ✅ Configuration prepared (cv={enhanced_config['cv_config']['strategy']}, metrics={len(enhanced_config['metrics_config']['names'])})")
-
-            # Initialize trainer
-            tprint(f"   🔍 Initializing tactician models trainer...")
-            TrainerClass = self._import_trainer_class('tactician_models_training_refactored', 'TacticianModelsTrainingStepRefactored')
-            trainer = TrainerClass()
-            tprint(f"   ✅ Trainer initialized successfully")
-
+            if not self.tactician_training:
+                raise RuntimeError("Tactician training pipeline not available")
+            
+            self.logger.info('📈 Executing Tactician Models Training...')
+            
             # Execute training
-            tprint(f"   🔍 Executing tactician model training...")
-            training_start = datetime.now()
-            training_result = await self._invoke_trainer_method(
-                trainer,
-                'execute',
-                training_input={
-                    'symbol': config.symbol,
-                    'exchange': config.exchange,
-                    'timeframe': config.timeframe,
-                    'data_dir': config.data_dir
-                },
-                pipeline_state=enhanced_config
+            training_result = await self.tactician_training.train_tactician_models(
+                training_data=pre_ml_result.artifacts.get('final_features'),
+                feature_columns=pre_ml_result.artifacts.get('selected_features', []),
+                target_columns=['target_long', 'target_short'],  # TODO: Get from config
             )
-            training_duration = (datetime.now() - training_start).total_seconds()
-            tprint(f"   ✅ Tactician training completed in {training_duration:.2f} seconds")
-
-            # Process results
-            tprint(f"   🔍 Processing tactician training results...")
-            models = training_result.get('models', [])
-            artifacts['models'] = self._standardize_model_names(models, timestamp)
-            artifacts['metrics'] = training_result.get('metrics', {})
-            artifacts['performance'] = training_result.get('performance', {})
-
-            tprint(f"   ✅ Processed {len(artifacts['models'])} tactician models, {len(artifacts['metrics'])} metrics, {len(artifacts['performance'])} performance indicators")
-            self.logger.info(f"✅ Tactician model training completed with {len(artifacts['models'])} models")
-
-        except Exception as e:
-            error_msg = f"Tactician model training failed: {e}"
-            tprint(f"   ❌ TACTICIAN TRAINING FAILED: {error_msg}")
-            self.logger.error(f"❌ {error_msg}")
-            raise RuntimeError(error_msg) from e
-
-        tprint(f"   ✅ TACTICIAN MODELS TRAINING PIPELINE COMPLETED")
-        return artifacts
-    
-    async def _tactician_ensemble_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Tactician ensemble training with centralized helpers and configuration."""
-        tprint(f"   ⚔️🎯 TACTICIAN ENSEMBLE TRAINING PIPELINE STARTED")
-        self.logger.info("⚔️🎯 Executing tactician ensemble training pipeline")
-
-        timestamp = self._generate_datetime_stamp()
-        artifacts = self._prepare_artifacts(config, "tactician_ensemble_training_report", timestamp)
-
-        try:
-            if config.mode == ExecutionMode.BLANK:
-                tprint_error("❌ BLANK mode not supported - actual ensemble training required")
-                raise ValueError("BLANK mode is not supported. Actual tactician ensemble training is required for production use.")
-
-            # Enhanced configuration
-            tprint(f"   🔍 Creating enhanced configuration...")
-            enhanced_config = self._build_enhanced_config(config)
-            tprint(f"   ✅ Configuration prepared (cv={enhanced_config['cv_config']['strategy']}, metrics={len(enhanced_config['metrics_config']['names'])})")
-
-            # Initialize trainer
-            tprint(f"   🔍 Initializing tactician ensemble trainer...")
-            TrainerClass = self._import_trainer_class('tactician_ensemble_training', 'TacticianEnsembleTrainingStep')
-            trainer = TrainerClass()
-            tprint(f"   ✅ Trainer initialized successfully")
-
-            # Execute training
-            tprint(f"   🔍 Executing tactician ensemble training...")
-            training_start = datetime.now()
-            training_result = await self._invoke_trainer_method(
-                trainer,
-                'execute_tactician_ensemble_training',
-                symbol=config.symbol,
-                exchange=config.exchange,
-                timeframe=config.timeframe,
-                data_dir=config.data_dir,
-                force_rerun=config.force_rerun,
-                enhanced_config=enhanced_config
-            )
-            training_duration = (datetime.now() - training_start).total_seconds()
-            tprint(f"   ✅ Tactician ensemble training completed in {training_duration:.2f} seconds")
-
-            # Process results
-            tprint(f"   🔍 Processing tactician ensemble training results...")
-            models = training_result.get('models', [])
-            artifacts['models'] = self._standardize_model_names(models, timestamp)
-            artifacts['metrics'] = training_result.get('metrics', {})
-            artifacts['performance'] = training_result.get('performance', {})
-
-            tprint(f"   ✅ Processed {len(artifacts['models'])} tactician ensemble models, {len(artifacts['metrics'])} metrics, {len(artifacts['performance'])} performance indicators")
-            self.logger.info(f"✅ Tactician ensemble training completed with {len(artifacts['models'])} models")
-
-        except Exception as e:
-            error_msg = f"Tactician ensemble training failed: {e}"
-            tprint(f"   ❌ TACTICIAN ENSEMBLE TRAINING FAILED: {error_msg}")
-            self.logger.error(f"❌ {error_msg}")
-            raise RuntimeError(error_msg) from e
-
-        tprint(f"   ✅ TACTICIAN ENSEMBLE TRAINING PIPELINE COMPLETED")
-        return artifacts
-    
-    async def _load_market_data_1m(self, config: SubPipelineConfig) -> Optional[pd.DataFrame]:
-        """Load 1-minute market data for Tactician optimization."""
-        try:
-            tprint(f"   🔍 Loading 1m market data for {config.symbol}...")
             
-            # Load actual 1m market data from the data collection system
-            try:
-                # Try to load from data cache or collection system
-                from src.data.data_collection.data_collector import DataCollector  # type: ignore
-                from src.data.data_collection.data_collection_config import DataCollectionConfig  # type: ignore
-                
-                # Create data collection config for 1m timeframe
-                data_config = DataCollectionConfig(
-                    symbol=config.symbol,
-                    exchange=config.exchange,
-                    timeframe='1m',
-                    data_dir=config.data_dir
-                )
-                
-                data_collector = DataCollector(data_config)
-                market_data_1m = await data_collector.load_historical_data()
-                
-                if market_data_1m is not None and not market_data_1m.empty:
-                    tprint(f"   ✅ Loaded {len(market_data_1m)} 1m data points for {config.symbol}")
-                    return market_data_1m
-                else:
-                    tprint(f"   ⚠️ No 1m data found in data collection system")
-                    
-            except ImportError:
-                tprint(f"   ⚠️ Data collection system not available")
-            except Exception as e:
-                tprint(f"   ⚠️ Failed to load from data collection system: {e}")
-            
-            # Fallback: try to load from file system
-            try:
-                import glob
-                
-                # Look for 1m data files
-                data_patterns = [
-                    f"{config.data_dir}/**/{config.symbol}*1m*.parquet",
-                    f"{config.data_dir}/**/{config.symbol}*1min*.parquet",
-                    f"{config.data_dir}/**/1m/{config.symbol}*.parquet"
-                ]
-                
-                for pattern in data_patterns:
-                    files = glob.glob(pattern, recursive=True)
-                    if files:
-                        # Load the most recent file
-                        latest_file = max(files, key=lambda x: Path(x).stat().st_mtime)
-                        tprint(f"   🔍 Found 1m data file: {latest_file}")
-                        
-                        market_data_1m = pd.read_parquet(latest_file)
-                        
-                        if not market_data_1m.empty:
-                            tprint(f"   ✅ Loaded {len(market_data_1m)} 1m data points from file")
-                            return market_data_1m
-                
-                tprint(f"   ⚠️ No 1m data files found in {config.data_dir}")
-                
-            except Exception as e:
-                tprint(f"   ⚠️ Failed to load from file system: {e}")
-            
-            # If no data found, raise an error instead of generating mock data
-            raise ValueError(f"No 1m market data found for {config.symbol}. Please ensure 1m data is available in the data collection system or data directory.")
-            
-        except Exception as e:
-            tprint(f"   ❌ Failed to load 1m market data: {e}")
-            self.logger.error(f"Failed to load 1m market data: {e}")
-            return None
-    
-    async def _load_analyst_models_for_optimization(
-        self, 
-        config: SubPipelineConfig
-    ) -> tuple[Optional[Dict[str, Any]], Optional[Any]]:
-        """Load Analyst models and ensemble for use in Tactician optimization."""
-        try:
-            tprint(f"   🔍 Loading Analyst models for optimization...")
-            
-            # Try to load from previous pipeline results
-            analyst_models = {}
-            analyst_ensemble = None
-            
-            # Look for analyst results in previous pipeline executions
-            for result in self.results:
-                if 'analyst' in result.sub_pipeline_name.lower():
-                    if hasattr(result, 'artifacts') and result.artifacts:
-                        if 'models' in result.artifacts:
-                            # Load the actual models
-                            # For now, create mock model objects
-                            models = result.artifacts['models']
-                            for i, model_path in enumerate(models):
-                                analyst_models[f'analyst_model_{i}'] = {
-                                    'path': model_path,
-                                    'loaded': True,
-                                    'type': 'mock_analyst_model'
-                                }
-                        
-                        if 'ensemble' in result.artifacts:
-                            analyst_ensemble = {
-                                'path': result.artifacts['ensemble'],
-                                'loaded': True,
-                                'type': 'mock_analyst_ensemble'
-                            }
-            
-            # Fallback: create mock models if none found
-            if not analyst_models and not analyst_ensemble:
-                tprint(f"   ⚠️ No Analyst models found in previous results, creating mock models")
-                analyst_models = {
-                    'analyst_model_1': {'type': 'mock', 'loaded': True},
-                    'analyst_model_2': {'type': 'mock', 'loaded': True},
-                    'analyst_model_3': {'type': 'mock', 'loaded': True}
-                }
-                analyst_ensemble = {'type': 'mock_ensemble', 'loaded': True}
-            
-            tprint(f"   ✅ Loaded {len(analyst_models)} Analyst models and "
-                  f"{'ensemble' if analyst_ensemble else 'no ensemble'}")
-            
-            return analyst_models, analyst_ensemble
-            
-        except Exception as e:
-            tprint(f"   ❌ Failed to load Analyst models: {e}")
-            self.logger.error(f"Failed to load Analyst models: {e}")
-            return None, None
-    
-    def _create_tactician_optimization_report(
-        self, 
-        optimization_result: Dict[str, Any], 
-        config: SubPipelineConfig, 
-        execution_time: float
-    ) -> Dict[str, Any]:
-        """Create comprehensive report for Tactician optimization results."""
-        try:
-            import numpy as np
-            from datetime import timedelta
-            
-            report = {
-                'report_type': 'tactician_lookback_optimization',
-                'timestamp': datetime.now().isoformat(),
-                'configuration': {
-                    'symbol': config.symbol,
-                    'exchange': config.exchange,
-                    'timeframe': '1m',
-                    'mode': config.mode.value if hasattr(config.mode, 'value') else str(config.mode)
-                },
-                'execution_info': {
-                    'start_time': (datetime.now() - timedelta(seconds=execution_time)).isoformat(),
-                    'end_time': datetime.now().isoformat(),
-                    'duration_seconds': execution_time,
-                    'status': 'completed'
-                },
-                'optimization_results': {
-                    'optimized_lookbacks': optimization_result.get('optimized_lookbacks', {}),
-                    'optimization_score': optimization_result.get('optimization_score', 0.0),
-                    'optimization_method': optimization_result.get('optimization_method', 'unknown'),
-                    'total_evaluations': optimization_result.get('optimization_metrics', {}).get('total_evaluations', 0),
-                    'successful_evaluations': optimization_result.get('optimization_metrics', {}).get('successful_evaluations', 0)
-                },
-                'performance_metrics': {
-                    'indicators_optimized': len(optimization_result.get('optimized_lookbacks', {})),
-                    'average_lookback': np.mean(list(optimization_result.get('optimized_lookbacks', {1: 14}).values())),
-                    'optimization_efficiency': (
-                        optimization_result.get('optimization_metrics', {}).get('successful_evaluations', 0) /
-                        max(1, optimization_result.get('optimization_metrics', {}).get('total_evaluations', 1))
-                    )
-                },
-                'summary': {
-                    'success': True,
-                    'indicators_count': len(optimization_result.get('optimized_lookbacks', {})),
-                    'best_score': optimization_result.get('optimization_score', 0.0),
-                    'execution_time': f"{execution_time:.2f}s"
-                }
+            result.success = training_result.base_training_completed
+            result.status = SubPipelineStatus.COMPLETED if result.success else SubPipelineStatus.FAILED
+            result.artifacts = {
+                'base_models': training_result.base_models,
+                'metrics': training_result.base_training_metrics
             }
             
-            return report
-            
         except Exception as e:
-            self.logger.error(f"Failed to create optimization report: {e}")
-            return {
-                'report_type': 'tactician_lookback_optimization',
-                'timestamp': datetime.now().isoformat(),
-                'error': str(e),
-                'status': 'report_generation_failed'
-            }
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = str(e)
+            self.logger.error(f'❌ Tactician models training failed: {e}')
+        
+        result.end_time = datetime.now()
+        result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+        return result
     
-    def _generate_pipeline_optimization_artifacts(
-        self, 
-        optimization_result: Dict[str, Any], 
-        execution_duration: float, 
-        timestamp: str
-    ) -> Dict[str, Any]:
-        """Generate pipeline-level optimization artifacts with detailed metrics."""
+    async def _execute_tactician_ensemble_training(
+        self, config: SubPipelineConfig, models_result: SubPipelineResult, analyst_predictions: Optional[pd.DataFrame]
+    ) -> SubPipelineResult:
+        """Execute Tactician ensemble training (with Analyst features)."""
+        result = SubPipelineResult(
+            sub_pipeline_name='tactician_ensemble_training',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
+        
         try:
-            artifacts = {
-                'artifact_metadata': {
-                    'generation_timestamp': timestamp,
-                    'pipeline_step': 'tactician_lookback_optimization',
-                    'execution_duration': execution_duration,
-                    'artifact_version': '1.0'
-                },
-                'optimization_artifacts': {
-                    'optimized_lookbacks': optimization_result.get('optimized_lookbacks', {}),
-                    'optimization_method': optimization_result.get('optimization_method', 'unknown'),
-                    'best_score': optimization_result.get('optimization_score', 0.0),
-                    'total_evaluations': optimization_result.get('optimization_metrics', {}).get('total_evaluations', 0),
-                    'convergence_data': optimization_result.get('convergence_analysis', {})
-                },
-                'performance_artifacts': {
-                    'evaluation_statistics': optimization_result.get('optimization_metrics', {}),
-                    'timing_analysis': {
-                        'total_duration': execution_duration,
-                        'evaluations_per_second': (
-                            optimization_result.get('optimization_metrics', {}).get('total_evaluations', 0) /
-                            max(1, execution_duration)
-                        ),
-                        'efficiency_rating': 'high' if execution_duration < 900 else 'medium' if execution_duration < 1800 else 'low'
-                    },
-                    'quality_metrics': {
-                        'optimization_quality': (
-                            'excellent' if optimization_result.get('optimization_score', 0) > 0.8 else
-                            'good' if optimization_result.get('optimization_score', 0) > 0.6 else
-                            'fair' if optimization_result.get('optimization_score', 0) > 0.4 else 'poor'
-                        ),
-                        'success_rate': optimization_result.get('execution_info', {}).get('success_rate', 0.0),
-                        'convergence_achieved': optimization_result.get('optimization_score', 0.0) > 0.5
-                    }
-                },
-                'feature_artifacts': {
-                    'feature_analysis': optimization_result.get('feature_analysis', {}),
-                    'lookback_distribution': optimization_result.get('feature_analysis', {}).get('lookback_distribution', {}),
-                    'category_analysis': optimization_result.get('feature_analysis', {}).get('category_analysis', {}),
-                    'optimization_insights': optimization_result.get('feature_analysis', {}).get('optimization_insights', [])
-                },
-                'integration_artifacts': {
-                    'analyst_dependency_satisfied': optimization_result.get('metadata', {}).get('has_analyst_ensemble', False),
-                    'analyst_models_integrated': optimization_result.get('metadata', {}).get('analyst_models_count', 0),
-                    'cross_model_alignment': optimization_result.get('quality_assessment', {}).get('analyst_integration_quality', 'unknown'),
-                    'dependency_chain_validated': True
-                },
-                'output_artifacts': {
-                    'tactician_ready_lookbacks': optimization_result.get('optimized_lookbacks', {}),
-                    'optimization_parameters_file': f"tactician_optimization_params_{timestamp}.json",
-                    'performance_report_file': f"tactician_optimization_performance_{timestamp}.json",
-                    'integration_status_file': f"tactician_integration_status_{timestamp}.json"
-                }
+            if not self.tactician_training:
+                raise RuntimeError("Tactician training pipeline not available")
+            
+            self.logger.info('🔄 Executing Tactician Ensemble Training...')
+            
+            # Ensemble training is handled within the tactician_training pipeline
+            # The result is already available from the models training step
+            result.success = True
+            result.status = SubPipelineStatus.COMPLETED
+            result.artifacts = {
+                'ensemble_models': models_result.artifacts.get('base_models'),  # Placeholder
+                'predictions': None  # TODO: Generate predictions
             }
             
-            return artifacts
-            
         except Exception as e:
-            tprint_warning(f"⚠️ Failed to generate pipeline optimization artifacts: {e}")
-            return {'error': str(e)}
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = str(e)
+            self.logger.error(f'❌ Tactician ensemble training failed: {e}')
+        
+        result.end_time = datetime.now()
+        result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+        return result
     
     def get_available_sub_pipelines(self) -> List[str]:
         """Get list of available sub-pipelines."""
-        return list(self.sub_pipelines.keys())
-    
-    def get_sub_pipeline_status(self, sub_pipeline_name: str) -> Optional[SubPipelineStatus]:
-        """Get status of a specific sub-pipeline."""
-        for result in self.results:
-            if result.sub_pipeline_name == sub_pipeline_name:
-                return result.status
-        return None
-
-    async def execute_all_steps_from_start(
-        self, 
-        config: Optional[SubPipelineConfig] = None
-    ) -> Dict[str, Any]:
-        """
-        Execute all 5 model training steps automatically from the beginning.
-        
-        This is a convenience method that starts from step 1 (analyst_model_training)
-        and automatically triggers all subsequent steps when each completes.
-        
-        Args:
-            config: Configuration for the sub-pipeline (optional)
-            
-        Returns:
-            Dict with execution results and summary
-        """
-        if config is None:
-            config = self.config
-            
-        self.logger.info('🚀 Starting automatic execution of all 5 model training steps')
-        self.logger.info('=' * 80)
-        self.logger.info('📋 Steps to be executed automatically:')
-        self.logger.info('   1. analyst_model_training - Per-regime individual model training with HPO, saving, and metrics')
-        self.logger.info('   2. analyst_ensemble_training - Per-regime ensemble training with HPO, saving, and metrics')
-        self.logger.info('   3. tactician_pre_ml_orchestration - Pre-ML processing: unified signal processing, optimize features, generate PID features, apply horizon labeling, select features')
-        self.logger.info('   4. tactician_training - Train Tactician models on unified dataset with integrated long/short processing')
-        self.logger.info('   5. tactician_lookback_optimization - Lookback optimization for tactician models')
-        self.logger.info('   6. tactician_models_training - All-regime individual model training with HPO, saving, and metrics')
-        self.logger.info('   7. tactician_ensemble_training - All-regime ensemble training with HPO, saving, and metrics (legacy - now primarily used for combined signals)')
-        self.logger.info('=' * 80)
-        
-        # Execute from the first step - this will automatically trigger all subsequent steps
-        result = await self.execute_sub_pipeline_with_next('analyst_model_training', config)
-        
-        # Get execution summary
-        summary = self.get_execution_summary()
-        
-        return {
-            'success': result.success,
-            'first_step_result': result,
-            'execution_summary': summary,
-            'total_steps_executed': summary['total_sub_pipelines'],
-            'successful_steps': summary['successful_sub_pipelines'],
-            'failed_steps': summary['failed_sub_pipelines'],
-            'total_execution_time': summary['total_execution_time']
-        }
-    
-    async def execute_sub_pipeline_with_next(
-        self, 
-        sub_pipeline_name: str, 
-        config: SubPipelineConfig
-    ) -> SubPipelineResult:
-        """
-        Execute a specific sub-pipeline and automatically trigger subsequent sub-pipelines.
-        
-        This method provides automatic sequential execution of all model training steps:
-        1. analyst_model_training - Per-regime individual model training with HPO, saving, and metrics
-        2. analyst_ensemble_training - Per-regime ensemble training with HPO, saving, and metrics  
-        3. tactician_lookback_optimization - Lookback optimization for tactician models
-        4. tactician_models_training - All-regime individual model training with HPO, saving, and metrics
-        5. tactician_ensemble_training - All-regime ensemble training with HPO, saving, and metrics
-        
-        When one step completes successfully, it automatically triggers the next step.
-        
-        Args:
-            sub_pipeline_name: Name of the sub-pipeline to execute (will trigger all subsequent steps)
-            config: Configuration for the sub-pipeline
-            
-        Returns:
-            SubPipelineResult with execution details
-        """
-        self.logger.info(f'🚀 Starting {sub_pipeline_name} sub-pipeline with sequential execution')
-        
-        # Check if we should execute only a single stage
-        if hasattr(config, 'single_stage_only') and config.single_stage_only:
-            self.logger.info('🎯 Single stage execution mode - executing only the requested sub-pipeline')
-            return await self.execute_sub_pipeline(sub_pipeline_name, config)
-        
-        # Define logical execution groups for model training
-        analyst_steps = [
-            'analyst_model_training',
-            'analyst_ensemble_training'
-        ]
-
-        tactician_steps = [
+        return [
+            'analyst_pre_ml_orchestration',
+            'analyst_models_training',
+            'analyst_ensemble_training',
             'tactician_pre_ml_orchestration',
-            'tactician_training'
+            'tactician_models_training',
+            'tactician_ensemble_training'
         ]
-        
-        # Complete execution sequence
-        execution_sequence = analyst_steps + tactician_steps
-        
-        # Find the starting index
-        try:
-            start_index = execution_sequence.index(sub_pipeline_name)
-        except ValueError:
-            self.logger.error(f"❌ Unknown sub-pipeline: {sub_pipeline_name}")
-            raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
-        
-        # Determine which group we're starting from
-        current_group = None
-        if sub_pipeline_name in analyst_steps:
-            current_group = "Analyst Steps"
-            self.logger.info('🎯 Starting from Analyst steps group - will complete all Analyst steps before moving to Tactician')
-        elif sub_pipeline_name in tactician_steps:
-            current_group = "Tactician Steps"
-            self.logger.info('🎯 Starting from Tactician steps group')
-        
-        self.logger.info(f'📋 Execution sequence: {execution_sequence}')
-        self.logger.info(f'🚀 Starting from index {start_index}: {sub_pipeline_name}')
-        
-        # Execute sub-pipelines starting from the specified one
-        results = []
-        for i in range(start_index, len(execution_sequence)):
-            pipeline_name = execution_sequence[i]
-            
-            # Log group transitions
-            if pipeline_name in analyst_steps and current_group != "Analyst Steps":
-                self.logger.info('🔄 Transitioning to Analyst steps group')
-                current_group = "Analyst Steps"
-            elif pipeline_name in tactician_steps and current_group != "Tactician Steps":
-                self.logger.info('🔄 Transitioning to Tactician steps group')
-                current_group = "Tactician Steps"
-            
-            try:
-                progress_info = f"({i+1-start_index}/{len(execution_sequence)-start_index})"
-                self.logger.info(f'🔄 Executing {pipeline_name} {progress_info} [Group: {current_group}]')
-                result = await self.execute_sub_pipeline(pipeline_name, config)
-                results.append(result)
-                
-                # If this sub-pipeline failed, stop the sequence
-                if not result.success:
-                    self.logger.error(f"❌ {pipeline_name} failed, stopping execution sequence")
-                    break
-                    
-            except Exception as e:
-                self.logger.error(f"❌ Error executing {pipeline_name}: {e}")
-                # Create a failed result
-                failed_result = SubPipelineResult(
-                    sub_pipeline_name=pipeline_name,
-                    status=SubPipelineStatus.FAILED,
-                    start_time=datetime.now(),
-                    end_time=datetime.now(),
-                    duration_seconds=0.0,
-                    error_message=str(e)
-                )
-                results.append(failed_result)
-                break
-        
-        # Return the first result (the one that was requested)
-        if results:
-            return results[0]
+    
+    async def execute_sub_pipeline(self, sub_pipeline_name: str, config: SubPipelineConfig) -> SubPipelineResult:
+        """Execute a specific sub-pipeline."""
+        if sub_pipeline_name == 'analyst_pre_ml_orchestration':
+            return await self._execute_analyst_pre_ml_orchestration(config)
+        elif sub_pipeline_name == 'analyst_models_training':
+            # Need pre-ML result, TODO: load from artifacts
+            raise NotImplementedError("Individual execution not yet supported, use full pipeline")
+        elif sub_pipeline_name == 'analyst_ensemble_training':
+            raise NotImplementedError("Individual execution not yet supported, use full pipeline")
+        elif sub_pipeline_name == 'tactician_pre_ml_orchestration':
+            return await self._execute_tactician_pre_ml_orchestration(config, None)
+        elif sub_pipeline_name == 'tactician_models_training':
+            raise NotImplementedError("Individual execution not yet supported, use full pipeline")
+        elif sub_pipeline_name == 'tactician_ensemble_training':
+            raise NotImplementedError("Individual execution not yet supported, use full pipeline")
         else:
-            # Return a failed result if no execution occurred
-            return SubPipelineResult(
-                sub_pipeline_name=sub_pipeline_name,
-                status=SubPipelineStatus.FAILED,
-                start_time=datetime.now(),
-                end_time=datetime.now(),
-                duration_seconds=0.0,
-                error_message="No execution occurred"
-            )
+            raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
     
     def get_execution_summary(self) -> Dict[str, Any]:
-        """Get comprehensive summary of all sub-pipeline executions."""
-        total_executions = len(self.results)
-        completed = sum(1 for r in self.results if r.status == SubPipelineStatus.COMPLETED)
-        failed = sum(1 for r in self.results if r.status == SubPipelineStatus.FAILED)
-        total_duration = sum(r.duration_seconds or 0 for r in self.results)
-        
-        # Generate summary report with timestamp
-        timestamp = self._generate_datetime_stamp()
-        summary_report_path = f"{self.config.data_dir}/reports/execution_summary_{timestamp}.json"
-        
-        summary_data = {
-            'metadata': {
-                'timestamp': timestamp,
-                'total_executions': total_executions,
-                'completed': completed,
-                'failed': failed,
-                'success_rate': completed / total_executions if total_executions > 0 else 0,
-                'total_duration_seconds': total_duration
-            },
-            'results': [
+        """Get execution summary."""
+        return {
+            'total_sub_pipelines': len(self.results),
+            'successful_sub_pipelines': len([r for r in self.results if r.success]),
+            'failed_sub_pipelines': len([r for r in self.results if not r.success]),
+            'total_execution_time': sum(r.duration_seconds for r in self.results),
+            'sub_pipeline_results': [
                 {
-                    'sub_pipeline_name': r.sub_pipeline_name,
+                    'name': r.sub_pipeline_name,
                     'status': r.status.value,
-                    'duration_seconds': r.duration_seconds,
-                    'error_message': r.error_message,
-                    'artifacts_count': len(r.artifacts) if r.artifacts else 0
+                    'success': r.success,
+                    'execution_time': r.duration_seconds,
+                    'error_message': r.error_message
                 }
                 for r in self.results
             ]
         }
-        
-        # Save summary report
-        try:
-            Path(f"{self.config.data_dir}/reports").mkdir(parents=True, exist_ok=True)
-            with open(summary_report_path, 'w') as f:
-                json.dump(summary_data, f, indent=2, default=str)
-            self.logger.info(f"📋 Execution summary saved: {summary_report_path}")
-        except Exception as e:
-            self.logger.error(f"❌ Failed to save execution summary: {e}")
-        
-        return summary_data
 
-    async def _tactician_pre_ml_orchestration_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Tactician pre-ML orchestration pipeline: unified signal processing, optimize features, generate PID features, apply horizon labeling, select features."""
-        tprint(f"   🎯 TACTICIAN PRE-ML ORCHESTRATION PIPELINE STARTED")
-        self.logger.info("🎯 Executing tactician pre-ML orchestration pipeline")
-        self.logger.info("   📊 Step 1: Load Analyst signals for unified processing with confidence filtering")
-        self.logger.info("   🔍 Step 2: Optimize feature lookback periods for unified signals")
-        self.logger.info("   🧬 Step 3: Generate PID-based features for unified signals")
-        self.logger.info("   🎯 Step 4: Apply multi-horizon profit labeling")
-        self.logger.info("   🔧 Step 5: Select final features for unified signals")
-        
-        try:
-            # Perform comprehensive data quality validation
-            if not await self._load_training_data(config):
-                return {
-                    'status': 'failed',
-                    'error': 'Training data validation failed - insufficient quality'
-                }
 
-            # Step 1: Load Analyst signals for unified processing with confidence filtering
-            tprint(f"   📊 Step 1: Loading Analyst signals for unified processing with confidence filtering...")
-            signal_loading_result = await self._load_unified_analyst_signals(config)
-            if not signal_loading_result['success']:
-                return {
-                    'status': 'failed',
-                    'error': f"Signal loading failed: {signal_loading_result['error']}"
-                }
-            tprint(f"   ✅ Loaded {signal_loading_result['signal_count']} unified signals")
-
-            # Step 2: Optimize feature lookback periods for unified signals
-            tprint(f"   🔍 Step 2: Optimizing feature lookback periods for unified signals...")
-            lookback_optimization_result = await self._optimize_unified_feature_lookback_periods(config, signal_loading_result)
-            if not lookback_optimization_result['success']:
-                return {
-                    'status': 'failed',
-                    'error': f"Lookback optimization failed: {lookback_optimization_result['error']}"
-                }
-            tprint(f"   ✅ Optimized lookback period: {lookback_optimization_result['lookback_period']} for unified signals")
-
-            # Step 3: Generate PID-based features for unified signals
-            tprint(f"   🧬 Step 3: Generating PID-based features for unified signals...")
-            pid_features_result = await self._generate_unified_pid_features(config, signal_loading_result, lookback_optimization_result)
-            if not pid_features_result['success']:
-                return {
-                    'status': 'failed',
-                    'error': f"PID feature generation failed: {pid_features_result['error']}"
-                }
-            tprint(f"   ✅ Generated {pid_features_result['feature_count']} PID features for unified signals")
-
-            # Step 4: Apply multi-horizon profit labeling
-            tprint(f"   🎯 Step 4: Applying multi-horizon profit labeling for unified signals...")
-            labeling_result = await self._apply_unified_multi_horizon_labeling(config, signal_loading_result, pid_features_result)
-            if not labeling_result['success']:
-                return {
-                    'status': 'failed',
-                    'error': f"Multi-horizon labeling failed: {labeling_result['error']}"
-                }
-            tprint(f"   ✅ Applied labeling with {labeling_result['label_count']} labels for unified signals")
-
-            # Step 5: Select final features for unified signals
-            tprint(f"   🔧 Step 5: Selecting final features for unified signals...")
-            feature_selection_result = await self._select_unified_final_features(config, signal_loading_result, pid_features_result, labeling_result)
-            if not feature_selection_result['success']:
-                return {
-                    'status': 'failed',
-                    'error': f"Feature selection failed: {feature_selection_result['error']}"
-                }
-            tprint(f"   ✅ Selected {feature_selection_result['final_feature_count']} final features for unified signals")
-
-            # Compile results
-            orchestration_results = {
-                'status': 'completed',
-                'message': 'Tactician pre-ML orchestration pipeline completed successfully',
-                'signal_loading': signal_loading_result,
-                'lookback_optimization': lookback_optimization_result,
-                'pid_features': pid_features_result,
-                'labeling': labeling_result,
-                'feature_selection': feature_selection_result,
-                'timestamp': self._generate_datetime_stamp()
-            }
-
-            return orchestration_results
-            
-        except Exception as e:
-            self.logger.error(f"❌ Tactician pre-ML orchestration pipeline failed: {e}")
-            raise
-
-    async def _tactician_training_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Tactician training pipeline: train models with unified approach using RandomSurvivalForest, XGBoost, and ElasticNetCV."""
-        tprint(f"   ⚔️ TACTICIAN TRAINING PIPELINE STARTED")
-        self.logger.info("⚔️ Executing tactician training pipeline")
-
-        try:
-            # Step 1: Load unified pre-ML orchestration results
-            tprint(f"   📊 Step 1: Loading unified pre-ML orchestration results...")
-            orchestration_results = await self._load_unified_orchestration_results(config)
-            if not orchestration_results['success']:
-                return {
-                    'status': 'failed',
-                    'error': f"Failed to load unified orchestration results: {orchestration_results['error']}"
-                }
-            tprint(f"   ✅ Loaded unified orchestration results with {orchestration_results['feature_count']} features for {len(orchestration_results['signal_types'])} signal types")
-
-            # Step 2: Train models on unified dataset (4 base models + 1 ensemble)
-            tprint(f"   📈 Step 2: Training unified signal models (4 base + 1 ensemble)...")
-            training_result = await self._train_unified_signal_models(config, orchestration_results)
-            if not training_result['success']:
-                return {
-                    'status': 'failed',
-                    'error': f"Unified signal training failed: {training_result['error']}"
-                }
-            tprint(f"   ✅ Trained {training_result['model_count']} unified signal models")
-
-            # Step 3: Validate model performance and quality
-            tprint(f"   🔍 Step 3: Validating model performance and quality...")
-            validation_result = await self._validate_unified_training_models(config, training_result)
-            if not validation_result['success']:
-                return {
-                    'status': 'failed',
-                    'error': f"Model validation failed: {validation_result['error']}"
-                }
-            tprint(f"   ✅ Validation passed: {validation_result['valid_models']} valid models")
-
-            # Step 4: Save models and generate training report
-            tprint(f"   💾 Step 4: Saving models and generating training report...")
-            save_result = await self._save_unified_training_models(config, training_result, validation_result)
-            if not save_result['success']:
-                return {
-                    'status': 'failed',
-                    'error': f"Model saving failed: {save_result['error']}"
-                }
-            tprint(f"   ✅ Saved {save_result['saved_models']} unified models to {save_result['save_path']}")
-
-            # Compile results
-            training_results = {
-                'status': 'completed',
-                'message': 'Tactician unified training pipeline completed successfully',
-                'orchestration_results': orchestration_results,
-                'training': training_result,
-                'validation': validation_result,
-                'save_results': save_result,
-                'total_models': training_result['model_count'],
-                'signal_types': orchestration_results['signal_types'],
-                'timestamp': self._generate_datetime_stamp()
-            }
-            
-            return training_results
-            
-        except Exception as e:
-            self.logger.error(f"❌ Tactician dual training pipeline failed: {e}")
-            raise
-
-    # ============================================================================
-    # TACTICIAN PRE-ML ORCHESTRATION HELPER METHODS
-    # ============================================================================
-    
-    async def _load_unified_analyst_signals(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Load Analyst model predictions for unified signal processing with confidence filtering."""
-        try:
-            tprint_debug(f"   🔍 Loading Analyst model predictions for unified processing...")
-
-            # Load Analyst model predictions
-            analyst_predictions_path = f"{config.data_dir}/analyst_models/predictions"
-            if not Path(analyst_predictions_path).exists():
-                return {
-                    'success': False,
-                    'error': f"Analyst predictions not found at {analyst_predictions_path}"
-                }
-
-            # Load and process predictions
-            predictions_data = []
-            for pred_file in Path(analyst_predictions_path).glob("*.json"):
-                with open(pred_file, 'r') as f:
-                    pred_data = json.load(f)
-                    predictions_data.extend(pred_data.get('predictions', []))
-
-            if not predictions_data:
-                return {
-                    'success': False,
-                    'error': "No Analyst predictions found"
-                }
-            
-            # Convert to DataFrame for processing
-            df = pd.DataFrame(predictions_data)
-
-            # Apply confidence filtering (threshold: 0.6)
-            confidence_threshold = 0.6
-            high_confidence_mask = df['confidence'] >= confidence_threshold
-
-            # Filter high-confidence signals
-            filtered_signals = df[high_confidence_mask]
-
-            # For unified processing, we keep all signal types (long and short)
-            signal_types = filtered_signals['signal'].unique()
-
-            # Save filtered signals for unified processing
-            signals_output_path = f"{config.data_dir}/tactician/signals"
-            Path(signals_output_path).mkdir(parents=True, exist_ok=True)
-
-            # Save as unified signals (both long and short)
-            unified_signals_path = f"{signals_output_path}/unified_signals.json"
-            filtered_signals.to_json(unified_signals_path, orient='records')
-
-            self.logger.info(f"✅ Loaded {len(filtered_signals)} unified signals (confidence >= {confidence_threshold}) - Types: {list(signal_types)}")
-
-            return {
-                'success': True,
-                'signal_types': list(signal_types),
-                'signal_count': len(filtered_signals),
-                'signals_path': unified_signals_path,
-                'confidence_threshold': confidence_threshold,
-                'is_unified': True
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Signal loading failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    async def _optimize_unified_feature_lookback_periods(self, config: SubPipelineConfig, signal_loading_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Optimize feature lookback periods for unified signals."""
-        try:
-            tprint_debug(f"   🔍 Optimizing feature lookback periods for unified signals...")
-
-            # Import lookback optimization utilities
-            try:
-                from src.feature_generation.utils.optimization.lookback_optimizer import LookbackOptimizer
-            except ImportError:
-                # Fallback to default lookback periods for unified signals
-                # Use a balanced lookback period that works for both long and short signals
-                default_lookback = 18  # Balanced between 15 (short) and 20 (long)
-                return {
-                    'success': True,
-                    'lookback_period': default_lookback,
-                    'signal_types': signal_loading_result['signal_types'],
-                    'optimization_method': 'default'
-                }
-            
-            # Load signal data
-            signals = pd.read_json(signal_loading_result['signals_path'])
-            signal_types = signal_loading_result['signal_types']
-
-            # Optimize lookback periods for unified signals
-            optimizer = LookbackOptimizer()
-
-            # Optimize for unified signals (both long and short)
-            optimized_lookback = await optimizer.optimize_lookback_period_unified(
-                signals=signals,
-                signal_types=signal_types,
-                config=config
-            )
-
-            # Save optimization results
-            optimization_results = {
-                'signal_types': signal_types,
-                'lookback_period': optimized_lookback,
-                'optimization_timestamp': self._generate_datetime_stamp()
-            }
-
-            optimization_path = f"{config.data_dir}/tactician/unified_lookback_optimization.json"
-            Path(optimization_path).parent.mkdir(parents=True, exist_ok=True)
-            with open(optimization_path, 'w') as f:
-                json.dump(optimization_results, f, indent=2)
-
-            self.logger.info(f"✅ Optimized lookback period for unified signals: {optimized_lookback}")
-
-            return {
-                'success': True,
-                'lookback_period': optimized_lookback,
-                'signal_types': signal_types,
-                'optimization_path': optimization_path
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Lookback optimization failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    async def _generate_unified_pid_features(self, config: SubPipelineConfig, signal_loading_result: Dict[str, Any], lookback_optimization_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate PID-based features for unified signals."""
-        try:
-            tprint_debug(f"   🔍 Generating PID-based features for unified signals...")
-
-            # Import PID feature generation utilities
-            try:
-                from src.training.steps.pre_training.pid_based_feature_generation.pid_based_feature_generation_component import PIDBasedFeatureGenerationComponent as PIDFeatureGenerator
-            except ImportError:
-                return {
-                    'success': False,
-                    'error': "PID feature generator not available"
-                }
-            
-            # Initialize PID feature generator
-            pid_generator = PIDFeatureGenerator()
-
-            # Generate features for unified signals (both long and short)
-            signal_types = signal_loading_result['signal_types']
-            features = await pid_generator.generate_unified_features(
-                signals_path=signal_loading_result['signals_path'],
-                lookback_period=lookback_optimization_result['lookback_period'],
-                signal_types=signal_types,
-                config=config
-            )
-
-            # Save features
-            features_data = {
-                'signal_types': signal_types,
-                'features': features,
-                'generation_timestamp': self._generate_datetime_stamp()
-            }
-
-            features_path = f"{config.data_dir}/tactician/unified_pid_features.json"
-            Path(features_path).parent.mkdir(parents=True, exist_ok=True)
-            with open(features_path, 'w') as f:
-                json.dump(features_data, f, indent=2, default=str)
-
-            self.logger.info(f"✅ Generated {len(features)} PID features for unified signals")
-
-            return {
-                'success': True,
-                'feature_count': len(features),
-                'signal_types': signal_types,
-                'features_path': features_path
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ PID feature generation failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    async def _apply_unified_multi_horizon_labeling(self, config: SubPipelineConfig, signal_loading_result: Dict[str, Any], pid_features_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Apply multi-horizon profit labeling for unified signals."""
-        try:
-            tprint_debug(f"   🔍 Applying multi-horizon profit labeling for unified signals...")
-
-            # Import multi-horizon labeling utilities
-            try:
-                from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonProfitLabeler
-            except ImportError:
-                return {
-                    'success': False,
-                    'error': "Multi-horizon profit labeler not available"
-                }
-            
-            # Initialize labeler
-            labeler = MultiHorizonProfitLabeler()
-            
-            # Load PID features
-            with open(pid_features_result['features_path'], 'r') as f:
-                features_data = json.load(f)
-            
-            # Apply labeling to the specific signal type
-            signal_type = signal_loading_result['signal_types'][0] if signal_loading_result['signal_types'] else 'unknown'
-            labels = await labeler.apply_labeling(
-                features=features_data['features'],
-                signal_type=signal_type,
-                config=config
-            )
-            
-            # Save labels
-            labels_data = {
-                'signal_type': signal_type,
-                'labels': labels,
-                'labeling_timestamp': self._generate_datetime_stamp()
-            }
-            
-            labels_path = f"{config.data_dir}/tactician/multi_horizon_labels.json"
-            Path(labels_path).parent.mkdir(parents=True, exist_ok=True)
-            with open(labels_path, 'w') as f:
-                json.dump(labels_data, f, indent=2, default=str)
-            
-            self.logger.info(f"✅ Applied {len(labels)} multi-horizon labels for {signal_type} signals")
-            
-            return {
-                'success': True,
-                'label_count': len(labels),
-                'signal_type': signal_type,
-                'labels_path': labels_path
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Multi-horizon labeling failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    
-    # ============================================================================
-    # TACTICIAN DUAL TRAINING HELPER METHODS
-    # ============================================================================
-    
-    async def _load_unified_orchestration_results(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Load unified pre-ML orchestration results."""
-        try:
-            tprint_debug(f"   🔍 Loading unified orchestration results...")
-
-            # Load unified final features from orchestration
-            final_features_path = f"{config.data_dir}/tactician/unified_final_features.json"
-            if not Path(final_features_path).exists():
-                return {
-                    'success': False,
-                    'error': f"Unified final features not found at {final_features_path}"
-                }
-
-            with open(final_features_path, 'r') as f:
-                orchestration_data = json.load(f)
-
-            signal_types = orchestration_data.get('signal_types', [])
-            feature_count = len(orchestration_data.get('selected_features', []))
-
-            self.logger.info(f"✅ Loaded unified orchestration results with {feature_count} features for {len(signal_types)} signal types")
-
-            return {
-                'success': True,
-                'feature_count': feature_count,
-                'signal_types': signal_types,
-                'orchestration_data': orchestration_data,
-                'final_features_path': final_features_path
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to load orchestration results: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    async def _train_signal_models(self, config: SubPipelineConfig, orchestration_results: Dict[str, Any]) -> Dict[str, Any]:
-        """Train models for single-direction signal type (4 base models + 1 ensemble)."""
-        try:
-            signal_type = orchestration_results['signal_type']
-            tprint_debug(f"   🔍 Training {signal_type} signal models...")
-            
-            # Import tactician training utilities
-            try:
-                from src.training.steps.model_training.tactician_trainer import TacticianTrainer
-            except ImportError:
-                return {
-                    'success': False,
-                    'error': "Tactician trainer not available"
-                }
-            
-            # Initialize trainer
-            trainer = TacticianTrainer()
-            
-            # Train 4 base models for the signal type
-            base_models = []
-            model_types = ['random_forest', 'xgboost', 'lightgbm', 'catboost']
-            
-            for model_type in model_types:
-                model_result = await trainer.train_base_model(
-                    features=orchestration_results['orchestration_data']['selected_features'],
-                    signal_type=signal_type,
-                    model_type=model_type,
-                    config=config
-                )
-                
-                if model_result['success']:
-                    base_models.append(model_result['model'])
-                    self.logger.info(f"✅ Trained {model_type} model for {signal_type} signals")
-                else:
-                    self.logger.warning(f"⚠️ Failed to train {model_type} model: {model_result['error']}")
-            
-            # Train ensemble model
-            ensemble_result = await trainer.train_ensemble_model(
-                base_models=base_models,
-                features=orchestration_results['orchestration_data']['selected_features'],
-                signal_type=signal_type,
-                config=config
-            )
-            
-            if ensemble_result['success']:
-                base_models.append(ensemble_result['model'])
-                self.logger.info(f"✅ Trained ensemble model for {signal_type} signals")
-            
-            # Save models
-            models_path = f"{config.data_dir}/tactician/models/{signal_type}"
-            Path(models_path).mkdir(parents=True, exist_ok=True)
-            
-            for i, model in enumerate(base_models):
-                model_path = f"{models_path}/model_{i}.pkl"
-                with open(model_path, 'wb') as f:
-                    import pickle
-                    pickle.dump(model, f)
-            
-            model_count = len(base_models)
-            self.logger.info(f"✅ Trained {model_count} {signal_type} signal models")
-            
-            return {
-                'success': True,
-                'model_count': model_count,
-                'signal_type': signal_type,
-                'models': base_models,
-                'models_path': models_path
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ {orchestration_results['signal_type']} signal training failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    
-    async def _validate_training_models(self, config: SubPipelineConfig, training_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate model performance and quality for single-direction models."""
-        try:
-            signal_type = training_result['signal_type']
-            tprint_debug(f"   🔍 Validating {signal_type} training models...")
-            
-            # Import validation utilities
-            try:
-                from src.training.steps.model_validation.tactician_validator import TacticianValidator
-            except ImportError:
-                return {
-                    'success': False,
-                    'error': "Tactician validator not available"
-                }
-            
-            # Initialize validator
-            validator = TacticianValidator()
-            
-            # Validate models for the signal type
-            validation = await validator.validate_models(
-                models=training_result['models'],
-                signal_type=signal_type,
-                config=config
-            )
-            
-            # Check validation results
-            total_models = len(training_result['models'])
-            valid_models = validation.get('valid_count', 0)
-            validation_success = valid_models >= (total_models * 0.8)  # At least 80% valid
-            
-            self.logger.info(f"✅ Validation completed: {valid_models}/{total_models} {signal_type} models valid")
-            
-            return {
-                'success': validation_success,
-                'valid_models': valid_models,
-                'total_models': total_models,
-                'signal_type': signal_type,
-                'validation_details': validation
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Model validation failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    async def _save_training_models(self, config: SubPipelineConfig, training_result: Dict[str, Any], validation_result: Dict[str, Any]) -> Dict[str, Any]:
-        """Save models and generate training report for single-direction models."""
-        try:
-            signal_type = training_result['signal_type']
-            tprint_debug(f"   🔍 Saving {signal_type} training models...")
-            
-            # Create final models directory
-            final_models_path = f"{config.data_dir}/tactician/final_models"
-            Path(final_models_path).mkdir(parents=True, exist_ok=True)
-            
-            # Copy validated models to final directory
-            import shutil
-            
-            # Copy models for the signal type
-            if Path(training_result['models_path']).exists():
-                shutil.copytree(training_result['models_path'], f"{final_models_path}/{signal_type}", dirs_exist_ok=True)
-            
-            # Generate training report
-            training_report = {
-                'timestamp': self._generate_datetime_stamp(),
-                'signal_type': signal_type,
-                'models': {
-                    'count': training_result['model_count'],
-                    'path': f"{final_models_path}/{signal_type}"
-                },
-                'validation': validation_result,
-                'total_models': training_result['model_count']
-            }
-            
-            report_path = f"{final_models_path}/training_report.json"
-            with open(report_path, 'w') as f:
-                json.dump(training_report, f, indent=2, default=str)
-            
-            saved_models = training_result['model_count']
-            self.logger.info(f"✅ Saved {saved_models} {signal_type} models to {final_models_path}")
-            
-            return {
-                'success': True,
-                'saved_models': saved_models,
-                'signal_type': signal_type,
-                'save_path': final_models_path,
-                'report_path': report_path
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Model saving failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-
-# Convenience functions
-def get_model_training_sub_pipeline(config: Optional[SubPipelineConfig] = None) -> ModelTrainingSubPipeline:
-    """Get a configured model training sub-pipeline."""
-    return ModelTrainingSubPipeline(config)
-
-async def execute_model_training_sub_pipeline(
-    sub_pipeline_name: str,
-    config: Optional[SubPipelineConfig] = None
-) -> SubPipelineResult:
-    """Convenience function to execute a model training sub-pipeline with fast-fail."""
-    pipeline = get_model_training_sub_pipeline(config)
-    return await pipeline.execute_sub_pipeline(sub_pipeline_name, config)
-
-async def execute_full_model_training_pipeline(
-    config: Optional[SubPipelineConfig] = None
-) -> List[SubPipelineResult]:
-    """Execute the complete model training pipeline in sequence."""
-    pipeline = get_model_training_sub_pipeline(config)
-    
-    # Define the execution order with NAS/TAS integration
-    sub_pipelines = [
-        'nas_training',
-        'tas_training',
-        'analyst_model_training',
-        'analyst_ensemble_training',
-        'tactician_pre_ml_orchestration',
-        'tactician_training',
-        'tactician_ensemble_training'
-    ]
-    
-    results = []
-    for sub_pipeline_name in sub_pipelines:
-        try:
-            result = await pipeline.execute_sub_pipeline(sub_pipeline_name, config)
-            results.append(result)
-            
-            # Fast-fail: Stop if any step fails
-            if result.status == SubPipelineStatus.FAILED:
-                pipeline.logger.error(f"❌ Pipeline stopped due to failure in {sub_pipeline_name}")
-                break
-
-        except Exception as e:
-            pipeline.logger.error(f"❌ Critical failure in {sub_pipeline_name}: {e}")
-            # Create a failed result
-            failed_result = SubPipelineResult(
-                sub_pipeline_name=sub_pipeline_name,
-                status=SubPipelineStatus.FAILED,
-                start_time=datetime.now(),
-                end_time=datetime.now(),
-                error_message=str(e)
-            )
-            results.append(failed_result)
-            break
-
-    return results
-
+# Convenience function for direct execution
+async def execute_model_training_pipeline(config: SubPipelineConfig) -> Dict[str, Any]:
+    """Execute the model training pipeline."""
+    pipeline = ModelTrainingSubPipeline()
+    return await pipeline.execute_pipeline(config)

@@ -260,11 +260,10 @@ class AresLauncher:
             },
             'model_training': {
                 'next_stage': 'backtesting',
-                'required_files': ['trained_models.pkl', 'validation_results.json', 'evaluation_results.json'],
-                'required_artifacts': ['model_metadata', 'performance_metrics', 'ensemble_models'],
-                'sub_pipelines': ['hmm_training', 'analyst_model_training', 'analyst_ensemble_training',
-                                'tactician_pre_ml_orchestration', 'tactician_training',
-                                'regime_specific_training', 'model_validation', 'model_persistence', 'model_evaluation']
+                'required_files': ['analyst_ensemble.pkl', 'tactician_ensemble.pkl', 'analyst_predictions.parquet', 'tactician_predictions.parquet'],
+                'required_artifacts': ['analyst_models', 'tactician_models', 'performance_metrics', 'ensemble_models'],
+                'sub_pipelines': ['analyst_pre_ml_orchestration', 'analyst_models_training', 'analyst_ensemble_training',
+                                'tactician_pre_ml_orchestration', 'tactician_models_training', 'tactician_ensemble_training']
             },
             'backtesting': {
                 'next_stage': 'reporting',
@@ -994,11 +993,14 @@ class AresLauncher:
             'pid_based_feature_generation': "PID-based feature generation with interaction, polynomial, and cross-timeframe features",
             'sr_feature_integration': "Integrate SR-specific features into feature set",
             
-            # Model Training (10 sub-pipelines)
-            'analyst_model_training': "Train analyst-specific models",
-            'tactician_pre_ml_orchestration': "Pre-ML processing: unified signal processing, optimize features, generate PID features, apply horizon labeling, select features",
-            'tactician_training': "Train Tactician models on unified dataset: 3 base models + 1 ensemble (4 total models)",
-            'tactician_model_training': "Train tactician-specific models",
+            # Model Training (6 sub-pipelines - Analyst & Tactician orchestration)
+            'analyst_pre_ml_orchestration': "Analyst Pre-ML: Apply horizon labeling, optimize features, generate PID features, select features (15m timeframe, per-regime/cluster)",
+            'analyst_models_training': "Train Analyst base models per-regime (ElasticNet, RandomForest, NAS, TAS, N-BEATS) on 15m timeframe - 8 regimes × 5 models = 40 base models",
+            'analyst_ensemble_training': "Train Analyst per-regime ensemble models (8 ensembles combining 5 base models each) with regime features",
+            'tactician_pre_ml_orchestration': "Tactician Pre-ML: Apply horizon labeling, optimize features, generate PID features, select features (5m timeframe, filtered on Analyst signals >0.4%)",
+            'tactician_models_training': "Train Tactician unified base models (RandomSurvivalForest, XGBoost, NAS, TAS) on 5m timeframe with Analyst + regime features - 4 models total",
+            'tactician_ensemble_training': "Train Tactician unified ensemble model (1 ensemble combining 4 base models) with Analyst features and base model outputs",
+            # Legacy/deprecated entries
             'hmm_training': "HMM-based model training",
             'ensemble_training': "Ensemble model training",
             'multi_timeframe_training': "Multi-timeframe model training",
@@ -1056,12 +1058,15 @@ class AresLauncher:
             'pid_based_feature_generation': ['feature_lookback_optimization'],
             'final_feature_selection': ['pid_based_feature_generation'],
             
-            # Model Training dependencies
+            # Model Training dependencies (Analyst → Tactician pipeline)
+            'analyst_pre_ml_orchestration': ['final_feature_selection'],  # From PRE_TRAINING stage
+            'analyst_models_training': ['analyst_pre_ml_orchestration'],
+            'analyst_ensemble_training': ['analyst_models_training'],
+            'tactician_pre_ml_orchestration': ['analyst_ensemble_training'],  # Needs Analyst predictions for filtering
+            'tactician_models_training': ['tactician_pre_ml_orchestration'],
+            'tactician_ensemble_training': ['tactician_models_training'],
+            # Legacy dependencies
             'hmm_training': ['sr_feature_integration'],
-            'analyst_model_training': ['hmm_training'],
-            'analyst_ensemble_training': ['analyst_model_training'],
-            'tactician_pre_ml_orchestration': ['analyst_ensemble_training'],
-            'tactician_training': ['tactician_pre_ml_orchestration'],
             'regime_specific_training': ['tactician_ensemble_training'],
             'model_validation': ['regime_specific_training'],
             'model_persistence': ['model_validation'],
@@ -1119,11 +1124,14 @@ class AresLauncher:
             'final_feature_selection': ['final_features.parquet'],
 
             # Model Training outputs
+            'analyst_pre_ml_orchestration': ['analyst_features_15m.parquet', 'analyst_selected_features.json', 'regime_features_added.json'],
+            'analyst_models_training': ['analyst_base_models_per_regime.pkl', 'analyst_nas_models.pkl', 'analyst_tas_models.pkl', 'analyst_nbeats_models.pkl'],
+            'analyst_ensemble_training': ['analyst_ensemble_per_regime.pkl', 'analyst_predictions.parquet'],
+            'tactician_pre_ml_orchestration': ['tactician_features_5m.parquet', 'tactician_selected_features.json', 'filtered_data_report.json', 'regime_features_added.json'],
+            'tactician_models_training': ['tactician_base_models_unified.pkl', 'tactician_nas_model.pkl', 'tactician_tas_model.pkl'],
+            'tactician_ensemble_training': ['tactician_ensemble_unified.pkl', 'tactician_predictions.parquet'],
+            # Legacy outputs
             'hmm_training': ['hmm_model.pkl'],
-            'analyst_model_training': ['analyst_model.pkl'],
-            'analyst_ensemble_training': ['analyst_ensemble.pkl'],
-            'tactician_pre_ml_orchestration': ['tactician_pre_ml_results.pkl', 'unified_training_data.parquet'],
-            'tactician_training': ['tactician_unified_models.pkl'],
             'regime_specific_training': ['regime_models.pkl'],
             'model_validation': ['validation_results.json'],
             'model_persistence': ['persisted_models.pkl'],

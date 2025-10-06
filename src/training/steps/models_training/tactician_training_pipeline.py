@@ -113,7 +113,8 @@ class TacticianTrainingPipelineConfig:
             self.base_model_types = [
                 "RANDOM_SURVIVAL_FOREST",
                 "XGBOOST",
-                "ELASTIC_NET_CV"
+                "NAS",
+                "TAS"
             ]
 
 

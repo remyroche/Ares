@@ -110,11 +110,11 @@ class AnalystTrainingPipelineConfig:
         """Post-initialization setup."""
         if self.base_model_types is None:
             self.base_model_types = [
-                "TCN",
-                "LIGHTGBM",
-                "RIDGE",
                 "ELASTIC_NET",
-                "RANDOM_FOREST"
+                "RANDOM_FOREST",
+                "NAS",
+                "TAS",
+                "MULTISCALE_NBEATS"
             ]
 
 

@@ -1,0 +1,550 @@
+"""
+Volatility-Aware Multi-Horizon Profit Labeler
+
+This module implements the main volatility-aware labeling system that explicitly accounts
+for volatility and microstructure noise, optimized for creating strong labels that are
+learnable by ML models and generalize well.
+
+Key Features:
+- Volatility-normalized target bands and horizons
+- Event-based bar construction with microstructure filtering
+- Noise gating and eligibility filters
+- Multi-target scheme with data-driven selection
+- Label quality scoring and optimization
+"""
+
+import numpy as np
+import pandas as pd
+from typing import Dict, List, Optional, Any, Tuple, Union
+from dataclasses import dataclass, field
+from enum import Enum
+import logging
+from datetime import datetime
+import warnings
+
+# Import existing utilities
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+from src.utils.common_operations import (
+    safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
+    validate_finite, validate_positive, validate_range, safe_correlation
+)
+from src.utils.math_validation import MathValidation
+from src.utils.serialization_utils import UniversalSerializer
+
+# Import components
+from .bar_construction import EventBasedBarConstructor, BarConstructionConfig
+from .volatility_modeling import VolatilityModeler, VolatilityConfig
+from .noise_gating import NoiseGatingFilter, NoiseGatingConfig
+from .quality_scoring import LabelQualityScorer, QualityScoringConfig
+from .multi_target_scheme import MultiTargetScheme, MultiTargetConfig
+
+
+class LabelType(Enum):
+    """Enumeration of label types."""
+    HARD = "hard"  # -1, 0, +1
+    SOFT = "soft"  # Confidence scores [0, 1]
+    PROBABILITY = "probability"  # Probability distributions
+
+
+@dataclass
+class VolatilityAwareConfig:
+    """Configuration for volatility-aware multi-horizon labeling."""
+    
+    # Bar construction settings
+    bar_construction: BarConstructionConfig = field(default_factory=BarConstructionConfig)
+    
+    # Volatility modeling settings
+    volatility: VolatilityConfig = field(default_factory=VolatilityConfig)
+    
+    # Noise gating settings
+    noise_gating: NoiseGatingConfig = field(default_factory=NoiseGatingConfig)
+    
+    # Quality scoring settings
+    quality_scoring: QualityScoringConfig = field(default_factory=QualityScoringConfig)
+    
+    # Multi-target scheme settings
+    multi_target: MultiTargetConfig = field(default_factory=MultiTargetConfig)
+    
+    # General settings
+    min_data_points: int = 1000
+    enable_caching: bool = True
+    cache_duration_minutes: int = 60
+    parallel_processing: bool = True
+    max_workers: Optional[int] = None
+    
+    # Output settings
+    save_intermediate_results: bool = True
+    output_directory: str = "volatility_aware_labeling_results"
+    generate_reports: bool = True
+    
+    # Label quality thresholds
+    min_auc_threshold: float = 0.55
+    max_auc_std_threshold: float = 0.03
+    min_psi_threshold: float = 0.1
+    max_flip_rate_threshold: float = 0.15
+    min_balance_threshold: float = 0.35
+    max_balance_threshold: float = 0.65
+    max_correlation_threshold: float = 0.4
+
+
+@dataclass
+class LabelQualityScore:
+    """Label quality score container."""
+    
+    # Core quality metrics
+    predictability: float = 0.0  # AUC/PR-AUC from baselines
+    stability: float = 0.0  # Variance of AUC across folds, PSI
+    consistency: float = 0.0  # Mutual information between labels
+    balance: float = 0.0  # Class balance
+    snr_proxy: float = 0.0  # |IC| between features and labels
+    
+    # Composite score
+    overall_quality: float = 0.0
+    
+    # Detailed metrics
+    auc_mean: float = 0.0
+    auc_std: float = 0.0
+    psi_score: float = 0.0
+    flip_rate: float = 0.0
+    class_balance: float = 0.0
+    mutual_information: float = 0.0
+    information_coefficient: float = 0.0
+    
+    # Metadata
+    n_samples: int = 0
+    n_features: int = 0
+    processing_time: float = 0.0
+    timestamp: datetime = field(default_factory=datetime.now)
+
+
+@dataclass
+class LabelingResult:
+    """Result container for volatility-aware labeling."""
+    
+    # Core labeling results
+    labels: pd.DataFrame
+    confidence_scores: pd.DataFrame
+    eligibility_masks: pd.DataFrame
+    
+    # Quality scores
+    quality_scores: Dict[str, LabelQualityScore]
+    
+    # Component results
+    bar_construction_result: Optional[Any] = None
+    volatility_result: Optional[Any] = None
+    noise_gating_result: Optional[Any] = None
+    multi_target_result: Optional[Any] = None
+    
+    # Metadata
+    config_used: VolatilityAwareConfig = None
+    processing_time: float = 0.0
+    timestamp: datetime = field(default_factory=datetime.now)
+    
+    # Statistics
+    n_samples: int = 0
+    n_targets: int = 0
+    n_horizons: int = 0
+    label_distribution: Dict[str, Any] = field(default_factory=dict)
+
+
+class VolatilityAwareMultiHorizonLabeler:
+    """
+    Volatility-Aware Multi-Horizon Profit Labeler
+    
+    This class implements a comprehensive labeling system that explicitly accounts for
+    volatility and microstructure noise, optimized for creating strong labels that are
+    learnable by ML models and generalize well.
+    
+    Key Features:
+    1. **Volatility-Normalized Targets**: Uses σ-units instead of fixed percentages
+    2. **Event-Based Bar Construction**: Reduces microstructure noise through better bar formation
+    3. **Noise Gating**: Filters out labels when noise dominates signal
+    4. **Multi-Target Scheme**: Data-driven selection of small/medium/high targets
+    5. **Quality Scoring**: Comprehensive assessment of label quality
+    6. **Adaptive Horizons**: Data-driven horizon selection based on first-passage time
+    """
+    
+    def __init__(self, config: Optional[VolatilityAwareConfig] = None):
+        """Initialize volatility-aware multi-horizon profit labeler."""
+        self.config = config or VolatilityAwareConfig()
+        self.logger = logging.getLogger('VolatilityAwareLabeler')
+        
+        # Initialize components
+        self.bar_constructor = EventBasedBarConstructor(self.config.bar_construction)
+        self.volatility_modeler = VolatilityModeler(self.config.volatility)
+        self.noise_gating_filter = NoiseGatingFilter(self.config.noise_gating)
+        self.quality_scorer = LabelQualityScorer(self.config.quality_scoring)
+        self.multi_target_scheme = MultiTargetScheme(self.config.multi_target)
+        
+        # State tracking
+        self.labeling_history: List[LabelingResult] = []
+        self.cache: Dict[str, Any] = {}
+        
+        tprint_success("🚀 Volatility-Aware Multi-Horizon Profit Labeler initialized")
+        tprint_info(f"   → Min data points: {self.config.min_data_points}")
+        tprint_info(f"   → Parallel processing: {self.config.parallel_processing}")
+        tprint_info(f"   → Caching enabled: {self.config.enable_caching}")
+    
+    def generate_labels(self, market_data: pd.DataFrame) -> LabelingResult:
+        """
+        Generate volatility-aware profit labels.
+        
+        Args:
+            market_data: OHLCV market data with datetime index
+            
+        Returns:
+            LabelingResult with comprehensive labeling and analysis
+        """
+        start_time = datetime.now()
+        tprint_info("🔍 Generating volatility-aware profit labels")
+        
+        # Validate input data
+        if not self._validate_input_data(market_data):
+            return self._create_empty_result()
+        
+        # Check cache
+        cache_key = self._generate_cache_key(market_data)
+        if self.config.enable_caching and cache_key in self.cache:
+            cached_result = self.cache[cache_key]
+            if self._is_cache_valid(cached_result):
+                tprint_info("📋 Using cached labeling result")
+                return cached_result
+        
+        # Initialize result container
+        result = LabelingResult(
+            labels=pd.DataFrame(),
+            confidence_scores=pd.DataFrame(),
+            eligibility_masks=pd.DataFrame(),
+            quality_scores={},
+            config_used=self.config
+        )
+        
+        try:
+            # Step 1: Event-based bar construction
+            tprint_info("📊 Step 1: Constructing event-based bars")
+            bar_result = self.bar_constructor.construct_bars(market_data)
+            result.bar_construction_result = bar_result
+            
+            if bar_result.cleaned_bars.empty:
+                tprint_warning("⚠️ No valid bars constructed")
+                return self._create_empty_result()
+            
+            # Step 2: Volatility modeling
+            tprint_info("📈 Step 2: Modeling volatility")
+            vol_result = self.volatility_modeler.model_volatility(bar_result.cleaned_bars)
+            result.volatility_result = vol_result
+            
+            if vol_result.volatility_series.empty:
+                tprint_warning("⚠️ No volatility estimates available")
+                return self._create_empty_result()
+            
+            # Step 3: Noise gating
+            tprint_info("🔇 Step 3: Applying noise gating")
+            noise_result = self.noise_gating_filter.filter_noise(
+                bar_result.cleaned_bars, vol_result.volatility_series
+            )
+            result.noise_gating_result = noise_result
+            
+            # Step 4: Multi-target scheme
+            tprint_info("🎯 Step 4: Generating multi-target labels")
+            target_result = self.multi_target_scheme.generate_targets(
+                bar_result.cleaned_bars,
+                vol_result.volatility_series,
+                noise_result.eligibility_mask
+            )
+            result.multi_target_result = target_result
+            
+            if target_result.labels.empty:
+                tprint_warning("⚠️ No valid targets generated")
+                return self._create_empty_result()
+            
+            # Step 5: Quality scoring
+            tprint_info("📊 Step 5: Assessing label quality")
+            quality_scores = self.quality_scorer.assess_quality(
+                target_result.labels,
+                target_result.confidence_scores,
+                target_result.eligibility_masks,
+                bar_result.cleaned_bars
+            )
+            result.quality_scores = quality_scores
+            
+            # Step 6: Filter by quality thresholds
+            tprint_info("🔍 Step 6: Filtering by quality thresholds")
+            filtered_result = self._filter_by_quality_thresholds(
+                target_result, quality_scores
+            )
+            
+            # Update result with filtered data
+            result.labels = filtered_result.labels
+            result.confidence_scores = filtered_result.confidence_scores
+            result.eligibility_masks = filtered_result.eligibility_masks
+            
+            # Calculate statistics
+            result.n_samples = len(result.labels)
+            result.n_targets = len([col for col in result.labels.columns if 'target' in col])
+            result.n_horizons = len([col for col in result.labels.columns if 'horizon' in col])
+            result.label_distribution = self._calculate_label_distribution(result.labels)
+            
+        except Exception as e:
+            tprint_error(f"❌ Labeling failed: {e}")
+            return self._create_empty_result()
+        
+        # Calculate processing time
+        result.processing_time = (datetime.now() - start_time).total_seconds()
+        
+        # Store in history and cache
+        self.labeling_history.append(result)
+        if self.config.enable_caching:
+            self.cache[cache_key] = result
+        
+        # Clean up old history
+        if len(self.labeling_history) > 100:
+            self.labeling_history = self.labeling_history[-100:]
+        
+        tprint_success("✅ Volatility-aware labeling completed")
+        tprint_info(f"   → Processing time: {result.processing_time:.2f}s")
+        tprint_info(f"   → Samples: {result.n_samples}")
+        tprint_info(f"   → Targets: {result.n_targets}")
+        tprint_info(f"   → Horizons: {result.n_horizons}")
+        
+        return result
+    
+    def _validate_input_data(self, market_data: pd.DataFrame) -> bool:
+        """Validate input market data."""
+        try:
+            # Check if DataFrame is empty
+            if market_data.empty:
+                tprint_warning("⚠️ Input data is empty")
+                return False
+            
+            # Check minimum data points
+            if len(market_data) < self.config.min_data_points:
+                tprint_warning(f"⚠️ Insufficient data: {len(market_data)} < {self.config.min_data_points}")
+                return False
+            
+            # Check required columns
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            missing_columns = set(required_columns) - set(market_data.columns)
+            if missing_columns:
+                tprint_warning(f"⚠️ Missing required columns: {missing_columns}")
+                return False
+            
+            # Check for datetime index
+            if not isinstance(market_data.index, pd.DatetimeIndex):
+                tprint_warning("⚠️ Index must be DatetimeIndex")
+                return False
+            
+            # Check for non-finite values
+            if market_data[required_columns].isnull().any().any():
+                tprint_warning("⚠️ Data contains null values")
+                return False
+            
+            if not np.isfinite(market_data[required_columns].values).all():
+                tprint_warning("⚠️ Data contains non-finite values")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            tprint_error(f"❌ Data validation failed: {e}")
+            return False
+    
+    def _filter_by_quality_thresholds(self, target_result, quality_scores: Dict[str, LabelQualityScore]) -> Any:
+        """Filter targets by quality thresholds."""
+        try:
+            # Create a copy of the target result
+            filtered_result = type(target_result)(
+                labels=target_result.labels.copy(),
+                confidence_scores=target_result.confidence_scores.copy(),
+                eligibility_masks=target_result.eligibility_masks.copy()
+            )
+            
+            # Get quality thresholds
+            min_auc = self.config.min_auc_threshold
+            max_auc_std = self.config.max_auc_std_threshold
+            min_psi = self.config.min_psi_threshold
+            max_flip_rate = self.config.max_flip_rate_threshold
+            min_balance = self.config.min_balance_threshold
+            max_balance = self.config.max_balance_threshold
+            
+            # Filter targets based on quality scores
+            valid_targets = []
+            for target_name, quality_score in quality_scores.items():
+                if (quality_score.auc_mean >= min_auc and
+                    quality_score.auc_std <= max_auc_std and
+                    quality_score.psi_score <= min_psi and
+                    quality_score.flip_rate <= max_flip_rate and
+                    min_balance <= quality_score.class_balance <= max_balance):
+                    valid_targets.append(target_name)
+                else:
+                    tprint_warning(f"⚠️ Target {target_name} failed quality thresholds")
+            
+            # Filter columns based on valid targets
+            if valid_targets:
+                target_columns = [col for col in filtered_result.labels.columns 
+                                if any(target in col for target in valid_targets)]
+                filtered_result.labels = filtered_result.labels[target_columns]
+                
+                conf_columns = [col for col in filtered_result.confidence_scores.columns 
+                              if any(target in col for target in valid_targets)]
+                filtered_result.confidence_scores = filtered_result.confidence_scores[conf_columns]
+                
+                mask_columns = [col for col in filtered_result.eligibility_masks.columns 
+                              if any(target in col for target in valid_targets)]
+                filtered_result.eligibility_masks = filtered_result.eligibility_masks[mask_columns]
+            else:
+                tprint_warning("⚠️ No targets passed quality thresholds")
+                filtered_result.labels = pd.DataFrame()
+                filtered_result.confidence_scores = pd.DataFrame()
+                filtered_result.eligibility_masks = pd.DataFrame()
+            
+            return filtered_result
+            
+        except Exception as e:
+            tprint_error(f"❌ Quality filtering failed: {e}")
+            return target_result
+    
+    def _calculate_label_distribution(self, labels: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate label distribution statistics."""
+        try:
+            if labels.empty:
+                return {}
+            
+            distribution = {}
+            for col in labels.columns:
+                if labels[col].dtype in ['int64', 'float64']:
+                    value_counts = labels[col].value_counts()
+                    distribution[col] = {
+                        'unique_values': len(value_counts),
+                        'most_common': value_counts.head(3).to_dict(),
+                        'mean': labels[col].mean(),
+                        'std': labels[col].std(),
+                        'min': labels[col].min(),
+                        'max': labels[col].max()
+                    }
+            
+            return distribution
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating label distribution: {e}")
+            return {}
+    
+    def _generate_cache_key(self, market_data: pd.DataFrame) -> str:
+        """Generate cache key for market data."""
+        try:
+            # Simple cache key based on data shape and last timestamp
+            data_hash = hash(str(market_data.shape) + str(market_data.index[-1]))
+            config_hash = hash(str(self.config))
+            return f"volatility_labels_{data_hash}_{config_hash}"
+        except Exception:
+            return f"volatility_labels_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    
+    def _is_cache_valid(self, cached_result: LabelingResult) -> bool:
+        """Check if cached result is still valid."""
+        if not self.config.enable_caching:
+            return False
+        
+        cache_age = datetime.now() - cached_result.timestamp
+        return cache_age.total_seconds() < (self.config.cache_duration_minutes * 60)
+    
+    def _create_empty_result(self) -> LabelingResult:
+        """Create empty result when processing fails."""
+        return LabelingResult(
+            labels=pd.DataFrame(),
+            confidence_scores=pd.DataFrame(),
+            eligibility_masks=pd.DataFrame(),
+            quality_scores={},
+            config_used=self.config,
+            processing_time=0.0
+        )
+    
+    def get_performance_summary(self) -> Dict[str, Any]:
+        """Get performance monitoring summary."""
+        if not self.labeling_history:
+            return {}
+        
+        latest_result = self.labeling_history[-1]
+        summary = {
+            'latest_processing_time': latest_result.processing_time,
+            'latest_n_samples': latest_result.n_samples,
+            'latest_n_targets': latest_result.n_targets,
+            'latest_n_horizons': latest_result.n_horizons,
+            'total_runs': len(self.labeling_history),
+            'cache_size': len(self.cache)
+        }
+        
+        # Add quality score summary if available
+        if latest_result.quality_scores:
+            quality_summary = {}
+            for target_name, quality_score in latest_result.quality_scores.items():
+                quality_summary[target_name] = {
+                    'overall_quality': quality_score.overall_quality,
+                    'auc_mean': quality_score.auc_mean,
+                    'class_balance': quality_score.class_balance
+                }
+            summary['quality_scores'] = quality_summary
+        
+        return summary
+    
+    def save_results(self, result: LabelingResult, output_directory: Optional[str] = None):
+        """Save labeling results."""
+        try:
+            output_dir = output_directory or self.config.output_directory
+            import os
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Save labels
+            labels_path = os.path.join(output_dir, 'volatility_aware_labels.csv')
+            result.labels.to_csv(labels_path)
+            
+            # Save confidence scores
+            conf_path = os.path.join(output_dir, 'confidence_scores.csv')
+            result.confidence_scores.to_csv(conf_path)
+            
+            # Save eligibility masks
+            mask_path = os.path.join(output_dir, 'eligibility_masks.csv')
+            result.eligibility_masks.to_csv(mask_path)
+            
+            # Save quality scores
+            quality_path = os.path.join(output_dir, 'quality_scores.json')
+            quality_data = {}
+            for target_name, quality_score in result.quality_scores.items():
+                quality_data[target_name] = {
+                    'predictability': quality_score.predictability,
+                    'stability': quality_score.stability,
+                    'consistency': quality_score.consistency,
+                    'balance': quality_score.balance,
+                    'snr_proxy': quality_score.snr_proxy,
+                    'overall_quality': quality_score.overall_quality,
+                    'auc_mean': quality_score.auc_mean,
+                    'auc_std': quality_score.auc_std,
+                    'psi_score': quality_score.psi_score,
+                    'flip_rate': quality_score.flip_rate,
+                    'class_balance': quality_score.class_balance,
+                    'mutual_information': quality_score.mutual_information,
+                    'information_coefficient': quality_score.information_coefficient,
+                    'n_samples': quality_score.n_samples,
+                    'processing_time': quality_score.processing_time
+                }
+            
+            import json
+            with open(quality_path, 'w') as f:
+                json.dump(quality_data, f, indent=2, default=str)
+            
+            tprint_success(f"💾 Results saved to {output_dir}")
+            
+        except Exception as e:
+            tprint_error(f"❌ Error saving results: {e}")
+
+
+# Convenience functions
+def create_volatility_aware_labeler(config: Optional[VolatilityAwareConfig] = None) -> VolatilityAwareMultiHorizonLabeler:
+    """Create volatility-aware labeler with specified configuration."""
+    return VolatilityAwareMultiHorizonLabeler(config)
+
+
+def generate_volatility_aware_labels(market_data: pd.DataFrame,
+                                   config: Optional[VolatilityAwareConfig] = None) -> LabelingResult:
+    """Generate volatility-aware labels with default configuration."""
+    labeler = VolatilityAwareMultiHorizonLabeler(config)
+    return labeler.generate_labels(market_data)

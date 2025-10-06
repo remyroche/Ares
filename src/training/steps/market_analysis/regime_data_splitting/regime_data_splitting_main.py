@@ -2428,19 +2428,21 @@ class RegimeDataSplittingStep:
     async def _predict_regimes_with_ensemble_model(self, ensemble_result: Dict[str, Any], market_data: pd.DataFrame) -> Optional[Dict[str, Any]]:
         """Use the trained ensemble model to predict regime labels and probabilities."""
         try:
-            # Extract the trained model
+            # Extract the trained models and scaler
             if 'stacker_lgbm_calibrated' not in ensemble_result:
                 self.logger.error("❌ No trained ML model found in regime ensemble training result")
                 return None
 
-            model = ensemble_result['stacker_lgbm_calibrated']
-
-            # Extract feature names from metadata
-            metadata = ensemble_result.get('metadata', {})
-            feature_names = metadata.get('feature_names', [])
+            models = ensemble_result.get('models', {})
+            scaler = ensemble_result.get('scaler')
+            feature_names = ensemble_result.get('feature_names', [])
 
             if not feature_names:
                 self.logger.error("❌ No feature names found in regime ensemble training metadata")
+                return None
+
+            if scaler is None:
+                self.logger.error("❌ No scaler found in regime ensemble training result")
                 return None
 
             # Prepare features for prediction
@@ -2453,49 +2455,43 @@ class RegimeDataSplittingStep:
             # Prepare feature matrix
             X = market_data[available_features].fillna(0).values
 
-            # Make predictions with enhanced probability information
-            regime_labels = model.predict(X)
-            regime_probabilities = model.predict_proba(X)
+            # Use the enhanced prediction method from regime models training
+            from src.training.steps.market_analysis.components.regime_models_training import RegimeModelsTrainingComponent
             
-            # Get number of regimes from the model
-            n_regimes = regime_probabilities.shape[1] if len(regime_probabilities.shape) > 1 else 1
+            # Create a temporary instance to use the prediction method
+            regime_models_component = RegimeModelsTrainingComponent()
             
-            # Calculate confidence scores for each prediction
-            max_probabilities = np.max(regime_probabilities, axis=1)
-            confidence_scores = max_probabilities
-            
-            # Calculate regime distribution statistics
-            regime_counts = np.bincount(regime_labels, minlength=n_regimes)
-            regime_percentages = regime_counts / len(regime_labels) * 100
-            
-            # Calculate average probabilities for each regime
-            avg_regime_probabilities = np.mean(regime_probabilities, axis=0)
-            
-            # Calculate regime stability (how consistent the predictions are)
-            regime_stability = 1.0 - np.std(regime_probabilities, axis=0)
-            
-            # Create comprehensive probability information
-            probability_info = {
-                'raw_probabilities': regime_probabilities,
-                'regime_labels': regime_labels,
-                'confidence_scores': confidence_scores,
-                'n_regimes': n_regimes,
-                'regime_counts': regime_counts.tolist(),
-                'regime_percentages': regime_percentages.tolist(),
-                'avg_regime_probabilities': avg_regime_probabilities.tolist(),
-                'regime_stability': regime_stability.tolist(),
-                'prediction_metadata': {
-                    'model_type': type(model).__name__,
-                    'n_samples': len(regime_labels),
-                    'feature_count': len(available_features),
-                    'prediction_timestamp': pd.Timestamp.now().isoformat()
-                }
-            }
+            # Make predictions with comprehensive probability information
+            prediction_result = regime_models_component.predict_regimes_with_probabilities(
+                models=models,
+                scaler=scaler,
+                X=X,
+                feature_names=available_features,
+                use_meta_learner=True
+            )
 
+            if 'error' in prediction_result:
+                self.logger.error(f"❌ Prediction failed: {prediction_result['error']}")
+                return None
+
+            # Return the comprehensive prediction result
             return {
-                'labels': regime_labels,
-                'probabilities': regime_probabilities,
-                'probability_info': probability_info
+                'labels': prediction_result['regime_labels'],
+                'probabilities': prediction_result['regime_probabilities'],
+                'probability_info': {
+                    'raw_probabilities': prediction_result['regime_probabilities'],
+                    'regime_labels': prediction_result['regime_labels'],
+                    'confidence_scores': prediction_result['confidence_scores'],
+                    'n_regimes': prediction_result['n_regimes'],
+                    'regime_counts': prediction_result['regime_counts'],
+                    'regime_percentages': prediction_result['regime_percentages'],
+                    'avg_regime_probabilities': prediction_result['avg_regime_probabilities'],
+                    'regime_stability': prediction_result['regime_stability'],
+                    'entropy': prediction_result['entropy'],
+                    'dominance': prediction_result['dominance'],
+                    'model_used': prediction_result['model_used'],
+                    'prediction_metadata': prediction_result['prediction_metadata']
+                }
             }
 
         except Exception as e:

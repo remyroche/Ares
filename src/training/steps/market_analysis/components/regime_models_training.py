@@ -1333,11 +1333,58 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'n_features': X.shape[1]
                 }
                 
-                # Add prediction probabilities if available
+                # Add comprehensive prediction probabilities if available
                 if y_pred_proba is not None:
+                    # Basic confidence metrics
+                    max_probs = y_pred_proba.max(axis=1)
                     model_metrics['prediction_confidence'] = {
-                        'mean': y_pred_proba.max(axis=1).mean(),
-                        'std': y_pred_proba.max(axis=1).std()
+                        'mean': max_probs.mean(),
+                        'std': max_probs.std(),
+                        'min': max_probs.min(),
+                        'max': max_probs.max()
+                    }
+                    
+                    # Regime-specific probability statistics
+                    n_regimes = y_pred_proba.shape[1]
+                    regime_prob_stats = {}
+                    for i in range(n_regimes):
+                        regime_probs = y_pred_proba[:, i]
+                        regime_prob_stats[f'regime_{i}'] = {
+                            'mean': regime_probs.mean(),
+                            'std': regime_probs.std(),
+                            'min': regime_probs.min(),
+                            'max': regime_probs.max()
+                        }
+                    model_metrics['regime_probability_stats'] = regime_prob_stats
+                    
+                    # Entropy and uncertainty measures
+                    epsilon = 1e-10
+                    entropy = -np.sum(y_pred_proba * np.log(y_pred_proba + epsilon), axis=1)
+                    model_metrics['entropy_stats'] = {
+                        'mean': entropy.mean(),
+                        'std': entropy.std(),
+                        'min': entropy.min(),
+                        'max': entropy.max()
+                    }
+                    
+                    # Regime dominance (difference between top 2 probabilities)
+                    sorted_probs = np.sort(y_pred_proba, axis=1)
+                    if n_regimes > 1:
+                        dominance = sorted_probs[:, -1] - sorted_probs[:, -2]
+                        model_metrics['dominance_stats'] = {
+                            'mean': dominance.mean(),
+                            'std': dominance.std(),
+                            'min': dominance.min(),
+                            'max': dominance.max()
+                        }
+                    else:
+                        model_metrics['dominance_stats'] = {'mean': 1.0, 'std': 0.0, 'min': 1.0, 'max': 1.0}
+                    
+                    # Prediction stability (consistency across samples)
+                    prob_std = np.std(y_pred_proba, axis=0)
+                    model_metrics['regime_stability'] = {
+                        'mean': (1.0 - prob_std).mean(),
+                        'std': (1.0 - prob_std).std()
                     }
                 
                 metrics[name] = model_metrics
@@ -1375,7 +1422,9 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 'training_history': training_history,
                 'feature_count': X.shape[1],
                 'sample_count': X.shape[0],
-                'feature_selection': feature_selection_info or {}
+                'feature_selection': feature_selection_info or {},
+                'feature_names': feature_names,
+                'n_regimes': len(unique_regimes)
             }
             
         except Exception as e:
@@ -1392,6 +1441,139 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 'training_time': training_time,
                 'error': str(e),
                 'error_type': error_type
+            }
+
+    def predict_regimes_with_probabilities(
+        self,
+        models: Dict[str, Any],
+        scaler: Any,
+        X: np.ndarray,
+        feature_names: List[str],
+        use_meta_learner: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Predict regime labels and probabilities using trained ensemble models.
+        
+        Args:
+            models: Dictionary of trained models
+            scaler: Fitted scaler for feature normalization
+            X: Feature matrix
+            feature_names: List of feature names
+            use_meta_learner: Whether to use the meta-learner (stacker_lgbm_calibrated)
+            
+        Returns:
+            Dictionary with comprehensive prediction information
+        """
+        try:
+            tprint("🔮 [REGIME_MODELS] Starting regime prediction with probabilities", color="cyan")
+            
+            # Scale features
+            X_scaled = scaler.transform(X)
+            
+            # Get the primary model (meta-learner if available, otherwise best base model)
+            primary_model = None
+            model_name = None
+            
+            if use_meta_learner and 'stacker_lgbm_calibrated' in models and models['stacker_lgbm_calibrated'] is not None:
+                primary_model = models['stacker_lgbm_calibrated']
+                model_name = 'stacker_lgbm_calibrated'
+                tprint("🎯 [REGIME_MODELS] Using meta-learner (stacker_lgbm_calibrated)", color="blue")
+                
+                # Create enhanced features for meta-learner
+                base_model_names = ['CatBoost', 'Greedy Rule Lists', 'ExtraTrees']
+                base_predictions = np.column_stack([
+                    np.argmax(models[base_name].predict_proba(X_scaled), axis=1).reshape(-1, 1) 
+                    if hasattr(models[base_name], 'predict_proba') 
+                    else models[base_name].predict(X_scaled).reshape(-1, 1)
+                    for base_name in base_model_names
+                    if base_name in models and models[base_name] is not None
+                ])
+                
+                feature_indices = models.get('stacker_lgbm_calibrated_feature_indices')
+                enhanced_features = self._create_enhanced_meta_features(base_predictions, X_scaled, feature_indices)
+                X_for_prediction = enhanced_features
+                
+            else:
+                # Use best available base model
+                available_models = {name: model for name, model in models.items() 
+                                 if model is not None and hasattr(model, 'predict') and name != 'stacker_lgbm_calibrated_feature_indices'}
+                
+                if not available_models:
+                    raise ValueError("No trained models available for prediction")
+                
+                # Use the first available model
+                model_name = list(available_models.keys())[0]
+                primary_model = available_models[model_name]
+                X_for_prediction = X_scaled
+                tprint(f"🎯 [REGIME_MODELS] Using base model: {model_name}", color="blue")
+            
+            # Make predictions
+            regime_labels = primary_model.predict(X_for_prediction)
+            regime_probabilities = primary_model.predict_proba(X_for_prediction)
+            
+            # Get number of regimes
+            n_regimes = regime_probabilities.shape[1] if len(regime_probabilities.shape) > 1 else 1
+            
+            # Calculate comprehensive probability information
+            max_probs = np.max(regime_probabilities, axis=1)
+            confidence_scores = max_probs
+            
+            # Calculate regime distribution statistics
+            regime_counts = np.bincount(regime_labels, minlength=n_regimes)
+            regime_percentages = regime_counts / len(regime_labels) * 100
+            
+            # Calculate average probabilities for each regime
+            avg_regime_probabilities = np.mean(regime_probabilities, axis=0)
+            
+            # Calculate regime stability (how consistent the predictions are)
+            regime_stability = 1.0 - np.std(regime_probabilities, axis=0)
+            
+            # Calculate entropy (uncertainty measure)
+            epsilon = 1e-10
+            entropy = -np.sum(regime_probabilities * np.log(regime_probabilities + epsilon), axis=1)
+            
+            # Calculate dominance (difference between top 2 probabilities)
+            sorted_probs = np.sort(regime_probabilities, axis=1)
+            if n_regimes > 1:
+                dominance = sorted_probs[:, -1] - sorted_probs[:, -2]
+            else:
+                dominance = np.ones(len(regime_labels))
+            
+            # Create comprehensive prediction result
+            prediction_result = {
+                'regime_labels': regime_labels,
+                'regime_probabilities': regime_probabilities,
+                'confidence_scores': confidence_scores,
+                'n_regimes': n_regimes,
+                'regime_counts': regime_counts.tolist(),
+                'regime_percentages': regime_percentages.tolist(),
+                'avg_regime_probabilities': avg_regime_probabilities.tolist(),
+                'regime_stability': regime_stability.tolist(),
+                'entropy': entropy,
+                'dominance': dominance,
+                'model_used': model_name,
+                'prediction_metadata': {
+                    'model_type': type(primary_model).__name__,
+                    'n_samples': len(regime_labels),
+                    'feature_count': X.shape[1],
+                    'prediction_timestamp': datetime.now().isoformat(),
+                    'scaled_features_used': True
+                }
+            }
+            
+            tprint(f"✅ [REGIME_MODELS] Prediction completed: {len(regime_labels)} samples, {n_regimes} regimes", color="green")
+            tprint(f"📊 [REGIME_MODELS] Confidence range: [{confidence_scores.min():.3f}, {confidence_scores.max():.3f}]", color="cyan")
+            tprint(f"📈 [REGIME_MODELS] Regime distribution: {dict(zip(range(n_regimes), regime_counts))}", color="cyan")
+            
+            return prediction_result
+            
+        except Exception as e:
+            tprint(f"❌ [REGIME_MODELS] Prediction failed: {e}", color="red")
+            self.logger.error(f"Error in regime prediction: {e}", exc_info=True)
+            return {
+                'regime_labels': np.array([]),
+                'regime_probabilities': np.array([]),
+                'error': str(e)
             }
 
     def _run_feature_selection(

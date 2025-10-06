@@ -7,8 +7,11 @@ This module handles training of Analyst ensemble models that combine:
 - NAS models per-regime for enhanced trading signal generation
 - Multi-timeframe features and cross-timeframe analysis
 - Technical indicators and market data
+- Outputs from base Analyst models for stacking
 
-The ensemble operates on 5m timeframe and combines all inputs for final trading decisions.
+The ensemble operates on 15m timeframe and combines all inputs for final trading decisions.
+Uses features from PRE_TRAINING/final_feature_selection + regime features from market_analysis/Ensemble ML.
+Creates separate ensembles for shorts & longs with per-regime training and HPO.
 
 ENHANCED FEATURES:
 - Comprehensive error handling with detailed failure reporting
@@ -19,6 +22,9 @@ ENHANCED FEATURES:
 - Health monitoring throughout training process
 - Integration with common utilities and hardware optimizers
 - Extensive logging with tprint at every step
+- Per-regime ensemble training with regime features integration
+- Separate long/short ensemble training
+- Base model output integration for stacking
 """
 
 import numpy as np

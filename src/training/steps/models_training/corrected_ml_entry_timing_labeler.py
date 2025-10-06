@@ -103,9 +103,9 @@ class CorrectedMLEntryTimingLabeler:
         """
         tprint_info("🎯 Creating corrected ML-based entry timing labels...")
         
-        # Step 1: Detect peaks and bottoms
-        peaks, bottoms = self._detect_peaks_and_bottoms(data)
-        tprint_info(f"📊 Detected {len(peaks)} peaks and {len(bottoms)} bottoms")
+        # Step 1: Detect peaks and bottoms within Analyst signal periods up to 0.7% move
+        peaks, bottoms = self._detect_peaks_and_bottoms(data, analyst_signals)
+        tprint_info(f"📊 Detected {len(peaks)} peaks and {len(bottoms)} bottoms within Analyst signal periods")
         
         # Step 2: Create entry quality labels based on peak/bottom proximity
         entry_labels = self._create_entry_quality_labels(data, peaks, bottoms, analyst_signals)
@@ -140,33 +140,85 @@ class CorrectedMLEntryTimingLabeler:
         
         return ml_labels, {**training_metrics, **quality_metrics}
     
-    def _detect_peaks_and_bottoms(self, data: pd.DataFrame) -> Tuple[List[int], List[int]]:
-        """Detect peaks and bottoms in price data."""
-        prices = data['close'].values
+    def _detect_peaks_and_bottoms(self, data: pd.DataFrame, analyst_signals: pd.Series) -> Tuple[List[int], List[int]]:
+        """Detect peaks and bottoms only within Analyst signal periods up to 0.7% price move."""
+        peaks = []
+        bottoms = []
         
-        # Detect peaks (local maxima)
-        peaks, peak_properties = find_peaks(
-            prices,
-            prominence=self.config.min_peak_prominence,
-            distance=self.config.min_peak_distance
-        )
+        # Find Analyst green light periods
+        green_periods = self._find_green_periods(analyst_signals)
         
-        # Detect bottoms (local minima)
-        bottoms, bottom_properties = find_peaks(
-            -prices,  # Invert to find minima
-            prominence=self.config.min_peak_prominence,
-            distance=self.config.min_peak_distance
-        )
+        for period in green_periods:
+            period_start = period['start']
+            period_end = period['end']
+            period_data = data.iloc[period_start:period_end]
+            
+            # Determine trend direction from Analyst signal
+            trend_direction = self._determine_trend_from_analyst_signal(analyst_signals.iloc[period_start:period_end])
+            
+            # Find the 0.7% price move in the right direction
+            target_price_move = 0.007  # 0.7%
+            start_price = period_data['close'].iloc[0]
+            
+            if trend_direction == 'long':
+                # For long signals, find 0.7% upward move
+                target_price = start_price * (1 + target_price_move)
+                move_end_idx = None
+                for i, price in enumerate(period_data['close']):
+                    if price >= target_price:
+                        move_end_idx = period_start + i
+                        break
+            else:  # short
+                # For short signals, find 0.7% downward move
+                target_price = start_price * (1 - target_price_move)
+                move_end_idx = None
+                for i, price in enumerate(period_data['close']):
+                    if price <= target_price:
+                        move_end_idx = period_start + i
+                        break
+            
+            # If no 0.7% move found, use the entire period
+            if move_end_idx is None:
+                move_end_idx = period_end
+            
+            # Detect peaks/bottoms only within this limited period
+            limited_period_data = data.iloc[period_start:move_end_idx]
+            limited_prices = limited_period_data['close'].values
+            
+            if len(limited_prices) < 5:  # Need minimum data for peak detection
+                continue
+            
+            # Detect peaks (local maxima) - only for short signals
+            if trend_direction == 'short':
+                period_peaks, peak_properties = find_peaks(
+                    limited_prices,
+                    prominence=self.config.min_peak_prominence,
+                    distance=self.config.min_peak_distance
+                )
+                # Adjust indices to global data index
+                global_peaks = [period_start + p for p in period_peaks]
+                peaks.extend(global_peaks)
+            
+            # Detect bottoms (local minima) - only for long signals
+            if trend_direction == 'long':
+                period_bottoms, bottom_properties = find_peaks(
+                    -limited_prices,  # Invert to find minima
+                    prominence=self.config.min_peak_prominence,
+                    distance=self.config.min_peak_distance
+                )
+                # Adjust indices to global data index
+                global_bottoms = [period_start + b for b in period_bottoms]
+                bottoms.extend(global_bottoms)
         
         # Store peak/bottom data for analysis
         self.peak_bottom_data = {
-            'peaks': peaks.tolist(),
-            'bottoms': bottoms.tolist(),
-            'peak_properties': peak_properties,
-            'bottom_properties': bottom_properties
+            'peaks': peaks,
+            'bottoms': bottoms,
+            'peak_properties': {},
+            'bottom_properties': {}
         }
         
-        return peaks.tolist(), bottoms.tolist()
+        return peaks, bottoms
     
     def _create_entry_quality_labels(
         self,
@@ -191,8 +243,8 @@ class CorrectedMLEntryTimingLabeler:
             period_end = period['end']
             period_data = data.iloc[period_start:period_end]
             
-            # Determine if this is a long or short opportunity based on price trend
-            period_trend = self._determine_period_trend(period_data)
+            # Determine trend direction from Analyst signal
+            period_trend = self._determine_trend_from_analyst_signal(analyst_signals.iloc[period_start:period_end])
             
             if period_trend == 'long':
                 # For long opportunities, look for bottoms (buy at bottom)
@@ -239,6 +291,12 @@ class CorrectedMLEntryTimingLabeler:
             })
         
         return green_periods
+    
+    def _determine_trend_from_analyst_signal(self, analyst_signals: pd.Series) -> str:
+        """Determine trend direction from Analyst signal."""
+        # For now, assume Analyst signals are always long (buy signals)
+        # In a real implementation, this would depend on the Analyst signal format
+        return 'long'
     
     def _determine_period_trend(self, period_data: pd.DataFrame) -> str:
         """Determine if period is trending up (long) or down (short)."""
@@ -406,40 +464,29 @@ class CorrectedMLEntryTimingLabeler:
         analyst_signals: pd.Series,
         regime_assignments: Optional[pd.Series] = None
     ) -> pd.DataFrame:
-        """Generate comprehensive features for ML training."""
+        """Generate features for ML training - only peak/bottom and analyst signals."""
         features = pd.DataFrame(index=data.index)
         
-        # Price action features
-        if self.config.price_action_features:
-            price_features = self._generate_price_action_features(data)
-            features = pd.concat([features, price_features], axis=1)
+        # Peak/bottom proximity features (primary features)
+        peak_bottom_features = self._generate_peak_bottom_features(data)
+        features = pd.concat([features, peak_bottom_features], axis=1)
         
-        # Technical indicators
+        # Analyst signal features (primary features)
+        analyst_features = self._generate_analyst_signal_features(analyst_signals)
+        features = pd.concat([features, analyst_features], axis=1)
+        
+        # Technical indicators, volume, volatility (for ML models only, not for labeling)
         if self.config.technical_indicators:
             tech_features = self._generate_technical_indicator_features(data)
             features = pd.concat([features, tech_features], axis=1)
         
-        # Volume features
         if self.config.volume_features:
             volume_features = self._generate_volume_features(data)
             features = pd.concat([features, volume_features], axis=1)
         
-        # Volatility features
         if self.config.volatility_features:
             vol_features = self._generate_volatility_features(data)
             features = pd.concat([features, vol_features], axis=1)
-        
-        # Peak/bottom proximity features
-        peak_bottom_features = self._generate_peak_bottom_features(data)
-        features = pd.concat([features, peak_bottom_features], axis=1)
-        
-        # Analyst signal features
-        analyst_features = self._generate_analyst_signal_features(analyst_signals)
-        features = pd.concat([features, analyst_features], axis=1)
-        
-        # Time-based features
-        time_features = self._generate_time_features(data.index)
-        features = pd.concat([features, time_features], axis=1)
         
         return features
     

@@ -5,12 +5,15 @@ import pywt
 import numpy as np
 import pandas as pd
 import pandas_ta as ta
-# Use existing feature engineering from src.feature_generation.utils
-from src.feature_generation.utils.step06_enhanced_feature_engineering import EnhancedFeatureEngineeringStep
-from .autoencoder_feature_generator import AutoencoderFeatureGenerator
-from .utils.limited_microstructure_features import LimitedMicrostructureFeatures
-from ..training.steps.data_collection.feature_generation.utils.feature_components import EntropyFeatureEngine
-from ..utils.step06_utilities import CrossTimeframeFeatureGenerator
+        # Use existing feature engineering from src.feature_generation.utils
+        from src.feature_generation.utils.step06_enhanced_feature_engineering import EnhancedFeatureEngineeringStep
+        from .autoencoder_feature_generator import AutoencoderFeatureGenerator
+        from .utils.limited_microstructure_features import LimitedMicrostructureFeatures
+        from ..training.steps.data_collection.feature_generation.utils.feature_components import EntropyFeatureEngine
+        from ..utils.step06_utilities import CrossTimeframeFeatureGenerator
+
+        # Enhanced feature engineering integration
+        from src.feature_generation.enhanced_feature_engineering_integration import EnhancedFeatureEngineer
 from ..config import CONFIG
 from ..core.domain import handle_data_processing_errors, handle_file_operations
 from ..utils.logger import system_logger
@@ -38,6 +41,9 @@ class FeatureEngineeringOrchestrator:
         self.microstructure_features = LimitedMicrostructureFeatures(config)
         self.entropy_engine = EntropyFeatureEngine(config)
         self.cross_timeframe_generator = CrossTimeframeFeatureGenerator()
+
+        # Enhanced feature engineering
+        self.enhanced_feature_engineer = EnhancedFeatureEngineer(config)
         self.model_storage_path = os.path.join(CONFIG['CHECKPOINT_DIR'], 'analyst_models', 'feature_engineering')
         os.makedirs(self.model_storage_path, exist_ok = True)
         self.autoencoder_model_path = os.path.join(self.model_storage_path, 'autoencoder_model.h5')
@@ -75,6 +81,24 @@ class FeatureEngineeringOrchestrator:
                 self.logger.info('📊 Generating advanced features...')
                 features_df = self.advanced_feature_generation.utils.generate_features(features_df, agg_trades_df, futures_df)
                 self.logger.info(f'✅ Advanced features generated. Shape: {features_df.shape}')
+
+                # Add enhanced features from the new feature engineering system
+                self.logger.info('🚀 Generating enhanced features...')
+                try:
+                    enhanced_features = await self.enhanced_feature_engineer.generate_comprehensive_features(
+                        {timeframe: features_df for timeframe in ['1m', '5m', '15m', '1h']},
+                        include_categories=['normalization', 'interaction', 'cross_timeframe']
+                    )
+
+                    # Merge enhanced features into main dataframe
+                    for tf, tf_features in enhanced_features.items():
+                        if not tf_features.empty:
+                            features_df = pd.concat([features_df, tf_features], axis=1)
+
+                    self.logger.info(f'✅ Enhanced features integrated. Shape: {features_df.shape}')
+
+                except Exception as e:
+                    self.logger.warning(f'⚠️ Enhanced features generation failed: {e}')
             if self.enable_autoencoder_features and (not features_df.empty):
                 self.logger.info('🤖 Generating autoencoder features...')
                 features_df = self.autoencoder_generator.generate_features(features_df)

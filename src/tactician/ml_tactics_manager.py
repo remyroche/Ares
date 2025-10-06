@@ -754,7 +754,7 @@ class MLTacticsManager:
 
     def _extract_features(self, market_data: pd.DataFrame) -> np.ndarray:
         """
-        Extract features from market data for prediction.
+        Extract enhanced features from market data for prediction using FeatureBank.
 
         Args:
             market_data: Market data with OHLCV
@@ -763,26 +763,188 @@ class MLTacticsManager:
             np.ndarray: Feature array
         """
         try:
+            if len(market_data) < 20:
+                return np.array([0.5] * 10)
+
+            # Use enhanced feature bank for feature extraction
+            features_df = self._extract_enhanced_features(market_data)
+
+            if features_df.empty or len(features_df.columns) == 0:
+                self.logger.warning("No enhanced features generated, falling back to basic features")
+                return self._extract_basic_features(market_data)
+
+            # Select most relevant features for ML prediction
+            selected_features = self._select_relevant_features(features_df)
+
+            # Convert to numpy array and ensure consistent length
+            feature_array = selected_features.values[-1]  # Take latest values
+
+            # Pad or truncate to expected length (10 features for compatibility)
+            if len(feature_array) < 10:
+                # Pad with zeros if fewer features
+                padded_features = np.zeros(10)
+                padded_features[:len(feature_array)] = feature_array
+                feature_array = padded_features
+            elif len(feature_array) > 10:
+                # Take first 10 features if more available
+                feature_array = feature_array[:10]
+
+            return feature_array
+
+        except Exception as e:
+            self.logger.exception(failed(f'❌ Enhanced feature extraction failed: {e}'))
+            return self._extract_basic_features(market_data)
+
+    def _extract_enhanced_features(self, market_data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Extract enhanced features using the FeatureBank.
+
+        Args:
+            market_data: Market data with OHLCV
+
+        Returns:
+            DataFrame with enhanced features
+        """
+        try:
+            from src.feature_generation import get_feature_bank
+
+            # Get global feature bank or create one
+            try:
+                feature_bank = get_feature_bank()
+            except:
+                # Create new feature bank if none exists
+                from src.feature_generation.core.feature_bank import FeatureBank, FeatureBankConfig
+                config = FeatureBankConfig(
+                    enable_matrix_operations=True,
+                    enable_gpu_acceleration=True,
+                    enable_parallel_processing=True,
+                    auto_normalize=True,
+                    normalization_method='zscore'
+                )
+                feature_bank = FeatureBank(config)
+
+            # Generate enhanced features for key categories
+            categories = [
+                'normalization',  # Rolling z-scores, volatility scaling
+                'momentum',       # RSI, MACD, momentum indicators
+                'volatility',     # Bollinger Bands, ATR
+                'volume',         # Volume ratios, OBV
+                'interaction',    # Feature interactions
+                'cross_timeframe' # Multi-timeframe features
+            ]
+
+            enhanced_features = feature_bank.generate_features(
+                data=market_data,
+                categories=categories,
+                lookback_optimization=False  # Use default lookbacks for speed
+            )
+
+            self.logger.info(f"✅ Generated {len(enhanced_features.columns)} enhanced features")
+            return enhanced_features
+
+        except Exception as e:
+            self.logger.warning(f"Error generating enhanced features: {e}")
+            return pd.DataFrame()
+
+    def _select_relevant_features(self, features_df: pd.DataFrame) -> pd.Series:
+        """
+        Select most relevant features for ML prediction.
+
+        Args:
+            features_df: DataFrame with all generated features
+
+        Returns:
+            Series with selected features (latest values)
+        """
+        # Feature selection strategy for Tactician ML models
+        priority_features = [
+            # Normalization features (most important for stationarity)
+            'zscore_close_20', 'zscore_close_50', 'zscore_volume_20',
+            'vol_scaled_returns_20', 'regime_norm_close_30',
+
+            # Momentum features
+            'rsi_14', 'macd_12_26_9', 'momentum_5', 'roc_10',
+
+            # Volatility features
+            'volatility_20', 'atr_14', 'bb_width_20',
+
+            # Volume features
+            'volume_ratio_20', 'obv', 'volume_momentum_5',
+
+            # Interaction features
+            'momentum_volume_5', 'price_volume_divergence_20',
+
+            # Cross-timeframe features
+            'ctf_fractional_volatility_5m_15m', 'ctf_aligned_1m_to_5m'
+        ]
+
+        selected_values = []
+
+        for feature in priority_features:
+            if feature in features_df.columns:
+                # Get latest value, handle NaN
+                latest_value = features_df[feature].iloc[-1]
+                if pd.isna(latest_value):
+                    latest_value = 0.0
+                selected_values.append(latest_value)
+
+        # If we don't have enough priority features, fill with available features
+        if len(selected_values) < 10:
+            available_features = [col for col in features_df.columns
+                                if col not in priority_features]
+
+            for feature in available_features[:10-len(selected_values)]:
+                latest_value = features_df[feature].iloc[-1]
+                if pd.isna(latest_value):
+                    latest_value = 0.0
+                selected_values.append(latest_value)
+
+        # Ensure we have exactly 10 features
+        while len(selected_values) < 10:
+            selected_values.append(0.0)
+
+        return pd.Series(selected_values[:10])
+
+    def _extract_basic_features(self, market_data: pd.DataFrame) -> np.ndarray:
+        """
+        Extract basic features as fallback (original implementation).
+
+        Args:
+            market_data: Market data with OHLCV
+
+        Returns:
+            np.ndarray: Basic feature array
+        """
+        try:
             features = []
             if len(market_data) < 20:
                 return np.array([0.5] * 10)
+
             close_prices = market_data['close'].values
             high_prices = market_data['high'].values
             low_prices = market_data['low'].values
             volumes = market_data['volume'].values
-            price_momentum = (close_prices[-1] - close_prices[-5]) / close_prices[-5]
+
+            # Basic momentum and volatility features
+            price_momentum = (close_prices[-1] - close_prices[-5]) / close_prices[-5] if close_prices[-5] > 0 else 0
             features.append(price_momentum)
+
             returns = np.diff(close_prices) / close_prices[:-1]
             volatility = np.std(returns[-20:])
             features.append(volatility)
+
             volume_trend = (volumes[-1] - volumes[-5]) / volumes[-5] if volumes[-5] > 0 else 0
             features.append(volume_trend)
-            price_range = (high_prices[-1] - low_prices[-1]) / close_prices[-1]
+
+            price_range = (high_prices[-1] - low_prices[-1]) / close_prices[-1] if close_prices[-1] > 0 else 0
             features.append(price_range)
+
             ma_short = np.mean(close_prices[-5:])
             ma_long = np.mean(close_prices[-20:])
             ma_ratio = ma_short / ma_long if ma_long > 0 else 1.0
             features.append(ma_ratio)
+
+            # RSI calculation
             gains = np.where(returns > 0, returns, 0)
             losses = np.where(returns < 0, -returns, 0)
             avg_gain = np.mean(gains[-14:]) if len(gains) >= 14 else 0
@@ -790,10 +952,19 @@ class MLTacticsManager:
             rs = avg_gain / avg_loss if avg_loss > 0 else 1.0
             rsi = 100 - 100 / (1 + rs)
             features.append(rsi / 100)
-            features.extend([close_prices[-1] / close_prices[-2] - 1, np.mean(volumes[-5:]) / np.mean(volumes[-20:]) if np.mean(volumes[-20:]) > 0 else 1.0, (high_prices[-1] - close_prices[-1]) / close_prices[-1], (close_prices[-1] - low_prices[-1]) / close_prices[-1]])
+
+            # Additional basic features
+            features.extend([
+                close_prices[-1] / close_prices[-2] - 1 if close_prices[-2] > 0 else 0,
+                np.mean(volumes[-5:]) / np.mean(volumes[-20:]) if np.mean(volumes[-20:]) > 0 else 1.0,
+                (high_prices[-1] - close_prices[-1]) / close_prices[-1] if close_prices[-1] > 0 else 0,
+                (close_prices[-1] - low_prices[-1]) / close_prices[-1] if close_prices[-1] > 0 else 0
+            ])
+
             return np.array(features)
+
         except Exception as e:
-            self.logger.exception(failed(f'❌ Feature extraction failed: {e}'))
+            self.logger.exception(failed(f'❌ Basic feature extraction failed: {e}'))
             return np.array([0.5] * 10)
 
     def _generate_fallback_confidence(self, barrier_type: str, features: np.ndarray) -> float:

@@ -28,7 +28,7 @@ from datetime import datetime
 import contextlib
 
 # Import the triple barrier components
-from .multi_horizon_profit_labeler import (
+from ..pre_training.multi_horizon_profit_labeler import (
     MultiHorizonProfitLabeler,
     MultiHorizonConfig,
     create_multi_horizon_labeler,

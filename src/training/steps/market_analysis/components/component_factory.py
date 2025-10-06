@@ -25,9 +25,9 @@ from .nas_tas_regime_discovery import NASTASRegimeDiscoveryComponent
 # from .hmm_ensemble_training_component import HMMEnsembleTrainingComponent  # DEPRECATED
 # RegimeDataSplittingComponent imported lazily to avoid circular imports
 # TripleBarrierLabelingComponent moved to triple_barrier_labeling package
-from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
+from ..pre_training.components.feature_lookback_optimization import FeatureLookbackOptimizationComponent
 from .cross_timeframe_analysis import CrossTimeframeAnalysisComponent  # Now uses PID-based feature generation
-from .final_feature_selection import FinalFeatureSelectionComponent
+from ..pre_training.components.final_feature_selection import FinalFeatureSelectionComponent
 # Removed unused NAS-TAS components - system uses regime_models_training and regime_ensemble_training instead
 from .nas_ensemble_training import NASEnsembleTrainingComponent
 from .regime_models_training import RegimeModelsTrainingComponent

@@ -246,12 +246,17 @@ class AresLauncher:
                                 'data_integration', 'data_export']
             },
             'market_analysis': {
-                'next_stage': 'model_training',
-                'required_files': ['sr_levels.json', 'regime_assignments.parquet', 'labels.parquet', 'features.parquet'],
-                'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata'],
+                'next_stage': 'pre_training',
+                'required_files': ['sr_levels.json', 'regime_assignments.parquet'],
+                'required_artifacts': ['sr_clusters', 'regime_model'],
                 'sub_pipelines': ['sr_detection', 'sr_clustering', 'hybrid_nas_tas_regime_discovery', 'nas_tas_clustering', 'regime_models_training', 'regime_ensemble_training',
-                                'regime_data_splitting', 'multi_horizon_profit_labeler', 'feature_lookback_optimization', 'pid_based_feature_generation',
-                                'final_feature_selection', 'sr_feature_integration']
+                                'regime_data_splitting', 'sr_feature_integration']
+            },
+            'pre_training': {
+                'next_stage': 'model_training',
+                'required_files': ['labels.parquet', 'features.parquet'],
+                'required_artifacts': ['feature_metadata'],
+                'sub_pipelines': ['multi_horizon_profit_labeler', 'feature_lookback_optimization', 'pid_based_feature_generation', 'final_feature_selection']
             },
             'model_training': {
                 'next_stage': 'backtesting',
@@ -950,6 +955,7 @@ class AresLauncher:
         descriptions = {
             PipelineStage.DATA_COLLECTION: "Data collection and preparation stage",
             PipelineStage.MARKET_ANALYSIS: "Market analysis and regime detection stage",
+            PipelineStage.PRE_TRAINING: "Pre-training feature engineering stage",
             PipelineStage.MODEL_TRAINING: "Model training and validation stage",
             PipelineStage.BACKTESTING: "Backtesting and optimization stage"
         }
@@ -1041,12 +1047,14 @@ class AresLauncher:
             'regime_models_training': ['nas_tas_clustering'],
             'regime_ensemble_training': ['regime_models_training'],
             'regime_data_splitting': ['regime_ensemble_training'],
+            'triple_barrier_labeling': ['hmm_regime_discovery'],
+            'sr_feature_integration': ['regime_data_splitting'],
+
+            # Pre-Training dependencies
             'multi_horizon_profit_labeler': ['regime_data_splitting'],
             'feature_lookback_optimization': ['multi_horizon_profit_labeler'],
             'pid_based_feature_generation': ['feature_lookback_optimization'],
             'final_feature_selection': ['pid_based_feature_generation'],
-            'triple_barrier_labeling': ['hmm_regime_discovery'],
-            'sr_feature_integration': ['multi_horizon_profit_labeler'],
             
             # Model Training dependencies
             'hmm_training': ['sr_feature_integration'],
@@ -1101,13 +1109,15 @@ class AresLauncher:
             'regime_models_training': ['regime_models_training_result.json'],
             'regime_ensemble_training': ['regime_ensemble_training_result.json'],
             'regime_data_splitting': ['regime_data_splitting_result.parquet'],
+            'triple_barrier_labeling': ['labels.parquet'],
+            'sr_feature_integration': ['sr_features.json'],
+
+            # Pre-Training outputs
             'multi_horizon_profit_labeler': ['multi_horizon_labels.parquet'],
             'feature_lookback_optimization': ['optimized_features.parquet'],
             'pid_based_feature_generation': ['pid_based_features.parquet'],
             'final_feature_selection': ['final_features.parquet'],
-            'triple_barrier_labeling': ['labels.parquet'],
-            'sr_feature_integration': ['sr_features.json'],
-            
+
             # Model Training outputs
             'hmm_training': ['hmm_model.pkl'],
             'analyst_model_training': ['analyst_model.pkl'],
@@ -1276,13 +1286,13 @@ Examples:
     
     parser.add_argument(
         '--stage',
-        choices=['data_collection', 'market_analysis', 'model_training', 'backtesting'],
+        choices=['data_collection', 'market_analysis', 'pre_training', 'model_training', 'backtesting'],
         help='Specific stage to execute (for stage mode)'
     )
     
     parser.add_argument(
         '--sub-pipeline', '--sub_pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, nas_tas_regime_discovery, nas_tas_clustering, nas_regime_discovery (DEPRECATED), nas_clustering (DEPRECATED), nas_tas_models_training, nas_tas_ensemble_training, hmm_training, analyst_model_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_training, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: data_download, sr_detection, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, feature_lookback_optimization, pid_based_feature_generation, final_feature_selection, nas_tas_models_training, nas_tas_ensemble_training, hmm_training, analyst_model_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_training, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc.'
     )
     
     parser.add_argument(
@@ -1382,6 +1392,7 @@ async def main():
         stage_map = {
             'data_collection': PipelineStage.DATA_COLLECTION,
             'market_analysis': PipelineStage.MARKET_ANALYSIS,
+            'pre_training': PipelineStage.PRE_TRAINING,
             'model_training': PipelineStage.MODEL_TRAINING,
             'backtesting': PipelineStage.BACKTESTING
         }

@@ -10,16 +10,16 @@ import logging
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
-from .base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
+from ...market_analysis.components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
-from ..logging_standards import (
+from ...market_analysis.logging_standards import (
     get_logger, log_info, log_warning, log_error, log_success, log_debug,
     LoggingContext, log_step_progress, log_data_info, log_validation_result
 )
 
 # Import optimized process engine
-from ..optimized_process_engines import OptimizedFeatureSelectionEngine, ProcessType
+from ...market_analysis.optimized_process_engines import OptimizedFeatureSelectionEngine, ProcessType
 
 # Import hardware optimization tools
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer

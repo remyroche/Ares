@@ -577,7 +577,7 @@ def safe_divide(numerator, denominator, default=0.0):
         return default
 
 # Import the multi-horizon labeler
-from .multi_horizon_profit_labeler import (
+from ..pre_training.multi_horizon_profit_labeler import (
     MultiHorizonProfitLabeler, 
     MultiHorizonConfig,
     apply_multi_horizon_labeling

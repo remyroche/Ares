@@ -1323,6 +1323,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
     def _check_for_precomputed_labels(self, pipeline_state: Optional[Dict[str, Any]]) -> bool:
         """Check if pre-computed labels from multi_horizon_profit_labeler are available."""
         if not pipeline_state:
+            tprint_warning("⚠️ No pipeline state provided for label checking")
             return False
 
         # Check for multi_horizon_labeling_result in pipeline state
@@ -1330,53 +1331,188 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         if labeling_result and 'labeled_data' in labeling_result:
             labeled_data = labeling_result['labeled_data']
             if not labeled_data.empty:
-                tprint_info("   → Using pre-computed labels from multi_horizon_profit_labeler")
+                tprint_success("✅ Using pre-computed labels from multi_horizon_profit_labeler")
+                tprint_info(f"   → Found {len(labeled_data.columns)} target columns")
                 return True
 
+        # Check for standardized output format
+        standardized_output = pipeline_state.get('standardized_output', {})
+        if standardized_output and 'labels' in standardized_output:
+            labels = standardized_output['labels']
+            if not labels.empty:
+                tprint_success("✅ Using standardized output labels from multi_horizon_profit_labeler")
+                tprint_info(f"   → Found {len(labels.columns)} target columns")
+                return True
+
+        tprint_warning("⚠️ No pre-computed labels found from multi_horizon_profit_labeler")
         return False
 
     def _get_precomputed_labels(self, pipeline_state: Optional[Dict[str, Any]], lookback: int) -> pd.Series:
-        """Get pre-computed labels from multi_horizon_profit_labeler."""
+        """Get pre-computed labels from multi_horizon_profit_labeler with proper weight application."""
         if not pipeline_state:
+            tprint_warning("⚠️ No pipeline state provided for label retrieval")
             return pd.Series(dtype=float)
 
+        # Try standardized output format first (preferred)
+        standardized_output = pipeline_state.get('standardized_output', {})
+        if standardized_output and 'labels' in standardized_output:
+            labels = standardized_output['labels']
+            weights = standardized_output.get('weights', {})
+            target_columns = standardized_output.get('target_columns', [])
+            
+            if not labels.empty:
+                tprint_info("📋 Using standardized output labels with weights")
+                tprint_info(f"   → Available target columns: {target_columns}")
+                tprint_info(f"   → Horizon weights: {weights}")
+                
+                # Select the best target based on weights and availability
+                best_target = self._select_best_target_with_weights(labels, weights, target_columns)
+                if best_target is not None:
+                    tprint_success(f"✅ Selected target: {best_target}")
+                    return labels[best_target].copy()
+                else:
+                    # Fallback to first available target
+                    target_cols = [col for col in labels.columns if col not in ['timestamp', 'symbol']]
+                    if target_cols:
+                        tprint_info(f"   → Using fallback target: {target_cols[0]}")
+                        return labels[target_cols[0]].copy()
+
+        # Fallback to multi_horizon_labeling_result format
         labeling_result = pipeline_state.get('multi_horizon_labeling_result', {})
         labeled_data = labeling_result.get('labeled_data', pd.DataFrame())
+        horizon_weights = labeling_result.get('horizon_weights', {})
+        target_columns = labeling_result.get('target_columns', [])
 
-        if labeled_data.empty:
-            return pd.Series(dtype=float)
+        if not labeled_data.empty:
+            tprint_info("📊 Using multi_horizon_labeling_result format")
+            tprint_info(f"   → Available target columns: {target_columns}")
+            tprint_info(f"   → Horizon weights: {horizon_weights}")
+            
+            # Select the best target based on weights and availability
+            best_target = self._select_best_target_with_weights(labeled_data, horizon_weights, target_columns)
+            if best_target is not None:
+                tprint_success(f"✅ Selected target: {best_target}")
+                return labeled_data[best_target].copy()
+            else:
+                # Fallback to first available target
+                target_cols = [col for col in labeled_data.columns if col not in ['timestamp', 'symbol']]
+                if target_cols:
+                    tprint_info(f"   → Using fallback target: {target_cols[0]}")
+                    return labeled_data[target_cols[0]].copy()
 
-        # Use the first available target column
-        target_columns = [col for col in labeled_data.columns if col not in ['timestamp', 'symbol']]
-        if target_columns:
-            # For consistency with FPT methodology, use the first target
-            return labeled_data[target_columns[0]].copy()
-        else:
-            return pd.Series(dtype=float)
+        tprint_warning("⚠️ No valid labels found in pipeline state")
+        return pd.Series(dtype=float)
+
+    def _select_best_target_with_weights(self, labels: pd.DataFrame, weights: Dict[str, float], target_columns: List[str]) -> Optional[str]:
+        """Select the best target based on horizon weights and availability."""
+        try:
+            if not weights or not target_columns:
+                # No weights available, use first available target
+                available_targets = [col for col in labels.columns if col not in ['timestamp', 'symbol']]
+                return available_targets[0] if available_targets else None
+
+            # Priority order based on horizon weights (higher weight = higher priority)
+            # Map target columns to their corresponding horizon weights
+            target_priority = []
+            
+            for target in target_columns:
+                if target in labels.columns:
+                    # Determine horizon type from target name
+                    if 'immediate' in target.lower() or 'small' in target.lower():
+                        horizon_weight = weights.get('small', 0.0)
+                    elif 'short' in target.lower() or 'medium' in target.lower():
+                        horizon_weight = weights.get('medium', 0.0)
+                    elif 'leverage' in target.lower() or 'high' in target.lower():
+                        horizon_weight = weights.get('high', 0.0)
+                    else:
+                        # Default to small horizon if unclear
+                        horizon_weight = weights.get('small', 0.0)
+                    
+                    target_priority.append((target, horizon_weight))
+
+            # Sort by weight (descending) and return the highest weighted target
+            if target_priority:
+                target_priority.sort(key=lambda x: x[1], reverse=True)
+                best_target = target_priority[0][0]
+                tprint_info(f"   → Selected target '{best_target}' with weight {target_priority[0][1]:.3f}")
+                return best_target
+
+            return None
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Error selecting best target with weights: {e}")
+            # Fallback to first available target
+            available_targets = [col for col in labels.columns if col not in ['timestamp', 'symbol']]
+            return available_targets[0] if available_targets else None
 
     def _get_precomputed_confidence_scores(self, pipeline_state: Optional[Dict[str, Any]]) -> pd.DataFrame:
         """Get pre-computed confidence scores from multi_horizon_profit_labeler."""
         if not pipeline_state:
             return pd.DataFrame()
 
+        # Try standardized output format first
+        standardized_output = pipeline_state.get('standardized_output', {})
+        if standardized_output and 'confidence_scores' in standardized_output:
+            confidence_scores = standardized_output['confidence_scores']
+            if not confidence_scores.empty:
+                tprint_info("📋 Using standardized confidence scores")
+                return confidence_scores
+
+        # Fallback to multi_horizon_labeling_result format
         labeling_result = pipeline_state.get('multi_horizon_labeling_result', {})
-        return labeling_result.get('confidence_scores', pd.DataFrame())
+        confidence_scores = labeling_result.get('confidence_scores', pd.DataFrame())
+        if not confidence_scores.empty:
+            tprint_info("📊 Using multi_horizon_labeling_result confidence scores")
+            return confidence_scores
+
+        tprint_warning("⚠️ No confidence scores found")
+        return pd.DataFrame()
 
     def _get_precomputed_eligibility_masks(self, pipeline_state: Optional[Dict[str, Any]]) -> pd.DataFrame:
         """Get pre-computed eligibility masks from multi_horizon_profit_labeler."""
         if not pipeline_state:
             return pd.DataFrame()
 
+        # Try standardized output format first
+        standardized_output = pipeline_state.get('standardized_output', {})
+        if standardized_output and 'eligibility_masks' in standardized_output:
+            eligibility_masks = standardized_output['eligibility_masks']
+            if not eligibility_masks.empty:
+                tprint_info("📋 Using standardized eligibility masks")
+                return eligibility_masks
+
+        # Fallback to multi_horizon_labeling_result format
         labeling_result = pipeline_state.get('multi_horizon_labeling_result', {})
-        return labeling_result.get('eligibility_masks', pd.DataFrame())
+        eligibility_masks = labeling_result.get('eligibility_masks', pd.DataFrame())
+        if not eligibility_masks.empty:
+            tprint_info("📊 Using multi_horizon_labeling_result eligibility masks")
+            return eligibility_masks
+
+        tprint_warning("⚠️ No eligibility masks found")
+        return pd.DataFrame()
 
     def _get_precomputed_quality_scores(self, pipeline_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """Get pre-computed quality scores from multi_horizon_profit_labeler."""
         if not pipeline_state:
             return {}
 
+        # Try standardized output format first
+        standardized_output = pipeline_state.get('standardized_output', {})
+        if standardized_output and 'quality_scores' in standardized_output:
+            quality_scores = standardized_output['quality_scores']
+            if quality_scores:
+                tprint_info("📋 Using standardized quality scores")
+                return quality_scores
+
+        # Fallback to multi_horizon_labeling_result format
         labeling_result = pipeline_state.get('multi_horizon_labeling_result', {})
-        return labeling_result.get('quality_scores', {})
+        quality_scores = labeling_result.get('quality_scores', {})
+        if quality_scores:
+            tprint_info("📊 Using multi_horizon_labeling_result quality scores")
+            return quality_scores
+
+        tprint_warning("⚠️ No quality scores found")
+        return {}
 
     def _get_generated_confidence_scores(self) -> pd.DataFrame:
         """Get confidence scores from the cached target result (generated on-the-fly)."""
@@ -2713,7 +2849,9 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
 
         except Exception as e:
             optimization_time = time.time() - optimization_start_time
-            tprint(f"❌ Feature optimization process failed after {optimization_time:.2f}s: {e}")
+            tprint_error(f"❌ Feature optimization process failed after {optimization_time:.2f}s: {e}")
+            import traceback
+            tprint_error(f"🔍 Error details: {traceback.format_exc()}")
             self.performance_monitor['error_counts'] += 1
 
             # Return comprehensive fallback optimization result

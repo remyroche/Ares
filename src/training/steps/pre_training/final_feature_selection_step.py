@@ -166,9 +166,9 @@ class FinalFeatureSelectionStep:
             return True
 
         except Exception as e:
-            tprint(f"❌ Final feature selection failed: {e}")
+            tprint_error(f"❌ Final feature selection failed: {e}")
             import traceback
-            tprint(f"🔍 Error details: {traceback.format_exc()}")
+            tprint_error(f"🔍 Error details: {traceback.format_exc()}")
             return False
 
     async def _load_target_data_from_standardized_format(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
@@ -196,9 +196,15 @@ class FinalFeatureSelectionStep:
                     if 'standardized_output' in artifacts:
                         standardized_output = artifacts['standardized_output']
                         target_data = standardized_output.get('labels')
+                        weights = standardized_output.get('weights', {})
+                        target_columns = standardized_output.get('target_columns', [])
 
                         if target_data is not None:
-                            self.logger.info("✅ Successfully loaded target data from standardized format"                            if isinstance(target_data, dict):
+                            self.logger.info("✅ Successfully loaded target data from standardized format")
+                            tprint_info(f"🎯 Target columns: {target_columns}")
+                            tprint_info(f"⚖️ Horizon weights: {weights}")
+                            
+                            if isinstance(target_data, dict):
                                 # Convert dict to DataFrame if needed
                                 target_df = pd.DataFrame(target_data)
                             elif isinstance(target_data, pd.DataFrame):
@@ -207,8 +213,19 @@ class FinalFeatureSelectionStep:
                                 self.logger.warning("⚠️ Target data in unexpected format")
                                 return None
 
-                            self.logger.info(f"📊 Target data loaded: {len(target_df)} rows, {len(target_df.columns)} columns")
-                            return target_df
+                            # Select the best target based on weights
+                            best_target = self._select_best_target_with_weights(target_df, weights, target_columns)
+                            if best_target:
+                                tprint_success(f"✅ Selected best target for feature selection: {best_target}")
+                                # Return DataFrame with the selected target
+                                selected_target_df = pd.DataFrame({best_target: target_df[best_target]})
+                                self.logger.info(f"📊 Target data loaded: {len(selected_target_df)} rows, 1 target column")
+                                return selected_target_df
+                            else:
+                                # Fallback to all targets
+                                self.logger.info("📊 Using all available targets")
+                                self.logger.info(f"📊 Target data loaded: {len(target_df)} rows, {len(target_df.columns)} columns")
+                                return target_df
                         else:
                             self.logger.warning("⚠️ No labels found in standardized output")
                     else:
@@ -221,6 +238,48 @@ class FinalFeatureSelectionStep:
             self.logger.warning(f"⚠️ Failed to load target data from standardized format: {e}")
             # Fallback to original method
             return await self._load_target_data(symbol, exchange, timeframe, data_dir)
+
+    def _select_best_target_with_weights(self, labels: pd.DataFrame, weights: Dict[str, float], target_columns: List[str]) -> Optional[str]:
+        """Select the best target based on horizon weights and availability for feature selection."""
+        try:
+            if not weights or not target_columns:
+                # No weights available, use first available target
+                available_targets = [col for col in labels.columns if col not in ['timestamp', 'symbol']]
+                return available_targets[0] if available_targets else None
+
+            # Priority order based on horizon weights (higher weight = higher priority)
+            # Map target columns to their corresponding horizon weights
+            target_priority = []
+            
+            for target in target_columns:
+                if target in labels.columns:
+                    # Determine horizon type from target name
+                    if 'immediate' in target.lower() or 'small' in target.lower():
+                        horizon_weight = weights.get('small', 0.0)
+                    elif 'short' in target.lower() or 'medium' in target.lower():
+                        horizon_weight = weights.get('medium', 0.0)
+                    elif 'leverage' in target.lower() or 'high' in target.lower():
+                        horizon_weight = weights.get('high', 0.0)
+                    else:
+                        # Default to small horizon if unclear
+                        horizon_weight = weights.get('small', 0.0)
+                    
+                    target_priority.append((target, horizon_weight))
+
+            # Sort by weight (descending) and return the highest weighted target
+            if target_priority:
+                target_priority.sort(key=lambda x: x[1], reverse=True)
+                best_target = target_priority[0][0]
+                tprint_info(f"   → Selected target '{best_target}' with weight {target_priority[0][1]:.3f} for feature selection")
+                return best_target
+
+            return None
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Error selecting best target with weights: {e}")
+            # Fallback to first available target
+            available_targets = [col for col in labels.columns if col not in ['timestamp', 'symbol']]
+            return available_targets[0] if available_targets else None
 
     async def _load_feature_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
         """Load feature data from previous pipeline steps."""

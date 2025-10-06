@@ -613,9 +613,34 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                 # Extract target columns and weights for enhanced integration
                 target_columns = standardized_output.get('target_columns', [])
                 horizon_weights = standardized_output.get('weights', {})
+                confidence_scores = standardized_output.get('confidence_scores', None)
+                eligibility_masks = standardized_output.get('eligibility_masks', None)
+                quality_scores = standardized_output.get('quality_scores', None)
 
                 tprint_info(f"🎯 Target columns from standardized format: {target_columns}")
                 tprint_info(f"⚖️ Horizon weights from standardized format: {horizon_weights}")
+                
+                # Log additional metadata availability
+                if confidence_scores is not None:
+                    tprint_info(f"📊 Using standardized confidence scores: {type(confidence_scores)}")
+                if eligibility_masks is not None:
+                    tprint_info(f"📊 Using standardized eligibility masks: {type(eligibility_masks)}")
+                if quality_scores is not None:
+                    tprint_info(f"📊 Using standardized quality scores for {len(quality_scores)} targets")
+                
+                # Select the best target based on weights
+                best_target = self._select_best_target_with_weights(labeled_data, horizon_weights, target_columns)
+                if best_target:
+                    tprint_success(f"✅ Selected best target for PID generation: {best_target}")
+                    return {
+                        'targets': labeled_data[best_target],
+                        'confidence_scores': confidence_scores,
+                        'eligibility_masks': eligibility_masks,
+                        'quality_scores': quality_scores,
+                        'horizon_weights': horizon_weights,
+                        'target_columns': target_columns,
+                        'selected_target': best_target
+                    }
 
             # Fallback to legacy format if standardized format not available
             else:
@@ -1278,6 +1303,48 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint_error(f"Target validation failed: {e}")
             return None
+
+    def _select_best_target_with_weights(self, labels: pd.DataFrame, weights: Dict[str, float], target_columns: List[str]) -> Optional[str]:
+        """Select the best target based on horizon weights and availability for PID feature generation."""
+        try:
+            if not weights or not target_columns:
+                # No weights available, use first available target
+                available_targets = [col for col in labels.columns if col not in ['timestamp', 'symbol']]
+                return available_targets[0] if available_targets else None
+
+            # Priority order based on horizon weights (higher weight = higher priority)
+            # Map target columns to their corresponding horizon weights
+            target_priority = []
+            
+            for target in target_columns:
+                if target in labels.columns:
+                    # Determine horizon type from target name
+                    if 'immediate' in target.lower() or 'small' in target.lower():
+                        horizon_weight = weights.get('small', 0.0)
+                    elif 'short' in target.lower() or 'medium' in target.lower():
+                        horizon_weight = weights.get('medium', 0.0)
+                    elif 'leverage' in target.lower() or 'high' in target.lower():
+                        horizon_weight = weights.get('high', 0.0)
+                    else:
+                        # Default to small horizon if unclear
+                        horizon_weight = weights.get('small', 0.0)
+                    
+                    target_priority.append((target, horizon_weight))
+
+            # Sort by weight (descending) and return the highest weighted target
+            if target_priority:
+                target_priority.sort(key=lambda x: x[1], reverse=True)
+                best_target = target_priority[0][0]
+                tprint_info(f"   → Selected target '{best_target}' with weight {target_priority[0][1]:.3f} for PID generation")
+                return best_target
+
+            return None
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Error selecting best target with weights: {e}")
+            # Fallback to first available target
+            available_targets = [col for col in labels.columns if col not in ['timestamp', 'symbol']]
+            return available_targets[0] if available_targets else None
     
     def _report_checkpoint(self, step: str, status: str, details: Dict[str, Any]):
         """Report progress at key checkpoints."""

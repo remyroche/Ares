@@ -39,7 +39,7 @@ except ImportError:
     pd = None
 
 # Import base component
-from ...market_analysis.components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
+from ....market_analysis.components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 
 # Import PID-based feature generation components
 from .pid_based_feature_orchestrator import PIDBasedFeatureOrchestrator, OrchestratorConfig, OrchestratorResult
@@ -48,7 +48,7 @@ from .interaction_feature_generator import OptimizationMetrics, OptimizationStat
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error
 
 # Import optimized process engine
-from ..optimized_process_engines import OptimizedPIDFeatureEngine, ProcessType
+from ...market_analysis.optimized_process_engines import OptimizedPIDFeatureEngine, ProcessType
 
 # Import logger
 try:

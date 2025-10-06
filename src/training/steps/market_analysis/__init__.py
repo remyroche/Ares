@@ -15,7 +15,7 @@ Key Components:
 """
 
 # Import core multi-horizon components (NEW SYSTEM)
-from .multi_horizon_profit_labeler import (
+from ..pre_training.multi_horizon_profit_labeler import (
     MultiHorizonProfitLabeler,
     MultiHorizonConfig,
     create_multi_horizon_labeler,
@@ -37,7 +37,7 @@ from .gradient_flow_analysis import (
 
 # Legacy compatibility - DEPRECATED but maintained for backward compatibility
 try:
-    from .multi_horizon_profit_labeler import (
+    from ..pre_training.multi_horizon_profit_labeler import (
         MultiHorizonProfitLabeler,
         MultiHorizonConfig,
         create_multi_horizon_labeler,

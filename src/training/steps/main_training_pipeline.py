@@ -44,6 +44,7 @@ class PipelineStage(Enum):
     """Pipeline stages."""
     DATA_COLLECTION = "data_collection"
     MARKET_ANALYSIS = "market_analysis"
+    PRE_TRAINING = "pre_training"
     MODEL_TRAINING = "model_training"
     BACKTESTING = "backtesting"
 
@@ -93,6 +94,18 @@ except ImportError:
     MarketAnalysisSubPipeline = None
     MarketAnalysisConfig = None
     MarketAnalysisResult = None
+
+try:
+    from .pre_training.sub_pipeline import (
+        PreTrainingSubPipeline, SubPipelineConfig as PreTrainingConfig,
+        SubPipelineResult as PreTrainingResult
+    )
+    PRE_TRAINING_AVAILABLE = True
+except ImportError:
+    PRE_TRAINING_AVAILABLE = False
+    PreTrainingSubPipeline = None
+    PreTrainingConfig = None
+    PreTrainingResult = None
 
 try:
     from .model_training.sub_pipeline import (
@@ -150,6 +163,7 @@ class MainPipelineConfig:
     enabled_stages: List[PipelineStage] = field(default_factory=lambda: [
         PipelineStage.DATA_COLLECTION,
         PipelineStage.MARKET_ANALYSIS,
+        PipelineStage.PRE_TRAINING,
         PipelineStage.MODEL_TRAINING,
         PipelineStage.BACKTESTING
     ])
@@ -164,8 +178,11 @@ class MainPipelineConfig:
         PipelineStage.MARKET_ANALYSIS: [
             'sr_parameter_optimization', 'sr_detection', 'sr_clustering',
             'nas_tas_regime_discovery', 'nas_tas_clustering', 'regime_models_training', 'regime_ensemble_training',
-            'regime_data_splitting', 'feature_lookback_optimization',
-            'pid_based_feature_generation', 'multi_horizon_profit_labeler', 'final_feature_selection'
+            'regime_data_splitting', 'sr_feature_integration'
+        ],
+        PipelineStage.PRE_TRAINING: [
+            'multi_horizon_profit_labeler', 'feature_lookback_optimization',
+            'pid_based_feature_generation', 'final_feature_selection'
         ],
         PipelineStage.MODEL_TRAINING: [
             'analyst_model_training', 'analyst_ensemble_training',
@@ -237,6 +254,7 @@ class MainTrainingPipeline:
         # Initialize sub-pipeline managers (only if available)
         self.data_collection_pipeline = DataCollectionSubPipeline() if DATA_COLLECTION_AVAILABLE else None
         self.market_analysis_pipeline = MarketAnalysisSubPipeline() if MARKET_ANALYSIS_AVAILABLE else None
+        self.pre_training_pipeline = PreTrainingSubPipeline() if PRE_TRAINING_AVAILABLE else None
         self.model_training_pipeline = ModelTrainingSubPipeline() if MODEL_TRAINING_AVAILABLE else None
         self.backtesting_pipeline = BacktestingSubPipeline() if BACKTESTING_AVAILABLE else None
         
@@ -365,6 +383,14 @@ class MainTrainingPipeline:
                     self.logger.warning("⚠️ Market analysis sub-pipeline not available")
                 return None
             return await self.market_analysis_pipeline.execute_sub_pipeline_with_next(starting_sub_pipeline, stage_config)
+        elif stage == PipelineStage.PRE_TRAINING:
+            if not PRE_TRAINING_AVAILABLE:
+                if STANDARDIZED_LOGGING_AVAILABLE:
+                    log_warning("⚠️ Pre-training sub-pipeline not available")
+                else:
+                    self.logger.warning("⚠️ Pre-training sub-pipeline not available")
+                return None
+            return await self.pre_training_pipeline.execute_sub_pipeline_with_next(starting_sub_pipeline, stage_config)
         elif stage == PipelineStage.MODEL_TRAINING:
             if not MODEL_TRAINING_AVAILABLE:
                 if STANDARDIZED_LOGGING_AVAILABLE:
@@ -422,6 +448,14 @@ class MainTrainingPipeline:
                     self.logger.warning("⚠️ Market analysis sub-pipeline not available")
                 return []
             return await self._execute_market_analysis_stage(enabled_sub_pipelines, stage_config)
+        elif stage == PipelineStage.PRE_TRAINING:
+            if not PRE_TRAINING_AVAILABLE:
+                if STANDARDIZED_LOGGING_AVAILABLE:
+                    log_warning("⚠️ Pre-training sub-pipeline not available")
+                else:
+                    self.logger.warning("⚠️ Pre-training sub-pipeline not available")
+                return []
+            return await self._execute_pre_training_stage(enabled_sub_pipelines, stage_config)
         elif stage == PipelineStage.MODEL_TRAINING:
             if not MODEL_TRAINING_AVAILABLE:
                 if STANDARDIZED_LOGGING_AVAILABLE:
@@ -465,6 +499,11 @@ class MainTrainingPipeline:
         elif stage == PipelineStage.MARKET_ANALYSIS:
             if MARKET_ANALYSIS_AVAILABLE:
                 return MarketAnalysisConfig(**base_config)
+            else:
+                return base_config
+        elif stage == PipelineStage.PRE_TRAINING:
+            if PRE_TRAINING_AVAILABLE:
+                return PreTrainingConfig(**base_config)
             else:
                 return base_config
         elif stage == PipelineStage.MODEL_TRAINING:
@@ -543,9 +582,17 @@ class MainTrainingPipeline:
                             log_warning("⚠️ Market analysis sub-pipeline not available")
                         else:
                             self.logger.warning("⚠️ Market analysis sub-pipeline not available")
-                        continue
                     # Use execute_sub_pipeline_with_next for automatic sequential execution
                     result = await self.market_analysis_pipeline.execute_sub_pipeline_with_next(sub_pipeline_name, stage_config)
+                elif stage == PipelineStage.PRE_TRAINING:
+                    if not PRE_TRAINING_AVAILABLE:
+                        if STANDARDIZED_LOGGING_AVAILABLE:
+                            log_warning("⚠️ Pre-training sub-pipeline not available")
+                        else:
+                            self.logger.warning("⚠️ Pre-training sub-pipeline not available")
+                        continue
+                    # Use execute_sub_pipeline_with_next for automatic sequential execution
+                    result = await self.pre_training_pipeline.execute_sub_pipeline_with_next(sub_pipeline_name, stage_config)
                 elif stage == PipelineStage.MODEL_TRAINING:
                     if not MODEL_TRAINING_AVAILABLE:
                         if STANDARDIZED_LOGGING_AVAILABLE:
@@ -671,7 +718,49 @@ class MainTrainingPipeline:
                     results.append(result)
 
         return results
-    
+
+    async def _execute_pre_training_stage(
+        self,
+        sub_pipeline_names: List[str],
+        config: PreTrainingConfig
+    ) -> List[PreTrainingResult]:
+        """Execute pre-training stage with automatic sequential progression."""
+        self.logger.info(f"📊 Executing pre-training stage with {len(sub_pipeline_names)} sub-pipelines")
+        self.logger.info("🔄 PRE_TRAINING stage configured for automatic sequential execution")
+
+        results = []
+
+        try:
+            # Execute each sub-pipeline in sequence
+            for sub_pipeline_name in sub_pipeline_names:
+                self.logger.info(f"🚀 Executing pre-training sub-pipeline: {sub_pipeline_name}")
+
+                # Execute the sub-pipeline
+                result = await self.pre_training_pipeline.execute_sub_pipeline(sub_pipeline_name, config)
+                results.append(result)
+
+                # Check if this sub-pipeline failed
+                if result.status == SubPipelineStatus.FAILED:
+                    self.logger.error(f"❌ Sub-pipeline {sub_pipeline_name} failed, stopping sequential execution")
+                    break
+                else:
+                    self.logger.info(f"✅ Sub-pipeline {sub_pipeline_name} completed successfully")
+
+        except Exception as e:
+            self.logger.error(f"❌ Error executing pre-training stage: {e}")
+            # Create a failed result for the problematic sub-pipeline
+            if sub_pipeline_names:
+                failed_result = PreTrainingResult(
+                    sub_pipeline_name=sub_pipeline_names[0],
+                    status=SubPipelineStatus.FAILED,
+                    start_time=datetime.now(),
+                    end_time=datetime.now(),
+                    error_message=str(e)
+                )
+                results.append(failed_result)
+
+        return results
+
     async def _execute_model_training_stage(
         self,
         sub_pipeline_names: List[str],
@@ -822,6 +911,11 @@ class MainTrainingPipeline:
                 return self.market_analysis_pipeline.get_available_sub_pipelines(stage)
             else:
                 return []
+        elif stage == PipelineStage.PRE_TRAINING:
+            if self.pre_training_pipeline:
+                return self.pre_training_pipeline.get_available_sub_pipelines()
+            else:
+                return []
         elif stage == PipelineStage.MODEL_TRAINING:
             if self.model_training_pipeline:
                 return self.model_training_pipeline.get_available_sub_pipelines()
@@ -841,6 +935,8 @@ class MainTrainingPipeline:
             return self.data_collection_pipeline.get_execution_summary()
         elif stage == PipelineStage.MARKET_ANALYSIS:
             return self.market_analysis_pipeline.get_execution_summary()
+        elif stage == PipelineStage.PRE_TRAINING:
+            return self.pre_training_pipeline.get_execution_summary()
         elif stage == PipelineStage.MODEL_TRAINING:
             return self.model_training_pipeline.get_execution_summary()
         elif stage == PipelineStage.BACKTESTING:
@@ -936,6 +1032,7 @@ def get_full_pipeline_config(
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,
+            PipelineStage.PRE_TRAINING,
             PipelineStage.MODEL_TRAINING,
             PipelineStage.BACKTESTING
         ],
@@ -947,8 +1044,11 @@ def get_full_pipeline_config(
             PipelineStage.MARKET_ANALYSIS: [
                 'sr_parameter_optimization', 'sr_detection', 'sr_clustering',
                 'hmm_regime_discovery', 'hmm_clustering', 'hmm_models_training', 'hmm_ensemble_training',
-                'regime_data_splitting', 'feature_lookback_optimization',
-                'pid_based_feature_generation', 'multi_horizon_profit_labeler', 'final_feature_selection'
+                'regime_data_splitting', 'sr_feature_integration'
+            ],
+            PipelineStage.PRE_TRAINING: [
+                'multi_horizon_profit_labeler', 'feature_lookback_optimization',
+                'pid_based_feature_generation', 'final_feature_selection'
             ],
             PipelineStage.MODEL_TRAINING: [
                 'analyst_model_training', 'analyst_ensemble_training', 
@@ -1037,6 +1137,7 @@ def get_light_pipeline_config(
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,
+            PipelineStage.PRE_TRAINING,
             PipelineStage.MODEL_TRAINING,
             PipelineStage.BACKTESTING
         ],
@@ -1134,6 +1235,7 @@ def get_blank_pipeline_config(
         enabled_stages=[
             PipelineStage.DATA_COLLECTION,
             PipelineStage.MARKET_ANALYSIS,
+            PipelineStage.PRE_TRAINING,
             PipelineStage.MODEL_TRAINING,
             PipelineStage.BACKTESTING
         ],

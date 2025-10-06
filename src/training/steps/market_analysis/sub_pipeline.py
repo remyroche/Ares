@@ -1,7 +1,7 @@
 """
-Market Analysis Sub-Pipeline - Complete 13-Step Pipeline
+Market Analysis Sub-Pipeline - Complete 9-Step Pipeline
 
-This module provides the complete market analysis sub-pipeline with exactly 13 required steps:
+This module provides the complete market analysis sub-pipeline with exactly 9 required steps:
 
 1. sr_parameter_optimization - Optimize SR detection levels
 2. sr_detection - Detect Support/Resistance levels
@@ -11,10 +11,7 @@ This module provides the complete market analysis sub-pipeline with exactly 13 r
         6. regime_models_training - Regime detection models training (CatBoost, Bayesian Rule Lists, ExtraTrees)
         7. regime_ensemble_training - Meta-learner training (stacker_lgbm_calibrated)
 8. regime_data_splitting - Tag data by regimes
-        9. multi_horizon_profit_labeler - Apply multi-horizon profit labeling
-        10. feature_lookback_optimization - Optimize feature lookback periods
-        11. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
-12. final_feature_selection - Final multi-stage feature selection (120→100→80→60)
+9. sr_feature_integration - Integrate SR-specific features into feature set
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -169,10 +166,6 @@ class SubPipelineResult:
             'regime_data_splitting': ['regime_data_splitting_result'],
             # Support both legacy and current naming for the multi-horizon step
             'multi_horizon_labeling': ['multi_horizon_labeling_result'],
-            'multi_horizon_profit_labeler': ['multi_horizon_labeling_result'],
-            'feature_lookback_optimization': ['feature_lookback_optimization_result'],
-            'pid_based_feature_generation': ['pid_based_feature_generation_result'],
-            'final_feature_selection': ['final_feature_selection_result']
         }
         return artifact_requirements.get(self.sub_pipeline_name, [])
     
@@ -645,10 +638,6 @@ class MarketAnalysisSubPipeline:
         log_info('   6. regime_models_training - Regime detection models training (CatBoost, Bayesian Rule Lists, ExtraTrees)')
         log_info('   7. regime_ensemble_training - Meta-learner training (stacker_lgbm_calibrated)')
         log_info('   8. regime_data_splitting - Tag data by regimes')
-        log_info('   9. multi_horizon_profit_labeler - Apply multi-horizon profit labeling')
-        log_info('   10. feature_lookback_optimization - Optimize feature lookback periods')
-        log_info('   11. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features')
-        log_info('   12. final_feature_selection - Final feature selection (120→100→80→60)')
         log_info('=' * 80)
         
         # Execute from the first step - this will automatically trigger all subsequent steps
@@ -996,112 +985,6 @@ class MarketAnalysisSubPipeline:
                 'regime_data': results['regime_data']
             })
             
-            # Stage 9: Feature Lookback Optimization
-            self.logger.info('⚙️ Executing Stage 9: Feature Lookback Optimization')
-            feature_lookback_optimization_result = await self.execute_sub_pipeline('feature_lookback_optimization', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(feature_lookback_optimization_result, "Feature Lookback Optimization")
-            if not is_success:
-                return error_info
-
-            # Extract data from consolidated artifact
-            feature_optimization_data = feature_lookback_optimization_result.artifacts.get('feature_lookback_optimization_result', {})
-            results['optimized_features'] = feature_optimization_data.get('optimized_features', {})
-            results['optimization_metrics'] = feature_optimization_data.get('optimization_metrics', {})
-
-            # Update pipeline state for next components
-            self._current_pipeline_state.update({
-                'optimized_features': results['optimized_features']
-            })
-
-            # Stage 10: PID-Based Feature Generation
-            self.logger.info('🔧 Executing Stage 10: PID-Based Feature Generation')
-            pid_based_feature_generation_result = await self.execute_sub_pipeline('pid_based_feature_generation', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(pid_based_feature_generation_result, "PID-Based Feature Generation")
-            if not is_success:
-                return error_info
-
-            # Extract data from consolidated artifact
-            pid_feature_data = pid_based_feature_generation_result.artifacts.get('pid_based_feature_generation_result', {})
-
-            # Extract comprehensive PID-based feature generation results
-            results['pid_based_features'] = {
-                'combined_features': pid_feature_data.get('combined_features', {}),
-                'combined_feature_names': pid_feature_data.get('combined_feature_names', []),
-                'feature_importance_scores': pid_feature_data.get('feature_importance_scores', {}),
-                'interaction_features': pid_feature_data.get('interaction_result', {}),
-                'polynomial_features': pid_feature_data.get('polynomial_result', {}),
-                'cross_timeframe_features': pid_feature_data.get('cross_timeframe_result', {})
-            }
-
-            results['pid_feature_metrics'] = {
-                'generation_summary': pid_feature_data.get('generation_summary', {}),
-                'quality_metrics': {
-                    'overall_quality_score': pid_feature_data.get('overall_quality_score', 0.0),
-                    'feature_diversity_score': pid_feature_data.get('feature_diversity_score', 0.0),
-                    'redundancy_score': pid_feature_data.get('redundancy_score', 0.0),
-                    'stability_score': pid_feature_data.get('stability_score', 0.0)
-                },
-                'optimization_metrics': {
-                    'optimization_used': pid_feature_data.get('optimization_used', False),
-                    'matrix_ops_used': pid_feature_data.get('matrix_ops_used', False),
-                    'lookback_integration': pid_feature_data.get('lookback_integration', {})
-                },
-                'validation_result': pid_feature_data.get('validation_result', {}),
-                'total_features_generated': pid_feature_data.get('total_features_generated', 0),
-                'generation_status': pid_feature_data.get('generation_status', 'unknown')
-            }
-
-            # Update pipeline state with features for labeling
-            self._current_pipeline_state.update({
-                'pid_based_features': results['pid_based_features']
-            })
-
-            # Stage 11: Multi-Horizon Profit Labeler (moved here to use optimized features)
-            self.logger.info('🎯 Executing Stage 11: Multi-Horizon Profit Labeler')
-            mh_component_result = await self.execute_sub_pipeline('multi_horizon_profit_labeler', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(mh_component_result, "Multi-Horizon Profit Labeler")
-            if not is_success:
-                return error_info
-            # Extract data from consolidated artifact using dict-safe access
-            mh_result_dict = mh_component_result.artifacts
-            multi_horizon_data = mh_result_dict.get('multi_horizon_labeling_result', {})
-            results['labeled_data'] = multi_horizon_data.get('labeled_data', {})
-            results['labeling_metrics'] = multi_horizon_data.get('labeling_metrics', {})
-            # Update pipeline state for next components
-            self._current_pipeline_state.update({
-                'labeled_data': results['labeled_data'],
-                'multi_horizon_labeling_result': multi_horizon_data
-            })
-
-            # ===== FINAL FEATURE SELECTION STEP =====
-            self.logger.info('🎯 ===== STARTING FINAL FEATURE SELECTION =====')
-
-            # Stage 12: Final Feature Selection
-            self.logger.info('🎯 Executing Stage 12: Final Feature Selection')
-            final_feature_selection_result = await self.execute_sub_pipeline('final_feature_selection', self.config)
-            is_success, error_info = self._validate_sub_pipeline_result(final_feature_selection_result, "Final Feature Selection")
-            if not is_success:
-                return error_info
-
-            # Extract data from consolidated artifact
-            final_selection_data = final_feature_selection_result.artifacts.get('final_feature_selection_result', {})
-
-            # Extract final feature selection results
-            results['final_feature_selection'] = {
-                'symbol': final_selection_data.get('symbol'),
-                'exchange': final_selection_data.get('exchange'),
-                'timeframe': final_selection_data.get('timeframe'),
-                'data_dir': final_selection_data.get('data_dir'),
-                'feature_selection_config': final_selection_data.get('feature_selection_config', {}),
-                'execution_mode': final_selection_data.get('execution_mode', 'component'),
-                'success': final_selection_data.get('success', True),
-                'stage_reduction': final_selection_data.get('stage_reduction', {
-                    'initial': 120,
-                    'stage_1': 100,
-                    'stage_2': 80,
-                    'stage_3': 60
-                })
-            }
 
             # Final success
             self.logger.info('🎉 Market Analysis Sub-Pipeline completed successfully')
@@ -1109,7 +992,7 @@ class MarketAnalysisSubPipeline:
                 'success': True,
                 'results': results,
                 'execution_time': sum(result.execution_time for result in self.results),
-                'total_stages': 12,
+                'total_stages': 8,
                 'completed_stages': len(self.results)
             }
             
@@ -1396,8 +1279,6 @@ class MarketAnalysisSubPipeline:
                 'tactician_training',
                 'regime_specific_training',
                 'regime_data_splitting',  # Tag data by regimes
-                'feature_lookback_optimization',  # Optimize feature lookback periods
-                'pid_based_feature_generation',   # PID-based feature generation
                 'model_validation',
                 'model_persistence',
                 'model_evaluation',
@@ -1434,10 +1315,6 @@ class MarketAnalysisSubPipeline:
         6. regime_models_training - Regime detection models training (CatBoost, Bayesian Rule Lists, ExtraTrees)
         7. regime_ensemble_training - Meta-learner training (stacker_lgbm_calibrated)
         8. regime_data_splitting - Tag data by regimes
-        9. multi_horizon_profit_labeler - Apply multi-horizon profit labeling
-        10. feature_lookback_optimization - Optimize feature lookback periods
-        11. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
-        12. final_feature_selection - Final feature selection (120→100→80→60)
 
         When one step completes successfully, it automatically triggers the next step.
         
@@ -1486,10 +1363,6 @@ class MarketAnalysisSubPipeline:
             'regime_models_training',
             'regime_ensemble_training',
             'regime_data_splitting',
-            'multi_horizon_profit_labeler',  # Generate profit labels first - needed for feature optimization
-            'feature_lookback_optimization',  # Optimize features based on profit labels
-            'pid_based_feature_generation',
-            'final_feature_selection'
         ]
         
         # Additional sub-pipelines that were missing

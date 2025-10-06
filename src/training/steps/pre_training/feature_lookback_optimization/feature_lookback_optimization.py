@@ -224,7 +224,7 @@ except ImportError as e:
     MATRIX_OPS_AVAILABLE = False
     tprint(f"⚠️ Matrix operations not available: {e}")
 
-from ...market_analysis.components.base_component import (
+from ....market_analysis.components.base_component import (
     BaseMarketAnalysisComponent,
     ComponentConfig,
     ComponentResult

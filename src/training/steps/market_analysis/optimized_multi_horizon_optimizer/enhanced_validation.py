@@ -25,7 +25,7 @@ from src.utils.ml_common.validation.model_complexity_analysis import ModelComple
 from .optimization_config import ValidationConfig, ValidationLevel, OptimizationResult
 
 # Import multi-horizon components
-from src.training.steps.market_analysis.multi_horizon_profit_labeler import MultiHorizonConfig
+from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonConfig
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +130,7 @@ class EnhancedValidationFramework:
         
         try:
             # Generate labels using configuration
-            from src.training.steps.market_analysis.multi_horizon_profit_labeler import MultiHorizonProfitLabeler
+            from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonProfitLabeler
             labeler = MultiHorizonProfitLabeler(config)
             labeled_data = labeler.generate_labels(market_data.copy())
             

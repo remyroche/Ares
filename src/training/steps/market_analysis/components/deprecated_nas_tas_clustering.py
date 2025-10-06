@@ -183,7 +183,7 @@ except ImportError as e:
 
 # Import PID-based feature selection for regime discovery
 try:
-    from src.training.steps.market_analysis.pid_based_feature_generation.feature_selection_mechanism import (
+    from src.training.steps.pre_training.pid_based_feature_generation.feature_selection_mechanism import (
         FeatureSelectionMechanism,
         FeatureSelectionConfig,
         SelectionStrategy

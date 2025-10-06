@@ -39,7 +39,7 @@ except ImportError:
     pd = None
 
 # Import base component
-from ....market_analysis.components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
+from ...market_analysis.components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 
 # Import PID-based feature generation components
 from .pid_based_feature_orchestrator import PIDBasedFeatureOrchestrator, OrchestratorConfig, OrchestratorResult

@@ -17,7 +17,7 @@ the new PID-based feature generation system.
 """
 
 # Import the new PID-based feature generation component
-from ..pid_based_feature_generation.pid_based_feature_generation_component import (
+from src.training.steps.pre_training.pid_based_feature_generation.pid_based_feature_generation_component import (
     PIDBasedFeatureGenerationComponent as _PIDBasedFeatureGenerationComponent
 )
 

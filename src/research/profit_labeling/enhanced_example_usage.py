@@ -244,7 +244,7 @@ def example_integration_with_existing_labeler():
     print("\n🔗 Running Integration with Existing Labeler Example")
     
     # Import existing labeler
-    from src.training.steps.market_analysis.multi_horizon_profit_labeler import (
+    from src.training.steps.pre_training.multi_horizon_profit_labeler import (
         MultiHorizonProfitLabeler, MultiHorizonConfig
     )
     
@@ -290,7 +290,7 @@ def example_component_usage():
     print("\n1. ML Quality Assessment:")
     try:
         # First generate base labels
-        from src.training.steps.market_analysis.multi_horizon_profit_labeler import MultiHorizonProfitLabeler
+        from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonProfitLabeler
         base_labeler = MultiHorizonProfitLabeler()
         base_labels = base_labeler.generate_labels(market_data.copy())
         

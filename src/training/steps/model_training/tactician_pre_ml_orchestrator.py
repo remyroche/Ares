@@ -57,7 +57,7 @@ except ImportError as e:
 
 # Import feature processing components
 try:
-    from src.training.steps.market_analysis.feature_lookback_optimization import (
+    from src.training.steps.pre_training.feature_lookback_optimization import (
         FeatureLookbackOptimizationComponent, ModularFeatureLookbackOptimizationComponent
     )
     FEATURE_OPTIMIZATION_AVAILABLE = True
@@ -66,8 +66,8 @@ except ImportError as e:
     tprint_warning(f"⚠️ Feature lookback optimization not available: {e}")
 
 try:
-    from src.training.steps.market_analysis.pid_based_feature_generation import (
-        PIDBasedFeatureOrchestrator, OrchestratorConfig, OrchestratorResult
+    from src.training.steps.pre_training.pid_based_feature_generation.pid_based_feature_orchestrator import (
+        PIDBasedFeatureOrchestrator, OrchestratorConfig
     )
     PID_GENERATION_AVAILABLE = True
 except ImportError as e:
@@ -75,8 +75,8 @@ except ImportError as e:
     tprint_warning(f"⚠️ PID-based feature generation not available: {e}")
 
 try:
-    from src.training.steps.market_analysis.multi_horizon_profit_labeler import (
-        MultiHorizonLabeler, MultiHorizonConfig
+    from src.training.steps.pre_training.multi_horizon_profit_labeler import (
+        MultiHorizonProfitLabeler, MultiHorizonConfig
     )
     HORIZON_LABELING_AVAILABLE = True
 except ImportError as e:
@@ -84,10 +84,10 @@ except ImportError as e:
     tprint_warning(f"⚠️ Multi-horizon profit labeling not available: {e}")
 
 try:
-    from src.training.steps.market_analysis.final_feature_selection_step import (
+    from src.training.steps.pre_training.final_feature_selection_step import (
         FinalFeatureSelectionStep
     )
-    from src.training.steps.market_analysis.final_feature_selection_pipeline import (
+    from src.training.steps.pre_training.final_feature_selection_pipeline import (
         FeatureSelectionConfig
     )
     FEATURE_SELECTION_AVAILABLE = True
@@ -303,7 +303,7 @@ class TacticianPreMLOrchestrator:
                     separate_directional_targets=self.config.separate_directional_features,
                     directional_target_prefixes=self.config.directional_feature_prefixes
                 )
-                self.horizon_labeler = MultiHorizonLabeler(labeler_config)
+                self.horizon_labeler = MultiHorizonProfitLabeler(labeler_config)
                 tprint_success(f"✅ Multi-horizon profit labeler initialized (mode: {self.config.direction_mode})")
             except Exception as e:
                 tprint_error(f"❌ Failed to initialize horizon labeler: {e}")

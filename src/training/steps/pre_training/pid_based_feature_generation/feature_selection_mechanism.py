@@ -80,7 +80,7 @@ except ImportError:
 
 # Import configuration constants
 try:
-    from src.training.steps.market_analysis.pid_based_feature_generation.constants import FEATURE_GEN, VALIDATION, CROSS_TIMEFRAME
+    from src.training.steps.pre_training.pid_based_feature_generation.constants import FEATURE_GEN, VALIDATION, CROSS_TIMEFRAME
     CONSTANTS_AVAILABLE = True
 except ImportError:
     CONSTANTS_AVAILABLE = False

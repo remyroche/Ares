@@ -2,7 +2,7 @@ import asyncio
 
 import numpy as np
 
-from src.training.steps.market_analysis.pid_based_feature_generation.cross_timeframe_feature_generator import (
+from src.training.steps.pre_training.pid_based_feature_generation.cross_timeframe_feature_generator import (
     CrossTimeframeConfig,
     CrossTimeframeFeatureGenerator,
 )

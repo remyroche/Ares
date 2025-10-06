@@ -2619,7 +2619,7 @@ class ModelTrainingSubPipeline:
 
             # Import PID feature generation utilities
             try:
-                from src.training.steps.market_analysis.pid_based_feature_generation.pid_based_feature_generation_component import PIDBasedFeatureGenerationComponent as PIDFeatureGenerator
+                from src.training.steps.pre_training.pid_based_feature_generation.pid_based_feature_generation_component import PIDBasedFeatureGenerationComponent as PIDFeatureGenerator
             except ImportError:
                 return {
                     'success': False,
@@ -2673,7 +2673,7 @@ class ModelTrainingSubPipeline:
 
             # Import multi-horizon labeling utilities
             try:
-                from src.training.steps.market_analysis.multi_horizon_profit_labeler import MultiHorizonProfitLabeler
+                from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonProfitLabeler
             except ImportError:
                 return {
                     'success': False,

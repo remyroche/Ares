@@ -57,7 +57,7 @@ def main():
     
     # Check 1: Verify PID-based feature generation directory exists
     print("\n📁 Directory Structure:")
-    pid_dir = workspace_root / "src/training/steps/market_analysis/pid_based_feature_generation"
+    pid_dir = workspace_root / "src/training/steps/pre_training/pid_based_feature_generation"
     check_file_exists(str(pid_dir), "PID-based feature generation directory")
     
     # Check 2: Verify key files exist
@@ -79,7 +79,7 @@ def main():
     
     # Check 3: Verify sub-pipeline integration
     print("\n🔗 Sub-Pipeline Integration:")
-    sub_pipeline_file = workspace_root / "src/training/steps/market_analysis/sub_pipeline.py"
+    sub_pipeline_file = workspace_root / "src/training/steps/pre_training/sub_pipeline.py"
     
     sub_pipeline_checks = [
         ("pid_based_feature_generation", "PID-based feature generation stage name"),

@@ -94,7 +94,7 @@ def test_integration_with_existing():
     
     try:
         # Import existing labeler
-        from src.training.steps.market_analysis.multi_horizon_profit_labeler import (
+        from src.training.steps.pre_training.multi_horizon_profit_labeler import (
             MultiHorizonProfitLabeler, MultiHorizonConfig
         )
         
@@ -133,7 +133,7 @@ def test_individual_components():
     # Test 1: ML Quality Assessment
     try:
         from src.research.profit_labeling import assess_label_quality_ml
-        from src.training.steps.market_analysis.multi_horizon_profit_labeler import MultiHorizonProfitLabeler
+        from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonProfitLabeler
         
         # Generate base labels first
         base_labeler = MultiHorizonProfitLabeler()

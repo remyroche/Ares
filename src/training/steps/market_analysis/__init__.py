@@ -78,7 +78,7 @@ from .enhanced_market_analysis_with_triple_barrier import (
 )
 
 # Import PID-based feature generation
-from .pid_based_feature_generation import (
+from ..pre_training.pid_based_feature_generation import (
     PIDBasedFeatureOrchestrator,
     OrchestratorConfig,
     InteractionFeatureGenerator,

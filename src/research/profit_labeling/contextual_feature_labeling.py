@@ -40,7 +40,7 @@ from sklearn.decomposition import PCA
 from sklearn.feature_selection import SelectKBest, f_regression, mutual_info_regression
 
 from src.utils.logger import get_logger
-from src.training.steps.market_analysis.multi_horizon_profit_labeler import MultiHorizonConfig
+from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonConfig
 
 
 class FeatureCategory(Enum):

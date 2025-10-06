@@ -117,7 +117,7 @@ class MultiHorizonConfig:
         'medium': 0.007,   # 0.7% (net: 0.62% after fees)
         'good': 0.010      # 1.0% (net: 0.92% after fees)
     })
-    
+
     # Time horizons (UPDATED for 20-40 minute focus)
     time_horizons: Dict[str, int] = field(default_factory=lambda: {
         'immediate': 4,    # 20 minutes (4 * 5m) - for 20m focus
@@ -126,6 +126,37 @@ class MultiHorizonConfig:
 
     # Base period in minutes (FIXED: Single source of timeframe truth)
     base_period_minutes: float = 5.0
+
+    # Timeframe parameter (for automatic base_period_minutes calculation)
+    timeframe: str = "15m"
+
+    def __post_init__(self):
+        """Post-initialization processing to convert timeframe to base_period_minutes."""
+        if self.timeframe and self.base_period_minutes == 5.0:  # Only auto-convert if using default
+            self.base_period_minutes = self._timeframe_to_minutes(self.timeframe)
+
+    def _timeframe_to_minutes(self, timeframe: str) -> float:
+        """Convert timeframe string to minutes."""
+        try:
+            # Extract number and unit from timeframe string
+            import re
+            match = re.match(r'(\d+)(\w+)', timeframe.lower())
+            if match:
+                number, unit = match.groups()
+                number = int(number)
+
+                if 'm' in unit:
+                    return float(number)  # Already in minutes
+                elif 'h' in unit:
+                    return float(number * 60)  # Convert hours to minutes
+                elif 'd' in unit:
+                    return float(number * 24 * 60)  # Convert days to minutes
+                else:
+                    return 5.0  # Default fallback
+            else:
+                return 5.0  # Default fallback
+        except Exception:
+            return 5.0  # Default fallback
 
     # Fee consideration
     transaction_cost: float = 0.0008  # 0.08%

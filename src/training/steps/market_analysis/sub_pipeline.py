@@ -1,7 +1,7 @@
 """
-Market Analysis Sub-Pipeline - Complete 9-Step Pipeline
+Market Analysis Sub-Pipeline - Complete 8-Step Pipeline
 
-This module provides the complete market analysis sub-pipeline with exactly 9 required steps:
+This module provides the complete market analysis sub-pipeline with exactly 8 required steps:
 
 1. sr_parameter_optimization - Optimize SR detection levels
 2. sr_detection - Detect Support/Resistance levels
@@ -11,7 +11,12 @@ This module provides the complete market analysis sub-pipeline with exactly 9 re
         6. regime_models_training - Regime detection models training (CatBoost, Bayesian Rule Lists, ExtraTrees)
         7. regime_ensemble_training - Meta-learner training (stacker_lgbm_calibrated)
 8. regime_data_splitting - Tag data by regimes
-9. sr_feature_integration - Integrate SR-specific features into feature set
+
+Note: The following feature engineering steps have been moved to pre_training:
+- multi_horizon_profit_labeler - Apply multi-horizon profit labeling
+- feature_lookback_optimization - Optimize feature lookback periods
+- pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
+- final_feature_selection - Final multi-stage feature selection (120→100→80→60)
 """
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -673,12 +678,14 @@ class MarketAnalysisSubPipeline:
         6. Regime detection models training (CatBoost, Bayesian Rule Lists, ExtraTrees)
         7. Regime detection ensemble training (stacker_lgbm_calibrated)
 
-        Data Processing Steps (8-12):
+        Data Processing Steps (8):
         8. Regime data splitting
-        9. Multi-horizon profit labeling
-        10. Feature lookback optimization
-        11. PID-based feature generation
-        12. Final feature selection (120→100→80→60)
+
+        Note: Feature engineering steps (9-12) have been moved to pre_training sub-pipeline:
+        - Multi-horizon profit labeling
+        - Feature lookback optimization
+        - PID-based feature generation
+        - Final feature selection (120→100→80→60)
         """
         log_info('🎯 Starting Market Analysis Sub-Pipeline execution')
         tprint("🎯 [MARKET_ANALYSIS] Starting Market Analysis Sub-Pipeline execution", color="cyan", bold=True)

@@ -375,39 +375,74 @@ class NASTASModelsTrainingSubPipeline:
     # and applied to the data before it reaches NAS/TAS training
 
     async def _prepare_training_data(self, config: NASTASModelsTrainingConfig, result: NASTASModelsTrainingResult) -> bool:
-        """Prepare training data using shared pipeline state from Analyst/Tactician."""
+        """Prepare training data using same inputs as Analyst/Tactician but with different regime splitting."""
         try:
-            tprint_info("📋 Preparing training data using shared pipeline state from Analyst/Tactician")
+            tprint_info("📋 Preparing training data with same inputs as Analyst/Tactician but different regime splitting")
 
-            # Check if we have access to processed data from Analyst/Tactician pre-training
-            analyst_features = self.current_pipeline_state.get('analyst_features')
-            tactician_features = self.current_pipeline_state.get('tactician_features')
+            # Determine which pipeline we're integrating with
+            integration_type = self.current_pipeline_state.get('integration_type', 'standalone')
+            tprint_info(f"🔗 Integration type: {integration_type}")
 
-            if analyst_features and isinstance(analyst_features, dict):
-                analyst_processed_data = analyst_features.get('final_features')
-                if analyst_processed_data is not None and not analyst_processed_data.empty:
-                    tprint_info(f"📥 Using Analyst processed data: {analyst_processed_data.shape}")
-                    # Use Analyst's processed data as base for NAS (5m timeframe)
-                    nas_5m_data = analyst_processed_data.copy()
+            if integration_type == 'analyst_nas':
+                # For analyst integration, use analyst's processed data but apply NAS regime splitting
+                tprint_info("🎯 Analyst-NAS integration: Using analyst inputs with NAS regime splitting")
+
+                # Get analyst processed data
+                analyst_features = self.current_pipeline_state.get('analyst_features')
+                analyst_pre_ml_result = self.current_pipeline_state.get('analyst_pre_ml_result')
+
+                if analyst_features and isinstance(analyst_features, dict):
+                    analyst_processed_data = analyst_features.get('final_features')
+                    if analyst_processed_data is not None and not analyst_processed_data.empty:
+                        tprint_info(f"📥 Using Analyst processed data for NAS training: {analyst_processed_data.shape}")
+                        # Use Analyst's processed data as base for NAS (5m timeframe)
+                        nas_5m_data = analyst_processed_data.copy()
+                        shared_features_used = True
+                    else:
+                        tprint_warning("⚠️ Analyst processed data not available, using fallback")
+                        nas_5m_data = self._load_raw_market_data(config, "5m")
+                        shared_features_used = False
                 else:
-                    tprint_warning("⚠️ Analyst processed data not available or empty, loading raw data")
+                    tprint_warning("⚠️ Analyst features not available, using fallback")
                     nas_5m_data = self._load_raw_market_data(config, "5m")
-            else:
-                tprint_warning("⚠️ Analyst features not available in pipeline state, loading raw data")
+                    shared_features_used = False
+
+                # For TAS, we still need 1m data (but we're only doing NAS for analyst integration)
+                tas_1m_data = self._load_raw_market_data(config, "1m")
+
+            elif integration_type == 'tactician_tas':
+                # For tactician integration, use tactician's processed data but apply TAS regime splitting
+                tprint_info("🌳 Tactician-TAS integration: Using tactician inputs with TAS regime splitting")
+
+                # Get tactician processed data
+                tactician_features = self.current_pipeline_state.get('tactician_features')
+                tactician_pre_ml_result = self.current_pipeline_state.get('tactician_pre_ml_result')
+
+                if tactician_features and isinstance(tactician_features, dict):
+                    tactician_processed_data = tactician_features.get('final_features')
+                    if tactician_processed_data is not None and not tactician_processed_data.empty:
+                        tprint_info(f"📥 Using Tactician processed data for TAS training: {tactician_processed_data.shape}")
+                        # Use Tactician's processed data as base for TAS (1m timeframe)
+                        tas_1m_data = tactician_processed_data.copy()
+                        shared_features_used = True
+                    else:
+                        tprint_warning("⚠️ Tactician processed data not available, using fallback")
+                        tas_1m_data = self._load_raw_market_data(config, "1m")
+                        shared_features_used = False
+                else:
+                    tprint_warning("⚠️ Tactician features not available, using fallback")
+                    tas_1m_data = self._load_raw_market_data(config, "1m")
+                    shared_features_used = False
+
+                # For NAS, we still need 5m data (but we're only doing TAS for tactician integration)
                 nas_5m_data = self._load_raw_market_data(config, "5m")
 
-            if tactician_features and isinstance(tactician_features, dict):
-                tactician_processed_data = tactician_features.get('final_features')
-                if tactician_processed_data is not None and not tactician_processed_data.empty:
-                    tprint_info(f"📥 Using Tactician processed data: {tactician_processed_data.shape}")
-                    # Use Tactician's processed data as base for TAS (1m timeframe)
-                    tas_1m_data = tactician_processed_data.copy()
-                else:
-                    tprint_warning("⚠️ Tactician processed data not available or empty, loading raw data")
-                    tas_1m_data = self._load_raw_market_data(config, "1m")
             else:
-                tprint_warning("⚠️ Tactician features not available in pipeline state, loading raw data")
+                # Standalone mode - use both timeframes independently
+                tprint_info("🔄 Standalone mode: Loading both timeframes independently")
+                nas_5m_data = self._load_raw_market_data(config, "5m")
                 tas_1m_data = self._load_raw_market_data(config, "1m")
+                shared_features_used = False
 
             # Validate that we have data for both timeframes
             if nas_5m_data is None or nas_5m_data.empty:
@@ -420,25 +455,22 @@ class NASTASModelsTrainingSubPipeline:
                 result.error_message = "Failed to load 1m market data for TAS training"
                 return False
 
-            tprint_success(f"✅ Loaded processed data - NAS: {nas_5m_data.shape}, TAS: {tas_1m_data.shape}")
-
-            # Ensure consistent target variables (multi-horizon profit labels)
-            # The data should already have been processed by the multi_horizon_profit_labeler
-            # through the Analyst/Tactician pipeline
+            tprint_success(f"✅ Loaded data - NAS: {nas_5m_data.shape}, TAS: {tas_1m_data.shape}")
 
             # Extract feature columns (excluding targets and metadata)
+            # The data should already have been processed by multi_horizon_profit_labeler
             target_columns = ['target_long', 'target_short']
             metadata_columns = ['timestamp', 'datetime']
 
-            # Get feature columns for NAS (5m)
+            # Get feature columns for NAS (5m) - same as analyst processing
             nas_feature_columns = [col for col in nas_5m_data.columns
                                  if col not in target_columns and col not in metadata_columns]
 
-            # Get feature columns for TAS (1m)
+            # Get feature columns for TAS (1m) - same as tactician processing
             tas_feature_columns = [col for col in tas_1m_data.columns
                                  if col not in target_columns and col not in metadata_columns]
 
-            # Validate that we have target variables
+            # Validate that we have target variables (multi-horizon profit labels)
             missing_targets_nas = [col for col in target_columns if col not in nas_5m_data.columns]
             missing_targets_tas = [col for col in target_columns if col not in tas_1m_data.columns]
 
@@ -450,21 +482,61 @@ class NASTASModelsTrainingSubPipeline:
                 tprint_warning(f"⚠️ Missing target columns in TAS data: {missing_targets_tas}")
                 result.warnings.append(f"Missing target columns in TAS data: {missing_targets_tas}")
 
-            # Prepare final training data
-            training_data = {
-                'X_5m': nas_5m_data[nas_feature_columns] if nas_feature_columns else None,
-                'y_5m': nas_5m_data[target_columns] if not any(col not in nas_5m_data.columns for col in target_columns) else None,
-                'X_1m': tas_1m_data[tas_feature_columns] if tas_feature_columns else None,
-                'y_1m': tas_1m_data[target_columns] if not any(col not in tas_1m_data.columns for col in target_columns) else None,
-                'regime_labels_5m': None,  # Will be loaded from market analysis
-                'regime_labels_1m': None,  # Will be loaded from market analysis
-                'analyst_signals': None,   # Will come from analyst ensemble for TAS filtering
-                'selected_features_5m': nas_feature_columns,
-                'selected_features_1m': tas_feature_columns,
-                'data_quality_5m': not nas_5m_data.empty and len(nas_feature_columns) > 0,
-                'data_quality_1m': not tas_1m_data.empty and len(tas_feature_columns) > 0,
-                'shared_pipeline_used': analyst_features is not None or tactician_features is not None
-            }
+            # For analyst integration, we only train NAS models (5m)
+            # For tactician integration, we only train TAS models (1m)
+            # For standalone, we train both
+
+            if integration_type == 'analyst_nas':
+                # Only prepare NAS data for analyst integration
+                training_data = {
+                    'X_5m': nas_5m_data[nas_feature_columns] if nas_feature_columns else None,
+                    'y_5m': nas_5m_data[target_columns] if not any(col not in nas_5m_data.columns for col in target_columns) else None,
+                    'X_1m': None,  # Not used for analyst integration
+                    'y_1m': None,  # Not used for analyst integration
+                    'regime_labels_5m': None,  # NAS will do its own regime splitting
+                    'regime_labels_1m': None,  # Not used for analyst integration
+                    'analyst_signals': None,   # Not needed for analyst integration
+                    'selected_features_5m': nas_feature_columns,
+                    'selected_features_1m': [],
+                    'data_quality_5m': not nas_5m_data.empty and len(nas_feature_columns) > 0,
+                    'data_quality_1m': False,
+                    'shared_pipeline_used': shared_features_used,
+                    'integration_type': 'analyst_nas'
+                }
+            elif integration_type == 'tactician_tas':
+                # Only prepare TAS data for tactician integration
+                training_data = {
+                    'X_5m': None,  # Not used for tactician integration
+                    'y_5m': None,  # Not used for tactician integration
+                    'X_1m': tas_1m_data[tas_feature_columns] if tas_feature_columns else None,
+                    'y_1m': tas_1m_data[target_columns] if not any(col not in tas_1m_data.columns for col in target_columns) else None,
+                    'regime_labels_5m': None,  # Not used for tactician integration
+                    'regime_labels_1m': None,  # TAS will do its own regime splitting
+                    'analyst_signals': None,   # Will be used for TAS filtering if available
+                    'selected_features_5m': [],
+                    'selected_features_1m': tas_feature_columns,
+                    'data_quality_5m': False,
+                    'data_quality_1m': not tas_1m_data.empty and len(tas_feature_columns) > 0,
+                    'shared_pipeline_used': shared_features_used,
+                    'integration_type': 'tactician_tas'
+                }
+            else:
+                # Standalone mode - prepare both
+                training_data = {
+                    'X_5m': nas_5m_data[nas_feature_columns] if nas_feature_columns else None,
+                    'y_5m': nas_5m_data[target_columns] if not any(col not in nas_5m_data.columns for col in target_columns) else None,
+                    'X_1m': tas_1m_data[tas_feature_columns] if tas_feature_columns else None,
+                    'y_1m': tas_1m_data[target_columns] if not any(col not in tas_1m_data.columns for col in target_columns) else None,
+                    'regime_labels_5m': None,  # NAS will do its own regime splitting
+                    'regime_labels_1m': None,  # TAS will do its own regime splitting
+                    'analyst_signals': None,   # Will come from analyst ensemble for TAS filtering
+                    'selected_features_5m': nas_feature_columns,
+                    'selected_features_1m': tas_feature_columns,
+                    'data_quality_5m': not nas_5m_data.empty and len(nas_feature_columns) > 0,
+                    'data_quality_1m': not tas_1m_data.empty and len(tas_feature_columns) > 0,
+                    'shared_pipeline_used': shared_features_used,
+                    'integration_type': 'standalone'
+                }
 
             self.current_pipeline_state['training_data'] = training_data
             self.current_pipeline_state['nas_5m_data'] = nas_5m_data
@@ -473,9 +545,11 @@ class NASTASModelsTrainingSubPipeline:
             # Store metadata about the shared pipeline usage
             result.metadata.update({
                 'shared_pipeline_integration': {
-                    'analyst_features_available': analyst_features is not None,
-                    'tactician_features_available': tactician_features is not None,
-                    'using_processed_data': training_data['shared_pipeline_used']
+                    'analyst_features_available': integration_type == 'analyst_nas',
+                    'tactician_features_available': integration_type == 'tactician_tas',
+                    'using_processed_data': shared_features_used,
+                    'integration_type': integration_type,
+                    'regime_splitting_method': 'nas_tas_own'  # NAS/TAS do their own regime splitting
                 },
                 'data_shapes': {
                     'nas_5m': nas_5m_data.shape,
@@ -491,9 +565,9 @@ class NASTASModelsTrainingSubPipeline:
                 }
             })
 
-            tprint_success("✅ Training data prepared using shared Analyst/Tactician pipeline state")
+            tprint_success("✅ Training data prepared with same inputs as Analyst/Tactician but different regime splitting")
             tprint_info(f"📊 NAS features: {len(nas_feature_columns)}, TAS features: {len(tas_feature_columns)}")
-            tprint_info(f"🔗 Shared pipeline integration: {training_data['shared_pipeline_used']}")
+            tprint_info(f"🔗 Integration type: {integration_type}, Shared features: {shared_features_used}")
             return True
 
         except Exception as e:

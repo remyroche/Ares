@@ -242,24 +242,44 @@ class ModelSelector:
         """
         self.logger.info("📝 Registering models for selection")
         
-        # Register regime models
+        # Register regime models (handling both old and new structure)
         for regime_id, models in regime_models.items():
             self.available_models[regime_id] = {}
-            
-            for model_type, model_info in models.items():
-                model_id = f"regime_{regime_id}_{model_type}"
-                self.available_models[regime_id][model_type] = {
-                    'model': model_info['model'],
-                    'model_id': model_id,
-                    'performance': model_info.get('val_metrics', {}),
-                    'feature_importance': model_info.get('feature_importance', {}),
-                    'hyperparameters': model_info.get('hyperparameters', {})
-                }
-                
-                # Initialize performance history
-                self.performance_history[model_id] = []
-                
-                self.logger.info(f"   ✅ Registered {model_type} for regime {regime_id}")
+
+            if isinstance(models, dict) and any(isinstance(v, dict) for v in models.values()):
+                # New structure: {regime: {'long': model_info, 'short': model_info}}
+                for direction, model_info in models.items():
+                    if isinstance(model_info, dict) and 'model' in model_info:
+                        model_id = f"regime_{regime_id}_{direction}"
+                        self.available_models[regime_id][direction] = {
+                            'model': model_info['model'],
+                            'model_id': model_id,
+                            'performance': model_info.get('val_metrics', {}),
+                            'feature_importance': model_info.get('feature_importance', {}),
+                            'hyperparameters': model_info.get('hyperparameters', {}),
+                            'direction': direction
+                        }
+
+                        # Initialize performance history
+                        self.performance_history[model_id] = []
+
+                        self.logger.info(f"   ✅ Registered {direction} model for regime {regime_id}")
+            else:
+                # Old structure: {regime: {'model_type': model_info}}
+                for model_type, model_info in models.items():
+                    model_id = f"regime_{regime_id}_{model_type}"
+                    self.available_models[regime_id][model_type] = {
+                        'model': model_info['model'],
+                        'model_id': model_id,
+                        'performance': model_info.get('val_metrics', {}),
+                        'feature_importance': model_info.get('feature_importance', {}),
+                        'hyperparameters': model_info.get('hyperparameters', {})
+                    }
+
+                    # Initialize performance history
+                    self.performance_history[model_id] = []
+
+                    self.logger.info(f"   ✅ Registered {model_type} for regime {regime_id}")
         
         # Register ensemble models
         if ensemble_models:

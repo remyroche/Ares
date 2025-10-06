@@ -334,54 +334,100 @@ class TASTrainingStep:
             'min_samples_leaf': 2
         }
     
-    async def _train_tas_models_per_regime(self, 
-                                          X_1m: np.ndarray, 
-                                          y_1m: np.ndarray, 
+    async def _train_tas_models_per_regime(self,
+                                          X_1m: np.ndarray,
+                                          y_1m: np.ndarray,
                                           analyst_signals: np.ndarray,
                                           tas_architectures: Dict[str, Any],
                                           tas_hyperparameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Train TAS models per regime."""
-        self.logger.info("🎯 Training TAS models per regime...")
-        
+        """Train TAS models per regime for both longs and shorts."""
+        self.logger.info("🎯 Training TAS models per regime for longs and shorts...")
+
         tas_models = {}
         unique_regimes = list(tas_architectures.keys())
-        
+
+        # Check if we have separate targets for longs and shorts
+        if isinstance(y_1m, pd.DataFrame) and 'target_long' in y_1m.columns and 'target_short' in y_1m.columns:
+            # We have separate target columns for longs and shorts
+            has_separate_targets = True
+            target_long = y_1m['target_long'].values
+            target_short = y_1m['target_short'].values
+        else:
+            # We need to create separate targets based on a threshold or direction
+            has_separate_targets = False
+            # For now, assume positive targets are longs, negative are shorts
+            target_long = np.where(y_1m > 0, y_1m, 0)
+            target_short = np.where(y_1m < 0, -y_1m, 0)
+
         for regime in unique_regimes:
             try:
                 # Get TAS architecture and hyperparameters for this regime
                 tas_architecture = tas_architectures.get(regime)
                 tas_hyperparams = tas_hyperparameters.get(regime)
-                
+
                 if not tas_architecture:
                     continue
-                
-                # Train TAS model for this regime
-                tas_model = await self._train_single_tas_model(
-                    regime, tas_architecture, tas_hyperparams
-                )
-                
-                if tas_model:
-                    tas_models[regime] = tas_model
-                    self.tas_models[regime] = tas_model
-                    
-                    self.logger.info(f"✅ TAS model trained for regime {regime}")
+
+                regime_tas_models = {}
+
+                # Filter data for this regime
+                regime_mask = tas_architectures.get(regime, {}).get('regime_mask', np.ones(len(X_1m), dtype=bool))
+                regime_data = X_1m[regime_mask]
+                regime_long_targets = target_long[regime_mask] if has_separate_targets else target_long[regime_mask]
+                regime_short_targets = target_short[regime_mask] if has_separate_targets else target_short[regime_mask]
+                regime_analyst_signals = analyst_signals[regime_mask] if analyst_signals is not None else None
+
+                # Train TAS model for LONG positions
+                if np.sum(regime_long_targets > 0) > 20:  # Minimum samples for long
+                    long_model = await self._train_single_tas_model(
+                        f"{regime}_long", tas_architecture, tas_hyperparams,
+                        regime_data, regime_long_targets, regime_analyst_signals
+                    )
+                    if long_model:
+                        regime_tas_models['long'] = long_model
+
+                # Train TAS model for SHORT positions
+                if np.sum(regime_short_targets > 0) > 20:  # Minimum samples for short
+                    short_model = await self._train_single_tas_model(
+                        f"{regime}_short", tas_architecture, tas_hyperparams,
+                        regime_data, regime_short_targets, regime_analyst_signals
+                    )
+                    if short_model:
+                        regime_tas_models['short'] = short_model
+
+                if regime_tas_models:
+                    tas_models[regime] = regime_tas_models
+                    self.tas_models[regime] = regime_tas_models
+
+                    self.logger.info(f"✅ TAS models trained for regime {regime}: long={bool(regime_tas_models.get('long'))}, short={bool(regime_tas_models.get('short'))}")
                 else:
-                    self.logger.warning(f"⚠️ TAS model training failed for regime {regime}")
-                    
+                    self.logger.warning(f"⚠️ No TAS models trained for regime {regime}")
+
             except Exception as e:
                 self.logger.error(f"❌ TAS model training failed for regime {regime}: {e}")
                 continue
-        
+
+        self.logger.info(f"✅ TAS model training completed for {len(tas_models)} regimes ({sum(len(models) for models in tas_models.values())} total models)")
         return tas_models
     
-    async def _train_single_tas_model(self, 
-                                   regime: int, 
-                                   tas_architecture: Any, 
-                                   tas_hyperparams: Dict[str, Any]) -> Optional[Any]:
-        """Train single TAS model for regime."""
+    async def _train_single_tas_model(self,
+                                   regime: int,
+                                   tas_architecture: Any,
+                                   tas_hyperparams: Dict[str, Any],
+                                   regime_data: np.ndarray,
+                                   regime_targets: np.ndarray,
+                                   analyst_signals: Optional[np.ndarray] = None) -> Optional[Any]:
+        """Train single TAS model for regime with specific data."""
         try:
-            # Simulate TAS model training
+            # Simulate TAS model training with regime-specific data
             # In actual implementation, this would train the TAS model with the discovered architecture
+            # using the provided regime data and targets
+
+            # Validate that we have sufficient data
+            if len(regime_data) < 50 or np.sum(regime_targets > 0) < 10:
+                self.logger.warning(f"⚠️ Insufficient data for TAS model training in regime {regime}")
+                return None
+
             training_time = np.random.uniform(5, 30)  # Simulate training time
             await asyncio.sleep(training_time)
             
@@ -407,17 +453,17 @@ class TASTrainingStep:
             self.logger.error(f"❌ Single TAS model training failed for regime {regime}: {e}")
             return None
     
-    async def _validate_tas_models(self, 
-                                 X_1m: np.ndarray, 
-                                 y_1m: np.ndarray, 
+    async def _validate_tas_models(self,
+                                 X_1m: np.ndarray,
+                                 y_1m: np.ndarray,
                                  analyst_signals: np.ndarray,
                                  tas_models: Dict[str, Any]) -> Dict[str, Any]:
         """Validate TAS models using existing validation utilities."""
         if not self.config.enable_cv:
             return {}
-        
-        self.logger.info("📊 Validating TAS models...")
-        
+
+        self.logger.info("📊 Validating TAS models (long/short per regime)...")
+
         try:
             # Use existing validation utilities
             if self.model_validator:
@@ -426,32 +472,82 @@ class TASTrainingStep:
                 )
             else:
                 validation_results = {}
-            
+
             self.logger.info("✅ TAS model validation completed")
             return validation_results
-            
+
         except Exception as e:
             self.logger.error(f"❌ TAS model validation failed: {e}")
             return {}
     
-    async def _perform_tas_model_validation(self, 
-                                          X_1m: np.ndarray, 
-                                          y_1m: np.ndarray, 
+    async def _perform_tas_model_validation(self,
+                                          X_1m: np.ndarray,
+                                          y_1m: np.ndarray,
                                           analyst_signals: np.ndarray,
                                           tas_models: Dict[str, Any]) -> Dict[str, Any]:
         """Perform TAS model validation using existing utilities."""
         try:
-            # Simulate validation using existing utilities
+            # Check if we have separate targets for longs and shorts
+            if isinstance(y_1m, pd.DataFrame) and 'target_long' in y_1m.columns and 'target_short' in y_1m.columns:
+                has_separate_targets = True
+                target_long = y_1m['target_long'].values
+                target_short = y_1m['target_short'].values
+            else:
+                has_separate_targets = False
+                target_long = np.where(y_1m > 0, y_1m, 0)
+                target_short = np.where(y_1m < 0, -y_1m, 0)
+
+            # Validate each regime's long/short models
+            regime_validation_results = {}
+            total_long_models = 0
+            total_short_models = 0
+
+            for regime, regime_models in tas_models.items():
+                if isinstance(regime_models, dict) and ('long' in regime_models or 'short' in regime_models):
+                    regime_results = {}
+
+                    # Validate long model
+                    if 'long' in regime_models:
+                        long_model = regime_models['long']
+                        if long_model:
+                            total_long_models += 1
+                            # Simulate validation for long model
+                            long_validation = {
+                                'cross_validation_score': np.random.uniform(0.7, 0.9),
+                                'walk_forward_score': np.random.uniform(0.6, 0.8),
+                                'analyst_signal_filtering_score': np.random.uniform(0.8, 0.95)
+                            }
+                            regime_results['long'] = long_validation
+
+                    # Validate short model
+                    if 'short' in regime_models:
+                        short_model = regime_models['short']
+                        if short_model:
+                            total_short_models += 1
+                            # Simulate validation for short model
+                            short_validation = {
+                                'cross_validation_score': np.random.uniform(0.7, 0.9),
+                                'walk_forward_score': np.random.uniform(0.6, 0.8),
+                                'analyst_signal_filtering_score': np.random.uniform(0.8, 0.95)
+                            }
+                            regime_results['short'] = short_validation
+
+                    if regime_results:
+                        regime_validation_results[regime] = regime_results
+
+            # Overall validation results
             validation_results = {
-                'cross_validation_score': np.random.uniform(0.7, 0.9),
-                'walk_forward_score': np.random.uniform(0.6, 0.8),
-                'lookahead_prevention_score': np.random.uniform(0.8, 0.95),
-                'regime_stability_score': np.random.uniform(0.7, 0.9),
+                'regime_validation_results': regime_validation_results,
+                'total_long_models_validated': total_long_models,
+                'total_short_models_validated': total_short_models,
+                'overall_cross_validation_score': np.random.uniform(0.7, 0.9),
+                'overall_walk_forward_score': np.random.uniform(0.6, 0.8),
+                'overall_analyst_signal_filtering_score': np.random.uniform(0.8, 0.95),
                 'overall_score': np.random.uniform(0.7, 0.9)
             }
-            
+
             return validation_results
-            
+
         except Exception as e:
             self.logger.error(f"❌ TAS model validation failed: {e}")
             return {}

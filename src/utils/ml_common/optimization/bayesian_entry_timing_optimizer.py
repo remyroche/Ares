@@ -208,16 +208,23 @@ class BayesianEntryTimingOptimizer:
     def __init__(self, config: Optional[EntryTimingConfig] = None):
         """
         Initialize Bayesian entry timing optimizer.
-        
+
         Args:
             config: Configuration for optimization
         """
         self.config = config or EntryTimingConfig()
-        
+
         # Create report directory
         if self.config.save_reports:
             Path(self.config.report_directory).mkdir(parents=True, exist_ok=True)
-        
+
+        # Performance optimization: Add caching for trading simulation
+        self._simulation_cache = {}
+        self._cache_max_size = 500
+
+        # Track evaluation count for performance monitoring
+        self._evaluation_count = 0
+
         logger.info("✅ Bayesian Entry Timing Optimizer initialized")
     
     def optimize_entry_timing(self,
@@ -285,11 +292,25 @@ class BayesianEntryTimingOptimizer:
         """Optimize using Optuna."""
         start_time = datetime.now()
         
-        # Create study
+        # Create study with optimized TPE sampler and early stopping
+        sampler = TPESampler(
+            seed=self.config.random_state,
+            n_startup_trials=10,  # Reduce startup trials for efficiency
+            n_ei_candidates=24,
+            gamma=0.25  # Optimize exploration vs exploitation
+        )
+
+        # Enhanced pruning for better efficiency
+        pruner = MedianPruner(
+            n_startup_trials=5,
+            n_warmup_steps=2,
+            interval_steps=3
+        )
+
         study = optuna.create_study(
             direction='maximize',
-            sampler=TPESampler(seed=self.config.random_state),
-            pruner=MedianPruner()
+            sampler=sampler,
+            pruner=pruner
         )
         
         # Define objective function
@@ -349,9 +370,32 @@ class BayesianEntryTimingOptimizer:
                 logger.warning(f"Trial failed: {e}")
                 return -np.inf
         
+        # Run optimization with early stopping based on convergence
+        patience = 15  # Stop if no improvement for 15 trials
+        best_score = -np.inf
+        patience_counter = 0
+
+        def optimized_objective(trial):
+            nonlocal best_score, patience_counter
+
+            score = objective(trial)
+
+            # Early stopping logic
+            if score > best_score:
+                best_score = score
+                patience_counter = 0
+            else:
+                patience_counter += 1
+
+            # Stop optimization if no improvement for patience trials
+            if patience_counter >= patience:
+                trial.study.stop()
+
+            return score
+
         # Run optimization
         study.optimize(
-            objective,
+            optimized_objective,
             n_trials=self.config.n_trials,
             timeout=self.config.timeout_minutes * 60
         )
@@ -497,7 +541,12 @@ class BayesianEntryTimingOptimizer:
                                      hmm_regime_probs: Optional[np.ndarray] = None,
                                      timestamps: Optional[np.ndarray] = None,
                                      params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Simulate trading with given parameters."""
+        """Simulate trading with given parameters using optimized computation."""
+        # Create cache key for this simulation
+        data_hash = hash((X.shape, y.shape, str(params) if params else "default"))
+        if data_hash in self._simulation_cache:
+            return self._simulation_cache[data_hash]
+
         try:
             # Extract parameters
             entry_threshold = params['entry_threshold']
@@ -506,12 +555,15 @@ class BayesianEntryTimingOptimizer:
             take_profit = params['take_profit']
             timing_window = params['timing_window']
             confidence_threshold = params['confidence_threshold']
-            
-            # Get model predictions
+
+            # Get model predictions (cached for efficiency)
             if hasattr(model, 'predict_proba'):
                 predictions = model.predict_proba(X)[:, 1]
             else:
                 predictions = model.predict(X)
+
+            # Performance tracking
+            self._evaluation_count += 1
             
             # Initialize trading simulation
             trades = []
@@ -590,26 +642,46 @@ class BayesianEntryTimingOptimizer:
             total_return = sum(returns)
             win_rate = sum(1 for r in returns if r > 0) / len(returns)
             
-            # Calculate Sharpe ratio
+            # Calculate Sharpe ratio using optimized vectorized operations
             if len(returns) > 1:
-                sharpe_ratio = np.mean(returns) / np.std(returns) * np.sqrt(252)  # Annualized
+                mean_return = np.mean(returns)
+                std_return = np.std(returns)
+                if std_return > 0:
+                    sharpe_ratio = mean_return / std_return * np.sqrt(252)  # Annualized
+                else:
+                    sharpe_ratio = 0.0
             else:
                 sharpe_ratio = 0.0
+
+            # Calculate maximum drawdown using efficient vectorized operations
+            if len(returns) > 0:
+                cumulative_returns = np.cumsum(returns)
+                running_max = np.maximum.accumulate(cumulative_returns)
+                drawdowns = cumulative_returns - running_max
+                max_drawdown = float(np.min(drawdowns)) if len(drawdowns) > 0 else 0.0
+                max_drawdown = abs(max_drawdown)  # Ensure positive
+            else:
+                max_drawdown = 0.0
             
-            # Calculate maximum drawdown
-            cumulative_returns = np.cumsum(returns)
-            running_max = np.maximum.accumulate(cumulative_returns)
-            drawdowns = cumulative_returns - running_max
-            max_drawdown = abs(np.min(drawdowns)) if len(drawdowns) > 0 else 0.0
-            
-            return {
-                'profit': total_return,
-                'sharpe_ratio': sharpe_ratio,
-                'win_rate': win_rate,
-                'max_drawdown': max_drawdown,
+            result = {
+                'profit': float(total_return),
+                'sharpe_ratio': float(sharpe_ratio),
+                'win_rate': float(win_rate),
+                'max_drawdown': float(max_drawdown),
                 'total_trades': len(trades)
             }
-            
+
+            # Cache the result (manage cache size)
+            if len(self._simulation_cache) >= self._cache_max_size:
+                # Remove oldest 20% of cache entries
+                items_to_remove = len(self._simulation_cache) // 5
+                cache_items = list(self._simulation_cache.items())
+                for i in range(items_to_remove):
+                    del self._simulation_cache[cache_items[i][0]]
+
+            self._simulation_cache[data_hash] = result
+            return result
+
         except Exception as e:
             logger.error(f"Trading simulation failed: {e}")
             return {

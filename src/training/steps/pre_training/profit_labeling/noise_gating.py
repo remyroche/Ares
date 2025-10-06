@@ -33,7 +33,6 @@ class NoiseGateType(Enum):
     """Enumeration of noise gate types."""
     MICRO_RANGE = "micro_range"  # Minimum move vs. micro-range
     VARIANCE_RATIO = "variance_ratio"  # Variance ratio test
-    LIQUIDITY = "liquidity"  # Liquidity-based gating
     SIGNAL_NOISE = "signal_noise"  # Signal-to-noise ratio
     COMBINED = "combined"  # Combined approach
 
@@ -54,11 +53,6 @@ class NoiseGatingConfig:
     vr_window: int = 30  # Window for variance ratio calculation
     vr_subperiods: int = 5  # Number of subperiods for VR calculation
     
-    # Liquidity gating
-    enable_liquidity_gating: bool = True
-    min_volume_percentile: float = 10.0  # Minimum volume percentile
-    max_spread_percentile: float = 95.0  # Maximum spread percentile
-    liquidity_window: int = 50  # Window for liquidity calculation
     
     # Signal-to-noise gating
     enable_signal_noise_gating: bool = True
@@ -86,7 +80,6 @@ class EligibilityResult:
     # Gate-specific results
     micro_range_mask: Optional[pd.Series] = None
     variance_ratio_mask: Optional[pd.Series] = None
-    liquidity_mask: Optional[pd.Series] = None
     signal_noise_mask: Optional[pd.Series] = None
     
     # Statistics
@@ -132,7 +125,6 @@ class NoiseGatingFilter:
         tprint_info(f"   → Gate type: {self.config.gate_type.value}")
         tprint_info(f"   → Micro-range gating: {self.config.enable_micro_range_gating}")
         tprint_info(f"   → Variance ratio gating: {self.config.enable_variance_ratio_gating}")
-        tprint_info(f"   → Liquidity gating: {self.config.enable_liquidity_gating}")
         tprint_info(f"   → Signal-noise gating: {self.config.enable_signal_noise_gating}")
     
     def filter_noise(self, bars: pd.DataFrame, volatility_series: pd.Series) -> EligibilityResult:
@@ -186,10 +178,6 @@ class NoiseGatingFilter:
                 gate_results['variance_ratio'] = vr_mask
                 result.variance_ratio_mask = vr_mask
             
-            if self.config.enable_liquidity_gating:
-                liquidity_mask = self._apply_liquidity_gating(bars_aligned)
-                gate_results['liquidity'] = liquidity_mask
-                result.liquidity_mask = liquidity_mask
             
             if self.config.enable_signal_noise_gating:
                 snr_mask = self._apply_signal_noise_gating(bars_aligned, vol_aligned)
@@ -344,29 +332,6 @@ class NoiseGatingFilter:
             
         except Exception as e:
             tprint_warning(f"⚠️ Error in variance ratio gating: {e}")
-            return pd.Series(True, index=bars.index)
-    
-    def _apply_liquidity_gating(self, bars: pd.DataFrame) -> pd.Series:
-        """Apply liquidity gating based on volume and spread."""
-        try:
-            # Calculate spread ratio
-            mid_price = (bars['high'] + bars['low']) / 2
-            spread_ratio = (bars['high'] - bars['low']) / mid_price
-            
-            # Calculate volume and spread thresholds
-            volume_threshold = bars['volume'].quantile(self.config.min_volume_percentile / 100)
-            spread_threshold = spread_ratio.quantile(self.config.max_spread_percentile / 100)
-            
-            # Apply gating
-            volume_mask = bars['volume'] >= volume_threshold
-            spread_mask = spread_ratio <= spread_threshold
-            
-            eligibility_mask = volume_mask & spread_mask
-            
-            return eligibility_mask
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Error in liquidity gating: {e}")
             return pd.Series(True, index=bars.index)
     
     def _apply_signal_noise_gating(self, bars: pd.DataFrame, volatility_series: pd.Series) -> pd.Series:

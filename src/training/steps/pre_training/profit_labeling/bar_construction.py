@@ -239,15 +239,26 @@ class EventBasedBarConstructor:
             return pd.DataFrame()
     
     def _create_dollar_bars(self, market_data: pd.DataFrame) -> pd.DataFrame:
-        """Create dollar bars."""
+        """Create dollar bars using median volume for more robust sizing."""
         try:
-            # Calculate dollar volume
+            # Calculate dollar volume (works for both USD and USDT)
             market_data = market_data.copy()
             market_data['dollar_volume'] = market_data['close'] * market_data['volume']
-            
-            # Calculate cumulative dollar volume
-            market_data['cum_dollar_volume'] = market_data['dollar_volume'].cumsum()
-            
+
+            # Use median volume over a window for more stable bar sizing
+            window_size = min(20, len(market_data) // 10)  # Adaptive window size
+            if window_size > 1:
+                market_data['median_volume'] = market_data['volume'].rolling(
+                    window=window_size, center=True, min_periods=1
+                ).median()
+                # Use median volume for bar size calculation when available
+                market_data['effective_volume'] = market_data['median_volume'].fillna(market_data['volume'])
+            else:
+                market_data['effective_volume'] = market_data['volume']
+
+            # Calculate cumulative dollar volume using effective volume
+            market_data['cum_dollar_volume'] = (market_data['close'] * market_data['effective_volume']).cumsum()
+
             # Create bar boundaries
             bar_boundaries = []
             current_bar_start = 0

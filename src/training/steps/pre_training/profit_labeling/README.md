@@ -6,7 +6,7 @@ A comprehensive, data-driven profit labeling system that explicitly accounts for
 
 - **Volatility-Normalized Targets**: Uses σ-units instead of fixed percentages
 - **Event-Based Bar Construction**: Reduces microstructure noise through better bar formation
-- **Noise Gating**: Filters out labels when noise dominates signal
+- **Noise Gating**: Filters out labels when noise dominates signal (micro-range, variance ratio, signal-to-noise)
 - **Multi-Target Scheme**: Data-driven selection of small/medium/high targets
 - **Quality Scoring**: Comprehensive assessment of label quality
 - **Adaptive Horizons**: Data-driven horizon selection based on first-passage time
@@ -30,7 +30,6 @@ The system is built with a modular architecture consisting of five main componen
 ### 3. Noise Gating (`noise_gating.py`)
 - Minimum move vs. micro-range filtering
 - Variance ratio test for microstructure detection
-- Liquidity gating based on volume and spread
 - Signal-to-noise ratio assessment
 
 ### 4. Quality Scoring (`quality_scoring.py`)
@@ -160,8 +159,8 @@ NoiseGatingConfig(
     enable_micro_range_gating=True,
     min_move_ratio=1.5,                # Minimum k·σ_t / (α·mTR_t) ratio
     enable_variance_ratio_gating=True,
-    enable_liquidity_gating=True,
-    min_volume_percentile=10.0
+    enable_signal_noise_gating=True,
+    min_snr_ratio=1.2                  # Minimum signal-to-noise ratio
 )
 ```
 

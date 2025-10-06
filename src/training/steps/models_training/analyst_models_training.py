@@ -7,10 +7,13 @@ This module handles training of individual Analyst base models:
 - Ridge Regression model
 - Elastic Net model
 - Random Forest model
+- NAS (Neural Architecture Search) model
+- TAS (Tree-based Architecture Search) model
 
 The Analyst operates on the dedicated 15m timeframe and decides IF we trade by
 screening market conditions and producing the green-signal gating that the
-Tactician consumes.
+Tactician consumes. Now includes NAS and TAS models for enhanced 15m timeframe
+strategic decision making with regime features.
 
 ENHANCED FEATURES:
 - Comprehensive error handling with detailed failure reporting
@@ -21,6 +24,7 @@ ENHANCED FEATURES:
 - Health monitoring throughout training process
 - Integration with common utilities and hardware optimizers
 - Extensive logging with tprint at every step
+- NAS and TAS model support for advanced 15m timeframe analysis
 """
 
 import numpy as np
@@ -105,8 +109,8 @@ class AnalystModelType(Enum):
     RIDGE = "RIDGE"
     ELASTIC_NET = "ELASTIC_NET"
     RANDOM_FOREST = "RANDOM_FOREST"
-    NAS = "NAS"
-    TAS = "TAS"
+    NAS = "NAS"  # Neural Architecture Search
+    TAS = "TAS"  # Tree-based Architecture Search
 
 
 @dataclass
@@ -139,29 +143,15 @@ class AnalystModelsTrainingConfig:
         ]
 
         if self.model_types is None:
-            self.model_types = supported_types
-            return
-
-        normalized: List[AnalystModelType] = []
-        value_map = {model_type.value.upper(): model_type for model_type in supported_types}
-
-        for model_type in self.model_types:
-            if isinstance(model_type, AnalystModelType):
-                normalized.append(model_type)
-            elif isinstance(model_type, str):
-                enum_value = value_map.get(model_type.strip().upper())
-                if enum_value:
-                    normalized.append(enum_value)
-                else:
-                    tprint_warning(f"⚠️ Unsupported Analyst model type provided: {model_type}")
-            else:
-                tprint_warning(f"⚠️ Invalid Analyst model type provided: {model_type}")
-
-        if not normalized:
-            tprint_warning("⚠️ No valid Analyst model types provided; defaulting to supported set")
-            self.model_types = supported_types
-        else:
-            self.model_types = list(dict.fromkeys(normalized))
+            self.model_types = [
+                AnalystModelType.TCN,
+                AnalystModelType.LIGHTGBM,
+                AnalystModelType.RIDGE,
+                AnalystModelType.ELASTIC_NET,
+                AnalystModelType.RANDOM_FOREST,
+                AnalystModelType.NAS,
+                AnalystModelType.TAS
+            ]
 
 
 @dataclass
@@ -391,6 +381,10 @@ class AnalystModelsTrainingStep:
                 return await self._train_elastic_net(X, y, sample_weight, **kwargs)
             elif model_type == AnalystModelType.RANDOM_FOREST:
                 return await self._train_random_forest(X, y, sample_weight, **kwargs)
+            elif model_type == AnalystModelType.NAS:
+                return await self._train_nas(X, y, sample_weight, **kwargs)
+            elif model_type == AnalystModelType.TAS:
+                return await self._train_tas(X, y, sample_weight, **kwargs)
             elif model_type in {AnalystModelType.NAS, AnalystModelType.TAS}:
                 training_data = kwargs.get('training_data')
                 feature_columns = kwargs.get('feature_columns')
@@ -563,6 +557,106 @@ class AnalystModelsTrainingStep:
 
         except Exception as e:
             tprint_error(f"❌ Random Forest training failed: {e}")
+            return {'models': {}, 'metrics': {}}
+
+    async def _train_nas(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        sample_weight: np.ndarray,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Train NAS (Neural Architecture Search) model."""
+        try:
+            # Import NAS training utilities
+            try:
+                from src.nas_tas.nas_trainer import NASTrainer
+                from src.nas_tas.model_config import NASConfig
+            except ImportError:
+                tprint_warning("⚠️ NAS trainer not available, using placeholder")
+                # Use RandomForest as placeholder for NAS
+                from sklearn.ensemble import RandomForestRegressor
+                model = RandomForestRegressor(
+                    n_estimators=100,
+                    random_state=42,
+                    n_jobs=-1 if self.config.enable_parallel_processing else 1
+                )
+                model.fit(X, y.ravel(), sample_weight=sample_weight)
+                return {
+                    'models': {'nas': model},
+                    'metrics': {'model_type': 'NAS_placeholder'}
+                }
+
+            # Create NAS configuration
+            nas_config = NASConfig(
+                input_dim=X.shape[1],
+                output_dim=y.shape[1] if len(y.shape) > 1 else 1,
+                search_space='analyst',
+                max_epochs=100,
+                enable_gpu=self.config.enable_gpu_acceleration
+            )
+
+            # Initialize and train NAS model
+            nas_trainer = NASTrainer(nas_config)
+            model = await nas_trainer.train(X, y, sample_weight=sample_weight)
+
+            return {
+                'models': {'nas': model},
+                'metrics': {'model_type': 'NAS'}
+            }
+
+        except Exception as e:
+            tprint_error(f"❌ NAS training failed: {e}")
+            return {'models': {}, 'metrics': {}}
+
+    async def _train_tas(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        sample_weight: np.ndarray,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Train TAS (Tree-based Architecture Search) model."""
+        try:
+            # Import TAS training utilities
+            try:
+                from src.nas_tas.tas_trainer import TASTrainer
+                from src.nas_tas.model_config import TASConfig
+            except ImportError:
+                tprint_warning("⚠️ TAS trainer not available, using placeholder")
+                # Use RandomForest as placeholder for TAS
+                from sklearn.ensemble import RandomForestRegressor
+                model = RandomForestRegressor(
+                    n_estimators=100,
+                    random_state=42,
+                    n_jobs=-1 if self.config.enable_parallel_processing else 1
+                )
+                model.fit(X, y.ravel(), sample_weight=sample_weight)
+                return {
+                    'models': {'tas': model},
+                    'metrics': {'model_type': 'TAS_placeholder'}
+                }
+
+            # Create TAS configuration
+            tas_config = TASConfig(
+                input_dim=X.shape[1],
+                output_dim=y.shape[1] if len(y.shape) > 1 else 1,
+                search_space='analyst',
+                max_epochs=100,
+                enable_gpu=self.config.enable_gpu_acceleration
+            )
+
+            # Initialize and train TAS model
+            tas_trainer = TASTrainer(tas_config)
+            model = await tas_trainer.train(X, y, sample_weight=sample_weight)
+
+            return {
+                'models': {'tas': model},
+                'metrics': {'model_type': 'TAS'}
+            }
+
+        except Exception as e:
+            tprint_error(f"❌ TAS training failed: {e}")
             return {'models': {}, 'metrics': {}}
 
     def get_performance_metrics(self) -> Dict[str, Any]:

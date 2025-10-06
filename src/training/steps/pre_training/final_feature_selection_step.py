@@ -432,9 +432,9 @@ class FinalFeatureSelectionStep:
             self.logger.error(f"❌ Failed to generate summary report: {e}")
 
 # Convenience function for pipeline integration
-async def run_final_feature_selection_step(symbol: str, 
-                                         exchange: str, 
-                                         timeframe: str = '1m', 
+async def run_final_feature_selection_step(symbol: str,
+                                         exchange: str,
+                                         timeframe: str = '15m',
                                          data_dir: str = 'historical_data',
                                          config: Optional[Dict[str, Any]] = None) -> bool:
     """Run the final feature selection step."""

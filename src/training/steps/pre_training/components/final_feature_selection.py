@@ -174,7 +174,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             if timeframe is None and 'timeframe' in pipeline_state:
                 timeframe = pipeline_state['timeframe']
             if timeframe is None:
-                timeframe = '1m'  # Default timeframe
+                timeframe = '15m'  # Default timeframe
 
             # Resolve data directory from config or pipeline state
             data_dir = getattr(self.config, 'data_dir', None)

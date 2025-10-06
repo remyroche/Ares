@@ -3,37 +3,14 @@ Tactician Pre-ML Orchestration - 15m Timeframe Feature Engineering
 
 This orchestrator applies the complete pre-training pipeline for Tactician models:
 1. Applies differentiated horizon labeling + Optimizes feature lookback periods + Generates PID features + Selects final features
-2. Uses 15m timeframe with per-regime/cluster optimisation
+2. Uses 15m timeframe as the feature engineering cadence
 3. Uses the pipeline present in src/training/steps/MODELS_TRAINING/
 
 TACTICIAN PRE-ML CONFIGURATION:
 - Timeframe: 15m (as specified for tactician_pre_ml_orchestration step)
 - Training Data: All market data (processed through the standard pre-training pipeline)
 - Output: Features optimized for Tactician model training
-- Per-regime optimization: Yes, using regime assignments from market_analysis
 
-ML-BASED ENTRY OPTIMIZATION METHODS FOR TACTICIAN:
-
-1. RANDOM FOREST SURVIVAL:
-   - Ensemble learning approach for entry timing prediction
-   - Survival analysis for time-to-optimal-entry modeling
-   - Robust to market noise and regime changes
-
-2. NEURAL ARCHITECTURE SEARCH (NAS):
-   - Automated neural network architecture optimization
-   - Custom architectures for entry timing prediction
-   - Adaptive to different market conditions
-
-3. TREE ATTENTION SEARCH (TAS):
-   - Tree-based attention mechanism for feature selection
-   - Attention weights applied to tree ensemble predictions
-   - Advanced ensemble learning with attention mechanisms
-
-TACTICIAN (5M) ENTRY OPTIMIZATION:
-- Tactician operates exclusively on 5m timeframe data
-- Uses ML models trained on Analyst 15m green light signals
-- Finds optimal entry points within favorable market conditions
-- Optimization Goal: Minimize adverse price movement while maximizing favorable movement
 """
 
 import numpy as np
@@ -44,6 +21,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 import traceback
 from scipy.signal import find_peaks
+
+from .ml_based_entry_timing_labeler import MLEntryTimingConfig, MLEntryTimingLabeler
+from .corrected_ml_entry_timing_labeler import (
+    CorrectedMLEntryTimingConfig,
+    CorrectedMLEntryTimingLabeler,
+)
 
 # Import pre-training sub-pipeline
 try:
@@ -106,6 +89,14 @@ class TacticianLabelingConfig:
     regime_specific_thresholds: Dict[str, Dict[str, float]] = field(default_factory=dict)
 
 
+class EntryLabelingStrategy(str, Enum):
+    """Supported entry labeling strategies for the Tactician pipeline."""
+
+    RULE_BASED = "rule_based"
+    ML_ITERATIVE = "ml_iterative"
+    ML_CORRECTED = "ml_corrected"
+
+
 @dataclass
 class Tactician5mConfig:
     """Configuration for 5m Tactician entry optimization."""
@@ -154,11 +145,15 @@ class TacticianPreMLConfig:
 
     # Differentiated labeling configuration
     labeling_config: TacticianLabelingConfig = field(default_factory=TacticianLabelingConfig)
+    entry_labeling_strategy: EntryLabelingStrategy = EntryLabelingStrategy.RULE_BASED
+    ml_labeling_config: Optional[MLEntryTimingConfig] = None
+    corrected_ml_labeling_config: Optional[CorrectedMLEntryTimingConfig] = None
 
     # Tactician 5m optimization configuration
     tactician_5m_config: Tactician5mConfig = field(default_factory=Tactician5mConfig)
 
     # Execution parameters
+
     enable_per_regime_optimization: bool = True
     enable_per_cluster_optimization: bool = True
 
@@ -860,8 +855,21 @@ class TacticianPreMLOrchestrator:
                 self.pre_training_pipeline = None
                 tprint_error("❌ Pre-training pipeline not available")
 
-            # Initialise differentiated entry labeler
-            self.labeler = TacticianDifferentiatedLabeler(self.config.labeling_config)
+            # Initialise entry labelers
+            self.rule_based_labeler = TacticianDifferentiatedLabeler(self.config.labeling_config)
+            self.ml_labeler: Optional[MLEntryTimingLabeler] = None
+            self.corrected_ml_labeler: Optional[CorrectedMLEntryTimingLabeler] = None
+
+            if self.config.entry_labeling_strategy == EntryLabelingStrategy.ML_ITERATIVE:
+                ml_config = self.config.ml_labeling_config or MLEntryTimingConfig()
+                self.ml_labeler = MLEntryTimingLabeler(ml_config)
+                tprint_success("✅ ML iterative entry labeler initialized")
+            elif self.config.entry_labeling_strategy == EntryLabelingStrategy.ML_CORRECTED:
+                corrected_config = (
+                    self.config.corrected_ml_labeling_config or CorrectedMLEntryTimingConfig()
+                )
+                self.corrected_ml_labeler = CorrectedMLEntryTimingLabeler(corrected_config)
+                tprint_success("✅ Corrected ML entry labeler initialized")
 
             tprint_success(f"✅ TacticianPreMLOrchestrator initialized (timeframe: {self.config.timeframe})")
             tprint_info(f"🎯 Analyst signal threshold: {self.config.analyst_confidence_threshold:.2%}")
@@ -950,11 +958,65 @@ class TacticianPreMLOrchestrator:
 
         regime_series = self._extract_regime_series(regime_assignments)
 
-        entry_labels, quality_metrics = self.labeler.create_entry_timing_labels(
-            prepared_data,
-            green_series,
-            regime_series
-        )
+        rule_labels: Optional[pd.Series] = None
+        entry_labels: Optional[pd.Series] = None
+        quality_metrics: Dict[str, Any] = {}
+
+        if self.config.entry_labeling_strategy == EntryLabelingStrategy.RULE_BASED:
+            entry_labels, quality_metrics = self.rule_based_labeler.create_entry_timing_labels(
+                prepared_data,
+                green_series,
+                regime_series
+            )
+        else:
+            rule_labels, rule_metrics = self.rule_based_labeler.create_entry_timing_labels(
+                prepared_data,
+                green_series,
+                regime_series
+            )
+
+            if (
+                self.config.entry_labeling_strategy == EntryLabelingStrategy.ML_ITERATIVE
+                and self.ml_labeler is not None
+            ):
+                ml_labels, ml_metrics = self.ml_labeler.create_ml_based_labels(
+                    prepared_data,
+                    rule_labels,
+                    green_series,
+                    regime_series
+                )
+                entry_labels = ml_labels
+                quality_metrics = {
+                    'strategy': EntryLabelingStrategy.ML_ITERATIVE.value,
+                    'rule_based_metrics': rule_metrics,
+                    'ml_metrics': ml_metrics,
+                }
+            elif (
+                self.config.entry_labeling_strategy == EntryLabelingStrategy.ML_CORRECTED
+                and self.corrected_ml_labeler is not None
+            ):
+                corrected_labels, corrected_metrics = self.corrected_ml_labeler.create_corrected_ml_labels(
+                    prepared_data,
+                    green_series,
+                    regime_series
+                )
+                entry_labels = corrected_labels
+                quality_metrics = {
+                    'strategy': EntryLabelingStrategy.ML_CORRECTED.value,
+                    'ml_metrics': corrected_metrics,
+                }
+            else:
+                tprint_warning(
+                    "⚠️ Requested ML entry labeling strategy unavailable; falling back to rule-based labels"
+                )
+                entry_labels = rule_labels
+                quality_metrics = {
+                    'strategy': EntryLabelingStrategy.RULE_BASED.value,
+                    'rule_based_metrics': rule_metrics,
+                }
+
+        if entry_labels is None:
+            return None
 
         label_column = 'tactician_entry_target'
         label_df = pd.DataFrame({label_column: entry_labels}, index=prepared_data.index)
@@ -1012,6 +1074,15 @@ class TacticianPreMLOrchestrator:
                 'regime_aware': bool(regime_series is not None)
             }
         }
+
+        if (
+            rule_labels is not None
+            and self.config.entry_labeling_strategy != EntryLabelingStrategy.RULE_BASED
+        ):
+            artifacts['rule_based_labels'] = pd.DataFrame(
+                {'tactician_rule_based_entry_target': rule_labels},
+                index=prepared_data.index
+            )
 
         return {
             'artifacts': artifacts,
@@ -1331,7 +1402,30 @@ class TacticianPreMLOrchestrator:
             )
 
             tprint_success(f"✅ Data preparation completed ({result.filter_ratio:.2%} retained)")
-            
+
+            # Entry label preparation
+            entry_label_bundle: Optional[Dict[str, Any]] = None
+            if analyst_predictions is not None and not analyst_predictions.empty:
+                tprint_info("🎯 Generating entry label bundle from Analyst signals...")
+                result.phase = OrchestrationPhase.ENTRY_LABELING
+                entry_label_bundle = self._create_entry_label_artifacts(
+                    prepared_data,
+                    analyst_predictions,
+                    regime_assignments
+                )
+                if entry_label_bundle is None and self.config.require_analyst_signals:
+                    raise ValueError(
+                        "Failed to generate entry labels despite Analyst signals being required"
+                    )
+            elif self.config.require_analyst_signals:
+                raise ValueError("Analyst predictions are required for Tactician pre-ML orchestration")
+            else:
+                tprint_warning("⚠️ Analyst predictions missing; skipping entry label bundle generation")
+
+            if entry_label_bundle is not None:
+                result.entry_labeling_result = entry_label_bundle['artifacts']
+                result.entry_label_quality_metrics = entry_label_bundle['quality_metrics']
+
             # Determine regime split payload from explicit parameter, kwargs, or config defaults
             regime_split_payload = regime_data_splitting_result
             if regime_split_payload is None:

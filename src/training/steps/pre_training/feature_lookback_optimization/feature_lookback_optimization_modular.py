@@ -73,7 +73,7 @@ from .validation.validator import InputValidator, ValidationLevel, ValidationSta
 from .error_handling.error_handler import StandardizedErrorHandler, ErrorSeverity, ErrorCategory
 from .performance.monitor import PerformanceMonitor, MetricType, MetricLevel
 
-from ....market_analysis.components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
+from ..components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
 
 # Import optimized process engine
 from ....market_analysis.optimized_process_engines import OptimizedFeatureLookbackEngine, ProcessType
@@ -111,7 +111,7 @@ class OptimizationMetrics:
     error_rate: float
 
 
-class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
+class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
     """
     Modular Feature Lookback Optimization Component.
 

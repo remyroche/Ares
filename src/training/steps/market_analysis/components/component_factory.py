@@ -25,19 +25,12 @@ from .nas_tas_regime_discovery import NASTASRegimeDiscoveryComponent
 # from .hmm_ensemble_training_component import HMMEnsembleTrainingComponent  # DEPRECATED
 # RegimeDataSplittingComponent imported lazily to avoid circular imports
 # TripleBarrierLabelingComponent moved to triple_barrier_labeling package
-from ..pre_training.components.feature_lookback_optimization import FeatureLookbackOptimizationComponent
 from .cross_timeframe_analysis import CrossTimeframeAnalysisComponent  # Now uses PID-based feature generation
-from ..pre_training.components.final_feature_selection import FinalFeatureSelectionComponent
 # Removed unused NAS-TAS components - system uses regime_models_training and regime_ensemble_training instead
 from .nas_ensemble_training import NASEnsembleTrainingComponent
 from .regime_models_training import RegimeModelsTrainingComponent
 from .regime_ensemble_training import RegimeEnsembleTrainingComponent
-# Import the actual PID-based component for direct use
-try:
-    from ..pid_based_feature_generation.pid_based_feature_generation_component import PIDBasedFeatureGenerationComponent
-    PID_COMPONENT_AVAILABLE = True
-except ImportError:
-    PID_COMPONENT_AVAILABLE = False
+# PID-based feature generation moved to pre_training stage
 
 # Import the new clustering component from clustering directory
 try:
@@ -726,10 +719,9 @@ class ComponentFactory:
         # 'hmm_ensemble_training': HMMEnsembleTrainingComponent,  # Removed
         # 'regime_data_splitting': RegimeDataSplittingComponent,  # Imported lazily to avoid circular imports
         # 'triple_barrier_labeling': TripleBarrierLabelingComponent,  # Moved to triple_barrier_labeling package
-        'feature_lookback_optimization': FeatureLookbackOptimizationComponent,
         'cross_timeframe_analysis': CrossTimeframeAnalysisComponent,  # Now uses PID-based feature generation
-        'pid_based_feature_generation': PIDBasedFeatureGenerationComponent if PID_COMPONENT_AVAILABLE else CrossTimeframeAnalysisComponent,  # Direct PID component or fallback
-        'final_feature_selection': FinalFeatureSelectionComponent  # Final feature selection step (120→100→80→60)
+        # Feature engineering components moved to pre_training stage:
+        # 'feature_lookback_optimization', 'pid_based_feature_generation', 'final_feature_selection'
     }
     
     @classmethod
@@ -763,18 +755,7 @@ class ComponentFactory:
             except ImportError as e:
                 raise ValueError(f"Failed to import RegimeDataSplittingComponent: {e}")
         
-        # Handle multi-horizon profit labeler
-        if component_name == 'multi_horizon_profit_labeler':
-            try:
-                tprint("🔧 [COMPONENT_FACTORY] Loading MultiHorizonSubPipelineAdapter", color="yellow")
-                from ..multi_horizon_sub_pipeline_adapter import MultiHorizonSubPipelineAdapter
-                component = MultiHorizonComponentWrapper(MultiHorizonSubPipelineAdapter, config)
-                tprint(f"✅ [COMPONENT_FACTORY] Created MultiHorizonComponentWrapper", color="green")
-                return component
-            except ImportError as e:
-                tprint(f"❌ [COMPONENT_FACTORY] Failed to import MultiHorizonSubPipelineAdapter: {e}", color="red")
-                raise ValueError(f"Failed to import MultiHorizonSubPipelineAdapter: {e}")
-        
+        # Multi-horizon profit labeler moved to pre_training stage
         # Handle HMM training components (DEPRECATED - removed)
         if component_name == 'hmm_models_training':
             tprint("⚠️ [COMPONENT_FACTORY] HMM models training is deprecated", color="yellow")
@@ -834,7 +815,7 @@ class ComponentFactory:
             List of component names
         """
         # Include both registered components and lazy-loaded components
-        lazy_components = ['regime_data_splitting', 'multi_horizon_profit_labeler']
+        lazy_components = ['regime_data_splitting']
         return list(self._components.keys()) + lazy_components
     
     @classmethod

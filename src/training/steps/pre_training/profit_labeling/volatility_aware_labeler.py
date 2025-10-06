@@ -86,6 +86,44 @@ class VolatilityAwareConfig:
     max_balance_threshold: float = 0.65
     max_correlation_threshold: float = 0.4
 
+    def __post_init__(self):
+        """Validate configuration parameters after initialization."""
+        self._validate_config()
+
+    def _validate_config(self):
+        """Validate configuration parameters."""
+        # Validate data requirements
+        if self.min_data_points < 100:
+            raise ValueError("min_data_points must be at least 100")
+
+        if self.cache_duration_minutes < 1:
+            raise ValueError("cache_duration_minutes must be at least 1")
+
+        # Validate thresholds
+        if not (0 < self.min_auc_threshold < 1):
+            raise ValueError("min_auc_threshold must be between 0 and 1")
+
+        if not (0 < self.max_auc_std_threshold < 1):
+            raise ValueError("max_auc_std_threshold must be between 0 and 1")
+
+        if not (0 <= self.min_balance_threshold <= self.max_balance_threshold <= 1):
+            raise ValueError("balance thresholds must satisfy: 0 ≤ min_balance ≤ max_balance ≤ 1")
+
+        if not (0 < self.max_correlation_threshold < 1):
+            raise ValueError("max_correlation_threshold must be between 0 and 1")
+
+        # Validate component configurations
+        if self.bar_construction:
+            self.bar_construction._validate_config()
+        if self.volatility:
+            self.volatility._validate_config()
+        if self.noise_gating:
+            self.noise_gating._validate_config()
+        if self.quality_scoring:
+            self.quality_scoring._validate_config()
+        if self.multi_target:
+            self.multi_target._validate_config()
+
 
 @dataclass
 class LabelQualityScore:
@@ -179,6 +217,13 @@ class VolatilityAwareMultiHorizonLabeler:
         # State tracking
         self.labeling_history: List[LabelingResult] = []
         self.cache: Dict[str, Any] = {}
+
+        # Intermediate computation caches
+        self.bar_cache: Dict[str, Any] = {}
+        self.volatility_cache: Dict[str, Any] = {}
+        self.noise_cache: Dict[str, Any] = {}
+        self.target_cache: Dict[str, Any] = {}
+        self.quality_cache: Dict[str, Any] = {}
         
         tprint_success("🚀 Volatility-Aware Multi-Horizon Profit Labeler initialized")
         tprint_info(f"   → Min data points: {self.config.min_data_points}")
@@ -202,13 +247,16 @@ class VolatilityAwareMultiHorizonLabeler:
         if not self._validate_input_data(market_data):
             return self._create_empty_result()
         
-        # Check cache
+        # Check main cache first
         cache_key = self._generate_cache_key(market_data)
         if self.config.enable_caching and cache_key in self.cache:
             cached_result = self.cache[cache_key]
             if self._is_cache_valid(cached_result):
                 tprint_info("📋 Using cached labeling result")
                 return cached_result
+
+        # Check intermediate caches for reuse opportunities
+        data_hash = self._generate_data_hash(market_data)
         
         # Initialize result container
         result = LabelingResult(
@@ -220,52 +268,92 @@ class VolatilityAwareMultiHorizonLabeler:
         )
         
         try:
-            # Step 1: Event-based bar construction
+            # Step 1: Event-based bar construction (with caching)
             tprint_info("📊 Step 1: Constructing event-based bars")
-            bar_result = self.bar_constructor.construct_bars(market_data)
+            bar_cache_key = f"bars_{data_hash}_{hash(str(self.config.bar_construction))}"
+            if self.config.enable_caching and bar_cache_key in self.bar_cache:
+                bar_result = self.bar_cache[bar_cache_key]
+                tprint_info("📋 Using cached bar construction")
+            else:
+                bar_result = self.bar_constructor.construct_bars(market_data)
+                if self.config.enable_caching:
+                    self.bar_cache[bar_cache_key] = bar_result
+
             result.bar_construction_result = bar_result
-            
+
             if bar_result.cleaned_bars.empty:
                 tprint_warning("⚠️ No valid bars constructed")
                 return self._create_empty_result()
             
-            # Step 2: Volatility modeling
+            # Step 2: Volatility modeling (with caching)
             tprint_info("📈 Step 2: Modeling volatility")
-            vol_result = self.volatility_modeler.model_volatility(bar_result.cleaned_bars)
+            vol_cache_key = f"volatility_{data_hash}_{hash(str(self.config.volatility))}"
+            if self.config.enable_caching and vol_cache_key in self.volatility_cache:
+                vol_result = self.volatility_cache[vol_cache_key]
+                tprint_info("📋 Using cached volatility modeling")
+            else:
+                vol_result = self.volatility_modeler.model_volatility(bar_result.cleaned_bars)
+                if self.config.enable_caching:
+                    self.volatility_cache[vol_cache_key] = vol_result
+
             result.volatility_result = vol_result
-            
+
             if vol_result.volatility_series.empty:
                 tprint_warning("⚠️ No volatility estimates available")
                 return self._create_empty_result()
             
-            # Step 3: Noise gating
+            # Step 3: Noise gating (with caching)
             tprint_info("🔇 Step 3: Applying noise gating")
-            noise_result = self.noise_gating_filter.filter_noise(
-                bar_result.cleaned_bars, vol_result.volatility_series
-            )
+            noise_cache_key = f"noise_{data_hash}_{hash(str(self.config.noise_gating))}"
+            if self.config.enable_caching and noise_cache_key in self.noise_cache:
+                noise_result = self.noise_cache[noise_cache_key]
+                tprint_info("📋 Using cached noise gating")
+            else:
+                noise_result = self.noise_gating_filter.filter_noise(
+                    bar_result.cleaned_bars, vol_result.volatility_series
+                )
+                if self.config.enable_caching:
+                    self.noise_cache[noise_cache_key] = noise_result
+
             result.noise_gating_result = noise_result
             
-            # Step 4: Multi-target scheme
+            # Step 4: Multi-target scheme (with caching)
             tprint_info("🎯 Step 4: Generating multi-target labels")
-            target_result = self.multi_target_scheme.generate_targets(
-                bar_result.cleaned_bars,
-                vol_result.volatility_series,
-                noise_result.eligibility_mask
-            )
+            target_cache_key = f"targets_{data_hash}_{hash(str(self.config.multi_target))}"
+            if self.config.enable_caching and target_cache_key in self.target_cache:
+                target_result = self.target_cache[target_cache_key]
+                tprint_info("📋 Using cached target generation")
+            else:
+                target_result = self.multi_target_scheme.generate_targets(
+                    bar_result.cleaned_bars,
+                    vol_result.volatility_series,
+                    noise_result.eligibility_mask
+                )
+                if self.config.enable_caching:
+                    self.target_cache[target_cache_key] = target_result
+
             result.multi_target_result = target_result
-            
+
             if target_result.labels.empty:
                 tprint_warning("⚠️ No valid targets generated")
                 return self._create_empty_result()
-            
-            # Step 5: Quality scoring
+
+            # Step 5: Quality scoring (with caching)
             tprint_info("📊 Step 5: Assessing label quality")
-            quality_scores = self.quality_scorer.assess_quality(
-                target_result.labels,
-                target_result.confidence_scores,
-                target_result.eligibility_masks,
-                bar_result.cleaned_bars
-            )
+            quality_cache_key = f"quality_{data_hash}_{hash(str(self.config.quality_scoring))}"
+            if self.config.enable_caching and quality_cache_key in self.quality_cache:
+                quality_scores = self.quality_cache[quality_cache_key]
+                tprint_info("📋 Using cached quality scoring")
+            else:
+                quality_scores = self.quality_scorer.assess_quality(
+                    target_result.labels,
+                    target_result.confidence_scores,
+                    target_result.eligibility_masks,
+                    bar_result.cleaned_bars
+                )
+                if self.config.enable_caching:
+                    self.quality_cache[quality_cache_key] = quality_scores
+
             result.quality_scores = quality_scores
             
             # Step 6: Filter by quality thresholds
@@ -300,6 +388,9 @@ class VolatilityAwareMultiHorizonLabeler:
         # Clean up old history
         if len(self.labeling_history) > 100:
             self.labeling_history = self.labeling_history[-100:]
+
+        # Clean up old cache entries (keep only recent ones)
+        self._cleanup_caches()
         
         tprint_success("✅ Volatility-aware labeling completed")
         tprint_info(f"   → Processing time: {result.processing_time:.2f}s")
@@ -438,7 +529,41 @@ class VolatilityAwareMultiHorizonLabeler:
             return f"volatility_labels_{data_hash}_{config_hash}"
         except Exception:
             return f"volatility_labels_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    
+
+    def _generate_data_hash(self, market_data: pd.DataFrame) -> str:
+        """Generate hash of market data for intermediate caching."""
+        try:
+            # Create a hash based on data statistics rather than all data
+            stats_hash = hash((
+                market_data.shape,
+                market_data.index[0].strftime('%Y%m%d'),
+                market_data.index[-1].strftime('%Y%m%d'),
+                market_data['close'].iloc[0],
+                market_data['close'].iloc[-1],
+                market_data['volume'].sum()
+            ))
+            return str(stats_hash)
+        except Exception:
+            return str(hash(str(market_data.shape)))
+
+    def _cleanup_caches(self):
+        """Clean up old cache entries to prevent memory bloat."""
+        max_cache_size = 50  # Maximum number of entries per cache
+
+        # Clean main cache
+        if len(self.cache) > max_cache_size:
+            # Remove oldest entries
+            sorted_keys = sorted(self.cache.keys(), key=lambda k: self.cache[k].timestamp)
+            for key in sorted_keys[:-max_cache_size]:
+                del self.cache[key]
+
+        # Clean intermediate caches
+        for cache in [self.bar_cache, self.volatility_cache, self.noise_cache, self.target_cache, self.quality_cache]:
+            if len(cache) > max_cache_size:
+                sorted_keys = sorted(cache.keys(), key=lambda k: cache[k].timestamp if hasattr(cache[k], 'timestamp') else datetime.now())
+                for key in sorted_keys[:-max_cache_size]:
+                    del cache[key]
+
     def _is_cache_valid(self, cached_result: LabelingResult) -> bool:
         """Check if cached result is still valid."""
         if not self.config.enable_caching:
@@ -541,6 +666,193 @@ class VolatilityAwareMultiHorizonLabeler:
 def create_volatility_aware_labeler(config: Optional[VolatilityAwareConfig] = None) -> VolatilityAwareMultiHorizonLabeler:
     """Create volatility-aware labeler with specified configuration."""
     return VolatilityAwareMultiHorizonLabeler(config)
+
+
+def create_fast_config() -> VolatilityAwareConfig:
+    """Create a fast configuration optimized for speed over accuracy."""
+    return VolatilityAwareConfig(
+        min_data_points=500,
+        enable_caching=True,
+        cache_duration_minutes=30,
+        parallel_processing=True,
+        max_workers=2,
+
+        # Simplified bar construction
+        bar_construction=BarConstructionConfig(
+            bar_type=BarType.DOLLAR,
+            bar_size=1000000.0,
+            enable_microstructure_filter=False,
+            min_bars_required=50
+        ),
+
+        # Fast volatility modeling
+        volatility=VolatilityConfig(
+            method=VolatilityMethod.ATR,
+            atr_window=10,
+            enable_smoothing=False
+        ),
+
+        # Simplified noise gating
+        noise_gating=NoiseGatingConfig(
+            gate_type=NoiseGateType.MICRO_RANGE,
+            enable_micro_range_gating=True,
+            enable_variance_ratio_gating=False,
+            enable_signal_noise_gating=False
+        ),
+
+        # Fast quality scoring
+        quality_scoring=QualityScoringConfig(
+            baseline_models=['logistic'],
+            n_splits=3,
+            enable_feature_engineering=False
+        ),
+
+        # Simplified multi-target
+        multi_target=MultiTargetConfig(
+            enable_optimization=False,
+            optimization_method='grid',
+            n_trials=20,
+            max_targets_per_band=1,
+            min_lqs_score=0.2
+        ),
+
+        # Relaxed thresholds
+        min_auc_threshold=0.5,
+        max_auc_std_threshold=0.05,
+        min_balance_threshold=0.3,
+        max_balance_threshold=0.7
+    )
+
+
+def create_accurate_config() -> VolatilityAwareConfig:
+    """Create an accurate configuration optimized for quality over speed."""
+    return VolatilityAwareConfig(
+        min_data_points=2000,
+        enable_caching=True,
+        cache_duration_minutes=120,
+        parallel_processing=True,
+        max_workers=None,
+
+        # Comprehensive bar construction
+        bar_construction=BarConstructionConfig(
+            bar_type=BarType.DOLLAR,
+            bar_size=500000.0,
+            enable_microstructure_filter=True,
+            min_spread_ratio=0.0002,
+            min_volume_percentile=5.0,
+            max_return_percentile=99.5,
+            min_bars_required=200
+        ),
+
+        # Comprehensive volatility modeling
+        volatility=VolatilityConfig(
+            method=VolatilityMethod.COMBINED,
+            rv_window=25,
+            atr_window=18,
+            ewma_alpha=0.08,
+            enable_smoothing=True,
+            smoothing_window=3
+        ),
+
+        # Full noise gating
+        noise_gating=NoiseGatingConfig(
+            gate_type=NoiseGateType.COMBINED,
+            enable_micro_range_gating=True,
+            enable_variance_ratio_gating=True,
+            enable_signal_noise_gating=True,
+            min_snr_ratio=1.5
+        ),
+
+        # Comprehensive quality scoring
+        quality_scoring=QualityScoringConfig(
+            baseline_models=['logistic', 'random_forest'],
+            n_splits=5,
+            enable_feature_engineering=True,
+            feature_window=25,
+            n_features=15
+        ),
+
+        # Comprehensive multi-target
+        multi_target=MultiTargetConfig(
+            enable_optimization=True,
+            optimization_method='bayesian',
+            n_trials=150,
+            max_targets_per_band=2,
+            min_lqs_score=0.4,
+            enable_parallel_processing=True,
+            max_workers=4
+        ),
+
+        # Strict thresholds
+        min_auc_threshold=0.6,
+        max_auc_std_threshold=0.02,
+        min_balance_threshold=0.4,
+        max_balance_threshold=0.6,
+        max_correlation_threshold=0.3
+    )
+
+
+def create_balanced_config() -> VolatilityAwareConfig:
+    """Create a balanced configuration with good speed/accuracy tradeoff."""
+    return VolatilityAwareConfig(
+        min_data_points=1000,
+        enable_caching=True,
+        cache_duration_minutes=60,
+        parallel_processing=True,
+        max_workers=None,
+
+        # Balanced bar construction
+        bar_construction=BarConstructionConfig(
+            bar_type=BarType.DOLLAR,
+            bar_size=750000.0,
+            enable_microstructure_filter=True,
+            min_spread_ratio=0.0003,
+            min_bars_required=100
+        ),
+
+        # Balanced volatility modeling
+        volatility=VolatilityConfig(
+            method=VolatilityMethod.COMBINED,
+            rv_window=20,
+            atr_window=14,
+            ewma_alpha=0.06,
+            enable_smoothing=True
+        ),
+
+        # Balanced noise gating
+        noise_gating=NoiseGatingConfig(
+            gate_type=NoiseGateType.COMBINED,
+            enable_micro_range_gating=True,
+            enable_variance_ratio_gating=True,
+            enable_signal_noise_gating=False
+        ),
+
+        # Balanced quality scoring
+        quality_scoring=QualityScoringConfig(
+            baseline_models=['logistic', 'random_forest'],
+            n_splits=4,
+            enable_feature_engineering=True,
+            feature_window=20,
+            n_features=10
+        ),
+
+        # Balanced multi-target
+        multi_target=MultiTargetConfig(
+            enable_optimization=True,
+            optimization_method='bayesian',
+            n_trials=100,
+            max_targets_per_band=2,
+            min_lqs_score=0.3,
+            enable_parallel_processing=True
+        ),
+
+        # Balanced thresholds
+        min_auc_threshold=0.55,
+        max_auc_std_threshold=0.03,
+        min_balance_threshold=0.35,
+        max_balance_threshold=0.65,
+        max_correlation_threshold=0.4
+    )
 
 
 def generate_volatility_aware_labels(market_data: pd.DataFrame,

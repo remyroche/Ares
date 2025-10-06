@@ -66,6 +66,39 @@ class BarConstructionConfig:
     min_bars_required: int = 100
     max_missing_data_ratio: float = 0.1  # Maximum ratio of missing data
 
+    def __post_init__(self):
+        """Validate configuration parameters after initialization."""
+        self._validate_config()
+
+    def _validate_config(self):
+        """Validate configuration parameters."""
+        if self.bar_size <= 0:
+            raise ValueError("bar_size must be positive")
+
+        if self.min_bar_duration_seconds <= 0:
+            raise ValueError("min_bar_duration_seconds must be positive")
+
+        if self.max_bar_duration_seconds <= self.min_bar_duration_seconds:
+            raise ValueError("max_bar_duration_seconds must be greater than min_bar_duration_seconds")
+
+        if not (0 < self.min_spread_ratio < 1):
+            raise ValueError("min_spread_ratio must be between 0 and 1")
+
+        if not (0 < self.min_volume_percentile < 100):
+            raise ValueError("min_volume_percentile must be between 0 and 100")
+
+        if not (0 < self.max_return_percentile < 100):
+            raise ValueError("max_return_percentile must be between 0 and 100")
+
+        if self.median_window <= 0:
+            raise ValueError("median_window must be positive")
+
+        if self.outlier_threshold <= 0:
+            raise ValueError("outlier_threshold must be positive")
+
+        if not (0 <= self.max_missing_data_ratio <= 1):
+            raise ValueError("max_missing_data_ratio must be between 0 and 1")
+
 
 @dataclass
 class BarConstructionResult:

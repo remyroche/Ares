@@ -185,8 +185,8 @@ class MainPipelineConfig:
             'pid_based_feature_generation', 'final_feature_selection'
         ],
         PipelineStage.MODEL_TRAINING: [
-            'analyst_pre_ml_orchestration', 'analyst_models_training', 'analyst_ensemble_training',
-            'tactician_pre_ml_orchestration', 'tactician_models_training', 'tactician_ensemble_training',
+            'analyst_pre_ml_orchestration', 'analyst_models_training', 'nas_tas_analyst_training', 'analyst_ensemble_training',
+            'tactician_pre_ml_orchestration', 'tactician_models_training', 'nas_tas_tactician_training', 'tactician_ensemble_training',
             'nas_tas_models_training', 'nas_tas_ensemble_integration'
         ],
         PipelineStage.BACKTESTING: [
@@ -1052,8 +1052,8 @@ def get_full_pipeline_config(
                 'pid_based_feature_generation', 'final_feature_selection'
             ],
             PipelineStage.MODEL_TRAINING: [
-                'analyst_model_training', 'analyst_ensemble_training',
-                'tactician_lookback_optimization', 'tactician_models_training', 'tactician_ensemble_training',
+                'analyst_model_training', 'nas_tas_analyst_training', 'analyst_ensemble_training',
+                'tactician_lookback_optimization', 'tactician_models_training', 'nas_tas_tactician_training', 'tactician_ensemble_training',
                 'nas_tas_models_training', 'nas_tas_ensemble_integration'
             ],
             PipelineStage.BACKTESTING: [
@@ -1154,7 +1154,7 @@ def get_light_pipeline_config(
                 'pid_based_feature_generation', 'multi_horizon_profit_labeler'
             ],
             PipelineStage.MODEL_TRAINING: [
-                'analyst_model_training', 'analyst_ensemble_training', 'tactician_lookback_optimization', 'tactician_models_training', 'tactician_ensemble_training',
+                'analyst_model_training', 'nas_tas_analyst_training', 'analyst_ensemble_training', 'tactician_lookback_optimization', 'tactician_models_training', 'nas_tas_tactician_training', 'tactician_ensemble_training',
                 'nas_tas_models_training', 'nas_tas_ensemble_integration'
             ],
             PipelineStage.BACKTESTING: [

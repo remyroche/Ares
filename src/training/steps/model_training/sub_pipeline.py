@@ -630,9 +630,9 @@ class ModelTrainingSubPipeline:
         # Count total steps
         total_steps = 0
         if config.train_analyst:
-            total_steps += 3  # pre_ml, models, ensemble
+            total_steps += 4  # pre_ml, models, nas_tas_analyst, ensemble
         if config.train_tactician:
-            total_steps += 3  # pre_ml, models, ensemble
+            total_steps += 4  # pre_ml, models, nas_tas_tactician, ensemble
         # NAS/TAS steps (always included when available)
         if NAS_TAS_MODELS_TRAINING_AVAILABLE:
             total_steps += 1  # nas_tas_models_training
@@ -666,8 +666,46 @@ class ModelTrainingSubPipeline:
                 results['analyst_results']['models'] = analyst_models_result.artifacts
                 self._current_pipeline_state['analyst_models'] = analyst_models_result.artifacts
                 results['completed_steps'] += 1
-                
-                # Step 3: Analyst Ensemble Training
+
+                # Step 3: NAS/TAS Analyst Training (integrate NAS models with Analyst)
+                if NAS_TAS_MODELS_TRAINING_AVAILABLE and self.nas_tas_models_training:
+                    self.logger.info('=' * 80)
+                    self.logger.info('🧠 NAS/TAS ANALYST TRAINING (integrate NAS with Analyst)')
+                    self.logger.info('=' * 80)
+
+                    # Pass analyst models and data for NAS integration
+                    analyst_integration_data = {
+                        'analyst_models': analyst_models_result.artifacts,
+                        'analyst_features': self._current_pipeline_state.get('analyst_features'),
+                        'analyst_pre_ml_result': analyst_models_result
+                    }
+
+                    self.nas_tas_models_training.current_pipeline_state.update(analyst_integration_data)
+
+                    nas_analyst_config = NASTASModelsTrainingConfig(
+                        mode=config.mode.value,
+                        enable_nas_training=True,
+                        enable_tas_training=False,  # Only NAS for analyst integration
+                        top_k_models=3,
+                        selection_strategy="best_performance"
+                    )
+
+                    nas_analyst_result = await self.nas_tas_models_training.execute_pipeline(nas_analyst_config)
+                    if not nas_analyst_result.success:
+                        self.logger.error(f'❌ NAS/TAS analyst training failed: {nas_analyst_result.error_message}')
+                        return results
+
+                    results['nas_tas_analyst_results'] = {
+                        'nas_training': nas_analyst_result.nas_training_results,
+                        'model_selection': nas_analyst_result.model_selection_results,
+                        'integration_type': 'analyst_nas'
+                    }
+                    self._current_pipeline_state['nas_tas_analyst'] = nas_analyst_result
+                    results['completed_steps'] += 1
+
+                    self.logger.info('✅ NAS/TAS analyst training completed successfully')
+
+                # Step 4: Analyst Ensemble Training
                 analyst_ensemble_result = await self._execute_analyst_ensemble_training(config, analyst_models_result)
                 if not analyst_ensemble_result.success:
                     self.logger.error(f'❌ Analyst ensemble training failed: {analyst_ensemble_result.error_message}')
@@ -711,8 +749,47 @@ class ModelTrainingSubPipeline:
                 results['tactician_results']['models'] = tactician_models_result.artifacts
                 self._current_pipeline_state['tactician_models'] = tactician_models_result.artifacts
                 results['completed_steps'] += 1
-                
-                # Step 6: Tactician Ensemble Training
+
+                # Step 6: NAS/TAS Tactician Training (integrate TAS models with Tactician)
+                if NAS_TAS_MODELS_TRAINING_AVAILABLE and self.nas_tas_models_training:
+                    self.logger.info('=' * 80)
+                    self.logger.info('🌳 NAS/TAS TACTICIAN TRAINING (integrate TAS with Tactician)')
+                    self.logger.info('=' * 80)
+
+                    # Pass tactician models and data for TAS integration
+                    tactician_integration_data = {
+                        'tactician_models': tactician_models_result.artifacts,
+                        'tactician_features': self._current_pipeline_state.get('tactician_features'),
+                        'tactician_pre_ml_result': tactician_models_result,
+                        'analyst_predictions': analyst_predictions
+                    }
+
+                    self.nas_tas_models_training.current_pipeline_state.update(tactician_integration_data)
+
+                    nas_tactician_config = NASTASModelsTrainingConfig(
+                        mode=config.mode.value,
+                        enable_nas_training=False,  # Only TAS for tactician integration
+                        enable_tas_training=True,
+                        top_k_models=3,
+                        selection_strategy="best_performance"
+                    )
+
+                    nas_tactician_result = await self.nas_tas_models_training.execute_pipeline(nas_tactician_config)
+                    if not nas_tactician_result.success:
+                        self.logger.error(f'❌ NAS/TAS tactician training failed: {nas_tactician_result.error_message}')
+                        return results
+
+                    results['nas_tas_tactician_results'] = {
+                        'tas_training': nas_tactician_result.tas_training_results,
+                        'model_selection': nas_tactician_result.model_selection_results,
+                        'integration_type': 'tactician_tas'
+                    }
+                    self._current_pipeline_state['nas_tas_tactician'] = nas_tactician_result
+                    results['completed_steps'] += 1
+
+                    self.logger.info('✅ NAS/TAS tactician training completed successfully')
+
+                # Step 7: Tactician Ensemble Training
                 tactician_ensemble_result = await self._execute_tactician_ensemble_training(
                     config, tactician_models_result, analyst_predictions
                 )
@@ -1529,9 +1606,11 @@ class ModelTrainingSubPipeline:
         sub_pipelines = [
             'analyst_pre_ml_orchestration',
             'analyst_models_training',
+            'nas_tas_analyst_training',
             'analyst_ensemble_training',
             'tactician_pre_ml_orchestration',
             'tactician_models_training',
+            'nas_tas_tactician_training',
             'tactician_ensemble_training'
         ]
 
@@ -1564,6 +1643,36 @@ class ModelTrainingSubPipeline:
             )
 
             result = await self._execute_analyst_models_training(config, pre_ml_result)
+        elif sub_pipeline_name == 'nas_tas_analyst_training':
+            # Execute NAS/TAS analyst training (requires analyst models)
+            models_artifacts = self._load_step_artifacts(config, 'analyst_models_training')
+            if models_artifacts is None:
+                raise FileNotFoundError(
+                    "Analyst model artifacts not found. Run 'analyst_models_training' first or provide persisted artifacts."
+                )
+
+            models_metadata = self._load_step_metadata(config, 'analyst_models_training')
+            models_result = self._build_loaded_result(
+                'analyst_models_training',
+                models_artifacts,
+                models_metadata
+            )
+
+            # Pass analyst models for NAS integration
+            self.nas_tas_models_training.current_pipeline_state.update({
+                'analyst_models': models_result.artifacts,
+                'analyst_features': self._current_pipeline_state.get('analyst_features'),
+                'analyst_pre_ml_result': models_result
+            })
+
+            nas_analyst_config = NASTASModelsTrainingConfig(
+                mode=config.mode.value,
+                enable_nas_training=True,
+                enable_tas_training=False,  # Only NAS for analyst integration
+                top_k_models=3,
+                selection_strategy="best_performance"
+            )
+            result = await self.nas_tas_models_training.execute_pipeline(nas_analyst_config)
         elif sub_pipeline_name == 'analyst_ensemble_training':
             models_artifacts = self._load_step_artifacts(config, 'analyst_models_training')
             if models_artifacts is None:
@@ -1629,6 +1738,40 @@ class ModelTrainingSubPipeline:
                 pre_ml_result,
                 analyst_predictions
             )
+        elif sub_pipeline_name == 'nas_tas_tactician_training':
+            # Execute NAS/TAS tactician training (requires tactician models)
+            models_artifacts = self._load_step_artifacts(config, 'tactician_models_training')
+            if models_artifacts is None:
+                raise FileNotFoundError(
+                    "Tactician model artifacts not found. Run 'tactician_models_training' first or provide persisted artifacts."
+                )
+
+            models_metadata = self._load_step_metadata(config, 'tactician_models_training')
+            models_result = self._build_loaded_result(
+                'tactician_models_training',
+                models_artifacts,
+                models_metadata
+            )
+
+            # Pass tactician models and analyst predictions for TAS integration
+            analyst_artifacts = self._load_step_artifacts(config, 'analyst_ensemble_training')
+            analyst_predictions = analyst_artifacts.get('predictions') if analyst_artifacts else None
+
+            self.nas_tas_models_training.current_pipeline_state.update({
+                'tactician_models': models_result.artifacts,
+                'tactician_features': self._current_pipeline_state.get('tactician_features'),
+                'tactician_pre_ml_result': models_result,
+                'analyst_predictions': analyst_predictions
+            })
+
+            nas_tactician_config = NASTASModelsTrainingConfig(
+                mode=config.mode.value,
+                enable_nas_training=False,  # Only TAS for tactician integration
+                enable_tas_training=True,
+                top_k_models=3,
+                selection_strategy="best_performance"
+            )
+            result = await self.nas_tas_models_training.execute_pipeline(nas_tactician_config)
         elif sub_pipeline_name == 'tactician_ensemble_training':
             models_artifacts = self._load_step_artifacts(config, 'tactician_models_training')
             if models_artifacts is None:
@@ -1691,12 +1834,16 @@ class ModelTrainingSubPipeline:
                     self._current_pipeline_state['analyst_features'] = result.artifacts
                 elif sub_pipeline_name == 'analyst_models_training':
                     self._current_pipeline_state['analyst_models'] = result.artifacts
+                elif sub_pipeline_name == 'nas_tas_analyst_training':
+                    self._current_pipeline_state['nas_tas_analyst'] = result
                 elif sub_pipeline_name == 'analyst_ensemble_training':
                     self._current_pipeline_state['analyst_ensemble'] = result.artifacts
                 elif sub_pipeline_name == 'tactician_pre_ml_orchestration':
                     self._current_pipeline_state['tactician_features'] = result.artifacts
                 elif sub_pipeline_name == 'tactician_models_training':
                     self._current_pipeline_state['tactician_models'] = result.artifacts
+                elif sub_pipeline_name == 'nas_tas_tactician_training':
+                    self._current_pipeline_state['nas_tas_tactician'] = result
                 elif sub_pipeline_name == 'tactician_ensemble_training':
                     self._current_pipeline_state['tactician_ensemble'] = result.artifacts
                 elif sub_pipeline_name == 'nas_tas_models_training':

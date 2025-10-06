@@ -262,8 +262,8 @@ class AresLauncher:
                 'next_stage': 'backtesting',
                 'required_files': ['analyst_ensemble.pkl', 'tactician_ensemble.pkl', 'analyst_predictions.parquet', 'tactician_predictions.parquet'],
                 'required_artifacts': ['analyst_models', 'tactician_models', 'performance_metrics', 'ensemble_models'],
-                'sub_pipelines': ['analyst_pre_ml_orchestration', 'analyst_models_training', 'analyst_ensemble_training',
-                                'tactician_pre_ml_orchestration', 'tactician_models_training', 'tactician_ensemble_training']
+                'sub_pipelines': ['analyst_pre_ml_orchestration', 'analyst_models_training', 'nas_tas_analyst_training', 'analyst_ensemble_training',
+                                'tactician_pre_ml_orchestration', 'tactician_models_training', 'nas_tas_tactician_training', 'tactician_ensemble_training']
             },
             'backtesting': {
                 'next_stage': 'reporting',
@@ -1020,12 +1020,14 @@ class AresLauncher:
             'pid_based_feature_generation': "PID-based feature generation with interaction, polynomial, and cross-timeframe features",
             'sr_feature_integration': "Integrate SR-specific features into feature set",
             
-            # Model Training (6 sub-pipelines - Analyst & Tactician orchestration)
+            # Model Training (8 sub-pipelines - Analyst & Tactician orchestration)
             'analyst_pre_ml_orchestration': "Analyst Pre-ML: Apply horizon labeling, optimize features, generate PID features, select features (15m timeframe, per-regime/cluster)",
             'analyst_models_training': "Train Analyst base models per-regime (ElasticNet, RandomForest, NAS, TAS, N-BEATS) on 15m timeframe - 8 regimes × 5 models = 40 base models",
+            'nas_tas_analyst_training': "Train NAS models integrated with Analyst pipeline (5m timeframe) using shared features and multi-horizon profit labeling",
             'analyst_ensemble_training': "Train Analyst per-regime ensemble models (8 ensembles combining 5 base models each) on 15m timeframe to produce final green-signal approvals consumed by Tactician",
             'tactician_pre_ml_orchestration': "Tactician Pre-ML: Apply horizon labeling, optimize features, generate PID features, select features (15m timeframe, filtered on Analyst signals >0.4%)",
             'tactician_models_training': "Train Tactician unified base models (RandomSurvivalForest, XGBoost, NAS, TAS) on 5m timeframe using Analyst green-signal filtered data with regime + Analyst features - 4 models total",
+            'nas_tas_tactician_training': "Train TAS models integrated with Tactician pipeline (1m timeframe) using shared features and Analyst signal filtering",
             'tactician_ensemble_training': "Train Tactician unified ensemble model (1 ensemble combining 4 base models) on 5m timeframe with Analyst green-signal filtered data and base model outputs",
             # Legacy/deprecated entries
             'hmm_training': "HMM-based model training",
@@ -1088,10 +1090,12 @@ class AresLauncher:
             # Model Training dependencies (Analyst → Tactician pipeline)
             'analyst_pre_ml_orchestration': ['final_feature_selection'],  # From PRE_TRAINING stage
             'analyst_models_training': ['analyst_pre_ml_orchestration'],
-            'analyst_ensemble_training': ['analyst_models_training'],
+            'nas_tas_analyst_training': ['analyst_models_training'],  # Requires analyst models for integration
+            'analyst_ensemble_training': ['nas_tas_analyst_training'],  # Can use NAS models in ensemble
             'tactician_pre_ml_orchestration': ['analyst_ensemble_training'],  # Needs Analyst predictions for filtering
             'tactician_models_training': ['tactician_pre_ml_orchestration'],
-            'tactician_ensemble_training': ['tactician_models_training'],
+            'nas_tas_tactician_training': ['tactician_models_training'],  # Requires tactician models for integration
+            'tactician_ensemble_training': ['nas_tas_tactician_training'],  # Can use TAS models in ensemble
             # Legacy dependencies
             'hmm_training': ['sr_feature_integration'],
             'regime_specific_training': ['tactician_ensemble_training'],
@@ -1153,9 +1157,11 @@ class AresLauncher:
             # Model Training outputs
             'analyst_pre_ml_orchestration': ['analyst_features_15m.parquet', 'analyst_selected_features.json', 'regime_features_added.json'],
             'analyst_models_training': ['analyst_base_models_per_regime.pkl', 'analyst_nas_models.pkl', 'analyst_tas_models.pkl', 'analyst_nbeats_models.pkl'],
+            'nas_tas_analyst_training': ['nas_tas_analyst_models.pkl', 'nas_tas_analyst_integration_results.json'],
             'analyst_ensemble_training': ['analyst_ensemble_per_regime.pkl', 'analyst_predictions.parquet'],
             'tactician_pre_ml_orchestration': ['tactician_features_5m.parquet', 'tactician_selected_features.json', 'filtered_data_report.json', 'regime_features_added.json'],
             'tactician_models_training': ['tactician_base_models_unified.pkl', 'tactician_nas_model.pkl', 'tactician_tas_model.pkl'],
+            'nas_tas_tactician_training': ['nas_tas_tactician_models.pkl', 'nas_tas_tactician_integration_results.json'],
             'tactician_ensemble_training': ['tactician_ensemble_unified.pkl', 'tactician_predictions.parquet'],
             # Legacy outputs
             'hmm_training': ['hmm_model.pkl'],
@@ -1260,6 +1266,12 @@ Examples:
 
   # Execute NAS-TAS clustering with full execution mode
   python ares_launcher.py --mode sub_pipeline --sub_pipeline nas_tas_clustering --execution-mode full --symbol ETHUSDT
+
+  # Execute NAS/TAS analyst training (integrates NAS with Analyst pipeline)
+  python ares_launcher.py --mode sub_pipeline --sub_pipeline nas_tas_analyst_training --execution-mode full --symbol ETHUSDT
+
+  # Execute NAS/TAS tactician training (integrates TAS with Tactician pipeline)
+  python ares_launcher.py --mode sub_pipeline --sub_pipeline nas_tas_tactician_training --execution-mode full --symbol ETHUSDT
 
   # Execute specific sub-pipeline with full execution mode (1460 days, 100% intensity) - RECOMMENDED
   python ares_launcher.py --mode sub_pipeline --sub_pipeline nas_tas_regime_discovery --execution-mode full --symbol ETHUSDT
@@ -1377,9 +1389,25 @@ Examples:
         help='Shortcut for Tactician ensemble training sub-pipeline.'
     )
 
+    shortcut_group.add_argument(
+        '--nas-tas-analyst',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='nas_tas_analyst_training',
+        help='Shortcut for NAS/TAS analyst training sub-pipeline.'
+    )
+
+    shortcut_group.add_argument(
+        '--nas-tas-tactician',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='nas_tas_tactician_training',
+        help='Shortcut for NAS/TAS tactician training sub-pipeline.'
+    )
+
     parser.add_argument(
         '--sub-pipeline', '--sub_pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: analyst_pre_ml_orchestration, analyst_models_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_models_training, tactician_ensemble_training, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, feature_lookback_optimization, pid_based_feature_generation, final_feature_selection, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc. You can also use shortcut flags like --analyst-pre-ml or --tactician-ensemble.'
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: analyst_pre_ml_orchestration, analyst_models_training, nas_tas_analyst_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_models_training, nas_tas_tactician_training, tactician_ensemble_training, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, feature_lookback_optimization, pid_based_feature_generation, final_feature_selection, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc. You can also use shortcut flags like --analyst-pre-ml or --tactician-ensemble.'
     )
     
     parser.add_argument(

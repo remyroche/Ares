@@ -364,9 +364,32 @@ class MultiStageFeatureSelector:
                 self.logger.info(f"📊 Applied execution mode window: using last {window_days} samples for feature selection")
 
         # Apply execution mode stage targets if configured
-        stage_targets = self.config.stage_3_target  # Default from config
+        default_stage_targets = (
+            self.config.initial_features,
+            self.config.stage_1_target,
+            self.config.stage_2_target,
+            self.config.stage_3_target,
+        )
+
+        stage_targets: Tuple[int, ...] = default_stage_targets
         if self.execution_mode_config:
-            stage_targets = self.execution_mode_config.get('stage_targets', (120, 100, 80, 60))
+            raw_stage_targets = self.execution_mode_config.get('stage_targets', default_stage_targets)
+
+            if isinstance(raw_stage_targets, (list, tuple)):
+                padded_targets = list(default_stage_targets)
+                for idx, value in enumerate(raw_stage_targets):
+                    if idx < len(padded_targets):
+                        padded_targets[idx] = value
+                    else:
+                        padded_targets.append(value)
+                stage_targets = tuple(padded_targets)
+            elif isinstance(raw_stage_targets, int):
+                padded_targets = list(default_stage_targets)
+                padded_targets[-1] = raw_stage_targets
+                stage_targets = tuple(padded_targets)
+            else:
+                stage_targets = default_stage_targets
+
             self.logger.info(f"📊 Using execution mode stage targets: {stage_targets}")
 
         # Determine which directions to process based on mode
@@ -1034,6 +1057,9 @@ class MultiStageFeatureSelector:
 
         tprint("🚀 Starting Stage 2 Feature Selection")
         tprint(f"📊 Input: {len(X)} samples, {len(X.columns)} features")
+
+        # Use provided target count or fall back to config
+        actual_target = target_count or self.config.stage_2_target
         tprint(f"🎯 Target features: {actual_target}")
 
         # Train optimized model for this stage
@@ -1108,6 +1134,10 @@ class MultiStageFeatureSelector:
 
         tprint("🚀 Starting Stage 3 Feature Selection")
         tprint(f"📊 Input: {len(X)} samples, {len(X.columns)} features")
+
+
+        # Use provided target count or fall back to config
+        actual_target = target_count or self.config.stage_3_target
         tprint(f"🎯 Target features: {actual_target}")
 
         # Train optimized model for this stage
@@ -1122,6 +1152,84 @@ class MultiStageFeatureSelector:
         tprint("🔄 Performing cross-validation feature importance...")
         cv_scores = self._cross_validate_feature_importance_optimized(X, y)
         tprint(f"✅ CV completed for {len(cv_scores)} features")
+
+        # Calculate non-linear quality metrics
+        mi_scores: Dict[str, float] = {}
+        if self.config.enable_mutual_information:
+            tprint("🔗 Calculating mutual information...")
+            mi_scores = self._calculate_mutual_information_correlation(X, y)
+            tprint(f"✅ MI calculated for {len(mi_scores)} features")
+
+        # Calculate feature stability across time periods
+        tprint("🛡️ Analyzing feature stability...")
+        stability_scores = self._calculate_feature_stability_score(X, y)
+        tprint(f"✅ Stability analyzed for {len(stability_scores)} features")
+
+        # Combine importance scores with non-linear awareness (model + CV + MI + stability)
+        tprint("⚖️ Combining importance scores with non-linear awareness...")
+        combined_scores: Dict[str, float] = {}
+        for feature in X.columns:
+            model_score = model_importance.get(feature, 0)
+            cv_score = cv_scores.get(feature, 0)
+            mi_score = mi_scores.get(feature, 0)
+            stability_score = stability_scores.get(feature, 0.5)  # Default stability if not calculated
+
+            base_score = (model_score * 0.3 + cv_score * 0.3 + mi_score * 0.2)
+            stability_multiplier = 0.5 + (stability_score * 0.5)  # Range: 0.5-1.0
+            combined_scores[feature] = base_score * stability_multiplier
+
+        if combined_scores:
+            tprint(
+                f"📊 Non-linear combined scores range: "
+                f"[{min(combined_scores.values()):.6f}, {max(combined_scores.values()):.6f}]"
+            )
+        else:
+            tprint("⚠️ No combined scores calculated")
+
+        high_stability_features = [f for f, score in stability_scores.items() if score > 0.8]
+        if high_stability_features:
+            tprint(f"🎯 High stability features: {len(high_stability_features)} (consistently valuable)")
+
+        low_stability_features = [f for f, score in stability_scores.items() if score < 0.3]
+        if low_stability_features:
+            tprint(f"⚠️ Low stability features: {len(low_stability_features)} (context-dependent)")
+
+        # Apply early termination if enabled and we have many features
+        if self.config.enable_early_termination and len(X.columns) > actual_target * 2:
+            tprint("🗑️ Applying early termination...")
+            X = self._apply_early_termination(X, combined_scores)
+            combined_scores = {f: combined_scores.get(f, 0) for f in X.columns}
+
+        # Apply final RFE if enabled
+        if self.config.enable_rfe and len(X.columns) > actual_target:
+            tprint(f"🔄 Applying final RFE to reduce from {len(X.columns)} to {actual_target} features")
+            rfe_features = self._recursive_feature_elimination(X, y)
+            X = X[rfe_features]
+            combined_scores = {f: combined_scores.get(f, 0) for f in X.columns}
+            tprint(f"✅ Final RFE completed: {len(X.columns)} features remaining")
+
+        # Select top features
+        sorted_features = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
+        selected_features = [f[0] for f in sorted_features[:actual_target]]
+
+        tprint(f"🏆 Final Stage 3 selection: {len(selected_features)} features")
+        tprint(f"📈 Top combined score: {sorted_features[0][1]:.6f}" if sorted_features else "N/A")
+
+        # Calculate comprehensive scores with non-linear awareness
+        scores = {
+            'combined_importance_score': np.mean(list(combined_scores.values())) if combined_scores else 0.0,
+            'model_cv_agreement': self._calculate_agreement(model_importance, cv_scores),
+            'final_stability': np.std(list(combined_scores.values())) if combined_scores else 0.0,
+            'model_type': model_type,
+            'mutual_information_avg': np.mean(list(mi_scores.values())) if mi_scores else 0.0,
+            'stability_avg': np.mean(list(stability_scores.values())) if stability_scores else 0.0,
+            'high_stability_features': len(high_stability_features),
+            'low_stability_features': len(low_stability_features)
+        }
+
+        tprint(f"📊 Final scores - Combined: {scores['combined_importance_score']:.4f}, Stability: {scores['final_stability']:.4f}")
+        tprint(f"✅ Stage 3 completed: {len(selected_features)} features selected")
+        return selected_features, scores
 
     def _cross_validate_feature_importance_optimized(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, float]:
         """Cross-validation feature importance using optimized models."""
@@ -1164,82 +1272,6 @@ class MultiStageFeatureSelector:
             cv_scores = dict(zip(X.columns, X.var().values))
 
         return cv_scores
-
-        # Calculate non-linear quality metrics
-        mi_scores = {}
-        if self.config.enable_mutual_information:
-            tprint("🔗 Calculating mutual information...")
-            mi_scores = self._calculate_mutual_information_correlation(X, y)
-            tprint(f"✅ MI calculated for {len(mi_scores)} features")
-
-        # Calculate feature stability across time periods
-        tprint("🛡️ Analyzing feature stability...")
-        stability_scores = self._calculate_feature_stability_score(X, y)
-        tprint(f"✅ Stability analyzed for {len(stability_scores)} features")
-
-        # Combine importance scores with non-linear awareness (model + CV + MI + stability)
-        tprint("⚖️ Combining importance scores with non-linear awareness...")
-        combined_scores = {}
-        for feature in X.columns:
-            model_score = model_importance.get(feature, 0)
-            cv_score = cv_scores.get(feature, 0)
-            mi_score = mi_scores.get(feature, 0)
-            stability_score = stability_scores.get(feature, 0.5)  # Default stability if not calculated
-
-            # Non-linear aware combination - stability acts as a multiplier
-            # High stability increases the score, low stability decreases it
-            base_score = (model_score * 0.3 + cv_score * 0.3 + mi_score * 0.2)
-            # Apply stability as a non-linear modifier
-            stability_multiplier = 0.5 + (stability_score * 0.5)  # Range: 0.5-1.0
-            combined_scores[feature] = base_score * stability_multiplier
-
-        tprint(f"📊 Non-linear combined scores range: [{min(combined_scores.values()):.6f}, {max(combined_scores.values()):.6f}]")
-
-        # Log insights about non-linear feature relationships
-        high_stability_features = [f for f, score in stability_scores.items() if score > 0.8]
-        if high_stability_features:
-            tprint(f"🎯 High stability features: {len(high_stability_features)} (consistently valuable)")
-
-        low_stability_features = [f for f, score in stability_scores.items() if score < 0.3]
-        if low_stability_features:
-            tprint(f"⚠️ Low stability features: {len(low_stability_features)} (context-dependent)")
-
-        # Apply early termination if enabled and we have many features
-        if self.config.enable_early_termination and len(X.columns) > actual_target * 2:
-            tprint("🗑️ Applying early termination...")
-            X = self._apply_early_termination(X, combined_scores)
-
-        # Apply final RFE if enabled
-        if self.config.enable_rfe and len(X.columns) > actual_target:
-            tprint(f"🔄 Applying final RFE to reduce from {len(X.columns)} to {actual_target} features")
-            rfe_features = self._recursive_feature_elimination(X, y)
-            X = X[rfe_features]
-            # Recalculate combined scores for RFE-selected features
-            combined_scores = {f: combined_scores.get(f, 0) for f in X.columns}
-            tprint(f"✅ Final RFE completed: {len(X.columns)} features remaining")
-
-        # Select top features
-        sorted_features = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
-        selected_features = [f[0] for f in sorted_features[:actual_target]]
-
-        tprint(f"🏆 Final Stage 3 selection: {len(selected_features)} features")
-        tprint(f"📈 Top combined score: {sorted_features[0][1]:.6f}" if sorted_features else "N/A")
-
-        # Calculate comprehensive scores with non-linear awareness
-        scores = {
-            'combined_importance_score': np.mean(list(combined_scores.values())),
-            'model_cv_agreement': self._calculate_agreement(model_importance, cv_scores),
-            'final_stability': np.std(list(combined_scores.values())),
-            'model_type': model_type,
-            'mutual_information_avg': np.mean(list(mi_scores.values())) if mi_scores else 0.0,
-            'stability_avg': np.mean(list(stability_scores.values())) if stability_scores else 0.0,
-            'high_stability_features': len(high_stability_features),
-            'low_stability_features': len(low_stability_features)
-        }
-
-        tprint(f"📊 Final scores - Combined: {scores['combined_importance_score']:.4f}, Stability: {scores['final_stability']:.4f}")
-        tprint(f"✅ Stage 3 completed: {len(selected_features)} features selected")
-        return selected_features, scores
     
     def _shap_based_selection(self, X: pd.DataFrame, y: pd.Series, target_count: int) -> Tuple[List[str], Dict[str, float]]:
         """SHAP-based feature selection."""

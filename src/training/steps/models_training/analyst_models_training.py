@@ -566,43 +566,120 @@ class AnalystModelsTrainingStep:
         sample_weight: np.ndarray,
         **kwargs
     ) -> Dict[str, Any]:
-        """Train NAS (Neural Architecture Search) model."""
+        """Train NAS (Neural Architecture Search) model for 15m timeframe."""
         try:
-            # Import NAS training utilities
-            try:
-                from src.nas_tas.nas_trainer import NASTrainer
-                from src.nas_tas.model_config import NASConfig
-            except ImportError:
-                tprint_warning("⚠️ NAS trainer not available, using placeholder")
-                # Use RandomForest as placeholder for NAS
-                from sklearn.ensemble import RandomForestRegressor
-                model = RandomForestRegressor(
-                    n_estimators=100,
-                    random_state=42,
-                    n_jobs=-1 if self.config.enable_parallel_processing else 1
-                )
-                model.fit(X, y.ravel(), sample_weight=sample_weight)
-                return {
-                    'models': {'nas': model},
-                    'metrics': {'model_type': 'NAS_placeholder'}
-                }
+            from .nas_tas.training_orchestrator import TrainingOrchestrator, OrchestratorConfig, OrchestrationMode
 
-            # Create NAS configuration
-            nas_config = NASConfig(
-                input_dim=X.shape[1],
-                output_dim=y.shape[1] if len(y.shape) > 1 else 1,
-                search_space='analyst',
-                max_epochs=100,
-                enable_gpu=self.config.enable_gpu_acceleration
+            # Create training configuration for NAS
+            output_directory = kwargs.get('output_directory') or f"{self.config.output_directory}/nas"
+            os.makedirs(output_directory, exist_ok=True)
+
+            orchestrator_config = OrchestratorConfig(
+                mode=OrchestrationMode.TRAINING_ONLY,
+                enable_regime_detection=True,
+                enable_model_training=True,
+                enable_model_selection=True,
+                enable_model_management=False,
+                enable_performance_tracking=False,
+                output_directory=output_directory,
+                save_models=self.config.save_models,
+                save_results=self.config.save_models,
+                direction_mode='both',
+                separate_directional_features=False,
             )
 
-            # Initialize and train NAS model
-            nas_trainer = NASTrainer(nas_config)
-            model = await nas_trainer.train(X, y, sample_weight=sample_weight)
+            # Set parallel processing
+            orchestrator_config.enable_parallel_processing = self.config.enable_parallel_processing
+            orchestrator_config.max_workers = max(1, os.cpu_count() or 1)
+
+            # Initialize orchestrator
+            orchestrator = TrainingOrchestrator(orchestrator_config)
+
+            # Prepare data for training
+            training_data = kwargs.get('training_data')
+            feature_columns = kwargs.get('feature_columns')
+            target_columns = kwargs.get('target_columns') or ['target']
+            regime_assignments = kwargs.get('regime_assignments')
+            timestamps = kwargs.get('timestamps')
+
+            if training_data is None or not feature_columns:
+                raise ValueError("Training data and feature columns required for NAS training")
+
+            # Create dataset for orchestrator
+            feature_set = list(dict.fromkeys(feature_columns))
+            dataset = training_data[feature_set + target_columns].dropna(subset=target_columns).copy()
+
+            if dataset.empty:
+                raise ValueError("No valid data for NAS training")
+
+            dataset = dataset.rename(columns={target_columns[0]: 'target'})
+
+            # Determine timestamps to maintain temporal ordering
+            timestamps_series = None
+            if timestamps is not None:
+                timestamps_series = timestamps
+            elif 'timestamp' in training_data.columns:
+                timestamps_series = training_data.loc[dataset.index, 'timestamp']
+
+            # Set context for analyst training
+            context = {
+                'source': 'AnalystModelsTrainingStep',
+                'model_type': 'NAS',
+                'timeframe': '15m',
+                'feature_count': len(feature_set),
+            }
+
+            if regime_assignments is not None:
+                context['regime_assignment_shape'] = getattr(regime_assignments, 'shape', None)
+
+            # Train NAS model
+            orchestration_result = await orchestrator.orchestrate_async(
+                market_data=dataset,
+                target_variable='target',
+                feature_columns=feature_set,
+                timestamps=timestamps_series,
+                context=context,
+            )
+
+            if not orchestration_result.success or not orchestration_result.training_result:
+                raise RuntimeError(f"NAS orchestrator failed: {orchestration_result.error_message}")
+
+            training_result = orchestration_result.training_result
+            if not training_result.success:
+                raise RuntimeError(f"NAS training unsuccessful: {training_result.error_message}")
+
+            # Extract trained models
+            models = {}
+            metrics = {
+                'model_type': 'NAS',
+                'timeframe': '15m',
+                'overall_performance': training_result.overall_performance,
+                'regime_performance': training_result.regime_performance,
+                'n_regimes': training_result.n_regimes_detected,
+                'execution_time': orchestration_result.execution_time,
+            }
+
+            # Store regime-specific models
+            for regime_id, regime_models in training_result.models_trained.items():
+                for model_name, model_info in regime_models.items():
+                    combined_key = f"regime_{regime_id}_{model_name}"
+                    models[combined_key] = model_info.get('model')
+
+                    # Add per-model metrics
+                    if combined_key not in metrics:
+                        metrics[combined_key] = {}
+                    metrics[combined_key].update({
+                        'regime': regime_id,
+                        'train_metrics': model_info.get('train_metrics'),
+                        'val_metrics': model_info.get('val_metrics'),
+                        'test_metrics': model_info.get('test_metrics'),
+                        'feature_importance': model_info.get('feature_importance'),
+                        'hyperparameters': model_info.get('hyperparameters'),
+                    })
 
             return {
-                'models': {'nas': model},
-                'metrics': {'model_type': 'NAS'}
+                'models': models,
+                'metrics': metrics
             }
 
         except Exception as e:
@@ -616,43 +693,120 @@ class AnalystModelsTrainingStep:
         sample_weight: np.ndarray,
         **kwargs
     ) -> Dict[str, Any]:
-        """Train TAS (Tree-based Architecture Search) model."""
+        """Train TAS (Tree-based Architecture Search) model for 15m timeframe."""
         try:
-            # Import TAS training utilities
-            try:
-                from src.nas_tas.tas_trainer import TASTrainer
-                from src.nas_tas.model_config import TASConfig
-            except ImportError:
-                tprint_warning("⚠️ TAS trainer not available, using placeholder")
-                # Use RandomForest as placeholder for TAS
-                from sklearn.ensemble import RandomForestRegressor
-                model = RandomForestRegressor(
-                    n_estimators=100,
-                    random_state=42,
-                    n_jobs=-1 if self.config.enable_parallel_processing else 1
-                )
-                model.fit(X, y.ravel(), sample_weight=sample_weight)
-                return {
-                    'models': {'tas': model},
-                    'metrics': {'model_type': 'TAS_placeholder'}
-                }
+            from .nas_tas.training_orchestrator import TrainingOrchestrator, OrchestratorConfig, OrchestrationMode
 
-            # Create TAS configuration
-            tas_config = TASConfig(
-                input_dim=X.shape[1],
-                output_dim=y.shape[1] if len(y.shape) > 1 else 1,
-                search_space='analyst',
-                max_epochs=100,
-                enable_gpu=self.config.enable_gpu_acceleration
+            # Create training configuration for TAS
+            output_directory = kwargs.get('output_directory') or f"{self.config.output_directory}/tas"
+            os.makedirs(output_directory, exist_ok=True)
+
+            orchestrator_config = OrchestratorConfig(
+                mode=OrchestrationMode.TRAINING_ONLY,
+                enable_regime_detection=True,
+                enable_model_training=True,
+                enable_model_selection=True,
+                enable_model_management=False,
+                enable_performance_tracking=False,
+                output_directory=output_directory,
+                save_models=self.config.save_models,
+                save_results=self.config.save_models,
+                direction_mode='both',
+                separate_directional_features=False,
             )
 
-            # Initialize and train TAS model
-            tas_trainer = TASTrainer(tas_config)
-            model = await tas_trainer.train(X, y, sample_weight=sample_weight)
+            # Set parallel processing
+            orchestrator_config.enable_parallel_processing = self.config.enable_parallel_processing
+            orchestrator_config.max_workers = max(1, os.cpu_count() or 1)
+
+            # Initialize orchestrator
+            orchestrator = TrainingOrchestrator(orchestrator_config)
+
+            # Prepare data for training
+            training_data = kwargs.get('training_data')
+            feature_columns = kwargs.get('feature_columns')
+            target_columns = kwargs.get('target_columns') or ['target']
+            regime_assignments = kwargs.get('regime_assignments')
+            timestamps = kwargs.get('timestamps')
+
+            if training_data is None or not feature_columns:
+                raise ValueError("Training data and feature columns required for TAS training")
+
+            # Create dataset for orchestrator
+            feature_set = list(dict.fromkeys(feature_columns))
+            dataset = training_data[feature_set + target_columns].dropna(subset=target_columns).copy()
+
+            if dataset.empty:
+                raise ValueError("No valid data for TAS training")
+
+            dataset = dataset.rename(columns={target_columns[0]: 'target'})
+
+            # Determine timestamps to maintain temporal ordering
+            timestamps_series = None
+            if timestamps is not None:
+                timestamps_series = timestamps
+            elif 'timestamp' in training_data.columns:
+                timestamps_series = training_data.loc[dataset.index, 'timestamp']
+
+            # Set context for analyst training
+            context = {
+                'source': 'AnalystModelsTrainingStep',
+                'model_type': 'TAS',
+                'timeframe': '15m',
+                'feature_count': len(feature_set),
+            }
+
+            if regime_assignments is not None:
+                context['regime_assignment_shape'] = getattr(regime_assignments, 'shape', None)
+
+            # Train TAS model
+            orchestration_result = await orchestrator.orchestrate_async(
+                market_data=dataset,
+                target_variable='target',
+                feature_columns=feature_set,
+                timestamps=timestamps_series,
+                context=context,
+            )
+
+            if not orchestration_result.success or not orchestration_result.training_result:
+                raise RuntimeError(f"TAS orchestrator failed: {orchestration_result.error_message}")
+
+            training_result = orchestration_result.training_result
+            if not training_result.success:
+                raise RuntimeError(f"TAS training unsuccessful: {training_result.error_message}")
+
+            # Extract trained models
+            models = {}
+            metrics = {
+                'model_type': 'TAS',
+                'timeframe': '15m',
+                'overall_performance': training_result.overall_performance,
+                'regime_performance': training_result.regime_performance,
+                'n_regimes': training_result.n_regimes_detected,
+                'execution_time': orchestration_result.execution_time,
+            }
+
+            # Store regime-specific models
+            for regime_id, regime_models in training_result.models_trained.items():
+                for model_name, model_info in regime_models.items():
+                    combined_key = f"regime_{regime_id}_{model_name}"
+                    models[combined_key] = model_info.get('model')
+
+                    # Add per-model metrics
+                    if combined_key not in metrics:
+                        metrics[combined_key] = {}
+                    metrics[combined_key].update({
+                        'regime': regime_id,
+                        'train_metrics': model_info.get('train_metrics'),
+                        'val_metrics': model_info.get('val_metrics'),
+                        'test_metrics': model_info.get('test_metrics'),
+                        'feature_importance': model_info.get('feature_importance'),
+                        'hyperparameters': model_info.get('hyperparameters'),
+                    })
 
             return {
-                'models': {'tas': model},
-                'metrics': {'model_type': 'TAS'}
+                'models': models,
+                'metrics': metrics
             }
 
         except Exception as e:

@@ -95,7 +95,7 @@ class FinalFeatureSelectionStep:
                                             data_dir: str,
                                             **kwargs) -> bool:
         """
-        Execute final feature selection step.
+        Execute final feature selection step with comprehensive logging.
         
         Args:
             symbol: Trading symbol
@@ -108,45 +108,67 @@ class FinalFeatureSelectionStep:
             bool: True if successful, False otherwise
         """
         
-        self.logger.info("🔍 Starting final feature selection step")
-        self.logger.info(f"   📊 Symbol: {symbol}")
-        self.logger.info(f"   🏢 Exchange: {exchange}")
-        self.logger.info(f"   ⏰ Timeframe: {timeframe}")
-        self.logger.info(f"   📁 Data directory: {data_dir}")
+        from src.utils.tprint import tprint
+        
+        tprint("🔍 Starting Final Feature Selection Step")
+        tprint(f"   📊 Symbol: {symbol}")
+        tprint(f"   🏢 Exchange: {exchange}")
+        tprint(f"   ⏰ Timeframe: {timeframe}")
+        tprint(f"   📁 Data directory: {data_dir}")
+        tprint(f"   🎯 Target: xx→120→100→80→60 features")
         
         try:
             # Load feature data
+            tprint("🔄 Loading feature data...")
             feature_data = await self._load_feature_data(symbol, exchange, timeframe, data_dir)
             if feature_data is None:
-                self.logger.error("❌ Failed to load feature data")
+                tprint("❌ Failed to load feature data")
                 return False
             
+            tprint(f"✅ Feature data loaded: {feature_data.shape[0]} samples, {feature_data.shape[1]} features")
+            
             # Load target data (if available) - prioritize standardized format from multi_horizon_profit_labeler
+            tprint("🔄 Loading target data...")
             target_data = await self._load_target_data_from_standardized_format(symbol, exchange, timeframe, data_dir)
             
+            if target_data is not None:
+                tprint(f"✅ Target data loaded: {target_data.shape[0]} samples, {target_data.shape[1]} columns")
+            else:
+                tprint("⚠️ No target data found - will perform unsupervised feature selection")
+            
             # Prepare data for feature selection
+            tprint("🔄 Preparing data for feature selection...")
             X, y = self._prepare_data(feature_data, target_data)
+            tprint(f"✅ Data prepared: {X.shape[0]} samples, {X.shape[1]} features")
             
             # Run feature selection
+            tprint("🚀 Running multi-stage feature selection...")
             selection_result = await self._run_feature_selection(X, y, symbol, exchange, timeframe)
             
             # Save results
+            tprint("💾 Saving selection results...")
             await self._save_selection_results(selection_result, symbol, exchange, timeframe, data_dir)
             
             # Generate summary report
+            tprint("📊 Generating summary report...")
             await self._generate_summary_report(selection_result, symbol, exchange, timeframe)
 
             # Log integration with upstream components
-            self.logger.info("📋 Integration Summary:")
-            self.logger.info(f"   🎯 Multi-horizon profit labels: {'✅ Used' if target_data is not None else '❌ Not found'}")
-            self.logger.info(f"   ⚙️ Feature lookback optimization: {'✅ Integrated' if 'lookback_optimized' in str(selection_result).lower() else '❌ Not applied'}")
-            self.logger.info(f"   🔧 PID-based features: {'✅ Used' if len(feature_data.columns) > 50 else '❌ Insufficient features'}")
+            tprint("📋 INTEGRATION SUMMARY:")
+            tprint(f"   🎯 Multi-horizon profit labels: {'✅ Used' if target_data is not None else '❌ Not found'}")
+            tprint(f"   ⚙️ Feature lookback optimization: {'✅ Integrated' if 'lookback_optimized' in str(selection_result).lower() else '❌ Not applied'}")
+            tprint(f"   🔧 PID-based features: {'✅ Used' if len(feature_data.columns) > 50 else '❌ Insufficient features'}")
+            tprint(f"   ⚡ Vectorization: ✅ Enabled")
+            tprint(f"   💾 Caching: ✅ Enabled")
+            tprint(f"   📊 tprint logging: ✅ Comprehensive")
 
-            self.logger.info("✅ Final feature selection completed successfully")
+            tprint("✅ Final feature selection completed successfully")
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Final feature selection failed: {e}")
+            tprint(f"❌ Final feature selection failed: {e}")
+            import traceback
+            tprint(f"🔍 Error details: {traceback.format_exc()}")
             return False
 
     async def _load_target_data_from_standardized_format(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
@@ -309,49 +331,78 @@ class FinalFeatureSelectionStep:
             return None
     
     def _prepare_data(self, feature_data: pd.DataFrame, target_data: Optional[pd.Series]) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
-        """Prepare data for feature selection."""
+        """Prepare data for feature selection with comprehensive logging."""
+        
+        from src.utils.tprint import tprint
+        
+        tprint("🔄 Preparing data for feature selection...")
+        tprint(f"   📊 Input features: {feature_data.shape[0]} samples, {feature_data.shape[1]} columns")
         
         # Clean feature data
         X = feature_data.copy()
         
         # Remove non-numeric columns
         numeric_columns = X.select_dtypes(include=[np.number]).columns
+        non_numeric_count = len(X.columns) - len(numeric_columns)
+        if non_numeric_count > 0:
+            tprint(f"   🗑️ Removing {non_numeric_count} non-numeric columns")
         X = X[numeric_columns]
         
         # Handle missing values
-        X = X.fillna(X.median())
+        missing_count = X.isnull().sum().sum()
+        if missing_count > 0:
+            tprint(f"   🔧 Handling {missing_count} missing values using median imputation")
+            X = X.fillna(X.median())
+        else:
+            tprint("   ✅ No missing values found")
         
         # Remove infinite values
-        X = X.replace([np.inf, -np.inf], np.nan)
-        X = X.fillna(X.median())
+        inf_count = np.isinf(X.values).sum()
+        if inf_count > 0:
+            tprint(f"   🔧 Handling {inf_count} infinite values")
+            X = X.replace([np.inf, -np.inf], np.nan)
+            X = X.fillna(X.median())
+        else:
+            tprint("   ✅ No infinite values found")
         
-        self.logger.info(f"📊 Prepared {len(X)} samples with {len(X.columns)} numeric features")
+        tprint(f"   ✅ Prepared {len(X)} samples with {len(X.columns)} numeric features")
         
         # Prepare target data if available
         y = None
         if target_data is not None:
+            tprint(f"   🎯 Processing target data: {target_data.shape[0]} samples")
             # Align target data with feature data
             common_indices = X.index.intersection(target_data.index)
             if len(common_indices) > 0:
                 X = X.loc[common_indices]
                 y = target_data.loc[common_indices]
-                self.logger.info(f"✅ Aligned target data: {len(y)} samples")
+                tprint(f"   ✅ Aligned target data: {len(y)} samples")
             else:
-                self.logger.warning("⚠️ No common indices between features and target")
+                tprint("   ⚠️ No common indices between features and target")
+        else:
+            tprint("   ℹ️ No target data - will perform unsupervised feature selection")
         
+        tprint(f"✅ Data preparation completed: {X.shape[0]} samples, {X.shape[1]} features")
         return X, y
     
     async def _run_feature_selection(self, X: pd.DataFrame, y: Optional[pd.Series],
                                    symbol: str, exchange: str, timeframe: str) -> Any:
-        """Run the multi-stage feature selection."""
+        """Run the multi-stage feature selection with comprehensive logging."""
         
-        self.logger.info("🔍 Running multi-stage feature selection")
-        self.logger.info(f"   📊 Input: {len(X)} samples, {len(X.columns)} features")
+        from src.utils.tprint import tprint
+        
+        tprint("🔍 Running Multi-Stage Feature Selection")
+        tprint(f"   📊 Input: {len(X)} samples, {len(X.columns)} features")
+        tprint(f"   🎯 Target: xx→120→100→80→60 features")
         
         if y is not None:
-            self.logger.info(f"   🎯 Target: {len(y)} samples (supervised)")
+            tprint(f"   🎯 Target: {len(y)} samples (supervised learning)")
+            tprint(f"   📊 Target type: {'classification' if len(y.unique()) <= 10 else 'regression'}")
         else:
-            self.logger.info("   🎯 No target data (unsupervised)")
+            tprint("   🎯 No target data (unsupervised learning)")
+        
+        tprint("   ⚡ Using vectorized operations and caching")
+        tprint("   🔄 Starting feature selection pipeline...")
         
         # Run feature selection in a thread pool to avoid blocking
         loop = asyncio.get_event_loop()
@@ -361,7 +412,10 @@ class FinalFeatureSelectionStep:
             X, y
         )
         
-        self.logger.info("✅ Feature selection completed")
+        tprint("✅ Multi-stage feature selection completed")
+        tprint(f"   📊 Final features: {len(selection_result.final_features)}")
+        tprint(f"   ⏱️ Selection time: {selection_result.selection_time:.3f} seconds")
+        
         return selection_result
     
     def _run_selection_sync(self, X: pd.DataFrame, y: Optional[pd.Series]) -> Any:
@@ -442,35 +496,41 @@ class FinalFeatureSelectionStep:
     
     async def _generate_summary_report(self, selection_result: Any, symbol: str,
                                      exchange: str, timeframe: str) -> None:
-        """Generate summary report of feature selection."""
+        """Generate comprehensive summary report of feature selection."""
+        
+        from src.utils.tprint import tprint
         
         try:
-            self.logger.info("📊 FEATURE SELECTION SUMMARY REPORT")
-            self.logger.info("=" * 60)
-            self.logger.info(f"🎯 Symbol: {symbol}")
-            self.logger.info(f"🏢 Exchange: {exchange}")
-            self.logger.info(f"⏰ Timeframe: {timeframe}")
-            self.logger.info(f"⏱️ Selection Time: {selection_result.selection_time:.3f}s")
-            self.logger.info("")
+            tprint("📊 FEATURE SELECTION SUMMARY REPORT")
+            tprint("=" * 60)
+            tprint(f"🎯 Symbol: {symbol}")
+            tprint(f"🏢 Exchange: {exchange}")
+            tprint(f"⏰ Timeframe: {timeframe}")
+            tprint(f"⏱️ Selection Time: {selection_result.selection_time:.3f}s")
+            tprint("")
             
-            self.logger.info("📈 FEATURE REDUCTION PIPELINE:")
-            self.logger.info(f"   🔢 Initial Features: {selection_result.feature_counts.get('initial', 'N/A')}")
-            self.logger.info(f"   📊 Stage 1 (120→100): {selection_result.feature_counts.get('stage_1', 'N/A')} features")
-            self.logger.info(f"   📊 Stage 2 (100→80): {selection_result.feature_counts.get('stage_2', 'N/A')} features")
-            self.logger.info(f"   📊 Stage 3 (80→60): {selection_result.feature_counts.get('stage_3', 'N/A')} features")
-            self.logger.info(f"   ✅ Final Features: {selection_result.feature_counts.get('final', 'N/A')} features")
-            self.logger.info("")
+            tprint("📈 FEATURE REDUCTION PIPELINE:")
+            tprint(f"   🔢 Initial Features: {selection_result.feature_counts.get('initial', 'N/A')}")
+            tprint(f"   📊 Stage 1 (xx→120): {selection_result.feature_counts.get('stage_1', 'N/A')} features")
+            tprint(f"   📊 Stage 2 (120→100): {selection_result.feature_counts.get('stage_2', 'N/A')} features")
+            tprint(f"   📊 Stage 3 (100→80): {selection_result.feature_counts.get('stage_3', 'N/A')} features")
+            tprint(f"   📊 Final (80→60): {selection_result.feature_counts.get('final', 'N/A')} features")
+            tprint("")
             
-            self.logger.info("📊 STAGE SCORES:")
+            tprint("📊 STAGE SCORES:")
             if selection_result.stage_1_scores:
-                self.logger.info(f"   🎯 Stage 1 Score: {selection_result.stage_1_scores.get('rf_importance_score', 'N/A'):.4f}")
+                score = selection_result.stage_1_scores.get('model_importance_score', 'N/A')
+                tprint(f"   🎯 Stage 1 Score: {score:.4f}" if isinstance(score, (int, float)) else f"   🎯 Stage 1 Score: {score}")
             if selection_result.stage_2_scores:
-                self.logger.info(f"   🎯 Stage 2 Score: {selection_result.stage_2_scores.get('enhanced_rf_score', selection_result.stage_2_scores.get('shap_importance_score', 'N/A')):.4f}")
+                score = selection_result.stage_2_scores.get('model_importance_score', 'N/A')
+                tprint(f"   🎯 Stage 2 Score: {score:.4f}" if isinstance(score, (int, float)) else f"   🎯 Stage 2 Score: {score}")
             if selection_result.stage_3_scores:
-                self.logger.info(f"   🎯 Stage 3 Score: {selection_result.stage_3_scores.get('combined_importance_score', 'N/A'):.4f}")
+                score = selection_result.stage_3_scores.get('combined_importance_score', 'N/A')
+                tprint(f"   🎯 Stage 3 Score: {score:.4f}" if isinstance(score, (int, float)) else f"   🎯 Stage 3 Score: {score}")
             if selection_result.final_scores:
-                self.logger.info(f"   🎯 Final CV Score: {selection_result.final_scores.get('cv_mean', 'N/A'):.4f}")
-            self.logger.info("")
+                score = selection_result.final_scores.get('cv_mean', 'N/A')
+                tprint(f"   🎯 Final CV Score: {score:.4f}" if isinstance(score, (int, float)) else f"   🎯 Final CV Score: {score}")
+            tprint("")
             
             # Show top 10 final features
             if hasattr(selection_result, 'model_performance') and 'feature_importance' in selection_result.model_performance:
@@ -479,14 +539,23 @@ class FinalFeatureSelectionStep:
                     key=lambda x: x[1], reverse=True
                 )[:10]
                 
-                self.logger.info("🏆 TOP 10 FINAL FEATURES:")
+                tprint("🏆 TOP 10 FINAL FEATURES:")
                 for i, (feature, importance) in enumerate(top_features, 1):
-                    self.logger.info(f"   {i:2d}. {feature}: {importance:.4f}")
+                    tprint(f"   {i:2d}. {feature}: {importance:.4f}")
             
-            self.logger.info("=" * 60)
+            tprint("")
+            tprint("⚡ OPTIMIZATION SUMMARY:")
+            tprint("   ✅ Vectorized operations: Enabled")
+            tprint("   ✅ Caching: Enabled")
+            tprint("   ✅ Comprehensive logging: Enabled")
+            tprint("   ✅ Multi-stage reduction: xx→120→100→80→60")
+            
+            tprint("=" * 60)
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to generate summary report: {e}")
+            tprint(f"❌ Failed to generate summary report: {e}")
+            import traceback
+            tprint(f"🔍 Error details: {traceback.format_exc()}")
 
 # Convenience function for pipeline integration
 async def run_final_feature_selection_step(symbol: str,

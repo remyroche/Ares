@@ -1427,10 +1427,10 @@ class RegimeDataSplittingStep:
             else:
                 self.logger.info(f'📊 Standard regime count: {num_regimes}')
 
-            # Add regime information to market data
-            market_data_with_regimes = market_data.copy()
-            market_data_with_regimes['composite_cluster_id'] = regime_labels
-            market_data_with_regimes['regime_probabilities'] = [prob for prob in regime_probabilities]
+            # Add comprehensive regime information to market data using the new tagging method
+            market_data_with_regimes = self.tag_data_with_regime_probabilities(
+                market_data, regime_labels, regime_probabilities
+            )
 
             # Memory checkpoint: Before dataset creation
             if self.m1_optimizations_enabled and self.memory_optimizer:
@@ -2428,19 +2428,21 @@ class RegimeDataSplittingStep:
     async def _predict_regimes_with_ensemble_model(self, ensemble_result: Dict[str, Any], market_data: pd.DataFrame) -> Optional[Dict[str, Any]]:
         """Use the trained ensemble model to predict regime labels and probabilities."""
         try:
-            # Extract the trained model
+            # Extract the trained models and scaler
             if 'stacker_lgbm_calibrated' not in ensemble_result:
                 self.logger.error("❌ No trained ML model found in regime ensemble training result")
                 return None
 
-            model = ensemble_result['stacker_lgbm_calibrated']
-
-            # Extract feature names from metadata
-            metadata = ensemble_result.get('metadata', {})
-            feature_names = metadata.get('feature_names', [])
+            models = ensemble_result.get('models', {})
+            scaler = ensemble_result.get('scaler')
+            feature_names = ensemble_result.get('feature_names', [])
 
             if not feature_names:
                 self.logger.error("❌ No feature names found in regime ensemble training metadata")
+                return None
+
+            if scaler is None:
+                self.logger.error("❌ No scaler found in regime ensemble training result")
                 return None
 
             # Prepare features for prediction
@@ -2453,13 +2455,43 @@ class RegimeDataSplittingStep:
             # Prepare feature matrix
             X = market_data[available_features].fillna(0).values
 
-            # Make predictions
-            regime_labels = model.predict(X)
-            regime_probabilities = model.predict_proba(X)
+            # Use the enhanced prediction method from regime models training
+            from src.training.steps.market_analysis.components.regime_models_training import RegimeModelsTrainingComponent
+            
+            # Create a temporary instance to use the prediction method
+            regime_models_component = RegimeModelsTrainingComponent()
+            
+            # Make predictions with comprehensive probability information
+            prediction_result = regime_models_component.predict_regimes_with_probabilities(
+                models=models,
+                scaler=scaler,
+                X=X,
+                feature_names=available_features,
+                use_meta_learner=True
+            )
 
+            if 'error' in prediction_result:
+                self.logger.error(f"❌ Prediction failed: {prediction_result['error']}")
+                return None
+
+            # Return the comprehensive prediction result
             return {
-                'labels': regime_labels,
-                'probabilities': regime_probabilities
+                'labels': prediction_result['regime_labels'],
+                'probabilities': prediction_result['regime_probabilities'],
+                'probability_info': {
+                    'raw_probabilities': prediction_result['regime_probabilities'],
+                    'regime_labels': prediction_result['regime_labels'],
+                    'confidence_scores': prediction_result['confidence_scores'],
+                    'n_regimes': prediction_result['n_regimes'],
+                    'regime_counts': prediction_result['regime_counts'],
+                    'regime_percentages': prediction_result['regime_percentages'],
+                    'avg_regime_probabilities': prediction_result['avg_regime_probabilities'],
+                    'regime_stability': prediction_result['regime_stability'],
+                    'entropy': prediction_result['entropy'],
+                    'dominance': prediction_result['dominance'],
+                    'model_used': prediction_result['model_used'],
+                    'prediction_metadata': prediction_result['prediction_metadata']
+                }
             }
 
         except Exception as e:
@@ -2734,6 +2766,94 @@ class RegimeDataSplittingStep:
             return duration_minutes
         except Exception:
             return 0
+
+    def tag_data_with_regime_probabilities(self, data: pd.DataFrame, regime_labels: np.ndarray, regime_probabilities: np.ndarray) -> pd.DataFrame:
+        """Tag data with comprehensive regime probability information.
+        
+        This method adds detailed probability information to the dataset, including:
+        - Individual regime probabilities for each regime
+        - Confidence scores and stability measures
+        - Entropy and dominance metrics
+        - Transition indicators and duration tracking
+        
+        Args:
+            data: The market data DataFrame to tag
+            regime_labels: Array of regime labels for each data point
+            regime_probabilities: Array of probabilities for each regime (n_samples x n_regimes)
+            
+        Returns:
+            DataFrame with comprehensive regime probability tagging
+        """
+        try:
+            tprint("🏷️ Tagging data with comprehensive regime probability information", color="blue")
+            
+            # Create a copy of the data to avoid modifying the original
+            tagged_data = data.copy()
+            
+            # Add basic regime information
+            tagged_data['composite_cluster_id'] = regime_labels
+            tagged_data['regime_probabilities'] = [prob for prob in regime_probabilities]
+            
+            # Get number of regimes
+            n_regimes = regime_probabilities.shape[1] if len(regime_probabilities.shape) > 1 else 1
+            
+            # Add individual regime probability columns
+            for i in range(n_regimes):
+                tagged_data[f'regime_{i}_probability'] = regime_probabilities[:, i]
+            
+            # Add confidence scores (max probability for each row)
+            tagged_data['regime_confidence'] = np.max(regime_probabilities, axis=1)
+            
+            # Add regime stability (1 - standard deviation of probabilities)
+            tagged_data['regime_stability'] = 1.0 - np.std(regime_probabilities, axis=1)
+            
+            # Add regime entropy (measure of uncertainty)
+            regime_entropy = -np.sum(regime_probabilities * np.log(regime_probabilities + 1e-10), axis=1)
+            tagged_data['regime_entropy'] = regime_entropy
+            
+            # Add regime dominance (difference between highest and second highest probability)
+            sorted_probs = np.sort(regime_probabilities, axis=1)
+            if n_regimes > 1:
+                tagged_data['regime_dominance'] = sorted_probs[:, -1] - sorted_probs[:, -2]
+            else:
+                tagged_data['regime_dominance'] = 1.0
+            
+            # Add regime transition indicators
+            tagged_data['regime_transition'] = False
+            if len(regime_labels) > 1:
+                tagged_data['regime_transition'] = np.concatenate([[False], regime_labels[1:] != regime_labels[:-1]])
+            
+            # Add regime duration (consecutive periods in same regime)
+            regime_duration = np.ones(len(regime_labels))
+            for i in range(1, len(regime_labels)):
+                if regime_labels[i] == regime_labels[i-1]:
+                    regime_duration[i] = regime_duration[i-1] + 1
+            tagged_data['regime_duration'] = regime_duration
+            
+            # Add regime quality metrics
+            tagged_data['regime_quality_score'] = (
+                tagged_data['regime_confidence'] * 0.4 +
+                tagged_data['regime_stability'] * 0.3 +
+                (1.0 - tagged_data['regime_entropy']) * 0.3
+            )
+            
+            # Add regime uncertainty (inverse of confidence)
+            tagged_data['regime_uncertainty'] = 1.0 - tagged_data['regime_confidence']
+            
+            # Add regime consistency (how similar probabilities are to the mean)
+            mean_probs = np.mean(regime_probabilities, axis=0)
+            regime_consistency = 1.0 - np.mean(np.abs(regime_probabilities - mean_probs), axis=1)
+            tagged_data['regime_consistency'] = regime_consistency
+            
+            tprint(f"✅ Data tagged with {n_regimes} regime probabilities and {len(tagged_data.columns) - len(data.columns)} additional columns", color="green")
+            tprint(f"📊 Added columns: regime_confidence, regime_stability, regime_entropy, regime_dominance, regime_transition, regime_duration, regime_quality_score, regime_uncertainty, regime_consistency", color="cyan")
+            
+            return tagged_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error tagging data with regime probabilities: {e}")
+            tprint_error(f"❌ Error tagging data with regime probabilities: {e}")
+            return data  # Return original data if tagging fails
 
     def demonstrate_tagging_approach(self, data: pd.DataFrame, regime_id: int) -> Dict[str, Any]:
         """Demonstrate the tagging approach vs traditional splitting.

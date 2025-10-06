@@ -1,0 +1,300 @@
+# Analyst Models Configuration
+# Configuration for A1-A4 Analyst models and stacker meta-learner
+
+# Model Enablement
+models:
+  enable_a1: true  # PatchTST-Embed + LightGBM
+  enable_a2: true  # PatchTST-Embed + XGBoost
+  enable_a3: true  # FT-Transformer
+  enable_a4: true  # PatchTST-Embed + CatBoost
+  enable_stacker: true  # LGBM Calibrated Meta-Learner
+  enable_legacy_models: false  # Legacy models for backward compatibility
+
+# Training Configuration
+training:
+  save_models: true
+  output_directory: "generated/analyst_models"
+  model_prefix: "analyst"
+  
+  # Parallel Processing
+  enable_parallel_training: true
+  max_workers: 4
+  
+  # Hardware Optimization
+  enable_gpu_acceleration: true
+  memory_limit_gb: 8.0
+  
+  # Validation
+  validation_split: 0.2
+  min_training_samples: 100
+
+# A1 Model Configuration (PatchTST + LightGBM)
+a1_model:
+  patchtst:
+    patch_len: 24
+    stride: 6
+    d_model: 128
+    n_layers: 3
+    causal_pooling: true
+    dropout: 0.1
+    attention_heads: 4
+  
+  lightgbm:
+    max_depth: 7  # 6-8 range for stability
+    learning_rate: 0.05
+    n_estimators: 1000
+    subsample: 0.8
+    colsample_bytree: 0.8
+    reg_alpha: 0.1
+    reg_lambda: 0.1
+    min_child_samples: 20
+    objective: "binary"
+    metric: "binary_logloss"
+    boosting_type: "gbdt"
+    num_leaves: 31
+    feature_fraction: 0.9
+    bagging_fraction: 0.8
+    bagging_freq: 5
+    verbose: -1
+    random_state: 42
+  
+  calibration:
+    method: "isotonic"  # 'isotonic' or 'sigmoid'
+    cv_folds: 5
+    enable_venn_abers: true
+    confidence_levels: [0.5, 0.6, 0.7, 0.8, 0.9]
+
+# A2 Model Configuration (PatchTST + XGBoost)
+a2_model:
+  patchtst:
+    patch_len: 24
+    stride: 6
+    d_model: 128
+    n_layers: 3
+    causal_pooling: true
+    dropout: 0.1
+    attention_heads: 4
+  
+  xgboost:
+    max_depth: 6
+    learning_rate: 0.05  # eta
+    n_estimators: 1000
+    subsample: 0.7
+    colsample_bytree: 0.7
+    reg_alpha: 0.1
+    reg_lambda: 0.1
+    min_child_weight: 1
+    gamma: 0.0
+    booster: "gbtree"
+    objective: "binary:logistic"
+    eval_metric: "logloss"
+    tree_method: "hist"
+    grow_policy: "depthwise"
+    max_leaves: 0
+    max_bin: 256
+    verbosity: 0
+    random_seed: 42
+  
+  calibration:
+    method: "isotonic"
+    cv_folds: 5
+    enable_venn_abers: true
+    confidence_levels: [0.5, 0.6, 0.7, 0.8, 0.9]
+
+# A3 Model Configuration (FT-Transformer)
+a3_model:
+  transformer:
+    d_model: 128
+    n_blocks: 3  # 2-3 blocks
+    n_heads: 2
+    dropout: 0.1
+    d_ff: 512
+    activation: "gelu"
+    layer_norm_eps: 1e-5
+    max_position_embeddings: 1000
+    num_categories: 0
+    use_position_embeddings: true
+    use_cls_token: true
+    learning_rate: 1e-4
+    weight_decay: 1e-5
+    batch_size: 64
+    num_epochs: 100
+    patience: 10
+    device: "auto"
+  
+  calibration:
+    method: "isotonic"
+    cv_folds: 5
+    enable_venn_abers: true
+    confidence_levels: [0.5, 0.6, 0.7, 0.8, 0.9]
+
+# A4 Model Configuration (PatchTST + CatBoost)
+a4_model:
+  patchtst:
+    patch_len: 24
+    stride: 6
+    d_model: 128
+    n_layers: 3
+    causal_pooling: true
+    dropout: 0.1
+    attention_heads: 4
+    frozen: true  # Frozen tiny model
+  
+  catboost:
+    depth: 6
+    iterations: 1000
+    l2_leaf_reg: 10.0
+    learning_rate: 0.1
+    subsample: 0.8
+    colsample_bylevel: 0.8
+    reg_lambda: 1.0
+    reg_alpha: 0.0
+    min_data_in_leaf: 20
+    max_leaves: 31
+    grow_policy: "SymmetricTree"
+    boosting_type: "Plain"
+    bootstrap_type: "Bayesian"
+    bagging_temperature: 1.0
+    random_strength: 1.0
+    one_hot_max_size: 255
+    leaf_estimation_method: "Newton"
+    leaf_estimation_iterations: 10
+    leaf_estimation_backtracking: "AnyImprovement"
+    feature_border_type: "GreedyLogSum"
+    per_feature_borders: null
+    model_shrink_rate: 0.0
+    feature_weights: null
+    penalties_coefficient: 1.0
+    first_feature_use_penalties: 0.0
+    per_object_feature_penalties: null
+    model_shrink_mode: "Constant"
+    langevin: false
+    diffusion_temperature: 10000.0
+    posterior_sampling: false
+    boost_from_average: true
+    text_processing: null
+    tokenizers: null
+    dictionaries: null
+    feature_calcers: null
+    verbose: 0
+    random_seed: 42
+  
+  calibration:
+    method: "isotonic"
+    cv_folds: 5
+    enable_venn_abers: true
+    confidence_levels: [0.5, 0.6, 0.7, 0.8, 0.9]
+
+# Stacker Model Configuration (LGBM Calibrated Meta-Learner)
+stacker_model:
+  stacker:
+    max_depth: 6
+    learning_rate: 0.05
+    n_estimators: 500
+    subsample: 0.8
+    colsample_bytree: 0.8
+    reg_alpha: 0.1
+    reg_lambda: 0.1
+    min_child_samples: 20
+    objective: "binary"
+    metric: "binary_logloss"
+    boosting_type: "gbdt"
+    num_leaves: 31
+    feature_fraction: 0.9
+    bagging_fraction: 0.8
+    bagging_freq: 5
+    verbose: -1
+    random_state: 42
+  
+  calibration:
+    method: "isotonic"
+    cv_folds: 5
+    enable_venn_abers: true
+    confidence_levels: [0.5, 0.6, 0.7, 0.8, 0.9]
+    per_regime_calibration: true
+
+# Prediction Configuration
+prediction:
+  green_light_threshold: 0.6
+  enable_uncertainty_estimation: true
+  enable_regime_specific_calibration: true
+  
+  # Confidence levels for uncertainty estimation
+  confidence_levels: [0.5, 0.6, 0.7, 0.8, 0.9]
+  
+  # Margin statistics
+  enable_margin_stats: true
+  enable_regime_stats: true
+
+# Feature Engineering
+feature_engineering:
+  # PatchTST embedding settings
+  patchtst_embedding:
+    patch_len: 24
+    stride: 6
+    d_model: 128
+    n_layers: 3
+    causal_pooling: true
+    dropout: 0.1
+    attention_heads: 4
+  
+  # Feature scaling
+  enable_feature_scaling: true
+  scaling_method: "standard"  # 'standard', 'minmax', 'robust'
+  
+  # Feature selection
+  enable_feature_selection: false
+  feature_selection_method: "mutual_info"  # 'mutual_info', 'f_score', 'chi2'
+  max_features: 500
+
+# Regime Configuration
+regime:
+  # Regime detection
+  enable_regime_detection: true
+  regime_detection_method: "hmm"  # 'hmm', 'kmeans', 'gmm'
+  n_regimes: 15  # 15-25 regimes as mentioned in requirements
+  
+  # Regime-specific calibration
+  enable_per_regime_calibration: true
+  min_regime_samples: 50  # Minimum samples for regime-specific calibration
+  
+  # Regime features
+  enable_regime_features: true
+  regime_feature_method: "one_hot"  # 'one_hot', 'embedding', 'target_encoding'
+
+# Monitoring and Logging
+monitoring:
+  enable_performance_tracking: true
+  enable_feature_importance_tracking: true
+  enable_uncertainty_tracking: true
+  
+  # Logging levels
+  log_level: "INFO"  # 'DEBUG', 'INFO', 'WARNING', 'ERROR'
+  enable_tprint: true
+  
+  # Model performance tracking
+  track_accuracy: true
+  track_logloss: true
+  track_calibration: true
+  track_uncertainty: true
+
+# Model Management
+model_management:
+  # Model saving
+  save_models: true
+  save_metadata: true
+  save_feature_importance: true
+  save_calibration_info: true
+  
+  # Model loading
+  enable_model_loading: true
+  model_loading_path: "generated/analyst_models"
+  
+  # Model versioning
+  enable_versioning: true
+  version_format: "timestamp"  # 'timestamp', 'semantic', 'incremental'
+  
+  # Model cleanup
+  enable_cleanup: true
+  cleanup_old_models: true
+  max_model_age_days: 30

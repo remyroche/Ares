@@ -106,6 +106,23 @@ async def test_tactician_orchestrator_passes_regime_split(monkeypatch):
     }
 
     captured_configs: Dict[str, Any] = {}
+    entry_bundle = {
+        "artifacts": {"labeling_report": {"status": "stub"}},
+        "quality_metrics": {"quality": 1.0},
+        "label_column": "tactician_entry_target",
+    }
+    entry_called: Dict[str, bool] = {"called": False}
+
+    def _stub_create_entry_label_artifacts(self, prepared_data, analyst_predictions, regime_assignments):
+        entry_called["called"] = True
+        return entry_bundle
+
+    monkeypatch.setattr(
+        module.TacticianPreMLOrchestrator,
+        "_create_entry_label_artifacts",
+        _stub_create_entry_label_artifacts,
+        raising=False,
+    )
 
     class _StubPipeline:
         def __init__(self):
@@ -161,24 +178,37 @@ async def test_tactician_orchestrator_passes_regime_split(monkeypatch):
     orchestrator.pre_training_pipeline = _StubPipeline()
 
     training_data = pd.DataFrame({
-        "timestamp": pd.date_range("2024-01-01", periods=5, freq="5min"),
+        "timestamp": pd.date_range("2024-01-01", periods=5, freq="15min"),
         "close": [1, 2, 3, 4, 5],
     })
     regime_assignments = pd.DataFrame({
-        "timestamp": pd.date_range("2024-01-01", periods=5, freq="5min"),
+        "timestamp": pd.date_range("2024-01-01", periods=5, freq="15min"),
         "regime": [0, 1, 0, 1, 0],
     })
+    analyst_predictions = pd.DataFrame(
+        {
+            "green_light": [1, 1, 0, 1, 0],
+        },
+        index=training_data["timestamp"],
+    )
 
     result = await orchestrator.orchestrate(
         training_data=training_data,
-        analyst_predictions=None,
+        analyst_predictions=analyst_predictions,
         regime_assignments=regime_assignments,
         regime_data_splitting_result=payload,
     )
 
     assert result.success
+    assert entry_called["called"]
+    assert result.entry_labeling_result == entry_bundle["artifacts"]
+    assert result.entry_label_quality_metrics == entry_bundle["quality_metrics"]
     assert orchestrator.pre_training_pipeline._current_pipeline_state["regime_data_splitting_result"] is payload
     assert captured_configs["multi"].custom_params["regime_data_splitting_result"] is payload
     assert captured_configs["lookback"].custom_params["regime_data_splitting_result"] is payload
     assert captured_configs["pid"].custom_params["regime_data_splitting_result"] is payload
     assert captured_configs["selection"].custom_params["regime_data_splitting_result"] is payload
+    assert (
+        captured_configs["multi"].custom_params["precomputed_labeling_result"]
+        == entry_bundle["artifacts"]
+    )

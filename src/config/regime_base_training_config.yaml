@@ -133,3 +133,32 @@ performance:
   # Logging
   enable_detailed_logging: true
   log_level: "INFO"
+
+# Regime Detection Models - Specific model configurations for regime detection
+regime_detection_models:
+  base:
+    # Tree-based (fast, robust)
+    catboost:
+      _class: "CatBoostClassifier"
+      iterations: 300
+      depth: 4  # Shallow to avoid overfitting
+      learning_rate: 0.05
+      l2_leaf_reg: 10  # Heavy regularization
+      border_count: 32  # Fewer splits = more stable
+      verbose: false
+
+    # Linear (different inductive bias, interpretable)
+    ridge_classifier:
+      _class: "RidgeClassifierCV"
+      alphas: "np.logspace(-3, 3, 10)"
+      cv: "TimeSeriesSplit(n_splits=5)"
+
+    # Distance-based (captures regime shifts differently)
+    lgbm_dart:
+      _class: "LGBMClassifier"
+      boosting_type: "dart"  # DART = Dropouts meet Multiple Additive Regression Trees
+      n_estimators: 200
+      max_depth: 3
+      learning_rate: 0.05
+      reg_alpha: 1.0
+      reg_lambda: 1.0

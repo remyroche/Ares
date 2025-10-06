@@ -346,27 +346,128 @@ class CrossTimeframeFeatureGenerator:
             return result
     
     def _apply_optimized_lookback_periods(
-        self, 
-        X: np.ndarray, 
-        feature_names: List[str], 
+        self,
+        X: np.ndarray,
+        feature_names: List[str],
         optimized_lookback_periods: Dict[str, int]
     ) -> Tuple[np.ndarray, List[str]]:
         """Apply optimized lookback periods to features."""
         try:
-            # This is a placeholder for applying optimized lookback periods
-            # In practice, this would involve resampling or windowing the data
-            # based on the optimized periods from feature_lookback_optimization
-            
-            self.logger.info(f"📊 Applying optimized lookback periods: {optimized_lookback_periods}")
-            
-            # For now, we'll just log the optimization and return the original data
-            # In a full implementation, this would:
-            # 1. Identify which features correspond to which optimized periods
-            # 2. Apply the appropriate windowing/resampling
-            # 3. Update feature names to reflect the optimization
-            
-            return X, feature_names
-            
+            if not optimized_lookback_periods:
+                return X, feature_names
+
+            self.logger.info(
+                f"📊 Applying optimized lookback periods: {optimized_lookback_periods}"
+            )
+
+            if X.ndim != 2:
+                self.logger.warning(
+                    "⚠️ Expected 2D feature matrix when applying lookback periods"
+                )
+                return X, feature_names
+
+            feature_index_map = {name: idx for idx, name in enumerate(feature_names)}
+
+            valid_periods: Dict[str, Tuple[int, int]] = {}
+            for feature_name, period in optimized_lookback_periods.items():
+                if feature_name not in feature_index_map:
+                    self.logger.debug(
+                        "ℹ️ Optimized period provided for unknown feature '%s'", feature_name
+                    )
+                    continue
+
+                try:
+                    period_value = int(period)
+                except (TypeError, ValueError):
+                    self.logger.debug(
+                        "ℹ️ Invalid lookback period '%s' for feature '%s'", period, feature_name
+                    )
+                    continue
+
+                if period_value < 1:
+                    self.logger.debug(
+                        "ℹ️ Non-positive lookback period %s for feature '%s'", period_value, feature_name
+                    )
+                    continue
+
+                if 'validate_lookback_period' in globals():
+                    try:
+                        if not validate_lookback_period(period_value):
+                            self.logger.debug(
+                                "ℹ️ Lookback period %s for feature '%s' failed validation",
+                                period_value,
+                                feature_name,
+                            )
+                            continue
+                    except Exception as validation_error:  # pragma: no cover - defensive
+                        self.logger.debug(
+                            "ℹ️ Lookback validation failed for feature '%s': %s",
+                            feature_name,
+                            validation_error,
+                        )
+                        continue
+
+                valid_periods[feature_name] = (feature_index_map[feature_name], period_value)
+
+            if not valid_periods:
+                return X, feature_names
+
+            # Compute rolling transformations grouped by common window sizes to
+            # leverage vectorized operations.
+            transformed_columns: Dict[str, np.ndarray] = {}
+            if PANDAS_AVAILABLE:
+                df = pd.DataFrame(X, columns=feature_names)
+                for period_value in sorted({period for _, period in valid_periods.values()}):
+                    period_columns = [
+                        name
+                        for name, (_, p_value) in valid_periods.items()
+                        if p_value == period_value
+                    ]
+                    if not period_columns:
+                        continue
+
+                    rolled_df = df[period_columns].rolling(
+                        window=period_value,
+                        min_periods=1,
+                    ).mean()
+                    for column_name in period_columns:
+                        transformed_columns[column_name] = rolled_df[column_name].to_numpy(copy=True)
+            else:
+                for feature_name, (idx, period_value) in valid_periods.items():
+                    column_data = X[:, idx].astype(float, copy=False)
+
+                    if period_value == 1:
+                        transformed_columns[feature_name] = column_data.copy()
+                        continue
+
+                    # Vectorized cumulative sum approach to compute rolling mean
+                    cumsum = np.cumsum(column_data, dtype=float)
+                    rolling_sum = cumsum.copy()
+                    rolling_sum[period_value:] = (
+                        cumsum[period_value:] - cumsum[:-period_value]
+                    )
+                    counts = np.minimum(
+                        np.arange(1, column_data.shape[0] + 1),
+                        period_value,
+                    )
+                    transformed = rolling_sum / counts
+                    transformed_columns[feature_name] = transformed
+
+            updated_feature_arrays: List[np.ndarray] = []
+            updated_feature_names: List[str] = []
+
+            for feature_name in feature_names:
+                if feature_name in valid_periods and feature_name in transformed_columns:
+                    period_value = valid_periods[feature_name][1]
+                    updated_feature_arrays.append(transformed_columns[feature_name])
+                    updated_feature_names.append(f"{feature_name}_lb{period_value}")
+                else:
+                    updated_feature_arrays.append(X[:, feature_index_map[feature_name]])
+                    updated_feature_names.append(feature_name)
+
+            transformed_matrix = np.column_stack(updated_feature_arrays)
+            return transformed_matrix, updated_feature_names
+
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to apply optimized lookback periods: {e}")
             return X, feature_names

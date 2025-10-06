@@ -60,9 +60,8 @@ def main():
 
     # Check main files exist
     files_to_check = [
-        "src/training/steps/pre_training/label_balancing.py",
-        "src/training/steps/model_training/tactician_balanced_training.py",
-        "src/training/steps/pre_training/README_BALANCING_SYSTEM.md",
+        "src/training/steps/pre_training/profit_labeling/label_balancing.py",
+        "src/training/steps/pre_training/profit_labeling/README_BALANCING_SYSTEM.md",
         "examples/balanced_training_example.py"
     ]
 
@@ -72,12 +71,11 @@ def main():
 
     # Check key classes exist
     classes_to_check = [
-        ("src/training/steps/pre_training/label_balancing.py", "LabelBalancer"),
-        ("src/training/steps/pre_training/label_balancing.py", "SampleWeighter"),
-        ("src/training/steps/pre_training/label_balancing.py", "RegimeAwareBalancer"),
-        ("src/training/steps/pre_training/label_balancing.py", "ValidationFairnessChecker"),
-        ("src/training/steps/pre_training/label_balancing.py", "ComprehensiveBalancingSystem"),
-        ("src/training/steps/model_training/tactician_balanced_training.py", "BalancedTacticianTrainingStep"),
+        ("src/training/steps/pre_training/profit_labeling/label_balancing.py", "LabelBalancer"),
+        ("src/training/steps/pre_training/profit_labeling/label_balancing.py", "SampleWeighter"),
+        ("src/training/steps/pre_training/profit_labeling/label_balancing.py", "RegimeAwareBalancer"),
+        ("src/training/steps/pre_training/profit_labeling/label_balancing.py", "ValidationFairnessChecker"),
+        ("src/training/steps/pre_training/profit_labeling/label_balancing.py", "ComprehensiveBalancingSystem"),
     ]
 
     for filepath, class_name in classes_to_check:
@@ -86,9 +84,9 @@ def main():
 
     # Check key functions exist
     functions_to_check = [
-        ("src/training/steps/pre_training/label_balancing.py", "balance_dataset"),
-        ("src/training/steps/pre_training/label_balancing.py", "compute_weights"),
-        ("src/training/steps/model_training/tactician_balanced_training.py", "balance_and_weight"),
+        ("src/training/steps/pre_training/profit_labeling/label_balancing.py", "balance_dataset"),
+        ("src/training/steps/pre_training/profit_labeling/label_balancing.py", "compute_weights"),
+        ("src/training/steps/pre_training/multi_horizon_profit_labeler.py", "execute_labeling"),
     ]
 
     for filepath, function_name in functions_to_check:

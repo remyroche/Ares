@@ -23,7 +23,7 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 try:
-    from src.training.steps.pre_training.label_balancing import (
+    from src.training.steps.pre_training.profit_labeling.label_balancing import (
         ComprehensiveBalancingSystem,
         BalancingConfig,
         WeightingConfig,
@@ -37,13 +37,12 @@ try:
         WeightingScheme
     )
 
-    from src.training.steps.model_training.tactician_balanced_training import (
-        BalancedTacticianTrainingStep,
-        BalancedTrainingConfig
-    )
-
     # Import Tactician components
-    from src.training.steps.model_training.tactician_training_step import TacticianTrainingConfig
+    try:
+        from src.training.steps.model_training.tactician_training_step import TacticianTrainingConfig
+        TACTICIAN_AVAILABLE = True
+    except ImportError:
+        TACTICIAN_AVAILABLE = False
 
     COMPONENTS_AVAILABLE = True
 
@@ -222,49 +221,50 @@ def demonstrate_validation_fairness():
 
 
 async def demonstrate_balanced_training_integration():
-    """Demonstrate integration with Tactician training."""
+    """Demonstrate integration with multi-horizon profit labeler."""
     if not COMPONENTS_AVAILABLE:
         if TPRINT_AVAILABLE:
-            tprint_warning("⚠️ Tactician training components not available, skipping integration demo")
+            tprint_warning("⚠️ Components not available, skipping integration demo")
         return None
 
     if TPRINT_AVAILABLE:
-        tprint_info("🚀 Demonstrating balanced training integration...")
+        tprint_info("🚀 Demonstrating integration with multi-horizon profit labeler...")
+
+    # Import multi-horizon profit labeler
+    try:
+        from src.training.steps.pre_training.multi_horizon_profit_labeler import (
+            MultiHorizonProfitLabeler,
+            MultiHorizonConfig
+        )
+    except ImportError:
+        if TPRINT_AVAILABLE:
+            tprint_warning("⚠️ Multi-horizon profit labeler not available")
+        return None
 
     # Generate training data
     data = generate_synthetic_imbalanced_data(10000)
 
-    # Split into analyst signals and market data (simplified)
-    analyst_signals = data[['target']].copy()
-    analyst_signals['confidence'] = np.random.uniform(0.5, 0.95, len(data))
-
-    market_data = data.drop(['target'], axis=1)
-    feature_names = [col for col in market_data.columns if col not in ['timestamp', 'regime']]
-
-    # Create balanced training configuration
-    balanced_config = BalancedTrainingConfig(
-        enable_balancing=True,
-        enable_weighting=True,
+    # Create balanced labeling configuration
+    labeling_config = MultiHorizonConfig(
+        enable_label_balancing=True,
+        enable_sample_weighting=True,
         enable_regime_balancing=True,
-        enable_validation_fairness=True
+        enable_volatility_normalization=True,
+        enable_noise_gating=True,
+        enable_quality_scoring=True
     )
 
-    # Create balanced trainer
-    trainer = BalancedTacticianTrainingStep(
-        training_config=TacticianTrainingConfig(),
-        balanced_config=balanced_config
-    )
+    # Create balanced labeler
+    labeler = MultiHorizonProfitLabeler(labeling_config)
 
-    # Note: This would require full Tactician setup in practice
-    # For demo purposes, we'll just show the setup
     if TPRINT_AVAILABLE:
-        tprint_success("✅ Balanced trainer created successfully")
-        tprint_info("   → Balancing: Enabled")
-        tprint_info("   → Weighting: Enabled")
+        tprint_success("✅ Balanced profit labeler created successfully")
+        tprint_info("   → Label balancing: Enabled")
+        tprint_info("   → Sample weighting: Enabled")
         tprint_info("   → Regime balancing: Enabled")
-        tprint_info("   → Validation fairness: Enabled")
+        tprint_info("   → Volatility normalization: Enabled")
 
-    return trainer
+    return labeler
 
 
 def run_comprehensive_demo():
@@ -286,10 +286,10 @@ def run_comprehensive_demo():
     print("-" * 40)
     fairness_report = demonstrate_validation_fairness()
 
-    # Demo 3: Training integration
-    print("\n3. BALANCED TRAINING INTEGRATION")
+    # Demo 3: Multi-horizon labeler integration
+    print("\n3. MULTI-HORIZON PROFIT LABELER INTEGRATION")
     print("-" * 40)
-    trainer = asyncio.run(demonstrate_balanced_training_integration())
+    labeler = asyncio.run(demonstrate_balanced_training_integration())
 
     print("\n" + "=" * 80)
     print("DEMO COMPLETED SUCCESSFULLY!")

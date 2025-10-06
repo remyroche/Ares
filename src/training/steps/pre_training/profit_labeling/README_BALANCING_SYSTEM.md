@@ -57,30 +57,37 @@ X_balanced, y_balanced, sample_weights = balancing_system.balance_and_weight(
 )
 ```
 
-### Integration with Tactician Training
+### Integration with Multi-Horizon Profit Labeler
 
 ```python
-from src.training.steps.model_training.tactician_balanced_training import (
-    BalancedTacticianTrainingStep,
-    BalancedTrainingConfig
+from src.training.steps.pre_training.multi_horizon_profit_labeler import (
+    MultiHorizonProfitLabeler,
+    MultiHorizonConfig
 )
 
-# Create balanced trainer
-balanced_config = BalancedTrainingConfig(
-    enable_balancing=True,
-    enable_weighting=True,
-    enable_regime_balancing=True
+# Create balanced labeler
+labeling_config = MultiHorizonConfig(
+    enable_label_balancing=True,
+    enable_sample_weighting=True,
+    enable_regime_balancing=True,
+    enable_volatility_normalization=True,
+    enable_noise_gating=True,
+    enable_quality_scoring=True
 )
 
-trainer = BalancedTacticianTrainingStep(
-    training_config=your_training_config,
-    balanced_config=balanced_config
+labeler = MultiHorizonProfitLabeler(labeling_config)
+
+# Generate balanced labels
+result = await labeler.execute_labeling(
+    symbol="ETHUSDT",
+    exchange="binance",
+    timeframe="15m",
+    regime_data=regime_data  # Optional
 )
 
-# Train with automatic balancing
-result = await trainer.train_tactician_models(
-    analyst_signals, market_data, feature_names
-)
+# Use balanced labels in downstream training
+balanced_labels = result['multi_horizon_labeling_result']['labeled_data']
+sample_weights = result['multi_horizon_labeling_result']['horizon_weights']
 ```
 
 ## 📊 Configuration Options
@@ -246,7 +253,34 @@ regime_weights = regime_balancer.compute_regime_weights(X, y, regime_labels)
 
 ## 🛠️ Integration Examples
 
-### With Existing Training Pipeline
+### With Multi-Horizon Profit Labeler (Recommended)
+
+```python
+# 1. Use the integrated multi-horizon profit labeler
+labeler = MultiHorizonProfitLabeler(MultiHorizonConfig(
+    enable_label_balancing=True,
+    enable_sample_weighting=True,
+    enable_regime_balancing=True
+))
+
+# 2. Generate balanced labels with automatic balancing and weighting
+result = await labeler.execute_labeling(
+    symbol="ETHUSDT",
+    exchange="binance",
+    timeframe="15m",
+    regime_data=regime_data
+)
+
+# 3. Extract balanced labels and weights for training
+balanced_labels = result['multi_horizon_labeling_result']['labeled_data']
+sample_weights = result['multi_horizon_labeling_result']['horizon_weights']
+
+# 4. Train models with balanced data
+model = YourModel()
+model.fit(balanced_labels, sample_weight=sample_weights)
+```
+
+### With Existing Training Pipeline (Standalone)
 
 ```python
 # 1. Generate features and labels (existing code)
@@ -334,6 +368,24 @@ The system is designed to be modular and extensible:
 2. **Custom Weighting Schemes**: Add new weighting methods to `SampleWeighter`
 3. **Custom Regime Methods**: Extend `RegimeAwareBalancer`
 4. **Custom Fairness Metrics**: Add new fairness checks to `ValidationFairnessChecker`
+
+## 🎯 Expected Impact
+
+This system should significantly improve your model's performance by:
+
+- **Better Recall**: Models learn to identify positive cases more effectively
+- **Reduced Overfitting**: Less bias toward majority "no-trade" class
+- **Improved Generalization**: Better performance on unseen data
+- **Regime Robustness**: Better performance across different market conditions
+
+The system is designed to be **production-ready** and is now **fully integrated** into the Multi-Horizon Profit Labeler. All models in your pipeline will automatically benefit from:
+
+- **Automatic Label Balancing**: Applied during label generation
+- **Intelligent Sample Weighting**: Based on volatility, confidence, and regime information
+- **Regime-Aware Processing**: Different balancing strategies per market regime
+- **Validation Fairness**: Ensured representative validation sets
+
+The integration is **seamless** - no changes needed to your existing training code. Simply use the Multi-Horizon Profit Labeler and all downstream models will receive properly balanced and weighted labels.
 
 ## 📄 License
 

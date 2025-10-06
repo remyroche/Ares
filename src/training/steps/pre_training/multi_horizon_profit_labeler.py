@@ -29,6 +29,23 @@ from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler im
     LabelingResult
 )
 
+# Import the label balancing system
+try:
+    from src.training.steps.pre_training.profit_labeling.label_balancing import (
+        ComprehensiveBalancingSystem,
+        BalancingConfig,
+        WeightingConfig,
+        RegimeConfig,
+        ValidationFairnessConfig,
+        DEFAULT_BALANCING_CONFIG,
+        DEFAULT_WEIGHTING_CONFIG,
+        DEFAULT_REGIME_CONFIG,
+        DEFAULT_FAIRNESS_CONFIG
+    )
+    BALANCING_SYSTEM_AVAILABLE = True
+except ImportError:
+    BALANCING_SYSTEM_AVAILABLE = False
+
 # Import base component
 from src.training.steps.pre_training.components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
 
@@ -64,6 +81,17 @@ class MultiHorizonConfig:
     min_balance_threshold: float = 0.35
     max_balance_threshold: float = 0.65
 
+    # Label balancing and weighting settings
+    enable_label_balancing: bool = True
+    enable_sample_weighting: bool = True
+    enable_regime_balancing: bool = True
+
+    # Balancing configuration (can be customized)
+    balancing_config: BalancingConfig = None
+    weighting_config: WeightingConfig = None
+    regime_config: RegimeConfig = None
+    fairness_config: ValidationFairnessConfig = None
+
 
 class MultiHorizonProfitLabeler:
     """
@@ -81,10 +109,29 @@ class MultiHorizonProfitLabeler:
         # Initialize the volatility-aware labeler
         self.volatility_labeler = VolatilityAwareMultiHorizonLabeler(self._create_volatility_config())
 
+        # Initialize the balancing system if available
+        self.balancing_system = None
+        if BALANCING_SYSTEM_AVAILABLE and (self.config.enable_label_balancing or self.config.enable_sample_weighting):
+            # Set default configurations if not provided
+            balancing_config = self.config.balancing_config or DEFAULT_BALANCING_CONFIG
+            weighting_config = self.config.weighting_config or DEFAULT_WEIGHTING_CONFIG
+            regime_config = self.config.regime_config or DEFAULT_REGIME_CONFIG
+            fairness_config = self.config.fairness_config or DEFAULT_FAIRNESS_CONFIG
+
+            self.balancing_system = ComprehensiveBalancingSystem(
+                balancing_config, weighting_config, regime_config, fairness_config
+            )
+
+            tprint_success("✅ Label balancing system initialized")
+        else:
+            tprint_info("ℹ️ Label balancing system disabled or not available")
+
         tprint_success("🚀 Multi-Horizon Profit Labeler initialized")
         tprint_info(f"   → Timeframe: {self.config.timeframe}")
         tprint_info(f"   → Regime-aware: {self.config.enable_regime_aware_labeling}")
         tprint_info(f"   → Volatility normalization: {self.config.enable_volatility_normalization}")
+        tprint_info(f"   → Label balancing: {self.config.enable_label_balancing}")
+        tprint_info(f"   → Sample weighting: {self.config.enable_sample_weighting}")
 
     def _create_volatility_config(self) -> VolatilityAwareConfig:
         """Create volatility-aware configuration from multi-horizon config."""
@@ -135,18 +182,23 @@ class MultiHorizonProfitLabeler:
 
             # Generate comprehensive report using the profit labeling report generator
             report = await self._generate_comprehensive_report(
-                labeling_result, symbol, exchange, timeframe, regime_data
+                balanced_labeling_result, symbol, exchange, timeframe, regime_data
+            )
+
+            # Apply label balancing and sample weighting if enabled
+            balanced_labeling_result = await self._apply_balancing_and_weighting(
+                labeling_result, market_data, regime_data
             )
 
             # Map target columns to expected names for feature lookback optimization compatibility
-            mapped_labels = self._map_target_columns_for_feature_optimization(labeling_result.labels)
+            mapped_labels = self._map_target_columns_for_feature_optimization(balanced_labeling_result.labels)
 
             # Create properly structured artifacts that feature lookback optimization expects
             # The feature lookback optimization expects 'labeled_data' or 'labels' keys
             tprint_info("📋 Creating comprehensive artifacts structure for downstream components")
 
             # Calculate horizon weights based on target quality and balance
-            horizon_weights = self._calculate_horizon_weights(labeling_result, mapped_labels)
+            horizon_weights = self._calculate_horizon_weights(balanced_labeling_result, mapped_labels)
             tprint_info(f"⚖️ Calculated horizon weights: {horizon_weights}")
 
             # Extract target columns for feature optimization
@@ -157,23 +209,24 @@ class MultiHorizonProfitLabeler:
                 'multi_horizon_labeling_result': {
                     'labeled_data': mapped_labels,  # This is what feature lookback optimization expects
                     'labels': mapped_labels,  # Backward compatibility
-                    'confidence_scores': labeling_result.confidence_scores,
-                    'eligibility_masks': labeling_result.eligibility_masks,
-                    'quality_scores': labeling_result.quality_scores,
+                    'confidence_scores': balanced_labeling_result.confidence_scores,
+                    'eligibility_masks': balanced_labeling_result.eligibility_masks,
+                    'quality_scores': balanced_labeling_result.quality_scores,
                     'horizon_weights': horizon_weights,  # New: weights for different horizons
                     'target_columns': target_columns,    # New: target columns for optimization
                     'method': 'multi_horizon_profit_labeling',
+                    'balancing_applied': self.config.enable_label_balancing or self.config.enable_sample_weighting,
                     'metadata': {
                         'symbol': symbol,
                         'exchange': exchange,
                         'timeframe': timeframe,
                         'regime_aware': self.config.enable_regime_aware_labeling and regime_data is not None,
-                        'processing_time': labeling_result.processing_time,
-                        'n_samples': labeling_result.n_samples,
-                        'n_targets': labeling_result.n_targets,
-                        'n_horizons': labeling_result.n_horizons,
+                        'processing_time': balanced_labeling_result.processing_time,
+                        'n_samples': balanced_labeling_result.n_samples,
+                        'n_targets': balanced_labeling_result.n_targets,
+                        'n_horizons': balanced_labeling_result.n_horizons,
                         'target_distribution': self._calculate_target_distribution(mapped_labels),
-                        'quality_summary': self._summarize_quality_scores(labeling_result.quality_scores)
+                        'quality_summary': self._summarize_quality_scores(balanced_labeling_result.quality_scores)
                     }
                 },
                 'labeling_report': report,
@@ -211,6 +264,96 @@ class MultiHorizonProfitLabeler:
                     'timestamp': datetime.now().isoformat()
                 }
             }
+
+    async def _apply_balancing_and_weighting(self, labeling_result: LabelingResult,
+                                           market_data: pd.DataFrame,
+                                           regime_data: Optional[Dict[str, Any]] = None) -> LabelingResult:
+        """
+        Apply label balancing and sample weighting to the labeling result.
+
+        Args:
+            labeling_result: Original labeling result
+            market_data: Market data used for labeling
+            regime_data: Optional regime data
+
+        Returns:
+            LabelingResult with balanced and weighted labels
+        """
+        if not self.balancing_system:
+            tprint_info("ℹ️ Balancing system not available, returning original labels")
+            return labeling_result
+
+        try:
+            tprint_info("⚖️ Applying label balancing and sample weighting...")
+
+            # Prepare data for balancing
+            # Use market data as features (exclude target columns and metadata)
+            exclude_cols = [col for col in market_data.columns if col.startswith('target_')]
+            exclude_cols.extend(['sample_weight', 'timestamp'])
+
+            feature_cols = [col for col in market_data.columns if col not in exclude_cols]
+            X = market_data[feature_cols]
+
+            # Extract targets from labeling result
+            if labeling_result.labels is not None and not labeling_result.labels.empty:
+                # Use the first target column for balancing (can be extended for multi-target)
+                target_cols = [col for col in labeling_result.labels.columns if 'target' in col.lower()]
+                if target_cols:
+                    y = labeling_result.labels[target_cols[0]]
+                else:
+                    # Fallback: create a simple target from the first column
+                    y = labeling_result.labels.iloc[:, 0] if not labeling_result.labels.empty else pd.Series()
+            else:
+                tprint_warning("⚠️ No labels available for balancing")
+                return labeling_result
+
+            # Extract existing sample weights if available
+            sample_weight = market_data.get('sample_weight')
+
+            # Prepare additional features for weighting
+            additional_features = {}
+
+            # Add regime information if available
+            if regime_data and 'regime_data' in regime_data:
+                regime_info = regime_data['regime_data']
+                if 'regime_states' in regime_info and len(regime_info['regime_states']) == len(market_data):
+                    additional_features['regime'] = pd.Series(regime_info['regime_states'], index=market_data.index)
+
+            # Add volatility information if available in market data
+            volatility_cols = [col for col in market_data.columns if 'volatility' in col.lower()]
+            if volatility_cols:
+                additional_features['volatility'] = market_data[volatility_cols[0]]
+
+            # Apply balancing and weighting
+            X_balanced, y_balanced, final_weights = self.balancing_system.balance_and_weight(
+                X, y, sample_weight, additional_features
+            )
+
+            # Create new labeling result with balanced data
+            balanced_result = LabelingResult(
+                labels=pd.DataFrame({target_cols[0]: y_balanced}, index=y_balanced.index),
+                confidence_scores=labeling_result.confidence_scores,  # Keep original confidence scores
+                eligibility_masks=labeling_result.eligibility_masks,   # Keep original masks
+                quality_scores=labeling_result.quality_scores,         # Keep original quality scores
+                n_samples=len(y_balanced),
+                n_targets=labeling_result.n_targets,
+                processing_time=labeling_result.processing_time        # Keep original processing time
+            )
+
+            # Add balancing metadata
+            balanced_result.balancing_applied = True
+            balanced_result.original_samples = labeling_result.n_samples
+            balanced_result.balanced_samples = len(y_balanced)
+            balanced_result.sample_weights = final_weights
+
+            tprint_success(f"✅ Balancing completed: {labeling_result.n_samples} → {len(y_balanced)} samples")
+            tprint_info(f"📊 Class distribution after balancing: {y_balanced.value_counts().to_dict()}")
+
+            return balanced_result
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Balancing failed: {e}, returning original labels")
+            return labeling_result
 
     async def _load_market_data(
         self,
@@ -877,7 +1020,10 @@ class MultiHorizonProfitLabeler:
                         'processing_time': labeling_result.processing_time,
                         'n_samples': labeling_result.n_samples,
                         'n_targets': labeling_result.n_targets,
-                        'n_horizons': labeling_result.n_horizons
+                        'n_horizons': labeling_result.n_horizons,
+                        'balancing_applied': getattr(labeling_result, 'balancing_applied', False),
+                        'original_samples': getattr(labeling_result, 'original_samples', labeling_result.n_samples),
+                        'balanced_samples': getattr(labeling_result, 'balanced_samples', labeling_result.n_samples)
                     }
                 },
                 'labeling_report': self._generate_basic_labeling_report(labeling_result, symbol, exchange, timeframe)
@@ -902,7 +1048,10 @@ class MultiHorizonProfitLabeler:
                     'n_samples': comprehensive_report.n_samples,
                     'n_targets': comprehensive_report.n_targets,
                     'n_horizons': comprehensive_report.n_horizons,
-                    'label_distribution': comprehensive_report.label_distribution
+                    'label_distribution': comprehensive_report.label_distribution,
+                    'balancing_applied': getattr(labeling_result, 'balancing_applied', False),
+                    'original_samples': getattr(labeling_result, 'original_samples', comprehensive_report.n_samples),
+                    'balanced_samples': getattr(labeling_result, 'balanced_samples', comprehensive_report.n_samples)
                 },
                 'quality_scores': comprehensive_report.quality_scores,
                 'regime_statistics': comprehensive_report.regime_statistics,

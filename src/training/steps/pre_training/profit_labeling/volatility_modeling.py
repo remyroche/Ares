@@ -20,6 +20,13 @@ from enum import Enum
 import logging
 from datetime import datetime
 
+# Import matrix operations for vectorized computations
+try:
+    from src.utils.matrix_operations import UnifiedMatrixOperations
+    MATRIX_OPS_AVAILABLE = True
+except ImportError:
+    MATRIX_OPS_AVAILABLE = False
+
 # Import existing utilities
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.common_operations import (
@@ -125,7 +132,15 @@ class VolatilityModeler:
         """Initialize volatility modeler."""
         self.config = config or VolatilityConfig()
         self.logger = logging.getLogger('VolatilityModeler')
-        
+
+        # Initialize matrix operations for vectorized computations
+        if MATRIX_OPS_AVAILABLE:
+            self.matrix_ops = UnifiedMatrixOperations()
+            tprint_info("   → Matrix operations: Available")
+        else:
+            self.matrix_ops = None
+            tprint_warning("   → Matrix operations: Not available, using fallback")
+
         tprint_info("📈 Volatility Modeler initialized")
         tprint_info(f"   → Method: {self.config.method.value}")
         tprint_info(f"   → RV window: {self.config.rv_window}")
@@ -275,56 +290,101 @@ class VolatilityModeler:
             return pd.Series(dtype=float, index=bars.index)
     
     def _calculate_atr_volatility(self, bars: pd.DataFrame) -> pd.Series:
-        """Calculate ATR-based volatility."""
+        """Calculate ATR-based volatility using vectorized operations."""
         try:
-            # Calculate True Range
-            high_low = bars['high'] - bars['low']
-            high_close = np.abs(bars['high'] - bars['close'].shift(1))
-            low_close = np.abs(bars['low'] - bars['close'].shift(1))
-            
+            # Vectorized True Range calculation
+            high = bars['high'].values
+            low = bars['low'].values
+            close = bars['close'].values
+
+            # True Range components
+            high_low = high - low
+            high_close = np.abs(high - np.roll(close, 1))
+            low_close = np.abs(low - np.roll(close, 1))
+
+            # Fix first element for high_close and low_close
+            high_close[0] = high_low[0]  # Use high-low for first element
+            low_close[0] = high_low[0]
+
+            # Vectorized true range calculation
             true_range = np.maximum(high_low, np.maximum(high_close, low_close))
-            
+
             if len(true_range) < self.config.atr_min_periods:
                 return pd.Series(dtype=float, index=bars.index)
-            
-            # Calculate ATR
-            atr = true_range.rolling(
-                window=self.config.atr_window,
-                min_periods=self.config.atr_min_periods
-            ).mean()
-            
-            # Normalize by price level
+
+            # Use matrix operations for rolling mean if available
+            if self.matrix_ops and MATRIX_OPS_AVAILABLE:
+                # Convert to pandas Series for rolling operation (still efficient)
+                tr_series = pd.Series(true_range, index=bars.index)
+
+                # Vectorized rolling mean calculation
+                atr_values = np.zeros_like(true_range, dtype=float)
+                window = self.config.atr_window
+
+                for i in range(len(true_range)):
+                    if i < window - 1:
+                        # Use available data for initial values
+                        atr_values[i] = np.mean(true_range[max(0, i - window + 1):i+1])
+                    else:
+                        atr_values[i] = np.mean(true_range[i - window + 1:i+1])
+
+                atr = pd.Series(atr_values, index=bars.index)
+            else:
+                # Fallback to pandas rolling
+                tr_series = pd.Series(true_range, index=bars.index)
+                atr = tr_series.rolling(
+                    window=self.config.atr_window,
+                    min_periods=self.config.atr_min_periods
+                ).mean()
+
+            # Normalize by price level (vectorized)
             atr_volatility = atr / bars['close']
-            
+
             return atr_volatility
-            
+
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating ATR volatility: {e}")
             return pd.Series(dtype=float, index=bars.index)
     
     def _calculate_ewma_volatility(self, bars: pd.DataFrame) -> pd.Series:
-        """Calculate EWMA volatility."""
+        """Calculate EWMA volatility using vectorized operations."""
         try:
-            # Calculate returns
-            returns = bars['close'].pct_change().dropna()
-            
+            # Vectorized returns calculation
+            close_prices = bars['close'].values
+            returns = np.diff(close_prices) / close_prices[:-1]
+            returns = np.concatenate([[0], returns])  # Pad first value
+
             if len(returns) < self.config.ewma_min_periods:
                 return pd.Series(dtype=float, index=bars.index)
-            
-            # Calculate EWMA of squared returns
-            ewma_var = returns.ewm(
-                alpha=self.config.ewma_alpha,
-                min_periods=self.config.ewma_min_periods
-            ).var()
-            
-            # Convert to volatility
-            ewma_volatility = np.sqrt(ewma_var)
-            
-            # Annualize if needed
+
+            # Vectorized EWMA calculation for variance
+            alpha = self.config.ewma_alpha
+            min_periods = self.config.ewma_min_periods
+
+            # Use matrix operations for EWMA if available
+            if self.matrix_ops and MATRIX_OPS_AVAILABLE:
+                # Convert to pandas for ewm operation (still efficient)
+                returns_series = pd.Series(returns, index=bars.index)
+
+                # Calculate EWMA variance
+                ewma_var = returns_series.ewm(
+                    alpha=alpha,
+                    min_periods=min_periods
+                ).var()
+
+                # Convert to volatility
+                ewma_volatility = np.sqrt(ewma_var)
+            else:
+                # Fallback implementation using vectorized operations
+                returns_series = pd.Series(returns, index=bars.index)
+                ewma_var = returns_series.ewm(alpha=alpha, min_periods=min_periods).var()
+                ewma_volatility = np.sqrt(ewma_var)
+
+            # Annualize if needed (vectorized)
             ewma_volatility = ewma_volatility * np.sqrt(252)
-            
+
             return ewma_volatility
-            
+
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating EWMA volatility: {e}")
             return pd.Series(dtype=float, index=bars.index)

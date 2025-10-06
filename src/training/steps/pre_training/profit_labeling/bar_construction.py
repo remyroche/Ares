@@ -20,6 +20,13 @@ from enum import Enum
 import logging
 from datetime import datetime, timedelta
 
+# Import matrix operations for vectorized computations
+try:
+    from src.utils.matrix_operations import UnifiedMatrixOperations
+    MATRIX_OPS_AVAILABLE = True
+except ImportError:
+    MATRIX_OPS_AVAILABLE = False
+
 # Import existing utilities
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.common_operations import (
@@ -140,7 +147,15 @@ class EventBasedBarConstructor:
         """Initialize event-based bar constructor."""
         self.config = config or BarConstructionConfig()
         self.logger = logging.getLogger('EventBasedBarConstructor')
-        
+
+        # Initialize matrix operations for vectorized computations
+        if MATRIX_OPS_AVAILABLE:
+            self.matrix_ops = UnifiedMatrixOperations()
+            tprint_info("   → Matrix operations: Available")
+        else:
+            self.matrix_ops = None
+            tprint_warning("   → Matrix operations: Not available, using fallback")
+
         tprint_info("🔧 Event-Based Bar Constructor initialized")
         tprint_info(f"   → Bar type: {self.config.bar_type.value}")
         tprint_info(f"   → Bar size: {self.config.bar_size}")
@@ -292,30 +307,57 @@ class EventBasedBarConstructor:
             # Calculate cumulative dollar volume using effective volume
             market_data['cum_dollar_volume'] = (market_data['close'] * market_data['effective_volume']).cumsum()
 
-            # Create bar boundaries
-            bar_boundaries = []
-            current_bar_start = 0
+            # Vectorized bar boundary detection
+            cum_dollar_vol = market_data['cum_dollar_volume'].values
             target_dollar_volume = self.config.bar_size
-            
-            for i, row in market_data.iterrows():
-                if row['cum_dollar_volume'] - market_data.loc[market_data.index[current_bar_start], 'cum_dollar_volume'] >= target_dollar_volume:
-                    bar_boundaries.append(i)
-                    current_bar_start = i
-            
-            # Create bars from boundaries
+
+            # Find where cumulative volume exceeds target (vectorized)
+            bar_start_volumes = cum_dollar_vol[0]  # Start from first bar
+
+            # Calculate volume differences from start of each potential bar
+            volume_diffs = cum_dollar_vol - bar_start_volumes
+
+            # Find where volume differences exceed target
+            exceeds_target = volume_diffs >= target_dollar_volume
+
+            # Find boundary indices where target is first exceeded
+            boundary_mask = np.diff(exceeds_target.astype(int), prepend=0) > 0
+            bar_boundaries = market_data.index[boundary_mask].tolist()
+
+            # Ensure we don't lose the last bar if it doesn't reach target
+            if len(bar_boundaries) == 0 or bar_boundaries[-1] != market_data.index[-1]:
+                if volume_diffs[-1] > 0:
+                    bar_boundaries.append(market_data.index[-1])
+
+            # Vectorized bar creation using matrix operations where possible
             bars = []
-            prev_boundary = 0
-            
-            for boundary in bar_boundaries:
-                bar_data = market_data.iloc[prev_boundary:boundary+1]
-                
-                if len(bar_data) > 0:
-                    bar = self._create_single_bar(bar_data)
-                    if bar is not None:
-                        bars.append(bar)
-                
-                prev_boundary = boundary + 1
-            
+
+            if self.matrix_ops and MATRIX_OPS_AVAILABLE:
+                # Use matrix operations for efficient bar creation
+                boundary_indices = [market_data.index.get_loc(boundary) for boundary in bar_boundaries]
+
+                for i, boundary_idx in enumerate(boundary_indices):
+                    start_idx = 0 if i == 0 else boundary_indices[i-1] + 1
+                    end_idx = boundary_idx + 1
+
+                    if start_idx < end_idx:
+                        bar_data = market_data.iloc[start_idx:end_idx]
+                        bar = self._create_single_bar_vectorized(bar_data)
+                        if bar is not None:
+                            bars.append(bar)
+            else:
+                # Fallback to original loop
+                prev_boundary = 0
+                for boundary in bar_boundaries:
+                    bar_data = market_data.iloc[prev_boundary:boundary+1]
+
+                    if len(bar_data) > 0:
+                        bar = self._create_single_bar(bar_data)
+                        if bar is not None:
+                            bars.append(bar)
+
+                    prev_boundary = boundary + 1
+
             if bars:
                 return pd.DataFrame(bars).set_index('timestamp')
             else:
@@ -332,29 +374,56 @@ class EventBasedBarConstructor:
             market_data = market_data.copy()
             market_data['cum_volume'] = market_data['volume'].cumsum()
             
-            # Create bar boundaries
-            bar_boundaries = []
-            current_bar_start = 0
+            # Vectorized bar boundary detection for volume bars
+            cum_volume = market_data['cum_volume'].values
             target_volume = self.config.bar_size
-            
-            for i, row in market_data.iterrows():
-                if row['cum_volume'] - market_data.loc[market_data.index[current_bar_start], 'cum_volume'] >= target_volume:
-                    bar_boundaries.append(i)
-                    current_bar_start = i
-            
-            # Create bars from boundaries
+
+            # Find where cumulative volume exceeds target (vectorized)
+            bar_start_volumes = cum_volume[0]  # Start from first bar
+
+            # Calculate volume differences from start of each potential bar
+            volume_diffs = cum_volume - bar_start_volumes
+
+            # Find where volume differences exceed target
+            exceeds_target = volume_diffs >= target_volume
+
+            # Find boundary indices where target is first exceeded
+            boundary_mask = np.diff(exceeds_target.astype(int), prepend=0) > 0
+            bar_boundaries = market_data.index[boundary_mask].tolist()
+
+            # Ensure we don't lose the last bar if it doesn't reach target
+            if len(bar_boundaries) == 0 or bar_boundaries[-1] != market_data.index[-1]:
+                if volume_diffs[-1] > 0:
+                    bar_boundaries.append(market_data.index[-1])
+
+            # Vectorized bar creation using matrix operations where possible
             bars = []
-            prev_boundary = 0
-            
-            for boundary in bar_boundaries:
-                bar_data = market_data.iloc[prev_boundary:boundary+1]
-                
-                if len(bar_data) > 0:
-                    bar = self._create_single_bar(bar_data)
-                    if bar is not None:
-                        bars.append(bar)
-                
-                prev_boundary = boundary + 1
+
+            if self.matrix_ops and MATRIX_OPS_AVAILABLE:
+                # Use matrix operations for efficient bar creation
+                boundary_indices = [market_data.index.get_loc(boundary) for boundary in bar_boundaries]
+
+                for i, boundary_idx in enumerate(boundary_indices):
+                    start_idx = 0 if i == 0 else boundary_indices[i-1] + 1
+                    end_idx = boundary_idx + 1
+
+                    if start_idx < end_idx:
+                        bar_data = market_data.iloc[start_idx:end_idx]
+                        bar = self._create_single_bar_vectorized(bar_data)
+                        if bar is not None:
+                            bars.append(bar)
+            else:
+                # Fallback to original loop
+                prev_boundary = 0
+                for boundary in bar_boundaries:
+                    bar_data = market_data.iloc[prev_boundary:boundary+1]
+
+                    if len(bar_data) > 0:
+                        bar = self._create_single_bar(bar_data)
+                        if bar is not None:
+                            bars.append(bar)
+
+                    prev_boundary = boundary + 1
             
             if bars:
                 return pd.DataFrame(bars).set_index('timestamp')
@@ -482,7 +551,88 @@ class EventBasedBarConstructor:
         except Exception as e:
             tprint_warning(f"⚠️ Error creating single bar: {e}")
             return None
-    
+
+    def _create_single_bar_vectorized(self, bar_data: pd.DataFrame) -> Optional[Dict[str, Any]]:
+        """Create a single bar from bar data using vectorized operations."""
+        try:
+            if len(bar_data) == 0:
+                return None
+
+            # Vectorized OHLC calculation
+            timestamp = bar_data.index[-1]
+
+            # Use matrix operations for efficient calculations if available
+            if self.matrix_ops and MATRIX_OPS_AVAILABLE:
+                # Convert to numpy arrays for vectorized operations
+                open_prices = bar_data['open'].values
+                high_prices = bar_data['high'].values
+                low_prices = bar_data['low'].values
+                close_prices = bar_data['close'].values
+                volumes = bar_data['volume'].values
+
+                # Vectorized OHLC calculation
+                open_price = open_prices[0]
+                high_price = self.matrix_ops.matrix_max(high_prices) if hasattr(self.matrix_ops, 'matrix_max') else high_prices.max()
+                low_price = self.matrix_ops.matrix_min(low_prices) if hasattr(self.matrix_ops, 'matrix_min') else low_prices.min()
+                close_price = close_prices[-1]
+
+                # Vectorized VWAP calculation
+                if self.config.use_vwap:
+                    total_volume = volumes.sum()
+                    if total_volume > 0:
+                        vwap = (close_prices * volumes).sum() / total_volume
+                        mid_prices = (high_prices + low_prices) / 2
+                        median_mid = np.median(mid_prices)
+
+                        # Vectorized adjustment
+                        if abs(median_mid - vwap) / vwap > 0.01:  # 1% threshold
+                            adjustment = median_mid - vwap
+                            open_price += adjustment
+                            high_price += adjustment
+                            low_price += adjustment
+                            close_price += adjustment
+            else:
+                # Fallback to original logic
+                open_price = bar_data['open'].iloc[0]
+                high_price = bar_data['high'].max()
+                low_price = bar_data['low'].min()
+                close_price = bar_data['close'].iloc[-1]
+
+                if self.config.use_median_prices and self.config.use_vwap:
+                    vwap = (bar_data['close'] * bar_data['volume']).sum() / bar_data['volume'].sum()
+                    mid_prices = (bar_data['high'] + bar_data['low']) / 2
+                    median_mid = mid_prices.median()
+
+                    if abs(median_mid - vwap) / vwap > 0.01:
+                        adjustment = median_mid - vwap
+                        open_price += adjustment
+                        high_price += adjustment
+                        low_price += adjustment
+                        close_price += adjustment
+
+            # Vectorized volume and duration calculation
+            volume = bar_data['volume'].sum()
+            duration = (bar_data.index[-1] - bar_data.index[0]).total_seconds()
+
+            # Validate bar quality
+            if not self._validate_bar_quality(open_price, high_price, low_price, close_price, volume, duration):
+                return None
+
+            return {
+                'timestamp': timestamp,
+                'open': open_price,
+                'high': high_price,
+                'low': low_price,
+                'close': close_price,
+                'volume': volume,
+                'duration': duration,
+                'ticks': len(bar_data)
+            }
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Error creating vectorized single bar: {e}")
+            return None
+
     def _create_single_bar_from_ohlcv(self, timestamp: pd.Timestamp, row: pd.Series) -> Optional[Dict[str, Any]]:
         """Create a single bar from OHLCV row."""
         try:

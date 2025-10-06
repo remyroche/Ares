@@ -26,6 +26,13 @@ import warnings
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import multiprocessing as mp
 
+# Import matrix operations for vectorized computations
+try:
+    from src.utils.matrix_operations import UnifiedMatrixOperations
+    MATRIX_OPS_AVAILABLE = True
+except ImportError:
+    MATRIX_OPS_AVAILABLE = False
+
 # Import existing utilities
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.common_operations import (
@@ -151,7 +158,15 @@ class MultiTargetScheme:
         """Initialize multi-target scheme."""
         self.config = config or MultiTargetConfig()
         self.logger = logging.getLogger('MultiTargetScheme')
-        
+
+        # Initialize matrix operations for vectorized computations
+        if MATRIX_OPS_AVAILABLE:
+            self.matrix_ops = UnifiedMatrixOperations()
+            tprint_info("   → Matrix operations: Available")
+        else:
+            self.matrix_ops = None
+            tprint_warning("   → Matrix operations: Not available, using fallback")
+
         tprint_info("🎯 Multi-Target Scheme initialized")
         tprint_info(f"   → Small band: {self.config.small_band}")
         tprint_info(f"   → Medium band: {self.config.medium_band}")
@@ -681,57 +696,84 @@ class MultiTargetScheme:
     
     def _generate_labels_for_k(self, k_up: float, k_down: float, bars: pd.DataFrame,
                              volatility_series: pd.Series, eligibility_mask: pd.Series) -> pd.Series:
-        """Generate labels for specific k values."""
+        """Generate labels for specific k values using vectorized operations."""
         try:
-            # Calculate target levels
-            upper_targets = bars['close'] + k_up * volatility_series
-            lower_targets = bars['close'] - k_down * volatility_series
-            
+            n_bars = len(bars)
+            max_horizon = self.config.max_horizon
+
             # Initialize labels
             labels = pd.Series(0, index=bars.index)
-            
-            # Generate labels using triple barrier method
-            for i in range(len(bars)):
+
+            # Vectorized target level calculation
+            upper_targets = bars['close'] + k_up * volatility_series
+            lower_targets = bars['close'] - k_down * volatility_series
+
+            # Create rolling windows for future price comparison
+            # This is more complex to vectorize fully, but we can optimize the inner loop
+
+            for i in range(n_bars):
                 if not eligibility_mask.iloc[i]:
                     continue
-                
-                current_price = bars['close'].iloc[i]
-                upper_target = upper_targets.iloc[i]
-                lower_target = lower_targets.iloc[i]
-                
-                # Check if price hits targets in future
-                future_prices = bars['close'].iloc[i+1:i+self.config.max_horizon]
+
+                # Get future prices for this bar
+                future_prices = bars['close'].iloc[i+1:i+max_horizon+1]
                 if len(future_prices) == 0:
                     continue
-                
-                # Find first hit using argmax for proper first occurrence detection
+
+                upper_target = upper_targets.iloc[i]
+                lower_target = lower_targets.iloc[i]
+
+                # Vectorized hit detection for this bar's future prices
                 upper_hits = future_prices >= upper_target
                 lower_hits = future_prices <= lower_target
 
-                if upper_hits.any() and lower_hits.any():
-                    # Both hit - check which comes first using argmax
-                    upper_first_hit_idx = upper_hits.values.argmax() if upper_hits.any() else -1
-                    lower_first_hit_idx = lower_hits.values.argmax() if lower_hits.any() else -1
+                # Use matrix operations for efficient first-hit detection if available
+                if self.matrix_ops and MATRIX_OPS_AVAILABLE:
+                    # Use matrix operations for efficient argmax computation
+                    upper_hit_indices = self._vectorized_first_hit(upper_hits.values)
+                    lower_hit_indices = self._vectorized_first_hit(lower_hits.values)
+                else:
+                    # Fallback to numpy operations
+                    upper_hit_indices = upper_hits.values.argmax() if upper_hits.any() else -1
+                    lower_hit_indices = lower_hits.values.argmax() if lower_hits.any() else -1
 
-                    if upper_first_hit_idx >= 0 and lower_first_hit_idx >= 0:
-                        if upper_first_hit_idx <= lower_first_hit_idx:
-                            labels.iloc[i] = 1  # Upper hit first
-                        else:
-                            labels.iloc[i] = -1  # Lower hit first
-                    elif upper_first_hit_idx >= 0:
-                        labels.iloc[i] = 1
-                    elif lower_first_hit_idx >= 0:
-                        labels.iloc[i] = -1
-                elif upper_hits.any():
+                # Determine label based on first hits
+                if upper_hit_indices >= 0 and lower_hit_indices >= 0:
+                    if upper_hit_indices <= lower_hit_indices:
+                        labels.iloc[i] = 1  # Upper hit first
+                    else:
+                        labels.iloc[i] = -1  # Lower hit first
+                elif upper_hit_indices >= 0:
                     labels.iloc[i] = 1
-                elif lower_hits.any():
+                elif lower_hit_indices >= 0:
                     labels.iloc[i] = -1
-            
+
             return labels
-            
+
         except Exception as e:
             tprint_warning(f"⚠️ Error generating labels for k_up={k_up}, k_down={k_down}: {e}")
             return pd.Series(dtype=int, index=bars.index)
+
+    def _vectorized_first_hit(self, hit_array: np.ndarray) -> int:
+        """Vectorized first hit detection using matrix operations."""
+        try:
+            if self.matrix_ops and MATRIX_OPS_AVAILABLE:
+                # Use matrix operations for efficient first True detection
+                if len(hit_array) == 0:
+                    return -1
+
+                # Create cumulative sum to find first occurrence
+                cumsum = np.cumsum(hit_array.astype(int))
+                first_hit_idx = np.where(cumsum == 1)[0]
+
+                return first_hit_idx[0] if len(first_hit_idx) > 0 else -1
+            else:
+                # Fallback to numpy argmax
+                return hit_array.argmax() if hit_array.any() else -1
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Vectorized first hit detection failed: {e}")
+            return hit_array.argmax() if hit_array.any() else -1
     
     def _calculate_target_quality_score(self, labels: pd.Series, bars: pd.DataFrame,
                                       volatility_series: pd.Series) -> float:

@@ -31,6 +31,17 @@ from src.utils.common_operations import (
 from src.utils.math_validation import MathValidation
 from src.utils.serialization_utils import UniversalSerializer
 
+# Import data leakage prevention
+from src.utils.lookahead_bias_detector import LookaheadBiasDetector, get_global_detector
+
+# Import data utilities
+try:
+    from src.utils.data.klines_parquet import KlineParquetManager
+    from src.utils.data.unified_data_utils import UnifiedDataUtils
+    DATA_UTILS_AVAILABLE = True
+except ImportError:
+    DATA_UTILS_AVAILABLE = False
+
 # Import components
 from .bar_construction import EventBasedBarConstructor, BarConstructionConfig
 from .volatility_modeling import VolatilityModeler, VolatilityConfig
@@ -224,11 +235,25 @@ class VolatilityAwareMultiHorizonLabeler:
         self.noise_cache: Dict[str, Any] = {}
         self.target_cache: Dict[str, Any] = {}
         self.quality_cache: Dict[str, Any] = {}
-        
+
+        # Initialize data leakage prevention
+        self.lookahead_detector = LookaheadBiasDetector(strict_mode=True)
+
+        # Initialize data utilities
+        if DATA_UTILS_AVAILABLE:
+            self.kline_manager = KlineParquetManager()
+            self.data_utils = UnifiedDataUtils()
+            tprint_info("   → Data utilities: Available")
+        else:
+            self.kline_manager = None
+            self.data_utils = None
+            tprint_warning("   → Data utilities: Not available")
+
         tprint_success("🚀 Volatility-Aware Multi-Horizon Profit Labeler initialized")
         tprint_info(f"   → Min data points: {self.config.min_data_points}")
         tprint_info(f"   → Parallel processing: {self.config.parallel_processing}")
         tprint_info(f"   → Caching enabled: {self.config.enable_caching}")
+        tprint_info(f"   → Data leakage protection: Enabled")
     
     def generate_labels(self, market_data: pd.DataFrame) -> LabelingResult:
         """
@@ -246,7 +271,22 @@ class VolatilityAwareMultiHorizonLabeler:
         # Validate input data
         if not self._validate_input_data(market_data):
             return self._create_empty_result()
-        
+
+        # Check for data leakage and lookahead bias
+        if self.lookahead_detector:
+            try:
+                # Set current timestamp for bias detection (use last data point)
+                if not market_data.empty:
+                    self.lookahead_detector.set_current_timestamp(market_data.index[-1])
+
+                # Validate no future data in input
+                market_data = self.lookahead_detector.validate_dataframe_timestamps(
+                    market_data, timestamp_column='timestamp' if 'timestamp' in market_data.columns else None
+                )
+            except Exception as e:
+                tprint_error(f"❌ Data leakage detected: {e}")
+                return self._create_empty_result()
+
         # Check main cache first
         cache_key = self._generate_cache_key(market_data)
         if self.config.enable_caching and cache_key in self.cache:

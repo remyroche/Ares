@@ -27,6 +27,15 @@ try:
 except ImportError:
     MATRIX_OPS_AVAILABLE = False
 
+# Import hardware optimization utilities
+try:
+    from src.utils.hardware.m1_gpu_utils import M1GPUManager
+    from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
+    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+
 # Import existing utilities
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.common_operations import (
@@ -155,6 +164,24 @@ class EventBasedBarConstructor:
         else:
             self.matrix_ops = None
             tprint_warning("   → Matrix operations: Not available, using fallback")
+
+        # Initialize hardware optimization utilities
+        if HARDWARE_OPTIMIZATION_AVAILABLE:
+            self.gpu_manager = M1GPUManager()
+            self.cpu_optimizer = M1CPUOptimizer()
+            self.memory_optimizer = M1MemoryOptimizer()
+
+            # Check if hardware optimization is beneficial
+            gpu_info = self.gpu_manager.get_gpu_info()
+            if gpu_info['is_m1'] and gpu_info['mps_available']:
+                tprint_info("   → Hardware optimization: M1 GPU available")
+            else:
+                tprint_info("   → Hardware optimization: CPU optimization available")
+        else:
+            self.gpu_manager = None
+            self.cpu_optimizer = None
+            self.memory_optimizer = None
+            tprint_warning("   → Hardware optimization: Not available")
 
         tprint_info("🔧 Event-Based Bar Constructor initialized")
         tprint_info(f"   → Bar type: {self.config.bar_type.value}")

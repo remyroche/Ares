@@ -140,6 +140,8 @@ class CoreOptimizer:
                 self.matrix_ops = None
                 self.batch_processor = None
 
+        self._cached_multi_horizon_limits: Optional[Tuple[int, int]] = None
+
     def optimize_single_feature(
         self,
         data: pd.DataFrame,
@@ -2675,98 +2677,284 @@ class CoreOptimizer:
             # Fallback to individual calculations
             return [self._calculate_mutual_information_robust(f, r) for f, r in zip(features_list, returns_list)]
 
+    def _extract_numeric_array(self, series: Union[pd.Series, np.ndarray, None]) -> Optional[np.ndarray]:
+        """Convert a Series or array-like into a sanitized numpy array."""
+        if series is None:
+            return None
+
+        try:
+            if isinstance(series, pd.Series):
+                numeric = pd.to_numeric(series, errors='coerce')
+                values = numeric.to_numpy(dtype=float, copy=True)
+            else:
+                values = np.asarray(series, dtype=float)
+
+            if values.size == 0:
+                return None
+
+            return np.nan_to_num(values, nan=0.0, posinf=0.0, neginf=0.0)
+        except Exception:
+            return None
+
+    def _combine_arrays(self, arrays: List[Optional[np.ndarray]]) -> Optional[np.ndarray]:
+        """Combine multiple arrays by averaging while ignoring missing inputs."""
+        valid_arrays = [arr for arr in arrays if arr is not None]
+        if not valid_arrays:
+            return None
+
+        try:
+            stacked = np.vstack(valid_arrays)
+            combined = np.nanmean(stacked, axis=0)
+            return np.nan_to_num(combined, nan=0.0, posinf=0.0, neginf=0.0)
+        except Exception:
+            return valid_arrays[0]
+
+    def _aggregate_probability_stream(self, data: pd.DataFrame, direction: str, horizon_keyword: str) -> Optional[np.ndarray]:
+        """Aggregate probability columns for a given direction and horizon keyword."""
+        pattern = f"_{horizon_keyword}_{direction}_prob"
+        matching_cols = [col for col in data.columns if pattern in col]
+        if not matching_cols:
+            return None
+
+        aggregated = [self._extract_numeric_array(data[col]) for col in matching_cols]
+        aggregated = [arr for arr in aggregated if arr is not None]
+        if not aggregated:
+            return None
+
+        return self._combine_arrays(aggregated)
+
+    def _get_multi_horizon_boundaries(self) -> Tuple[int, int]:
+        """Return cached immediate and short horizon boundaries derived from configuration."""
+        if self._cached_multi_horizon_limits is not None:
+            return self._cached_multi_horizon_limits
+
+        immediate_default, short_default = 2, 4
+        config_path = Path('src/config/multi_horizon_labeling_config.yaml')
+
+        if config_path.exists():
+            try:
+                import yaml  # type: ignore
+
+                with open(config_path, 'r') as cfg_file:
+                    config_data = yaml.safe_load(cfg_file)
+
+                mh_config = config_data.get('multi_horizon_labeling', {}) if isinstance(config_data, dict) else {}
+                horizons_cfg = mh_config.get('time_horizons', {}) if isinstance(mh_config, dict) else {}
+
+                immediate_default = int(horizons_cfg.get('immediate', immediate_default))
+                short_default = int(horizons_cfg.get('short', short_default))
+            except Exception:
+                # Use defaults if configuration parsing fails
+                pass
+
+        immediate_limit = max(1, immediate_default)
+        short_limit = max(immediate_limit, short_default)
+
+        self._cached_multi_horizon_limits = (immediate_limit, short_limit)
+        return self._cached_multi_horizon_limits
+
+    def _build_horizon_weighted_matrix(
+        self,
+        immediate_arr: Optional[np.ndarray],
+        short_arr: Optional[np.ndarray],
+        overall_arr: Optional[np.ndarray],
+        immediate_limit: int,
+        short_limit: int,
+        max_horizon: int
+    ) -> Dict[int, np.ndarray]:
+        """Create a dictionary that maps horizons to the most appropriate opportunity stream."""
+        horizon_map: Dict[int, np.ndarray] = {}
+
+        for horizon in range(1, max_horizon + 1):
+            selected: Optional[np.ndarray] = None
+
+            if immediate_arr is not None and horizon <= immediate_limit:
+                selected = immediate_arr
+            elif short_arr is not None and horizon <= short_limit:
+                selected = short_arr
+            elif overall_arr is not None:
+                selected = overall_arr
+            elif immediate_arr is not None:
+                selected = immediate_arr
+            elif short_arr is not None:
+                selected = short_arr
+
+            if selected is not None:
+                horizon_map[horizon] = selected
+
+        return horizon_map
+
     def _get_shared_forward_returns_matrix(self, data: pd.DataFrame, target_column: str, max_horizon: int = 300) -> Dict[int, np.ndarray]:
         """
         Get or create shared forward returns matrix that can be reused across all features.
-        
+
         Args:
             data: Input data with target column
             target_column: Target column for forward returns calculation
             max_horizon: Maximum horizon to compute forward returns
-            
+
         Returns:
             Dictionary mapping horizon to forward returns array
         """
-        # Create hash for data to check if we can reuse cached matrix
-        data_hash = self._get_data_hash(data, "shared_returns", max_horizon)
-        
-        # Check if we can reuse cached matrix
-        if (self.shared_forward_returns_hash == data_hash and 
-            self.shared_forward_returns and 
-            max(self.shared_forward_returns.keys()) >= max_horizon):
-            self.logger.info(f"♻️ Reusing shared forward returns matrix for {max_horizon} horizons")
-            return self.shared_forward_returns
-        
-        # Compute new matrix
-        self.logger.info(f"🔄 Computing shared forward returns matrix for horizons 1-{max_horizon}")
-        self.shared_forward_returns = self._precompute_forward_returns_matrix(data, target_column, max_horizon)
-        self.shared_forward_returns_hash = data_hash
-        return self.shared_forward_returns
+        data_hash = self._get_data_hash(data, f"shared_returns_{target_column}", max_horizon)
 
-    def _create_multi_horizon_aligned_targets(self, data: pd.DataFrame, max_horizon: int = 300) -> Dict[str, Dict[int, np.ndarray]]:
-        """
-        Create multi-horizon aligned targets using the same logic as multi_horizon_profit_labeler.
-        
-        Args:
-            data: Input data with OHLCV
-            max_horizon: Maximum horizon to compute targets
-            
-        Returns:
-            Dictionary with different target types (long, short, directional) for each horizon
-        """
-        if not MULTI_HORIZON_AVAILABLE:
-            # Fallback to simple forward returns
-            return self._create_simple_forward_returns(data, max_horizon)
-        
-        try:
-            # Create multi-horizon config aligned with the labeler
-            config = MultiHorizonConfig()
-            
-            # Apply multi-horizon labeling to get all targets
-            labeled_data = apply_multi_horizon_labeling(data, config)
-            
-            # Extract different target types for each horizon
-            targets = {}
-            
-            # Define target patterns based on multi_horizon_profit_labeler output
-            target_patterns = {
-                'long_opportunity': 'long_opportunity_',
-                'short_opportunity': 'short_opportunity_', 
-                'directional_confidence': 'directional_confidence_',
-                'opportunity_asymmetry': 'opportunity_asymmetry_',
-                'long_overall_opportunity': 'long_overall_opportunity',
-                'short_overall_opportunity': 'short_overall_opportunity'
+        if (
+            self.shared_forward_returns_hash == data_hash and
+            isinstance(self.shared_forward_returns, dict) and
+            target_column in self.shared_forward_returns and
+            max(self.shared_forward_returns[target_column].keys(), default=0) >= max_horizon
+        ):
+            self.logger.info(f"♻️ Reusing cached multi-horizon opportunity matrix for '{target_column}'")
+            return self.shared_forward_returns[target_column]
+
+        self.logger.info(
+            f"🔄 Building multi-horizon opportunity matrices up to horizon {max_horizon} for target '{target_column}'"
+        )
+
+        matrices = self._precompute_forward_returns_matrix(data, target_column, max_horizon)
+        self.shared_forward_returns = matrices
+        self.shared_forward_returns_hash = data_hash
+
+        if target_column in matrices:
+            return matrices[target_column]
+
+        # Fallback: create a direct matrix from the target column if available
+        if target_column in data.columns:
+            direct_array = self._extract_numeric_array(data[target_column])
+            if direct_array is not None:
+                fallback_matrix = {h: direct_array for h in range(1, max_horizon + 1)}
+                self.shared_forward_returns[target_column] = fallback_matrix
+                return fallback_matrix
+
+        return {}
+
+    def _create_multi_horizon_aligned_targets(
+        self,
+        data: pd.DataFrame,
+        max_horizon: int = 300,
+        allow_labeler: bool = True
+    ) -> Dict[str, Any]:
+        """Create aligned multi-horizon opportunity streams using available labeled data."""
+        def column_array(column_name: str) -> Optional[np.ndarray]:
+            return self._extract_numeric_array(data[column_name]) if column_name in data.columns else None
+
+        long_immediate = self._combine_arrays([
+            self._aggregate_probability_stream(data, 'long', 'immediate'),
+            column_array('long_immediate_opportunity')
+        ])
+        long_short_term = column_array('long_short_term_opportunity')
+        long_short = self._combine_arrays([
+            self._aggregate_probability_stream(data, 'long', 'short'),
+            long_short_term
+        ])
+        long_overall = column_array('long_overall_opportunity')
+        long_leverage = column_array('long_leverage_adjusted_score')
+
+        short_immediate = self._combine_arrays([
+            self._aggregate_probability_stream(data, 'short', 'immediate'),
+            column_array('short_immediate_opportunity')
+        ])
+        short_short_term = column_array('short_short_term_opportunity')
+        short_short = self._combine_arrays([
+            self._aggregate_probability_stream(data, 'short', 'short'),
+            short_short_term
+        ])
+        short_overall = column_array('short_overall_opportunity')
+        short_leverage = column_array('short_leverage_adjusted_score')
+
+        composite_immediate = self._combine_arrays([
+            column_array('immediate_opportunity'),
+            long_immediate,
+            short_immediate
+        ])
+        composite_short = self._combine_arrays([
+            column_array('short_term_opportunity'),
+            long_short,
+            short_short
+        ])
+        composite_overall = self._combine_arrays([
+            column_array('overall_opportunity'),
+            long_overall,
+            short_overall
+        ])
+        composite_leverage = self._combine_arrays([
+            column_array('leverage_adjusted_score'),
+            long_leverage,
+            short_leverage,
+            composite_overall
+        ])
+
+        directional_confidence = column_array('directional_confidence')
+        if directional_confidence is None and long_overall is not None and short_overall is not None:
+            directional_confidence = np.nan_to_num(
+                np.abs(long_overall - short_overall),
+                nan=0.0,
+                posinf=0.0,
+                neginf=0.0
+            )
+
+        opportunity_asymmetry = column_array('opportunity_asymmetry')
+        if opportunity_asymmetry is None and long_overall is not None and short_overall is not None:
+            opportunity_asymmetry = np.nan_to_num(
+                long_overall - short_overall,
+                nan=0.0,
+                posinf=0.0,
+                neginf=0.0
+            )
+
+        aligned_targets: Dict[str, Any] = {
+            'long': {
+                'immediate': long_immediate,
+                'short': long_short,
+                'overall': self._combine_arrays([long_overall, long_leverage]),
+                'leverage': long_leverage
+            },
+            'short': {
+                'immediate': short_immediate,
+                'short': short_short,
+                'overall': self._combine_arrays([short_overall, short_leverage]),
+                'leverage': short_leverage
+            },
+            'composite': {
+                'immediate': composite_immediate,
+                'short': composite_short,
+                'overall': composite_overall,
+                'leverage': composite_leverage
+            },
+            'directional': {
+                'confidence': directional_confidence,
+                'asymmetry': opportunity_asymmetry
             }
-            
-            for target_type, pattern in target_patterns.items():
-                targets[target_type] = {}
-                
-                # Find columns matching this pattern
-                matching_cols = [col for col in labeled_data.columns if col.startswith(pattern)]
-                
-                for col in matching_cols:
-                    # Extract horizon from column name
-                    try:
-                        if '_' in col:
-                            horizon_str = col.split('_')[-1]
-                            horizon = int(horizon_str)
-                            if 1 <= horizon <= max_horizon:
-                                targets[target_type][horizon] = labeled_data[col].values
-                    except (ValueError, IndexError):
-                        # Handle non-horizon columns (overall targets)
-                        if 'overall' in col:
-                            targets[target_type][0] = labeled_data[col].values
-            
-            self.logger.info(f"✅ Created multi-horizon aligned targets: {len(targets)} types")
-            return targets
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ Multi-horizon target creation failed, using fallback: {e}")
-            return self._create_simple_forward_returns(data, max_horizon)
+        }
+
+        has_any = any(
+            isinstance(bucket, dict) and any(value is not None for value in bucket.values())
+            for bucket in aligned_targets.values()
+        )
+
+        if has_any:
+            return aligned_targets
+
+        if allow_labeler and MULTI_HORIZON_AVAILABLE:
+            try:
+                config = MultiHorizonConfig()
+                labeled_data = apply_multi_horizon_labeling(data, config)
+                self.logger.info("🔁 Generated multi-horizon labels on the fly for forward-return alignment")
+                return self._create_multi_horizon_aligned_targets(labeled_data, max_horizon, allow_labeler=False)
+            except Exception as exc:
+                self.logger.warning(f"⚠️ Dynamic multi-horizon labeling failed: {exc}")
+
+        self.logger.warning("⚠️ Falling back to simple forward returns for target alignment")
+        return {'fallback': self._create_simple_forward_returns(data, max_horizon).get('simple_returns', {})}
 
     def _create_simple_forward_returns(self, data: pd.DataFrame, max_horizon: int) -> Dict[str, Dict[int, np.ndarray]]:
         """Fallback method to create simple forward returns."""
         targets = {'simple_returns': {}}
+
+        if 'close' not in data.columns:
+            self.logger.warning("⚠️ Close prices unavailable for simple forward returns fallback")
+            return targets
+
         close_prices = data['close'].values
         
         for horizon in range(1, max_horizon + 1):
@@ -2786,49 +2974,119 @@ class CoreOptimizer:
         
         return targets
 
-    def _precompute_forward_returns_matrix(self, data: pd.DataFrame, target_column: str, max_horizon: int = 200) -> Dict[int, np.ndarray]:
-        """
-        Precompute forward returns matrix for horizons 1 to max_horizon.
-        
-        Args:
-            data: Input data with target column
-            target_column: Target column for forward returns calculation
-            max_horizon: Maximum horizon to compute forward returns
-            
-        Returns:
-            Dictionary mapping horizon to forward returns array
-        """
+    def _precompute_forward_returns_matrix(
+        self,
+        data: pd.DataFrame,
+        target_column: str,
+        max_horizon: int = 200
+    ) -> Dict[str, Dict[int, np.ndarray]]:
+        """Create horizon-weighted opportunity matrices derived from multi-horizon labeling signals."""
         try:
-            self.logger.info(f"🔄 Precomputing forward returns matrix for horizons 1-{max_horizon}")
-            
-            forward_returns = {}
-            target_values = data[target_column].values
-            
-            for horizon in range(1, max_horizon + 1):
-                # Calculate forward returns: (price[t+horizon] - price[t]) / price[t]
-                if horizon >= len(target_values):
-                    break
-                    
-                future_prices = target_values[horizon:]
-                current_prices = target_values[:-horizon]
-                
-                # Avoid division by zero
-                forward_return = np.where(
-                    current_prices != 0,
-                    (future_prices - current_prices) / current_prices,
-                    0.0
+            immediate_limit, short_limit = self._get_multi_horizon_boundaries()
+            immediate_limit = min(max_horizon, immediate_limit)
+            short_limit = min(max_horizon, short_limit)
+
+            aligned_targets = self._create_multi_horizon_aligned_targets(data, max_horizon)
+
+            if 'fallback' in aligned_targets:
+                fallback_matrix = aligned_targets['fallback']
+                return {target_column: fallback_matrix}
+
+            result: Dict[str, Dict[int, np.ndarray]] = {}
+
+            long_bucket = aligned_targets.get('long', {})
+            short_bucket = aligned_targets.get('short', {})
+            composite_bucket = aligned_targets.get('composite', {})
+            directional_bucket = aligned_targets.get('directional', {})
+
+            def register_target(
+                name: str,
+                bucket: Dict[str, Optional[np.ndarray]],
+                immediate_override: Optional[np.ndarray] = None,
+                short_override: Optional[np.ndarray] = None,
+                overall_override: Optional[np.ndarray] = None,
+                leverage_override: Optional[np.ndarray] = None,
+                fallback_overall: Optional[np.ndarray] = None
+            ) -> None:
+                immediate_arr = immediate_override if immediate_override is not None else bucket.get('immediate')
+                short_arr = short_override if short_override is not None else bucket.get('short')
+                overall_arr = overall_override if overall_override is not None else bucket.get('overall')
+
+                if overall_arr is None and leverage_override is not None:
+                    overall_arr = leverage_override
+                if overall_arr is None and bucket.get('leverage') is not None:
+                    overall_arr = bucket.get('leverage')
+                if overall_arr is None and fallback_overall is not None:
+                    overall_arr = fallback_overall
+                if short_arr is None and overall_arr is not None:
+                    short_arr = overall_arr
+                if short_arr is None and immediate_arr is not None:
+                    short_arr = immediate_arr
+
+                horizon_map = self._build_horizon_weighted_matrix(
+                    immediate_arr,
+                    short_arr,
+                    overall_arr,
+                    immediate_limit,
+                    short_limit,
+                    max_horizon
                 )
-                
-                forward_returns[horizon] = forward_return
-                
-                # Reduced logging for better performance
-            
-            self.logger.info(f"✅ Precomputed forward returns for {len(forward_returns)} horizons")
-            return forward_returns
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to precompute forward returns matrix: {e}")
-            return {}
+
+                if horizon_map:
+                    result[name] = horizon_map
+
+            composite_overall = composite_bucket.get('overall') or composite_bucket.get('leverage')
+            composite_immediate = composite_bucket.get('immediate') or composite_overall
+            composite_short = composite_bucket.get('short') or composite_overall
+
+            register_target('long_overall_opportunity', long_bucket, fallback_overall=composite_overall)
+            register_target('long_immediate_opportunity', long_bucket, overall_override=long_bucket.get('immediate'), fallback_overall=composite_immediate)
+            register_target('long_short_term_opportunity', long_bucket, immediate_override=long_bucket.get('short'), short_override=long_bucket.get('short'), fallback_overall=composite_short)
+            register_target('long_leverage_adjusted_score', long_bucket, leverage_override=long_bucket.get('leverage'), fallback_overall=composite_overall)
+
+            register_target('short_overall_opportunity', short_bucket, fallback_overall=composite_overall)
+            register_target('short_immediate_opportunity', short_bucket, overall_override=short_bucket.get('immediate'), fallback_overall=composite_immediate)
+            register_target('short_short_term_opportunity', short_bucket, immediate_override=short_bucket.get('short'), short_override=short_bucket.get('short'), fallback_overall=composite_short)
+            register_target('short_leverage_adjusted_score', short_bucket, leverage_override=short_bucket.get('leverage'), fallback_overall=composite_overall)
+
+            register_target('leverage_adjusted_score', composite_bucket, leverage_override=composite_bucket.get('leverage'))
+            register_target('overall_opportunity', composite_bucket)
+            register_target('immediate_opportunity', composite_bucket, overall_override=composite_bucket.get('immediate'), fallback_overall=composite_immediate)
+            register_target('short_term_opportunity', composite_bucket, immediate_override=composite_bucket.get('short'), short_override=composite_bucket.get('short'), fallback_overall=composite_short)
+
+            directional_confidence = directional_bucket.get('confidence')
+            if directional_confidence is not None:
+                result['directional_confidence'] = self._build_horizon_weighted_matrix(
+                    directional_confidence,
+                    directional_confidence,
+                    directional_confidence,
+                    immediate_limit,
+                    short_limit,
+                    max_horizon
+                )
+
+            opportunity_asymmetry = directional_bucket.get('asymmetry')
+            if opportunity_asymmetry is not None:
+                result['opportunity_asymmetry'] = self._build_horizon_weighted_matrix(
+                    opportunity_asymmetry,
+                    opportunity_asymmetry,
+                    opportunity_asymmetry,
+                    immediate_limit,
+                    short_limit,
+                    max_horizon
+                )
+
+            if not result:
+                fallback_matrix = self._create_simple_forward_returns(data, max_horizon).get('simple_returns', {})
+                return {target_column: fallback_matrix}
+
+            self.logger.info(f"✅ Prepared multi-horizon matrices for {len(result)} target columns")
+            return result
+
+        except Exception as exc:
+            self.logger.error(f"❌ Failed to build multi-horizon opportunity matrices: {exc}")
+            fallback_matrix = self._create_simple_forward_returns(data, max_horizon).get('simple_returns', {})
+            return {target_column: fallback_matrix}
 
     def _create_time_split(self, data_length: int, train_ratio: float = 0.7) -> Tuple[int, int]:
         """

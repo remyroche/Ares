@@ -186,7 +186,8 @@ class MainPipelineConfig:
         ],
         PipelineStage.MODEL_TRAINING: [
             'analyst_pre_ml_orchestration', 'analyst_models_training', 'analyst_ensemble_training',
-            'tactician_pre_ml_orchestration', 'tactician_models_training', 'tactician_ensemble_training'
+            'tactician_pre_ml_orchestration', 'tactician_models_training', 'tactician_ensemble_training',
+            'nas_tas_models_training', 'nas_tas_ensemble_integration'
         ],
         PipelineStage.BACKTESTING: [
             'basic_backtesting_pre', 'final_parameters_optimization', 'basic_backtesting_post', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
@@ -1051,8 +1052,9 @@ def get_full_pipeline_config(
                 'pid_based_feature_generation', 'final_feature_selection'
             ],
             PipelineStage.MODEL_TRAINING: [
-                'analyst_model_training', 'analyst_ensemble_training', 
-                'tactician_lookback_optimization', 'tactician_models_training', 'tactician_ensemble_training'
+                'analyst_model_training', 'analyst_ensemble_training',
+                'tactician_lookback_optimization', 'tactician_models_training', 'tactician_ensemble_training',
+                'nas_tas_models_training', 'nas_tas_ensemble_integration'
             ],
             PipelineStage.BACKTESTING: [
                 'basic_backtesting_pre', 'final_parameters_optimization', 'basic_backtesting_post', 'walk_forward_validation', 'monte_carlo_simulation', 'ab_testing',
@@ -1152,7 +1154,8 @@ def get_light_pipeline_config(
                 'pid_based_feature_generation', 'multi_horizon_profit_labeler'
             ],
             PipelineStage.MODEL_TRAINING: [
-                'analyst_model_training', 'analyst_ensemble_training', 'tactician_lookback_optimization', 'tactician_models_training', 'tactician_ensemble_training'
+                'analyst_model_training', 'analyst_ensemble_training', 'tactician_lookback_optimization', 'tactician_models_training', 'tactician_ensemble_training',
+                'nas_tas_models_training', 'nas_tas_ensemble_integration'
             ],
             PipelineStage.BACKTESTING: [
                 'walk_forward_validation', 'performance_analytics'
@@ -1242,7 +1245,7 @@ def get_blank_pipeline_config(
         enabled_sub_pipelines={
             PipelineStage.DATA_COLLECTION: ['data_download', 'data_conversion'],
             PipelineStage.MARKET_ANALYSIS: ['sr_parameter_optimization', 'sr_detection', 'hmm_regime_discovery', 'hmm_models_training', 'hmm_ensemble_training'],
-            PipelineStage.MODEL_TRAINING: ['analyst_model_training'],
+            PipelineStage.MODEL_TRAINING: ['analyst_model_training', 'nas_tas_models_training'],
             PipelineStage.BACKTESTING: ['walk_forward_validation']
         }
     )

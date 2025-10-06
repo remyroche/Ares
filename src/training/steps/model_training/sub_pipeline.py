@@ -126,6 +126,24 @@ except ImportError as e:
     print(f"⚠️ Warning: tactician_ensemble_training not available: {e}")
     TACTICIAN_ENSEMBLE_AVAILABLE = False
 
+try:
+    from .nas_tas_models_training import (
+        NASTASModelsTrainingSubPipeline, NASTASModelsTrainingConfig, NASTASModelsTrainingResult
+    )
+    NAS_TAS_MODELS_TRAINING_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Warning: nas_tas_models_training not available: {e}")
+    NAS_TAS_MODELS_TRAINING_AVAILABLE = False
+
+try:
+    from .nas_tas_ensemble_integration import (
+        NASTASEnsembleIntegrationSubPipeline, NASTASEnsembleIntegrationConfig, NASTASEnsembleIntegrationResult
+    )
+    NAS_TAS_ENSEMBLE_INTEGRATION_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Warning: nas_tas_ensemble_integration not available: {e}")
+    NAS_TAS_ENSEMBLE_INTEGRATION_AVAILABLE = False
+
 logger = system_logger.getChild('ModelTrainingSubPipeline')
 
 
@@ -247,6 +265,16 @@ class ModelTrainingSubPipeline:
             )
         else:
             self.tactician_ensemble_trainer = None
+
+        if NAS_TAS_MODELS_TRAINING_AVAILABLE:
+            self.nas_tas_models_training = NASTASModelsTrainingSubPipeline()
+        else:
+            self.nas_tas_models_training = None
+
+        if NAS_TAS_ENSEMBLE_INTEGRATION_AVAILABLE:
+            self.nas_tas_ensemble_integration = NASTASEnsembleIntegrationSubPipeline()
+        else:
+            self.nas_tas_ensemble_integration = None
 
     # ------------------------------------------------------------------
     # Persistence helpers
@@ -605,6 +633,11 @@ class ModelTrainingSubPipeline:
             total_steps += 3  # pre_ml, models, ensemble
         if config.train_tactician:
             total_steps += 3  # pre_ml, models, ensemble
+        # NAS/TAS steps (always included when available)
+        if NAS_TAS_MODELS_TRAINING_AVAILABLE:
+            total_steps += 1  # nas_tas_models_training
+        if NAS_TAS_ENSEMBLE_INTEGRATION_AVAILABLE:
+            total_steps += 1  # nas_tas_ensemble_integration
         results['total_steps'] = total_steps
         
         try:
@@ -690,9 +723,70 @@ class ModelTrainingSubPipeline:
                 results['tactician_results']['ensemble'] = tactician_ensemble_result.artifacts
                 self._current_pipeline_state['tactician_ensemble'] = tactician_ensemble_result.artifacts
                 results['completed_steps'] += 1
-                
+
                 self.logger.info('✅ Tactician pipeline completed successfully')
-            
+
+            # ==================== NAS/TAS PIPELINE ====================
+            # Step 7: NAS/TAS Models Training (after features optimization)
+            if NAS_TAS_MODELS_TRAINING_AVAILABLE and self.nas_tas_models_training:
+                self.logger.info('=' * 80)
+                self.logger.info('🧠 NAS/TAS PIPELINE (5m & 1m timeframes - after features optimization)')
+                self.logger.info('=' * 80)
+
+                nas_tas_config = NASTASModelsTrainingConfig(
+                    mode=config.mode.value,
+                    enable_nas_training=True,
+                    enable_tas_training=True,
+                    top_k_models=3,
+                    selection_strategy="best_performance"
+                )
+
+                nas_tas_result = await self.nas_tas_models_training.execute_pipeline(nas_tas_config)
+                if not nas_tas_result.success:
+                    self.logger.error(f'❌ NAS/TAS models training failed: {nas_tas_result.error_message}')
+                    return results
+
+                results['nas_tas_results'] = {
+                    'models_training': nas_tas_result.nas_training_results,
+                    'tas_training': nas_tas_result.tas_training_results,
+                    'model_selection': nas_tas_result.model_selection_results,
+                    'top_models': nas_tas_result.top_models_selected
+                }
+                self._current_pipeline_state['nas_tas_models'] = nas_tas_result
+                results['completed_steps'] += 1
+
+                self.logger.info('✅ NAS/TAS models training completed successfully')
+
+            # Step 8: NAS/TAS Ensemble Integration
+            if NAS_TAS_ENSEMBLE_INTEGRATION_AVAILABLE and self.nas_tas_ensemble_integration:
+                self.logger.info('=' * 80)
+                self.logger.info('🔗 NAS/TAS ENSEMBLE INTEGRATION')
+                self.logger.info('=' * 80)
+
+                integration_config = NASTASEnsembleIntegrationConfig(
+                    mode=config.mode.value,
+                    integrate_with_analyst_ensemble=True,
+                    integrate_with_tactician_ensemble=True,
+                    top_k_models=3,
+                    selection_strategy="best_performance"
+                )
+
+                integration_result = await self.nas_tas_ensemble_integration.execute_pipeline(integration_config)
+                if not integration_result.success:
+                    self.logger.error(f'❌ NAS/TAS ensemble integration failed: {integration_result.error_message}')
+                    return results
+
+                results['nas_tas_integration_results'] = {
+                    'analyst_integration': integration_result.analyst_integration_results,
+                    'tactician_integration': integration_result.tactician_integration_results,
+                    'model_selection': integration_result.model_selection_results,
+                    'performance': integration_result.integration_performance
+                }
+                self._current_pipeline_state['nas_tas_integration'] = integration_result
+                results['completed_steps'] += 1
+
+                self.logger.info('✅ NAS/TAS ensemble integration completed successfully')
+
             # Success
             end_time = datetime.now()
             results['success'] = True
@@ -1408,7 +1502,7 @@ class ModelTrainingSubPipeline:
     
     def get_available_sub_pipelines(self) -> List[str]:
         """Get list of available sub-pipelines."""
-        return [
+        sub_pipelines = [
             'analyst_pre_ml_orchestration',
             'analyst_models_training',
             'analyst_ensemble_training',
@@ -1416,6 +1510,14 @@ class ModelTrainingSubPipeline:
             'tactician_models_training',
             'tactician_ensemble_training'
         ]
+
+        if NAS_TAS_MODELS_TRAINING_AVAILABLE:
+            sub_pipelines.append('nas_tas_models_training')
+
+        if NAS_TAS_ENSEMBLE_INTEGRATION_AVAILABLE:
+            sub_pipelines.append('nas_tas_ensemble_integration')
+
+        return sub_pipelines
     
     async def execute_sub_pipeline(self, sub_pipeline_name: str, config: SubPipelineConfig) -> SubPipelineResult:
         """Execute a specific sub-pipeline."""
@@ -1527,6 +1629,30 @@ class ModelTrainingSubPipeline:
                 models_result,
                 analyst_predictions
             )
+        elif sub_pipeline_name == 'nas_tas_models_training':
+            if not NAS_TAS_MODELS_TRAINING_AVAILABLE or not self.nas_tas_models_training:
+                raise RuntimeError("NAS/TAS models training not available")
+
+            nas_tas_config = NASTASModelsTrainingConfig(
+                mode=config.mode.value,
+                enable_nas_training=True,
+                enable_tas_training=True,
+                top_k_models=3,
+                selection_strategy="best_performance"
+            )
+            return await self.nas_tas_models_training.execute_pipeline(nas_tas_config)
+        elif sub_pipeline_name == 'nas_tas_ensemble_integration':
+            if not NAS_TAS_ENSEMBLE_INTEGRATION_AVAILABLE or not self.nas_tas_ensemble_integration:
+                raise RuntimeError("NAS/TAS ensemble integration not available")
+
+            integration_config = NASTASEnsembleIntegrationConfig(
+                mode=config.mode.value,
+                integrate_with_analyst_ensemble=True,
+                integrate_with_tactician_ensemble=True,
+                top_k_models=3,
+                selection_strategy="best_performance"
+            )
+            return await self.nas_tas_ensemble_integration.execute_pipeline(integration_config)
         else:
             raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
 
@@ -1546,6 +1672,10 @@ class ModelTrainingSubPipeline:
                     self._current_pipeline_state['tactician_models'] = result.artifacts
                 elif sub_pipeline_name == 'tactician_ensemble_training':
                     self._current_pipeline_state['tactician_ensemble'] = result.artifacts
+                elif sub_pipeline_name == 'nas_tas_models_training':
+                    self._current_pipeline_state['nas_tas_models'] = result
+                elif sub_pipeline_name == 'nas_tas_ensemble_integration':
+                    self._current_pipeline_state['nas_tas_integration'] = result
 
             return result
 

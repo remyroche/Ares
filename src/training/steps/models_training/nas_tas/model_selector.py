@@ -102,6 +102,9 @@ class ModelSelectionConfig:
     save_selection_history: bool = True
     selection_history_path: str = "model_selection_history.json"
 
+    # Top-K selection
+    top_k: int = 3  # Number of top models to select per market/regime
+
 
 @dataclass
 class ModelSelectionResult:
@@ -380,10 +383,17 @@ class ModelSelector:
                 selection_result['model_id']
             )
             
-            # Step 5: Get alternative models
+            # Step 5: Get alternative models (top K-1 since we already have the selected model)
             alternative_models = self._get_alternative_models(
                 regime_models, selection_result['model_id']
             )
+
+            # Ensure we have top K total models (selected + alternatives)
+            total_models_needed = getattr(self.config, 'top_k', 3)
+            if len(alternative_models) < total_models_needed - 1:
+                # If we don't have enough alternatives, pad with None or repeat selection
+                tprint_warning(f"⚠️ Only {len(alternative_models) + 1}/{total_models_needed} models available for regime {current_regime}")
+                result.metadata['insufficient_models'] = True
             
             # Step 6: Create result
             result = ModelSelectionResult(
@@ -900,12 +910,12 @@ class ModelSelector:
         
         return (max(0.0, mean_f1 - margin_of_error), min(1.0, mean_f1 + margin_of_error))
     
-    def _get_alternative_models(self, 
+    def _get_alternative_models(self,
                                regime_models: Dict[str, Any],
                                selected_model_id: str) -> List[Dict[str, Any]]:
         """Get alternative models for the regime."""
         alternatives = []
-        
+
         for model_type, model_info in regime_models.items():
             if model_type not in selected_model_id:  # Different from selected
                 alternatives.append({
@@ -913,11 +923,67 @@ class ModelSelector:
                     'performance': model_info['performance'],
                     'confidence': model_info['performance'].get(self.config.performance_metric, 0.0)
                 })
-        
+
         # Sort by performance
         alternatives.sort(key=lambda x: x['confidence'], reverse=True)
-        
-        return alternatives[:3]  # Return top 3 alternatives
+
+        # Return top K alternatives based on configuration
+        top_k = getattr(self.config, 'top_k', 3)
+        return alternatives[:top_k]
+
+    def select_top_k_models(self,
+                           market_data: pd.DataFrame,
+                           regime_id: int,
+                           k: int = 3) -> List[ModelSelectionResult]:
+        """
+        Select top K models for a specific regime/market.
+
+        Args:
+            market_data: Market data for selection
+            regime_id: Regime ID
+            k: Number of top models to select
+
+        Returns:
+            List of ModelSelectionResult objects for top K models
+        """
+        tprint_info(f"🎯 Selecting top {k} models for regime {regime_id}")
+
+        # Get models for this regime
+        regime_models = self._get_models_for_regime_and_direction(regime_id, 'long')  # Default to long for selection
+
+        if not regime_models:
+            tprint_warning(f"⚠️ No models available for regime {regime_id}")
+            return []
+
+        top_models = []
+
+        # Select top K models using different strategies
+        for i in range(min(k, len(regime_models))):
+            try:
+                selection_result = self.select_model(
+                    market_data=market_data,
+                    current_regime=regime_id
+                )
+
+                if selection_result and selection_result.selected_model:
+                    top_models.append(selection_result)
+
+                    # Remove selected model from available models for next iteration
+                    selected_type = selection_result.selected_model_type
+                    if selected_type in regime_models:
+                        del regime_models[selected_type]
+
+                    tprint_info(f"✅ Selected model {i+1}/{k}: {selected_type}")
+                else:
+                    tprint_warning(f"⚠️ Failed to select model {i+1}/{k} for regime {regime_id}")
+                    break
+
+            except Exception as e:
+                tprint_error(f"❌ Failed to select model {i+1}/{k} for regime {regime_id}: {e}")
+                break
+
+        tprint_success(f"✅ Selected {len(top_models)}/{k} top models for regime {regime_id}")
+        return top_models
     
     def _get_model_rankings(self, regime_models: Dict[str, Any]) -> Dict[str, int]:
         """Get model rankings for the regime."""

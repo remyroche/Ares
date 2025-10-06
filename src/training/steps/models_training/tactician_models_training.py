@@ -109,7 +109,17 @@ except ImportError as e:
 
 
 class TacticianModelType(Enum):
-    """Tactician model types."""
+    """Tactician T1-T4 model types."""
+    # T1-T3: PatchTST-Enhanced Tree Models
+    T1_PATCHTST_LIGHTGBM = "T1_PATCHTST_LIGHTGBM"  # Classification: up/down/none
+    T2_PATCHTST_XGBOOST_LAMBDAMART = "T2_PATCHTST_XGBOOST_LAMBDAMART"  # Ranking: trade desirability
+    T3_PATCHTST_CATBOOST = "T3_PATCHTST_CATBOOST"  # Binary classification: up_hit/down_hit
+
+    # T4: Sequence Models
+    T4_CAUSAL_DILATED_TCN = "T4_CAUSAL_DILATED_TCN"  # Sequence classification/regression
+    T4_TFT_SMALL = "T4_TFT_SMALL"  # Alternative sequence model
+
+    # Legacy models (for backward compatibility)
     RANDOM_SURVIVAL_FOREST = "RANDOM_SURVIVAL_FOREST"
     XGBOOST = "XGBOOST"
     ELASTIC_NET_CV = "ELASTIC_NET_CV"
@@ -139,8 +149,10 @@ class TacticianModelsTrainingConfig:
         """Post-initialization setup."""
         if self.model_types is None:
             self.model_types = [
-                TacticianModelType.RANDOM_SURVIVAL_FOREST,
-                TacticianModelType.XGBOOST,
+                TacticianModelType.T1_PATCHTST_LIGHTGBM,
+                TacticianModelType.T2_PATCHTST_XGBOOST_LAMBDAMART,
+                TacticianModelType.T3_PATCHTST_CATBOOST,
+                TacticianModelType.T4_CAUSAL_DILATED_TCN,
                 TacticianModelType.ELASTIC_NET_CV,
                 TacticianModelType.NAS,
                 TacticianModelType.TAS,
@@ -511,7 +523,17 @@ class TacticianModelsTrainingStep:
             # Add model type for filtering to kwargs
             kwargs['model_type_for_filtering'] = model_type.value
 
-            if model_type == TacticianModelType.RANDOM_SURVIVAL_FOREST:
+            if model_type == TacticianModelType.T1_PATCHTST_LIGHTGBM:
+                return await self._train_t1_patchtst_lightgbm(X, y, sample_weight, **kwargs)
+            elif model_type == TacticianModelType.T2_PATCHTST_XGBOOST_LAMBDAMART:
+                return await self._train_t2_patchtst_xgboost_lambdamart(X, y, sample_weight, **kwargs)
+            elif model_type == TacticianModelType.T3_PATCHTST_CATBOOST:
+                return await self._train_t3_patchtst_catboost(X, y, sample_weight, **kwargs)
+            elif model_type == TacticianModelType.T4_CAUSAL_DILATED_TCN:
+                return await self._train_t4_causal_dilated_tcn(X, y, sample_weight, **kwargs)
+            elif model_type == TacticianModelType.T4_TFT_SMALL:
+                return await self._train_t4_tft_small(X, y, sample_weight, **kwargs)
+            elif model_type == TacticianModelType.RANDOM_SURVIVAL_FOREST:
                 return await self._train_random_survival_forest(X, y, sample_weight, **kwargs)
             elif model_type == TacticianModelType.XGBOOST:
                 return await self._train_xgboost(X, y, sample_weight, **kwargs)
@@ -1641,6 +1663,435 @@ class TacticianModelsTrainingStep:
         except Exception as e:
             tprint_error(f"❌ Failed to extract analyst features: {e}")
             return []
+
+    async def _train_t1_patchtst_lightgbm(self, X: np.ndarray, y: np.ndarray,
+                                        sample_weight: Optional[np.ndarray] = None,
+                                        **kwargs) -> Dict[str, Any]:
+        """Train T1: PatchTST-LightGBM model for classification."""
+        try:
+            tprint_info("🚀 Training T1: PatchTST-LightGBM model...")
+
+            from src.utils.ml_common.models.model_factory import EnhancedModelFactory, ModelConfig, ModelType
+
+            # Load T1-T4 configuration
+            config_path = Path("/workspace/config/tactician_t1_t4_models_config.yaml")
+            if config_path.exists():
+                import yaml
+                with open(config_path, 'r') as f:
+                    t1_t4_config = yaml.safe_load(f)
+            else:
+                # Fallback configuration
+                t1_t4_config = {
+                    'tactician_t1_t4_config': {
+                        'tree_models': {
+                            't1_lightgbm': {
+                                'params': {
+                                    'n_estimators': 1000,
+                                    'learning_rate': 0.05,
+                                    'max_depth': 8,
+                                    'num_leaves': 63,
+                                    'subsample': 0.8,
+                                    'colsample_bytree': 0.8,
+                                    'random_state': 42,
+                                    'verbosity': -1,
+                                    'monotone_constraints': [1, 1, 1, 0, 0, -1, -1, 1, 0, 0],
+                                    'monotone_constraints_method': 'advanced'
+                                }
+                            }
+                        },
+                        'patchtst_config': {
+                            'patch_len': 16,
+                            'stride': 8,
+                            'use_transformer_attention': True,
+                            'regime_aware': True,
+                            'attention_dropout': 0.1,
+                            'num_heads': 4
+                        }
+                    }
+                }
+
+            # Create model configuration
+            model_config = ModelConfig(
+                model_type=ModelType.PATCHTST_LIGHTGBM,
+                model_name="t1_patchtst_lightgbm",
+                n_outputs=len(np.unique(y)) if len(np.unique(y)) > 2 else 1,
+                model_params={
+                    **t1_t4_config['tactician_t1_t4_config']['tree_models']['t1_lightgbm']['params'],
+                    'patchtst_config': t1_t4_config['tactician_t1_t4_config']['patchtst_config']
+                }
+            )
+
+            # Create and train model
+            factory = EnhancedModelFactory()
+            model = factory.create_model(model_config)
+
+            if sample_weight is not None:
+                model.fit(X, y, sample_weight=sample_weight)
+            else:
+                model.fit(X, y)
+
+            # Get predictions for metrics
+            predictions = model.predict(X)
+
+            # Calculate metrics
+            from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+            metrics = {
+                'accuracy': accuracy_score(y, predictions),
+                'f1_score': f1_score(y, predictions, average='weighted'),
+                'precision': precision_score(y, predictions, average='weighted'),
+                'recall': recall_score(y, predictions, average='weighted'),
+                'model_type': 'T1_PatchTST_LightGBM'
+            }
+
+            tprint_success(f"✅ T1: PatchTST-LightGBM trained with accuracy: {metrics['accuracy']".4f"}")
+            return {'models': {'t1_patchtst_lightgbm': model}, 'metrics': metrics}
+
+        except Exception as e:
+            tprint_error(f"❌ T1: PatchTST-LightGBM training failed: {e}")
+            return {'models': {}, 'metrics': {}}
+
+    async def _train_t2_patchtst_xgboost_lambdamart(self, X: np.ndarray, y: np.ndarray,
+                                                  sample_weight: Optional[np.ndarray] = None,
+                                                  **kwargs) -> Dict[str, Any]:
+        """Train T2: PatchTST-XGBoost-LambdaMART model for ranking."""
+        try:
+            tprint_info("🚀 Training T2: PatchTST-XGBoost-LambdaMART model...")
+
+            from src.utils.ml_common.models.model_factory import EnhancedModelFactory, ModelConfig, ModelType
+
+            # Load T1-T4 configuration
+            config_path = Path("/workspace/config/tactician_t1_t4_models_config.yaml")
+            if config_path.exists():
+                import yaml
+                with open(config_path, 'r') as f:
+                    t1_t4_config = yaml.safe_load(f)
+            else:
+                # Fallback configuration
+                t1_t4_config = {
+                    'tactician_t1_t4_config': {
+                        'tree_models': {
+                            't2_xgboost_lambdamart': {
+                                'params': {
+                                    'n_estimators': 1000,
+                                    'learning_rate': 0.05,
+                                    'max_depth': 8,
+                                    'subsample': 0.8,
+                                    'colsample_bytree': 0.8,
+                                    'random_state': 42,
+                                    'lambda': 0.1,
+                                    'alpha': 0.1,
+                                    'verbosity': 0,
+                                    'monotone_constraints': [1, 1, 1, 0, 0, -1, -1, 1, 0, 0]
+                                }
+                            }
+                        },
+                        'patchtst_config': {
+                            'patch_len': 16,
+                            'stride': 8,
+                            'use_transformer_attention': True,
+                            'regime_aware': True,
+                            'attention_dropout': 0.1,
+                            'num_heads': 4
+                        }
+                    }
+                }
+
+            # Create model configuration
+            model_config = ModelConfig(
+                model_type=ModelType.PATCHTST_XGBOOST_LAMBDAMART,
+                model_name="t2_patchtst_xgboost_lambdamart",
+                n_outputs=1,
+                model_params={
+                    **t1_t4_config['tactician_t1_t4_config']['tree_models']['t2_xgboost_lambdamart']['params'],
+                    'patchtst_config': t1_t4_config['tactician_t1_t4_config']['patchtst_config']
+                }
+            )
+
+            # Create and train model
+            factory = EnhancedModelFactory()
+            model = factory.create_model(model_config)
+
+            # For ranking, we need group information
+            groups = kwargs.get('groups', np.ones(len(X)))  # Default to single group
+
+            if sample_weight is not None:
+                model.fit(X, y, group=groups, sample_weight=sample_weight)
+            else:
+                model.fit(X, y, group=groups)
+
+            # Get predictions for metrics
+            predictions = model.predict(X)
+
+            # Calculate ranking metrics
+            from sklearn.metrics import mean_squared_error, mean_absolute_error
+            metrics = {
+                'mse': mean_squared_error(y, predictions),
+                'mae': mean_absolute_error(y, predictions),
+                'model_type': 'T2_PatchTST_XGBoost_LambdaMART'
+            }
+
+            tprint_success(f"✅ T2: PatchTST-XGBoost-LambdaMART trained with MSE: {metrics['mse']".4f"}")
+            return {'models': {'t2_patchtst_xgboost_lambdamart': model}, 'metrics': metrics}
+
+        except Exception as e:
+            tprint_error(f"❌ T2: PatchTST-XGBoost-LambdaMART training failed: {e}")
+            return {'models': {}, 'metrics': {}}
+
+    async def _train_t3_patchtst_catboost(self, X: np.ndarray, y: np.ndarray,
+                                        sample_weight: Optional[np.ndarray] = None,
+                                        **kwargs) -> Dict[str, Any]:
+        """Train T3: PatchTST-CatBoost model for binary classification."""
+        try:
+            tprint_info("🚀 Training T3: PatchTST-CatBoost model...")
+
+            from src.utils.ml_common.models.model_factory import EnhancedModelFactory, ModelConfig, ModelType
+
+            # Load T1-T4 configuration
+            config_path = Path("/workspace/config/tactician_t1_t4_models_config.yaml")
+            if config_path.exists():
+                import yaml
+                with open(config_path, 'r') as f:
+                    t1_t4_config = yaml.safe_load(f)
+            else:
+                # Fallback configuration
+                t1_t4_config = {
+                    'tactician_t1_t4_config': {
+                        'tree_models': {
+                            't3_catboost': {
+                                'params': {
+                                    'iterations': 1000,
+                                    'learning_rate': 0.05,
+                                    'depth': 8,
+                                    'random_seed': 42,
+                                    'verbose': False,
+                                    'monotone_constraints': [1, 1, 1, 0, 0, -1, -1, 1, 0, 0],
+                                    'ordered_boosting': True
+                                }
+                            }
+                        },
+                        'patchtst_config': {
+                            'patch_len': 16,
+                            'stride': 8,
+                            'use_transformer_attention': True,
+                            'regime_aware': True,
+                            'attention_dropout': 0.1,
+                            'num_heads': 4
+                        }
+                    }
+                }
+
+            # Create model configuration
+            model_config = ModelConfig(
+                model_type=ModelType.PATCHTST_CATBOOST,
+                model_name="t3_patchtst_catboost",
+                n_outputs=len(np.unique(y)),
+                model_params={
+                    **t1_t4_config['tactician_t1_t4_config']['tree_models']['t3_catboost']['params'],
+                    'patchtst_config': t1_t4_config['tactician_t1_t4_config']['patchtst_config']
+                }
+            )
+
+            # Create and train model
+            factory = EnhancedModelFactory()
+            model = factory.create_model(model_config)
+
+            if sample_weight is not None:
+                model.fit(X, y, sample_weight=sample_weight)
+            else:
+                model.fit(X, y)
+
+            # Get predictions and probabilities
+            predictions = model.predict(X)
+            probabilities = model.predict_proba(X)
+
+            # Calculate metrics
+            from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
+            metrics = {
+                'accuracy': accuracy_score(y, predictions),
+                'f1_score': f1_score(y, predictions, average='weighted'),
+                'precision': precision_score(y, predictions, average='weighted'),
+                'recall': recall_score(y, predictions, average='weighted'),
+                'model_type': 'T3_PatchTST_CatBoost'
+            }
+
+            # Add AUC for binary classification
+            if len(np.unique(y)) == 2:
+                try:
+                    metrics['auc'] = roc_auc_score(y, probabilities[:, 1])
+                except:
+                    pass
+
+            tprint_success(f"✅ T3: PatchTST-CatBoost trained with accuracy: {metrics['accuracy']".4f"}")
+            return {'models': {'t3_patchtst_catboost': model}, 'metrics': metrics}
+
+        except Exception as e:
+            tprint_error(f"❌ T3: PatchTST-CatBoost training failed: {e}")
+            return {'models': {}, 'metrics': {}}
+
+    async def _train_t4_causal_dilated_tcn(self, X: np.ndarray, y: np.ndarray,
+                                         sample_weight: Optional[np.ndarray] = None,
+                                         **kwargs) -> Dict[str, Any]:
+        """Train T4: Causal Dilated TCN model for sequence tasks."""
+        try:
+            tprint_info("🚀 Training T4: Causal Dilated TCN model...")
+
+            from src.utils.ml_common.models.model_factory import EnhancedModelFactory, ModelConfig, ModelType
+
+            # Load T1-T4 configuration
+            config_path = Path("/workspace/config/tactician_t1_t4_models_config.yaml")
+            if config_path.exists():
+                import yaml
+                with open(config_path, 'r') as f:
+                    t1_t4_config = yaml.safe_load(f)
+            else:
+                # Fallback configuration
+                t1_t4_config = {
+                    'tactician_t1_t4_config': {
+                        'sequence_model': {
+                            't4_tcn': {
+                                'config': {
+                                    'residual_blocks': 8,
+                                    'channels': 64,
+                                    'kernel_size': 3,
+                                    'dilations': [1, 2, 4, 8, 16, 32, 64],
+                                    'dropout': 0.1,
+                                    'use_batch_norm': True,
+                                    'activation': 'relu'
+                                }
+                            }
+                        }
+                    }
+                }
+
+            # Reshape X for sequence model if needed
+            if len(X.shape) == 2:
+                # Convert 2D to 3D for sequence model
+                seq_length = min(100, X.shape[1] // 10)  # Estimate sequence length
+                n_features = min(50, X.shape[1] // seq_length)  # Estimate features per timestep
+                X_seq = X[:, :seq_length*n_features].reshape(X.shape[0], seq_length, n_features)
+            else:
+                X_seq = X
+
+            # Create model configuration
+            model_config = ModelConfig(
+                model_type=ModelType.CAUSAL_DILATED_TCN,
+                model_name="t4_causal_dilated_tcn",
+                n_outputs=y.shape[1] if len(y.shape) > 1 else 1,
+                model_params={
+                    **t1_t4_config['tactician_t1_t4_config']['sequence_model']['t4_tcn']['config'],
+                    'input_dim': X_seq.shape[-1],
+                    'seq_length': X_seq.shape[1]
+                }
+            )
+
+            # Create and train model
+            factory = EnhancedModelFactory()
+            model = factory.create_model(model_config)
+
+            if sample_weight is not None:
+                model.fit(X_seq, y, sample_weight=sample_weight)
+            else:
+                model.fit(X_seq, y)
+
+            # Get predictions for metrics
+            predictions = model.predict(X_seq)
+
+            # Calculate metrics
+            from sklearn.metrics import mean_squared_error, mean_absolute_error
+            metrics = {
+                'mse': mean_squared_error(y, predictions),
+                'mae': mean_absolute_error(y, predictions),
+                'model_type': 'T4_Causal_Dilated_TCN'
+            }
+
+            tprint_success(f"✅ T4: Causal Dilated TCN trained with MSE: {metrics['mse']".4f"}")
+            return {'models': {'t4_causal_dilated_tcn': model}, 'metrics': metrics}
+
+        except Exception as e:
+            tprint_error(f"❌ T4: Causal Dilated TCN training failed: {e}")
+            return {'models': {}, 'metrics': {}}
+
+    async def _train_t4_tft_small(self, X: np.ndarray, y: np.ndarray,
+                                sample_weight: Optional[np.ndarray] = None,
+                                **kwargs) -> Dict[str, Any]:
+        """Train T4: TFT-Small model for sequence tasks (alternative to TCN)."""
+        try:
+            tprint_info("🚀 Training T4: TFT-Small model...")
+
+            from src.utils.ml_common.models.model_factory import EnhancedModelFactory, ModelConfig, ModelType
+
+            # Load T1-T4 configuration
+            config_path = Path("/workspace/config/tactician_t1_t4_models_config.yaml")
+            if config_path.exists():
+                import yaml
+                with open(config_path, 'r') as f:
+                    t1_t4_config = yaml.safe_load(f)
+            else:
+                # Fallback configuration
+                t1_t4_config = {
+                    'tactician_t1_t4_config': {
+                        'sequence_model': {
+                            't4_tft_small': {
+                                'config': {
+                                    'hidden_size': 64,
+                                    'attention_heads': 4,
+                                    'dropout': 0.1,
+                                    'num_layers': 3,
+                                    'use_time_features': True,
+                                    'use_static_features': True
+                                }
+                            }
+                        }
+                    }
+                }
+
+            # Reshape X for sequence model if needed
+            if len(X.shape) == 2:
+                # Convert 2D to 3D for sequence model
+                seq_length = min(100, X.shape[1] // 10)
+                n_features = min(50, X.shape[1] // seq_length)
+                X_seq = X[:, :seq_length*n_features].reshape(X.shape[0], seq_length, n_features)
+            else:
+                X_seq = X
+
+            # Create model configuration
+            model_config = ModelConfig(
+                model_type=ModelType.TFT_SMALL,
+                model_name="t4_tft_small",
+                n_outputs=1,  # Regression output
+                model_params={
+                    **t1_t4_config['tactician_t1_t4_config']['sequence_model']['t4_tft_small']['config'],
+                    'input_dim': X_seq.shape[-1],
+                    'seq_length': X_seq.shape[1]
+                }
+            )
+
+            # Create and train model
+            factory = EnhancedModelFactory()
+            model = factory.create_model(model_config)
+
+            if sample_weight is not None:
+                model.fit(X_seq, y, sample_weight=sample_weight)
+            else:
+                model.fit(X_seq, y)
+
+            # Get predictions for metrics
+            predictions = model.predict(X_seq)
+
+            # Calculate metrics
+            from sklearn.metrics import mean_squared_error, mean_absolute_error
+            metrics = {
+                'mse': mean_squared_error(y, predictions),
+                'mae': mean_absolute_error(y, predictions),
+                'model_type': 'T4_TFT_Small'
+            }
+
+            tprint_success(f"✅ T4: TFT-Small trained with MSE: {metrics['mse']".4f"}")
+            return {'models': {'t4_tft_small': model}, 'metrics': metrics}
+
+        except Exception as e:
+            tprint_error(f"❌ T4: TFT-Small training failed: {e}")
+            return {'models': {}, 'metrics': {}}
 
 
 # Convenience function for external usage

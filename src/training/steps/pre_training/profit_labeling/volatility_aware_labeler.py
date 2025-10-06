@@ -48,6 +48,12 @@ from .volatility_modeling import VolatilityModeler, VolatilityConfig
 from .noise_gating import NoiseGatingFilter, NoiseGatingConfig
 from .quality_scoring import LabelQualityScorer, QualityScoringConfig
 from .multi_target_scheme import MultiTargetScheme, MultiTargetConfig
+from .enhanced_label_definitions import (
+    EnhancedLabelDefinitions, LabelDefinitionType,
+    AnalystLabelConfig, TacticianLabelConfig, RegimeConditionedConfig,
+    RiskAwareConfig, DataCleaningConfig, StabilityCheckConfig,
+    create_trading_aware_config
+)
 
 
 class LabelType(Enum):
@@ -75,7 +81,19 @@ class VolatilityAwareConfig:
     
     # Multi-target scheme settings
     multi_target: MultiTargetConfig = field(default_factory=MultiTargetConfig)
-    
+
+    # Enhanced label definitions settings
+    enable_enhanced_labels: bool = True
+    label_definition_type: LabelDefinitionType = LabelDefinitionType.ANALYST
+
+    # Enhanced label configurations
+    analyst_config: AnalystLabelConfig = field(default_factory=AnalystLabelConfig)
+    tactician_config: TacticianLabelConfig = field(default_factory=TacticianLabelConfig)
+    regime_config: RegimeConditionedConfig = field(default_factory=RegimeConditionedConfig)
+    risk_config: RiskAwareConfig = field(default_factory=RiskAwareConfig)
+    cleaning_config: DataCleaningConfig = field(default_factory=DataCleaningConfig)
+    stability_config: StabilityCheckConfig = field(default_factory=StabilityCheckConfig)
+
     # General settings
     min_data_points: int = 1000
     enable_caching: bool = True
@@ -224,6 +242,19 @@ class VolatilityAwareMultiHorizonLabeler:
         self.noise_gating_filter = NoiseGatingFilter(self.config.noise_gating)
         self.quality_scorer = LabelQualityScorer(self.config.quality_scoring)
         self.multi_target_scheme = MultiTargetScheme(self.config.multi_target)
+
+        # Initialize enhanced label definitions if enabled
+        if self.config.enable_enhanced_labels:
+            self.enhanced_labeler = EnhancedLabelDefinitions(
+                analyst_config=self.config.analyst_config,
+                tactician_config=self.config.tactician_config,
+                regime_config=self.config.regime_config,
+                risk_config=self.config.risk_config,
+                cleaning_config=self.config.cleaning_config,
+                stability_config=self.config.stability_config
+            )
+        else:
+            self.enhanced_labeler = None
         
         # State tracking
         self.labeling_history: List[LabelingResult] = []
@@ -364,11 +395,21 @@ class VolatilityAwareMultiHorizonLabeler:
                 target_result = self.target_cache[target_cache_key]
                 tprint_info("📋 Using cached target generation")
             else:
-                target_result = self.multi_target_scheme.generate_targets(
-                    bar_result.cleaned_bars,
-                    vol_result.volatility_series,
-                    noise_result.eligibility_mask
-                )
+                # Use enhanced label definitions if enabled
+                if self.config.enable_enhanced_labels and self.enhanced_labeler:
+                    tprint_info("🚀 Using enhanced label definitions")
+                    target_result = self._generate_enhanced_targets(
+                        bar_result.cleaned_bars,
+                        vol_result.volatility_series,
+                        noise_result.eligibility_mask
+                    )
+                else:
+                    target_result = self.multi_target_scheme.generate_targets(
+                        bar_result.cleaned_bars,
+                        vol_result.volatility_series,
+                        noise_result.eligibility_mask
+                    )
+
                 if self.config.enable_caching:
                     self.target_cache[target_cache_key] = target_result
 
@@ -419,26 +460,147 @@ class VolatilityAwareMultiHorizonLabeler:
         
         # Calculate processing time
         result.processing_time = (datetime.now() - start_time).total_seconds()
-        
+
         # Store in history and cache
         self.labeling_history.append(result)
         if self.config.enable_caching:
             self.cache[cache_key] = result
-        
+
         # Clean up old history
         if len(self.labeling_history) > 100:
             self.labeling_history = self.labeling_history[-100:]
 
         # Clean up old cache entries (keep only recent ones)
         self._cleanup_caches()
-        
+
         tprint_success("✅ Volatility-aware labeling completed")
         tprint_info(f"   → Processing time: {result.processing_time:.2f}s")
         tprint_info(f"   → Samples: {result.n_samples}")
         tprint_info(f"   → Targets: {result.n_targets}")
         tprint_info(f"   → Horizons: {result.n_horizons}")
-        
+
         return result
+
+    def _generate_enhanced_targets(self, market_data: pd.DataFrame, volatility_series: pd.Series,
+                                 eligibility_mask: pd.Series) -> Any:
+        """
+        Generate targets using enhanced label definitions.
+
+        Args:
+            market_data: Cleaned market data
+            volatility_series: Volatility estimates
+            eligibility_mask: Noise gating eligibility mask
+
+        Returns:
+            Target result object compatible with existing pipeline
+        """
+        try:
+            tprint_info("🎯 Generating targets with enhanced label definitions")
+
+            # Apply eligibility mask to market data
+            eligible_data = market_data[eligibility_mask].copy()
+            eligible_volatility = volatility_series[eligibility_mask].copy()
+
+            if eligible_data.empty:
+                tprint_warning("⚠️ No eligible data for enhanced labeling")
+                return self.multi_target_scheme.generate_targets(
+                    market_data, volatility_series, eligibility_mask
+                )
+
+            # Get regime data if available (would need to be passed in)
+            # For now, create a simple regime classification based on volatility
+            regime_data = self._classify_regimes_from_volatility(eligible_volatility)
+
+            # Generate labels based on selected definition type
+            if self.config.label_definition_type == LabelDefinitionType.ANALYST:
+                analyst_labels, confidence_scores = self.enhanced_labeler.generate_analyst_labels(
+                    eligible_data, eligible_volatility, regime_data
+                )
+
+                # Create target result structure compatible with existing pipeline
+                target_result = type('TargetResult', (), {})()
+                target_result.labels = pd.DataFrame({
+                    'analyst_target': analyst_labels,
+                    'analyst_confidence': confidence_scores
+                })
+                target_result.confidence_scores = pd.DataFrame({
+                    'analyst_confidence': confidence_scores
+                })
+                target_result.eligibility_masks = pd.DataFrame({
+                    'analyst_eligible': pd.Series(True, index=analyst_labels.index)
+                })
+
+            elif self.config.label_definition_type == LabelDefinitionType.TACTICIAN:
+                tactician_labels, magnitude_scores = self.enhanced_labeler.generate_tactician_labels(
+                    eligible_data, eligible_volatility, regime_data
+                )
+
+                target_result = type('TargetResult', (), {})()
+                target_result.labels = pd.DataFrame({
+                    'tactician_target': tactician_labels,
+                    'tactician_magnitude': magnitude_scores
+                })
+                target_result.confidence_scores = pd.DataFrame({
+                    'tactician_magnitude': magnitude_scores
+                })
+                target_result.eligibility_masks = pd.DataFrame({
+                    'tactician_eligible': pd.Series(True, index=tactician_labels.index)
+                })
+
+            else:
+                # Fall back to standard multi-target scheme
+                tprint_warning(f"⚠️ Unsupported label definition type: {self.config.label_definition_type}")
+                return self.multi_target_scheme.generate_targets(
+                    market_data, volatility_series, eligibility_mask
+                )
+
+            # Apply stability checks if enabled
+            if self.enhanced_labeler:
+                stability_results = self.enhanced_labeler.check_label_stability(
+                    target_result.labels.iloc[:, 0],  # Check first target column
+                    market_data=eligible_data
+                )
+
+                if not stability_results['is_stable']:
+                    tprint_warning("⚠️ Label stability issues detected:")
+                    for issue in stability_results['issues']:
+                        tprint_warning(f"   → {issue}")
+
+            tprint_success("✅ Enhanced targets generated successfully")
+            return target_result
+
+        except Exception as e:
+            tprint_error(f"❌ Error generating enhanced targets: {e}")
+            # Fall back to standard targets
+            return self.multi_target_scheme.generate_targets(
+                market_data, volatility_series, eligibility_mask
+            )
+
+    def _classify_regimes_from_volatility(self, volatility_series: pd.Series) -> pd.Series:
+        """
+        Classify regimes based on volatility levels.
+
+        Args:
+            volatility_series: Volatility estimates
+
+        Returns:
+            Regime classifications
+        """
+        try:
+            # Simple regime classification based on volatility percentiles
+            low_threshold = volatility_series.quantile(0.33)
+            high_threshold = volatility_series.quantile(0.67)
+
+            regimes = pd.Series('normal', index=volatility_series.index)
+
+            regimes[volatility_series <= low_threshold] = 'low_vol'
+            regimes[volatility_series >= high_threshold] = 'high_vol'
+
+            return regimes
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Error classifying regimes: {e}")
+            return pd.Series('normal', index=volatility_series.index)
     
     def _validate_input_data(self, market_data: pd.DataFrame) -> bool:
         """Validate input market data."""
@@ -900,3 +1062,91 @@ def generate_volatility_aware_labels(market_data: pd.DataFrame,
     """Generate volatility-aware labels with default configuration."""
     labeler = VolatilityAwareMultiHorizonLabeler(config)
     return labeler.generate_labels(market_data)
+
+
+def create_enhanced_analyst_labeler() -> VolatilityAwareMultiHorizonLabeler:
+    """Create a labeler optimized for Analyst labels (Should we trade?)."""
+    config = VolatilityAwareConfig(
+        enable_enhanced_labels=True,
+        label_definition_type=LabelDefinitionType.ANALYST,
+        analyst_config=AnalystLabelConfig(
+            horizon_minutes=60,
+            min_profit_threshold_usd=5.0,
+            trading_costs=TradingCosts(
+                maker_fee=0.001,
+                taker_fee=0.002,
+                slippage_pct=0.001
+            ),
+            enable_regime_conditioning=True,
+            volatility_scaling_factor=1.0
+        ),
+        regime_config=RegimeConditionedConfig(
+            volatility_scaling_enabled=True,
+            base_threshold_multiplier=1.0,
+            adaptive_thresholds=True,
+            lookback_window=50
+        ),
+        risk_config=RiskAwareConfig(
+            stop_loss_pct=0.02,
+            take_profit_pct=0.04,
+            min_risk_reward_ratio=2.0,
+            max_portfolio_risk_pct=0.02
+        ),
+        cleaning_config=DataCleaningConfig(
+            outlier_method="iqr",
+            outlier_threshold=3.0,
+            min_volume_threshold=1000.0,
+            enforce_timestamp_alignment=True
+        ),
+        stability_config=StabilityCheckConfig(
+            recompute_on_refresh=True,
+            max_autocorrelation_threshold=0.3,
+            enable_oos_balance_check=True,
+            balance_tolerance=0.05,
+            enable_drift_detection=True,
+            drift_threshold=0.1
+        )
+    )
+    return VolatilityAwareMultiHorizonLabeler(config)
+
+
+def create_enhanced_tactician_labeler() -> VolatilityAwareMultiHorizonLabeler:
+    """Create a labeler optimized for Tactician labels (Direction/Magnitude)."""
+    config = VolatilityAwareConfig(
+        enable_enhanced_labels=True,
+        label_definition_type=LabelDefinitionType.TACTICIAN,
+        tactician_config=TacticianLabelConfig(
+            favorable_excursion_threshold=1.0,
+            adverse_excursion_threshold=-2.0,
+            horizon_minutes=30,
+            enable_regime_conditioning=True,
+            volatility_sensitivity=1.0
+        ),
+        regime_config=RegimeConditionedConfig(
+            volatility_scaling_enabled=True,
+            base_threshold_multiplier=1.0,
+            adaptive_thresholds=True,
+            lookback_window=50
+        ),
+        risk_config=RiskAwareConfig(
+            stop_loss_pct=0.02,
+            take_profit_pct=0.04,
+            min_risk_reward_ratio=2.0,
+            max_portfolio_risk_pct=0.02
+        ),
+        cleaning_config=DataCleaningConfig(
+            outlier_method="iqr",
+            outlier_threshold=3.0,
+            min_volume_threshold=1000.0,
+            enforce_timestamp_alignment=True
+        ),
+        stability_config=StabilityCheckConfig(
+            recompute_on_refresh=True,
+            max_autocorrelation_threshold=0.3,
+            enable_oos_balance_check=True,
+            balance_tolerance=0.05,
+            enable_drift_detection=True,
+            drift_threshold=0.1
+        )
+    )
+    return VolatilityAwareMultiHorizonLabeler(config)

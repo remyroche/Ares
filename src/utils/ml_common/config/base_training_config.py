@@ -178,7 +178,7 @@ class EnsembleTrainingConfig(BaseTrainingConfig):
 
     # Ensemble configuration
     base_models: List[str] = field(default_factory=lambda: [
-        "NAS", "CatBoostClassifier", "XGBoostClassifier"
+        "NAS", "CatBoostClassifier", "XGBoostClassifier", "LGBMDARTClassifier"
     ])
     meta_models: List[str] = field(default_factory=lambda: [
         "XGBoostClassifier", "CatBoostClassifier", "NAS"

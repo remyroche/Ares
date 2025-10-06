@@ -484,6 +484,7 @@ class TrainingUtils:
             'XGBRegressor': 'XGBRegressor',
             'LGBMClassifier': 'LGBMClassifier',
             'LGBMRegressor': 'LGBMRegressor',
+            'LGBMDARTClassifier': 'LGBMDARTClassifier',
             'CatBoostClassifier': 'CatBoostClassifier',
             'CatBoostRegressor': 'CatBoostRegressor',
             'RandomForestClassifier': 'RandomForestClassifier',
@@ -840,6 +841,18 @@ class TrainingUtils:
                 'reg_lambda': 0.1,
                 'subsample': 0.8,
                 'colsample_bytree': 0.8
+            },
+            'LGBMDARTCLASSIFIER': {
+                'boosting_type': 'dart',
+                'n_estimators': 200,
+                'learning_rate': 0.05,
+                'max_depth': 3,
+                'reg_alpha': 1.0,
+                'reg_lambda': 1.0,
+                'subsample': 0.8,
+                'colsample_bytree': 0.8,
+                'drop_rate': 0.1,
+                'skip_drop': 0.5
             },
             'RANDOM_FOREST': {
                 'n_estimators': 500,

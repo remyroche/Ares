@@ -77,6 +77,7 @@ class ModelType(Enum):
     EXTRA_TREES_CLASSIFIER = "ExtraTreesClassifier"
     LIGHTGBM = "LGBMRegressor"
     LIGHTGBM_CLASSIFIER = "LGBMClassifier"
+    LGBM_DART_CLASSIFIER = "LGBMDARTClassifier"
     HIST_GRADIENT_BOOSTING = "HistGradientBoostingRegressor"
     HIST_GRADIENT_BOOSTING_CLASSIFIER = "HistGradientBoostingClassifier"
     CATBOOST = "CatBoostRegressor"
@@ -310,6 +311,8 @@ class EnhancedModelFactory:
                     model = self._create_attention_lightgbm_model(model_config)
                 else:
                     model = self._create_lightgbm_model(model_config)
+            elif model_config.model_type == ModelType.LGBM_DART_CLASSIFIER:
+                model = self._create_lgbm_dart_model(model_config)
             elif model_config.model_type in [ModelType.HIST_GRADIENT_BOOSTING, ModelType.HIST_GRADIENT_BOOSTING_CLASSIFIER]:
                 model = self._create_hist_gradient_boosting_model(model_config)
             elif model_config.model_type in [ModelType.CATBOOST, ModelType.CATBOOST_CLASSIFIER]:
@@ -406,7 +409,7 @@ class EnhancedModelFactory:
             raise ValidationError(f"Invalid model type: {model_config.model_type}")
         
         # Check dependencies
-        if model_config.model_type in [ModelType.LIGHTGBM, ModelType.LIGHTGBM_CLASSIFIER]:
+        if model_config.model_type in [ModelType.LIGHTGBM, ModelType.LIGHTGBM_CLASSIFIER, ModelType.LGBM_DART_CLASSIFIER]:
             if not self.dependencies.get('lightgbm', False):
                 raise ValidationError("LightGBM not available")
         
@@ -492,7 +495,61 @@ class EnhancedModelFactory:
             self.logger.info("✅ Random Forest created without CLVSA wrapper")
         
         return model
-    
+
+    def _create_lgbm_dart_model(self, model_config: ModelConfig) -> Any:
+        """Create LightGBM DART model with DART-specific defaults."""
+
+        import lightgbm as lgb
+
+        # DART-specific default parameters optimized for regime detection
+        default_params = {
+            'boosting_type': 'dart',  # DART boosting
+            'n_estimators': 200,      # DART typically needs fewer estimators
+            'learning_rate': 0.05,
+            'max_depth': 3,          # Shallower trees for DART
+            'num_leaves': 15,        # Fewer leaves for DART
+            'reg_alpha': 1.0,        # L1 regularization
+            'reg_lambda': 1.0,       # L2 regularization
+            'subsample': 0.8,        # Bagging
+            'colsample_bytree': 0.8, # Feature sampling
+            'min_child_samples': 20, # Prevent overfitting
+            'drop_rate': 0.1,        # DART dropout rate
+            'skip_drop': 0.5,        # DART skip dropout rate
+            'early_stopping_rounds': 50,
+            'random_state': model_config.random_state,
+            'n_jobs': model_config.n_jobs,
+            'verbosity': -1
+        }
+
+        # Merge with user parameters (user params override defaults)
+        params = {**default_params, **model_config.model_params}
+
+        # Create DART classifier
+        model = lgb.LGBMClassifier(**params)
+
+        # Apply CLVSA wrapper if requested (default: True for tree models)
+        use_clvsa = model_config.model_params.get('use_clvsa', True)
+
+        if use_clvsa:
+            # Create Tree CLVSA wrapper configuration optimized for DART
+            clvsa_config = create_tree_clvsa_config(
+                attention_dim=model_config.model_params.get('attention_dim', 64),
+                use_temporal_attention=model_config.model_params.get('use_temporal_attention', True),
+                regime_aware=model_config.model_params.get('regime_aware', True),
+                attention_dropout=model_config.model_params.get('attention_dropout', 0.1),
+                feature_selection_method=model_config.model_params.get('feature_selection_method', 'mutual_info'),
+                temporal_window_size=model_config.model_params.get('temporal_window_size', 20),
+                ensemble_attention=model_config.model_params.get('ensemble_attention', True),
+                memory_efficient=model_config.model_params.get('memory_efficient', True)
+            )
+
+            # Wrap with Tree CLVSA attention
+            model = create_tree_clvsa_wrapper(model, clvsa_config)
+            self.logger.info("✅ LGBM DART wrapped with Tree CLVSA attention architecture")
+
+        self.logger.info(f"✅ LGBM DART model created with parameters: {len(params)} configured")
+        return model
+
     def _create_lightgbm_model(self, model_config: ModelConfig) -> Any:
         """Create LightGBM model with CLVSA wrapper by default."""
         

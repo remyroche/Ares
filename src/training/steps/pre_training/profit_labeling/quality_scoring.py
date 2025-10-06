@@ -53,11 +53,28 @@ except ImportError:
     tprint_warning("⚠️ Bayesian TPE optimizer not available, using grid search")
 
 try:
-    from src.utils.ml_common.optimization.pareto import ParetoOptimizer, Solution
+    from src.utils.ml_common.optimization.pareto import ParetoOptimizer, ParetoFront, Solution
     PARETO_OPTIMIZER_AVAILABLE = True
+    tprint_info("   → Pareto optimizer: Available for multi-objective optimization")
 except ImportError:
     PARETO_OPTIMIZER_AVAILABLE = False
     tprint_warning("⚠️ Pareto optimizer not available, using weighted sum")
+
+# Import cross-validation utilities
+try:
+    from src.utils.ml_common.validation.cross_validation import CrossValidator
+    CV_UTILITIES_AVAILABLE = True
+except ImportError:
+    CV_UTILITIES_AVAILABLE = False
+    tprint_warning("⚠️ CV utilities not available")
+
+# Import OOF stacking utilities
+try:
+    from src.utils.ml_common.ensembles.oof_stacking_ensemble_manager import OOFStackingEnsembleManager
+    OOF_AVAILABLE = True
+except ImportError:
+    OOF_AVAILABLE = False
+    tprint_warning("⚠️ OOF stacking not available")
 
 
 class QualityMetric(Enum):
@@ -188,9 +205,24 @@ class LabelQualityScorer:
 
         # Initialize Pareto optimizer if available
         if PARETO_OPTIMIZER_AVAILABLE and self.config.enable_pareto_optimization:
-            self.pareto_optimizer = ParetoOptimizer()
+            self.pareto_optimizer = ParetoFront()
+            tprint_info("   → Pareto optimizer: Available for multi-objective optimization")
         else:
             self.pareto_optimizer = None
+
+        # Initialize CV utilities
+        if CV_UTILITIES_AVAILABLE:
+            self.cv_validator = CrossValidator()
+            tprint_info("   → CV utilities: Available")
+        else:
+            self.cv_validator = None
+
+        # Initialize OOF stacking
+        if OOF_AVAILABLE:
+            self.oof_manager = OOFStackingEnsembleManager()
+            tprint_info("   → OOF stacking: Available")
+        else:
+            self.oof_manager = None
 
         tprint_info("📊 Label Quality Scorer initialized")
         tprint_info(f"   → Baseline models: {self.config.baseline_models}")

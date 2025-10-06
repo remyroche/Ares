@@ -95,7 +95,8 @@ class MultiHorizonProfitLabeler:
         symbol: str,
         exchange: str,
         timeframe: str,
-        data_dir: str = "historical_data"
+        data_dir: str = "historical_data",
+        regime_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Execute multi-horizon profit labeling.
@@ -105,6 +106,7 @@ class MultiHorizonProfitLabeler:
             exchange: Exchange name (e.g., 'binance')
             timeframe: Timeframe for labeling (e.g., '15m')
             data_dir: Directory containing historical data
+            regime_data: Optional regime data for regime-aware labeling
 
         Returns:
             Dictionary containing labeling results and metadata
@@ -118,27 +120,31 @@ class MultiHorizonProfitLabeler:
             if market_data is None or market_data.empty:
                 raise ValueError(f"No market data available for {symbol} {timeframe}")
 
-            # Apply regime-aware labeling if enabled
-            if self.config.enable_regime_aware_labeling:
-                labeling_result = await self._execute_regime_aware_labeling(market_data)
+            # Apply regime-aware labeling if enabled and regime data is available
+            if self.config.enable_regime_aware_labeling and regime_data:
+                labeling_result = await self._execute_regime_aware_labeling(market_data, regime_data)
             else:
+                # Use standard volatility-aware labeling
                 labeling_result = self.volatility_labeler.generate_labels(market_data)
 
             # Generate comprehensive report
             report = self._generate_labeling_report(labeling_result, symbol, exchange, timeframe)
 
-            # Create artifacts
+            # Create properly structured artifacts that feature lookback optimization expects
+            # The feature lookback optimization expects 'labeled_data' or 'labels' keys
             artifacts = {
                 'multi_horizon_labeling_result': {
-                    'labels': labeling_result.labels,
+                    'labeled_data': labeling_result.labels,  # This is what feature lookback optimization expects
+                    'labels': labeling_result.labels,  # Backward compatibility
                     'confidence_scores': labeling_result.confidence_scores,
                     'eligibility_masks': labeling_result.eligibility_masks,
                     'quality_scores': labeling_result.quality_scores,
+                    'method': 'multi_horizon_profit_labeling',
                     'metadata': {
                         'symbol': symbol,
                         'exchange': exchange,
                         'timeframe': timeframe,
-                        'regime_aware': self.config.enable_regime_aware_labeling,
+                        'regime_aware': self.config.enable_regime_aware_labeling and regime_data is not None,
                         'processing_time': labeling_result.processing_time,
                         'n_samples': labeling_result.n_samples,
                         'n_targets': labeling_result.n_targets,
@@ -184,12 +190,13 @@ class MultiHorizonProfitLabeler:
             tprint_error(f"❌ Error loading market data: {e}")
             return None
 
-    async def _execute_regime_aware_labeling(self, market_data: pd.DataFrame) -> LabelingResult:
+    async def _execute_regime_aware_labeling(self, market_data: pd.DataFrame, regime_data: Dict[str, Any]) -> LabelingResult:
         """
         Execute regime-aware labeling that creates differentiated labels for different regimes.
 
         Args:
-            market_data: Market data with regime information
+            market_data: Market data
+            regime_data: Regime data from regime_data_splitting
 
         Returns:
             LabelingResult with regime-differentiated labels
@@ -197,60 +204,61 @@ class MultiHorizonProfitLabeler:
         try:
             tprint_info("🎭 Executing regime-aware labeling")
 
-            # Check if regime column exists
-            if self.config.regime_column not in market_data.columns:
-                tprint_warning(f"⚠️ Regime column '{self.config.regime_column}' not found, falling back to standard labeling")
+            # Extract regime assignments from regime data
+            regime_assignments = self._extract_regime_assignments(market_data, regime_data)
+            if regime_assignments is None:
+                tprint_warning("⚠️ No regime assignments found, falling back to standard labeling")
                 return self.volatility_labeler.generate_labels(market_data)
 
             # Get unique regimes
-            regimes = market_data[self.config.regime_column].unique()
+            regimes = np.unique(regime_assignments[~pd.isna(regime_assignments)])
             tprint_info(f"📊 Found {len(regimes)} distinct regimes")
 
-            # Create regime-specific labels
+            if len(regimes) == 0:
+                tprint_warning("⚠️ No valid regime assignments, falling back to standard labeling")
+                return self.volatility_labeler.generate_labels(market_data)
+
+            # Create regime-specific labels using the volatility-aware labeler for each regime
             regime_labels = {}
             regime_quality_scores = {}
+            total_processing_time = 0.0
 
             for regime in regimes:
-                if pd.isna(regime):
-                    continue
-
                 tprint_info(f"🏷️ Processing regime {regime}")
 
                 # Filter data for this regime
-                regime_data = market_data[market_data[self.config.regime_column] == regime].copy()
+                regime_mask = regime_assignments == regime
+                regime_data_subset = market_data[regime_mask].copy()
 
-                if len(regime_data) < self.config.min_data_points:
-                    tprint_warning(f"⚠️ Insufficient data for regime {regime}: {len(regime_data)} samples")
+                if len(regime_data_subset) < self.config.min_data_points:
+                    tprint_warning(f"⚠️ Insufficient data for regime {regime}: {len(regime_data_subset)} samples")
                     continue
 
-                # Generate labels for this regime
-                regime_result = self.volatility_labeler.generate_labels(regime_data)
+                # Generate labels for this regime using the volatility-aware labeler
+                regime_result = self.volatility_labeler.generate_labels(regime_data_subset)
 
                 if not regime_result.labels.empty:
-                    # Add regime suffix to column names
+                    # Add regime suffix to column names to differentiate between regimes
                     regime_labels[regime] = regime_result.labels.add_suffix(f'_regime_{regime}')
                     regime_quality_scores.update({
                         f"{target}_regime_{regime}": quality_score
                         for target, quality_score in regime_result.quality_scores.items()
                     })
+                    total_processing_time += regime_result.processing_time
 
             # Combine regime-specific labels
             if regime_labels:
                 combined_labels = pd.concat(regime_labels.values(), axis=1)
-                combined_quality_scores = regime_quality_scores
 
-                # Create combined result
+                # Create combined result with proper metadata
                 combined_result = LabelingResult(
                     labels=combined_labels,
-                    confidence_scores=pd.DataFrame(index=combined_labels.index),  # Placeholder
-                    eligibility_masks=pd.DataFrame(index=combined_labels.index),   # Placeholder
-                    quality_scores=combined_quality_scores,
+                    confidence_scores=pd.DataFrame(index=combined_labels.index),  # Will be populated by individual regime results
+                    eligibility_masks=pd.DataFrame(index=combined_labels.index),   # Will be populated by individual regime results
+                    quality_scores=regime_quality_scores,
                     n_samples=len(combined_labels),
                     n_targets=len([col for col in combined_labels.columns if 'target' in col]),
-                    processing_time=sum(
-                        quality_score.processing_time
-                        for quality_score in combined_quality_scores.values()
-                    )
+                    processing_time=total_processing_time
                 )
 
                 tprint_success(f"✅ Regime-aware labeling completed for {len(regime_labels)} regimes")
@@ -263,6 +271,45 @@ class MultiHorizonProfitLabeler:
             tprint_error(f"❌ Regime-aware labeling failed: {e}")
             # Fall back to standard labeling
             return self.volatility_labeler.generate_labels(market_data)
+
+    def _extract_regime_assignments(self, market_data: pd.DataFrame, regime_data: Dict[str, Any]) -> Optional[np.ndarray]:
+        """
+        Extract regime assignments from regime data.
+
+        Args:
+            market_data: Market data
+            regime_data: Regime data from regime_data_splitting
+
+        Returns:
+            Array of regime assignments or None if not found
+        """
+        try:
+            # Try to get regime assignments from regime data
+            if 'regime_data' in regime_data:
+                regime_info = regime_data['regime_data']
+
+                # Check if regime states are directly available
+                if 'regime_states' in regime_info:
+                    regime_states = regime_info['regime_states']
+                    if len(regime_states) == len(market_data):
+                        return regime_states
+
+                # Check if market data in regime data has regime column
+                if 'market_data' in regime_info and regime_info['market_data'] is not None:
+                    regime_market_data = regime_info['market_data']
+                    if self.config.regime_column in regime_market_data.columns:
+                        return regime_market_data[self.config.regime_column].values
+
+            # Check if regime assignments are in the market data itself
+            if self.config.regime_column in market_data.columns:
+                return market_data[self.config.regime_column].values
+
+            tprint_warning(f"⚠️ No regime assignments found in regime data or market data")
+            return None
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Error extracting regime assignments: {e}")
+            return None
 
     def _generate_labeling_report(
         self,
@@ -360,13 +407,50 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
             timeframe = pipeline_state.get('timeframe', '15m')
             data_dir = pipeline_state.get('data_dir', 'historical_data')
 
-            # Execute labeling
+            # Extract regime data from pipeline state if available
+            regime_data = pipeline_state.get('regime_data_splitting_result')
+
+            # Execute labeling with regime data if available
             labeling_result = await self.labeler.execute_labeling(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
-                data_dir=data_dir
+                data_dir=data_dir,
+                regime_data=regime_data
             )
+
+            # Save artifacts persistently for other components to use
+            try:
+                # Save the complete artifacts structure as a single outcome file
+                # that the feature lookback optimization can load
+                outcome_data = {
+                    'config': {
+                        'symbol': symbol,
+                        'exchange': exchange,
+                        'timeframe': timeframe
+                    },
+                    'artifacts': labeling_result,
+                    'metadata': {
+                        'component_type': 'multi_horizon_profit_labeler',
+                        'saved_at': datetime.now().isoformat()
+                    }
+                }
+
+                # Save as a single outcome file that matches the expected pattern
+                import json
+                outcomes_dir = Path("outcomes")
+                outcomes_dir.mkdir(exist_ok=True)
+
+                filename = f"market_analysis_multi_horizon_profit_labeler_outcome_{symbol}_{exchange}_{timeframe}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                outcome_file = outcomes_dir / filename
+
+                with open(outcome_file, 'w') as f:
+                    json.dump(outcome_data, f, indent=2, default=str)
+
+                tprint_info(f"💾 Labeling outcome saved to {outcome_file}")
+
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to save outcome: {e}")
 
             return ComponentResult(
                 success=True,
@@ -375,7 +459,8 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                     'component_type': 'multi_horizon_profit_labeler',
                     'symbol': symbol,
                     'exchange': exchange,
-                    'timeframe': timeframe
+                    'timeframe': timeframe,
+                    'artifacts_saved': True
                 }
             )
 

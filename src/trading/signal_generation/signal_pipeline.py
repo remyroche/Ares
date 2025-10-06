@@ -170,20 +170,26 @@ class SignalGenerationPipeline:
             return False
     
     async def _initialize_hmm_regime_detector(self):
-        """Initialize HMM regime detector."""
+        """Initialize NAS/TAS regime detector (replaces HMM-based approach)."""
         try:
-            # Import and initialize HMM regime detector
-            from ..regime.regime_detector import RegimeDetector
-            from ..config.regime_config import RegimeConfig
+            # Import and initialize NAS/TAS regime detector
+            from src.training.steps.market_analysis.hybrid_nas_tas_regime.core.hybrid_regime_detector import (
+                HybridNASTASRegimeDetector
+            )
+            from src.training.steps.market_analysis.hybrid_nas_tas_regime.config.hybrid_regime_config import (
+                HybridRegimeConfig, RegimeCombinationStrategy
+            )
             
-            regime_config = RegimeConfig()
-            self.hmm_regime_detector = RegimeDetector(regime_config)
-            await self.hmm_regime_detector.initialize()
+            regime_config = HybridRegimeConfig(
+                n_regimes=8,
+                combination_strategy=RegimeCombinationStrategy.ADAPTIVE_FUSION
+            )
+            self.hmm_regime_detector = HybridNASTASRegimeDetector(regime_config)
             
-            self.logger.info("✅ HMM regime detector initialized")
+            self.logger.info("✅ NAS/TAS regime detector initialized (replaces HMM)")
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to initialize HMM regime detector: {e}")
+            self.logger.error(f"❌ Failed to initialize NAS/TAS regime detector: {e}")
             raise
     
     async def _initialize_analyst_models(self):
@@ -424,23 +430,51 @@ class SignalGenerationPipeline:
             raise
     
     async def _detect_hmm_regime(self, market_data: pd.DataFrame, timestamp: datetime) -> HMMRegimeOutput:
-        """Step 1: Detect HMM regime."""
+        """Step 1: Detect regime using NAS/TAS (replaces HMM approach)."""
         try:
-            # Use HMM regime detector
-            regime_detection = await self.hmm_regime_detector.detect_regime(market_data)
+            # Use NAS/TAS regime detector
+            regime_detection = self.hmm_regime_detector.detect_regimes(
+                market_data=market_data,
+                validate_economic_significance=True,
+                validate_financial_relevance=True
+            )
+            
+            if not regime_detection.success:
+                raise RuntimeError(f"NAS/TAS regime detection failed: {regime_detection.error_message}")
+            
+            # Convert NAS/TAS result to HMMRegimeOutput format
+            regime_predictions = regime_detection.regime_predictions
+            regime_probabilities = regime_detection.regime_probabilities
+            
+            # Get primary regime (most recent prediction)
+            primary_regime = regime_predictions[-1] if len(regime_predictions) > 0 else 0
+            
+            # Calculate confidence from regime probabilities
+            confidence = regime_probabilities[-1, primary_regime] if len(regime_probabilities) > 0 else 0.5
+            
+            # Calculate regime strength from economic significance
+            regime_strength = np.mean(regime_detection.economic_significance_scores) if len(regime_detection.economic_significance_scores) > 0 else 0.5
+            
+            # Calculate transition probability
+            transition_probability = np.mean(regime_detection.transition_probabilities[primary_regime]) if len(regime_detection.transition_probabilities) > 0 else 0.5
             
             return HMMRegimeOutput(
                 timestamp=timestamp,
-                regime_probabilities=regime_detection.regime_probabilities,
-                primary_regime=regime_detection.primary_regime,
-                confidence=regime_detection.confidence,
-                regime_strength=regime_detection.regime_strength,
-                transition_probability=regime_detection.transition_probability,
-                features_used=regime_detection.features_used
+                regime_probabilities={f"regime_{i}": prob for i, prob in enumerate(regime_probabilities[-1])},
+                primary_regime=primary_regime,
+                confidence=confidence,
+                regime_strength=regime_strength,
+                transition_probability=transition_probability,
+                features_used={
+                    'nas_contributions': regime_detection.nas_contributions,
+                    'tas_contributions': regime_detection.tas_contributions,
+                    'economic_significance': regime_detection.economic_significance_scores.tolist(),
+                    'financial_relevance': regime_detection.financial_relevance_scores.tolist()
+                }
             )
             
         except Exception as e:
-            self.logger.error(f"❌ HMM regime detection failed: {e}")
+            self.logger.error(f"❌ NAS/TAS regime detection failed: {e}")
             raise
     
     async def _run_analyst_base_models(

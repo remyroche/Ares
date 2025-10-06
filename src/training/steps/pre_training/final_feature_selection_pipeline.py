@@ -1029,12 +1029,12 @@ class MultiStageFeatureSelector:
     def _stage_2_selection(self, X: pd.DataFrame, y: pd.Series, target_count: Optional[int] = None) -> Tuple[List[str], Dict[str, float]]:
         """Stage 2: Previous → target features using enhanced selection methods."""
 
+        # Use provided target count or fall back to config
+        actual_target = target_count or self.config.stage_2_target
+
         tprint("🚀 Starting Stage 2 Feature Selection")
         tprint(f"📊 Input: {len(X)} samples, {len(X.columns)} features")
         tprint(f"🎯 Target features: {actual_target}")
-
-        # Use provided target count or fall back to config
-        actual_target = target_count or self.config.stage_2_target
 
         # Train optimized model for this stage
         tprint("🤖 Training optimized model for Stage 2...")
@@ -1103,12 +1103,12 @@ class MultiStageFeatureSelector:
     def _stage_3_selection(self, X: pd.DataFrame, y: pd.Series, target_count: Optional[int] = None) -> Tuple[List[str], Dict[str, float]]:
         """Stage 3: Previous → target features using combined importance and cross-validation with optimizations."""
 
+        # Use provided target count or fall back to config
+        actual_target = target_count or self.config.stage_3_target
+
         tprint("🚀 Starting Stage 3 Feature Selection")
         tprint(f"📊 Input: {len(X)} samples, {len(X.columns)} features")
         tprint(f"🎯 Target features: {actual_target}")
-
-        # Use provided target count or fall back to config
-        actual_target = target_count or self.config.stage_3_target
 
         # Train optimized model for this stage
         tprint("🤖 Training optimized model for Stage 3...")

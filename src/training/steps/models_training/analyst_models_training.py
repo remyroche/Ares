@@ -8,7 +8,9 @@ This module handles training of individual Analyst base models:
 - Elastic Net model
 - Random Forest model
 
-The Analyst operates on 5m timeframe and decides IF we trade based on market conditions.
+The Analyst operates on the dedicated 15m timeframe and decides IF we trade by
+screening market conditions and producing the green-signal gating that the
+Tactician consumes.
 
 ENHANCED FEATURES:
 - Comprehensive error handling with detailed failure reporting

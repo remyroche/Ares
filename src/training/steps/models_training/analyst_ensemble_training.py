@@ -8,7 +8,9 @@ This module handles training of Analyst ensemble models that combine:
 - Multi-timeframe features and cross-timeframe analysis
 - Technical indicators and market data
 
-The ensemble operates on 5m timeframe and combines all inputs for final trading decisions.
+The ensemble operates on the dedicated 15m timeframe and combines all inputs to
+deliver the Analyst's final green-signal decisions that gate downstream
+Tactician processing.
 
 ENHANCED FEATURES:
 - Comprehensive error handling with detailed failure reporting

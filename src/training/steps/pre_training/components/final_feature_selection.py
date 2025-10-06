@@ -10,7 +10,7 @@ import logging
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
-from ...market_analysis.components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
+from .base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 from ...market_analysis.logging_standards import (
@@ -27,7 +27,7 @@ from src.utils.hardware.adaptive_optimization_engine import AdaptiveOptimization
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
 
 
-class FinalFeatureSelectionComponent(BaseMarketAnalysisComponent):
+class FinalFeatureSelectionComponent(BasePreTrainingComponent):
     """
     Final Feature Selection Component.
 

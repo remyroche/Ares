@@ -172,6 +172,7 @@ class TacticianPreMLOrchestrator:
         training_data: pd.DataFrame,
         analyst_predictions: Optional[pd.DataFrame] = None,
         regime_assignments: Optional[pd.DataFrame] = None,
+        regime_data_splitting_result: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> TacticianPreMLResult:
         """
@@ -181,6 +182,7 @@ class TacticianPreMLOrchestrator:
             training_data: Input DataFrame with market data (5m timeframe)
             analyst_predictions: Analyst ensemble predictions for filtering
             regime_assignments: Optional regime assignments for per-regime optimization
+            regime_data_splitting_result: Complete payload from regime data splitting stage
             **kwargs: Additional parameters
 
         Returns:
@@ -211,6 +213,20 @@ class TacticianPreMLOrchestrator:
 
             tprint_success(f"✅ Data preparation completed ({result.filter_ratio:.2%} retained)")
             
+            # Determine regime split payload from explicit parameter, kwargs, or config defaults
+            regime_split_payload = regime_data_splitting_result
+            if regime_split_payload is None:
+                regime_split_payload = kwargs.get('regime_data_splitting_result')
+            if regime_split_payload is None:
+                regime_split_payload = self.config.custom_params.get('regime_data_splitting_result')
+
+            if regime_split_payload is not None and self.pre_training_pipeline:
+                try:
+                    self.pre_training_pipeline._current_pipeline_state['regime_data_splitting_result'] = regime_split_payload
+                except AttributeError:
+                    # Pre-training pipeline might not expose internal state in certain configurations
+                    pass
+
             # Create sub-pipeline configuration
             sub_config = SubPipelineConfig(
                 symbol=self.config.symbol,
@@ -229,6 +245,9 @@ class TacticianPreMLOrchestrator:
                     **kwargs
                 }
             )
+
+            if regime_split_payload is not None:
+                sub_config.custom_params['regime_data_splitting_result'] = regime_split_payload
             
             tprint_info("📋 Configuration:")
             tprint_info(f"  - Timeframe: {self.config.timeframe} (5m for feature engineering)")
@@ -328,6 +347,7 @@ async def execute_tactician_pre_ml_orchestration(
     analyst_predictions: Optional[pd.DataFrame] = None,
     regime_assignments: Optional[pd.DataFrame] = None,
     config: Optional[TacticianPreMLConfig] = None,
+    regime_data_splitting_result: Optional[Dict[str, Any]] = None,
     **kwargs
 ) -> TacticianPreMLResult:
     """
@@ -337,6 +357,7 @@ async def execute_tactician_pre_ml_orchestration(
         training_data: Input DataFrame with market data (5m timeframe)
         analyst_predictions: Analyst ensemble predictions (for reference only)
         regime_assignments: Optional regime assignments for per-regime optimization
+        regime_data_splitting_result: Complete payload from regime data splitting stage
         config: Optional configuration
         **kwargs: Additional parameters
 
@@ -344,4 +365,10 @@ async def execute_tactician_pre_ml_orchestration(
         TacticianPreMLResult with orchestrated features and metadata
     """
     orchestrator = TacticianPreMLOrchestrator(config)
-    return await orchestrator.orchestrate(training_data, analyst_predictions, regime_assignments, **kwargs)
+    return await orchestrator.orchestrate(
+        training_data,
+        analyst_predictions,
+        regime_assignments,
+        regime_data_splitting_result=regime_data_splitting_result,
+        **kwargs
+    )

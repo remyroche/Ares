@@ -58,6 +58,14 @@ except ImportError as e:
     print(f"❌ CRITICAL: Failed to import utilities: {e}")
     UTILS_AVAILABLE = False
 
+# Import ML-based labeling
+try:
+    from .ml_based_entry_timing_labeler import MLEntryTimingLabeler, MLEntryTimingConfig
+    ML_LABELING_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ ML-based labeling not available: {e}")
+    ML_LABELING_AVAILABLE = False
+
 
 class OrchestrationPhase(Enum):
     """Orchestration execution phases."""
@@ -109,9 +117,13 @@ class EnhancedTacticianPreMLConfig:
     # Tactician-specific labeling
     labeling_config: TacticianLabelingConfig = field(default_factory=TacticianLabelingConfig)
     
+    # ML-based labeling
+    enable_ml_labeling: bool = True
+    ml_labeling_config: Optional[MLEntryTimingConfig] = None
+    
     # Execution parameters
-    enable_per_regime_optimization: bool = True
-    enable_per_cluster_optimization: bool = True
+    enable_per_regime_optimization: bool = False  # Tactician is NOT per-regime
+    enable_per_cluster_optimization: bool = False  # Tactician is NOT per-cluster
     
     # Output configuration
     output_directory: str = "generated/enhanced_tactician_pre_ml"
@@ -594,6 +606,16 @@ class EnhancedTacticianPreMLOrchestrator:
             self.labeler = TacticianDifferentiatedLabeler(self.config.labeling_config)
             self.pid_generator = TacticianPIDFeatureGenerator(self.config.custom_params)
             
+            # Initialize ML-based labeling if enabled
+            if self.config.enable_ml_labeling and ML_LABELING_AVAILABLE:
+                ml_config = self.config.ml_labeling_config or MLEntryTimingConfig()
+                self.ml_labeler = MLEntryTimingLabeler(ml_config)
+                tprint_success("✅ ML-based labeling initialized")
+            else:
+                self.ml_labeler = None
+                if self.config.enable_ml_labeling:
+                    tprint_warning("⚠️ ML-based labeling requested but not available")
+            
             # Initialize pre-training pipeline
             if PRE_TRAINING_AVAILABLE:
                 self.pre_training_pipeline = PreTrainingSubPipeline()
@@ -721,9 +743,27 @@ class EnhancedTacticianPreMLOrchestrator:
             if regime_assignments is not None and 'regime' in regime_assignments.columns:
                 regime_series = regime_assignments['regime']
             
-            entry_labels, labeling_metrics = self.labeler.create_entry_timing_labels(
+            # First, create initial rule-based labels
+            initial_labels, initial_metrics = self.labeler.create_entry_timing_labels(
                 filtered_data, analyst_signals, regime_series
             )
+            
+            # Then, apply ML-based labeling if enabled
+            if self.ml_labeler is not None:
+                tprint_info("🤖 Applying ML-based labeling refinement...")
+                entry_labels, ml_metrics = self.ml_labeler.create_ml_based_labels(
+                    filtered_data, initial_labels, analyst_signals, regime_series
+                )
+                
+                # Combine metrics
+                labeling_metrics = {
+                    'initial_labeling': initial_metrics,
+                    'ml_labeling': ml_metrics,
+                    'overall_quality': ml_metrics.get('overall_quality', initial_metrics.get('overall_quality', 0))
+                }
+            else:
+                entry_labels = initial_labels
+                labeling_metrics = initial_metrics
             
             result.differentiated_labeling_result = labeling_metrics
             result.entry_timing_labels = entry_labels
@@ -733,8 +773,8 @@ class EnhancedTacticianPreMLOrchestrator:
             tprint_success(f"✅ Differentiated labeling completed")
             tprint_info(f"📊 Labeling quality: {labeling_metrics.get('overall_quality', 0):.3f}")
             
-            # Step 2: Feature Lookback Optimization (per-regime/cluster)
-            tprint_info("⚙️ Step 2/5: Feature Lookback Optimization (per-regime/cluster)...")
+            # Step 2: Feature Lookback Optimization (global, not per-regime)
+            tprint_info("⚙️ Step 2/5: Feature Lookback Optimization (global)...")
             result.phase = OrchestrationPhase.LOOKBACK_OPTIMIZATION
             
             # Create sub-pipeline configuration for lookback optimization
@@ -746,9 +786,9 @@ class EnhancedTacticianPreMLOrchestrator:
                 parallel_processing=self.config.enable_parallel_processing,
                 custom_params={
                     **self.config.custom_params,
-                    'enable_per_regime_optimization': self.config.enable_per_regime_optimization,
-                    'enable_per_cluster_optimization': self.config.enable_per_cluster_optimization,
-                    'regime_assignments': regime_assignments,
+                    'enable_per_regime_optimization': False,  # Tactician is NOT per-regime
+                    'enable_per_cluster_optimization': False,  # Tactician is NOT per-cluster
+                    'regime_assignments': None,  # Not used for Tactician
                     'role': 'tactician',
                     'prepared_data': filtered_data,
                     'entry_labels': entry_labels,
@@ -794,13 +834,15 @@ class EnhancedTacticianPreMLOrchestrator:
             result.total_features_generated = len(combined_pid_features.columns)
             tprint_success(f"✅ Enhanced PID generation completed ({result.total_features_generated} features)")
             
-            # Step 4: Final Feature Selection
-            tprint_info("🎯 Step 4/5: Final Feature Selection (multi-stage)...")
+            # Step 4: Final Feature Selection (global, not per-regime)
+            tprint_info("🎯 Step 4/5: Final Feature Selection (global)...")
             result.phase = OrchestrationPhase.FEATURE_SELECTION
             
             # Update sub-config with combined features
             sub_config.custom_params['combined_features'] = combined_pid_features
             sub_config.custom_params['entry_labels'] = entry_labels
+            sub_config.custom_params['enable_per_regime_optimization'] = False  # Tactician is NOT per-regime
+            sub_config.custom_params['enable_per_cluster_optimization'] = False  # Tactician is NOT per-cluster
             
             selection_result = await self.pre_training_pipeline._execute_final_feature_selection(sub_config)
             

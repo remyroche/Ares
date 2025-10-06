@@ -199,14 +199,14 @@ class MultiHorizonProfitLabeler:
                 # Use standard volatility-aware labeling
                 labeling_result = self.volatility_labeler.generate_labels(market_data)
 
-            # Generate comprehensive report using the profit labeling report generator
-            report = await self._generate_comprehensive_report(
-                balanced_labeling_result, symbol, exchange, timeframe, regime_data
-            )
-
             # Apply label balancing and sample weighting if enabled
             balanced_labeling_result = await self._apply_balancing_and_weighting(
                 labeling_result, market_data, regime_data
+            )
+
+            # Generate comprehensive report using the profit labeling report generator
+            report = await self._generate_comprehensive_report(
+                balanced_labeling_result, symbol, exchange, timeframe, regime_data
             )
 
             # Map target columns to expected names for feature lookback optimization compatibility
@@ -275,12 +275,29 @@ class MultiHorizonProfitLabeler:
 
         except Exception as e:
             tprint_error(f"❌ Multi-horizon labeling failed: {e}")
+            import traceback
+            tprint_error(f"🔍 Error details: {traceback.format_exc()}")
             return {
                 'multi_horizon_labeling_result': {},
                 'labeling_report': {
                     'status': 'failed',
                     'error': str(e),
+                    'traceback': traceback.format_exc(),
                     'timestamp': datetime.now().isoformat()
+                },
+                'standardized_output': {
+                    'labels': pd.DataFrame(),
+                    'weights': {},
+                    'target_columns': [],
+                    'quality_scores': {},
+                    'confidence_scores': pd.DataFrame(),
+                    'eligibility_masks': pd.DataFrame(),
+                    'metadata': {
+                        'source_component': 'multi_horizon_profit_labeler',
+                        'creation_time': datetime.now().isoformat(),
+                        'pipeline_ready': False,
+                        'error': str(e)
+                    }
                 }
             }
 

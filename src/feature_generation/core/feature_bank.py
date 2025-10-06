@@ -154,7 +154,9 @@ class FeatureBank:
                 FeatureCategory.INTERACTION,
                 FeatureCategory.MICROSTRUCTURE,
                 FeatureCategory.REGIME,
-                FeatureCategory.TIME
+                FeatureCategory.TIME,
+                FeatureCategory.NORMALIZATION,
+                FeatureCategory.REPRESENTATION_LEARNING
             ]
 
             registered_count = 0
@@ -202,6 +204,16 @@ class FeatureBank:
                 create_default_time_generators
             )
 
+            # Import enhanced generators
+            try:
+                from ..categories.enhanced_normalization import create_enhanced_normalization_generators
+                from ..categories.enhanced_cross_timeframe import create_enhanced_cross_timeframe_generators
+                from ..categories.enhanced_interaction import create_enhanced_interaction_generators
+                from ..categories.enhanced_representation_learning import create_enhanced_representation_learning_generators
+                enhanced_available = True
+            except ImportError:
+                enhanced_available = False
+
             # Map categories to their creation functions
             category_creators = {
                 FeatureCategory.MOMENTUM: self._create_momentum_generators,
@@ -221,7 +233,9 @@ class FeatureBank:
                 FeatureCategory.INTERACTION: self._create_interaction_generators,
                 FeatureCategory.MICROSTRUCTURE: self._create_microstructure_generators,
                 FeatureCategory.REGIME: self._create_regime_generators,
-                FeatureCategory.TIME: self._create_time_generators
+                FeatureCategory.TIME: self._create_time_generators,
+                FeatureCategory.NORMALIZATION: self._create_normalization_generators,
+                FeatureCategory.REPRESENTATION_LEARNING: self._create_representation_learning_generators
             }
 
             creator_func = category_creators.get(category)
@@ -644,6 +658,58 @@ class FeatureBank:
 
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to create time generators: {e}")
+
+        return generators
+
+    def _create_normalization_generators(self) -> List[FeatureGenerator]:
+        """Create normalization-specific feature generators."""
+        generators = []
+        try:
+            # Try enhanced normalization generators first
+            try:
+                from ..categories.enhanced_normalization import create_enhanced_normalization_generators
+                enhanced_generators = create_enhanced_normalization_generators()
+                generators.extend(enhanced_generators)
+                self.logger.info(f"✅ Added {len(enhanced_generators)} enhanced normalization generators")
+            except ImportError:
+                self.logger.warning("⚠️ Enhanced normalization generators not available")
+
+            # Fallback to standard normalization generators
+            try:
+                from ..categories.normalization import create_default_normalization_generators
+                standard_generators = create_default_normalization_generators()
+                generators.extend(standard_generators)
+            except ImportError:
+                pass
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create normalization generators: {e}")
+
+        return generators
+
+    def _create_representation_learning_generators(self) -> List[FeatureGenerator]:
+        """Create representation learning feature generators."""
+        generators = []
+        try:
+            # Try enhanced representation learning generators first
+            try:
+                from ..categories.enhanced_representation_learning import create_enhanced_representation_learning_generators
+                enhanced_generators = create_enhanced_representation_learning_generators()
+                generators.extend(enhanced_generators)
+                self.logger.info(f"✅ Added {len(enhanced_generators)} enhanced representation learning generators")
+            except ImportError:
+                self.logger.warning("⚠️ Enhanced representation learning generators not available")
+
+            # Fallback to standard representation learning generators
+            try:
+                from ..categories.representation_learning import create_default_representation_learning_generators
+                standard_generators = create_default_representation_learning_generators()
+                generators.extend(standard_generators)
+            except ImportError:
+                pass
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create representation learning generators: {e}")
 
         return generators
 

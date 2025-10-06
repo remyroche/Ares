@@ -1393,8 +1393,9 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
     def _calculate_feature_target_score_aligned(self, feature_values: np.ndarray,
                                               target_values: np.ndarray, lookback: int,
                                               confidence_scores: Optional[np.ndarray] = None,
-                                              eligibility_mask: Optional[np.ndarray] = None) -> float:
-        """Calculate score for feature-target alignment using actual FPT labels with confidence weighting."""
+                                              eligibility_mask: Optional[np.ndarray] = None,
+                                              quality_scores: Optional[Dict[str, Any]] = None) -> float:
+        """Calculate score for feature-target alignment using actual FPT labels with confidence weighting and quality assessment."""
         try:
             # Apply eligibility mask first to filter out unreliable data points
             if eligibility_mask is not None:
@@ -1440,7 +1441,23 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             else:
                 score = abs(correlation) * (1 - p_value)
 
-            tprint_info(f"   → Aligned score: correlation={correlation:.4f}, p-value={p_value:.4f}, confidence={np.mean(confidence_scores) if confidence_scores is not None else 'N/A':.4f}, score={score:.4f}")
+            # Apply quality score adjustment if available
+            quality_adjustment = 1.0
+            if quality_scores:
+                # Extract overall quality from the first available target
+                for target_name, quality_data in quality_scores.items():
+                    if hasattr(quality_data, 'overall_quality'):
+                        quality_adjustment = quality_data.overall_quality
+                        break
+                    elif isinstance(quality_data, dict) and 'overall_quality' in quality_data:
+                        quality_adjustment = quality_data['overall_quality']
+                        break
+                
+                # Apply quality adjustment (higher quality = higher score)
+                score = score * quality_adjustment
+                tprint_info(f"   → Quality adjustment applied: {quality_adjustment:.4f}")
+
+            tprint_info(f"   → Aligned score: correlation={correlation:.4f}, p-value={p_value:.4f}, confidence={np.mean(confidence_scores) if confidence_scores is not None else 'N/A':.4f}, quality={quality_adjustment:.4f}, score={score:.4f}")
             return score
 
         except Exception as e:
@@ -1527,9 +1544,10 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 feature_aligned = feature_data.data.loc[common_index]
                 returns_aligned = forward_returns.loc[common_index]
 
-                # Get confidence scores and eligibility masks for the aligned data
+                # Get confidence scores, eligibility masks, and quality scores for the aligned data
                 confidence_aligned = None
                 eligibility_aligned = None
+                quality_scores_data = None
 
                 if confidence_scores is not None and not confidence_scores.empty:
                     confidence_aligned = confidence_scores.loc[common_index]
@@ -1547,21 +1565,28 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                     if not generated_eligibility.empty:
                         eligibility_aligned = generated_eligibility.loc[common_index]
 
-                # Calculate score using the actual FPT-based labels with confidence weighting
+                # Get quality scores from pipeline state
+                if pipeline_state:
+                    quality_scores_data = self._get_precomputed_quality_scores(pipeline_state)
+
+                # Calculate score using the actual FPT-based labels with confidence weighting and quality assessment
                 score = self._calculate_feature_target_score_aligned(
                     feature_aligned.values,
                     returns_aligned.values,
                     lookback,
                     confidence_scores=confidence_aligned.values if confidence_aligned is not None else None,
-                    eligibility_mask=eligibility_aligned.values if eligibility_aligned is not None else None
+                    eligibility_mask=eligibility_aligned.values if eligibility_aligned is not None else None,
+                    quality_scores=quality_scores_data
                 )
 
-                # Log additional information about confidence and eligibility
+                # Log additional information about confidence, eligibility, and quality
                 if confidence_aligned is not None:
                     tprint_info(f"   → Using {len(confidence_aligned.dropna())} confidence scores (avg: {confidence_aligned.mean():.4f})")
                 if eligibility_aligned is not None:
                     eligible_count = eligibility_aligned.sum() if hasattr(eligibility_aligned, 'sum') else 0
                     tprint_info(f"   → Using {eligible_count} eligible data points out of {len(eligibility_aligned)}")
+                if quality_scores_data:
+                    tprint_info(f"   → Using quality scores for {len(quality_scores_data)} targets")
 
                 if not np.isnan(score):
                     lookback_scores[lookback] = score

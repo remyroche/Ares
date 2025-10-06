@@ -247,8 +247,28 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                         market_data = market_data.tail(window_days).copy()
                         self.logger.info(f"📊 Applied execution mode window: using last {window_days} days for PID generation")
 
-            # Step 7: Get target variable if available (from multi-horizon profit labeler)
-            target = await self._get_target_variable(pipeline_state)
+            # Step 7: Get target variable and additional outputs if available (from multi-horizon profit labeler)
+            target_data = await self._get_target_variable(pipeline_state)
+            
+            # Extract targets and additional outputs
+            target = None
+            confidence_scores = None
+            eligibility_masks = None
+            quality_scores = None
+            
+            if target_data:
+                target = target_data.get('targets', None)
+                confidence_scores = target_data.get('confidence_scores', None)
+                eligibility_masks = target_data.get('eligibility_masks', None)
+                quality_scores = target_data.get('quality_scores', None)
+                
+                # Log information about additional outputs
+                if confidence_scores is not None:
+                    tprint_info(f"📊 Using confidence scores for PID feature generation: {type(confidence_scores)}")
+                if eligibility_masks is not None:
+                    tprint_info(f"📊 Using eligibility masks for PID feature generation: {type(eligibility_masks)}")
+                if quality_scores is not None:
+                    tprint_info(f"📊 Using quality scores for PID feature generation: {len(quality_scores)} targets")
 
             # Step 8: Orchestrate feature generation with long/short differentiation
             self.logger.info('🚀 Orchestrating PID-based feature generation with long/short differentiation...')
@@ -566,8 +586,8 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"❌ Failed to load multi-horizon outcome: {e}")
             return None
     
-    async def _get_target_variable(self, pipeline_state: Dict[str, Any]) -> Optional[Dict[str, np.ndarray]]:
-        """Get target variable from multi-horizon profit labeler (replaces triple barrier labeling)."""
+    async def _get_target_variable(self, pipeline_state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Get target variable and additional outputs from multi-horizon profit labeler (replaces triple barrier labeling)."""
         try:
             tprint_info("🎯 Getting target variable from multi-horizon profit labeler")
 
@@ -612,6 +632,19 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
 
                 if multi_horizon_result and 'labeled_data' in multi_horizon_result:
                     labeled_data = multi_horizon_result['labeled_data']
+                    
+                    # Extract additional outputs from multi_horizon_profit_labeler
+                    confidence_scores = multi_horizon_result.get('confidence_scores', None)
+                    eligibility_masks = multi_horizon_result.get('eligibility_masks', None)
+                    quality_scores = multi_horizon_result.get('quality_scores', None)
+                    
+                    # Log information about the additional outputs
+                    if confidence_scores is not None:
+                        tprint_info(f"📊 Using confidence scores: {type(confidence_scores)}")
+                    if eligibility_masks is not None:
+                        tprint_info(f"📊 Using eligibility masks: {type(eligibility_masks)}")
+                    if quality_scores is not None:
+                        tprint_info(f"📊 Using quality scores for {len(quality_scores)} targets")
                 else:
                     tprint_warning("⚠️ No labeled data found in multi-horizon results")
                     return None
@@ -698,7 +731,13 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                             },
                             'source': 'multi_horizon_labeling'
                         }
-                        return targets
+                        return {
+                            'targets': targets,
+                            'confidence_scores': confidence_scores,
+                            'eligibility_masks': eligibility_masks,
+                            'quality_scores': quality_scores,
+                            'metadata': self._target_source_info
+                        }
                     
                     # Fallback to single target approach if we don't have both
                     for target_option in target_options:
@@ -719,7 +758,13 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                                         'valid_samples': int(np.sum(valid_mask)),
                                         'source': 'multi_horizon_labeling'
                                     }
-                                    return {'combined': sanitized_values}
+                                    return {
+                                        'targets': {'combined': sanitized_values},
+                                        'confidence_scores': confidence_scores,
+                                        'eligibility_masks': eligibility_masks,
+                                        'quality_scores': quality_scores,
+                                        'metadata': self._target_source_info
+                                    }
                                 else:
                                     self.logger.info(
                                         f"✅ LEGACY PID: Using '{target_option}' as fallback PID target ({np.sum(valid_mask)} valid samples)"
@@ -731,7 +776,13 @@ class PIDBasedFeatureGenerationComponent(BaseMarketAnalysisComponent):
                                         'valid_samples': int(np.sum(valid_mask)),
                                         'source': 'multi_horizon_labeling'
                                     }
-                                    return {'combined': sanitized_values}
+                                    return {
+                                        'targets': {'combined': sanitized_values},
+                                        'confidence_scores': confidence_scores,
+                                        'eligibility_masks': eligibility_masks,
+                                        'quality_scores': quality_scores,
+                                        'metadata': self._target_source_info
+                                    }
             
             # Try to load multi-horizon results from recent outcome files
             self.logger.info("🔍 Attempting to load multi-horizon results from recent outcome files...")

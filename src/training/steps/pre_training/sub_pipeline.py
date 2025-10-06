@@ -203,6 +203,26 @@ class PreTrainingSubPipeline:
         # Execute the pipeline
         return await self.execute_pipeline(config)
 
+    def _prepare_component_pipeline_state(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Construct the pipeline state passed to individual components."""
+        pipeline_state: Dict[str, Any] = {
+            'symbol': config.symbol,
+            'exchange': config.exchange,
+            'timeframe': config.timeframe,
+            'data_dir': config.data_dir,
+            'custom_params': config.custom_params,
+        }
+
+        regime_split = config.custom_params.get('regime_data_splitting_result')
+        if regime_split is None:
+            regime_split = self._current_pipeline_state.get('regime_data_splitting_result')
+
+        if regime_split is not None:
+            pipeline_state['regime_data_splitting_result'] = regime_split
+            self._current_pipeline_state['regime_data_splitting_result'] = regime_split
+
+        return pipeline_state
+
     async def _execute_multi_horizon_profit_labeler(self, config: SubPipelineConfig) -> SubPipelineResult:
         """Execute multi-horizon profit labeler with timeframe support."""
         result = SubPipelineResult(
@@ -240,15 +260,10 @@ class PreTrainingSubPipeline:
 
             # Create component using factory
             component = ComponentFactory.create_component('multi_horizon_profit_labeler', component_config)
-            
+
             # Execute component
-            component_result = await component.execute(None, {
-                'symbol': config.symbol,
-                'exchange': config.exchange,
-                'timeframe': config.timeframe,
-                'data_dir': config.data_dir,
-                'custom_params': config.custom_params
-            })
+            pipeline_state = self._prepare_component_pipeline_state(config)
+            component_result = await component.execute(None, pipeline_state)
 
             result.status = SubPipelineStatus.COMPLETED if component_result.success else SubPipelineStatus.FAILED
             result.success = component_result.success
@@ -285,15 +300,10 @@ class PreTrainingSubPipeline:
 
             # Create component using factory
             component = ComponentFactory.create_component('feature_lookback_optimization', component_config)
-            
+
             # Execute component
-            component_result = await component.execute(None, {
-                'symbol': config.symbol,
-                'exchange': config.exchange,
-                'timeframe': config.timeframe,
-                'data_dir': config.data_dir,
-                'custom_params': config.custom_params
-            })
+            pipeline_state = self._prepare_component_pipeline_state(config)
+            component_result = await component.execute(None, pipeline_state)
 
             result.status = SubPipelineStatus.COMPLETED if component_result.success else SubPipelineStatus.FAILED
             result.success = component_result.success
@@ -330,15 +340,10 @@ class PreTrainingSubPipeline:
 
             # Create component using factory
             component = ComponentFactory.create_component('pid_based_feature_generation', component_config)
-            
+
             # Execute component
-            component_result = await component.execute(None, {
-                'symbol': config.symbol,
-                'exchange': config.exchange,
-                'timeframe': config.timeframe,
-                'data_dir': config.data_dir,
-                'custom_params': config.custom_params
-            })
+            pipeline_state = self._prepare_component_pipeline_state(config)
+            component_result = await component.execute(None, pipeline_state)
 
             result.status = SubPipelineStatus.COMPLETED if component_result.success else SubPipelineStatus.FAILED
             result.success = component_result.success
@@ -375,15 +380,10 @@ class PreTrainingSubPipeline:
 
             # Create component using factory
             component = ComponentFactory.create_component('final_feature_selection', component_config)
-            
+
             # Execute component
-            component_result = await component.execute(None, {
-                'symbol': config.symbol,
-                'exchange': config.exchange,
-                'timeframe': config.timeframe,
-                'data_dir': config.data_dir,
-                'custom_params': config.custom_params
-            })
+            pipeline_state = self._prepare_component_pipeline_state(config)
+            component_result = await component.execute(None, pipeline_state)
 
             result.status = SubPipelineStatus.COMPLETED if component_result.success else SubPipelineStatus.FAILED
             result.success = component_result.success

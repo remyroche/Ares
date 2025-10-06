@@ -1043,6 +1043,15 @@ class ModelTrainingSubPipeline:
             regime_assignments = self._load_regime_assignments(config, config.tactician_timeframe)
             regime_feature_columns = self._extract_regime_feature_columns(regime_assignments)
 
+            regime_data_splitting_result = (
+                config.custom_params.get('regime_data_splitting_result')
+                if config.custom_params else None
+            )
+            if regime_data_splitting_result is None:
+                regime_data_splitting_result = self._current_pipeline_state.get('regime_data_splitting_result')
+            if regime_data_splitting_result is not None:
+                self._current_pipeline_state['regime_data_splitting_result'] = regime_data_splitting_result
+
             filtered_predictions = self._filter_analyst_predictions(
                 analyst_predictions,
                 config.analyst_confidence_threshold
@@ -1053,6 +1062,7 @@ class ModelTrainingSubPipeline:
                 training_data=training_data,
                 analyst_predictions=filtered_predictions,
                 regime_assignments=regime_assignments,
+                regime_data_splitting_result=regime_data_splitting_result,
             )
 
             result.success = orchestration_result.success

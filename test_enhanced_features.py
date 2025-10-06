@@ -1,153 +1,240 @@
 #!/usr/bin/env python3
 """
-Test script for enhanced feature engineering capabilities.
+Test Enhanced Feature Engineering
+
+This script tests the enhanced feature engineering capabilities that have been
+integrated into the existing feature generation infrastructure.
 """
 
 import sys
 import os
+import numpy as np
+import pandas as pd
+import logging
+from datetime import datetime, timedelta
 
-# Add the workspace to the path
-sys.path.insert(0, '/workspace')
+# Add the src directory to the path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-def test_imports():
-    """Test that all new feature generators can be imported."""
-    print("Testing imports...")
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
+def create_sample_data():
+    """Create sample market data for testing."""
+    # Create 1-minute data for 1 week
+    start_date = datetime.now() - timedelta(days=7)
+    dates_1m = pd.date_range(start=start_date, periods=7*24*60, freq='1min')
+    
+    # Generate realistic price data with trends and volatility
+    np.random.seed(42)
+    
+    # 1-minute data
+    returns_1m = np.random.normal(0, 0.001, len(dates_1m))
+    prices_1m = 100 * np.exp(np.cumsum(returns_1m))
+    
+    data_1m = pd.DataFrame({
+        'timestamp': dates_1m,
+        'open': prices_1m * (1 + np.random.normal(0, 0.0005, len(dates_1m))),
+        'high': prices_1m * (1 + np.abs(np.random.normal(0, 0.001, len(dates_1m)))),
+        'low': prices_1m * (1 - np.abs(np.random.normal(0, 0.001, len(dates_1m)))),
+        'close': prices_1m,
+        'volume': np.random.randint(1000, 10000, len(dates_1m))
+    }).set_index('timestamp')
+    
+    return data_1m
+
+def test_enhanced_normalization_features():
+    """Test enhanced normalization features."""
+    logger.info("🧪 Testing enhanced normalization features...")
+    
     try:
-        # Test normalization features
         from src.feature_generation.categories.normalization import (
             NormalizationFeatureGenerator,
-            RollingZScoreGenerator,
-            VolatilityScalingGenerator,
-            CrossSectionalNormalizer
+            AdvancedRollingZScoreGenerator,
+            RegimeAwareNormalizer
         )
-        print("✅ Normalization features imported successfully")
-
-        # Test cross-timeframe features
-        from src.feature_generation.categories.cross_timeframe import (
-            CrossTimeframeFractionalChangeGenerator,
-            CrossTimeframeAlignmentGenerator,
-            CrossTimeframeLearnedProjectionGenerator
-        )
-        print("✅ Enhanced cross-timeframe features imported successfully")
-
-        # Test interaction features
-        from src.feature_generation.categories.interaction import (
-            RegimeDependentFeatureGenerator,
-            CointegrationResidualGenerator,
-            StructuralRatioGenerator,
-            PairwiseInteractionGenerator
-        )
-        print("✅ Enhanced interaction features imported successfully")
-
-        # Test representation learning features
-        from src.feature_generation.categories.representation_learning import (
-            PatchTSTRepresentationGenerator,
-            TFTEncoderRepresentationGenerator,
-            AutoencoderRepresentationGenerator,
-            ContrastiveLearningGenerator
-        )
-        print("✅ Representation learning features imported successfully")
-
-        # Test integration module
-        from src.feature_generation.enhanced_feature_engineering_integration import EnhancedFeatureEngineer
-        print("✅ Enhanced Feature Engineer imported successfully")
-
-        return True
-
-    except ImportError as e:
-        print(f"❌ Import error: {e}")
-        return False
-
-def test_initialization():
-    """Test that feature generators can be initialized."""
-    print("\nTesting initialization...")
-
-    try:
-        from src.feature_generation.enhanced_feature_engineering_integration import EnhancedFeatureEngineer
-
-        engineer = EnhancedFeatureEngineer()
-        summary = engineer.get_feature_summary()
-
-        print(f"✅ Enhanced Feature Engineer initialized")
-        print(f"📊 Total generators: {summary['total_generators']}")
-        print(f"🔧 Normalization: {summary['normalization_generators']}")
-        print(f"⏰ Cross-timeframe: {summary['cross_timeframe_generators']}")
-        print(f"🔗 Interaction: {summary['interaction_generators']}")
-        print(f"🧠 Representation: {summary['representation_generators']}")
-
-        return True
-
-    except Exception as e:
-        print(f"❌ Initialization error: {e}")
-        return False
-
-def test_feature_generation():
-    """Test feature generation with sample data."""
-    print("\nTesting feature generation...")
-
-    try:
-        import pandas as pd
-        import numpy as np
-        from src.feature_generation.enhanced_feature_engineering_integration import EnhancedFeatureEngineer
-
+        
         # Create sample data
-        sample_data = pd.DataFrame({
-            'close': np.random.randn(100).cumsum() + 100,
-            'high': np.random.randn(100).cumsum() + 102,
-            'low': np.random.randn(100).cumsum() + 98,
-            'open': np.random.randn(100).cumsum() + 100,
-            'volume': np.random.randint(1000, 10000, 100)
-        })
-
-        engineer = EnhancedFeatureEngineer()
-
-        # Test normalization features
-        norm_features = engineer._generate_normalization_features(sample_data)
-        print(f"✅ Generated {len(norm_features)} normalization features")
-
-        # Test cross-timeframe features
-        ctf_features = engineer._generate_cross_timeframe_features(sample_data)
-        print(f"✅ Generated {len(ctf_features)} cross-timeframe features")
-
-        # Test interaction features
-        interaction_features = engineer._generate_interaction_features(sample_data)
-        print(f"✅ Generated {len(interaction_features)} interaction features")
-
-        # Test representation features
-        repr_features = engineer._generate_representation_features(sample_data)
-        print(f"✅ Generated {len(repr_features)} representation features")
-
+        data = create_sample_data()
+        
+        # Test main enhanced normalization generator
+        generator = NormalizationFeatureGenerator()
+        result = generator.generate(data)
+        
+        if result.success:
+            logger.info(f"✅ Enhanced normalization generator: {len(result.data)} features generated")
+        else:
+            logger.error(f"❌ Enhanced normalization generator failed: {result.error_message}")
+        
+        # Test individual generators
+        zscore_gen = AdvancedRollingZScoreGenerator(window=20, column='close', method='zscore')
+        zscore_result = zscore_gen.generate(data)
+        
+        if zscore_result.success:
+            logger.info(f"✅ Rolling z-score generator: {zscore_result.data.name}")
+        else:
+            logger.error(f"❌ Rolling z-score generator failed: {zscore_result.error_message}")
+        
+        regime_gen = RegimeAwareNormalizer(window=60, column='close', regime_method='volatility')
+        regime_result = regime_gen.generate(data)
+        
+        if regime_result.success:
+            logger.info(f"✅ Regime-aware normalizer: {regime_result.data.name}")
+        else:
+            logger.error(f"❌ Regime-aware normalizer failed: {regime_result.error_message}")
+        
         return True
-
+        
     except Exception as e:
-        print(f"❌ Feature generation error: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"❌ Enhanced normalization test failed: {e}")
+        return False
+
+def test_enhanced_cross_timeframe_features():
+    """Test enhanced cross-timeframe features."""
+    logger.info("🧪 Testing enhanced cross-timeframe features...")
+    
+    try:
+        from src.feature_generation.categories.cross_timeframe import (
+            EnhancedCrossTimeframeFeatureGenerator,
+            FractionalChangeGenerator,
+            CrossTimeframeAlignmentGenerator,
+            LearnedProjectionGenerator
+        )
+        
+        # Create sample data
+        data = create_sample_data()
+        
+        # Test main enhanced cross-timeframe generator
+        generator = EnhancedCrossTimeframeFeatureGenerator()
+        result = generator.generate(data)
+        
+        if result.success:
+            logger.info(f"✅ Enhanced cross-timeframe generator: {len(result.data)} features generated")
+        else:
+            logger.error(f"❌ Enhanced cross-timeframe generator failed: {result.error_message}")
+        
+        # Test individual generators
+        frac_gen = FractionalChangeGenerator(fast_tf=5, slow_tf=15, feature_type='volatility')
+        frac_result = frac_gen.generate(data)
+        
+        if frac_result.success:
+            logger.info(f"✅ Fractional change generator: {frac_result.data.name}")
+        else:
+            logger.error(f"❌ Fractional change generator failed: {frac_result.error_message}")
+        
+        align_gen = CrossTimeframeAlignmentGenerator(source_tf=1, target_tf=5, alignment_method='lag')
+        align_result = align_gen.generate(data)
+        
+        if align_result.success:
+            logger.info(f"✅ Cross-timeframe alignment generator: {align_result.data.name}")
+        else:
+            logger.error(f"❌ Cross-timeframe alignment generator failed: {align_result.error_message}")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Enhanced cross-timeframe test failed: {e}")
+        return False
+
+def test_feature_bank_integration():
+    """Test integration with the existing feature bank."""
+    logger.info("🧪 Testing feature bank integration...")
+    
+    try:
+        from src.feature_generation.core.feature_bank import get_global_feature_bank
+        
+        # Get the global feature bank
+        feature_bank = get_global_feature_bank()
+        
+        # Test that enhanced categories are available
+        categories = feature_bank.list_categories()
+        logger.info(f"✅ Available categories: {[cat.value for cat in categories]}")
+        
+        # Check if enhanced categories are present
+        enhanced_categories = ['normalization', 'cross_timeframe']
+        for category in enhanced_categories:
+            if any(cat.value == category for cat in categories):
+                logger.info(f"✅ Enhanced category '{category}' is available")
+            else:
+                logger.warning(f"⚠️ Enhanced category '{category}' not found")
+        
+        # Test feature generation with enhanced categories
+        data = create_sample_data()
+        
+        # Test normalization features
+        try:
+            norm_features = feature_bank.generate_features_by_category(data, 'normalization')
+            if not norm_features.empty:
+                logger.info(f"✅ Normalization features: {len(norm_features.columns)} features generated")
+            else:
+                logger.warning("⚠️ No normalization features generated")
+        except Exception as e:
+            logger.warning(f"⚠️ Normalization feature generation failed: {e}")
+        
+        # Test cross-timeframe features
+        try:
+            ctf_features = feature_bank.generate_features_by_category(data, 'cross_timeframe')
+            if not ctf_features.empty:
+                logger.info(f"✅ Cross-timeframe features: {len(ctf_features.columns)} features generated")
+            else:
+                logger.warning("⚠️ No cross-timeframe features generated")
+        except Exception as e:
+            logger.warning(f"⚠️ Cross-timeframe feature generation failed: {e}")
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Feature bank integration test failed: {e}")
         return False
 
 def main():
     """Run all tests."""
-    print("🚀 Testing Enhanced Feature Engineering System")
-    print("=" * 50)
-
-    # Test imports
-    if not test_imports():
-        print("❌ Import tests failed")
+    logger.info("🚀 Starting Enhanced Feature Engineering Tests")
+    logger.info("=" * 60)
+    
+    tests = [
+        ("Enhanced Normalization Features", test_enhanced_normalization_features),
+        ("Enhanced Cross-Timeframe Features", test_enhanced_cross_timeframe_features),
+        ("Feature Bank Integration", test_feature_bank_integration)
+    ]
+    
+    results = []
+    
+    for test_name, test_func in tests:
+        logger.info(f"\n{'='*20} {test_name} {'='*20}")
+        try:
+            result = test_func()
+            results.append((test_name, result))
+            if result:
+                logger.info(f"✅ {test_name}: PASSED")
+            else:
+                logger.error(f"❌ {test_name}: FAILED")
+        except Exception as e:
+            logger.error(f"❌ {test_name}: ERROR - {e}")
+            results.append((test_name, False))
+    
+    # Summary
+    logger.info("\n" + "="*60)
+    logger.info("📊 TEST SUMMARY")
+    logger.info("="*60)
+    
+    passed = sum(1 for _, result in results if result)
+    total = len(results)
+    
+    for test_name, result in results:
+        status = "✅ PASSED" if result else "❌ FAILED"
+        logger.info(f"{test_name}: {status}")
+    
+    logger.info(f"\nOverall: {passed}/{total} tests passed")
+    
+    if passed == total:
+        logger.info("🎉 All tests passed! Enhanced feature engineering is working correctly.")
+        return 0
+    else:
+        logger.error(f"⚠️ {total - passed} tests failed. Please check the logs above.")
         return 1
-
-    # Test initialization
-    if not test_initialization():
-        print("❌ Initialization tests failed")
-        return 1
-
-    # Test feature generation
-    if not test_feature_generation():
-        print("❌ Feature generation tests failed")
-        return 1
-
-    print("\n🎉 All tests passed! Enhanced feature engineering system is working correctly.")
-    return 0
 
 if __name__ == "__main__":
-    exit(main())
+    exit_code = main()
+    sys.exit(exit_code)

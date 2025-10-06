@@ -113,9 +113,34 @@ class PIDBasedFeatureGeneration:
 
     def _initialize_components(self):
         """Initialize internal feature generation components."""
-        # For now, we'll use basic feature generation
-        # Advanced component integration can be added later if needed
-        self.logger.info("✅ PID-based feature generation initialized with basic features")
+        try:
+            # Try to import the advanced component
+            from .pid_based_feature_generation.pid_based_feature_generation_component import PIDBasedFeatureGenerationComponent
+
+            # Create component config from our config
+            from ....market_analysis.components.base_component import ComponentConfig
+            component_config = ComponentConfig(
+                symbol=self.config.symbol,
+                exchange=self.config.exchange,
+                timeframe=self.config.timeframe,
+                data_dir=self.config.data_dir,
+                validation_enabled=self.config.validation_enabled,
+                custom_params={
+                    'interaction_features': self.config.interaction_features,
+                    'polynomial_features': self.config.polynomial_features,
+                    'cross_timeframe_features': self.config.cross_timeframe_features,
+                    'max_lookback': self.config.max_lookback,
+                    'optimization_method': self.config.optimization_method,
+                    'hardware_acceleration': self.config.hardware_acceleration,
+                }
+            )
+
+            self.component = PIDBasedFeatureGenerationComponent(component_config)
+            self.logger.info("✅ Advanced PID-based feature generation component initialized")
+
+        except ImportError as e:
+            self.logger.warning(f"⚠️ Advanced component not available: {e}")
+            self.component = None
 
     async def generate_features(
         self,
@@ -142,17 +167,36 @@ class PIDBasedFeatureGeneration:
                 result = await self.component.execute(market_data, pipeline_state or {})
 
                 if result.success:
-                    features = result.artifacts.get('pid_based_features', {})
-                    feature_names = features.get('feature_names', []) if isinstance(features, dict) else []
+                    # The component returns 'pid_based_feature_generation_result' as the main artifact key
+                    feature_generation_result = result.artifacts.get('pid_based_feature_generation_result', {})
+                    combined_features = feature_generation_result.get('combined_features', {})
+                    feature_names = feature_generation_result.get('combined_feature_names', [])
+
+                    # Handle case where combined_features might be a numpy array or dict
+                    if isinstance(combined_features, dict):
+                        features = combined_features
+                    else:
+                        features = {
+                            'combined_features': combined_features,
+                            'feature_names': feature_names
+                        }
+
                     metrics = result.metadata or {}
 
                     execution_time = time.time() - start_time
 
                     self.logger.info(f'✅ PID-based feature generation completed: {len(feature_names)} features in {execution_time:.2f}s')
 
+                    # Prepare features dict for return
+                    features_dict = {
+                        'combined_features': combined_features,
+                        'feature_names': feature_names,
+                        'total_features_generated': len(feature_names)
+                    }
+
                     return PIDBasedFeatureGenerationResult(
                         success=True,
-                        features=features,
+                        features=features_dict,
                         feature_names=feature_names,
                         generation_metrics=metrics,
                         execution_time=execution_time

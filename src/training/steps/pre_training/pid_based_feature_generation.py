@@ -113,34 +113,9 @@ class PIDBasedFeatureGeneration:
 
     def _initialize_components(self):
         """Initialize internal feature generation components."""
-        try:
-            # Try to import the advanced component
-            from .pid_based_feature_generation.pid_based_feature_generation_component import PIDBasedFeatureGenerationComponent
-
-            # Create component config from our config
-            from ....market_analysis.components.base_component import ComponentConfig
-            component_config = ComponentConfig(
-                symbol=self.config.symbol,
-                exchange=self.config.exchange,
-                timeframe=self.config.timeframe,
-                data_dir=self.config.data_dir,
-                validation_enabled=self.config.validation_enabled,
-                custom_params={
-                    'interaction_features': self.config.interaction_features,
-                    'polynomial_features': self.config.polynomial_features,
-                    'cross_timeframe_features': self.config.cross_timeframe_features,
-                    'max_lookback': self.config.max_lookback,
-                    'optimization_method': self.config.optimization_method,
-                    'hardware_acceleration': self.config.hardware_acceleration,
-                }
-            )
-
-            self.component = PIDBasedFeatureGenerationComponent(component_config)
-            self.logger.info("✅ Advanced PID-based feature generation component initialized")
-
-        except ImportError as e:
-            self.logger.warning(f"⚠️ Advanced component not available: {e}")
-            self.component = None
+        # For now, we'll use basic feature generation
+        # Advanced component integration can be added later if needed
+        self.logger.info("✅ PID-based feature generation initialized with basic features")
 
     async def generate_features(
         self,

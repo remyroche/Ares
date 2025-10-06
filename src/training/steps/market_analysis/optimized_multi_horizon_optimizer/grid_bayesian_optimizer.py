@@ -22,7 +22,7 @@ from src.utils.ml_common.optimization.grid_utils import (
     build_coarse_grid_from_search_space,
     build_fine_grid_around_best
 )
-from src.utils.ml_common.utils.hpo_utils import HyperparameterOptimization
+from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
 from src.utils.ml_common.validation.cv_utils import CrossValidationUtilities
 from src.utils.ml_common.validation.temporal_cross_validation import TemporalCrossValidator
 from src.utils.ml_common.validation.unified_validation_system import UnifiedValidationSystem
@@ -52,16 +52,20 @@ class GridBayesianOptimizer:
         """Initialize grid-bayesian optimizer."""
         self.config = config
         self.logger = logging.getLogger('GridBayesianOptimizer')
-        
+
         # Initialize ml_commons utilities
         self._initialize_ml_commons_utilities()
-        
+
         # Optimization state
         self.optimization_history = []
         self.best_coarse_result = None
         self.best_fine_result = None
         self.best_bayesian_result = None
-        
+
+        # Performance optimization: Add caching for expensive computations
+        self._evaluation_cache = {}
+        self._cache_max_size = 1000
+
         self.logger.info(f'🔧 Grid-Bayesian Optimizer initialized for {config.model_type.value}')
     
     def _initialize_ml_commons_utilities(self):
@@ -305,13 +309,28 @@ class GridBayesianOptimizer:
             
             return score
         
-        # Run optimization using ml_commons HPO
+        # Run optimization using ml_commons HPO with early stopping and parallel processing
         try:
+            # Configure early stopping based on improvement plateau
+            early_stopping_config = {
+                'patience': 10,
+                'min_delta': 0.001,
+                'mode': 'max'
+            }
+
+            # Configure parallel processing for faster evaluation
+            parallel_config = {
+                'n_jobs': min(self.config.bayesian_tpe_config.max_workers, 4),
+                'backend': 'threading'
+            }
+
             optimization_result = self.hpo_optimizer.optimize_hyperparameters(
                 objective=objective,
                 search_space=search_space,
                 n_trials=self.config.bayesian_tpe_config.n_trials,
-                timeout=self.config.bayesian_tpe_config.timeout_seconds
+                timeout=self.config.bayesian_tpe_config.timeout_seconds,
+                early_stopping=early_stopping_config,
+                parallel_config=parallel_config
             )
             
             # Extract best parameters
@@ -381,47 +400,85 @@ class GridBayesianOptimizer:
         
         return config
     
-    def _evaluate_configuration(self, config: MultiHorizonConfig, market_data: pd.DataFrame, 
+    def _evaluate_configuration(self, config: MultiHorizonConfig, market_data: pd.DataFrame,
                                model_type: ModelType) -> Tuple[float, Dict[str, float]]:
-        """Evaluate a configuration using ml_commons validation utilities."""
+        """Evaluate a configuration using ml_commons validation utilities with caching."""
+        # Create cache key from configuration parameters
+        cache_key = self._create_cache_key(config, market_data.shape, model_type)
+
+        # Check cache first
+        if cache_key in self._evaluation_cache:
+            self.logger.debug(f'   → Cache hit for configuration evaluation')
+            return self._evaluation_cache[cache_key]
+
         try:
-            # Generate labels using configuration
+            # Generate labels using configuration (optimized - avoid deep copy when possible)
             from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonProfitLabeler
             labeler = MultiHorizonProfitLabeler(config)
-            labeled_data = labeler.generate_labels(market_data.copy())
-            
+
+            # Use view instead of copy for efficiency when possible
+            try:
+                labeled_data = labeler.generate_labels(market_data)
+            except:
+                labeled_data = labeler.generate_labels(market_data.copy())
+
             # Calculate performance metrics using ml_commons validation
             metrics = self._calculate_performance_metrics(labeled_data, market_data, model_type)
-            
+
             # Calculate overall score
             score = self._calculate_overall_score(metrics)
-            
-            return score, metrics
-            
+
+            result = (score, metrics)
+
+            # Cache the result (manage cache size)
+            if len(self._evaluation_cache) >= self._cache_max_size:
+                # Remove oldest 20% of cache entries
+                items_to_remove = len(self._evaluation_cache) // 5
+                cache_items = list(self._evaluation_cache.items())
+                for i in range(items_to_remove):
+                    del self._evaluation_cache[cache_items[i][0]]
+
+            self._evaluation_cache[cache_key] = result
+            return result
+
         except Exception as e:
             self.logger.warning(f'⚠️ Error evaluating configuration: {e}')
             return 0.0, {}
+
+    def _create_cache_key(self, config: MultiHorizonConfig, data_shape: Tuple, model_type: ModelType) -> str:
+        """Create a cache key for configuration evaluation."""
+        # Create a hashable representation of the configuration and data shape
+        config_str = f"{config.time_horizons}_{config.profit_targets}_{model_type.value}_{data_shape}"
+        return hash(config_str)
     
-    def _calculate_performance_metrics(self, labeled_data: pd.DataFrame, market_data: pd.DataFrame, 
+    def _calculate_performance_metrics(self, labeled_data: pd.DataFrame, market_data: pd.DataFrame,
                                      model_type: ModelType) -> Dict[str, float]:
-        """Calculate performance metrics using ml_commons validation utilities."""
+        """Calculate performance metrics using optimized ml_commons validation utilities."""
         try:
-            # Use ml_commons validation system
+            # Use ml_commons validation system with optimized settings
             validation_result = self.validation_system.validate_model_performance(
                 model=None,  # No model needed for configuration validation
                 X=market_data,
                 y=labeled_data,
                 validation_type='configuration_validation'
             )
-            
+
+            # Extract metrics efficiently
+            hit_rate = validation_result.get('hit_rate', 0.5)
+            sharpe_ratio = validation_result.get('sharpe_ratio', 0.0)
+            information_ratio = validation_result.get('information_ratio', 0.0)
+            max_drawdown = validation_result.get('max_drawdown', 0.1)
+            validation_score = validation_result.get('overall_score', 0.5)
+
+            # Return optimized metrics dictionary
             return {
-                'hit_rate': validation_result.get('hit_rate', 0.5),
-                'sharpe_ratio': validation_result.get('sharpe_ratio', 0.0),
-                'information_ratio': validation_result.get('information_ratio', 0.0),
-                'max_drawdown': validation_result.get('max_drawdown', 0.1),
-                'validation_score': validation_result.get('overall_score', 0.5)
+                'hit_rate': float(hit_rate),
+                'sharpe_ratio': float(sharpe_ratio),
+                'information_ratio': float(information_ratio),
+                'max_drawdown': float(max_drawdown),
+                'validation_score': float(validation_score)
             }
-            
+
         except Exception as e:
             self.logger.warning(f'⚠️ Error calculating performance metrics: {e}')
             return {

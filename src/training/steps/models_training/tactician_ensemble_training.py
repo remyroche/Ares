@@ -54,15 +54,7 @@ except ImportError as e:
     print(f"❌ CRITICAL ERROR: tprint is required but not available: {e}")
     TPRINT_AVAILABLE = False
 
-# Import NAS integration for Tactician
-try:
-    from .tactician_nas_integration import (
-        TacticianNASIntegration, TacticianNASConfig, create_tactician_nas_model
-    )
-    NAS_AVAILABLE = True
-except ImportError as e:
-    print(f"❌ CRITICAL: Failed to import NAS integration: {e}")
-    NAS_AVAILABLE = False
+# NAS integration removed - NAS-TAS training pipelines have been removed
 
 # Enhanced training utilities integration
 try:

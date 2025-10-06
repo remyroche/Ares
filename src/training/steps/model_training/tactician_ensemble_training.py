@@ -50,14 +50,7 @@ try:
         tprint_timer, LogLevel
     )
     
-    # Import NAS integration for Tactician
-    from src.training.steps.model_training.tactician_nas_integration import (
-        TacticianNASIntegration, TacticianNASConfig, create_tactician_nas_model
-    )
-    NAS_AVAILABLE = True
-except ImportError as e:
-    print(f"❌ CRITICAL: Failed to import NAS integration: {e}")
-    NAS_AVAILABLE = False
+    # NAS integration removed - NAS-TAS training pipelines have been removed
 except ImportError as e:
     print(f"❌ CRITICAL ERROR: tprint is required but not available: {e}")
     print("❌ This is a critical dependency for enhanced logging. Please install tprint.")

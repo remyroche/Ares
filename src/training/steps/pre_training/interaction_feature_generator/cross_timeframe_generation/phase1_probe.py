@@ -356,7 +356,7 @@ class Phase1HTFProbe:
         self.logger.info(f"Phase-1 completed: {len(results['shortlisted_candidates'])} candidates shortlisted")
         return results
     
-    def _process_family(self, 
+    def _process_family(self,
                        family: str,
                        base_features: List[str],
                        sessionized_data: Dict[str, Any],
@@ -381,17 +381,23 @@ class Phase1HTFProbe:
                     lookback,
                     family
                 )
-                
+
                 # Score the candidate
-                candidate = self._score_candidate(
+                regime_candidates = self._score_candidate(
                     htf_feature, base_feature, lookback, family,
                     regime_segments, targets
                 )
-                
-                if candidate:
-                    candidates.append(candidate)
-                    family_scores.append(candidate.utility_score)
-                    
+
+                if regime_candidates:
+                    candidates.extend(regime_candidates)
+                    family_scores.extend([c.utility_score for c in regime_candidates])
+                    self.logger.debug(
+                        "Scored %s@%s for %d regime variants",
+                        base_feature,
+                        lookback,
+                        len(regime_candidates)
+                    )
+
             except Exception as e:
                 self.logger.warning(f"Failed to process {base_feature}@{lookback}: {e}")
                 continue
@@ -412,56 +418,123 @@ class Phase1HTFProbe:
             'early_stopped': early_stopped
         }
     
-    def _score_candidate(self, 
+    def _score_candidate(self,
                         htf_feature: pd.Series,
                         base_feature: str,
                         lookback: int,
                         family: str,
                         regime_segments: Dict[str, Any],
-                        targets: Optional[pd.Series] = None) -> Optional[HTFCandidate]:
-        """Score an HTF candidate."""
-        
+                        targets: Optional[pd.Series] = None) -> List[HTFCandidate]:
+        """Score an HTF candidate across available regimes."""
+
         if targets is None or len(htf_feature) == 0:
-            return None
-        
+            return []
+
         # Align features and targets
         aligned_data = pd.DataFrame({
             'htf_feature': htf_feature,
             'target': targets
         }).dropna()
-        
-        if len(aligned_data) < 100:  # Need sufficient data
-            return None
-        
-        # Calculate IC and other metrics
-        ic_oos = self._calculate_ic(aligned_data['htf_feature'], aligned_data['target'])
-        se_wild_bootstrap = self._calculate_wild_bootstrap_se(
-            aligned_data['htf_feature'], aligned_data['target']
-        )
-        cpu_p95 = self._estimate_cpu_cost(lookback, family)
-        staleness = self._calculate_staleness(lookback, family)
-        fold_pass_rate = self._calculate_fold_pass_rate(
-            aligned_data['htf_feature'], aligned_data['target']
-        )
-        
-        # Calculate utility score
-        utility_score = self._calculate_utility_score(
-            ic_oos, se_wild_bootstrap, cpu_p95, staleness
-        )
-        
-        return HTFCandidate(
-            family=family,
-            base_feature=base_feature,
-            lookback_minutes=lookback,
-            regime='mixed',  # Would be determined by regime segmentation
-            utility_score=utility_score,
-            ic_oos=ic_oos,
-            se_wild_bootstrap=se_wild_bootstrap,
-            cpu_p95=cpu_p95,
-            staleness=staleness,
-            fold_pass_rate=fold_pass_rate,
-            metadata={}
-        )
+
+        if len(aligned_data) < 100:  # Need sufficient data across the full window
+            return []
+
+        segments = (regime_segments or {}).get('segments', [])
+        min_segment_points = max(50, int(self.config.base_timeframe_minutes * 4))
+
+        def _build_candidate(segment_data: pd.DataFrame,
+                             regime_label: str,
+                             segment_index: Optional[int],
+                             segment_meta: Dict[str, Any]) -> Optional[HTFCandidate]:
+            if len(segment_data) < min_segment_points:
+                return None
+
+            feature_slice = segment_data['htf_feature']
+            target_slice = segment_data['target']
+
+            ic_oos = self._calculate_ic(feature_slice, target_slice)
+            se_wild_bootstrap = self._calculate_wild_bootstrap_se(feature_slice, target_slice)
+            cpu_p95 = self._estimate_cpu_cost(lookback, family)
+            staleness = self._calculate_staleness(lookback, family)
+            fold_pass_rate = self._calculate_fold_pass_rate(feature_slice, target_slice)
+
+            utility_score = self._calculate_utility_score(
+                ic_oos, se_wild_bootstrap, cpu_p95, staleness
+            )
+
+            metadata = {
+                'regime_segment': {
+                    'segment_index': segment_index,
+                    **segment_meta
+                },
+                'performance': {
+                    'ic_oos': ic_oos,
+                    'utility_score': utility_score,
+                    'se_wild_bootstrap': se_wild_bootstrap,
+                    'fold_pass_rate': fold_pass_rate
+                }
+            }
+
+            return HTFCandidate(
+                family=family,
+                base_feature=base_feature,
+                lookback_minutes=lookback,
+                regime=regime_label,
+                utility_score=utility_score,
+                ic_oos=ic_oos,
+                se_wild_bootstrap=se_wild_bootstrap,
+                cpu_p95=cpu_p95,
+                staleness=staleness,
+                fold_pass_rate=fold_pass_rate,
+                metadata=metadata
+            )
+
+        candidates: List[HTFCandidate] = []
+
+        if segments:
+            for idx, segment in enumerate(segments):
+                start_time = getattr(segment, 'start_time', None)
+                end_time = getattr(segment, 'end_time', None)
+                if start_time is None or end_time is None:
+                    continue
+
+                mask = (aligned_data.index >= start_time) & (aligned_data.index <= end_time)
+                segment_data = aligned_data.loc[mask]
+
+                segment_meta = {
+                    'start_time': start_time,
+                    'end_time': end_time,
+                    'segment_length': len(segment_data),
+                    'regime_type': getattr(segment, 'regime_type', None),
+                    'volatility_level': getattr(segment, 'volatility_level', None),
+                    'mean_return': getattr(segment, 'mean_return', None)
+                }
+
+                regime_label = getattr(segment, 'regime_type', f'regime_{idx}')
+                candidate = _build_candidate(segment_data, regime_label, idx, segment_meta)
+                if candidate:
+                    candidates.append(candidate)
+
+        if not candidates:
+            # Fall back to mixed regime scoring if no segments or all were insufficient
+            segment_meta = {
+                'start_time': aligned_data.index.min(),
+                'end_time': aligned_data.index.max(),
+                'segment_length': len(aligned_data),
+                'regime_type': 'mixed',
+                'volatility_level': None,
+                'mean_return': None
+            }
+            fallback_candidate = _build_candidate(
+                aligned_data,
+                'mixed',
+                None,
+                segment_meta
+            )
+            if fallback_candidate:
+                candidates.append(fallback_candidate)
+
+        return candidates
     
     def _calculate_ic(self, feature: pd.Series, target: pd.Series) -> float:
         """Calculate Information Coefficient."""

@@ -595,15 +595,16 @@ class PositionMonitor:
                 return value if isinstance(value, dict) else {}
 
             def _parse_schedule(schedule_value: Any, default: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-                if isinstance(schedule_value, list):
-                    return schedule_value
                 if isinstance(schedule_value, str):
                     try:
-                        parsed = json.loads(schedule_value)
-                        if isinstance(parsed, list):
-                            return parsed
+                        schedule_value = json.loads(schedule_value)
                     except json.JSONDecodeError:
-                        pass
+                        return default
+                if isinstance(schedule_value, list):
+                    if not schedule_value or not isinstance(schedule_value[0], list):
+                        return schedule_value  # Assume correct format or empty
+                    # Convert list of lists [[mins, mod]] to list of dicts
+                    return [{"minutes": item[0], "modifier": item[1]} for item in schedule_value]
                 return default
 
             def _merge_dict(defaults: Dict[str, Any], *candidates: Dict[str, Any]) -> Dict[str, Any]:

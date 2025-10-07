@@ -334,22 +334,27 @@ class PositionSizer:
     def _apply_position_size_modifiers(self, base_size: float, analyst_confidence: float, tactician_confidence: float) -> float:
         """Apply final position size modifiers."""
         try:
-            # Normalize dual confidence
-            total_confidence = analyst_confidence + tactician_confidence
-            if total_confidence > 0:
-                normalized_analyst = analyst_confidence / total_confidence
-                normalized_tactician = tactician_confidence / total_confidence
+            # Use raw confidence inputs to determine scaling
+            confidence_values = [value for value in (analyst_confidence, tactician_confidence)
+                                 if value is not None and math.isfinite(value)]
+
+            if confidence_values:
+                average_confidence = sum(confidence_values) / len(confidence_values)
             else:
-                normalized_analyst = normalized_tactician = 0.5
-            
-            # Calculate confidence scale
-            confidence_scale = 0.8 + 0.4 * (normalized_analyst + normalized_tactician) / 2
-            
-            # Apply logarithmic adjustment
+                average_confidence = 0.5
+
+            # Clamp the average confidence to a sensible range (0 to 1)
+            average_confidence = max(0.0, min(1.0, average_confidence))
+
+            # Calculate confidence scale directly from the raw scores (0.8 to 1.2 window)
+            confidence_scale = 0.8 + 0.4 * average_confidence
+
+            # Apply logarithmic adjustment with safeguarded base size
             epsilon = 1e-8
-            log_adjusted = math.log(base_size + epsilon) + math.log(confidence_scale)
+            safe_base = max(self.min_position_size, min(self.max_position_size, base_size))
+            log_adjusted = math.log(safe_base + epsilon) + math.log(confidence_scale)
             adjusted = math.exp(log_adjusted)
-            
+
             return max(self.min_position_size, min(self.max_position_size, adjusted))
             
         except Exception as e:

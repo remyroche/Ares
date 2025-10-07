@@ -2722,7 +2722,9 @@ class EnhancedModelFactory:
                 'use_transformer_attention': model_config.model_params.get('patchtst_config', {}).get('use_transformer_attention', True),
                 'regime_aware': model_config.model_params.get('patchtst_config', {}).get('regime_aware', True),
                 'attention_dropout': model_config.model_params.get('patchtst_config', {}).get('attention_dropout', 0.1),
-                'num_heads': model_config.model_params.get('patchtst_config', {}).get('num_heads', 4)
+                'num_heads': model_config.model_params.get('patchtst_config', {}).get('num_heads', 4),
+                'sign_dropout_rate': model_config.model_params.get('patchtst_config', {}).get('sign_dropout_rate', 0.0),
+                'sign_threshold': model_config.model_params.get('patchtst_config', {}).get('sign_threshold', 0.2)
             }
 
             # Wrap with PatchTST
@@ -2749,7 +2751,9 @@ class EnhancedModelFactory:
                 'use_transformer_attention': model_config.model_params.get('patchtst_config', {}).get('use_transformer_attention', True),
                 'regime_aware': model_config.model_params.get('patchtst_config', {}).get('regime_aware', True),
                 'attention_dropout': model_config.model_params.get('patchtst_config', {}).get('attention_dropout', 0.1),
-                'num_heads': model_config.model_params.get('patchtst_config', {}).get('num_heads', 4)
+                'num_heads': model_config.model_params.get('patchtst_config', {}).get('num_heads', 4),
+                'sign_dropout_rate': model_config.model_params.get('patchtst_config', {}).get('sign_dropout_rate', 0.0),
+                'sign_threshold': model_config.model_params.get('patchtst_config', {}).get('sign_threshold', 0.2)
             }
 
             # Wrap with PatchTST
@@ -2776,7 +2780,9 @@ class EnhancedModelFactory:
                 'use_transformer_attention': model_config.model_params.get('patchtst_config', {}).get('use_transformer_attention', True),
                 'regime_aware': model_config.model_params.get('patchtst_config', {}).get('regime_aware', True),
                 'attention_dropout': model_config.model_params.get('patchtst_config', {}).get('attention_dropout', 0.1),
-                'num_heads': model_config.model_params.get('patchtst_config', {}).get('num_heads', 4)
+                'num_heads': model_config.model_params.get('patchtst_config', {}).get('num_heads', 4),
+                'sign_dropout_rate': model_config.model_params.get('patchtst_config', {}).get('sign_dropout_rate', 0.0),
+                'sign_threshold': model_config.model_params.get('patchtst_config', {}).get('sign_threshold', 0.2)
             }
 
             # Wrap with PatchTST
@@ -2803,7 +2809,9 @@ class EnhancedModelFactory:
                 'use_transformer_attention': model_config.model_params.get('patchtst_config', {}).get('use_transformer_attention', True),
                 'regime_aware': model_config.model_params.get('patchtst_config', {}).get('regime_aware', True),
                 'attention_dropout': model_config.model_params.get('patchtst_config', {}).get('attention_dropout', 0.1),
-                'num_heads': model_config.model_params.get('patchtst_config', {}).get('num_heads', 4)
+                'num_heads': model_config.model_params.get('patchtst_config', {}).get('num_heads', 4),
+                'sign_dropout_rate': model_config.model_params.get('patchtst_config', {}).get('sign_dropout_rate', 0.0),
+                'sign_threshold': model_config.model_params.get('patchtst_config', {}).get('sign_threshold', 0.2)
             }
 
             # Wrap with PatchTST

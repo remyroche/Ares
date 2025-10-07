@@ -82,6 +82,8 @@ class AdvancedTreeConfig:
     patchtst_regime_aware: bool = True
     patchtst_attention_dropout: float = 0.1
     patchtst_num_heads: int = 4
+    patchtst_sign_dropout_rate: float = 0.0
+    patchtst_sign_threshold: float = 0.2
     
     # Meta-learning parameters
     enable_meta_learning: bool = True
@@ -526,23 +528,17 @@ class AdvancedTreeModelFactory:
                 )
 
                 patchtst_config = {
-                    'patch_len': 16,
-                    'stride': 8,
-                    'use_transformer_attention': True,
-                    'regime_aware': True,
-                    'attention_dropout': 0.1,
-                    'num_heads': 4
+                    'patch_len': self.config.patchtst_patch_len,
+                    'stride': self.config.patchtst_stride,
+                    'use_transformer_attention': self.config.patchtst_use_attention,
+                    'regime_aware': self.config.patchtst_regime_aware,
+                    'attention_dropout': self.config.patchtst_attention_dropout,
+                    'num_heads': self.config.patchtst_num_heads,
+                    'sign_dropout_rate': self.config.patchtst_sign_dropout_rate,
+                    'sign_threshold': self.config.patchtst_sign_threshold
                 }
 
-                self.patchtst_model = create_patchtst_wrapper(
-                    base_model,
-                    patch_len=patchtst_config['patch_len'],
-                    stride=patchtst_config['stride'],
-                    use_transformer_attention=patchtst_config['use_transformer_attention'],
-                    regime_aware=patchtst_config['regime_aware'],
-                    attention_dropout=patchtst_config['attention_dropout'],
-                    num_heads=patchtst_config['num_heads']
-                )
+                self.patchtst_model = create_patchtst_wrapper(base_model, **patchtst_config)
                 self.logger.info("✅ PatchTST model initialized for tree enhancement")
             except Exception as e:
                 self.logger.warning(f"PatchTST model initialization failed: {e}")

@@ -27,6 +27,7 @@ from .interaction_templates import HTFInteractionTemplates
 from .statistical_selection import StatisticalSelection
 from .evaluation import WalkForwardEvaluation
 from .monitoring import MonitoringSystem
+from .staleness_curve import StalenessCurveCalculator, StalenessCurve, StalenessSummary
 
 __all__ = [
     'CrossTimeframePipeline',
@@ -40,5 +41,8 @@ __all__ = [
     'HTFInteractionTemplates',
     'StatisticalSelection',
     'WalkForwardEvaluation',
-    'MonitoringSystem'
+    'MonitoringSystem',
+    'StalenessCurveCalculator',
+    'StalenessCurve',
+    'StalenessSummary'
 ]

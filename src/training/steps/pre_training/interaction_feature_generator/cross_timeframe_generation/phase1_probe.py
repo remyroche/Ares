@@ -18,6 +18,8 @@ from itertools import product
 from scipy import stats
 from sklearn.model_selection import TimeSeriesSplit
 
+from .staleness_curve import StalenessCurveCalculator
+
 # Import existing components
 import sys
 sys.path.append('src/training/steps/pre_training/interaction_feature_generator/feature_interaction_generation')
@@ -305,10 +307,13 @@ class Phase1HTFProbe:
     def __init__(self, config):
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
+
         self.grid_generator = CoarseGridGenerator(config)
         self.htf_generator = HTFFeatureGenerator(config)
         self.scoring_system = None  # Will be injected
+        self.staleness_calculator = StalenessCurveCalculator(
+            default_base_timeframe=getattr(config, 'base_timeframe_minutes', 5)
+        )
         
     def run_probe_stage(self, 
                        sessionized_data: Dict[str, Any],
@@ -439,7 +444,13 @@ class Phase1HTFProbe:
             aligned_data['htf_feature'], aligned_data['target']
         )
         cpu_p95 = self._estimate_cpu_cost(lookback, family)
-        staleness = self._calculate_staleness(lookback, family)
+        staleness_summary = self.staleness_calculator.get_summary(
+            base_feature,
+            family,
+            lookback,
+            base_timeframe=getattr(self.config, 'base_timeframe_minutes', 5),
+        )
+        staleness = staleness_summary.at_base
         fold_pass_rate = self._calculate_fold_pass_rate(
             aligned_data['htf_feature'], aligned_data['target']
         )
@@ -460,7 +471,9 @@ class Phase1HTFProbe:
             cpu_p95=cpu_p95,
             staleness=staleness,
             fold_pass_rate=fold_pass_rate,
-            metadata={}
+            metadata={
+                'staleness_summary': staleness_summary,
+            }
         )
     
     def _calculate_ic(self, feature: pd.Series, target: pd.Series) -> float:
@@ -502,23 +515,6 @@ class Phase1HTFProbe:
         
         multiplier = family_multipliers.get(family, 1.0)
         return base_cost * lookback * multiplier
-    
-    def _calculate_staleness(self, lookback: int, family: str) -> float:
-        """Calculate staleness score."""
-        # Feature-specific staleness curves
-        if family in ['trend_level_vol']:
-            # EMA/EWσ: s(B) = 1 - exp(-Δt/τ(B)) with τ ≈ B/2
-            tau = lookback / 2
-            delta_t = 5  # 5-minute base timeframe
-            return 1 - np.exp(-delta_t / tau)
-        elif family == 'anchors':
-            # Session VWAP: step function rising within session
-            return 0.1  # Simplified
-        else:
-            # RSI/Stoch: similar to EMA but with larger τ
-            tau = lookback / 1.5
-            delta_t = 5
-            return 1 - np.exp(-delta_t / tau)
     
     def _calculate_fold_pass_rate(self, feature: pd.Series, target: pd.Series) -> float:
         """Calculate fold pass rate using time series cross-validation."""

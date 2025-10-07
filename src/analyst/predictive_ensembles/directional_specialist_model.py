@@ -51,6 +51,57 @@ class DirectionType(Enum):
     BOTH = "both"
 
 
+class StreamingQuantileTransformer:
+    """Streaming quantile transformer storing state for incremental updates."""
+
+    def __init__(self):
+        self._state: Dict[str, np.ndarray] = {}
+
+    def _update_state(self, feature: str, values: np.ndarray) -> None:
+        if values.size == 0:
+            return
+
+        existing = self._state.get(feature)
+        if existing is not None and existing.size:
+            combined = np.concatenate([existing, values])
+            combined.sort()
+            self._state[feature] = combined
+        else:
+            self._state[feature] = np.sort(values)
+
+    def _transform_values(self, feature: str, values: np.ndarray) -> np.ndarray:
+        state = self._state.get(feature)
+        if state is None or state.size == 0:
+            return np.zeros_like(values, dtype=float)
+
+        ranks = np.searchsorted(state, values, side='right').astype(float)
+        transformed = ranks / float(len(state))
+        return np.clip(transformed, 0.0, 1.0)
+
+    def fit_transform(self, df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
+        transformed_df = df.copy()
+        for col in columns:
+            series = transformed_df[col]
+            mask = series.notna()
+            values = series[mask].astype(float).values
+            self._update_state(col, values)
+            transformed = self._transform_values(col, values)
+            series.loc[mask] = transformed
+            transformed_df[col] = series
+        return transformed_df
+
+    def transform(self, df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
+        transformed_df = df.copy()
+        for col in columns:
+            series = transformed_df[col]
+            mask = series.notna()
+            values = series[mask].astype(float).values
+            transformed = self._transform_values(col, values)
+            series.loc[mask] = transformed
+            transformed_df[col] = series
+        return transformed_df
+
+
 @dataclass
 class DirectionalConfig:
     """Configuration for directional specialist model."""
@@ -78,6 +129,9 @@ class DirectionalConfig:
     directional_lookback_periods: List[int] = None
     momentum_periods: List[int] = None
 
+    # Feature normalization parameters
+    enable_directional_quantiles: bool = False
+    
     def __post_init__(self):
         if self.directional_lookback_periods is None:
             self.directional_lookback_periods = [5, 10, 15, 20, 30]
@@ -92,15 +146,24 @@ class DirectionalFeatureEngineer:
     def __init__(self, config: DirectionalConfig):
         self.config = config
         self.logger = logger.getChild('DirectionalFeatureEngineer')
-    
-    def create_directional_features(self, df: pd.DataFrame, target: np.ndarray) -> pd.DataFrame:
+        self.quantile_transformer: Optional[StreamingQuantileTransformer] = None
+        if self.config.enable_directional_quantiles:
+            self.quantile_transformer = StreamingQuantileTransformer()
+
+    def create_directional_features(
+        self,
+        df: pd.DataFrame,
+        target: np.ndarray,
+        fit: bool = False
+    ) -> pd.DataFrame:
         """
         Create features optimized for directional prediction.
-        
+
         Args:
             df: Input dataframe with OHLCV data
             target: Target values for directional optimization
-            
+            fit: Whether to update quantile transformer state
+
         Returns:
             DataFrame with enhanced directional features
         """
@@ -125,7 +188,20 @@ class DirectionalFeatureEngineer:
         
         self.logger.debug(f"Created {df_enhanced.shape[1] - df.shape[1]} directional features")
         
+        if self.quantile_transformer is not None:
+            df_enhanced = self._apply_quantile_transform(df_enhanced, fit=fit)
+
         return df_enhanced
+
+    def _apply_quantile_transform(self, df: pd.DataFrame, fit: bool) -> pd.DataFrame:
+        numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
+        if not numeric_columns:
+            return df
+
+        if fit:
+            return self.quantile_transformer.fit_transform(df, numeric_columns)
+
+        return self.quantile_transformer.transform(df, numeric_columns)
     
     def _add_directional_momentum_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add momentum features optimized for directional prediction."""
@@ -279,7 +355,10 @@ class DirectionalSpecialistModel:
         self.logger.info("🚀 Training directional specialist model...")
         
         # Create directional features
-        X_enhanced = self.feature_engineer.create_directional_features(X, y)
+        X_enhanced = self.feature_engineer.create_directional_features(X, y, fit=True)
+
+        if self.config.enable_directional_quantiles:
+            self._validate_quantile_feature_range(X_enhanced)
         
         # Create directional sample weights with recency decay
         timestamps = X.index if isinstance(X, pd.DataFrame) else None
@@ -359,7 +438,7 @@ class DirectionalSpecialistModel:
         
         # Create directional features (using dummy target for feature engineering)
         dummy_target = np.zeros(len(X))
-        X_enhanced = self.feature_engineer.create_directional_features(X, dummy_target)
+        X_enhanced = self.feature_engineer.create_directional_features(X, dummy_target, fit=False)
         
         # Ensure feature alignment
         X_aligned = X_enhanced.reindex(columns=self.feature_columns, fill_value=0)
@@ -509,7 +588,21 @@ class DirectionalSpecialistModel:
         }
         
         return stats
-    
+
+    def _validate_quantile_feature_range(self, df: pd.DataFrame) -> None:
+        numeric_df = df.select_dtypes(include=[np.number])
+        if numeric_df.empty:
+            return
+
+        min_val = numeric_df.min().min()
+        max_val = numeric_df.max().max()
+
+        if min_val < -1e-6 or max_val > 1.0 + 1e-6:
+            raise ValueError(
+                "Quantile-transformed features must be within [0, 1]. "
+                f"Observed range: [{min_val}, {max_val}]"
+            )
+
     def _calculate_prediction_confidence(self, X: pd.DataFrame, predictions: np.ndarray) -> np.ndarray:
         """Calculate confidence scores for predictions."""
         

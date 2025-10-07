@@ -563,7 +563,18 @@ class PositionMonitor:
                 if Path(path).exists():
                     with open(path, 'r') as f:
                         optimization_results = json.load(f)
-                    
+
+                    if "position_monitor_exit_strategy" in optimization_results:
+                        self.logger.info(f"✅ Loaded pre-formatted exit strategy from: {path}")
+                        return optimization_results["position_monitor_exit_strategy"]
+
+                    if "exit_strategy" in optimization_results and isinstance(optimization_results["exit_strategy"], dict):
+                        exit_strategy_payload = optimization_results["exit_strategy"]
+                        # Handle already formatted schema
+                        if "confidence_thresholds" in exit_strategy_payload and "profit_taking" in exit_strategy_payload:
+                            self.logger.info(f"✅ Loaded exit strategy parameters from: {path}")
+                            return exit_strategy_payload
+
                     # Check for exit_strategy parameters in the results
                     if "exit_strategy" in optimization_results:
                         self.logger.info(f"✅ Loaded exit strategy parameters from: {path}")
@@ -591,6 +602,12 @@ class PositionMonitor:
             Dict: Converted parameters for position monitor
         """
         try:
+            regime_bands = {
+                "trending": exit_strategy_params.get("regime_trending_profit_band", 0.75),
+                "ranging": exit_strategy_params.get("regime_ranging_profit_band", 0.55),
+                "high_volatility": exit_strategy_params.get("regime_high_volatility_profit_band", 0.65)
+            }
+
             converted = {
                 "confidence_thresholds": {
                     "very_low": exit_strategy_params.get("confidence_very_low", 0.2),
@@ -602,11 +619,16 @@ class PositionMonitor:
                     "base_profit_target": exit_strategy_params.get("base_profit_target", 0.04),
                     "min_confidence_for_profit": exit_strategy_params.get("min_confidence_for_profit", 0.6),
                     "confidence_profit_multiplier": exit_strategy_params.get("confidence_profit_multiplier", 0.5),
+                    "profit_buffer": exit_strategy_params.get("profit_buffer_ratio", 0.01),
+                    "time_decay_half_life": exit_strategy_params.get("profit_time_decay_half_life", 3600),
+                    "ml_adjustment_weight": exit_strategy_params.get("profit_ml_adjustment_weight", 0.3),
+                    "ml_trigger_multiplier": exit_strategy_params.get("ml_trigger_confidence_multiplier", 1.0),
                     "scaling_levels": [
                         exit_strategy_params.get("profit_tier_1", 0.25),
                         exit_strategy_params.get("profit_tier_2", 0.5),
                         exit_strategy_params.get("profit_tier_3", 0.75)
-                    ]
+                    ],
+                    "regime_bands": regime_bands
                 },
                 "stop_loss": {
                     "base_stop_loss": exit_strategy_params.get("base_stop_loss", -0.05),
@@ -621,11 +643,17 @@ class PositionMonitor:
                 "trailing_stop": {
                     "atr_multiplier": exit_strategy_params.get("trailing_atr_multiplier", 1.5),
                     "min_distance": exit_strategy_params.get("trailing_min_distance", 0.01),
-                    "confidence_activation": exit_strategy_params.get("trailing_confidence_activation", 0.7)
+                    "confidence_activation": exit_strategy_params.get("trailing_confidence_activation", 0.7),
+                    "tightening_threshold": exit_strategy_params.get("trailing_tightening_threshold", 0.02),
+                    "time_decay": exit_strategy_params.get("trailing_time_decay", 0.95),
+                    "ml_adjustment_weight": exit_strategy_params.get("trailing_ml_adjustment_weight", 0.3),
+                    "ml_trigger_multiplier": exit_strategy_params.get("ml_trigger_trailing_multiplier", 1.0)
                 },
                 "regime_aware": {
                     "transition_penalty": exit_strategy_params.get("regime_transition_penalty", 0.1),
-                    "regime_specific_scaling": exit_strategy_params.get("regime_specific_scaling", 1.0)
+                    "regime_specific_scaling": exit_strategy_params.get("regime_specific_scaling", 1.0),
+                    "profit_bands": regime_bands,
+                    "trailing_sensitivity": exit_strategy_params.get("regime_trailing_sensitivity", 1.0)
                 }
             }
             

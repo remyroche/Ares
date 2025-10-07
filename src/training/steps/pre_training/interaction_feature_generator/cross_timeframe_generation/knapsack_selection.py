@@ -521,13 +521,17 @@ class KnapsackSelection:
             assignment = assignment_map.get(feature.feature_name)
             if not assignment:
                 continue
-            
-            # Calculate utility (use optimal IC as proxy)
-            utility = feature.optimal_ic
-            
+
+            adaptive_score = getattr(feature, 'adaptive_score', None)
+            if isinstance(adaptive_score, dict):
+                utility = adaptive_score.get('utility_score', feature.optimal_ic)
+            else:
+                adaptive_score = None
+                utility = feature.optimal_ic
+
             # Calculate cost
             cost = assignment.cost_per_ms * feature.optimal_lookback
-            
+
             candidate = FeatureCandidate(
                 feature_id=f"{feature.feature_name}_{feature.optimal_lookback}",
                 feature_name=feature.feature_name,
@@ -540,10 +544,11 @@ class KnapsackSelection:
                     'optimal_ic': feature.optimal_ic,
                     'confidence_interval': feature.confidence_interval,
                     'export_type': feature.export_type,
-                    'blend_weights': feature.blend_weights
+                    'blend_weights': feature.blend_weights,
+                    'adaptive_score': adaptive_score,
                 }
             )
-            
+
             candidates.append(candidate)
         
         return candidates

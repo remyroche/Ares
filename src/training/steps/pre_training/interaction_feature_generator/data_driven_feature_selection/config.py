@@ -188,6 +188,11 @@ class FinalSelectionConfig:
 
     # Category allocation
     category_quotas: 'FeatureCategoryQuotas' = field(default_factory=lambda: FeatureCategoryQuotas())
+
+    # Group regularization
+    enable_group_regularization: bool = False
+    group_regularization_method: str = "shap"
+    group_contribution_threshold: float = 0.05
     
     # Model settings
     model_type: str = "lightgbm"

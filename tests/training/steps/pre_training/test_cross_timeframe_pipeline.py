@@ -53,9 +53,10 @@ class DummyEvaluation:
     def __init__(self):
         self.calls = []
 
-    def evaluate_features(self, final_features, targets, regime_segments):
+    def evaluate_features(self, final_features, targets, regime_segments, feature_source=None):
         assert isinstance(final_features, list)
-        self.calls.append((final_features, targets, regime_segments))
+        assert isinstance(feature_source, pd.DataFrame)
+        self.calls.append((final_features, targets, regime_segments, feature_source))
         return EvaluationResult(
             overall_ic=0.0,
             overall_ic_std=0.0,
@@ -90,6 +91,7 @@ def test_pipeline_passes_feature_list_to_evaluation_and_monitoring():
     pipeline = CrossTimeframePipeline(config)
 
     # Replace heavy dependencies with lightweight stubs
+    pipeline._sessionize_and_align = lambda ohlcv, optional: {"aligned_data": ohlcv}
     pipeline.regime_segmentation.segment_regimes = lambda sessionized, targets: {"segments": []}
     pipeline.phase1_probe.run_probe_stage = lambda sessionized, segments, targets: {"phase1": True}
     pipeline.phase2_optimization.optimize_lookbacks = lambda data, phase1, segments, targets: {"phase2": True}
@@ -150,8 +152,10 @@ def test_pipeline_passes_feature_list_to_evaluation_and_monitoring():
     results = pipeline.run_pipeline(ohlcv_data=ohlcv, targets=targets)
 
     assert dummy_evaluation.calls, "Evaluation should be executed once"
-    eval_features, _, _ = dummy_evaluation.calls[0]
+    eval_features, _, _, feature_matrix = dummy_evaluation.calls[0]
     assert eval_features == selection_result.selected_features
+    assert list(feature_matrix.columns) == selection_result.selected_features
+    assert feature_matrix.index.equals(targets.index)
 
     assert dummy_monitoring.calls, "Monitoring should receive pipeline outputs"
     monitoring_call = dummy_monitoring.calls[0]

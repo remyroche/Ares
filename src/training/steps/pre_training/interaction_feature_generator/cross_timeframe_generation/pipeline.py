@@ -193,8 +193,34 @@ class CrossTimeframePipeline:
             
             # Step 7: Generate interactions
             self.logger.info("Step 7: Generating HTF-aware interactions")
+
+            base_feature_series: Dict[str, pd.Series] = {}
+            aligned_base_features = None
+
+            if isinstance(self.sessionized_data, dict):
+                aligned_base_features = self.sessionized_data.get('aligned_data')
+
+            if isinstance(aligned_base_features, pd.DataFrame):
+                base_feature_series = {
+                    column: aligned_base_features[column]
+                    for column in aligned_base_features.columns
+                }
+            elif isinstance(aligned_base_features, dict):
+                base_feature_series = {
+                    name: series
+                    for name, series in aligned_base_features.items()
+                    if isinstance(series, pd.Series)
+                }
+
+            if not base_feature_series:
+                self.logger.warning(
+                    "No base features available from sessionized data; interaction grouping may be limited."
+                )
+
             self.interactions = self.interaction_templates.generate_interactions(
-                self.materialized_htfs, self.sessionized_data
+                self.materialized_htfs,
+                base_feature_series,
+                targets,
             )
             
             # Step 8: Statistical selection

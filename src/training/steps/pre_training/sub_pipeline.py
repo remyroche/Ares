@@ -6,7 +6,7 @@ that were moved from market_analysis:
 
 1. multi_horizon_profit_labeler - Apply multi-horizon profit labeling
 2. feature_lookback_optimization - Optimize feature lookback periods
-3. pid_based_feature_generation - PID-based feature generation with interaction, polynomial, and cross-timeframe features
+3. roadmap_feature_generation - End-to-end roadmap feature generation with comprehensive approach
 4. final_feature_selection - Final multi-stage feature selection (120→100→80→60)
 
 Each step can receive a timeframe parameter, with default 15m.
@@ -91,7 +91,7 @@ class PreTrainingSubPipeline:
     Executes the 4 feature engineering steps in sequence:
     1. multi_horizon_profit_labeler
     2. feature_lookback_optimization
-    3. pid_based_feature_generation
+    3. roadmap_feature_generation
     4. final_feature_selection
     """
 
@@ -157,19 +157,19 @@ class PreTrainingSubPipeline:
             results['results']['feature_lookback_optimization'] = flo_result.artifacts
             self._current_pipeline_state.update(flo_result.artifacts)
 
-            # Step 3: PID-Based Feature Generation
-            tprint("🔧 Step 3: PID-Based Feature Generation")
-            self.logger.info('🔧 Step 3: PID-Based Feature Generation')
-            pid_result = await self._execute_pid_based_feature_generation(config)
-            if not pid_result.success:
-                tprint(f"❌ PID-based feature generation failed: {pid_result.error_message}")
-                self.logger.error(f'❌ PID-based feature generation failed: {pid_result.error_message}')
+            # Step 3: Roadmap Feature Generation
+            tprint("🔧 Step 3: Roadmap Feature Generation")
+            self.logger.info('🔧 Step 3: Roadmap Feature Generation')
+            roadmap_result = await self._execute_roadmap_feature_generation(config)
+            if not roadmap_result.success:
+                tprint(f"❌ Roadmap feature generation failed: {roadmap_result.error_message}")
+                self.logger.error(f'❌ Roadmap feature generation failed: {roadmap_result.error_message}')
                 return results
 
-            tprint(f"✅ PID-based feature generation completed for {config.symbol}")
-            tprint(f"   → Features generated: {len(pid_result.artifacts.get('pid_based_feature_generation_result', {}).get('generated_features', {}))}")
-            results['results']['pid_based_feature_generation'] = pid_result.artifacts
-            self._current_pipeline_state.update(pid_result.artifacts)
+            tprint(f"✅ Roadmap feature generation completed for {config.symbol}")
+            tprint(f"   → Features generated: {len(roadmap_result.artifacts.get('roadmap_feature_generation_result', {}).get('features', {}))}")
+            results['results']['roadmap_feature_generation'] = roadmap_result.artifacts
+            self._current_pipeline_state.update(roadmap_result.artifacts)
 
             # Step 4: Final Feature Selection
             tprint("🎯 Step 4: Final Feature Selection")
@@ -197,7 +197,7 @@ class PreTrainingSubPipeline:
             tprint(f"📋 Pipeline summary:")
             tprint(f"   🎯 Multi-horizon labeling: ✅ Complete")
             tprint(f"   ⚙️ Feature optimization: ✅ Complete")
-            tprint(f"   🔧 PID-based features: ✅ Complete")
+            tprint(f"   🔧 Roadmap features: ✅ Complete")
             tprint(f"   🎯 Final selection: ✅ Complete")
 
             self.logger.info(f'🎉 Pre-Training Sub-Pipeline completed successfully in {results["execution_time"]:.2f}s')
@@ -349,10 +349,10 @@ class PreTrainingSubPipeline:
 
         return result
 
-    async def _execute_pid_based_feature_generation(self, config: SubPipelineConfig) -> SubPipelineResult:
-        """Execute PID-based feature generation with timeframe support."""
+    async def _execute_roadmap_feature_generation(self, config: SubPipelineConfig) -> SubPipelineResult:
+        """Execute roadmap feature generation with timeframe support."""
         result = SubPipelineResult(
-            sub_pipeline_name='pid_based_feature_generation',
+            sub_pipeline_name='roadmap_feature_generation',
             status=SubPipelineStatus.RUNNING,
             start_time=datetime.now()
         )
@@ -368,7 +368,7 @@ class PreTrainingSubPipeline:
             )
 
             # Create component using factory
-            component = ComponentFactory.create_component('pid_based_feature_generation', component_config)
+            component = ComponentFactory.create_component('roadmap_feature_generation', component_config)
 
             # Execute component
             pipeline_state = self._prepare_component_pipeline_state(config)
@@ -434,7 +434,7 @@ class PreTrainingSubPipeline:
         return [
             'multi_horizon_profit_labeler',
             'feature_lookback_optimization', 
-            'pid_based_feature_generation',
+            'roadmap_feature_generation',
             'final_feature_selection'
         ]
 
@@ -444,8 +444,8 @@ class PreTrainingSubPipeline:
             return await self._execute_multi_horizon_profit_labeler(config)
         elif sub_pipeline_name == 'feature_lookback_optimization':
             return await self._execute_feature_lookback_optimization(config)
-        elif sub_pipeline_name == 'pid_based_feature_generation':
-            return await self._execute_pid_based_feature_generation(config)
+        elif sub_pipeline_name == 'roadmap_feature_generation':
+            return await self._execute_roadmap_feature_generation(config)
         elif sub_pipeline_name == 'final_feature_selection':
             return await self._execute_final_feature_selection(config)
         else:

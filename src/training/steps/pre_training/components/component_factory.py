@@ -23,6 +23,13 @@ try:
 except ImportError:
     PID_COMPONENT_AVAILABLE = False
 
+# Import roadmap feature generation component
+try:
+    from ..interaction_feature_generator.feature_interaction_generation.roadmap_feature_generation_component import RoadmapFeatureGenerationComponent
+    ROADMAP_COMPONENT_AVAILABLE = True
+except ImportError:
+    ROADMAP_COMPONENT_AVAILABLE = False
+
 # Import multi-horizon profit labeler
 try:
     from ..multi_horizon_profit_labeler import MultiHorizonProfitLabelerComponent
@@ -75,6 +82,7 @@ class ComponentFactory:
         'multi_horizon_profit_labeler': MultiHorizonComponentWrapper if MULTI_HORIZON_AVAILABLE else None,
         'feature_lookback_optimization': FeatureLookbackOptimizationComponent,
         'pid_based_feature_generation': PIDBasedFeatureGenerationComponent if PID_COMPONENT_AVAILABLE else None,
+        'roadmap_feature_generation': RoadmapFeatureGenerationComponent if ROADMAP_COMPONENT_AVAILABLE else None,
         'final_feature_selection': FinalFeatureSelectionComponent
     }
     

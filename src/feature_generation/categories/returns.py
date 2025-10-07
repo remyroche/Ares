@@ -67,17 +67,59 @@ class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        close_prices = data['close'].values
-        returns = self._calculate_returns(close_prices, period=1)
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name='returns_1')
+
+        close_prices = data['close'].astype(float).values
+        state = self.get_state()
+        history = state.get('close_history') or []
+
+        if history:
+            try:
+                history_array = np.asarray(history, dtype=float)
+            except Exception:
+                history_array = np.array(history, dtype=float)
+            combined_closes = np.concatenate([history_array, close_prices])
+        else:
+            combined_closes = close_prices
+
+        combined_returns = self._calculate_returns(combined_closes, period=1)
+        returns = combined_returns[-len(close_prices):] if len(close_prices) else np.array([])
+
+        prev_close = state.get('last_close')
+        if len(returns) > 0 and prev_close not in (None, np.nan):
+            try:
+                prev_close_val = float(prev_close)
+                returns[0] = (close_prices[0] - prev_close_val) / prev_close_val if prev_close_val != 0 else np.nan
+            except Exception:
+                returns[0] = np.nan
+
         return pd.Series(returns, index=data.index, name='returns_1')
     
     def _calculate_returns(self, prices: np.ndarray, period: int = 1) -> np.ndarray:
         if len(prices) < period + 1:
             return np.full(len(prices), np.nan)
-        
+
         returns = (prices - np.roll(prices, period)) / np.roll(prices, period)
         returns[:period] = np.nan
         return returns
+
+    def _finalize_state(self, data: pd.DataFrame, feature_data: pd.Series) -> None:
+        if not data.empty:
+            closes = data['close'].astype(float)
+            history_window = max(int(getattr(self.config, 'min_lookback', 2)), 2)
+            close_history = closes.tolist()[-history_window:]
+            state_update = {
+                'last_close': float(closes.iloc[-1]),
+                'close_history': close_history
+            }
+            if not feature_data.empty:
+                last_return = feature_data.iloc[-1]
+                if pd.notna(last_return):
+                    state_update['last_return'] = float(last_return)
+            self.update_state(state_update)
+
+        super()._finalize_state(data, feature_data)
 
     
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:

@@ -21,6 +21,8 @@ from sklearn.linear_model import Ridge
 import warnings
 warnings.filterwarnings('ignore')
 
+from .staleness_curve import StalenessCurveCalculator
+
 
 @dataclass
 class ScoringResult:
@@ -258,12 +260,13 @@ class CostEstimator:
 
 class StalenessCalculator:
     """Calculates staleness scores for features."""
-    
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-    
-    def calculate_staleness(self, 
-                          lookback: int, 
+        self.curve_calculator = StalenessCurveCalculator()
+
+    def calculate_staleness(self,
+                          lookback: int,
                           family: str,
                           base_timeframe: int = 5) -> float:
         """
@@ -277,35 +280,13 @@ class StalenessCalculator:
         Returns:
             Staleness score (0-1, higher = more stale)
         """
-        # Feature-specific staleness curves
-        if family in ['trend_level_vol']:
-            # EMA/EWσ: s(B) = 1 - exp(-Δt/τ(B)) with τ ≈ B/2
-            tau = lookback / 2
-            delta_t = base_timeframe
-            return 1 - np.exp(-delta_t / tau)
-        
-        elif family == 'anchors':
-            # Session VWAP: step function rising within session
-            # Simplified as constant low staleness
-            return 0.1
-        
-        elif family == 'oscillators':
-            # RSI/Stoch: similar to EMA but with larger τ
-            tau = lookback / 1.5
-            delta_t = base_timeframe
-            return 1 - np.exp(-delta_t / tau)
-        
-        elif family == 'liquidity_micro':
-            # Volume-based features: moderate staleness
-            tau = lookback / 2.5
-            delta_t = base_timeframe
-            return 1 - np.exp(-delta_t / tau)
-        
-        else:
-            # Default: moderate staleness
-            tau = lookback / 2
-            delta_t = base_timeframe
-            return 1 - np.exp(-delta_t / tau)
+        summary = self.curve_calculator.get_summary(
+            feature_name=f"family::{family}",
+            family=family,
+            lookback=lookback,
+            base_timeframe=base_timeframe,
+        )
+        return summary.at_base
 
 
 class MetaLearner:

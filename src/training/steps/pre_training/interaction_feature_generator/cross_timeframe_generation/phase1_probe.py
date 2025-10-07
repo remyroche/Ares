@@ -16,7 +16,6 @@ from datetime import datetime, timedelta
 import logging
 from itertools import product
 from scipy import stats
-from sklearn.model_selection import TimeSeriesSplit
 
 from .staleness_curve import StalenessCurveCalculator
 
@@ -36,7 +35,7 @@ from ..feature_interaction_generation.feature_engineering import (
     create_default_transform_config,
 )
 
-from .scoring_system import AdaptiveScoringSystem
+from .scoring_system import AdaptiveScoringSystem, ScoringResult
 from . import htf_base_features
 
 
@@ -317,7 +316,10 @@ class Phase1HTFProbe:
 
                 if regime_candidates:
                     candidates.extend(regime_candidates)
-                    family_scores.extend([c.utility_score for c in regime_candidates])
+                    family_scores.extend([
+                        c.utility_score * c.metadata.get('regime_weight', 1.0)
+                        for c in regime_candidates
+                    ])
                     self.logger.debug(
                         "Scored %s@%s for %d regime variants",
                         base_feature,
@@ -369,53 +371,6 @@ class Phase1HTFProbe:
         segments = (regime_segments or {}).get('segments', [])
         min_segment_points = max(50, int(self.config.base_timeframe_minutes * 4))
 
-        def _build_candidate(segment_data: pd.DataFrame,
-                             regime_label: str,
-                             segment_index: Optional[int],
-                             segment_meta: Dict[str, Any]) -> Optional[HTFCandidate]:
-            if len(segment_data) < min_segment_points:
-                return None
-
-            feature_slice = segment_data['htf_feature']
-            target_slice = segment_data['target']
-
-            ic_oos = self._calculate_ic(feature_slice, target_slice)
-            se_wild_bootstrap = self._calculate_wild_bootstrap_se(feature_slice, target_slice)
-            cpu_p95 = self._estimate_cpu_cost(lookback, family)
-            staleness = self._calculate_staleness(lookback, family)
-            fold_pass_rate = self._calculate_fold_pass_rate(feature_slice, target_slice)
-
-            utility_score = self._calculate_utility_score(
-                ic_oos, se_wild_bootstrap, cpu_p95, staleness
-            )
-
-            metadata = {
-                'regime_segment': {
-                    'segment_index': segment_index,
-                    **segment_meta
-                },
-                'performance': {
-                    'ic_oos': ic_oos,
-                    'utility_score': utility_score,
-                    'se_wild_bootstrap': se_wild_bootstrap,
-                    'fold_pass_rate': fold_pass_rate
-                }
-            }
-
-            return HTFCandidate(
-                family=family,
-                base_feature=base_feature,
-                lookback_minutes=lookback,
-                regime=regime_label,
-                utility_score=utility_score,
-                ic_oos=ic_oos,
-                se_wild_bootstrap=se_wild_bootstrap,
-                cpu_p95=cpu_p95,
-                staleness=staleness,
-                fold_pass_rate=fold_pass_rate,
-                metadata=metadata
-            )
-
         candidates: List[HTFCandidate] = []
 
         if segments:
@@ -428,6 +383,10 @@ class Phase1HTFProbe:
                 mask = (aligned_data.index >= start_time) & (aligned_data.index <= end_time)
                 segment_data = aligned_data.loc[mask]
 
+                if len(segment_data) < min_segment_points:
+                    continue
+
+                regime_label = getattr(segment, 'regime_type', f'regime_{idx}')
                 segment_meta = {
                     'start_time': start_time,
                     'end_time': end_time,
@@ -437,8 +396,18 @@ class Phase1HTFProbe:
                     'mean_return': getattr(segment, 'mean_return', None)
                 }
 
-                regime_label = getattr(segment, 'regime_type', f'regime_{idx}')
-                candidate = _build_candidate(segment_data, regime_label, idx, segment_meta)
+                candidate = self._score_regime_segment(
+                    base_feature=base_feature,
+                    family=family,
+                    lookback=lookback,
+                    regime_label=regime_label,
+                    segment_index=idx,
+                    feature_slice=segment_data['htf_feature'],
+                    target_slice=segment_data['target'],
+                    segment_meta=segment_meta,
+                    regime_segments=[segment],
+                )
+
                 if candidate:
                     candidates.append(candidate)
 
@@ -452,103 +421,201 @@ class Phase1HTFProbe:
                 'volatility_level': None,
                 'mean_return': None
             }
-            fallback_candidate = _build_candidate(
-                aligned_data,
-                'mixed',
-                None,
-                segment_meta
+            fallback_candidate = self._score_regime_segment(
+                base_feature=base_feature,
+                family=family,
+                lookback=lookback,
+                regime_label='mixed',
+                segment_index=None,
+                feature_slice=aligned_data['htf_feature'],
+                target_slice=aligned_data['target'],
+                segment_meta=segment_meta,
+                regime_segments=segments,
             )
             if fallback_candidate:
                 candidates.append(fallback_candidate)
 
         return candidates
-    
-    def _calculate_ic(self, feature: pd.Series, target: pd.Series) -> float:
-        """Calculate Information Coefficient."""
-        correlation = feature.corr(target)
-        return correlation if not pd.isna(correlation) else 0.0
-    
-    def _calculate_wild_bootstrap_se(self, feature: pd.Series, target: pd.Series) -> float:
-        """Calculate wild bootstrap standard error."""
-        # Simplified implementation
-        n = len(feature)
-        if n < 10:
-            return 1.0
-        
-        # Wild bootstrap with Rademacher weights
-        n_bootstrap = 100
-        correlations = []
-        
-        for _ in range(n_bootstrap):
-            weights = np.random.choice([-1, 1], size=n)
-            weighted_feature = feature * weights
-            corr = weighted_feature.corr(target)
-            if not pd.isna(corr):
-                correlations.append(corr)
-        
-        return np.std(correlations) if correlations else 1.0
-    
-    def _estimate_cpu_cost(self, lookback: int, family: str) -> float:
-        """Estimate CPU cost in milliseconds."""
-        # Base cost per lookback minute
-        base_cost = 0.01  # ms per minute
-        
-        # Family-specific multipliers
-        family_multipliers = {
-            'trend_level_vol': 1.0,
-            'oscillators': 1.2,
-            'anchors': 0.8
-        }
-        
-        multiplier = family_multipliers.get(family, 1.0)
-        return base_cost * lookback * multiplier
-    
-    def _calculate_fold_pass_rate(self, feature: pd.Series, target: pd.Series) -> float:
-        """Calculate fold pass rate using time series cross-validation."""
-        if len(feature) < 50:
-            return 0.0
-        
-        # Use 3-fold time series split
-        tscv = TimeSeriesSplit(n_splits=3)
-        pass_count = 0
-        total_folds = 0
-        
-        for train_idx, val_idx in tscv.split(feature):
-            if len(val_idx) < 10:
-                continue
-                
-            train_feature = feature.iloc[train_idx]
-            train_target = target.iloc[train_idx]
-            val_feature = feature.iloc[val_idx]
-            val_target = target.iloc[val_idx]
-            
-            # Calculate IC on validation set
-            val_ic = val_feature.corr(val_target)
-            
-            # Pass if IC > 0.05
-            if not pd.isna(val_ic) and val_ic > 0.05:
-                pass_count += 1
-            
-            total_folds += 1
-        
-        return pass_count / total_folds if total_folds > 0 else 0.0
-    
-    def _calculate_utility_score(self,
-                               ic_oos: float,
-                               se_wild_bootstrap: float,
-                               cpu_p95: float,
-                               staleness: float) -> float:
-        """Calculate utility score using the centralized scoring system."""
+
+    def _score_regime_segment(self,
+                              base_feature: str,
+                              family: str,
+                              lookback: int,
+                              regime_label: str,
+                              segment_index: Optional[int],
+                              feature_slice: pd.Series,
+                              target_slice: pd.Series,
+                              segment_meta: Dict[str, Any],
+                              regime_segments: Optional[List[Any]]) -> Optional[HTFCandidate]:
+        """Score a regime-specific slice using the adaptive scoring system."""
+
         if self.scoring_system is None:
             raise ValueError("Adaptive scoring system must be provided to Phase1HTFProbe")
 
-        return self.scoring_system.calculate_utility_score(
+        scoring_result = self.scoring_system.score_feature_candidate(
+            feature=feature_slice,
+            target=target_slice,
+            lookback=lookback,
+            family=family,
+            regime=regime_label,
+            regime_segments=regime_segments,
+        )
+
+        if self._is_empty_scoring_result(scoring_result):
+            scoring_result = self._fallback_score_candidate(
+                base_feature=base_feature,
+                family=family,
+                lookback=lookback,
+                regime_label=regime_label,
+                feature_slice=feature_slice,
+                target_slice=target_slice,
+                regime_segments=regime_segments,
+            )
+
+        if scoring_result is None:
+            return None
+
+        return self._build_candidate(
+            base_feature=base_feature,
+            family=family,
+            lookback=lookback,
+            regime_label=regime_label,
+            segment_index=segment_index,
+            scoring_result=scoring_result,
+            segment_meta=segment_meta,
+        )
+
+    @staticmethod
+    def _is_empty_scoring_result(scoring_result: ScoringResult) -> bool:
+        """Determine if the scoring result contains meaningful metrics."""
+        if scoring_result is None:
+            return True
+
+        return (
+            scoring_result.utility_score <= -1.0 and
+            scoring_result.regime_weight == 0.0 and
+            not scoring_result.metadata
+        )
+
+    def _fallback_score_candidate(self,
+                                  base_feature: str,
+                                  family: str,
+                                  lookback: int,
+                                  regime_label: str,
+                                  feature_slice: pd.Series,
+                                  target_slice: pd.Series,
+                                  regime_segments: Optional[List[Any]]) -> Optional[ScoringResult]:
+        """Provide a lightweight fallback scoring when the scorer returns empty results."""
+
+        if self.scoring_system is None or len(feature_slice) == 0:
+            return None
+
+        ic_oos = feature_slice.corr(target_slice)
+        if pd.isna(ic_oos):
+            ic_oos = 0.0
+
+        if len(feature_slice) > 1:
+            se_proxy = feature_slice.std(ddof=0)
+            if pd.isna(se_proxy) or se_proxy == 0:
+                se_proxy = 1.0
+            else:
+                se_proxy = float(se_proxy / np.sqrt(len(feature_slice)))
+        else:
+            se_proxy = 1.0
+
+        cpu_p95 = self.scoring_system.cost_estimator.estimate_cpu_cost(lookback, family)
+        staleness = self.scoring_system.staleness_calculator.calculate_staleness(
+            lookback,
+            family,
+            getattr(self.config, 'base_timeframe_minutes', 5),
+        )
+
+        try:
+            fold_pass_rate = self.scoring_system._calculate_fold_pass_rate(feature_slice, target_slice)
+        except Exception:
+            fold_pass_rate = 0.0
+
+        try:
+            regime_weight = self.scoring_system._calculate_regime_weight(regime_label, regime_segments)
+        except Exception:
+            regime_weight = 1.0
+
+        utility_score = self.scoring_system.calculate_utility_score(
             ic_oos=ic_oos,
-            se_wild_bootstrap=se_wild_bootstrap,
+            se_wild_bootstrap=se_proxy,
             cpu_p95=cpu_p95,
             staleness=staleness,
         )
-    
+
+        feature_name = feature_slice.name if getattr(feature_slice, 'name', None) else base_feature
+
+        return ScoringResult(
+            feature_name=feature_name,
+            lookback=lookback,
+            regime=regime_label,
+            ic_oos=ic_oos,
+            se_wild_bootstrap=se_proxy,
+            se_stationary_bootstrap=se_proxy,
+            cpu_p95=cpu_p95,
+            staleness=staleness,
+            utility_score=utility_score,
+            fold_pass_rate=fold_pass_rate,
+            regime_weight=regime_weight,
+            metadata={'is_fallback': True},
+        )
+
+    def _build_candidate(self,
+                         base_feature: str,
+                         family: str,
+                         lookback: int,
+                         regime_label: str,
+                         segment_index: Optional[int],
+                         scoring_result: ScoringResult,
+                         segment_meta: Dict[str, Any]) -> Optional[HTFCandidate]:
+        """Translate a scoring result into an HTF candidate."""
+
+        if scoring_result is None:
+            return None
+
+        regime_segment_meta = {
+            'segment_index': segment_index,
+            **segment_meta,
+        }
+
+        performance_meta = {
+            'ic_oos': scoring_result.ic_oos,
+            'utility_score': scoring_result.utility_score,
+            'se_wild_bootstrap': scoring_result.se_wild_bootstrap,
+            'se_stationary_bootstrap': scoring_result.se_stationary_bootstrap,
+            'fold_pass_rate': scoring_result.fold_pass_rate,
+            'regime_weight': scoring_result.regime_weight,
+        }
+
+        metadata: Dict[str, Any] = {
+            'regime_segment': regime_segment_meta,
+            'performance': performance_meta,
+            'regime_weight': scoring_result.regime_weight,
+            'se_stationary_bootstrap': scoring_result.se_stationary_bootstrap,
+            'scoring_metadata': scoring_result.metadata,
+        }
+
+        if isinstance(scoring_result.metadata, dict) and scoring_result.metadata.get('is_fallback'):
+            metadata['is_fallback'] = True
+
+        return HTFCandidate(
+            family=family,
+            base_feature=base_feature,
+            lookback_minutes=lookback,
+            regime=regime_label,
+            utility_score=scoring_result.utility_score,
+            ic_oos=scoring_result.ic_oos,
+            se_wild_bootstrap=scoring_result.se_wild_bootstrap,
+            cpu_p95=scoring_result.cpu_p95,
+            staleness=scoring_result.staleness,
+            fold_pass_rate=scoring_result.fold_pass_rate,
+            metadata=metadata,
+        )
+
     def _check_early_stopping(self, family_scores: List[float]) -> bool:
         """Check if family should be early stopped."""
         if not family_scores:
@@ -564,17 +631,21 @@ class Phase1HTFProbe:
         if not candidates:
             return []
         
-        # Sort by utility score
-        sorted_candidates = sorted(candidates, key=lambda x: x.utility_score, reverse=True)
-        
+        # Sort by regime-weighted utility score
+        def _weighted_score(candidate: HTFCandidate) -> float:
+            return candidate.utility_score * candidate.metadata.get('regime_weight', 1.0)
+
+        sorted_candidates = sorted(candidates, key=_weighted_score, reverse=True)
+
         # Keep top 2 with positive utility and fold pass rate >= 60%
         shortlisted = []
         for candidate in sorted_candidates:
-            if (candidate.utility_score > 0 and 
-                candidate.fold_pass_rate >= 0.6 and 
+            weighted_score = _weighted_score(candidate)
+            if (weighted_score > 0 and
+                candidate.fold_pass_rate >= 0.6 and
                 len(shortlisted) < 2):
                 shortlisted.append(candidate)
-        
+
         return shortlisted
     
     def _apply_early_stopping(self, results: Dict[str, Any]) -> Dict[str, Any]:

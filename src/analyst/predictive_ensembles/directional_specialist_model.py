@@ -16,6 +16,7 @@ Key Features:
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Any, Tuple, Union
+from collections.abc import Sequence
 import logging
 from dataclasses import dataclass
 from enum import Enum
@@ -122,6 +123,8 @@ class DirectionalConfig:
     directional_weight_boost: float = 1.5  # Boost weight for strong directional moves
     asymmetric_loss_alpha: float = 0.7     # Asymmetric loss parameter
     min_directional_threshold: float = 0.1  # Minimum threshold for directional moves
+    temporal_decay_tau: float = 7 * 24 * 3600  # Temporal decay constant (seconds)
+    
     tau: float = 7.0  # Exponential decay time constant in days for recency weighting
 
     # Feature engineering parameters
@@ -340,7 +343,13 @@ class DirectionalSpecialistModel:
         self.logger.info(f"   Directional features: {self.config.enable_directional_features}")
         self.logger.info(f"   Asymmetric loss alpha: {self.config.asymmetric_loss_alpha}")
     
-    def fit(self, X: pd.DataFrame, y: np.ndarray, sample_weight: Optional[np.ndarray] = None) -> 'DirectionalSpecialistModel':
+    def fit(
+        self,
+        X: pd.DataFrame,
+        y: np.ndarray,
+        sample_weight: Optional[np.ndarray] = None,
+        timestamps: Optional[Union[pd.Series, np.ndarray, Sequence[Any]]] = None
+    ) -> 'DirectionalSpecialistModel':
         """
         Fit the directional specialist model.
         
@@ -348,6 +357,7 @@ class DirectionalSpecialistModel:
             X: Input features
             y: Target values
             sample_weight: Optional sample weights
+            timestamps: Optional timestamps aligned with samples for temporal decay
             
         Returns:
             Self for method chaining
@@ -360,6 +370,7 @@ class DirectionalSpecialistModel:
         if self.config.enable_directional_quantiles:
             self._validate_quantile_feature_range(X_enhanced)
         
+
         # Create directional sample weights with recency decay
         timestamps = X.index if isinstance(X, pd.DataFrame) else None
         directional_weights = self._create_directional_sample_weights(y, timestamps=timestamps)
@@ -512,10 +523,14 @@ class DirectionalSpecialistModel:
     def _create_directional_sample_weights(
         self,
         y: np.ndarray,
-        timestamps: Optional[Union[pd.Index, pd.Series, np.ndarray]] = None,
+        timestamps: Optional[Union[pd.Series, np.ndarray, Sequence[Any]]] = None
     ) -> np.ndarray:
-        """Create sample weights that emphasize directional clarity and recency."""
-        weights = np.ones(len(y), dtype=float)
+        """Create sample weights that emphasize directional clarity with temporal decay."""
+
+        weights = np.ones(len(y))
+
+        if len(y) == 0:
+            return weights
 
         # Higher weight for strong directional moves
         strong_threshold = np.percentile(np.abs(y), 75)
@@ -526,6 +541,7 @@ class DirectionalSpecialistModel:
         clear_long = y > self.config.min_directional_threshold
         clear_short = y < -self.config.min_directional_threshold
         weights[clear_long | clear_short] *= 1.2
+
 
         if timestamps is not None:
             timestamp_index = pd.Index(timestamps)
@@ -565,13 +581,137 @@ class DirectionalSpecialistModel:
                     )
 
         return weights
+
+    @staticmethod
+    def _extract_timestamps(X: pd.DataFrame) -> Optional[pd.Series]:
+        """Extract timestamp information from feature dataframe if available."""
+
+        if isinstance(X.index, pd.DatetimeIndex):
+            return pd.Series(X.index, index=X.index)
+
+        for candidate in ['timestamp', 'time', 'datetime']:
+            if candidate in X.columns:
+                try:
+                    return pd.to_datetime(X[candidate], errors='coerce')
+                except Exception:
+                    continue
+
+        return None
+
+    def _compute_temporal_decay(
+        self,
+        timestamps: Optional[Union[pd.Series, np.ndarray, Sequence[Any]]],
+        n_samples: int
+    ) -> Optional[np.ndarray]:
+        """Compute exponential decay factors based on sample timestamps."""
+
+        if timestamps is None:
+            return None
+
+        try:
+            if isinstance(timestamps, pd.Series):
+                ts_series = timestamps.reset_index(drop=True)
+            elif isinstance(timestamps, (pd.Index, pd.DatetimeIndex)):
+                ts_series = pd.Series(timestamps)
+            else:
+                if isinstance(timestamps, (str, bytes)):
+                    raise TypeError("Timestamps must be an iterable of values, not a single string/bytes object.")
+                ts_series = pd.Series(list(timestamps))
+        except Exception as exc:
+            self.logger.warning(f"⚠️ Failed to interpret timestamps for temporal decay: {exc}")
+            return None
+
+        if len(ts_series) != n_samples:
+            self.logger.warning(
+                "⚠️ Timestamp count (%s) does not match sample count (%s); skipping temporal decay.",
+                len(ts_series),
+                n_samples
+            )
+            return None
+
+        # Attempt to coerce timestamps into datetime values with heuristics for numeric units
+        ts_datetime = self._coerce_to_datetime(ts_series)
+        if ts_datetime is None or ts_datetime.isna().all():
+            self.logger.warning("⚠️ Unable to parse timestamps for temporal decay; skipping decay application.")
+            return None
+
+        valid_mask = ~ts_datetime.isna()
+        if not valid_mask.any():
+            return None
+
+        valid_timestamps = ts_datetime[valid_mask]
+        reference_time = valid_timestamps.max()
+        tau = max(float(self.config.temporal_decay_tau), 1.0)
+
+        delta_seconds = (reference_time - valid_timestamps).dt.total_seconds().clip(lower=0.0)
+        decay_values = np.exp(-delta_seconds / tau)
+
+        decay = np.ones(n_samples)
+        decay[valid_mask.to_numpy()] = decay_values.to_numpy()
+
+        if not valid_mask.all():
+            self.logger.warning(
+                "⚠️ %d timestamps were invalid for temporal decay and received neutral weight.",
+                (~valid_mask).sum()
+            )
+
+        return decay
+
+    @staticmethod
+    def _coerce_to_datetime(series: pd.Series) -> Optional[pd.Series]:
+        """Convert a series of timestamps to datetime, handling common numeric units."""
+
+        if series.empty:
+            return None
+
+        if np.issubdtype(series.dtype, np.datetime64):
+            return pd.to_datetime(series, utc=True, errors='coerce').tz_convert(None)
+
+        # Handle pandas Period
+        if isinstance(series.dtype, pd.PeriodDtype):
+            period_converted = series.dt.to_timestamp().astype('datetime64[ns]')
+            return pd.to_datetime(period_converted, errors='coerce')
+
+        # Try direct conversion first
+        converted = pd.to_datetime(series, errors='coerce', utc=True)
+        if not converted.isna().all():
+            return converted.tz_convert(None)
+
+        # Numeric fallback with unit detection
+        try:
+            numeric_series = pd.to_numeric(series, errors='coerce')
+        except Exception:
+            return None
+
+        if numeric_series.isna().all():
+            return None
+
+        max_abs = np.nanmax(np.abs(numeric_series.to_numpy()))
+        if max_abs > 1e18:
+            unit = 'ns'
+        elif max_abs > 1e15:
+            unit = 'us'
+        elif max_abs > 1e12:
+            unit = 'ms'
+        else:
+            unit = 's'
+
+        converted_numeric = pd.to_datetime(numeric_series, unit=unit, errors='coerce', utc=True)
+        return converted_numeric.tz_convert(None)
     
     def _calculate_directional_statistics(self, y: np.ndarray, sample_weight: np.ndarray) -> Dict[str, Any]:
         """Calculate statistics about directional distribution."""
-        
+
         long_mask = y > self.config.min_directional_threshold
         short_mask = y < -self.config.min_directional_threshold
-        
+
+        weight_sum = float(np.sum(sample_weight))
+        weight_mean = float(weight_sum / len(y)) if len(y) > 0 else 0.0
+        weight_sq_sum = float(np.sum(np.square(sample_weight)))
+        effective_sample_count = (
+            (weight_sum ** 2) / weight_sq_sum if weight_sq_sum > 0 else float(len(y))
+        )
+
         stats = {
             'total_samples': len(y),
             'long_samples': np.sum(long_mask),
@@ -584,9 +724,12 @@ class DirectionalSpecialistModel:
             'weighted_short_ratio': np.sum(sample_weight[short_mask]) / np.sum(sample_weight),
             'mean_target': np.mean(y),
             'std_target': np.std(y),
-            'directional_bias': 'long' if np.mean(y) > 0 else 'short'
+            'directional_bias': 'long' if np.mean(y) > 0 else 'short',
+            'weight_sum': weight_sum,
+            'weight_mean': weight_mean,
+            'effective_sample_count': effective_sample_count
         }
-        
+
         return stats
 
     def _validate_quantile_feature_range(self, df: pd.DataFrame) -> None:
@@ -633,7 +776,9 @@ class DirectionalSpecialistEnsemble(BaseEnsemble):
     
     def fit(self, X: pd.DataFrame, y: np.ndarray, **kwargs) -> 'DirectionalSpecialistEnsemble':
         """Fit the directional specialist ensemble."""
-        self.directional_model.fit(X, y)
+        timestamps = kwargs.get('timestamps')
+        sample_weight = kwargs.get('sample_weight')
+        self.directional_model.fit(X, y, sample_weight=sample_weight, timestamps=timestamps)
         return self
     
     def predict(self, X: pd.DataFrame) -> np.ndarray:

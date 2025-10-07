@@ -198,11 +198,17 @@ class FinalFeatureSelectionStep:
                         target_data = standardized_output.get('labels')
                         weights = standardized_output.get('weights', {})
                         target_columns = standardized_output.get('target_columns', [])
+                        sample_weights = standardized_output.get('sample_weights', None)
+                        quality_scores = standardized_output.get('quality_scores', {})
+                        validation_results = standardized_output.get('validation_results', {})
 
                         if target_data is not None:
                             self.logger.info("✅ Successfully loaded target data from standardized format")
                             tprint_info(f"🎯 Target columns: {target_columns}")
                             tprint_info(f"⚖️ Horizon weights: {weights}")
+                            tprint_info(f"📊 Sample weights: {'Available' if sample_weights is not None else 'Not available'}")
+                            tprint_info(f"🔍 Quality scores: {'Available' if quality_scores else 'Not available'}")
+                            tprint_info(f"✅ Validation status: {'Passed' if validation_results.get('is_valid', False) else 'Failed'}")
                             
                             if isinstance(target_data, dict):
                                 # Convert dict to DataFrame if needed

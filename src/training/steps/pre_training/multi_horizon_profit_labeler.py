@@ -188,26 +188,37 @@ class MultiHorizonProfitLabeler:
             tprint_info(f"⏰ Timeframe: {timeframe}")
 
             # Load market data
+            tprint_info("📊 Loading market data...")
             market_data = await self._load_market_data(symbol, exchange, timeframe, data_dir)
             if market_data is None or market_data.empty:
+                tprint_error(f"❌ No market data available for {symbol} {timeframe}")
                 raise ValueError(f"No market data available for {symbol} {timeframe}")
+            
+            tprint_success(f"✅ Market data loaded: {len(market_data)} rows, {len(market_data.columns)} columns")
 
             # Apply regime-aware labeling if enabled and regime data is available
             if self.config.enable_regime_aware_labeling and regime_data:
+                tprint_info("🎭 Applying regime-aware labeling...")
                 labeling_result = await self._execute_regime_aware_labeling(market_data, regime_data)
+                tprint_success("✅ Regime-aware labeling completed")
             else:
-                # Use standard volatility-aware labeling
+                tprint_info("📊 Using standard volatility-aware labeling...")
                 labeling_result = self.volatility_labeler.generate_labels(market_data)
+                tprint_success("✅ Standard labeling completed")
 
             # Apply label balancing and sample weighting if enabled
+            tprint_info("⚖️ Applying label balancing and sample weighting...")
             balanced_labeling_result = await self._apply_balancing_and_weighting(
                 labeling_result, market_data, regime_data
             )
+            tprint_success("✅ Balancing and weighting completed")
 
             # Generate comprehensive report using the profit labeling report generator
+            tprint_info("📋 Generating comprehensive report...")
             report = await self._generate_comprehensive_report(
                 balanced_labeling_result, symbol, exchange, timeframe, regime_data
             )
+            tprint_success("✅ Report generation completed")
 
             # Map target columns to expected names for feature lookback optimization compatibility
             mapped_labels = self._map_target_columns_for_feature_optimization(balanced_labeling_result.labels)
@@ -224,6 +235,15 @@ class MultiHorizonProfitLabeler:
             target_columns = self._extract_target_columns_for_optimization(mapped_labels)
             tprint_info(f"🎯 Identified target columns for feature optimization: {target_columns}")
 
+            # Validate that we have the required data for downstream components
+            tprint_info("🔍 Validating data structure for downstream compatibility...")
+            validation_results = self._validate_downstream_compatibility(mapped_labels, horizon_weights, target_columns)
+            if not validation_results['is_valid']:
+                tprint_warning(f"⚠️ Downstream compatibility issues detected: {validation_results['issues']}")
+            else:
+                tprint_success("✅ Data structure validated for downstream compatibility")
+
+            # Create enhanced artifacts with comprehensive metadata for downstream components
             artifacts = {
                 'multi_horizon_labeling_result': {
                     'labeled_data': mapped_labels,  # This is what feature lookback optimization expects
@@ -235,6 +255,8 @@ class MultiHorizonProfitLabeler:
                     'target_columns': target_columns,    # New: target columns for optimization
                     'method': 'multi_horizon_profit_labeling',
                     'balancing_applied': self.config.enable_label_balancing or self.config.enable_sample_weighting,
+                    'sample_weights': getattr(balanced_labeling_result, 'sample_weights', None),  # Sample weights for training
+                    'validation_results': validation_results,  # Downstream compatibility validation
                     'metadata': {
                         'symbol': symbol,
                         'exchange': exchange,
@@ -245,7 +267,8 @@ class MultiHorizonProfitLabeler:
                         'n_targets': balanced_labeling_result.n_targets,
                         'n_horizons': balanced_labeling_result.n_horizons,
                         'target_distribution': self._calculate_target_distribution(mapped_labels),
-                        'quality_summary': self._summarize_quality_scores(balanced_labeling_result.quality_scores)
+                        'quality_summary': self._summarize_quality_scores(balanced_labeling_result.quality_scores),
+                        'downstream_ready': validation_results['is_valid']
                     }
                 },
                 'labeling_report': report,
@@ -253,13 +276,16 @@ class MultiHorizonProfitLabeler:
                     'labels': mapped_labels,
                     'weights': horizon_weights,
                     'target_columns': target_columns,
-                    'quality_scores': labeling_result.quality_scores,
-                    'confidence_scores': labeling_result.confidence_scores,
-                    'eligibility_masks': labeling_result.eligibility_masks,
+                    'quality_scores': balanced_labeling_result.quality_scores,
+                    'confidence_scores': balanced_labeling_result.confidence_scores,
+                    'eligibility_masks': balanced_labeling_result.eligibility_masks,
+                    'sample_weights': getattr(balanced_labeling_result, 'sample_weights', None),
+                    'validation_results': validation_results,
                     'metadata': {
                         'source_component': 'multi_horizon_profit_labeler',
                         'creation_time': datetime.now().isoformat(),
-                        'pipeline_ready': True
+                        'pipeline_ready': validation_results['is_valid'],
+                        'downstream_compatibility': validation_results
                     }
                 }
             }
@@ -277,8 +303,37 @@ class MultiHorizonProfitLabeler:
             tprint_error(f"❌ Multi-horizon labeling failed: {e}")
             import traceback
             tprint_error(f"🔍 Error details: {traceback.format_exc()}")
-            return {
-                'multi_horizon_labeling_result': {},
+            
+            # Create error artifacts with proper structure for downstream components
+            error_artifacts = {
+                'multi_horizon_labeling_result': {
+                    'labeled_data': pd.DataFrame(),
+                    'labels': pd.DataFrame(),
+                    'confidence_scores': pd.DataFrame(),
+                    'eligibility_masks': pd.DataFrame(),
+                    'quality_scores': {},
+                    'horizon_weights': {},
+                    'target_columns': [],
+                    'method': 'multi_horizon_profit_labeling',
+                    'balancing_applied': False,
+                    'sample_weights': None,
+                    'validation_results': {'is_valid': False, 'issues': [f'Labeling failed: {str(e)}']},
+                    'metadata': {
+                        'symbol': symbol,
+                        'exchange': exchange,
+                        'timeframe': timeframe,
+                        'regime_aware': False,
+                        'processing_time': 0.0,
+                        'n_samples': 0,
+                        'n_targets': 0,
+                        'n_horizons': 0,
+                        'target_distribution': {},
+                        'quality_summary': {},
+                        'downstream_ready': False,
+                        'error': str(e),
+                        'error_traceback': traceback.format_exc()
+                    }
+                },
                 'labeling_report': {
                     'status': 'failed',
                     'error': str(e),
@@ -292,13 +347,108 @@ class MultiHorizonProfitLabeler:
                     'quality_scores': {},
                     'confidence_scores': pd.DataFrame(),
                     'eligibility_masks': pd.DataFrame(),
+                    'sample_weights': None,
+                    'validation_results': {'is_valid': False, 'issues': [f'Labeling failed: {str(e)}']},
                     'metadata': {
                         'source_component': 'multi_horizon_profit_labeler',
                         'creation_time': datetime.now().isoformat(),
                         'pipeline_ready': False,
+                        'downstream_compatibility': {'is_valid': False, 'issues': [f'Labeling failed: {str(e)}']},
                         'error': str(e)
                     }
                 }
+            }
+            
+            tprint_error("❌ Error artifacts created for downstream components")
+            return error_artifacts
+
+    def _validate_downstream_compatibility(self, labels_df: pd.DataFrame, horizon_weights: Dict[str, float], target_columns: List[str]) -> Dict[str, Any]:
+        """
+        Validate that the labeling results are compatible with downstream components.
+        
+        Args:
+            labels_df: DataFrame with labels
+            horizon_weights: Dictionary of horizon weights
+            target_columns: List of target column names
+            
+        Returns:
+            Dictionary with validation results
+        """
+        try:
+            tprint_info("🔍 Validating downstream compatibility...")
+            
+            issues = []
+            is_valid = True
+            
+            # Check if we have labels
+            if labels_df is None or labels_df.empty:
+                issues.append("No labels available")
+                is_valid = False
+            else:
+                tprint_info(f"✅ Labels available: {len(labels_df)} rows, {len(labels_df.columns)} columns")
+            
+            # Check if we have target columns
+            if not target_columns:
+                issues.append("No target columns identified")
+                is_valid = False
+            else:
+                tprint_info(f"✅ Target columns identified: {target_columns}")
+                
+                # Check if target columns exist in labels
+                missing_targets = [col for col in target_columns if col not in labels_df.columns]
+                if missing_targets:
+                    issues.append(f"Missing target columns in labels: {missing_targets}")
+                    is_valid = False
+                else:
+                    tprint_info("✅ All target columns present in labels")
+            
+            # Check if we have horizon weights
+            if not horizon_weights:
+                issues.append("No horizon weights calculated")
+                is_valid = False
+            else:
+                tprint_info(f"✅ Horizon weights available: {horizon_weights}")
+            
+            # Check data quality
+            if not labels_df.empty:
+                # Check for sufficient non-null values
+                for col in target_columns:
+                    if col in labels_df.columns:
+                        non_null_count = labels_df[col].notna().sum()
+                        total_count = len(labels_df)
+                        null_ratio = 1 - (non_null_count / total_count) if total_count > 0 else 1.0
+                        
+                        if null_ratio > 0.5:  # More than 50% null values
+                            issues.append(f"High null ratio in target '{col}': {null_ratio:.2%}")
+                            is_valid = False
+                        else:
+                            tprint_info(f"✅ Target '{col}' has good data quality: {null_ratio:.2%} null values")
+            
+            validation_result = {
+                'is_valid': is_valid,
+                'issues': issues,
+                'labels_shape': labels_df.shape if not labels_df.empty else (0, 0),
+                'target_columns_count': len(target_columns),
+                'horizon_weights_count': len(horizon_weights),
+                'data_quality_score': 1.0 - (len(issues) / 10.0)  # Simple quality score
+            }
+            
+            if is_valid:
+                tprint_success("✅ Downstream compatibility validation passed")
+            else:
+                tprint_warning(f"⚠️ Downstream compatibility validation failed: {len(issues)} issues")
+            
+            return validation_result
+            
+        except Exception as e:
+            tprint_error(f"❌ Error during downstream compatibility validation: {e}")
+            return {
+                'is_valid': False,
+                'issues': [f'Validation error: {str(e)}'],
+                'labels_shape': (0, 0),
+                'target_columns_count': 0,
+                'horizon_weights_count': 0,
+                'data_quality_score': 0.0
             }
 
     async def _apply_balancing_and_weighting(self, labeling_result: LabelingResult,
@@ -321,6 +471,8 @@ class MultiHorizonProfitLabeler:
 
         try:
             tprint_info("⚖️ Applying label balancing and sample weighting...")
+            tprint_info(f"   → Original samples: {labeling_result.n_samples}")
+            tprint_info(f"   → Original targets: {labeling_result.n_targets}")
 
             # Prepare data for balancing
             # Use market data as features (exclude target columns and metadata)
@@ -361,9 +513,18 @@ class MultiHorizonProfitLabeler:
                 additional_features['volatility'] = market_data[volatility_cols[0]]
 
             # Apply balancing and weighting
+            tprint_info("🔄 Executing balancing algorithm...")
             X_balanced, y_balanced, final_weights = self.balancing_system.balance_and_weight(
                 X, y, sample_weight, additional_features
             )
+
+            # Validate balancing results
+            if len(y_balanced) == 0:
+                tprint_warning("⚠️ Balancing resulted in empty dataset, returning original labels")
+                return labeling_result
+            
+            if len(y_balanced) < 100:  # Minimum threshold for reliable analysis
+                tprint_warning(f"⚠️ Balancing resulted in very small dataset ({len(y_balanced)} samples), proceeding with caution")
 
             # Create new labeling result with balanced data
             balanced_result = LabelingResult(
@@ -382,13 +543,29 @@ class MultiHorizonProfitLabeler:
             balanced_result.balanced_samples = len(y_balanced)
             balanced_result.sample_weights = final_weights
 
+            # Calculate balancing statistics
+            original_distribution = y.value_counts().to_dict() if not y.empty else {}
+            balanced_distribution = y_balanced.value_counts().to_dict()
+            
             tprint_success(f"✅ Balancing completed: {labeling_result.n_samples} → {len(y_balanced)} samples")
-            tprint_info(f"📊 Class distribution after balancing: {y_balanced.value_counts().to_dict()}")
+            tprint_info(f"📊 Original class distribution: {original_distribution}")
+            tprint_info(f"📊 Balanced class distribution: {balanced_distribution}")
+            
+            # Check if balancing improved class balance
+            if original_distribution and balanced_distribution:
+                original_balance = min(original_distribution.values()) / max(original_distribution.values()) if max(original_distribution.values()) > 0 else 0
+                balanced_balance = min(balanced_distribution.values()) / max(balanced_distribution.values()) if max(balanced_distribution.values()) > 0 else 0
+                
+                if balanced_balance > original_balance:
+                    tprint_success(f"✅ Class balance improved: {original_balance:.3f} → {balanced_balance:.3f}")
+                else:
+                    tprint_warning(f"⚠️ Class balance may have worsened: {original_balance:.3f} → {balanced_balance:.3f}")
 
             return balanced_result
 
         except Exception as e:
             tprint_warning(f"⚠️ Balancing failed: {e}, returning original labels")
+            tprint_info("🔍 This is not critical - downstream components can work with unbalanced data")
             return labeling_result
 
     async def _load_market_data(

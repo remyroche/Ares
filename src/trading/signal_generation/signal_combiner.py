@@ -95,15 +95,21 @@ class SignalCombiner:
         self.combination_method = CombinationMethod(
             config.get('combination_method', 'weighted_average')
         )
-        
+
         # Performance tracking
         self.combination_history: List[CombinedSignal] = []
         self.max_history = config.get('max_history', 1000)
-        
+
         # Performance metrics
         self.combination_count = 0
         self.successful_combinations = 0
         self.failed_combinations = 0
+
+        # Optional gated stacker for expert combination
+        self.stacker = config.get('stacker_model')
+        self.stacker_artifacts = config.get('stacker_artifacts', {})
+        self.stacker_ready = False
+        self._initialise_stacker_from_artifacts()
 
     async def initialize(self) -> bool:
         """
@@ -118,6 +124,37 @@ class SignalCombiner:
         except Exception as e:
             self.logger.error(f"❌ Failed to initialize Signal Combiner: {e}")
             return False
+
+    def _initialise_stacker_from_artifacts(self) -> None:
+        """Load gating/calibration state for the stacker if provided."""
+
+        if not self.stacker:
+            self.stacker_ready = False
+            return
+
+        gating_state = None
+        calibration_state = None
+        if isinstance(self.stacker_artifacts, dict):
+            gating_state = (
+                self.stacker_artifacts.get('stacker_gating_state')
+                or self.stacker_artifacts.get('gating_state')
+            )
+            calibration_state = (
+                self.stacker_artifacts.get('stacker_calibration_state')
+                or self.stacker_artifacts.get('calibration_state')
+            )
+
+        try:
+            if gating_state and hasattr(self.stacker, 'load_gating_state'):
+                self.stacker.load_gating_state(gating_state)
+            if calibration_state and hasattr(self.stacker, 'load_calibration_state'):
+                self.stacker.load_calibration_state(calibration_state)
+        except Exception as exc:
+            self.logger.warning(
+                "⚠️ Failed to hydrate stacker gating/calibration state: %s", exc
+            )
+
+        self.stacker_ready = bool(getattr(self.stacker, 'fitted', False))
 
     @handles_errors
     @traced(span_name="signal_combination")
@@ -199,44 +236,75 @@ class SignalCombiner:
     ) -> Optional[CombinedSignal]:
         """Combine signals using weighted average method."""
         try:
-            # Calculate weighted confidence
             analyst_confidence = analyst_signal.confidence_score if analyst_signal else 0.0
             tactician_confidence = tactician_signal.confidence_score if tactician_signal else 0.0
-            
-            # Adjust weights based on signal availability
+
             analyst_weight = self.weights.analyst_weight if analyst_signal else 0.0
             tactician_weight = self.weights.tactician_weight if tactician_signal else 0.0
-            
-            # Normalize weights
-            total_weight = analyst_weight + tactician_weight
-            if total_weight == 0:
-                return None
-            
-            analyst_weight /= total_weight
-            tactician_weight /= total_weight
-            
-            # Calculate combined confidence
-            combined_confidence = (
-                analyst_confidence * analyst_weight + 
-                tactician_confidence * tactician_weight
+
+            gated_output = self._compute_gated_output(
+                analyst_signal, tactician_signal, additional_context
             )
-            
-            # Check confidence threshold
+
+            metadata: Dict[str, Any] = {'additional_context': additional_context or {}}
+            combined_utility: Optional[float] = None
+
+            if gated_output:
+                weights_dict = gated_output['weights']
+                analyst_weight = float(weights_dict.get('analyst', [analyst_weight])[0])
+                tactician_weight = float(weights_dict.get('tactician', [tactician_weight])[0])
+                total_weight = analyst_weight + tactician_weight
+                if total_weight > 0:
+                    analyst_weight /= total_weight
+                    tactician_weight /= total_weight
+                combined_confidence = float(gated_output['probability'][0])
+                combined_raw_probability = float(gated_output['raw_probability'][0])
+                if gated_output.get('utility') is not None:
+                    combined_utility = float(gated_output['utility'][0])
+                metadata['gated'] = {
+                    'probability': combined_confidence,
+                    'raw_probability': combined_raw_probability,
+                    'weights': {
+                        name: float(value[0]) if isinstance(value, np.ndarray) else float(value)
+                        for name, value in weights_dict.items()
+                    },
+                    'expert_probabilities': {
+                        name: float(values[0]) if isinstance(values, np.ndarray) else float(values)
+                        for name, values in gated_output['expert_probabilities'].items()
+                    },
+                    'utility': combined_utility,
+                }
+            else:
+                total_weight = analyst_weight + tactician_weight
+                if total_weight == 0:
+                    return None
+                analyst_weight /= total_weight
+                tactician_weight /= total_weight
+                combined_confidence = (
+                    analyst_confidence * analyst_weight
+                    + tactician_confidence * tactician_weight
+                )
+
             if combined_confidence < self.weights.confidence_threshold:
                 return None
-            
-            # Determine action
+
             action = self._determine_combined_action(analyst_signal, tactician_signal)
-            
-            # Calculate strength
             strength = self._calculate_combined_strength(analyst_signal, tactician_signal)
-            
-            # Calculate risk metrics
             risk_metrics = self._calculate_risk_metrics(analyst_signal, tactician_signal)
-            
-            # Calculate position sizing
+            if combined_utility is not None:
+                risk_metrics = dict(risk_metrics or {})
+                risk_metrics['combined_utility'] = combined_utility
+
             position_sizing = self._calculate_position_sizing(tactician_signal)
-            
+
+            metadata['combination_weights'] = {
+                'analyst_weight': analyst_weight,
+                'tactician_weight': tactician_weight,
+            }
+            if combined_utility is not None:
+                metadata['combined_utility'] = combined_utility
+            metadata['combined_confidence'] = combined_confidence
+
             return CombinedSignal(
                 timestamp=datetime.now(),
                 symbol=analyst_signal.symbol if analyst_signal else tactician_signal.symbol,
@@ -248,15 +316,9 @@ class SignalCombiner:
                 combination_method=CombinationMethod.WEIGHTED_AVERAGE,
                 risk_metrics=risk_metrics,
                 position_sizing=position_sizing,
-                metadata={
-                    'combination_weights': {
-                        'analyst_weight': analyst_weight,
-                        'tactician_weight': tactician_weight
-                    },
-                    'additional_context': additional_context or {}
-                }
+                metadata=metadata,
             )
-            
+
         except Exception as e:
             self.logger.error(f"❌ Weighted average combination failed: {e}")
             return None
@@ -639,6 +701,202 @@ class SignalCombiner:
                 'leverage': 1.0,
                 'risk_per_trade': 0.02
             }
+
+    def _compute_gated_output(
+        self,
+        analyst_signal: Optional[AnalystSignal],
+        tactician_signal: Optional[TacticianSignal],
+        additional_context: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        if not self.stacker or not self.stacker_ready:
+            return None
+        if analyst_signal is None or tactician_signal is None:
+            return None
+
+        base_predictions = self._prepare_base_predictions_for_gater(
+            analyst_signal, tactician_signal
+        )
+        if not base_predictions:
+            return None
+
+        regime_features = self._assemble_regime_features_for_gater(
+            analyst_signal, tactician_signal, additional_context
+        )
+
+        try:
+            return self.stacker.combine_outputs(base_predictions, regime_features)
+        except Exception as exc:
+            self.logger.warning("⚠️ Failed to evaluate gated stacker: %s", exc)
+            return None
+
+    def _prepare_base_predictions_for_gater(
+        self,
+        analyst_signal: AnalystSignal,
+        tactician_signal: TacticianSignal,
+    ) -> Optional[Dict[str, Dict[str, np.ndarray]]]:
+        analyst_prob = self._extract_probability_from_signal(analyst_signal)
+        tactician_prob = self._extract_probability_from_signal(tactician_signal)
+        if analyst_prob is None or tactician_prob is None:
+            return None
+
+        predictions: Dict[str, Dict[str, np.ndarray]] = {
+            'analyst': {'probability': np.array([analyst_prob], dtype=float)},
+            'tactician': {'probability': np.array([tactician_prob], dtype=float)},
+        }
+
+        analyst_utility = self._extract_utility_from_signal(analyst_signal)
+        if analyst_utility is not None:
+            predictions['analyst']['utility'] = np.array([analyst_utility], dtype=float)
+
+        tactician_utility = self._extract_utility_from_signal(tactician_signal)
+        if tactician_utility is not None:
+            predictions['tactician']['utility'] = np.array([tactician_utility], dtype=float)
+
+        return predictions
+
+    def _extract_probability_from_signal(self, signal: Any) -> Optional[float]:
+        if signal is None:
+            return None
+
+        candidates: List[Any] = []
+        if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
+            metadata = signal.metadata
+            candidates.extend(
+                metadata.get(key)
+                for key in (
+                    'probability',
+                    'meta_probability',
+                    'stacker_probability',
+                    'confidence_score',
+                )
+            )
+        if hasattr(signal, 'ml_predictions') and isinstance(signal.ml_predictions, dict):
+            ml_preds = signal.ml_predictions
+            candidates.extend(
+                ml_preds.get(key)
+                for key in ('probability', 'meta_probability', 'stacker_probability')
+            )
+        if hasattr(signal, 'confidence_score'):
+            candidates.append(getattr(signal, 'confidence_score'))
+
+        for value in candidates:
+            prob = self._safe_probability(value)
+            if prob is not None:
+                return prob
+        return None
+
+    def _extract_utility_from_signal(self, signal: Any) -> Optional[float]:
+        if signal is None:
+            return None
+        sources: List[Any] = []
+        if hasattr(signal, 'metadata') and isinstance(signal.metadata, dict):
+            metadata = signal.metadata
+            sources.extend(
+                metadata.get(key)
+                for key in ('utility', 'expected_utility', 'expected_reward', 'reward')
+            )
+        if hasattr(signal, 'risk_metrics') and isinstance(signal.risk_metrics, dict):
+            sources.append(signal.risk_metrics.get('expected_utility'))
+        for value in sources:
+            if value is None:
+                continue
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    def _assemble_regime_features_for_gater(
+        self,
+        analyst_signal: Optional[AnalystSignal],
+        tactician_signal: Optional[TacticianSignal],
+        additional_context: Optional[Dict[str, Any]],
+    ) -> Dict[str, np.ndarray]:
+        required = []
+        if self.stacker and hasattr(self.stacker, 'regime_feature_names'):
+            required = list(self.stacker.regime_feature_names)
+
+        contexts: List[Dict[str, Any]] = []
+        if additional_context:
+            contexts.append(additional_context)
+        if analyst_signal and isinstance(analyst_signal.metadata, dict):
+            contexts.append(analyst_signal.metadata)
+        if tactician_signal and isinstance(tactician_signal.metadata, dict):
+            contexts.append(tactician_signal.metadata)
+
+        feature_map: Dict[str, np.ndarray] = {}
+
+        volatility = self._resolve_context_value(
+            contexts,
+            'volatility_level',
+            fallback=getattr(analyst_signal, 'volatility_score', None),
+        )
+        # Trend signal primarily uses the `trend_score` metadata key with graceful fallbacks.
+        trend = self._resolve_context_value(
+            contexts,
+            'trend_score',
+            fallback=getattr(analyst_signal, 'market_health_score', None),
+        )
+        liquidity = self._resolve_context_value(
+            contexts,
+            'liquidity_z',
+            fallback=(
+                getattr(tactician_signal, 'risk_metrics', {}).get('liquidity_z')
+                if tactician_signal and isinstance(tactician_signal.risk_metrics, dict)
+                else None
+            ),
+        )
+
+        feature_map['volatility_level'] = np.array([
+            self._safe_float(volatility)
+        ])
+        feature_map['trend_score'] = np.array([
+            self._safe_float(trend)
+        ])
+        feature_map['liquidity_z'] = np.array([
+            self._safe_float(liquidity)
+        ])
+
+        for name in required:
+            if name not in feature_map:
+                value = self._resolve_context_value(contexts, name)
+                feature_map[name] = np.array([self._safe_float(value)])
+
+        return feature_map
+
+    def _resolve_context_value(
+        self,
+        contexts: List[Dict[str, Any]],
+        key: str,
+        fallback: Any = None,
+    ) -> Any:
+        for context in contexts:
+            if key in context and context[key] is not None:
+                return context[key]
+        return fallback
+
+    def _safe_probability(self, value: Any) -> Optional[float]:
+        if value is None:
+            return None
+        try:
+            prob = float(value)
+        except (TypeError, ValueError):
+            return None
+        if np.isnan(prob):
+            return None
+        if prob > 1.0:
+            prob = prob / 100.0 if prob <= 100.0 else 1.0
+        if prob < 0.0:
+            prob = 0.0
+        return max(0.0, min(1.0, prob))
+
+    def _safe_float(self, value: Any, default: float = 0.0) -> float:
+        if value is None:
+            return default
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
 
     def _signal_to_dict(self, signal: CombinedSignal) -> Dict[str, Any]:
         """Convert combined signal to dictionary."""

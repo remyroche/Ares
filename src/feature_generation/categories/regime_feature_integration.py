@@ -19,6 +19,11 @@ from dataclasses import dataclass
 from collections import defaultdict
 
 from ..core.feature_generator import (
+    FeatureGenerator,
+    FeatureConfig,
+    FeatureCategory,
+    VectorizedFeatureGenerator
+)
 
 # Optimization utilities
 try:
@@ -27,11 +32,6 @@ try:
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
-    FeatureGenerator, 
-    FeatureConfig, 
-    FeatureCategory,
-    VectorizedFeatureGenerator
-)
 
 # Import tprint for consistent logging
 from src.utils.tprint import tprint
@@ -85,6 +85,10 @@ class RegimeFeatureConfig:
     persistence_weight: float = 0.5
     noise_penalty_weight: float = 0.3
     stability_weight: float = 0.2
+
+    # Intensity weighting controls
+    persistence_scale: float = 0.5
+    probability_scale: float = 0.75
 
     def __post_init__(self) -> None:
         thresholds = get_regime_feature_thresholds()
@@ -149,6 +153,7 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
         self._latest_selection_scores: Dict[str, float] = {}
         self._latest_category_counts: Dict[str, int] = {}
         self._latest_target_count: int = getattr(config, 'total_max_features', 100)
+        self._latest_intensity_scalers: Dict[str, float] = {}
         
         # Initialize regime-focused feature generators
         self.volatility_generator = RegimeVolatilityFeatureGenerator() if config.include_volatility_regime else None
@@ -259,6 +264,18 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
                 filter_start = time.time()
                 filtered_features, quality_stats = self._apply_quality_filters(features, optimized_data)
 
+                # Apply intensity weighting prior to feature selection
+                filtered_features, intensity_scalers, quality_stats = self._apply_intensity_weighting(
+                    filtered_features,
+                    quality_stats
+                )
+                if intensity_scalers:
+                    self._latest_intensity_scalers = intensity_scalers
+                else:
+                    self._latest_intensity_scalers = {
+                        name: 1.0 for name in filtered_features.keys()
+                    }
+
                 # Ensure we keep exactly the configured number of features for optimal performance
                 target_features = getattr(self.regime_config, 'total_max_features', 100)
                 self._latest_target_count = target_features
@@ -279,6 +296,10 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
                 # Persist the latest stats aligned with the selected features
                 self._latest_quality_stats = {
                     name: quality_stats.get(name, {})
+                    for name in features.keys()
+                }
+                self._latest_intensity_scalers = {
+                    name: self._latest_quality_stats.get(name, {}).get('intensity_scaler', 1.0)
                     for name in features.keys()
                 }
                 if len(filtered_features) <= target_features:
@@ -475,6 +496,56 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
 
         self._latest_quality_stats = quality_stats
         return filtered_features, quality_stats
+
+    def _apply_intensity_weighting(
+        self,
+        features: Dict[str, np.ndarray],
+        quality_stats: Dict[str, Dict[str, float]]
+    ) -> Tuple[Dict[str, np.ndarray], Dict[str, float], Dict[str, Dict[str, float]]]:
+        """Scale features using persistence and probability based intensity multipliers."""
+
+        if not features:
+            return features, {}, quality_stats
+
+        persistence_scale = getattr(self.regime_config, 'persistence_scale', 0.0)
+        probability_scale = getattr(self.regime_config, 'probability_scale', 0.0)
+
+        updated_features: Dict[str, np.ndarray] = {}
+        intensity_scalers: Dict[str, float] = {}
+        updated_quality_stats: Dict[str, Dict[str, float]] = dict(quality_stats)
+
+        for name, feature_array in features.items():
+            metrics = dict(quality_stats.get(name, {}))
+
+            persistence = float(metrics.get('persistence', 0.0) or 0.0)
+            persistence = max(persistence, 0.0)
+            scale = 1.0 + (persistence_scale * persistence if persistence_scale else 0.0)
+
+            probability_value = metrics.get('probability')
+            if probability_value is None and probability_scale and feature_array is not None and 'prob' in name.lower():
+                valid_values = feature_array[~np.isnan(feature_array)]
+                if len(valid_values) > 0:
+                    probability_value = float(np.clip(np.nanmean(valid_values), 0.0, 1.0))
+
+            if probability_value is not None:
+                probability_value = float(np.clip(probability_value, 0.0, 1.0))
+                probability_boost = max(probability_value - 0.5, 0.0)
+                scale *= 1.0 + (probability_scale * probability_boost if probability_scale else 0.0)
+                metrics['probability'] = probability_value
+
+            if scale <= 0:
+                scale = 1.0
+
+            metrics['intensity_scaler'] = scale
+            intensity_scalers[name] = scale
+            updated_quality_stats[name] = metrics
+
+            if feature_array is not None:
+                updated_features[name] = np.asarray(feature_array) * scale
+            else:
+                updated_features[name] = feature_array
+
+        return updated_features, intensity_scalers, updated_quality_stats
 
     def _determine_feature_category(self, feature_name: str) -> str:
         """Classify feature names into high-level regime categories."""
@@ -831,6 +902,10 @@ class RegimeFeatureIntegration(VectorizedFeatureGenerator):
                     'persistence': getattr(self.regime_config, 'persistence_weight', 0.5),
                     'noise_penalty': getattr(self.regime_config, 'noise_penalty_weight', 0.3),
                     'stability': getattr(self.regime_config, 'stability_weight', 0.2)
+                },
+                'intensity_scalers': self._latest_intensity_scalers or {
+                    name: stats.get(name, {}).get('intensity_scaler', 1.0)
+                    for name in features.keys()
                 },
                 'category_quota': {
                     category: {

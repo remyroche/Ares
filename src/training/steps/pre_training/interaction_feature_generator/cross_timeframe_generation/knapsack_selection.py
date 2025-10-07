@@ -60,7 +60,7 @@ class FeatureCandidate:
 
 
 @dataclass
-class KnapsackSelectionResult:
+class CrossTimeframeKnapsackSelectionResult:
     """Result of the knapsack-based resource allocation stage."""
     selected_features: List[FeatureCandidate]
     total_utility: float
@@ -438,7 +438,7 @@ class KnapsackSelection:
     def select_features(self,
                        phase2_results: Dict[str, Any],
                        ehu_rih_assignments: List[Any],
-                       sessionized_data: Optional[Dict[str, Any]] = None) -> KnapsackSelectionResult:
+                       sessionized_data: Optional[Dict[str, Any]] = None) -> CrossTimeframeKnapsackSelectionResult:
         """
         Select features using knapsack optimization.
         
@@ -456,7 +456,7 @@ class KnapsackSelection:
         
         if not candidates:
             self.logger.warning("No feature candidates available")
-            return KnapsackSelectionResult(
+            return CrossTimeframeKnapsackSelectionResult(
                 selected_features=[],
                 total_utility=0.0,
                 total_cost=0.0,
@@ -487,7 +487,7 @@ class KnapsackSelection:
             family_coverage[family] = family_coverage.get(family, 0) + 1
         
         # Create selection result
-        result = KnapsackSelectionResult(
+        result = CrossTimeframeKnapsackSelectionResult(
             selected_features=selected_features,
             total_utility=total_utility,
             total_cost=total_cost,
@@ -691,7 +691,7 @@ class KnapsackSelection:
 
         return None
     
-    def get_selection_summary(self, result: KnapsackSelectionResult) -> Dict[str, Any]:
+    def get_selection_summary(self, result: CrossTimeframeKnapsackSelectionResult) -> Dict[str, Any]:
         """Get summary of selection results."""
         return {
             'total_selected': len(result.selected_features),

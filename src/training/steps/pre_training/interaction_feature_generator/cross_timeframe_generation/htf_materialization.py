@@ -30,6 +30,14 @@ from .htf_utils import (
     format_transform_suffix,
     resample_htf_series,
 )
+from ..feature_interaction_generation.feature_engineering import (
+    FeatureRegistry,
+    FeatureFamily,
+    TransformRouter,
+    create_default_transform_config,
+)
+
+from . import htf_base_features
 
 
 class UpdateStyle(Enum):
@@ -377,6 +385,20 @@ class HTFFeatureGenerator:
             feature_name,
             lookback,
             htf_series,
+        # Get base feature computation function
+        base_feature_func = htf_base_features.get_base_feature_func(feature_name)
+        
+        # Compute base feature
+        base_series = base_feature_func(data)
+        
+        # Resample to HTF
+        htf_series = htf_base_features.resample_to_htf(base_series, lookback, family)
+        
+        # Apply transform
+        transform_router = self._create_transform_router([feature_name])
+        transformed_data = transform_router.fit_transform(
+            pd.DataFrame({feature_name: htf_series}),
+            pd.DataFrame({feature_name: htf_series})
         )
         
         # Create state
@@ -428,6 +450,11 @@ class HTFFeatureGenerator:
         suffix = format_transform_suffix(transform_config[feature_name])
         transformed_series.name = f"t/{feature_name}_htf{lookback}/{suffix}"
         return transformed_series, suffix
+    
+    def _create_transform_router(self, feature_names: List[str]) -> TransformRouter:
+        """Create transform router for features."""
+        config = create_default_transform_config(feature_names)
+        return TransformRouter(config)
 
 
 class HTFMaterialization:

@@ -29,9 +29,15 @@ from .htf_utils import (
     build_htf_family_catalog,
     format_transform_suffix,
     resample_htf_series,
+from ..feature_interaction_generation.feature_engineering import (
+    FeatureRegistry,
+    FeatureFamily,
+    TransformRouter,
+    create_default_transform_config,
 )
 
 from .scoring_system import AdaptiveScoringSystem
+from . import htf_base_features
 
 
 @dataclass
@@ -174,6 +180,14 @@ class HTFFeatureGenerator:
 
         transformed_series = self._apply_transforms(
             base_feature,
+        base_feature_func = htf_base_features.get_base_feature_func(base_feature)
+
+        # Compute base feature
+        base_series = base_feature_func(data)
+
+        # Resample to HTF
+        return htf_base_features.resample_to_htf(
+            base_series,
             lookback_minutes,
             htf_series,
         )

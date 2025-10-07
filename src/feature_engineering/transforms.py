@@ -4,11 +4,12 @@ Transform System for End-to-End Roadmap
 Implements exactly one transform per parent:
 - EW-Z (stateful online): default for continuous parents
 - TOD Rank (EW histogram): for seasonal count-like features
-- Signed-log: for heavy tails
+- Signed-log: for deterministic heavy tails
+- MAD Scaler: for empirically heavy-tailed series
 - Winsorization: after transform, clip to train quantiles
 """
 
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any, Union, Iterable, Tuple
 from dataclasses import dataclass
 import pandas as pd
 import numpy as np
@@ -21,6 +22,7 @@ class TransformType(Enum):
     EWZ = "ewz"
     TOD_RANK = "tod_rank"
     SIGNED_LOG = "signed_log"
+    MAD = "mad"
     WINSOR = "winsor"
 
 
@@ -165,7 +167,7 @@ class TODRank:
 
 class SignedLog:
     """Signed log transform for heavy tails."""
-    
+
     def __init__(self):
         pass
     
@@ -184,6 +186,61 @@ class SignedLog:
     def set_state(self, state: Dict[str, Any]):
         """Set state (no state for signed log)."""
         pass
+
+
+class MADScaler:
+    """Median absolute deviation scaler with persistent state."""
+
+    def __init__(self):
+        self.median: Optional[float] = None
+        self.mad: Optional[float] = None
+        self.fitted: bool = False
+
+    @staticmethod
+    def _compute_mad(values: pd.Series, center: float) -> float:
+        deviations = np.abs(values - center)
+        mad = np.median(deviations)
+        return float(mad)
+
+    def fit_transform(self, data: pd.Series) -> pd.Series:
+        """Fit median and MAD, then scale data."""
+        finite_data = data.dropna()
+
+        if len(finite_data) == 0:
+            # Default to neutral parameters when no finite data is present.
+            self.median = 0.0
+            self.mad = 1.0
+            self.fitted = True
+            return data.astype(float)
+
+        self.median = float(np.median(finite_data))
+        mad = self._compute_mad(finite_data, self.median)
+        # Avoid division by zero by falling back to unit scale.
+        self.mad = mad if mad != 0 else 1.0
+        self.fitted = True
+
+        return self.transform(data)
+
+    def transform(self, data: pd.Series) -> pd.Series:
+        """Scale using stored median and MAD."""
+        if not self.fitted or self.median is None or self.mad is None:
+            raise ValueError("MADScaler must be fitted before calling transform.")
+
+        return (data - self.median) / self.mad
+
+    def get_state(self) -> Dict[str, Any]:
+        """Return state for persistence."""
+        return {
+            'median': self.median,
+            'mad': self.mad,
+            'fitted': self.fitted
+        }
+
+    def set_state(self, state: Dict[str, Any]):
+        """Restore persisted state."""
+        self.median = state.get('median')
+        self.mad = state.get('mad')
+        self.fitted = state.get('fitted', False)
 
 
 class Winsorization:
@@ -255,11 +312,13 @@ class TransformRouter:
                 self.transformers[feature_name] = TODRank(n_buckets, granularity)
             elif transform_config.transform_type == TransformType.SIGNED_LOG:
                 self.transformers[feature_name] = SignedLog()
+            elif transform_config.transform_type == TransformType.MAD:
+                self.transformers[feature_name] = MADScaler()
             elif transform_config.transform_type == TransformType.WINSOR:
                 lower_q = transform_config.params.get('lower_quantile', 0.001)
                 upper_q = transform_config.params.get('upper_quantile', 0.999)
                 self.transformers[feature_name] = Winsorization(lower_q, upper_q)
-    
+
     def fit_transform(self, train_data: pd.DataFrame, val_data: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         """Fit on training data and transform both train and validation."""
         results = {}
@@ -326,35 +385,49 @@ class TransformRouter:
                 self.transformers[feature_name].set_state(state)
 
 
-def create_default_transform_config(feature_names: List[str]) -> Dict[str, TransformConfig]:
+def _iter_feature_metadata(
+    feature_inputs: Union[List[str], Dict[str, Dict[str, Any]]]
+) -> Iterable[Tuple[str, Dict[str, Any]]]:
+    if isinstance(feature_inputs, dict):
+        return feature_inputs.items()
+    return [(name, {}) for name in feature_inputs]
+
+
+def create_default_transform_config(
+    feature_inputs: Union[List[str], Dict[str, Dict[str, Any]]]
+) -> Dict[str, TransformConfig]:
     """Create default transform configuration for features."""
-    config = {}
-    
-    for feature_name in feature_names:
-        # Determine transform type based on feature name
-        if any(x in feature_name for x in ['volume_z', 'tradecount_z', 'dollarvol_z']):
+    config: Dict[str, TransformConfig] = {}
+
+    for feature_name, metadata in _iter_feature_metadata(feature_inputs):
+        metadata = metadata or {}
+
+        if metadata.get('heavy_tailed'):
+            transform_type = TransformType.MAD
+            params: Dict[str, Any] = {}
+        elif any(x in feature_name for x in ['volume_z', 'tradecount_z', 'dollarvol_z']):
             # TOD Rank for seasonal count-like features
             transform_type = TransformType.TOD_RANK
             params = {'n_buckets': 48, 'granularity_minutes': 30}
         elif any(x in feature_name for x in ['spread_z', 'ofi_proxy', 'microprice_dev']):
-            # Signed log for heavy tails
+            # Signed log for deterministic heavy tails
             transform_type = TransformType.SIGNED_LOG
             params = {}
         else:
             # EW-Z as default for continuous features
             transform_type = TransformType.EWZ
             params = {'halflife': 12}
-        
+
         # Generate spec hash
         content = f"{feature_name}_{transform_type.value}_{params}"
         spec_hash = hashlib.md5(content.encode()).hexdigest()
-        
+
         config[feature_name] = TransformConfig(
             transform_type=transform_type,
             params=params,
             spec_hash=spec_hash
         )
-    
+
     return config
 
 

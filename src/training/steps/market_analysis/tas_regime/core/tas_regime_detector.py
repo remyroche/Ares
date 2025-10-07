@@ -478,18 +478,12 @@ class TASRegimeDetector:
                 'use_transformer_attention': True,
                 'regime_aware': True,
                 'attention_dropout': 0.1,
-                'num_heads': 4
+                'num_heads': 4,
+                'sign_dropout_rate': 0.0,
+                'sign_threshold': 0.2
             }
 
-            self.patchtst_model = create_patchtst_wrapper(
-                base_model,
-                patch_len=patchtst_config['patch_len'],
-                stride=patchtst_config['stride'],
-                use_transformer_attention=patchtst_config['use_transformer_attention'],
-                regime_aware=patchtst_config['regime_aware'],
-                attention_dropout=patchtst_config['attention_dropout'],
-                num_heads=patchtst_config['num_heads']
-            )
+            self.patchtst_model = create_patchtst_wrapper(base_model, **patchtst_config)
             self.logger.info("✅ PatchTST architecture initialized for regime enhancement")
         except Exception as e:
             self.logger.warning(f"PatchTST initialization failed: {e}")

@@ -215,6 +215,12 @@ class AssemblyDAG:
             
             # Apply winsorization
             transformed_features = apply_winsorization(transformed_features)
+
+            rotation_metadata = {}
+            if not transformed_features.empty:
+                transformed_features, rotation_metadata = self._orthogonalize_correlated_features(
+                    transformed_features
+                )
             
             # Step 5: Patch/GRU model
             patch_features = {}
@@ -256,7 +262,7 @@ class AssemblyDAG:
             
             # Step 9: Create artifacts
             self.artifacts = self._create_artifacts(
-                transform_router, lookback_choices, interaction_config, patch_features
+                transform_router, lookback_choices, interaction_config, patch_features, rotation_metadata
             )
             
             self.status = AssemblyStatus.COMPLETED
@@ -274,7 +280,8 @@ class AssemblyDAG:
                     'parent_features': len(parent_features.columns),
                     'transformed_features': len(transformed_features.columns),
                     'interactions': len(interactions.columns),
-                    'patch_features': len(patch_features)
+                    'patch_features': len(patch_features),
+                    'orthogonalized_groups': len(rotation_metadata)
                 }
             )
             
@@ -287,13 +294,13 @@ class AssemblyDAG:
                 feature_names=[],
                 selected_features=[],
                 patch_features={},
-                artifacts=ArtifactsRegistry({}, {}, {}, {}),
+                artifacts=ArtifactsRegistry({}, {}, {}, {}, rotation_metadata={}),
                 status=self.status,
                 metadata={'error': str(e)}
             )
-    
-    def _select_features(self, 
-                        features: pd.DataFrame, 
+
+    def _select_features(self,
+                        features: pd.DataFrame,
                         targets: Optional[pd.Series]) -> List[str]:
         """Select features within budget constraints."""
         
@@ -315,14 +322,83 @@ class AssemblyDAG:
         selected = [col for col, _ in correlations[:self.config.feature_budget_pre]]
         
         return selected
-    
-    def _create_artifacts(self, 
+
+    def _orthogonalize_correlated_features(self,
+                                           features: pd.DataFrame,
+                                           threshold: float = 0.9
+                                           ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """Replace highly correlated feature groups with orthogonal rotations."""
+
+        if features.shape[1] < 2:
+            return features, {}
+
+        corr_matrix = features.corr().abs()
+        corr_matrix = corr_matrix.fillna(0.0)
+        np.fill_diagonal(corr_matrix.values, 0.0)
+
+        visited = set()
+        rotation_metadata: Dict[str, Any] = {}
+
+        for column in corr_matrix.columns:
+            if column in visited:
+                continue
+
+            group = {column}
+            stack = [column]
+
+            while stack:
+                current = stack.pop()
+                visited.add(current)
+                strong_partners = corr_matrix.loc[current][corr_matrix.loc[current] > threshold].index.tolist()
+                for partner in strong_partners:
+                    if partner not in group:
+                        group.add(partner)
+                        if partner not in visited:
+                            stack.append(partner)
+
+            if len(group) < 2:
+                continue
+
+            ordered_group = sorted(group, key=lambda name: list(features.columns).index(name))
+            subset = features[ordered_group]
+
+            column_means = subset.mean(axis=0)
+            subset_filled = subset.fillna(column_means)
+            centered = subset_filled - column_means
+
+            if np.allclose(centered.values, 0.0):
+                continue
+
+            try:
+                _, _, vh = np.linalg.svd(centered.values, full_matrices=False)
+            except np.linalg.LinAlgError:
+                continue
+
+            rotation_matrix = vh.T
+            rotated_values = centered.values @ rotation_matrix
+
+            rotated_df = pd.DataFrame(rotated_values, index=subset.index, columns=ordered_group)
+            features.loc[:, ordered_group] = rotated_df
+
+            group_key = "::".join(ordered_group)
+            rotation_metadata[group_key] = {
+                'columns': ordered_group,
+                'means': column_means.to_dict(),
+                'rotation_matrix': rotation_matrix.tolist(),
+                'method': 'pca',
+                'threshold': threshold
+            }
+
+        return features, rotation_metadata
+
+    def _create_artifacts(self,
                          transform_router: TransformRouter,
                          lookback_choices: Dict[str, Any],
                          interaction_config: Dict[str, Any],
-                         patch_features: Dict[str, pd.Series]) -> ArtifactsRegistry:
+                         patch_features: Dict[str, pd.Series],
+                         rotation_metadata: Dict[str, Any]) -> ArtifactsRegistry:
         """Create artifacts registry."""
-        
+
         # Transform parameters
         transform_params = {}
         for feature_name, params in transform_router.get_transform_params().items():
@@ -364,12 +440,13 @@ class AssemblyDAG:
                 'feature_importance': {},
                 'spec_hash': 'patch_model_gru'
             }
-        
+
         return ArtifactsRegistry(
             transform_params=transform_params,
             lookback_choices=lookback_artifacts,
             interaction_configs=interaction_artifacts,
             model_artifacts=model_artifacts,
+            rotation_metadata=rotation_metadata,
             patch_weights=None,
             residual_std=None,
             spec_hash=f"assembly_{hash(str(transform_params))}"

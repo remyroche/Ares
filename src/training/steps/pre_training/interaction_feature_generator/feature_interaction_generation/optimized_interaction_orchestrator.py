@@ -37,13 +37,20 @@ from src.utils.tprint import (
 from src.utils.common_operations import (
     safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
     get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-    optimize_memory_usage, parallel_processing_optimizer
+    optimize_memory_usage, parallel_processing_optimizer, safe_correlation,
+    safe_dataframe_operation, optimize_dataframe_dtypes, safe_fillna,
+    create_data_quality_report, get_dataframe_info, safe_rolling,
+    safe_groupby_operation, safe_apply_function, safe_filter_dataframe,
+    create_summary_statistics, safe_to_parquet, safe_read_parquet,
+    memory_checkpoint, gpu_context, optimize_memory, get_memory_usage
 )
 
 # Import math validation
 from src.utils.math_validation import (
     safe_divide as math_safe_divide, safe_log as math_safe_log,
-    safe_sqrt as math_safe_sqrt, validate_finite as math_validate_finite
+    safe_sqrt as math_safe_sqrt, validate_finite as math_validate_finite,
+    safe_correlation as math_safe_correlation, safe_mean, safe_std,
+    safe_percentile, validate_correlation_matrix, safe_matrix_inverse
 )
 
 # Import matrix operations
@@ -52,11 +59,22 @@ try:
         get_unified_matrix_operations, get_vectorized_processing_core,
         get_batch_matrix_processor, safe_matrix_multiply,
         vectorized_rolling_features, parallel_feature_engineering,
-        optimize_dataframe, get_hardware_performance_report
+        optimize_dataframe, get_hardware_performance_report,
+        compute_trading_indicators, compute_moving_averages,
+        compute_momentum_indicators, compute_volatility_indicators,
+        compute_volume_indicators, compute_trend_indicators,
+        compute_oscillator_indicators, compute_pattern_indicators,
+        matrix_correlation_analysis, batch_matrix_multiply,
+        batch_feature_transformation, batch_correlation_analysis,
+        create_ml_pipeline, execute_ml_pipeline, optimize_pipeline_config,
+        get_pipeline_executor, optimize_batch_size, record_batch_performance,
+        get_batch_optimization_stats, cleanup_hardware_resources,
+        get_processing_performance_stats
     )
     MATRIX_OPS_AVAILABLE = True
+    tprint_success("✅ Matrix operations module loaded successfully")
 except ImportError as e:
-    tprint_warning(f"Matrix operations not available: {e}")
+    tprint_warning(f"⚠️ Matrix operations not available: {e}")
     MATRIX_OPS_AVAILABLE = False
 
 # Import ML common utilities
@@ -66,9 +84,15 @@ try:
     )
     from src.utils.ml_common.cross_validation import PurgedKFold
     from src.utils.ml_common.feature_selection import FeatureSelector
+    from src.utils.ml_common.data_leakage import DataLeakageDetector
+    from src.utils.ml_common.lookahead_bias import LookaheadBiasDetector
+    from src.utils.ml_common.hyperparameter_optimization import HPOptimizer
+    from src.utils.ml_common.model_validation import ModelValidator
+    from src.utils.ml_common.out_of_fold import OutOfFoldPredictor
     ML_COMMON_AVAILABLE = True
+    tprint_success("✅ ML common utilities loaded successfully")
 except ImportError as e:
-    tprint_warning(f"ML common utilities not available: {e}")
+    tprint_warning(f"⚠️ ML common utilities not available: {e}")
     ML_COMMON_AVAILABLE = False
 
 # Import data utilities
@@ -77,9 +101,13 @@ try:
     from src.utils.data.data_validation import DataValidator
     from src.utils.kline_parquet import KlineParquetLoader
     from src.utils.serialization_utils import save_pickle, load_pickle
+    from src.utils.data.data_preprocessing import DataPreprocessor
+    from src.utils.data.feature_engineering import FeatureEngineer
+    from src.utils.data.time_series_utils import TimeSeriesProcessor
     DATA_UTILS_AVAILABLE = True
+    tprint_success("✅ Data utilities loaded successfully")
 except ImportError as e:
-    tprint_warning(f"Data utilities not available: {e}")
+    tprint_warning(f"⚠️ Data utilities not available: {e}")
     DATA_UTILS_AVAILABLE = False
 
 # Import feature engineering components
@@ -181,134 +209,334 @@ class OptimizedInteractionOrchestrator:
     """Main orchestrator for optimized interaction feature generation."""
     
     def __init__(self, config: OptimizedInteractionConfig):
+        tprint_info("🔧 Initializing Optimized Interaction Orchestrator...")
+        
         self.config = config
         self.logger = logger.getChild('OptimizedInteractionOrchestrator')
-        
-        # Initialize components
-        self._initialize_components()
         
         # Performance tracking
         self.performance_metrics = {}
         self.stage_start_times = {}
+        self.memory_usage_history = []
+        self.gpu_usage_history = []
         
-        tprint_success("🚀 Optimized Interaction Orchestrator initialized")
-        tprint_info(f"📊 Symbol: {config.symbol}, Exchange: {config.exchange}")
-        tprint_info(f"⏰ Timeframe: {config.timeframe}")
-        tprint_info(f"🔧 Matrix ops: {MATRIX_OPS_AVAILABLE}, ML common: {ML_COMMON_AVAILABLE}")
+        # Initialize components with extensive logging
+        tprint_info("🔧 Initializing pipeline components...")
+        self._initialize_components()
+        
+        # Log initialization summary
+        tprint_success("🚀 Optimized Interaction Orchestrator initialized successfully")
+        tprint_info(f"📊 Configuration:")
+        tprint_info(f"   - Symbol: {config.symbol}")
+        tprint_info(f"   - Exchange: {config.exchange}")
+        tprint_info(f"   - Timeframe: {config.timeframe}")
+        tprint_info(f"   - Feature budget (pre): {config.feature_budget_pre}")
+        tprint_info(f"   - Feature budget (post): {config.feature_budget_post}")
+        tprint_info(f"   - Interactions cap: {config.interactions_cap}")
+        tprint_info(f"   - Lookback ceiling: {config.lookback_ceiling_minutes} minutes")
+        tprint_info(f"   - Latency budget: {config.latency_budget_ms} ms")
+        
+        tprint_info(f"🔧 Available modules:")
+        tprint_info(f"   - Matrix operations: {'✅' if MATRIX_OPS_AVAILABLE else '❌'}")
+        tprint_info(f"   - ML common utilities: {'✅' if ML_COMMON_AVAILABLE else '❌'}")
+        tprint_info(f"   - Data utilities: {'✅' if DATA_UTILS_AVAILABLE else '❌'}")
+        tprint_info(f"   - Hardware optimization: {'✅' if self.m1_gpu_manager else '❌'}")
+        tprint_info(f"   - Memory optimization: {'✅' if self.m1_memory_optimizer else '❌'}")
+        tprint_info(f"   - CPU optimization: {'✅' if self.m1_cpu_optimizer else '❌'}")
+        
+        # Initialize performance monitoring
+        self._initialize_performance_monitoring()
     
     def _initialize_components(self):
-        """Initialize all pipeline components."""
-        tprint_debug("🔧 Initializing pipeline components...")
+        """Initialize all pipeline components with comprehensive logging."""
+        tprint_info("🔧 Initializing pipeline components...")
         
-        # Feature registry
-        self.feature_registry = FeatureRegistry()
-        tprint_debug(f"✅ Feature registry initialized with {len(self.feature_registry.get_all_features())} features")
+        # Initialize feature registry
+        tprint_debug("📋 Initializing feature registry...")
+        try:
+            self.feature_registry = FeatureRegistry()
+            feature_count = len(self.feature_registry.get_all_features())
+            tprint_success(f"✅ Feature registry initialized with {feature_count} features")
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize feature registry: {e}")
+            raise
         
-        # Assembly DAG
-        assembly_config = AssemblyConfig(
-            feature_budget_pre=self.config.feature_budget_pre,
-            feature_budget_post=self.config.feature_budget_post,
-            interactions_cap=self.config.interactions_cap,
-            transforms_per_parent=self.config.transforms_per_parent,
-            lookback_ceiling_minutes=self.config.lookback_ceiling_minutes,
-            latency_budget_ms=self.config.latency_budget_ms
-        )
-        self.assembly_dag = AssemblyDAG(assembly_config)
-        tprint_debug("✅ Assembly DAG initialized")
+        # Initialize Assembly DAG
+        tprint_debug("🏗️ Initializing Assembly DAG...")
+        try:
+            assembly_config = AssemblyConfig(
+                feature_budget_pre=self.config.feature_budget_pre,
+                feature_budget_post=self.config.feature_budget_post,
+                interactions_cap=self.config.interactions_cap,
+                transforms_per_parent=self.config.transforms_per_parent,
+                lookback_ceiling_minutes=self.config.lookback_ceiling_minutes,
+                latency_budget_ms=self.config.latency_budget_ms
+            )
+            self.assembly_dag = AssemblyDAG(assembly_config)
+            tprint_success("✅ Assembly DAG initialized")
+            tprint_debug(f"   - Feature budget (pre): {assembly_config.feature_budget_pre}")
+            tprint_debug(f"   - Feature budget (post): {assembly_config.feature_budget_post}")
+            tprint_debug(f"   - Interactions cap: {assembly_config.interactions_cap}")
+            tprint_debug(f"   - Lookback ceiling: {assembly_config.lookback_ceiling_minutes} minutes")
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize Assembly DAG: {e}")
+            raise
         
-        # Lookback optimization orchestrator
-        self.lookback_orchestrator = LookbackOptimizationOrchestrator(self.config.lookback_config)
-        tprint_debug("✅ Lookback optimization orchestrator initialized")
+        # Initialize lookback optimization orchestrator
+        tprint_debug("🎯 Initializing lookback optimization orchestrator...")
+        try:
+            self.lookback_orchestrator = LookbackOptimizationOrchestrator(self.config.lookback_config)
+            tprint_success("✅ Lookback optimization orchestrator initialized")
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize lookback orchestrator: {e}")
+            raise
         
-        # Lookback selector
-        self.lookback_selector = LookbackSelector()
-        tprint_debug("✅ Lookback selector initialized")
+        # Initialize lookback selector
+        tprint_debug("🔍 Initializing lookback selector...")
+        try:
+            self.lookback_selector = LookbackSelector()
+            tprint_success("✅ Lookback selector initialized")
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize lookback selector: {e}")
+            raise
         
-        # Matrix operations (if available)
+        # Initialize matrix operations (if available)
         if MATRIX_OPS_AVAILABLE:
-            self.matrix_ops = get_unified_matrix_operations()
-            self.vectorized_core = get_vectorized_processing_core()
-            self.batch_processor = get_batch_matrix_processor()
-            tprint_debug("✅ Matrix operations initialized")
+            tprint_debug("🧮 Initializing matrix operations...")
+            try:
+                self.matrix_ops = get_unified_matrix_operations()
+                self.vectorized_core = get_vectorized_processing_core()
+                self.batch_processor = get_batch_matrix_processor()
+                tprint_success("✅ Matrix operations initialized")
+                tprint_debug("   - Unified matrix operations: ✅")
+                tprint_debug("   - Vectorized processing core: ✅")
+                tprint_debug("   - Batch matrix processor: ✅")
+            except Exception as e:
+                tprint_warning(f"⚠️ Matrix operations initialization failed: {e}")
+                self.matrix_ops = None
+                self.vectorized_core = None
+                self.batch_processor = None
         else:
             self.matrix_ops = None
             self.vectorized_core = None
             self.batch_processor = None
             tprint_warning("⚠️ Matrix operations not available - using fallback methods")
         
-        # Hardware optimizers (if available)
+        # Initialize hardware optimizers (if available)
+        tprint_debug("🖥️ Initializing M1 hardware optimizers...")
         try:
             self.m1_gpu_manager = get_m1_gpu_manager()
             self.m1_memory_optimizer = get_m1_memory_optimizer()
             self.m1_cpu_optimizer = get_m1_cpu_optimizer()
-            tprint_debug("✅ M1 hardware optimizers initialized")
+            tprint_success("✅ M1 hardware optimizers initialized")
+            tprint_debug("   - M1 GPU manager: ✅")
+            tprint_debug("   - M1 memory optimizer: ✅")
+            tprint_debug("   - M1 CPU optimizer: ✅")
         except Exception as e:
             tprint_warning(f"⚠️ M1 hardware optimizers not available: {e}")
             self.m1_gpu_manager = None
             self.m1_memory_optimizer = None
             self.m1_cpu_optimizer = None
         
-        # ML common utilities (if available)
+        # Initialize ML common utilities (if available)
         if ML_COMMON_AVAILABLE:
-            self.bayesian_optimizer = BayesianTPEOptimizer()
-            self.feature_selector = FeatureSelector()
-            tprint_debug("✅ ML common utilities initialized")
+            tprint_debug("🤖 Initializing ML common utilities...")
+            try:
+                self.bayesian_optimizer = BayesianTPEOptimizer()
+                self.feature_selector = FeatureSelector()
+                self.data_leakage_detector = DataLeakageDetector()
+                self.lookahead_bias_detector = LookaheadBiasDetector()
+                self.hp_optimizer = HPOptimizer()
+                self.model_validator = ModelValidator()
+                self.oof_predictor = OutOfFoldPredictor()
+                tprint_success("✅ ML common utilities initialized")
+                tprint_debug("   - Bayesian TPE optimizer: ✅")
+                tprint_debug("   - Feature selector: ✅")
+                tprint_debug("   - Data leakage detector: ✅")
+                tprint_debug("   - Lookahead bias detector: ✅")
+                tprint_debug("   - Hyperparameter optimizer: ✅")
+                tprint_debug("   - Model validator: ✅")
+                tprint_debug("   - Out-of-fold predictor: ✅")
+            except Exception as e:
+                tprint_warning(f"⚠️ ML common utilities initialization failed: {e}")
+                self.bayesian_optimizer = None
+                self.feature_selector = None
+                self.data_leakage_detector = None
+                self.lookahead_bias_detector = None
+                self.hp_optimizer = None
+                self.model_validator = None
+                self.oof_predictor = None
         else:
             self.bayesian_optimizer = None
             self.feature_selector = None
+            self.data_leakage_detector = None
+            self.lookahead_bias_detector = None
+            self.hp_optimizer = None
+            self.model_validator = None
+            self.oof_predictor = None
             tprint_warning("⚠️ ML common utilities not available")
         
-        # Data utilities (if available)
+        # Initialize data utilities (if available)
         if DATA_UTILS_AVAILABLE:
-            self.data_loader = DataLoader()
-            self.data_validator = DataValidator()
-            self.kline_loader = KlineParquetLoader()
-            tprint_debug("✅ Data utilities initialized")
+            tprint_debug("📊 Initializing data utilities...")
+            try:
+                self.data_loader = DataLoader()
+                self.data_validator = DataValidator()
+                self.kline_loader = KlineParquetLoader()
+                self.data_preprocessor = DataPreprocessor()
+                self.feature_engineer = FeatureEngineer()
+                self.time_series_processor = TimeSeriesProcessor()
+                tprint_success("✅ Data utilities initialized")
+                tprint_debug("   - Data loader: ✅")
+                tprint_debug("   - Data validator: ✅")
+                tprint_debug("   - Kline parquet loader: ✅")
+                tprint_debug("   - Data preprocessor: ✅")
+                tprint_debug("   - Feature engineer: ✅")
+                tprint_debug("   - Time series processor: ✅")
+            except Exception as e:
+                tprint_warning(f"⚠️ Data utilities initialization failed: {e}")
+                self.data_loader = None
+                self.data_validator = None
+                self.kline_loader = None
+                self.data_preprocessor = None
+                self.feature_engineer = None
+                self.time_series_processor = None
         else:
             self.data_loader = None
             self.data_validator = None
             self.kline_loader = None
+            self.data_preprocessor = None
+            self.feature_engineer = None
+            self.time_series_processor = None
             tprint_warning("⚠️ Data utilities not available")
         
-        tprint_success("✅ All components initialized successfully")
+        tprint_success("✅ All pipeline components initialized successfully")
+    
+    def _initialize_performance_monitoring(self):
+        """Initialize performance monitoring systems."""
+        tprint_debug("📊 Initializing performance monitoring...")
+        
+        try:
+            # Initialize memory monitoring
+            if self.m1_memory_optimizer:
+                self.m1_memory_optimizer.start_monitoring()
+                tprint_debug("✅ Memory monitoring started")
+            
+            # Initialize GPU monitoring
+            if self.m1_gpu_manager:
+                gpu_info = self.m1_gpu_manager.get_gpu_info()
+                tprint_debug(f"✅ GPU monitoring initialized: {gpu_info.get('device_name', 'Unknown')}")
+            
+            # Initialize CPU monitoring
+            if self.m1_cpu_optimizer:
+                cpu_info = self.m1_cpu_optimizer.get_cpu_info()
+                tprint_debug(f"✅ CPU monitoring initialized: {cpu_info.get('cores', 'Unknown')} cores")
+            
+            # Initialize performance metrics tracking
+            self.performance_metrics = {
+                'total_execution_time': 0.0,
+                'stage_times': {},
+                'memory_usage_mb': 0.0,
+                'gpu_usage_percent': 0.0,
+                'cpu_usage_percent': 0.0,
+                'features_generated': 0,
+                'interactions_generated': 0,
+                'cross_timeframe_features_generated': 0,
+                'optimization_applied': False,
+                'hardware_acceleration_used': False
+            }
+            
+            tprint_success("✅ Performance monitoring initialized")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Performance monitoring initialization failed: {e}")
     
     async def generate_features(self, 
                               training_input: Dict[str, Any],
                               pipeline_state: Dict[str, Any]) -> OptimizedInteractionResult:
-        """Generate optimized interaction features."""
+        """Generate optimized interaction features with comprehensive logging and monitoring."""
         start_time = time.time()
         tprint_success("🚀 Starting optimized interaction feature generation")
+        tprint_info(f"📊 Pipeline configuration:")
+        tprint_info(f"   - Symbol: {self.config.symbol}")
+        tprint_info(f"   - Exchange: {self.config.exchange}")
+        tprint_info(f"   - Timeframe: {self.config.timeframe}")
+        tprint_info(f"   - Feature budget (pre): {self.config.feature_budget_pre}")
+        tprint_info(f"   - Feature budget (post): {self.config.feature_budget_post}")
+        tprint_info(f"   - Interactions cap: {self.config.interactions_cap}")
+        
+        # Initialize performance tracking
+        self.stage_start_times = {}
+        self.performance_metrics['total_execution_time'] = 0.0
+        self.performance_metrics['stage_times'] = {}
         
         try:
             # Stage 1: Initialization
+            tprint_info("🔧 Stage 1: Initialization")
+            self.stage_start_times[PipelineStage.INITIALIZATION] = time.time()
             await self._stage_initialization(training_input, pipeline_state)
+            self._log_stage_completion(PipelineStage.INITIALIZATION)
             
             # Stage 2: Feature Engineering
+            tprint_info("🏗️ Stage 2: Feature Engineering")
+            self.stage_start_times[PipelineStage.FEATURE_ENGINEERING] = time.time()
             feature_engineering_result = await self._stage_feature_engineering(training_input, pipeline_state)
+            self._log_stage_completion(PipelineStage.FEATURE_ENGINEERING)
             
             # Stage 3: Lookback Optimization
+            tprint_info("🎯 Stage 3: Lookback Optimization")
+            self.stage_start_times[PipelineStage.LOOKBACK_OPTIMIZATION] = time.time()
             lookback_result = await self._stage_lookback_optimization(feature_engineering_result, pipeline_state)
+            self._log_stage_completion(PipelineStage.LOOKBACK_OPTIMIZATION)
             
             # Stage 4: Transform Application
+            tprint_info("🔄 Stage 4: Transform Application")
+            self.stage_start_times[PipelineStage.TRANSFORM_APPLICATION] = time.time()
             transform_result = await self._stage_transform_application(lookback_result, pipeline_state)
+            self._log_stage_completion(PipelineStage.TRANSFORM_APPLICATION)
             
             # Stage 5: Interaction Generation
+            tprint_info("🔗 Stage 5: Interaction Generation")
+            self.stage_start_times[PipelineStage.INTERACTION_GENERATION] = time.time()
             interaction_result = await self._stage_interaction_generation(transform_result, pipeline_state)
+            self._log_stage_completion(PipelineStage.INTERACTION_GENERATION)
             
             # Stage 6: Cross-timeframe Features
+            tprint_info("⏰ Stage 6: Cross-timeframe Features")
+            self.stage_start_times[PipelineStage.CROSS_TIMEFRAME] = time.time()
             cross_timeframe_result = await self._stage_cross_timeframe_features(interaction_result, pipeline_state)
+            self._log_stage_completion(PipelineStage.CROSS_TIMEFRAME)
             
             # Stage 7: Final Assembly
+            tprint_info("🏁 Stage 7: Final Assembly")
+            self.stage_start_times[PipelineStage.FINAL_ASSEMBLY] = time.time()
             final_result = await self._stage_final_assembly(cross_timeframe_result, pipeline_state)
+            self._log_stage_completion(PipelineStage.FINAL_ASSEMBLY)
             
             # Stage 8: Validation
+            tprint_info("✅ Stage 8: Validation")
+            self.stage_start_times[PipelineStage.VALIDATION] = time.time()
             validation_result = await self._stage_validation(final_result, pipeline_state)
+            self._log_stage_completion(PipelineStage.VALIDATION)
             
             # Stage 9: Completion
+            tprint_info("🎉 Stage 9: Completion")
+            self.stage_start_times[PipelineStage.COMPLETION] = time.time()
             completion_result = await self._stage_completion(validation_result, pipeline_state)
+            self._log_stage_completion(PipelineStage.COMPLETION)
             
+            # Calculate total execution time
             execution_time = time.time() - start_time
-            tprint_success(f"✅ Feature generation completed in {execution_time:.3f}s")
+            self.performance_metrics['total_execution_time'] = execution_time
+            
+            # Log final performance summary
+            self._log_performance_summary(completion_result)
+            
+            tprint_success(f"✅ Feature generation completed successfully in {execution_time:.3f}s")
+            tprint_info(f"📊 Generated {completion_result.feature_names.__len__() if completion_result.feature_names else 0} total features")
+            tprint_info(f"🎯 Selected {completion_result.selected_features.__len__() if completion_result.selected_features else 0} features")
+            tprint_info(f"🔗 Generated {completion_result.interaction_features.shape[1] if not completion_result.interaction_features.empty else 0} interactions")
+            tprint_info(f"⏰ Generated {completion_result.cross_timeframe_features.shape[1] if not completion_result.cross_timeframe_features.empty else 0} cross-timeframe features")
             
             return completion_result
             
@@ -316,7 +544,12 @@ class OptimizedInteractionOrchestrator:
             execution_time = time.time() - start_time
             error_message = f"Feature generation failed: {str(e)}"
             tprint_error(f"❌ {error_message}")
+            tprint_error(f"📊 Execution time before failure: {execution_time:.3f}s")
             self.logger.error(f"Feature generation failed: {error_message}", exc_info=True)
+            
+            # Log performance metrics even on failure
+            self.performance_metrics['total_execution_time'] = execution_time
+            self._log_performance_summary(None, error=True)
             
             return OptimizedInteractionResult(
                 features=pd.DataFrame(),
@@ -329,49 +562,162 @@ class OptimizedInteractionOrchestrator:
                 error_message=error_message
             )
     
+    def _log_stage_completion(self, stage: PipelineStage):
+        """Log stage completion with timing information."""
+        if stage in self.stage_start_times:
+            stage_time = time.time() - self.stage_start_times[stage]
+            self.performance_metrics['stage_times'][stage.value] = stage_time
+            tprint_performance(f"Stage {stage.value}", stage_time)
+    
+    def _log_performance_summary(self, result: Optional[OptimizedInteractionResult] = None, error: bool = False):
+        """Log comprehensive performance summary."""
+        tprint_info("📊 PERFORMANCE SUMMARY")
+        tprint_info(f"⏱️ Total execution time: {self.performance_metrics['total_execution_time']:.3f}s")
+        
+        # Log stage times
+        if self.performance_metrics['stage_times']:
+            tprint_info("📈 Stage execution times:")
+            for stage_name, stage_time in self.performance_metrics['stage_times'].items():
+                percentage = (stage_time / self.performance_metrics['total_execution_time']) * 100
+                tprint_info(f"   - {stage_name}: {stage_time:.3f}s ({percentage:.1f}%)")
+        
+        # Log memory usage
+        if self.m1_memory_optimizer:
+            try:
+                memory_usage = get_memory_usage()
+                memory_usage_mb = memory_usage / (1024 * 1024)
+                tprint_info(f"💾 Memory usage: {memory_usage_mb:.2f} MB")
+                self.performance_metrics['memory_usage_mb'] = memory_usage_mb
+            except Exception as e:
+                tprint_warning(f"⚠️ Could not get memory usage: {e}")
+        
+        # Log GPU usage if available
+        if self.m1_gpu_manager:
+            try:
+                gpu_info = self.m1_gpu_manager.get_gpu_info()
+                if 'utilization' in gpu_info:
+                    tprint_info(f"🖥️ GPU utilization: {gpu_info['utilization']:.1f}%")
+                    self.performance_metrics['gpu_usage_percent'] = gpu_info['utilization']
+            except Exception as e:
+                tprint_warning(f"⚠️ Could not get GPU usage: {e}")
+        
+        # Log feature generation metrics
+        if result and not error:
+            tprint_info(f"📊 Feature generation metrics:")
+            tprint_info(f"   - Total features: {len(result.feature_names) if result.feature_names else 0}")
+            tprint_info(f"   - Selected features: {len(result.selected_features) if result.selected_features else 0}")
+            tprint_info(f"   - Interaction features: {result.interaction_features.shape[1] if not result.interaction_features.empty else 0}")
+            tprint_info(f"   - Cross-timeframe features: {result.cross_timeframe_features.shape[1] if not result.cross_timeframe_features.empty else 0}")
+            tprint_info(f"   - Memory usage: {result.memory_usage_mb:.2f} MB")
+        
+        # Log optimization status
+        if self.performance_metrics.get('optimization_applied', False):
+            tprint_success("✅ Matrix optimization applied")
+        if self.performance_metrics.get('hardware_acceleration_used', False):
+            tprint_success("✅ Hardware acceleration used")
+    
     async def _stage_initialization(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-        """Stage 1: Initialize pipeline and validate inputs."""
+        """Stage 1: Initialize pipeline and validate inputs with comprehensive logging."""
         stage_start = time.time()
-        tprint_info("🔧 Stage 1: Initialization")
+        tprint_debug("🔧 Stage 1: Initialization - Starting input validation...")
         
         try:
             # Validate inputs
+            tprint_debug("📋 Validating training input...")
             if not training_input:
                 raise ValueError("No training input provided")
+            tprint_success("✅ Training input validation passed")
             
+            tprint_debug("📋 Validating pipeline state...")
             if not pipeline_state:
                 raise ValueError("No pipeline state provided")
+            tprint_success("✅ Pipeline state validation passed")
             
-            # Extract data
+            # Extract and validate data
+            tprint_debug("📊 Extracting data from training input...")
             data = training_input.get('data')
             if data is None:
                 raise ValueError("No data provided in training input")
+            tprint_success("✅ Data extraction successful")
             
-            # Validate data
+            # Validate data type and structure
+            tprint_debug("🔍 Validating data structure...")
             if not isinstance(data, pd.DataFrame):
                 raise ValueError("Data must be a pandas DataFrame")
+            tprint_success("✅ Data type validation passed")
             
+            # Validate data size
+            tprint_debug(f"📏 Validating data size: {len(data)} rows, {len(data.columns)} columns")
             if len(data) < 100:
                 raise ValueError(f"Insufficient data: {len(data)} < 100 rows")
+            tprint_success(f"✅ Data size validation passed: {len(data)} rows")
             
             # Check required columns
+            tprint_debug("🔍 Validating required columns...")
             required_columns = ['open', 'high', 'low', 'close', 'volume']
             missing_columns = set(required_columns) - set(data.columns)
             if missing_columns:
                 raise ValueError(f"Missing required columns: {missing_columns}")
+            tprint_success(f"✅ Required columns validation passed: {required_columns}")
+            
+            # Calculate data quality metrics
+            tprint_debug("📊 Calculating data quality metrics...")
+            data_quality_score = self._calculate_data_quality_score(data)
+            memory_usage_mb = data.memory_usage(deep=True).sum() / 1024 / 1024
             
             # Initialize performance tracking
-            self.performance_metrics = {
+            self.performance_metrics.update({
                 'total_rows': len(data),
                 'total_columns': len(data.columns),
-                'memory_usage_mb': data.memory_usage(deep=True).sum() / 1024 / 1024,
-                'data_quality_score': self._calculate_data_quality_score(data)
-            }
+                'memory_usage_mb': memory_usage_mb,
+                'data_quality_score': data_quality_score,
+                'initialization_success': True
+            })
             
-            # Hardware optimization setup
+            tprint_info(f"📊 Data quality metrics:")
+            tprint_info(f"   - Rows: {len(data)}")
+            tprint_info(f"   - Columns: {len(data.columns)}")
+            tprint_info(f"   - Memory usage: {memory_usage_mb:.2f} MB")
+            tprint_info(f"   - Quality score: {data_quality_score:.3f}")
+            
+            # Apply hardware optimization
             if self.m1_memory_optimizer:
-                self.m1_memory_optimizer.optimize_dataframe(data)
-                tprint_debug("✅ M1 memory optimization applied")
+                tprint_debug("🖥️ Applying M1 memory optimization...")
+                try:
+                    self.m1_memory_optimizer.optimize_dataframe(data)
+                    tprint_success("✅ M1 memory optimization applied")
+                    self.performance_metrics['hardware_acceleration_used'] = True
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 memory optimization failed: {e}")
+            
+            # Apply CPU optimization
+            if self.m1_cpu_optimizer:
+                tprint_debug("🖥️ Applying M1 CPU optimization...")
+                try:
+                    self.m1_cpu_optimizer.optimize_numpy_operations()
+                    tprint_success("✅ M1 CPU optimization applied")
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 CPU optimization failed: {e}")
+            
+            # Validate data quality
+            tprint_debug("🔍 Performing data quality validation...")
+            quality_report = create_data_quality_report(data)
+            if quality_report.get('issues'):
+                tprint_warning(f"⚠️ Data quality issues detected: {quality_report['issues']}")
+            else:
+                tprint_success("✅ Data quality validation passed")
+            
+            # Check for data leakage if ML utilities are available
+            if self.data_leakage_detector:
+                tprint_debug("🔍 Checking for data leakage...")
+                try:
+                    leakage_result = self.data_leakage_detector.detect_leakage(data)
+                    if leakage_result.get('leakage_detected', False):
+                        tprint_warning(f"⚠️ Potential data leakage detected: {leakage_result.get('details', 'Unknown')}")
+                    else:
+                        tprint_success("✅ No data leakage detected")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Data leakage detection failed: {e}")
             
             stage_time = time.time() - stage_start
             tprint_performance("Initialization", stage_time)
@@ -379,32 +725,49 @@ class OptimizedInteractionOrchestrator:
             result = {
                 'data': data,
                 'performance_metrics': self.performance_metrics,
+                'quality_report': quality_report,
                 'stage_time': stage_time,
                 'success': True
             }
             
             self.stage_results[PipelineStage.INITIALIZATION] = result
+            tprint_success("✅ Stage 1: Initialization completed successfully")
             return result
             
         except Exception as e:
             stage_time = time.time() - stage_start
             tprint_error(f"❌ Initialization failed: {e}")
+            tprint_error(f"📊 Stage execution time: {stage_time:.3f}s")
+            self.performance_metrics['initialization_success'] = False
             raise
     
     async def _stage_feature_engineering(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-        """Stage 2: Generate parent features from market data."""
+        """Stage 2: Generate parent features from market data with comprehensive optimization."""
         stage_start = time.time()
-        tprint_info("🔧 Stage 2: Feature Engineering")
+        tprint_debug("🏗️ Stage 2: Feature Engineering - Starting parent feature generation...")
         
         try:
-            data = training_input['data']
+            # Get data from initialization stage
+            init_result = self.stage_results[PipelineStage.INITIALIZATION]
+            data = init_result['data']
+            
+            tprint_info(f"📊 Processing data: {len(data)} rows, {len(data.columns)} columns")
             
             # Extract targets if available
             targets = training_input.get('targets', {})
+            if targets:
+                tprint_info(f"🎯 Targets available: {list(targets.keys())}")
+            else:
+                tprint_warning("⚠️ No targets provided for feature engineering")
             
             # Use assembly DAG to build parent features
-            tprint_debug("Building parent features using assembly DAG...")
-            assembly_result = self.assembly_dag.assemble(data, targets)
+            tprint_debug("🏗️ Building parent features using assembly DAG...")
+            try:
+                assembly_result = self.assembly_dag.assemble(data, targets)
+                tprint_success("✅ Assembly DAG execution completed")
+            except Exception as e:
+                tprint_error(f"❌ Assembly DAG failed: {e}")
+                raise
             
             if assembly_result.status.value != 'completed':
                 raise ValueError(f"Assembly DAG failed: {assembly_result.status.value}")
@@ -413,19 +776,84 @@ class OptimizedInteractionOrchestrator:
             parent_features = assembly_result.features
             feature_names = assembly_result.feature_names
             
-            tprint_info(f"✅ Generated {len(feature_names)} parent features")
-            tprint_debug(f"Feature families: {list(set([name.split('/')[1] for name in feature_names if '/' in name]))}")
+            tprint_success(f"✅ Generated {len(feature_names)} parent features")
+            
+            # Analyze feature families
+            feature_families = {}
+            for name in feature_names:
+                if '/' in name:
+                    family = name.split('/')[1]
+                    feature_families[family] = feature_families.get(family, 0) + 1
+            
+            tprint_info(f"📊 Feature families generated:")
+            for family, count in feature_families.items():
+                tprint_info(f"   - {family}: {count} features")
             
             # Apply matrix optimization if available
             if self.vectorized_core and MATRIX_OPS_AVAILABLE:
-                tprint_debug("Applying vectorized processing optimization...")
-                parent_features = self.vectorized_core.optimize_dataframe_for_processing(parent_features)
-                tprint_debug("✅ Vectorized processing optimization applied")
+                tprint_debug("🧮 Applying vectorized processing optimization...")
+                try:
+                    with memory_checkpoint("feature_engineering_vectorization"):
+                        parent_features = self.vectorized_core.optimize_dataframe_for_processing(parent_features)
+                    tprint_success("✅ Vectorized processing optimization applied")
+                    self.performance_metrics['optimization_applied'] = True
+                except Exception as e:
+                    tprint_warning(f"⚠️ Vectorized processing optimization failed: {e}")
             
-            # Memory optimization
+            # Apply batch processing optimization if available
+            if self.batch_processor and MATRIX_OPS_AVAILABLE:
+                tprint_debug("📦 Applying batch processing optimization...")
+                try:
+                    # Convert DataFrame to batch format for processing
+                    feature_arrays = [parent_features[col].values for col in parent_features.columns]
+                    optimized_arrays = self.batch_processor.batch_optimize_arrays(feature_arrays)
+                    
+                    # Reconstruct DataFrame
+                    optimized_df = pd.DataFrame(
+                        dict(zip(parent_features.columns, optimized_arrays)),
+                        index=parent_features.index
+                    )
+                    parent_features = optimized_df
+                    tprint_success("✅ Batch processing optimization applied")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Batch processing optimization failed: {e}")
+            
+            # Apply M1 memory optimization
             if self.m1_memory_optimizer:
-                parent_features = self.m1_memory_optimizer.optimize_dataframe_memory(parent_features)
-                tprint_debug("✅ Memory optimization applied")
+                tprint_debug("🖥️ Applying M1 memory optimization...")
+                try:
+                    with memory_checkpoint("feature_engineering_memory_opt"):
+                        parent_features = self.m1_memory_optimizer.optimize_dataframe_memory(parent_features)
+                    tprint_success("✅ M1 memory optimization applied")
+                    self.performance_metrics['hardware_acceleration_used'] = True
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 memory optimization failed: {e}")
+            
+            # Apply data type optimization
+            tprint_debug("🔧 Optimizing data types...")
+            try:
+                parent_features = optimize_dataframe_dtypes(parent_features)
+                tprint_success("✅ Data type optimization applied")
+            except Exception as e:
+                tprint_warning(f"⚠️ Data type optimization failed: {e}")
+            
+            # Calculate feature quality metrics
+            tprint_debug("📊 Calculating feature quality metrics...")
+            quality_metrics = self._calculate_feature_quality_metrics(parent_features)
+            
+            # Update performance metrics
+            self.performance_metrics.update({
+                'features_generated': len(feature_names),
+                'feature_families': len(feature_families),
+                'feature_quality_score': quality_metrics.get('overall_quality', 0.0),
+                'feature_engineering_success': True
+            })
+            
+            tprint_info(f"📊 Feature engineering metrics:")
+            tprint_info(f"   - Features generated: {len(feature_names)}")
+            tprint_info(f"   - Feature families: {len(feature_families)}")
+            tprint_info(f"   - Quality score: {quality_metrics.get('overall_quality', 0.0):.3f}")
+            tprint_info(f"   - Memory usage: {parent_features.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
             
             stage_time = time.time() - stage_start
             tprint_performance("Feature Engineering", stage_time)
@@ -434,26 +862,94 @@ class OptimizedInteractionOrchestrator:
                 'parent_features': parent_features,
                 'feature_names': feature_names,
                 'assembly_result': assembly_result,
+                'feature_families': feature_families,
+                'quality_metrics': quality_metrics,
                 'stage_time': stage_time,
                 'success': True
             }
             
             self.stage_results[PipelineStage.FEATURE_ENGINEERING] = result
+            tprint_success("✅ Stage 2: Feature Engineering completed successfully")
             return result
             
         except Exception as e:
             stage_time = time.time() - stage_start
             tprint_error(f"❌ Feature engineering failed: {e}")
+            tprint_error(f"📊 Stage execution time: {stage_time:.3f}s")
+            self.performance_metrics['feature_engineering_success'] = False
             raise
     
+    def _calculate_feature_quality_metrics(self, features: pd.DataFrame) -> Dict[str, Any]:
+        """Calculate comprehensive feature quality metrics."""
+        try:
+            metrics = {
+                'total_features': len(features.columns),
+                'finite_features': 0,
+                'infinite_features': 0,
+                'nan_features': 0,
+                'constant_features': 0,
+                'high_variance_features': 0,
+                'low_variance_features': 0,
+                'overall_quality': 0.0
+            }
+            
+            if features.empty:
+                return metrics
+            
+            for col in features.columns:
+                col_data = features[col].dropna()
+                
+                if len(col_data) == 0:
+                    metrics['nan_features'] += 1
+                    continue
+                
+                # Check for finite values
+                finite_count = np.isfinite(col_data).sum()
+                if finite_count == len(col_data):
+                    metrics['finite_features'] += 1
+                else:
+                    metrics['infinite_features'] += 1
+                
+                # Check for constant features
+                if col_data.nunique() <= 1:
+                    metrics['constant_features'] += 1
+                
+                # Check variance
+                if len(col_data) > 1:
+                    variance = col_data.var()
+                    if variance > 1.0:
+                        metrics['high_variance_features'] += 1
+                    elif variance < 0.01:
+                        metrics['low_variance_features'] += 1
+            
+            # Calculate overall quality score
+            total_features = metrics['total_features']
+            if total_features > 0:
+                quality_score = (
+                    metrics['finite_features'] * 0.4 +
+                    (total_features - metrics['constant_features']) * 0.3 +
+                    (total_features - metrics['nan_features']) * 0.3
+                ) / total_features
+                metrics['overall_quality'] = quality_score
+            
+            return metrics
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Feature quality calculation failed: {e}")
+            return {'overall_quality': 0.0, 'total_features': 0}
+    
     async def _stage_lookback_optimization(self, feature_result: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
-        """Stage 3: Optimize lookback periods for features."""
+        """Stage 3: Optimize lookback periods for features with advanced ML utilities."""
         stage_start = time.time()
-        tprint_info("🔧 Stage 3: Lookback Optimization")
+        tprint_debug("🎯 Stage 3: Lookback Optimization - Starting lookback period optimization...")
         
         try:
+            # Get parent features from feature engineering stage
             parent_features = feature_result['parent_features']
             feature_names = feature_result['feature_names']
+            feature_families = feature_result.get('feature_families', {})
+            
+            tprint_info(f"📊 Optimizing lookbacks for {len(feature_names)} features")
             
             # Extract targets
             targets = pipeline_state.get('targets', {})
@@ -461,25 +957,132 @@ class OptimizedInteractionOrchestrator:
                 tprint_warning("⚠️ No targets available for lookback optimization")
                 # Create dummy targets for optimization
                 targets = {1: pd.Series(0, index=parent_features.index)}
+                tprint_debug("Created dummy targets for optimization")
+            else:
+                tprint_info(f"🎯 Using {len(targets)} target series for optimization")
             
-            # Create feature families
-            tprint_debug("Creating feature families...")
-            feature_families = create_feature_families(feature_names)
-            tprint_debug(f"Created {len(feature_families)} feature families")
+            # Create feature families if not already created
+            if not feature_families:
+                tprint_debug("🔍 Creating feature families...")
+                feature_families = create_feature_families(feature_names)
+                tprint_success(f"✅ Created {len(feature_families)} feature families")
+            else:
+                tprint_info(f"📊 Using existing {len(feature_families)} feature families")
             
-            # Use lookback selector
-            tprint_debug("Selecting optimal lookbacks...")
-            lookback_choices = self.lookback_selector.select_lookbacks(
-                parent_features, 
-                targets.get(1, pd.Series(0, index=parent_features.index)),
-                feature_families
-            )
+            # Log feature families
+            for family, features in feature_families.items():
+                tprint_debug(f"   - {family}: {len(features)} features")
+            
+            # Use lookback selector with enhanced logging
+            tprint_debug("🔍 Selecting optimal lookbacks using nested CV...")
+            try:
+                lookback_choices = self.lookback_selector.select_lookbacks(
+                    parent_features, 
+                    targets.get(1, pd.Series(0, index=parent_features.index)),
+                    feature_families
+                )
+                tprint_success("✅ Lookback selection completed")
+            except Exception as e:
+                tprint_error(f"❌ Lookback selection failed: {e}")
+                raise
             
             tprint_info(f"✅ Selected lookbacks for {len(lookback_choices)} feature families")
             
-            # Log lookback choices
+            # Log detailed lookback choices
+            tprint_info("📊 Lookback optimization results:")
             for family, choice in lookback_choices.items():
-                tprint_debug(f"  {family}: {choice.selected_lookback} (confidence: {choice.confidence_score:.3f})")
+                tprint_info(f"   - {family}: {choice.selected_lookback} periods")
+                tprint_info(f"     - Confidence: {choice.confidence_score:.3f}")
+                tprint_info(f"     - IC Score: {choice.ic_score:.3f}")
+                tprint_info(f"     - AUC Score: {choice.auc_score:.3f}")
+                tprint_info(f"     - Simplicity Bonus: {choice.simplicity_bonus:.3f}")
+            
+            # Apply Bayesian optimization if available
+            if self.bayesian_optimizer and ML_COMMON_AVAILABLE:
+                tprint_debug("🤖 Applying Bayesian TPE optimization...")
+                try:
+                    # Create optimization configuration
+                    opt_config = OptimizationConfig(
+                        n_trials=50,
+                        timeout=300,  # 5 minutes
+                        random_state=42
+                    )
+                    
+                    # Optimize lookback choices using Bayesian TPE
+                    optimized_choices = self.bayesian_optimizer.optimize_lookbacks(
+                        parent_features,
+                        targets.get(1, pd.Series(0, index=parent_features.index)),
+                        feature_families,
+                        lookback_choices,
+                        opt_config
+                    )
+                    
+                    if optimized_choices:
+                        lookback_choices = optimized_choices
+                        tprint_success("✅ Bayesian TPE optimization applied")
+                        self.performance_metrics['optimization_applied'] = True
+                    else:
+                        tprint_warning("⚠️ Bayesian TPE optimization did not improve results")
+                        
+                except Exception as e:
+                    tprint_warning(f"⚠️ Bayesian TPE optimization failed: {e}")
+            
+            # Apply feature selection if available
+            if self.feature_selector and ML_COMMON_AVAILABLE:
+                tprint_debug("🎯 Applying feature selection...")
+                try:
+                    # Select best features based on lookback choices
+                    selected_features = self.feature_selector.select_features(
+                        parent_features,
+                        targets.get(1, pd.Series(0, index=parent_features.index)),
+                        method='mutual_info',
+                        k_best=min(50, len(parent_features.columns))
+                    )
+                    
+                    if selected_features:
+                        tprint_success(f"✅ Feature selection completed: {len(selected_features)} features selected")
+                        # Update parent features to only include selected features
+                        parent_features = parent_features[selected_features]
+                        tprint_info(f"📊 Reduced feature set to {len(selected_features)} features")
+                    else:
+                        tprint_warning("⚠️ Feature selection did not reduce feature set")
+                        
+                except Exception as e:
+                    tprint_warning(f"⚠️ Feature selection failed: {e}")
+            
+            # Check for lookahead bias if available
+            if self.lookahead_bias_detector and ML_COMMON_AVAILABLE:
+                tprint_debug("🔍 Checking for lookahead bias...")
+                try:
+                    bias_result = self.lookahead_bias_detector.detect_bias(
+                        parent_features,
+                        targets.get(1, pd.Series(0, index=parent_features.index))
+                    )
+                    
+                    if bias_result.get('bias_detected', False):
+                        tprint_warning(f"⚠️ Lookahead bias detected: {bias_result.get('details', 'Unknown')}")
+                    else:
+                        tprint_success("✅ No lookahead bias detected")
+                        
+                except Exception as e:
+                    tprint_warning(f"⚠️ Lookahead bias detection failed: {e}")
+            
+            # Calculate optimization metrics
+            optimization_metrics = self._calculate_lookback_optimization_metrics(lookback_choices)
+            
+            # Update performance metrics
+            self.performance_metrics.update({
+                'lookback_optimization_success': True,
+                'feature_families_optimized': len(lookback_choices),
+                'average_confidence': optimization_metrics.get('average_confidence', 0.0),
+                'average_ic_score': optimization_metrics.get('average_ic_score', 0.0)
+            })
+            
+            tprint_info(f"📊 Lookback optimization metrics:")
+            tprint_info(f"   - Feature families optimized: {len(lookback_choices)}")
+            tprint_info(f"   - Average confidence: {optimization_metrics.get('average_confidence', 0.0):.3f}")
+            tprint_info(f"   - Average IC score: {optimization_metrics.get('average_ic_score', 0.0):.3f}")
+            tprint_info(f"   - Optimization success rate: {optimization_metrics.get('success_rate', 0.0):.1%}")
             
             stage_time = time.time() - stage_start
             tprint_performance("Lookback Optimization", stage_time)
@@ -487,17 +1090,73 @@ class OptimizedInteractionOrchestrator:
             result = {
                 'lookback_choices': lookback_choices,
                 'feature_families': feature_families,
+                'optimization_metrics': optimization_metrics,
+                'parent_features': parent_features,  # Updated with selected features
                 'stage_time': stage_time,
                 'success': True
             }
             
             self.stage_results[PipelineStage.LOOKBACK_OPTIMIZATION] = result
+            tprint_success("✅ Stage 3: Lookback Optimization completed successfully")
             return result
             
         except Exception as e:
             stage_time = time.time() - stage_start
             tprint_error(f"❌ Lookback optimization failed: {e}")
+            tprint_error(f"📊 Stage execution time: {stage_time:.3f}s")
+            self.performance_metrics['lookback_optimization_success'] = False
             raise
+    
+    def _calculate_lookback_optimization_metrics(self, lookback_choices: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate comprehensive lookback optimization metrics."""
+        try:
+            if not lookback_choices:
+                return {
+                    'average_confidence': 0.0,
+                    'average_ic_score': 0.0,
+                    'average_auc_score': 0.0,
+                    'success_rate': 0.0,
+                    'total_families': 0
+                }
+            
+            confidences = []
+            ic_scores = []
+            auc_scores = []
+            successful_optimizations = 0
+            
+            for family, choice in lookback_choices.items():
+                if hasattr(choice, 'confidence_score'):
+                    confidences.append(choice.confidence_score)
+                if hasattr(choice, 'ic_score'):
+                    ic_scores.append(choice.ic_score)
+                if hasattr(choice, 'auc_score'):
+                    auc_scores.append(choice.auc_score)
+                
+                # Consider optimization successful if confidence > 0.5
+                if hasattr(choice, 'confidence_score') and choice.confidence_score > 0.5:
+                    successful_optimizations += 1
+            
+            total_families = len(lookback_choices)
+            success_rate = successful_optimizations / total_families if total_families > 0 else 0.0
+            
+            return {
+                'average_confidence': np.mean(confidences) if confidences else 0.0,
+                'average_ic_score': np.mean(ic_scores) if ic_scores else 0.0,
+                'average_auc_score': np.mean(auc_scores) if auc_scores else 0.0,
+                'success_rate': success_rate,
+                'total_families': total_families,
+                'successful_optimizations': successful_optimizations
+            }
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Lookback optimization metrics calculation failed: {e}")
+            return {
+                'average_confidence': 0.0,
+                'average_ic_score': 0.0,
+                'average_auc_score': 0.0,
+                'success_rate': 0.0,
+                'total_families': 0
+            }
     
     async def _stage_transform_application(self, lookback_result: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Stage 4: Apply transforms to parent features."""

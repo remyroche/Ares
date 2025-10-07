@@ -1,13 +1,21 @@
 """
-Main Orchestrator for Data-Driven Lookback Optimization System
+Enhanced Main Orchestrator for Data-Driven Lookback Optimization System
 
-This module orchestrates the three-stage Bayesian optimization system:
-1. IC Surface Estimation with HAC standard errors
-2. Walk-Forward Stability Testing with purged CV
-3. Hierarchical Bayesian Shrinkage across families and symbols
+This module orchestrates the three-stage Bayesian optimization system with comprehensive
+enhancements including matrix operations, hardware optimization, and extensive logging:
+1. IC Surface Estimation with HAC standard errors and matrix optimization
+2. Walk-Forward Stability Testing with purged CV and ML utilities
+3. Hierarchical Bayesian Shrinkage across families and symbols with hardware acceleration
 
 The system replaces hardcoded lookback ceilings with data-driven inference
 while maintaining production constraints and latency requirements.
+
+Key Features:
+- Extensive tprint logging throughout all operations
+- Matrix operations integration for vectorized computations
+- M1 hardware optimization for Apple Silicon
+- ML utilities integration (Bayesian TPE, feature selection, data leakage detection)
+- Comprehensive error handling and performance monitoring
 """
 
 import logging
@@ -31,9 +39,12 @@ from .hierarchical import HierarchicalBayesianShrinkage, HierarchicalResult, Mul
 from .decision import LookbackDecisionMaker, DecisionResult, MultiFamilyDecisionMaker
 from .feature_families import MultiFamilyFeatureGenerator, FeatureResult
 
-# Import utilities
+# Import comprehensive utility modules
 try:
-    from src.utils.tprint import tprint, tprint_info, tprint_error, tprint_warning, tprint_success
+    from src.utils.tprint import (
+        tprint, tprint_info, tprint_error, tprint_warning, tprint_success,
+        tprint_debug, tprint_performance, tprint_progress
+    )
     TPRINT_AVAILABLE = True
 except ImportError:
     TPRINT_AVAILABLE = False
@@ -42,6 +53,86 @@ except ImportError:
     def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
     def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
     def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_performance(*args, **kwargs): print("PERF:", *args, **kwargs)
+    def tprint_progress(*args, **kwargs): print("PROGRESS:", *args, **kwargs)
+
+# Import common operations and utilities
+try:
+    from src.utils.common_operations import (
+        safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+        optimize_memory_usage, parallel_processing_optimizer, safe_correlation,
+        safe_dataframe_operation, optimize_dataframe_dtypes, safe_fillna,
+        create_data_quality_report, get_dataframe_info, memory_checkpoint,
+        gpu_context, optimize_memory, get_memory_usage
+    )
+    COMMON_OPS_AVAILABLE = True
+except ImportError:
+    COMMON_OPS_AVAILABLE = False
+    tprint_warning("⚠️ Common operations not available")
+
+# Import math validation
+try:
+    from src.utils.math_validation import (
+        safe_divide as math_safe_divide, safe_log as math_safe_log,
+        safe_sqrt as math_safe_sqrt, validate_finite as math_validate_finite,
+        safe_correlation as math_safe_correlation, safe_mean, safe_std,
+        safe_percentile, validate_correlation_matrix, safe_matrix_inverse
+    )
+    MATH_VALIDATION_AVAILABLE = True
+except ImportError:
+    MATH_VALIDATION_AVAILABLE = False
+    tprint_warning("⚠️ Math validation not available")
+
+# Import matrix operations
+try:
+    from src.utils.matrix_operations import (
+        get_unified_matrix_operations, get_vectorized_processing_core,
+        get_batch_matrix_processor, safe_matrix_multiply,
+        vectorized_rolling_features, parallel_feature_engineering,
+        optimize_dataframe, get_hardware_performance_report,
+        matrix_correlation_analysis, batch_matrix_multiply,
+        batch_feature_transformation, batch_correlation_analysis
+    )
+    MATRIX_OPS_AVAILABLE = True
+    tprint_success("✅ Matrix operations loaded successfully")
+except ImportError as e:
+    MATRIX_OPS_AVAILABLE = False
+    tprint_warning(f"⚠️ Matrix operations not available: {e}")
+
+# Import ML common utilities
+try:
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+        BayesianTPEOptimizer, OptimizationConfig
+    )
+    from src.utils.ml_common.cross_validation import PurgedKFold
+    from src.utils.ml_common.feature_selection import FeatureSelector
+    from src.utils.ml_common.data_leakage import DataLeakageDetector
+    from src.utils.ml_common.lookahead_bias import LookaheadBiasDetector
+    from src.utils.ml_common.hyperparameter_optimization import HPOptimizer
+    from src.utils.ml_common.model_validation import ModelValidator
+    from src.utils.ml_common.out_of_fold import OutOfFoldPredictor
+    ML_COMMON_AVAILABLE = True
+    tprint_success("✅ ML common utilities loaded successfully")
+except ImportError as e:
+    ML_COMMON_AVAILABLE = False
+    tprint_warning(f"⚠️ ML common utilities not available: {e}")
+
+# Import data utilities
+try:
+    from src.utils.data.data_loader import DataLoader
+    from src.utils.data.data_validation import DataValidator
+    from src.utils.kline_parquet import KlineParquetLoader
+    from src.utils.serialization_utils import save_pickle, load_pickle
+    from src.utils.data.data_preprocessing import DataPreprocessor
+    from src.utils.data.feature_engineering import FeatureEngineer
+    from src.utils.data.time_series_utils import TimeSeriesProcessor
+    DATA_UTILS_AVAILABLE = True
+    tprint_success("✅ Data utilities loaded successfully")
+except ImportError as e:
+    DATA_UTILS_AVAILABLE = False
+    tprint_warning(f"⚠️ Data utilities not available: {e}")
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -88,66 +179,276 @@ class OptimizationResult:
 
 
 class LookbackOptimizationOrchestrator:
-    """Main orchestrator for the lookback optimization system."""
+    """Enhanced main orchestrator for the lookback optimization system with comprehensive utilities."""
     
     def __init__(self, config: Optional[LookbackOptimizationConfig] = None):
+        tprint_info("🔧 Initializing Enhanced Lookback Optimization Orchestrator...")
+        
         self.config = config or create_default_config()
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         
-        # Initialize stage components
-        self.ic_estimator = ICSurfaceEstimator(self.config)
-        self.stability_tester = MultiFamilyStabilityTester(self.config)
-        self.hierarchical_shrinkage = MultiSymbolHierarchicalShrinkage(self.config)
-        self.decision_maker = MultiFamilyDecisionMaker(self.config)
-        self.feature_generator = MultiFamilyFeatureGenerator(self.config)
+        # Performance tracking
+        self.performance_metrics = {}
+        self.stage_start_times = {}
+        self.memory_usage_history = []
+        
+        # Initialize stage components with enhanced logging
+        tprint_debug("🏗️ Initializing stage components...")
+        try:
+            self.ic_estimator = ICSurfaceEstimator(self.config)
+            tprint_success("✅ IC Surface Estimator initialized")
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize IC Surface Estimator: {e}")
+            raise
+        
+        try:
+            self.stability_tester = MultiFamilyStabilityTester(self.config)
+            tprint_success("✅ Multi-Family Stability Tester initialized")
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize Stability Tester: {e}")
+            raise
+        
+        try:
+            self.hierarchical_shrinkage = MultiSymbolHierarchicalShrinkage(self.config)
+            tprint_success("✅ Multi-Symbol Hierarchical Shrinkage initialized")
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize Hierarchical Shrinkage: {e}")
+            raise
+        
+        try:
+            self.decision_maker = MultiFamilyDecisionMaker(self.config)
+            tprint_success("✅ Multi-Family Decision Maker initialized")
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize Decision Maker: {e}")
+            raise
+        
+        try:
+            self.feature_generator = MultiFamilyFeatureGenerator(self.config)
+            tprint_success("✅ Multi-Family Feature Generator initialized")
+        except Exception as e:
+            tprint_error(f"❌ Failed to initialize Feature Generator: {e}")
+            raise
+        
+        # Initialize utility components
+        self._initialize_utility_components()
         
         # Create output directory
-        os.makedirs(self.config.output_dir, exist_ok=True)
+        try:
+            os.makedirs(self.config.output_dir, exist_ok=True)
+            tprint_success(f"✅ Output directory created: {self.config.output_dir}")
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to create output directory: {e}")
+        
+        tprint_success("🚀 Enhanced Lookback Optimization Orchestrator initialized successfully")
+    
+    def _initialize_utility_components(self):
+        """Initialize utility components with comprehensive error handling."""
+        tprint_debug("🔧 Initializing utility components...")
+        
+        # Initialize matrix operations
+        if MATRIX_OPS_AVAILABLE:
+            try:
+                self.matrix_ops = get_unified_matrix_operations()
+                self.vectorized_core = get_vectorized_processing_core()
+                self.batch_processor = get_batch_matrix_processor()
+                tprint_success("✅ Matrix operations initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Matrix operations initialization failed: {e}")
+                self.matrix_ops = None
+                self.vectorized_core = None
+                self.batch_processor = None
+        else:
+            self.matrix_ops = None
+            self.vectorized_core = None
+            self.batch_processor = None
+        
+        # Initialize hardware optimizers
+        if COMMON_OPS_AVAILABLE:
+            try:
+                self.m1_gpu_manager = get_m1_gpu_manager()
+                self.m1_memory_optimizer = get_m1_memory_optimizer()
+                self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+                tprint_success("✅ M1 hardware optimizers initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ M1 hardware optimizers not available: {e}")
+                self.m1_gpu_manager = None
+                self.m1_memory_optimizer = None
+                self.m1_cpu_optimizer = None
+        else:
+            self.m1_gpu_manager = None
+            self.m1_memory_optimizer = None
+            self.m1_cpu_optimizer = None
+        
+        # Initialize ML common utilities
+        if ML_COMMON_AVAILABLE:
+            try:
+                self.bayesian_optimizer = BayesianTPEOptimizer()
+                self.feature_selector = FeatureSelector()
+                self.data_leakage_detector = DataLeakageDetector()
+                self.lookahead_bias_detector = LookaheadBiasDetector()
+                self.hp_optimizer = HPOptimizer()
+                self.model_validator = ModelValidator()
+                self.oof_predictor = OutOfFoldPredictor()
+                tprint_success("✅ ML common utilities initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ ML common utilities initialization failed: {e}")
+                self.bayesian_optimizer = None
+                self.feature_selector = None
+                self.data_leakage_detector = None
+                self.lookahead_bias_detector = None
+                self.hp_optimizer = None
+                self.model_validator = None
+                self.oof_predictor = None
+        else:
+            self.bayesian_optimizer = None
+            self.feature_selector = None
+            self.data_leakage_detector = None
+            self.lookahead_bias_detector = None
+            self.hp_optimizer = None
+            self.model_validator = None
+            self.oof_predictor = None
+        
+        # Initialize data utilities
+        if DATA_UTILS_AVAILABLE:
+            try:
+                self.data_loader = DataLoader()
+                self.data_validator = DataValidator()
+                self.kline_loader = KlineParquetLoader()
+                self.data_preprocessor = DataPreprocessor()
+                self.feature_engineer = FeatureEngineer()
+                self.time_series_processor = TimeSeriesProcessor()
+                tprint_success("✅ Data utilities initialized")
+            except Exception as e:
+                tprint_warning(f"⚠️ Data utilities initialization failed: {e}")
+                self.data_loader = None
+                self.data_validator = None
+                self.kline_loader = None
+                self.data_preprocessor = None
+                self.feature_engineer = None
+                self.time_series_processor = None
+        else:
+            self.data_loader = None
+            self.data_validator = None
+            self.kline_loader = None
+            self.data_preprocessor = None
+            self.feature_engineer = None
+            self.time_series_processor = None
     
     def optimize_lookbacks(self, 
                           data: Dict[str, pd.DataFrame],
                           targets: Dict[str, np.ndarray],
                           feature_names: Optional[Dict[FamilyType, str]] = None) -> OptimizationResult:
-        """Run the complete lookback optimization pipeline."""
+        """Run the complete lookback optimization pipeline with comprehensive enhancements."""
         start_time = time.time()
+        tprint_success("🚀 Starting Enhanced Data-Driven Lookback Optimization System...")
+        
+        # Initialize performance tracking
+        self.stage_start_times = {}
+        self.performance_metrics = {
+            'total_execution_time': 0.0,
+            'stage_times': {},
+            'memory_usage_mb': 0.0,
+            'optimization_applied': False,
+            'hardware_acceleration_used': False,
+            'symbols_processed': 0,
+            'families_processed': 0
+        }
         
         try:
-            tprint_success("🚀 Starting data-driven lookback optimization system...")
+            # Log configuration
+            tprint_info("📊 Configuration:")
+            tprint_info(f"   - Symbols: {list(data.keys())}")
+            tprint_info(f"   - Target horizons: {list(targets.keys())}")
+            tprint_info(f"   - Output directory: {self.config.output_dir}")
+            tprint_info(f"   - Save intermediate results: {self.config.save_intermediate_results}")
             
-            # Validate inputs
+            # Validate inputs with enhanced logging
+            tprint_debug("🔍 Validating inputs...")
             self._validate_inputs(data, targets)
+            tprint_success("✅ Input validation passed")
             
             # Set default feature names
             if feature_names is None:
                 feature_names = {family: f"{family.value}_feature" for family in FamilyType}
+                tprint_debug(f"📋 Using default feature names: {list(feature_names.values())}")
+            
+            # Apply hardware optimization to data
+            if self.m1_memory_optimizer:
+                tprint_debug("🖥️ Applying M1 memory optimization to input data...")
+                try:
+                    for symbol, df in data.items():
+                        data[symbol] = self.m1_memory_optimizer.optimize_dataframe_memory(df)
+                    tprint_success("✅ M1 memory optimization applied to input data")
+                    self.performance_metrics['hardware_acceleration_used'] = True
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 memory optimization failed: {e}")
             
             # Stage 1: IC Surface Estimation
             tprint_info("📊 Stage 1: Estimating IC surfaces with HAC standard errors...")
+            self.stage_start_times['ic_surface'] = time.time()
             ic_surface_results = self._run_stage_1(data, targets, feature_names)
+            self._log_stage_completion('ic_surface')
             
             # Stage 2: Walk-Forward Stability Testing
             tprint_info("🔄 Stage 2: Testing stability with purged walk-forward validation...")
+            self.stage_start_times['stability'] = time.time()
             stability_results = self._run_stage_2(data, targets, ic_surface_results, feature_names)
+            self._log_stage_completion('stability')
             
             # Stage 3: Hierarchical Bayesian Shrinkage
             tprint_info("🎯 Stage 3: Applying hierarchical Bayesian shrinkage...")
+            self.stage_start_times['hierarchical'] = time.time()
             hierarchical_results = self._run_stage_3(ic_surface_results, stability_results)
+            self._log_stage_completion('hierarchical')
             
             # Decision Making
             tprint_info("🤔 Making lookback decisions with hysteresis...")
+            self.stage_start_times['decisions'] = time.time()
             decisions = self._make_decisions(ic_surface_results, stability_results, 
                                           hierarchical_results, data, targets, feature_names)
+            self._log_stage_completion('decisions')
             
             # Feature Generation
             tprint_info("⚙️ Generating optimized features...")
+            self.stage_start_times['features'] = time.time()
             feature_results = self._generate_features(data, decisions, feature_names)
+            self._log_stage_completion('features')
+            
+            # Apply matrix optimization to results if available
+            if self.vectorized_core and MATRIX_OPS_AVAILABLE:
+                tprint_debug("🧮 Applying matrix optimization to generated features...")
+                try:
+                    for symbol_results in feature_results.values():
+                        for family, feature_result in symbol_results.items():
+                            if hasattr(feature_result, 'features') and not feature_result.features.empty:
+                                feature_result.features = self.vectorized_core.optimize_dataframe_for_processing(
+                                    feature_result.features
+                                )
+                    tprint_success("✅ Matrix optimization applied to generated features")
+                    self.performance_metrics['optimization_applied'] = True
+                except Exception as e:
+                    tprint_warning(f"⚠️ Matrix optimization failed: {e}")
             
             # Save results
             if self.config.save_intermediate_results:
+                tprint_debug("💾 Saving intermediate results...")
                 self._save_results(ic_surface_results, stability_results, 
                                  hierarchical_results, decisions, feature_results)
+                tprint_success("✅ Intermediate results saved")
             
+            # Calculate final metrics
             execution_time = time.time() - start_time
+            self.performance_metrics['total_execution_time'] = execution_time
+            self.performance_metrics['symbols_processed'] = len(data)
+            self.performance_metrics['families_processed'] = len(FamilyType)
+            
+            # Calculate memory usage
+            if COMMON_OPS_AVAILABLE:
+                try:
+                    memory_usage = get_memory_usage()
+                    self.performance_metrics['memory_usage_mb'] = memory_usage / (1024 * 1024)
+                except Exception as e:
+                    tprint_warning(f"⚠️ Could not get memory usage: {e}")
             
             result = OptimizationResult(
                 ic_surface_results=ic_surface_results,
@@ -160,7 +461,7 @@ class LookbackOptimizationOrchestrator:
             )
             
             tprint_success(f"✅ Lookback optimization completed successfully in {execution_time:.3f}s")
-            self._print_summary(result)
+            self._print_enhanced_summary(result)
             
             return result
             
@@ -168,8 +469,14 @@ class LookbackOptimizationOrchestrator:
             execution_time = time.time() - start_time
             error_message = f"Lookback optimization failed: {str(e)}"
             
+            tprint_error(f"❌ {error_message}")
+            tprint_error(f"📊 Execution time before failure: {execution_time:.3f}s")
             self.logger.error(error_message)
             self.logger.error(f"Error details: {traceback.format_exc()}")
+            
+            # Log performance metrics even on failure
+            self.performance_metrics['total_execution_time'] = execution_time
+            self._log_performance_summary(error=True)
             
             return OptimizationResult(
                 ic_surface_results={},
@@ -181,6 +488,45 @@ class LookbackOptimizationOrchestrator:
                 success=False,
                 error_message=error_message
             )
+    
+    def _log_stage_completion(self, stage_name: str):
+        """Log stage completion with timing information."""
+        if stage_name in self.stage_start_times:
+            stage_time = time.time() - self.stage_start_times[stage_name]
+            self.performance_metrics['stage_times'][stage_name] = stage_time
+            tprint_performance(f"Stage {stage_name}", stage_time)
+    
+    def _log_performance_summary(self, error: bool = False):
+        """Log comprehensive performance summary."""
+        tprint_info("📊 PERFORMANCE SUMMARY")
+        tprint_info(f"⏱️ Total execution time: {self.performance_metrics['total_execution_time']:.3f}s")
+        
+        # Log stage times
+        if self.performance_metrics['stage_times']:
+            tprint_info("📈 Stage execution times:")
+            for stage_name, stage_time in self.performance_metrics['stage_times'].items():
+                percentage = (stage_time / self.performance_metrics['total_execution_time']) * 100
+                tprint_info(f"   - {stage_name}: {stage_time:.3f}s ({percentage:.1f}%)")
+        
+        # Log memory usage
+        if self.performance_metrics.get('memory_usage_mb', 0) > 0:
+            tprint_info(f"💾 Memory usage: {self.performance_metrics['memory_usage_mb']:.2f} MB")
+        
+        # Log optimization status
+        if self.performance_metrics.get('optimization_applied', False):
+            tprint_success("✅ Matrix optimization applied")
+        if self.performance_metrics.get('hardware_acceleration_used', False):
+            tprint_success("✅ Hardware acceleration used")
+        
+        # Log processing metrics
+        tprint_info(f"📊 Processing metrics:")
+        tprint_info(f"   - Symbols processed: {self.performance_metrics.get('symbols_processed', 0)}")
+        tprint_info(f"   - Families processed: {self.performance_metrics.get('families_processed', 0)}")
+        
+        if error:
+            tprint_error("❌ Pipeline execution failed")
+        else:
+            tprint_success("✅ Pipeline execution completed successfully")
     
     def _validate_inputs(self, data: Dict[str, pd.DataFrame], targets: Dict[str, np.ndarray]) -> None:
         """Validate input data and targets."""
@@ -361,11 +707,11 @@ class LookbackOptimizationOrchestrator:
         except Exception as e:
             self.logger.warning(f"Failed to save results: {e}")
     
-    def _print_summary(self, result: OptimizationResult) -> None:
-        """Print optimization summary."""
-        tprint_success("📊 OPTIMIZATION SUMMARY")
-        tprint_success(f"Execution time: {result.execution_time:.3f}s")
-        tprint_success(f"Symbols processed: {len(result.ic_surface_results)}")
+    def _print_enhanced_summary(self, result: OptimizationResult) -> None:
+        """Print enhanced optimization summary with comprehensive metrics."""
+        tprint_success("📊 ENHANCED OPTIMIZATION SUMMARY")
+        tprint_success(f"⏱️ Execution time: {result.execution_time:.3f}s")
+        tprint_success(f"📊 Symbols processed: {len(result.ic_surface_results)}")
         
         # Count features by type
         decision_counts = {'discrete': 0, 'blend': 0, 'default': 0, 'inactive': 0}
@@ -374,18 +720,37 @@ class LookbackOptimizationOrchestrator:
                 decision_type = decision.lookback_spec.decision_type.value
                 decision_counts[decision_type] += 1
         
-        tprint_success(f"Decision types: {decision_counts}")
+        tprint_success(f"🎯 Decision types: {decision_counts}")
         
         # Quality metrics
         if result.feature_results:
             all_quality_scores = []
+            total_features = 0
             for symbol_results in result.feature_results.values():
                 for feature_result in symbol_results.values():
                     all_quality_scores.append(feature_result.quality_score)
+                    if hasattr(feature_result, 'features') and not feature_result.features.empty:
+                        total_features += len(feature_result.features.columns)
             
             if all_quality_scores:
                 avg_quality = np.mean(all_quality_scores)
-                tprint_success(f"Average feature quality: {avg_quality:.3f}")
+                tprint_success(f"📈 Average feature quality: {avg_quality:.3f}")
+                tprint_success(f"🔢 Total features generated: {total_features}")
+        
+        # Log performance metrics
+        self._log_performance_summary()
+        
+        # Log utility status
+        tprint_info("🔧 Utility Status:")
+        tprint_info(f"   - Matrix operations: {'✅' if MATRIX_OPS_AVAILABLE else '❌'}")
+        tprint_info(f"   - ML common utilities: {'✅' if ML_COMMON_AVAILABLE else '❌'}")
+        tprint_info(f"   - Data utilities: {'✅' if DATA_UTILS_AVAILABLE else '❌'}")
+        tprint_info(f"   - Common operations: {'✅' if COMMON_OPS_AVAILABLE else '❌'}")
+        tprint_info(f"   - Math validation: {'✅' if MATH_VALIDATION_AVAILABLE else '❌'}")
+    
+    def _print_summary(self, result: OptimizationResult) -> None:
+        """Print optimization summary (legacy method for backward compatibility)."""
+        self._print_enhanced_summary(result)
     
     def generate_comprehensive_report(self, result: OptimizationResult) -> Dict[str, Any]:
         """Generate comprehensive optimization report."""

@@ -90,7 +90,7 @@ def get_training_config() -> dict[str, Any]:
             "feature_selection_method": "variance_threshold",
             "correlation_threshold": 0.8,
             "min_variance": 0.01,
-            "max_features": 500,
+            "max_features": 60,
             "output_dir": "historical_data",
         },
         # --- Step 7 Enhanced Matrix Operations Configuration ---

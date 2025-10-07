@@ -4,7 +4,7 @@
 multi_horizon_labeling:
   # Core Configuration - SHORT-TERM FOCUSED
   profit_targets:
-    micro: 0.003      # 0.3% (net: 0.22% after 0.08% fees) - High leverage makes this significant
+    micro: 0.003      # 0.3% (net: 0.20% after 0.10% fees) - High leverage makes this significant
     small: 0.005      # 0.5% (net: 0.42% after fees) - Good short-term target
     medium: 0.007     # 0.7% (net: 0.62% after fees) - Strong move target
     good: 0.010       # 1.0% (net: 0.92% after fees) - Excellent move target
@@ -15,7 +15,7 @@ multi_horizon_labeling:
     short: 4          # 20 minutes (4 * 5m periods) - Capture short-term moves
   
   # Fee and Cost Management
-  transaction_cost: 0.0008        # 0.08% transaction cost (entry + exit)
+  transaction_cost: 0.001         # 0.10% transaction cost (entry + exit)
   slippage_allowance: 0.0002      # 0.02% slippage allowance
   
   # Quality Scoring Configuration

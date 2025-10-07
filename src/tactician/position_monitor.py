@@ -581,10 +581,10 @@ class PositionMonitor:
             activation_reason = None
             direction = 1.0 if side == "LONG" else -1.0
             if not trailing_state.get("is_active"):
-                adverse_momentum = (
-                    momentum_score is not None
-                    and direction * momentum_score < direction * momentum_threshold
-                )
+                directional_score = None
+                if momentum_score is not None:
+                    directional_score = direction * (momentum_score - momentum_threshold)
+                adverse_momentum = directional_score is not None and directional_score < 0
                 momentum_triggered = adverse_momentum and unrealized_pnl > 0
                 confidence_triggered = unrealized_pnl > 0 and combined_confidence >= activation_threshold
 
@@ -608,7 +608,7 @@ class PositionMonitor:
                 if (
                     momentum_score is not None
                     and not (
-                        direction * momentum_score < direction * momentum_threshold
+                        direction * (momentum_score - momentum_threshold) < 0
                     )
                 ):
                     reason += f" (momentum={momentum_score:.3f})"

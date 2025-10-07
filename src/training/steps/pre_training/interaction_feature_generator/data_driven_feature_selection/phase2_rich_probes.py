@@ -496,8 +496,11 @@ class Phase2RichProbes:
                 rejected.append(wrapper)
                 continue
             
-            # Check stability threshold
-            if wrapper.phase2_stability is None or wrapper.phase2_stability < 0.5:
+            # Check stability threshold using configured tolerance for sign flips
+            if (
+                wrapper.phase2_stability is None
+                or wrapper.phase2_stability < self.config.stability_threshold
+            ):
                 rejected.append(wrapper)
                 continue
             

@@ -109,7 +109,7 @@ class Phase2Config:
     
     # Stability testing
     enable_stability_test: bool = True
-    stability_threshold: float = 0.8  # Collapse threshold
+    stability_threshold: float = 0.7  # Minimum stability score (<=30% sign flips)
     sign_flip_tolerance: float = 0.1  # Sign flip tolerance
     
     # Data availability requirements

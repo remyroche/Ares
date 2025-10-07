@@ -22,6 +22,8 @@ from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 import warnings
 warnings.filterwarnings('ignore')
 
+# Local imports
+from .phase1_probe import HTFFeatureGenerator
 # Try to import PyMC for Bayesian optimization
 try:
     import pymc as pm
@@ -48,6 +50,7 @@ class LocalGridResult:
     export_type: str  # 'discrete' or 'blend'
     blend_weights: Optional[Dict[int, float]]
     metadata: Dict[str, Any]
+    adaptive_score: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -591,15 +594,17 @@ class ExportDecisionMaker:
 
 class Phase2Optimization:
     """Main Phase-2 optimization system."""
-    
-    def __init__(self, config):
+
+    def __init__(self, config, scoring_system: Optional[Any] = None):
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
+        self.scoring_system = scoring_system
+
         self.local_grid_generator = LocalGridGenerator(config)
         self.ic_surface_fitter = ICSurfaceFitter(config.ic_surface_smoothing)
         self.hierarchical_shrinkage = HierarchicalShrinkage(config)
         self.export_decision_maker = ExportDecisionMaker(config)
+        self.htf_feature_generator: Optional[HTFFeatureGenerator] = None
     
     def optimize_lookbacks(self, 
                          sessionized_data: Dict[str, Any],
@@ -640,7 +645,18 @@ class Phase2Optimization:
                 ic_surface_result = self._fit_ic_surface_for_candidate(
                     candidate, local_grid, sessionized_data, targets
                 )
-                
+
+                optimal_lookback_value = int(round(ic_surface_result['optimal_lookback']))
+                ic_surface_result['optimal_lookback'] = optimal_lookback_value
+
+                adaptive_score = self._score_refined_candidate(
+                    candidate=candidate,
+                    optimal_lookback=optimal_lookback_value,
+                    sessionized_data=sessionized_data,
+                    targets=targets,
+                    regime_segments=regime_segments,
+                )
+
                 # Create local grid result
                 local_grid_result = LocalGridResult(
                     feature_name=candidate.base_feature,
@@ -649,13 +665,14 @@ class Phase2Optimization:
                     local_grid=local_grid,
                     ic_surface=ic_surface_result.get('ic_surface', {}),
                     se_surface=ic_surface_result.get('se_surface', {}),
-                    optimal_lookback=ic_surface_result['optimal_lookback'],
+                    optimal_lookback=optimal_lookback_value,
                     optimal_ic=ic_surface_result['optimal_ic'],
                     optimal_se=ic_surface_result.get('optimal_se', 1.0),
                     confidence_interval=ic_surface_result['confidence_interval'],
                     export_type='pending',
                     blend_weights=None,
-                    metadata=ic_surface_result
+                    metadata=dict(ic_surface_result),
+                    adaptive_score=adaptive_score,
                 )
                 
                 optimized_features.append(local_grid_result)
@@ -701,7 +718,7 @@ class Phase2Optimization:
         self.logger.info(f"Phase-2 optimization completed: {len(final_features)} features optimized")
         return results
     
-    def _fit_ic_surface_for_candidate(self, 
+    def _fit_ic_surface_for_candidate(self,
                                     candidate,
                                     local_grid: List[int],
                                     sessionized_data: Dict[str, Any],
@@ -709,7 +726,7 @@ class Phase2Optimization:
         """Fit IC surface for a specific candidate."""
         # This would involve re-computing the HTF features for each lookback in the local grid
         # and calculating their ICs. For now, we'll simulate this process.
-        
+
         # Simulate IC surface (in practice, you'd compute actual HTF features)
         ics = []
         ses = []
@@ -734,7 +751,7 @@ class Phase2Optimization:
         ic_surface_result['se_surface'] = dict(zip(local_grid, ses))
         
         return ic_surface_result
-    
+
     def _local_grid_to_dict(self, local_grid_result: LocalGridResult) -> Dict[str, Any]:
         """Convert LocalGridResult to dictionary."""
         return {
@@ -746,5 +763,153 @@ class Phase2Optimization:
             'confidence_interval': local_grid_result.confidence_interval,
             'export_type': local_grid_result.export_type,
             'blend_weights': local_grid_result.blend_weights,
-            'regime': 'mixed'  # Would be determined from regime segmentation
+            'regime': 'mixed',  # Would be determined from regime segmentation
+            'adaptive_score': local_grid_result.adaptive_score,
+        }
+
+    def _score_refined_candidate(
+        self,
+        candidate,
+        optimal_lookback: int,
+        sessionized_data: Dict[str, Any],
+        targets: Optional[Union[pd.Series, pd.DataFrame]],
+        regime_segments: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """Regenerate series and score the refined candidate."""
+
+        if self.scoring_system is None:
+            return None
+
+        target_series = self._ensure_target_series(targets)
+        if target_series is None:
+            self.logger.debug(
+                "Targets unavailable for adaptive scoring of %s", candidate.base_feature
+            )
+            return None
+
+        aligned_data = self._extract_aligned_data(sessionized_data)
+        if aligned_data is None or aligned_data.empty:
+            self.logger.warning(
+                "Aligned data unavailable for adaptive scoring of %s", candidate.base_feature
+            )
+            return None
+
+        feature_series = self._regenerate_feature_series(
+            aligned_data, candidate.base_feature, optimal_lookback, candidate.family
+        )
+
+        if feature_series is None or feature_series.empty:
+            return None
+
+        regime_list = regime_segments.get('segments') if isinstance(regime_segments, dict) else None
+
+        try:
+            scoring_result = self.scoring_system.score_feature_candidate(
+                feature=feature_series,
+                target=target_series,
+                lookback=optimal_lookback,
+                family=candidate.family,
+                regime=getattr(candidate, 'regime', 'mixed') or 'mixed',
+                regime_segments=regime_list,
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "Adaptive scoring failed for %s@%d: %s",
+                candidate.base_feature,
+                optimal_lookback,
+                exc,
+            )
+            return None
+
+        return self._scoring_result_to_dict(scoring_result)
+
+    def _ensure_target_series(self, targets: Optional[Union[pd.Series, pd.DataFrame]]) -> Optional[pd.Series]:
+        """Normalize targets to a Series if possible."""
+
+        if targets is None:
+            return None
+
+        if isinstance(targets, pd.Series):
+            return targets
+
+        if isinstance(targets, pd.DataFrame):
+            if targets.shape[1] == 0:
+                return None
+            return targets.iloc[:, 0]
+
+        return None
+
+    def _extract_aligned_data(self, sessionized_data: Optional[Dict[str, Any]]) -> Optional[pd.DataFrame]:
+        """Extract aligned base timeframe data from sessionized payload."""
+
+        if sessionized_data is None:
+            return None
+
+        if isinstance(sessionized_data, pd.DataFrame):
+            return sessionized_data
+
+        if isinstance(sessionized_data, dict):
+            aligned = sessionized_data.get('aligned_data')
+            if isinstance(aligned, pd.DataFrame):
+                return aligned
+
+        return None
+
+    def _regenerate_feature_series(
+        self,
+        aligned_data: pd.DataFrame,
+        base_feature: str,
+        lookback: int,
+        family: str,
+    ) -> Optional[pd.Series]:
+        """Regenerate HTF series for the refined lookback."""
+
+        if self.htf_feature_generator is None:
+            try:
+                self.htf_feature_generator = HTFFeatureGenerator(self.config)
+            except Exception as exc:
+                self.logger.warning(
+                    "Failed to initialize HTF generator for adaptive scoring: %s",
+                    exc,
+                )
+                return None
+
+        try:
+            feature_series = self.htf_feature_generator.generate_htf_feature(
+                aligned_data, base_feature, lookback, family
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "HTF regeneration failed for %s@%d: %s",
+                base_feature,
+                lookback,
+                exc,
+            )
+            return None
+
+        return feature_series
+
+    def _scoring_result_to_dict(self, scoring_result: Any) -> Dict[str, Any]:
+        """Convert a ScoringResult into a serializable dictionary."""
+
+        if scoring_result is None:
+            return {}
+
+        metadata = dict(getattr(scoring_result, 'metadata', {}) or {})
+        penalties = metadata.pop('penalties', {}) if isinstance(metadata, dict) else {}
+
+        return {
+            'feature_name': getattr(scoring_result, 'feature_name', 'unknown'),
+            'lookback': getattr(scoring_result, 'lookback', 0),
+            'regime': getattr(scoring_result, 'regime', 'mixed'),
+            'ic_oos': getattr(scoring_result, 'ic_oos', 0.0),
+            'se_wild_bootstrap': getattr(scoring_result, 'se_wild_bootstrap', 1.0),
+            'se_stationary_bootstrap': getattr(scoring_result, 'se_stationary_bootstrap', 1.0),
+            'cpu_p95': getattr(scoring_result, 'cpu_p95', 0.0),
+            'staleness': getattr(scoring_result, 'staleness', 1.0),
+            'utility_score': getattr(scoring_result, 'utility_score', 0.0),
+            'fold_pass_rate': getattr(scoring_result, 'fold_pass_rate', 0.0),
+            'regime_weight': getattr(scoring_result, 'regime_weight', 0.0),
+            'penalties': penalties,
+            'metadata': metadata,
         }

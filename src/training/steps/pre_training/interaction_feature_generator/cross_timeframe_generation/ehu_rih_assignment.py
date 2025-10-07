@@ -356,7 +356,8 @@ class EHU_RIH_Assignment:
             switch_conditions=switch_conditions,
             metadata={
                 'cost_benefit': cost_benefit,
-                'staleness_curve_params': staleness_curve.curve_params
+                'staleness_curve_params': staleness_curve.curve_params,
+                'adaptive_score': getattr(feature, 'adaptive_score', None),
             }
         )
     

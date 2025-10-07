@@ -19,12 +19,24 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
+import numpy as np
+import pandas as pd
+
 from .enhanced_order_manager import EnhancedOrderManager
 from .position_division_strategy import PositionDivisionStrategy
 from src.utils.confidence import normalize_dual_confidence
 import json
 import logging
 import time
+
+from src.trading.utils.helpers import (
+    calculate_atr14,
+    calculate_realized_volatility,
+    calculate_three_bar_momentum,
+    calculate_three_bar_rsi,
+    calculate_volatility_slope,
+)
+from src.trading.utils.ohlcv import ensure_ohlcv_dataframe
 
 class PositionAction(Enum):
     """Enum for position actions."""
@@ -96,6 +108,8 @@ class PositionMonitor:
         # Configuration
         self.monitor_config = config.get("position_monitor", {})
         self.monitoring_interval = self.monitor_config.get("monitoring_interval", 10)  # seconds
+        self._missing_price_provider_logged = False
+        self._latest_market_snapshots: Dict[str, Dict[str, Any]] = {}
         
         # Enhanced exit strategy configuration with optimization support
         self.max_position_age = 10800  # 3 hours (will be optimized)
@@ -129,6 +143,15 @@ class PositionMonitor:
         self.position_alerts: List[PositionAlert] = []
         self.monitoring_task: Optional[asyncio.Task] = None
         self.is_monitoring = False
+
+    def _cache_market_snapshot(self, symbol: str, snapshot: Optional[Dict[str, Any]]) -> None:
+        """Store the latest market snapshot and reset missing-provider logging."""
+
+        if snapshot is None:
+            return
+
+        self._latest_market_snapshots[symbol] = snapshot
+        self._missing_price_provider_logged = False
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
@@ -301,13 +324,18 @@ class PositionMonitor:
         """
         try:
             for position_id, position_data in self.active_positions.items():
-                # Get current market data
-                current_price = await self._get_current_price(position_data["symbol"])
+                # Get current market snapshot including multi-timeframe context
+                market_snapshot = await self._get_market_snapshot(position_data["symbol"])
+                if not market_snapshot:
+                    continue
+
+                current_price = market_snapshot.get("latest_price")
                 if current_price is None:
                     continue
 
-                # Update position data
-                position_data["current_price"] = current_price
+                # Update position data with latest price and context bundle
+                position_data["current_price"] = float(current_price)
+                position_data["market_snapshot"] = market_snapshot
                 position_data["unrealized_pnl"] = self._calculate_unrealized_pnl(position_data)
 
                 # Assess position
@@ -509,6 +537,127 @@ class PositionMonitor:
             tuple: (PositionAction, reason)
         """
         try:
+            market_snapshot = position_data.get("market_snapshot")
+            timeframe_config = self.trailing_stop_config.get("metrics_timeframes", {})
+            metrics = self._compute_trailing_metrics(market_snapshot, timeframe_config)
+            if not metrics:
+                return PositionAction.STAY, "Trailing stop skipped: insufficient market data"
+
+            current_price = position_data.get("current_price")
+            if current_price is None:
+                return PositionAction.STAY, "Trailing stop skipped: missing current price"
+
+            atr_value = metrics.get("atr14")
+            if atr_value is None or pd.isna(atr_value) or atr_value <= 0:
+                return PositionAction.STAY, "Trailing stop skipped: ATR unavailable"
+
+            activation_confidence = self.trailing_stop_config.get("confidence_activation", 0.7)
+            if combined_confidence < activation_confidence:
+                return (
+                    PositionAction.STAY,
+                    f"Trailing stop inactive: confidence {combined_confidence:.3f} < {activation_confidence:.3f}",
+                )
+
+            side = position_data.get("side", "").upper()
+            side_multiplier = 1 if side == "LONG" else -1 if side == "SHORT" else None
+            if side_multiplier is None:
+                return PositionAction.STAY, "Trailing stop skipped: unknown position side"
+
+            trailing_state = position_data.setdefault("trailing_state", {})
+            trailing_state["metrics"] = metrics
+            trailing_state["last_update"] = datetime.now()
+
+            atr_multiplier = self.trailing_stop_config.get("atr_multiplier", 1.5)
+            min_distance_pct = self.trailing_stop_config.get("min_distance", 0.01)
+
+            trailing_distance = max(atr_value * atr_multiplier, float(current_price) * min_distance_pct)
+
+            volatility = metrics.get("realized_volatility20")
+            volatility_cfg = self.trailing_stop_config.get("volatility_adjustment", {})
+            if (
+                volatility_cfg.get("enabled", True)
+                and volatility is not None
+                and not pd.isna(volatility)
+            ):
+                offset = volatility_cfg.get("offset", 1.0)
+                scale = volatility_cfg.get("scale", 1.0)
+                min_mult = volatility_cfg.get("min_multiplier", 0.5)
+                max_mult = volatility_cfg.get("max_multiplier", 2.0)
+                volatility_multiplier = offset + scale * float(volatility)
+                volatility_multiplier = max(min_mult, min(max_mult, volatility_multiplier))
+                trailing_distance *= volatility_multiplier
+
+            slope = metrics.get("volatility_slope")
+            slope_cfg = self.trailing_stop_config.get("slope_adjustment", {})
+            if slope_cfg.get("enabled", True) and slope is not None and not pd.isna(slope):
+                offset = slope_cfg.get("offset", 1.0)
+                scale = slope_cfg.get("scale", 1.0)
+                min_mult = slope_cfg.get("min_multiplier", 0.7)
+                max_mult = slope_cfg.get("max_multiplier", 1.3)
+                slope_multiplier = offset + scale * float(slope)
+                slope_multiplier = max(min_mult, min(max_mult, slope_multiplier))
+                trailing_distance *= slope_multiplier
+
+            momentum = metrics.get("momentum3")
+            momentum_cfg = self.trailing_stop_config.get("momentum_adjustment", {})
+            if (
+                momentum_cfg.get("enabled", True)
+                and momentum is not None
+                and not pd.isna(momentum)
+            ):
+                if side_multiplier > 0:
+                    threshold = momentum_cfg.get("long_threshold")
+                    adjustment = momentum_cfg.get("long_multiplier", 1.0)
+                    if threshold is not None and float(momentum) < float(threshold):
+                        trailing_distance *= adjustment
+                else:
+                    threshold = momentum_cfg.get("short_threshold")
+                    adjustment = momentum_cfg.get("short_multiplier", 1.0)
+                    if threshold is not None and float(momentum) > float(threshold):
+                        trailing_distance *= adjustment
+
+            rsi = metrics.get("rsi3")
+            rsi_cfg = self.trailing_stop_config.get("rsi_adjustment", {})
+            if rsi_cfg.get("enabled", True) and rsi is not None and not pd.isna(rsi):
+                if side_multiplier > 0:
+                    threshold = rsi_cfg.get("long_threshold")
+                    adjustment = rsi_cfg.get("long_multiplier", 1.0)
+                    if threshold is not None and float(rsi) < float(threshold):
+                        trailing_distance *= adjustment
+                else:
+                    threshold = rsi_cfg.get("short_threshold")
+                    adjustment = rsi_cfg.get("short_multiplier", 1.0)
+                    if threshold is not None and float(rsi) > float(threshold):
+                        trailing_distance *= adjustment
+
+            current_price_float = float(current_price)
+            entry_price = position_data.get("entry_price", current_price_float)
+            try:
+                entry_price = float(entry_price)
+            except (TypeError, ValueError):
+                entry_price = current_price_float
+
+            default_extreme = max(entry_price, current_price_float) if side_multiplier > 0 else min(entry_price, current_price_float)
+            cached_extreme = trailing_state.get("extreme_price")
+            if cached_extreme is not None:
+                try:
+                    cached_extreme = float(cached_extreme)
+                except (TypeError, ValueError):
+                    cached_extreme = default_extreme
+            else:
+                cached_extreme = default_extreme
+
+            extreme_price = max(cached_extreme, current_price_float) if side_multiplier > 0 else min(cached_extreme, current_price_float)
+            trailing_price = extreme_price - side_multiplier * trailing_distance
+
+            trailing_state["extreme_price"] = extreme_price
+            trailing_state["trailing_price"] = trailing_price
+
+            price_difference = side_multiplier * (current_price_float - trailing_price)
+            if price_difference <= 0:
+                return PositionAction.FULL_CLOSE, f"Trailing stop hit at {trailing_price:.4f}"
+
+            return PositionAction.STAY, f"Trailing stop active at {trailing_price:.4f}"
             trailing_config = self.trailing_stop_config or {}
             if not trailing_config.get("enabled", True):
                 return PositionAction.STAY, "Trailing stop disabled"
@@ -1700,6 +1849,39 @@ class PositionMonitor:
             "atr_multiplier": 1.5,
             "min_distance": 0.01,
             "confidence_activation": 0.7,
+            "metrics_timeframes": {
+                "primary": "15m",
+                "volatility": "1h",
+            },
+            "volatility_adjustment": {
+                "enabled": True,
+                "offset": 1.0,
+                "scale": 1.0,
+                "min_multiplier": 0.5,
+                "max_multiplier": 2.0,
+            },
+            "slope_adjustment": {
+                "enabled": True,
+                "offset": 1.0,
+                "scale": 1.0,
+                "min_multiplier": 0.7,
+                "max_multiplier": 1.3,
+            },
+            "momentum_adjustment": {
+                "enabled": True,
+                "long_threshold": 0.0,
+                "short_threshold": 0.0,
+                "long_multiplier": 0.9,
+                "short_multiplier": 0.9,
+            },
+            "rsi_adjustment": {
+                "enabled": True,
+                "long_threshold": 35.0,
+                "short_threshold": 65.0,
+                "long_multiplier": 0.9,
+                "short_multiplier": 0.9,
+            },
+        })
             "profit_buffer_pct": 0.002,
             "breakeven_buffer_pct": 0.0005,
             "breakeven_activation_multiple": 1.0,
@@ -1876,36 +2058,200 @@ class PositionMonitor:
             self.logger.error(failed(f"❌ Error calculating unrealized PnL: {e}"))
             return 0.0
 
-    async def _get_current_price(self, symbol: str) -> Optional[float]:
-        """
-        Get current price for a symbol.
+    async def _get_market_snapshot(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a normalized market data snapshot for the requested symbol."""
 
-        Args:
-            symbol: Trading symbol
-
-        Returns:
-            float: Current price or None if failed
-        """
         try:
-            # Attempt to use an injected price provider callable from config
             price_provider = self.monitor_config.get("price_provider")
             if callable(price_provider):
-                return float(await price_provider(symbol)) if asyncio.iscoroutinefunction(price_provider) else float(price_provider(symbol))
+                raw_snapshot = (
+                    await price_provider(symbol)
+                    if asyncio.iscoroutinefunction(price_provider)
+                    else price_provider(symbol)
+                )
+                normalized = self._normalize_market_snapshot(symbol, raw_snapshot)
+                if normalized:
+                    self._cache_market_snapshot(symbol, normalized)
+                    return normalized
 
-            # Attempt exchange client from config
             exchange_client = self.monitor_config.get("exchange_client")
             if exchange_client is not None:
-                # Expecting a method get_current_price(symbol) possibly async
+                if hasattr(exchange_client, "get_market_snapshot"):
+                    func = getattr(exchange_client, "get_market_snapshot")
+                    raw_snapshot = (
+                        await func(symbol)
+                        if asyncio.iscoroutinefunction(func)
+                        else func(symbol)
+                    )
+                    normalized = self._normalize_market_snapshot(symbol, raw_snapshot)
+                    if normalized:
+                        self._cache_market_snapshot(symbol, normalized)
+                        return normalized
+
                 if hasattr(exchange_client, "get_current_price"):
                     func = getattr(exchange_client, "get_current_price")
-                    return float(await func(symbol)) if asyncio.iscoroutinefunction(func) else float(func(symbol))
+                    price_value = (
+                        await func(symbol)
+                        if asyncio.iscoroutinefunction(func)
+                        else func(symbol)
+                    )
+                    normalized = self._normalize_market_snapshot(symbol, price_value)
+                    if normalized:
+                        self._cache_market_snapshot(symbol, normalized)
+                        return normalized
 
-            self.logger.error(missing("No price provider configured for PositionMonitor"))
+            if not self._missing_price_provider_logged:
+                self.logger.error(missing("No price provider configured for PositionMonitor"))
+                self._missing_price_provider_logged = True
+
+            # Fall back to the last known snapshot if available
+            if symbol in self._latest_market_snapshots:
+                return self._latest_market_snapshots[symbol]
+
             return None
 
         except Exception as e:
-            self.logger.error(failed(f"❌ Error getting current price for {symbol}: {e}"))
+            self.logger.error(failed(f"❌ Error getting market snapshot for {symbol}: {e}"))
+            return self._latest_market_snapshots.get(symbol)
+
+    def _normalize_market_snapshot(
+        self,
+        symbol: str,
+        raw_snapshot: Any,
+    ) -> Optional[Dict[str, Any]]:
+        """Normalize various snapshot formats into a consistent structure."""
+
+        if raw_snapshot is None:
             return None
+
+        snapshot: Dict[str, Any] = {
+            "symbol": symbol,
+            "latest_price": None,
+            "latest_timestamp": None,
+            "timeframes": {},
+            "metadata": {},
+        }
+
+        if isinstance(raw_snapshot, (int, float)):
+            snapshot["latest_price"] = float(raw_snapshot)
+            snapshot["latest_timestamp"] = datetime.now()
+            return snapshot
+
+        if isinstance(raw_snapshot, dict):
+            snapshot["symbol"] = raw_snapshot.get("symbol", symbol)
+            if raw_snapshot.get("latest_price") is not None:
+                snapshot["latest_price"] = float(raw_snapshot["latest_price"])
+            snapshot["latest_timestamp"] = raw_snapshot.get("latest_timestamp")
+
+            metadata = raw_snapshot.get("metadata")
+            if isinstance(metadata, dict):
+                snapshot["metadata"] = metadata
+
+            timeframe_data = raw_snapshot.get("timeframes")
+            if isinstance(timeframe_data, dict):
+                for interval, frame in timeframe_data.items():
+                    normalized_df = ensure_ohlcv_dataframe(frame)
+                    if normalized_df is not None:
+                        snapshot["timeframes"][interval] = normalized_df
+            else:
+                for key, value in raw_snapshot.items():
+                    if isinstance(value, (pd.DataFrame, list, dict)):
+                        normalized_df = ensure_ohlcv_dataframe(value)
+                        if normalized_df is not None:
+                            snapshot["timeframes"][key] = normalized_df
+
+        elif isinstance(raw_snapshot, pd.DataFrame):
+            normalized_df = ensure_ohlcv_dataframe(raw_snapshot)
+            if normalized_df is not None:
+                snapshot["timeframes"]["default"] = normalized_df
+
+        elif hasattr(raw_snapshot, "close") and hasattr(raw_snapshot, "timestamp"):
+            try:
+                snapshot["latest_price"] = float(getattr(raw_snapshot, "close"))
+                snapshot["latest_timestamp"] = getattr(raw_snapshot, "timestamp")
+            except Exception:
+                return None
+            return snapshot
+
+        if snapshot["latest_price"] is None:
+            for df in snapshot["timeframes"].values():
+                if "close" in df.columns and not df.empty:
+                    snapshot["latest_price"] = float(df["close"].iloc[-1])
+                    snapshot["latest_timestamp"] = df.index[-1]
+                    break
+
+        if not snapshot["timeframes"] and snapshot["latest_price"] is None:
+            return None
+
+        return snapshot
+
+    def _compute_trailing_metrics(
+        self,
+        market_snapshot: Dict[str, Any],
+        timeframe_overrides: Optional[Dict[str, str]] = None,
+    ) -> Optional[Dict[str, float]]:
+        """Compute technical metrics required for trailing stop evaluation."""
+
+        if not market_snapshot:
+            return None
+
+        timeframes = market_snapshot.get("timeframes", {})
+        if not timeframes:
+            return None
+
+        overrides = timeframe_overrides or {}
+        primary_name = overrides.get("primary")
+        data_primary = timeframes.get(primary_name) if primary_name else None
+
+        if data_primary is None or data_primary.empty:
+            data_primary = next(
+                (df for df in timeframes.values() if isinstance(df, pd.DataFrame) and not df.empty),
+                None,
+            )
+            if data_primary is None:
+                return None
+
+        volatility_name = overrides.get("volatility", primary_name)
+        volatility_source = timeframes.get(volatility_name) if volatility_name else None
+        if volatility_source is None or volatility_source.empty:
+            volatility_source = data_primary
+
+        metrics: Dict[str, float] = {}
+
+        atr_series = calculate_atr14(data_primary)
+        metrics["atr14"] = self._get_latest_metric_value(atr_series)
+
+        realized_vol = calculate_realized_volatility(data_primary)
+        metrics["realized_volatility20"] = self._get_latest_metric_value(realized_vol)
+
+        momentum_series = calculate_three_bar_momentum(data_primary)
+        metrics["momentum3"] = self._get_latest_metric_value(momentum_series)
+
+        rsi_series = calculate_three_bar_rsi(data_primary)
+        metrics["rsi3"] = self._get_latest_metric_value(rsi_series)
+
+        slope_series = calculate_volatility_slope(volatility_source)
+        metrics["volatility_slope"] = self._get_latest_metric_value(slope_series)
+
+        return metrics
+
+    @staticmethod
+    def _get_latest_metric_value(series: Optional[pd.Series]) -> float:
+        """Return the latest value from a metric series, preserving NaN where appropriate."""
+
+        if series is None or series.empty:
+            return float(np.nan)
+
+        value = series.iloc[-1]
+        return float(value) if not pd.isna(value) else float(np.nan)
+
+    async def _get_current_price(self, symbol: str) -> Optional[float]:
+        """Compatibility wrapper around _get_market_snapshot for legacy callers."""
+
+        snapshot = await self._get_market_snapshot(symbol)
+        if snapshot and snapshot.get("latest_price") is not None:
+            return float(snapshot["latest_price"])
+        return None
 
     async def _check_position_alerts(self, assessment: PositionAssessment) -> None:
         """

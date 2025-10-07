@@ -696,3 +696,96 @@ def save_trading_data(
     except Exception as e:
         tprint_info(f"❌ Failed to save trading data: {e}")
         return False
+
+
+def calculate_atr14(data: pd.DataFrame, period: int = 14) -> pd.Series:
+    """Calculate the Average True Range (ATR) for OHLCV input data."""
+
+    required_columns = {"high", "low", "close"}
+    if not required_columns.issubset(data.columns):
+        missing = ", ".join(sorted(required_columns - set(data.columns)))
+        raise ValueError(f"Missing required columns for ATR calculation: {missing}")
+
+    high = pd.to_numeric(data["high"], errors="coerce")
+    low = pd.to_numeric(data["low"], errors="coerce")
+    close = pd.to_numeric(data["close"], errors="coerce")
+
+    previous_close = close.shift(1)
+    tr_components = pd.concat(
+        [
+            high - low,
+            (high - previous_close).abs(),
+            (low - previous_close).abs(),
+        ],
+        axis=1,
+    )
+    true_range = tr_components.max(axis=1)
+    atr = true_range.rolling(window=period, min_periods=period).mean()
+    return atr
+
+
+def calculate_realized_volatility(data: pd.DataFrame, window: int = 20) -> pd.Series:
+    """Compute realized volatility using log returns over the supplied window."""
+
+    if "close" not in data.columns:
+        raise ValueError("Missing required column 'close' for realized volatility calculation")
+
+    close = pd.to_numeric(data["close"], errors="coerce")
+    close = close.replace(0, np.nan)
+    log_returns = np.log(close / close.shift(1))
+    realized_vol = log_returns.rolling(window=window, min_periods=window).std()
+    realized_vol *= np.sqrt(window)
+    return realized_vol
+
+
+def calculate_three_bar_momentum(data: pd.DataFrame) -> pd.Series:
+    """Calculate momentum between the latest close and the close three bars prior."""
+
+    if "close" not in data.columns:
+        raise ValueError("Missing required column 'close' for momentum calculation")
+
+    close = pd.to_numeric(data["close"], errors="coerce")
+    momentum = close - close.shift(3)
+    return momentum
+
+
+def calculate_three_bar_rsi(data: pd.DataFrame, period: int = 3) -> pd.Series:
+    """Calculate a fast RSI value over a three-period window."""
+
+    if "close" not in data.columns:
+        raise ValueError("Missing required column 'close' for RSI calculation")
+
+    close = pd.to_numeric(data["close"], errors="coerce")
+    delta = close.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    avg_gain = gain.rolling(window=period, min_periods=period).mean()
+    avg_loss = loss.rolling(window=period, min_periods=period).mean()
+
+    rs = avg_gain / avg_loss.replace(to_replace=0, value=np.nan)
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+
+def calculate_volatility_slope(
+    data: pd.DataFrame,
+    volatility_window: int = 20,
+    slope_window: int = 5,
+) -> pd.Series:
+    """Compute the slope of realized volatility to gauge acceleration or deceleration."""
+
+    volatility = calculate_realized_volatility(data, window=volatility_window)
+
+    def _slope(values: np.ndarray) -> float:
+        idx = np.arange(len(values))
+        mask = ~np.isnan(values)
+        if mask.sum() < 2:
+            return np.nan
+        x = idx[mask]
+        y = values[mask]
+        slope, _ = np.polyfit(x, y, 1)
+        return slope
+
+    slope_series = volatility.rolling(window=slope_window, min_periods=2).apply(_slope, raw=True)
+    return slope_series

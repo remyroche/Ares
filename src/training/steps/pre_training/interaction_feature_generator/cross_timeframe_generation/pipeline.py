@@ -201,11 +201,17 @@ class CrossTimeframePipeline:
             self.final_features = self.statistical_selection.select_final_features(
                 self.materialized_htfs, self.interactions, targets
             )
-            
+
             # Step 9: Walk-forward evaluation
             self.logger.info("Step 9: Walk-forward evaluation")
+            feature_matrix = self._assemble_feature_matrix(
+                self.final_features.selected_features
+            )
             self.evaluation_results = self.evaluation.evaluate_features(
-                self.final_features, targets, self.regime_segments
+                self.final_features.selected_features,
+                targets,
+                self.regime_segments,
+                feature_data=feature_matrix
             )
             
             # Step 10: Monitoring & automation
@@ -230,10 +236,85 @@ class CrossTimeframePipeline:
             
             self.logger.info("Cross-timeframe pipeline completed successfully")
             return results
-            
+
         except Exception as e:
             self.logger.error(f"Pipeline failed: {str(e)}")
             raise
+
+    def _assemble_feature_matrix(self, selected_features: List[str]) -> pd.DataFrame:
+        """Assemble a feature matrix from materialized HTFs and interactions."""
+        if not selected_features:
+            return pd.DataFrame()
+
+        feature_data: Dict[str, pd.Series] = {}
+
+        # Prepare lookup for interactions by name for efficient access
+        interaction_lookup = {}
+        if isinstance(self.interactions, dict):
+            interaction_lookup = {
+                name: interaction for name, interaction in self.interactions.items()
+            }
+        elif isinstance(self.interactions, list):
+            interaction_lookup = {
+                getattr(interaction, 'name', None): interaction
+                for interaction in self.interactions
+                if getattr(interaction, 'name', None)
+            }
+
+        for feature_name in selected_features:
+            series = self._extract_feature_series(feature_name, interaction_lookup)
+            if series is not None:
+                feature_data[feature_name] = series
+            else:
+                self.logger.warning(
+                    "Selected feature %s not found in materialized HTFs or interactions",
+                    feature_name
+                )
+
+        if not feature_data:
+            return pd.DataFrame()
+
+        feature_matrix = pd.DataFrame(feature_data)
+        feature_matrix = feature_matrix.dropna(how='all')
+
+        return feature_matrix
+
+    def _extract_feature_series(self,
+                                feature_name: str,
+                                interaction_lookup: Dict[str, Any]) -> Optional[pd.Series]:
+        """Extract the pandas Series for a given feature name."""
+        series: Optional[pd.Series] = None
+
+        if isinstance(self.materialized_htfs, dict) and feature_name in self.materialized_htfs:
+            candidate = self.materialized_htfs[feature_name]
+            series = self._to_series(candidate)
+
+        if series is None and feature_name in interaction_lookup:
+            series = self._to_series(interaction_lookup[feature_name])
+
+        return series
+
+    @staticmethod
+    def _to_series(feature_obj: Any) -> Optional[pd.Series]:
+        """Convert a feature object to a pandas Series if possible."""
+        if feature_obj is None:
+            return None
+
+        if isinstance(feature_obj, pd.Series):
+            return feature_obj
+
+        if isinstance(feature_obj, pd.DataFrame) and feature_obj.shape[1] == 1:
+            return feature_obj.iloc[:, 0]
+
+        if hasattr(feature_obj, 'feature_series'):
+            return getattr(feature_obj, 'feature_series')
+
+        if isinstance(feature_obj, dict):
+            candidate = feature_obj.get('feature_series')
+            if isinstance(candidate, pd.Series):
+                return candidate
+
+        return None
     
     def _sessionize_and_align(self, 
                             ohlcv_data: pd.DataFrame,

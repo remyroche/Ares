@@ -10,7 +10,7 @@ Implements comprehensive evaluation with:
 - Performance metrics by regime
 """
 
-from typing import Dict, List, Optional, Any, Tuple, Union
+from typing import Callable, Dict, List, Optional, Any, Tuple, Union
 from dataclasses import dataclass
 import pandas as pd
 import numpy as np
@@ -557,38 +557,64 @@ class WalkForwardEvaluation:
         self.regime_evaluator = RegimeEvaluator(config)
         self.ablation_evaluator = AblationEvaluator(config)
     
-    def evaluate_features(self, 
+    def evaluate_features(self,
                         final_features: List[str],
                         targets: pd.Series,
-                        regime_segments: Optional[Dict[str, Any]] = None) -> EvaluationResult:
+                        regime_segments: Optional[Dict[str, Any]] = None,
+                        feature_data: Optional[Union[pd.DataFrame, Callable[[], pd.DataFrame]]] = None) -> EvaluationResult:
         """
         Evaluate final features using walk-forward validation.
-        
+
         Args:
             final_features: List of selected features
             targets: Target series
             regime_segments: Regime segmentation results
-            
+            feature_data: Pre-materialized feature matrix or callable returning it
+
         Returns:
             Evaluation result
         """
         self.logger.info("Starting walk-forward evaluation")
-        
-        # Create feature matrix (simplified)
-        # In practice, you'd load the actual feature data
-        n_samples = len(targets)
-        n_features = len(final_features)
-        feature_matrix = pd.DataFrame(
-            np.random.randn(n_samples, n_features),
-            columns=final_features,
-            index=targets.index
-        )
-        
+
+        if feature_data is None:
+            raise ValueError("feature_data must be provided as a DataFrame or callable returning a DataFrame")
+
+        feature_matrix = feature_data() if callable(feature_data) else feature_data
+
+        if feature_matrix is None:
+            raise ValueError("feature_data callable returned None")
+
+        if not isinstance(feature_matrix, pd.DataFrame):
+            raise TypeError("feature_data must be a pandas DataFrame or callable returning a DataFrame")
+
+        if not final_features:
+            self.logger.warning("No final features provided for evaluation")
+            return self._empty_evaluation_result()
+
+        missing_features = [f for f in final_features if f not in feature_matrix.columns]
+        if missing_features:
+            raise ValueError(f"Missing features in provided data: {missing_features}")
+
+        feature_matrix = feature_matrix[final_features].copy()
+
+        target_column_name = targets.name if targets.name is not None else "__target__"
+        targets_df = targets.to_frame(name=target_column_name)
+        combined = feature_matrix.join(targets_df, how='inner')
+        combined = combined.dropna()
+
+        if combined.empty:
+            self.logger.warning("No overlapping data between features and targets after alignment")
+            return self._empty_evaluation_result()
+
+        aligned_targets = combined.pop(target_column_name)
+        aligned_targets.name = targets.name
+        feature_matrix = combined
+
         # Walk-forward validation
         fold_results = self.walk_forward_validator.validate_features(
-            feature_matrix, targets, regime_segments
+            feature_matrix, aligned_targets, regime_segments
         )
-        
+
         # Calculate overall metrics
         overall_ic, overall_ic_std, overall_ic_ci = self.bootstrap_evaluator.calculate_confidence_intervals(
             fold_results, 'ic'
@@ -604,7 +630,7 @@ class WalkForwardEvaluation:
         # Ablation study
         feature_groups = self._create_ablation_groups(final_features)
         ablation_results = self.ablation_evaluator.perform_ablation_study(
-            feature_matrix, targets, feature_groups
+            feature_matrix, aligned_targets, feature_groups
         )
         
         # SPA test
@@ -623,14 +649,32 @@ class WalkForwardEvaluation:
             walk_forward_results=[self._fold_to_dict(f) for f in fold_results],
             metadata={
                 'n_folds': len(fold_results),
-                'n_features': len(final_features),
+                'n_features': len(feature_matrix.columns),
                 'evaluation_method': 'walk_forward',
                 'embargo_minutes': self.config.embargo_minutes
             }
         )
-        
+
         self.logger.info(f"Walk-forward evaluation completed: IC={overall_ic:.4f}")
         return result
+
+    def _empty_evaluation_result(self) -> EvaluationResult:
+        """Return an empty evaluation result when evaluation cannot be performed."""
+        return EvaluationResult(
+            overall_ic=0.0,
+            overall_ic_std=0.0,
+            overall_ic_ci=(0.0, 0.0),
+            regime_results={},
+            ablation_results={},
+            spa_test_result={},
+            walk_forward_results=[],
+            metadata={
+                'n_folds': 0,
+                'n_features': 0,
+                'evaluation_method': 'walk_forward',
+                'embargo_minutes': self.config.embargo_minutes
+            }
+        )
     
     def _create_ablation_groups(self, final_features: List[str]) -> Dict[str, List[str]]:
         """Create feature groups for ablation study."""

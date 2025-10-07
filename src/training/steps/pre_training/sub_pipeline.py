@@ -389,6 +389,46 @@ class PreTrainingSubPipeline:
 
         return result
 
+    async def _execute_optimized_lookback_generation(self, config: SubPipelineConfig) -> SubPipelineResult:
+        """Execute optimized lookback generation with matrix operations and hardware acceleration."""
+        result = SubPipelineResult(
+            sub_pipeline_name='optimized_lookback_generation',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
+
+        try:
+            # Convert config to component config
+            component_config = ComponentConfig(
+                symbol=config.symbol,
+                exchange=config.exchange,
+                timeframe=config.timeframe,
+                data_dir=config.data_dir,
+                custom_params=config.custom_params
+            )
+
+            # Create component using factory
+            component = ComponentFactory.create_component('optimized_lookback_generation', component_config)
+
+            # Execute component
+            pipeline_state = self._prepare_component_pipeline_state(config)
+            component_result = await component.execute(None, pipeline_state)
+
+            result.status = SubPipelineStatus.COMPLETED if component_result.success else SubPipelineStatus.FAILED
+            result.success = component_result.success
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            result.artifacts = component_result.artifacts
+            result.error_message = component_result.error_message
+
+        except Exception as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = str(e)
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+
+        return result
+
     async def _execute_final_feature_selection(self, config: SubPipelineConfig) -> SubPipelineResult:
         """Execute final feature selection with timeframe support."""
         result = SubPipelineResult(
@@ -434,7 +474,8 @@ class PreTrainingSubPipeline:
         return [
             'multi_horizon_profit_labeler',
             'feature_lookback_optimization', 
-            'roadmap_feature_generation',
+            'pid_based_feature_generation',
+            'optimized_lookback_generation',
             'final_feature_selection'
         ]
 
@@ -444,6 +485,10 @@ class PreTrainingSubPipeline:
             return await self._execute_multi_horizon_profit_labeler(config)
         elif sub_pipeline_name == 'feature_lookback_optimization':
             return await self._execute_feature_lookback_optimization(config)
+        elif sub_pipeline_name == 'pid_based_feature_generation':
+            return await self._execute_pid_based_feature_generation(config)
+        elif sub_pipeline_name == 'optimized_lookback_generation':
+            return await self._execute_optimized_lookback_generation(config)
         elif sub_pipeline_name == 'roadmap_feature_generation':
             return await self._execute_roadmap_feature_generation(config)
         elif sub_pipeline_name == 'final_feature_selection':

@@ -31,7 +31,9 @@ class PatchTSTWrapper(BaseEstimator, RegressorMixin):
                  use_transformer_attention: bool = True,
                  regime_aware: bool = True,
                  attention_dropout: float = 0.1,
-                 num_heads: int = 4):
+                 num_heads: int = 4,
+                 sign_dropout_rate: float = 0.0,
+                 sign_threshold: float = 0.2):
         """Initialize PatchTST wrapper.
 
         Args:
@@ -42,6 +44,8 @@ class PatchTSTWrapper(BaseEstimator, RegressorMixin):
             regime_aware: Whether to use regime-aware patch selection
             attention_dropout: Attention dropout rate
             num_heads: Number of attention heads
+            sign_dropout_rate: Dropout rate applied to dominant sign activations in a patch
+            sign_threshold: Minimum dominance difference before sign-based dropout is applied
         """
         self.base_model = base_model
         self.patch_len = patch_len
@@ -50,6 +54,8 @@ class PatchTSTWrapper(BaseEstimator, RegressorMixin):
         self.regime_aware = regime_aware
         self.attention_dropout = attention_dropout
         self.num_heads = num_heads
+        self.sign_dropout_rate = sign_dropout_rate
+        self.sign_threshold = sign_threshold
 
         # PatchTST components
         self.patch_embeddings = None
@@ -57,6 +63,7 @@ class PatchTSTWrapper(BaseEstimator, RegressorMixin):
         self.regime_patch_weights = None
         self.scaler = StandardScaler()
         self.feature_names = None
+        self._last_dropout_stats: Optional[Dict[str, Any]] = None
 
     def _create_patches(self, X: np.ndarray) -> np.ndarray:
         """Create patches from time series data."""
@@ -131,11 +138,21 @@ class PatchTSTWrapper(BaseEstimator, RegressorMixin):
     def _apply_patch_attention(self, patches: np.ndarray) -> np.ndarray:
         """Apply attention weights to patches."""
         if self.attention_weights is None:
+            self._last_dropout_stats = None
             return patches
 
         # Apply attention weights
         weighted_patches = patches * self.attention_weights[:, None]
-        
+
+        dropout_stats = {
+            'attention_dropout_rate': self.attention_dropout,
+            'sign_dropout_rate': self.sign_dropout_rate,
+            'positive_dropped': 0,
+            'negative_dropped': 0,
+            'positive_total': 0,
+            'negative_total': 0
+        }
+
         # Apply dropout to attention weights
         if self.attention_dropout > 0:
             attention_mask = np.random.binomial(
@@ -143,6 +160,60 @@ class PatchTSTWrapper(BaseEstimator, RegressorMixin):
                 size=patches.shape[0]
             )
             weighted_patches = weighted_patches * attention_mask[:, None]
+
+        sign_mask = np.ones_like(weighted_patches) if self.sign_dropout_rate > 0 else None
+
+        for idx, patch in enumerate(weighted_patches):
+            positive_mask = patch > 0
+            negative_mask = patch < 0
+            pos_count = int(np.sum(positive_mask))
+            neg_count = int(np.sum(negative_mask))
+
+            dropout_stats['positive_total'] += pos_count
+            dropout_stats['negative_total'] += neg_count
+
+            total_count = pos_count + neg_count
+            if total_count == 0 or self.sign_dropout_rate <= 0:
+                continue
+
+            pos_ratio = pos_count / total_count
+            neg_ratio = neg_count / total_count
+
+            dominant_sign = None
+            if pos_ratio - neg_ratio >= self.sign_threshold:
+                dominant_sign = 'positive'
+            elif neg_ratio - pos_ratio >= self.sign_threshold:
+                dominant_sign = 'negative'
+
+            if dominant_sign == 'positive' and pos_count > 0:
+                drop_samples = np.random.rand(pos_count) < self.sign_dropout_rate
+                mask_values = np.ones(pos_count, dtype=weighted_patches.dtype)
+                mask_values[drop_samples] = 0.0
+                sign_mask[idx, positive_mask] = mask_values
+                dropout_stats['positive_dropped'] += int(np.sum(drop_samples))
+            elif dominant_sign == 'negative' and neg_count > 0:
+                drop_samples = np.random.rand(neg_count) < self.sign_dropout_rate
+                mask_values = np.ones(neg_count, dtype=weighted_patches.dtype)
+                mask_values[drop_samples] = 0.0
+                sign_mask[idx, negative_mask] = mask_values
+                dropout_stats['negative_dropped'] += int(np.sum(drop_samples))
+
+        if sign_mask is not None:
+            weighted_patches = weighted_patches * sign_mask
+
+        if dropout_stats['positive_total'] > 0:
+            active = dropout_stats['positive_total'] - dropout_stats['positive_dropped']
+            dropout_stats['positive_active_ratio'] = active / dropout_stats['positive_total']
+        else:
+            dropout_stats['positive_active_ratio'] = 1.0
+
+        if dropout_stats['negative_total'] > 0:
+            active = dropout_stats['negative_total'] - dropout_stats['negative_dropped']
+            dropout_stats['negative_active_ratio'] = active / dropout_stats['negative_total']
+        else:
+            dropout_stats['negative_active_ratio'] = 1.0
+
+        self._last_dropout_stats = dropout_stats
 
         return weighted_patches
 
@@ -233,6 +304,21 @@ class PatchTSTWrapper(BaseEstimator, RegressorMixin):
         # Enhance features with patch-based transformations
         X_enhanced = self._enhance_features_with_patches(X)
 
+        if self._last_dropout_stats is not None:
+            stats = self._last_dropout_stats
+            logger.info(
+                "PatchTST dropout stats — attention: %.3f, sign: %.3f, "+
+                "positive active ratio: %.3f (%d/%d), negative active ratio: %.3f (%d/%d)",
+                stats.get('attention_dropout_rate', 0.0),
+                stats.get('sign_dropout_rate', 0.0),
+                stats.get('positive_active_ratio', 0.0),
+                stats.get('positive_total', 0) - stats.get('positive_dropped', 0),
+                stats.get('positive_total', 0),
+                stats.get('negative_active_ratio', 0.0),
+                stats.get('negative_total', 0) - stats.get('negative_dropped', 0),
+                stats.get('negative_total', 0)
+            )
+
         # Scale features
         X_scaled = self.scaler.fit_transform(X_enhanced)
 
@@ -293,7 +379,8 @@ class PatchTSTWrapper(BaseEstimator, RegressorMixin):
 
 # Factory function for creating PatchTST wrappers
 def create_patchtst_wrapper(base_model, patch_len=16, stride=8, use_transformer_attention=True,
-                          regime_aware=True, attention_dropout=0.1, num_heads=4):
+                          regime_aware=True, attention_dropout=0.1, num_heads=4,
+                          sign_dropout_rate: float = 0.0, sign_threshold: float = 0.2):
     """Create PatchTST wrapper for tree-based models."""
     return PatchTSTWrapper(
         base_model=base_model,
@@ -302,7 +389,9 @@ def create_patchtst_wrapper(base_model, patch_len=16, stride=8, use_transformer_
         use_transformer_attention=use_transformer_attention,
         regime_aware=regime_aware,
         attention_dropout=attention_dropout,
-        num_heads=num_heads
+        num_heads=num_heads,
+        sign_dropout_rate=sign_dropout_rate,
+        sign_threshold=sign_threshold
     )
 
 
@@ -325,7 +414,7 @@ def _create_patchtst_xgboost_model(self, model_config: ModelConfig) -> Any:
 
         if use_patchtst:
             patchtst_config = model_config.model_params.get('patchtst_config', {})
-            return create_patchtst_wrapper(base_model, patchtst_config)
+            return create_patchtst_wrapper(base_model, **patchtst_config)
 
         return base_model
 
@@ -346,7 +435,7 @@ def _create_patchtst_lightgbm_model(self, model_config: ModelConfig) -> Any:
 
         if use_patchtst:
             patchtst_config = model_config.model_params.get('patchtst_config', {})
-            return create_patchtst_wrapper(base_model, patchtst_config)
+            return create_patchtst_wrapper(base_model, **patchtst_config)
 
         return base_model
 

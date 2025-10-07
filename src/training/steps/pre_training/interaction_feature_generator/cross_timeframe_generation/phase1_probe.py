@@ -23,8 +23,13 @@ from .staleness_curve import StalenessCurveCalculator
 # Import existing components
 import sys
 sys.path.append('src/training/steps/pre_training/interaction_feature_generator/feature_interaction_generation')
-from feature_engineering.feature_registry import FeatureRegistry, FeatureFamily
+from feature_engineering.feature_registry import FeatureRegistry
 from feature_engineering.transforms import TransformRouter, create_default_transform_config
+from .htf_utils import (
+    build_htf_family_catalog,
+    format_transform_suffix,
+    resample_htf_series,
+)
 
 from .scoring_system import AdaptiveScoringSystem
 
@@ -51,20 +56,6 @@ class CoarseGridGenerator:
     def __init__(self, config):
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
-        # Define HTF families and their base features
-        self.htf_families = {
-            'trend_level_vol': [
-                'p/price_ema10_pct', 'p/price_ema20_pct', 'p/bollz20',
-                'p/sigma_ew', 'p/gk_w', 'p/rv_bipower_12', 'p/rv_short_3'
-            ],
-            'oscillators': [
-                'p/rsi7', 'p/rsi14', 'p/stochk14', 'p/autocorr_r1_w'
-            ],
-            'anchors': [
-                'p/vwap_session_dist', 'p/vwap_roll12_dist'
-            ]
-        }
         
         # Base coarse grid (15m to 300m)
         self.base_coarse_grid = self._generate_coarse_grid()
@@ -138,13 +129,16 @@ class CoarseGridGenerator:
 
 class HTFFeatureGenerator:
     """Generates HTF features from base features."""
-    
+
     def __init__(self, config):
         self.config = config
         self.feature_registry = FeatureRegistry()
         self.logger = logging.getLogger(__name__)
-    
-    def generate_htf_feature(self, 
+        self.htf_families, self.base_feature_to_family = build_htf_family_catalog(
+            self.feature_registry
+        )
+
+    def generate_htf_feature(self,
                            data: pd.DataFrame,
                            base_feature: str,
                            lookback_minutes: int,
@@ -161,146 +155,54 @@ class HTFFeatureGenerator:
         Returns:
             HTF feature series
         """
-        # Get base feature computation function
-        base_feature_func = self._get_base_feature_func(base_feature)
-        
-        # Compute base feature
-        base_series = base_feature_func(data)
-        
-        # Resample to HTF
-        htf_series = self._resample_to_htf(
-            base_series, 
+        if base_feature not in self.base_feature_to_family:
+            raise ValueError(f"Base feature '{base_feature}' is not registered for HTF usage")
+
+        expected_family = self.base_feature_to_family[base_feature]
+        if family != expected_family:
+            self.logger.warning(
+                "Family mismatch for %s: expected %s, received %s",
+                base_feature,
+                expected_family,
+                family,
+            )
+
+        metadata = self.feature_registry.get_feature_metadata(base_feature)
+        base_series = self.feature_registry.compute_feature(base_feature, data)
+
+        htf_series = resample_htf_series(base_series, lookback_minutes, metadata.family)
+
+        transformed_series = self._apply_transforms(
+            base_feature,
             lookback_minutes,
-            family
+            htf_series,
         )
-        
-        return htf_series
-    
-    def _get_base_feature_func(self, base_feature: str):
-        """Get base feature computation function."""
-        # Map feature names to computation functions
-        feature_map = {
-            'p/price_ema10_pct': self._price_ema10_pct,
-            'p/price_ema20_pct': self._price_ema20_pct,
-            'p/bollz20': self._bollz20,
-            'p/sigma_ew': self._sigma_ew,
-            'p/gk_w': self._gk_w,
-            'p/rv_bipower_12': self._rv_bipower_12,
-            'p/rv_short_3': self._rv_short_3,
-            'p/rsi7': self._rsi7,
-            'p/rsi14': self._rsi14,
-            'p/stochk14': self._stochk14,
-            'p/autocorr_r1_w': self._autocorr_r1_w,
-            'p/vwap_session_dist': self._vwap_session_dist,
-            'p/vwap_roll12_dist': self._vwap_roll12_dist
-        }
-        
-        if base_feature not in feature_map:
-            raise ValueError(f"Unknown base feature: {base_feature}")
-        
-        return feature_map[base_feature]
-    
-    def _resample_to_htf(self, 
-                        base_series: pd.Series, 
-                        lookback_minutes: int,
-                        family: str) -> pd.Series:
-        """
-        Resample base feature to higher timeframe.
-        
-        For different families, use different resampling strategies:
-        - Trend/Level & Vol: Use last value (most recent)
-        - Oscillators: Use mean (smoothing)
-        - Anchors: Use last value (most recent)
-        """
-        if family in ['trend_level_vol', 'anchors']:
-            # Use last value (most recent)
-            return base_series.resample(f'{lookback_minutes}min').last()
-        elif family == 'oscillators':
-            # Use mean (smoothing)
-            return base_series.resample(f'{lookback_minutes}min').mean()
-        else:
-            # Default to last value
-            return base_series.resample(f'{lookback_minutes}min').last()
-    
-    # Base feature computation functions
-    def _price_ema10_pct(self, data: pd.DataFrame) -> pd.Series:
-        """Price vs EMA10 percentage."""
-        ema10 = data['close'].ewm(span=10).mean()
-        return (data['close'] - ema10) / ema10
-    
-    def _price_ema20_pct(self, data: pd.DataFrame) -> pd.Series:
-        """Price vs EMA20 percentage."""
-        ema20 = data['close'].ewm(span=20).mean()
-        return (data['close'] - ema20) / ema20
-    
-    def _bollz20(self, data: pd.DataFrame) -> pd.Series:
-        """Bollinger z-score."""
-        ma20 = data['close'].rolling(20).mean()
-        sd20 = data['close'].rolling(20).std()
-        return (data['close'] - ma20) / sd20
-    
-    def _sigma_ew(self, data: pd.DataFrame) -> pd.Series:
-        """EW standard deviation of r1."""
-        r1 = np.log(data['close'] / data['close'].shift(1))
-        return r1.ewm(halflife=12).std()
-    
-    def _gk_w(self, data: pd.DataFrame) -> pd.Series:
-        """Garman-Klass estimator."""
-        log_hl = np.log(data['high'] / data['low'])
-        log_co = np.log(data['close'] / data['open'])
-        gk = 0.5 * log_hl**2 - (2*np.log(2) - 1) * log_co**2
-        return np.sqrt(gk.rolling(12).mean())
-    
-    def _rv_bipower_12(self, data: pd.DataFrame) -> pd.Series:
-        """Bipower variation."""
-        r1 = np.log(data['close'] / data['close'].shift(1))
-        r1_abs = np.abs(r1)
-        bipower = r1_abs * r1_abs.shift(1)
-        return np.sqrt(bipower.rolling(12).mean())
-    
-    def _rv_short_3(self, data: pd.DataFrame) -> pd.Series:
-        """Short-term realized volatility."""
-        r1 = np.log(data['close'] / data['close'].shift(1))
-        return np.sqrt((r1**2).rolling(3).sum())
-    
-    def _rsi7(self, data: pd.DataFrame) -> pd.Series:
-        """7-period RSI."""
-        return self._rsi(data, 7)
-    
-    def _rsi14(self, data: pd.DataFrame) -> pd.Series:
-        """14-period RSI."""
-        return self._rsi(data, 14)
-    
-    def _rsi(self, data: pd.DataFrame, period: int) -> pd.Series:
-        """RSI calculation."""
-        delta = data['close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss
-        return 100 - (100 / (1 + rs))
-    
-    def _stochk14(self, data: pd.DataFrame) -> pd.Series:
-        """14-period Stochastic %K."""
-        low14 = data['low'].rolling(14).min()
-        high14 = data['high'].rolling(14).max()
-        return 100 * (data['close'] - low14) / (high14 - low14)
-    
-    def _autocorr_r1_w(self, data: pd.DataFrame) -> pd.Series:
-        """Autocorrelation of r1."""
-        r1 = np.log(data['close'] / data['close'].shift(1))
-        return r1.rolling(12).apply(lambda x: x.autocorr(lag=1), raw=False)
-    
-    def _vwap_session_dist(self, data: pd.DataFrame) -> pd.Series:
-        """Session VWAP distance."""
-        vwap = (data['high'] + data['low'] + data['close']) / 3
-        vwap_session = vwap.rolling(12).mean()
-        return (data['close'] - vwap_session) / vwap_session
-    
-    def _vwap_roll12_dist(self, data: pd.DataFrame) -> pd.Series:
-        """Rolling VWAP distance."""
-        vwap = (data['high'] + data['low'] + data['close']) / 3
-        vwap_roll = vwap.rolling(12).mean()
-        return (data['close'] - vwap_roll) / vwap_roll
+
+        return transformed_series
+
+    def _apply_transforms(
+        self,
+        base_feature: str,
+        lookback_minutes: int,
+        htf_series: pd.Series,
+    ) -> pd.Series:
+        """Apply the default transform pipeline to a resampled HTF series."""
+        transform_config = create_default_transform_config([base_feature])
+        transform_router = TransformRouter(transform_config)
+
+        transformed = transform_router.fit_transform(
+            pd.DataFrame({base_feature: htf_series}),
+            pd.DataFrame({base_feature: htf_series}),
+        )
+
+        transformed_df = transformed.get(base_feature, {}).get('train')
+        if transformed_df is None or transformed_df.empty:
+            return pd.Series(index=htf_series.index, dtype=float)
+
+        transformed_series = transformed_df.iloc[:, 0]
+        suffix = format_transform_suffix(transform_config[base_feature])
+        transformed_series.name = f"t/{base_feature}_htf{lookback_minutes}/{suffix}"
+        return transformed_series
 
 
 class Phase1HTFProbe:

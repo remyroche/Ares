@@ -23,8 +23,13 @@ from pathlib import Path
 # Import existing feature generation components
 import sys
 sys.path.append('src/training/steps/pre_training/interaction_feature_generator/feature_interaction_generation')
-from feature_engineering.feature_registry import FeatureRegistry, FeatureFamily
+from feature_engineering.feature_registry import FeatureRegistry
 from feature_engineering.transforms import TransformRouter, create_default_transform_config
+from .htf_utils import (
+    build_htf_family_catalog,
+    format_transform_suffix,
+    resample_htf_series,
+)
 
 
 class UpdateStyle(Enum):
@@ -325,10 +330,13 @@ class HTFFeatureGenerator:
     def __init__(self, config):
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
+
         self.feature_registry = FeatureRegistry()
         self.rih_manager = RIHStateManager()
         self.ehu_manager = EHUStateManager()
+        self.htf_families, self.base_feature_to_family = build_htf_family_catalog(
+            self.feature_registry
+        )
     
     def generate_htf_feature(self, 
                            data: pd.DataFrame,
@@ -349,23 +357,27 @@ class HTFFeatureGenerator:
         Returns:
             Materialized HTF feature
         """
-        # Get base feature computation function
-        base_feature_func = self._get_base_feature_func(feature_name)
-        
-        # Compute base feature
-        base_series = base_feature_func(data)
-        
-        # Resample to HTF
-        htf_series = self._resample_to_htf(base_series, lookback, family)
-        
-        # Apply transform
-        transform_router = self._create_transform_router([feature_name])
-        transformed_data = transform_router.fit_transform(
-            pd.DataFrame({feature_name: htf_series}),
-            pd.DataFrame({feature_name: htf_series})
+        if feature_name not in self.base_feature_to_family:
+            raise ValueError(f"Feature '{feature_name}' is not registered for HTF materialization")
+
+        expected_family = self.base_feature_to_family[feature_name]
+        if family != expected_family:
+            self.logger.warning(
+                "Family mismatch for %s: expected %s, received %s",
+                feature_name,
+                expected_family,
+                family,
+            )
+
+        metadata = self.feature_registry.get_feature_metadata(feature_name)
+        base_series = self.feature_registry.compute_feature(feature_name, data)
+        htf_series = resample_htf_series(base_series, lookback, metadata.family)
+
+        transformed_series, transform_suffix = self._apply_transforms(
+            feature_name,
+            lookback,
+            htf_series,
         )
-        
-        transformed_series = transformed_data[feature_name]['train']
         
         # Create state
         if update_style == UpdateStyle.RIH:
@@ -375,12 +387,12 @@ class HTFFeatureGenerator:
         
         # Create materialized HTF
         materialized_htf = MaterializedHTF(
-            feature_name=f"t/{feature_name}_htf{lookback}/ewz12",
+            feature_name=f"t/{feature_name}_htf{lookback}/{transform_suffix}",
             family=family,
             lookback=lookback,
             update_style=update_style,
             feature_series=transformed_series,
-            transform_applied="ewz12",
+            transform_applied=transform_suffix,
             state=state,
             metadata={
                 'base_feature': feature_name,
@@ -389,132 +401,33 @@ class HTFFeatureGenerator:
                 'data_length': len(transformed_series)
             }
         )
-        
+
         return materialized_htf
-    
-    def _get_base_feature_func(self, base_feature: str):
-        """Get base feature computation function."""
-        # Map feature names to computation functions
-        feature_map = {
-            'p/price_ema10_pct': self._price_ema10_pct,
-            'p/price_ema20_pct': self._price_ema20_pct,
-            'p/bollz20': self._bollz20,
-            'p/sigma_ew': self._sigma_ew,
-            'p/gk_w': self._gk_w,
-            'p/rv_bipower_12': self._rv_bipower_12,
-            'p/rv_short_3': self._rv_short_3,
-            'p/rsi7': self._rsi7,
-            'p/rsi14': self._rsi14,
-            'p/stochk14': self._stochk14,
-            'p/autocorr_r1_w': self._autocorr_r1_w,
-            'p/vwap_session_dist': self._vwap_session_dist,
-            'p/vwap_roll12_dist': self._vwap_roll12_dist
-        }
-        
-        if base_feature not in feature_map:
-            raise ValueError(f"Unknown base feature: {base_feature}")
-        
-        return feature_map[base_feature]
-    
-    def _resample_to_htf(self, 
-                        base_series: pd.Series, 
-                        lookback_minutes: int,
-                        family: str) -> pd.Series:
-        """Resample base feature to higher timeframe."""
-        if family in ['trend_level_vol', 'anchors']:
-            # Use last value (most recent)
-            return base_series.resample(f'{lookback_minutes}min').last()
-        elif family == 'oscillators':
-            # Use mean (smoothing)
-            return base_series.resample(f'{lookback_minutes}min').mean()
-        else:
-            # Default to last value
-            return base_series.resample(f'{lookback_minutes}min').last()
-    
-    def _create_transform_router(self, feature_names: List[str]) -> TransformRouter:
-        """Create transform router for features."""
-        config = create_default_transform_config(feature_names)
-        return TransformRouter(config)
-    
-    # Base feature computation functions (same as in phase1_probe.py)
-    def _price_ema10_pct(self, data: pd.DataFrame) -> pd.Series:
-        """Price vs EMA10 percentage."""
-        ema10 = data['close'].ewm(span=10).mean()
-        return (data['close'] - ema10) / ema10
-    
-    def _price_ema20_pct(self, data: pd.DataFrame) -> pd.Series:
-        """Price vs EMA20 percentage."""
-        ema20 = data['close'].ewm(span=20).mean()
-        return (data['close'] - ema20) / ema20
-    
-    def _bollz20(self, data: pd.DataFrame) -> pd.Series:
-        """Bollinger z-score."""
-        ma20 = data['close'].rolling(20).mean()
-        sd20 = data['close'].rolling(20).std()
-        return (data['close'] - ma20) / sd20
-    
-    def _sigma_ew(self, data: pd.DataFrame) -> pd.Series:
-        """EW standard deviation of r1."""
-        r1 = np.log(data['close'] / data['close'].shift(1))
-        return r1.ewm(halflife=12).std()
-    
-    def _gk_w(self, data: pd.DataFrame) -> pd.Series:
-        """Garman-Klass estimator."""
-        log_hl = np.log(data['high'] / data['low'])
-        log_co = np.log(data['close'] / data['open'])
-        gk = 0.5 * log_hl**2 - (2*np.log(2) - 1) * log_co**2
-        return np.sqrt(gk.rolling(12).mean())
-    
-    def _rv_bipower_12(self, data: pd.DataFrame) -> pd.Series:
-        """Bipower variation."""
-        r1 = np.log(data['close'] / data['close'].shift(1))
-        r1_abs = np.abs(r1)
-        bipower = r1_abs * r1_abs.shift(1)
-        return np.sqrt(bipower.rolling(12).mean())
-    
-    def _rv_short_3(self, data: pd.DataFrame) -> pd.Series:
-        """Short-term realized volatility."""
-        r1 = np.log(data['close'] / data['close'].shift(1))
-        return np.sqrt((r1**2).rolling(3).sum())
-    
-    def _rsi7(self, data: pd.DataFrame) -> pd.Series:
-        """7-period RSI."""
-        return self._rsi(data, 7)
-    
-    def _rsi14(self, data: pd.DataFrame) -> pd.Series:
-        """14-period RSI."""
-        return self._rsi(data, 14)
-    
-    def _rsi(self, data: pd.DataFrame, period: int) -> pd.Series:
-        """RSI calculation."""
-        delta = data['close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss
-        return 100 - (100 / (1 + rs))
-    
-    def _stochk14(self, data: pd.DataFrame) -> pd.Series:
-        """14-period Stochastic %K."""
-        low14 = data['low'].rolling(14).min()
-        high14 = data['high'].rolling(14).max()
-        return 100 * (data['close'] - low14) / (high14 - low14)
-    
-    def _autocorr_r1_w(self, data: pd.DataFrame) -> pd.Series:
-        """Autocorrelation of r1."""
-        r1 = np.log(data['close'] / data['close'].shift(1))
-        return r1.rolling(12).apply(lambda x: x.autocorr(lag=1), raw=False)
-    
-    def _vwap_session_dist(self, data: pd.DataFrame) -> pd.Series:
-        """Session VWAP distance."""
-        vwap = (data['high'] + data['low'] + data['close']) / 3
-        vwap_session = vwap.rolling(12).mean()
-        return (data['close'] - vwap_session) / vwap_session
-    
-    def _vwap_roll12_dist(self, data: pd.DataFrame) -> pd.Series:
-        """Rolling VWAP distance."""
-        vwap = (data['high'] + data['low'] + data['close']) / 3
-        vwap_roll = vwap.rolling(12).mean()
-        return (data['close'] - vwap_roll) / vwap_roll
+
+    def _apply_transforms(
+        self,
+        feature_name: str,
+        lookback: int,
+        htf_series: pd.Series,
+    ) -> Tuple[pd.Series, str]:
+        """Apply default transforms and return the series with its suffix."""
+        transform_config = create_default_transform_config([feature_name])
+        transform_router = TransformRouter(transform_config)
+
+        transformed = transform_router.fit_transform(
+            pd.DataFrame({feature_name: htf_series}),
+            pd.DataFrame({feature_name: htf_series}),
+        )
+
+        transformed_df = transformed.get(feature_name, {}).get('train')
+        if transformed_df is None or transformed_df.empty:
+            empty_series = pd.Series(index=htf_series.index, dtype=float)
+            return empty_series, format_transform_suffix(transform_config[feature_name])
+
+        transformed_series = transformed_df.iloc[:, 0]
+        suffix = format_transform_suffix(transform_config[feature_name])
+        transformed_series.name = f"t/{feature_name}_htf{lookback}/{suffix}"
+        return transformed_series, suffix
 
 
 class HTFMaterialization:

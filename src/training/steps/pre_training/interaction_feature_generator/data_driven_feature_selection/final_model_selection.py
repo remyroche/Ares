@@ -15,7 +15,7 @@ Key Features:
 import logging
 import time
 import traceback
-from typing import Dict, List, Optional, Tuple, Union, Any
+from typing import Dict, List, Optional, Tuple, Union, Any, Set
 from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
@@ -129,7 +129,7 @@ class FinalModelSelection:
             tprint_info(f"📊 Selecting from {len(selected_wrappers)} base features and {len(selected_interactions)} interactions")
             
             # Generate feature matrix
-            feature_matrix, feature_names = self._generate_feature_matrix(
+            feature_matrix, feature_names, feature_metadata = self._generate_feature_matrix(
                 selected_wrappers, selected_interactions, data
             )
             
@@ -162,7 +162,11 @@ class FinalModelSelection:
             
             # Final feature selection
             final_features = self._select_final_features(
-                feature_matrix, target, feature_names, group_heredity_features
+                feature_matrix,
+                target,
+                feature_names,
+                group_heredity_features,
+                feature_metadata
             )
             
             # Generate final feature matrix
@@ -203,14 +207,16 @@ class FinalModelSelection:
             
             return self._create_empty_result(execution_time)
     
-    def _generate_feature_matrix(self, selected_wrappers: List[FeatureGeneratorWrapper], 
-                               selected_interactions: List[InteractionFeature], 
-                               data: pd.DataFrame) -> Tuple[Optional[np.ndarray], List[str]]:
+    def _generate_feature_matrix(self, selected_wrappers: List[FeatureGeneratorWrapper],
+                               selected_interactions: List[InteractionFeature],
+                               data: pd.DataFrame) -> Tuple[Optional[np.ndarray], List[str], Dict[str, Dict[str, Any]]]:
         """Generate feature matrix from selected wrappers and interactions."""
         try:
             features = []
             feature_names = []
-            
+            feature_metadata: Dict[str, Dict[str, Any]] = {}
+            wrapper_category_map: Dict[str, str] = {}
+
             # Generate base features
             for wrapper in selected_wrappers:
                 try:
@@ -218,10 +224,18 @@ class FinalModelSelection:
                     if feature_values is not None and len(feature_values) > 10:
                         features.append(feature_values)
                         feature_names.append(wrapper.name)
+                        feature_type = self._determine_feature_bucket(wrapper)
+                        feature_metadata[wrapper.name] = {
+                            'family': wrapper.family,
+                            'category': wrapper.category,
+                            'feature_type': feature_type,
+                            'source': 'base'
+                        }
+                        wrapper_category_map[wrapper.name] = feature_type
                 except Exception as e:
                     self.logger.debug(f"Failed to generate feature for {wrapper.name}: {e}")
                     continue
-            
+
             # Generate interaction features
             for interaction in selected_interactions:
                 try:
@@ -229,12 +243,23 @@ class FinalModelSelection:
                     if feature_values is not None and len(feature_values) > 10:
                         features.append(feature_values)
                         feature_names.append(interaction.name)
+                        feature_type = self._determine_interaction_bucket([
+                            wrapper_category_map.get(interaction.parent1),
+                            wrapper_category_map.get(interaction.parent2)
+                        ])
+                        feature_metadata[interaction.name] = {
+                            'family': 'interaction',
+                            'category': interaction.interaction_type,
+                            'feature_type': feature_type,
+                            'parents': [interaction.parent1, interaction.parent2],
+                            'source': 'interaction'
+                        }
                 except Exception as e:
                     self.logger.debug(f"Failed to generate interaction {interaction.name}: {e}")
                     continue
-            
+
             if not features:
-                return None, []
+                return None, [], {}
             
             # Align all features to same length
             min_length = min(len(f) for f in features)
@@ -244,11 +269,11 @@ class FinalModelSelection:
             feature_matrix = np.column_stack(aligned_features)
             
             tprint_info(f"📊 Generated feature matrix: {feature_matrix.shape}")
-            return feature_matrix, feature_names
-            
+            return feature_matrix, feature_names, feature_metadata
+
         except Exception as e:
             self.logger.error(f"Failed to generate feature matrix: {e}")
-            return None, []
+            return None, [], {}
     
     def _generate_wrapper_feature(self, wrapper: FeatureGeneratorWrapper, data: pd.DataFrame) -> Optional[np.ndarray]:
         """Generate feature values for a wrapper."""
@@ -271,7 +296,7 @@ class FinalModelSelection:
             self.logger.debug(f"Failed to generate wrapper feature {wrapper.name}: {e}")
             return None
     
-    def _generate_interaction_feature(self, interaction: InteractionFeature, data: pd.DataFrame, 
+    def _generate_interaction_feature(self, interaction: InteractionFeature, data: pd.DataFrame,
                                     selected_wrappers: List[FeatureGeneratorWrapper]) -> Optional[np.ndarray]:
         """Generate feature values for an interaction."""
         try:
@@ -309,6 +334,48 @@ class FinalModelSelection:
         except Exception as e:
             self.logger.debug(f"Failed to generate interaction feature {interaction.name}: {e}")
             return None
+
+    def _determine_feature_bucket(self, wrapper: FeatureGeneratorWrapper) -> str:
+        """Infer the high-level category bucket for a wrapper."""
+        name = (wrapper.name or '').lower()
+        category = (wrapper.category or '').lower()
+        family = (wrapper.family or '').lower()
+
+        regime_terms = ['regime', 'state', 'market_state']
+        embedding_terms = ['embedding', 'representation', 'autoencoder', 'encoder', 'ae']
+        htf_terms = ['htf', 'higher_time', 'higher_tf', 'multi_time', 'multitime', 'mtf', 'higher timeframe']
+
+        if any(term in category for term in regime_terms) or any(term in name for term in regime_terms):
+            return 'regime'
+        if any(term in category for term in embedding_terms) or any(term in name for term in embedding_terms):
+            return 'embedding'
+        if any(term in category for term in htf_terms) or any(term in name for term in htf_terms) or any(term in family for term in htf_terms):
+            return 'htf'
+
+        return 'engineered'
+
+    def _determine_interaction_bucket(self, parent_buckets: List[Optional[str]]) -> str:
+        """Infer category bucket for an interaction based on parent buckets."""
+        valid_buckets = [bucket for bucket in parent_buckets if bucket]
+        if not valid_buckets:
+            return 'engineered'
+
+        non_engineered = [bucket for bucket in valid_buckets if bucket != 'engineered']
+        if not non_engineered:
+            return 'engineered'
+
+        if len(set(non_engineered)) == 1:
+            return non_engineered[0]
+
+        # Mixed parents – default to engineered to avoid double counting specialised quotas
+        return 'engineered'
+
+    def _resolve_feature_bucket(self, feature_name: str, metadata: Dict[str, Dict[str, Any]]) -> str:
+        """Resolve the bucket for a feature from metadata."""
+        bucket = metadata.get(feature_name, {}).get('feature_type')
+        if bucket in {'engineered', 'htf', 'regime', 'embedding'}:
+            return bucket
+        return 'engineered'
     
     def _run_stability_selection(self, feature_matrix: np.ndarray, target: np.ndarray, 
                                feature_names: List[str]) -> Dict[str, float]:
@@ -590,31 +657,198 @@ class FinalModelSelection:
             self.logger.debug(f"Failed to check heredity for {feature_name}: {e}")
             return True
     
-    def _select_final_features(self, feature_matrix: np.ndarray, target: np.ndarray, 
-                             feature_names: List[str], candidate_features: List[str]) -> List[str]:
-        """Select final features to meet target count."""
+    def _select_final_features(self, feature_matrix: np.ndarray, target: np.ndarray,
+                             feature_names: List[str], candidate_features: List[str],
+                             feature_metadata: Dict[str, Dict[str, Any]]) -> List[str]:
+        """Select final features while satisfying category quotas."""
         try:
             if len(candidate_features) <= self.config.target_feature_count:
                 return candidate_features
-            
-            # Get indices of candidate features
+
             candidate_indices = [i for i, name in enumerate(feature_names) if name in candidate_features]
-            
             if not candidate_indices:
                 return candidate_features
-            
-            # Select features using the configured method
+
+            candidate_names = [feature_names[i] for i in candidate_indices]
+            metadata = {name: feature_metadata.get(name, {}) for name in candidate_names}
+
+            quotas = {}
+            if getattr(self.config, 'category_quotas', None) is not None:
+                quotas = {k: int(v) for k, v in self.config.category_quotas.to_dict().items() if int(v) > 0}
+
+            desired_total = min(
+                self.config.target_feature_count,
+                self.config.max_feature_count,
+                len(candidate_names)
+            )
+
+            if quotas:
+                self._validate_quota_configuration(quotas, desired_total)
+                self._validate_category_supply(candidate_names, metadata, quotas)
+
             X_candidate = feature_matrix[:, candidate_indices]
-            selected_indices = self._select_features_single_sample(X_candidate, target, candidate_features)
-            
-            # Map back to feature names
-            final_features = [candidate_features[i] for i in selected_indices]
-            
-            return final_features
-            
+            ranking = self._rank_candidate_features(X_candidate, target, candidate_names)
+
+            if not quotas:
+                return ranking[:desired_total]
+
+            selected: List[str] = []
+            used: Set[str] = set()
+
+            for category, quota in quotas.items():
+                category_features = [
+                    name for name in ranking
+                    if self._resolve_feature_bucket(name, metadata) == category
+                ]
+
+                if len(category_features) < quota:
+                    shortfall = quota - len(category_features)
+                    self._log_quota_shortfall(category, quota, len(category_features))
+                    raise ValueError(
+                        f"Insufficient features for category '{category}' (missing {shortfall})."
+                    )
+
+                for name in category_features[:quota]:
+                    if name not in used:
+                        selected.append(name)
+                        used.add(name)
+
+            waitlist = [name for name in ranking if name not in used]
+
+            for name in waitlist:
+                if len(selected) >= desired_total:
+                    break
+                selected.append(name)
+                used.add(name)
+
+            if len(selected) > desired_total:
+                selected = selected[:desired_total]
+
+            self._log_final_allocation(selected, metadata)
+
+            return selected
+
         except Exception as e:
             self.logger.warning(f"Final feature selection failed: {e}")
             return candidate_features[:self.config.target_feature_count]
+
+    def _validate_quota_configuration(self, quotas: Dict[str, int], desired_total: int) -> None:
+        """Validate that quota configuration is internally consistent."""
+        total_quota = sum(max(0, quota) for quota in quotas.values())
+
+        if total_quota <= 0:
+            message = "Category quotas must reserve at least one feature."
+            self.logger.error(message)
+            tprint_error(message)
+            raise ValueError(message)
+
+        if total_quota > self.config.max_feature_count:
+            message = (
+                f"Category quotas ({total_quota}) exceed max feature count "
+                f"({self.config.max_feature_count})."
+            )
+            self.logger.error(message)
+            tprint_error(message)
+            raise ValueError(message)
+
+        if total_quota > desired_total:
+            message = (
+                f"Category quotas ({total_quota}) exceed desired total ({desired_total})."
+            )
+            self.logger.error(message)
+            tprint_error(message)
+            raise ValueError(message)
+
+    def _validate_category_supply(self, candidate_names: List[str], metadata: Dict[str, Dict[str, Any]],
+                                  quotas: Dict[str, int]) -> None:
+        """Validate that candidate features can satisfy the configured quotas."""
+        deficits = {}
+        for category, quota in quotas.items():
+            available = sum(
+                1 for name in candidate_names
+                if self._resolve_feature_bucket(name, metadata) == category
+            )
+            if available < quota:
+                deficits[category] = quota - available
+
+        if deficits:
+            details = ", ".join(f"{cat}: short {shortfall}" for cat, shortfall in deficits.items())
+            message = f"Insufficient supply to satisfy category quotas ({details})."
+            self.logger.error(message)
+            tprint_error(message)
+            raise ValueError(message)
+
+    def _rank_candidate_features(self, X_candidate: np.ndarray, target: np.ndarray,
+                                 candidate_names: List[str]) -> List[str]:
+        """Rank candidate features using the configured selection model."""
+        scores: Optional[np.ndarray] = None
+
+        try:
+            if self.config.model_type == "lightgbm" and LIGHTGBM_AVAILABLE:
+                train_data = lgb.Dataset(X_candidate, label=target)
+                params = {
+                    'objective': 'regression',
+                    'metric': 'rmse',
+                    'boosting_type': 'gbdt',
+                    'max_depth': self.config.max_depth,
+                    'learning_rate': self.config.learning_rate,
+                    'n_estimators': self.config.n_estimators,
+                    'verbose': -1
+                }
+                model = lgb.train(params, train_data, num_boost_round=self.config.n_estimators)
+                scores = model.feature_importance(importance_type='gain').astype(float)
+            elif self.config.model_type == "lasso":
+                lasso = LassoCV(cv=3, random_state=42)
+                lasso.fit(X_candidate, target)
+                scores = np.abs(lasso.coef_)
+            elif self.config.model_type == "random_forest":
+                rf = RandomForestRegressor(
+                    n_estimators=100,
+                    max_depth=self.config.max_depth,
+                    random_state=42
+                )
+                rf.fit(X_candidate, target)
+                scores = rf.feature_importances_.astype(float)
+            else:
+                scores, _ = f_regression(X_candidate, target)
+        except Exception as e:
+            self.logger.debug(f"Primary ranking method failed: {e}")
+
+        if scores is None or len(scores) != len(candidate_names):
+            try:
+                scores, _ = f_regression(X_candidate, target)
+            except Exception as e:
+                self.logger.warning(f"Fallback ranking failed: {e}")
+                return candidate_names
+
+        scores = np.nan_to_num(scores, nan=0.0, posinf=0.0, neginf=0.0)
+        ranking_pairs = sorted(
+            zip(scores.tolist(), candidate_names),
+            key=lambda item: item[0],
+            reverse=True
+        )
+
+        return [name for _, name in ranking_pairs]
+
+    def _log_quota_shortfall(self, category: str, requested: int, available: int) -> None:
+        """Log a shortfall for a specific category."""
+        message = (
+            f"Category '{category}' quota not met: requested {requested}, available {available}."
+        )
+        self.logger.error(message)
+        tprint_error(message)
+
+    def _log_final_allocation(self, selected: List[str], metadata: Dict[str, Dict[str, Any]]) -> None:
+        """Log the final allocation across categories for observability."""
+        counts: Dict[str, int] = {}
+        for name in selected:
+            bucket = self._resolve_feature_bucket(name, metadata)
+            counts[bucket] = counts.get(bucket, 0) + 1
+
+        summary = ", ".join(f"{category}: {count}" for category, count in sorted(counts.items()))
+        message = f"Final feature allocation by category -> {summary}"
+        self.logger.info(message)
+        tprint_info(message)
     
     def _generate_final_matrix(self, feature_matrix: np.ndarray, feature_names: List[str], 
                              final_features: List[str]) -> Optional[np.ndarray]:

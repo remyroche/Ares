@@ -45,6 +45,16 @@ def get_trading_config() -> dict[str, Any]:
             "tas_models_path": "models/tas/",
             "tas_architectures_path": "models/tas/architectures/"
         },
+        "model_selection": {
+            "cross_timeframe_confirmation": {
+                "enabled": True,
+                "max_regime_difference": 0,
+                "max_confidence_delta": 0.2,
+                "downgrade_confidence_factor": 0.6,
+                "reject_on_disagreement": False,
+                "rejection_confidence": 0.0,
+            }
+        },
         # --- Exchange Configurations ---
         "exchanges": {
             "binance": {

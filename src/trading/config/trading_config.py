@@ -64,7 +64,17 @@ class TradingConfig:
     enable_regime_switching: bool = True
     enable_dynamic_sizing: bool = True
     enable_risk_scaling: bool = True
-    
+
+    # Cross-timeframe confirmation settings
+    cross_timeframe_confirmation: Dict[str, Any] = field(default_factory=lambda: {
+        'enabled': True,
+        'max_regime_difference': 0,
+        'max_confidence_delta': 0.2,
+        'downgrade_confidence_factor': 0.6,
+        'reject_on_disagreement': False,
+        'rejection_confidence': 0.0,
+    })
+
     # Exit strategy configuration (optimized trailing settings)
     exit_strategy: Dict[str, Any] = field(default_factory=dict)
 

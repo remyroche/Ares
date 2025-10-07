@@ -14,6 +14,7 @@ import numpy as np
 from src.utils.logger import system_logger
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.version_manager import get_version_manager
+from src.utils.tprint import tprint, tprint_error, tprint_warning, tprint_success, tprint_debug
 
 logger = system_logger.getChild('PreTrainingComponent')
 

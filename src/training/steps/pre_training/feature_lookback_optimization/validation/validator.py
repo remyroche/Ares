@@ -15,6 +15,7 @@ from src.utils.common_operations import validate_dataframe_columns, safe_datafra
 from src.utils.common_utilities import CommonUtilities
 from src.utils.math_validation import validate_finite, validate_positive
 from src.utils.serialization_utils import UniversalSerializer
+from src.utils.tprint import tprint, tprint_error, tprint_warning, tprint_success, tprint_debug
 
 from ..constants import VALIDATION_CONSTANTS, QUALITY_CONSTANTS
 from ..dependency_manager import get_dependency

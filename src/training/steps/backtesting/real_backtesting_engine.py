@@ -18,6 +18,7 @@ import time
 import gc
 from pathlib import Path
 import json
+from copy import deepcopy
 
 # Import existing utilities
 from src.utils.data.klines_parquet import get_klines_manager
@@ -178,7 +179,21 @@ class RealBacktestingEngine:
                 data['sma_50'] = data['close'].rolling(window=50).mean()
                 data['rsi'] = self._calculate_rsi(data['close'])
                 data['atr'] = self._calculate_atr(data)
-            
+
+            # Volatility features for trailing TP simulations
+            returns = data['close'].pct_change().fillna(0)
+            data['realized_volatility'] = returns.rolling(window=20).std().fillna(0) * np.sqrt(252)
+            long_term_vol = data['realized_volatility'].rolling(window=100).mean()
+            vol_std = data['realized_volatility'].rolling(window=100).std()
+            data['volatility_zscore'] = ((data['realized_volatility'] - long_term_vol) / vol_std)
+            data['volatility_zscore'] = data['volatility_zscore'].replace([np.inf, -np.inf], 0).fillna(0)
+            data['volatility_bucket'] = pd.cut(
+                data['realized_volatility'],
+                bins=[-np.inf, 0.01, 0.03, np.inf],
+                labels=['low', 'normal', 'high']
+            )
+            data['volatility_bucket'] = data['volatility_bucket'].astype(str).replace('nan', 'normal')
+
             # Clean up NaN values
             data = data.fillna(method='bfill').fillna(method='ffill')
             
@@ -293,129 +308,500 @@ class RealBacktestingEngine:
         
         return positions
     
+
     async def execute_backtest(self, data: pd.DataFrame, signals: pd.DataFrame) -> Dict[str, Any]:
-        """Execute the actual backtest."""
+        """Execute the actual backtest with trailing TP simulations."""
         self.logger.info("🚀 Executing backtest")
-        
+
         try:
-            # Initialize portfolio
-            portfolio_value = self.config.backtesting.initial_capital
-            position = 0.0
-            cash = self.config.backtesting.initial_capital
-            
-            # Performance tracking
-            equity_curve = [portfolio_value]
-            trade_log = []
-            
-            # Execute trades
-            for i in range(1, len(data)):
-                current_price = data['close'].iloc[i]
-                signal = signals['signal'].iloc[i]
-                position_size = signals['position'].iloc[i]
-                
-                if signal != 0 and position_size > 0:
-                    # Calculate trade size
-                    trade_value = portfolio_value * position_size
-                    shares = trade_value / current_price
-                    
-                    # Apply transaction costs
-                    commission = trade_value * self.config.backtesting.commission_rate
-                    slippage = trade_value * self.config.backtesting.slippage_rate
-                    total_cost = trade_value + commission + slippage
-                    
-                    if signal == 1 and cash >= total_cost:  # Buy signal
-                        # Execute buy
-                        shares_to_buy = shares
-                        cost = shares_to_buy * current_price + commission + slippage
-                        
-                        if cost <= cash:
-                            position += shares_to_buy
-                            cash -= cost
-                            
-                            # Log trade
-                            trade_log.append({
-                                'timestamp': data.index[i],
-                                'action': 'BUY',
-                                'shares': shares_to_buy,
-                                'price': current_price,
-                                'cost': cost,
-                                'portfolio_value': portfolio_value
-                            })
-                    
-                    elif signal == -1 and position > 0:  # Sell signal
-                        # Execute sell
-                        shares_to_sell = min(position, shares)
-                        proceeds = shares_to_sell * current_price - commission - slippage
-                        
-                        position -= shares_to_sell
-                        cash += proceeds
-                        
-                        # Log trade
-                        trade_log.append({
-                            'timestamp': data.index[i],
-                            'action': 'SELL',
-                            'shares': shares_to_sell,
-                            'price': current_price,
-                            'proceeds': proceeds,
-                            'portfolio_value': portfolio_value
-                        })
-                
-                # Update portfolio value
-                portfolio_value = cash + (position * current_price)
-                equity_curve.append(portfolio_value)
-            
-            # Calculate performance metrics
-            performance_metrics = self._calculate_performance_metrics(equity_curve, trade_log)
-            
-            # Store results
-            self.equity_curve = equity_curve
-            self.trade_log = trade_log
-            self.performance_metrics = performance_metrics
-            
-            self.logger.info(f"✅ Backtest completed: {len(trade_log)} trades, {performance_metrics['total_return']:.2%} return")
-            
+            scenario_configs = self._get_volatility_scenarios()
+            base_scenario_name = 'normal' if 'normal' in scenario_configs else next(iter(scenario_configs.keys()), 'base')
+            base_config = scenario_configs.get(base_scenario_name, {})
+
+            base_result = self._run_backtest_simulation(data, signals, base_scenario_name, base_config)
+            base_metrics = base_result['metrics']
+            noise_sensitivity = self._estimate_noise_sensitivity(
+                data,
+                signals,
+                base_scenario_name,
+                base_config,
+                base_metrics.get('total_return', 0.0)
+            )
+            base_metrics['noise_sensitivity'] = noise_sensitivity
+
+            regime_performance = self._calculate_regime_performance(base_result['trade_log'])
+            base_metrics['regime_performance'] = regime_performance
+
+            self.equity_curve = base_result['equity_curve']
+            self.trade_log = base_result['trade_log']
+            self.performance_metrics = base_metrics
+
+            persisted_path = self._persist_regime_performance(regime_performance)
+            if persisted_path:
+                self.logger.info(f"💾 Saved per-regime performance metrics to {persisted_path}")
+
+            remaining_scenarios = {k: v for k, v in scenario_configs.items() if k != base_scenario_name}
+            trial_results = self.simulate_trailing_tp_trials(data, signals, remaining_scenarios)
+
+            if trial_results:
+                self.performance_metrics['trailing_tp_trials'] = {
+                    trial['scenario']: trial['metrics'] for trial in trial_results
+                }
+
+            self.logger.info(
+                "✅ Backtest completed: %d exit trades, %.2f%% return (scenario=%s)",
+                base_metrics.get('total_trades', 0),
+                base_metrics.get('total_return', 0.0) * 100,
+                base_scenario_name,
+            )
+
             return {
-                'performance_metrics': performance_metrics,
-                'trade_log': trade_log,
-                'equity_curve': equity_curve,
-                'final_portfolio_value': portfolio_value,
-                'total_trades': len(trade_log)
+                'performance_metrics': self.performance_metrics,
+                'trade_log': self.trade_log,
+                'equity_curve': self.equity_curve,
+                'regime_performance': regime_performance,
+                'trailing_tp_trials': trial_results,
+                'final_portfolio_value': self.equity_curve[-1] if self.equity_curve else 0.0,
+                'total_trades': self.performance_metrics.get('total_trades', 0)
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Backtest execution failed: {e}")
             raise
-    
-    def _calculate_performance_metrics(self, equity_curve: List[float], trade_log: List[Dict]) -> Dict[str, Any]:
+
+    def _get_trailing_tp_settings(self) -> Dict[str, Any]:
+        """Get trailing take-profit configuration."""
+        settings = {
+            'activation_rr': getattr(self.config.trailing_tp, 'activation_rr', 1.2),
+            'trail_distance_pct': getattr(self.config.trailing_tp, 'trail_distance_pct', 0.01),
+            'volatility_sensitivity': getattr(self.config.trailing_tp, 'volatility_sensitivity', 1.0),
+            'max_latency_seconds': getattr(self.config.trailing_tp, 'max_latency_seconds', 120),
+            'noise_levels': list(getattr(self.config.trailing_tp, 'noise_levels', [0.0005, 0.001])),
+        }
+
+        custom_settings = self.config.custom_params.get('trailing_tp', {})
+        if isinstance(custom_settings, dict):
+            settings.update(custom_settings)
+
+        return settings
+
+    def _get_volatility_scenarios(self) -> Dict[str, Dict[str, Any]]:
+        """Combine default and custom volatility scenario configurations."""
+        scenarios: Dict[str, Dict[str, Any]] = {}
+        default_scenarios = getattr(self.config.scenario_sweep, 'scenarios', {})
+        custom_scenarios = self.config.custom_params.get('volatility_scenarios', {})
+
+        for name, base_cfg in default_scenarios.items():
+            base_copy = deepcopy(base_cfg)
+            if isinstance(custom_scenarios, dict):
+                base_copy.update(custom_scenarios.get(name, {}))
+            scenarios[name] = base_copy
+
+        if isinstance(custom_scenarios, dict):
+            for name, cfg in custom_scenarios.items():
+                if name not in scenarios:
+                    scenarios[name] = deepcopy(cfg)
+
+        return scenarios
+
+    def _detect_regime_column(self, data: pd.DataFrame) -> Optional[str]:
+        """Detect a regime column in the dataset if present."""
+        candidate_columns = ['regime', 'regime_id', 'primary_regime', 'hmm_regime', 'composite_cluster_id']
+        for column in candidate_columns:
+            if column in data.columns:
+                return column
+        return None
+
+    def _run_backtest_simulation(
+        self,
+        data: pd.DataFrame,
+        signals: pd.DataFrame,
+        scenario_name: str,
+        scenario_config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Run a single backtest simulation for the provided scenario."""
+        trailing_settings = self._get_trailing_tp_settings()
+        portfolio_value = self.config.backtesting.initial_capital
+        cash = self.config.backtesting.initial_capital
+        position_shares = 0.0
+        position_cost_basis = 0.0
+        equity_curve = [portfolio_value]
+        trade_log: List[Dict[str, Any]] = []
+        risk_reward_values: List[float] = []
+        realized_profits: List[float] = []
+        trade_durations: List[float] = []
+        activation_latencies: List[float] = []
+
+        regime_column = self._detect_regime_column(data)
+        base_stop_loss_pct = self.config.backtesting.stop_loss
+        take_profit_pct = self.config.backtesting.take_profit * scenario_config.get('tp_multiplier', 1.0)
+
+        trailing_state: Dict[str, Any] = {
+            'active': False,
+            'highest_price': None,
+            'activation_price': None,
+            'activation_time': None,
+            'entry_time': None,
+            'entry_index': None,
+            'entry_price': None,
+            'take_profit_price': None,
+        }
+
+        for i in range(1, len(data)):
+            current_price = float(data['close'].iloc[i])
+            signal = signals['signal'].iloc[i]
+            position_size = float(signals['position'].iloc[i])
+            timestamp = data.index[i]
+            regime_value = str(data[regime_column].iloc[i]) if regime_column else 'global'
+
+            volatility = float(data['realized_volatility'].iloc[i]) if 'realized_volatility' in data.columns else 0.0
+            volatility_adjustment = 1.0 + volatility * trailing_settings['volatility_sensitivity']
+            dynamic_trail_pct = trailing_settings['trail_distance_pct'] * scenario_config.get('trail_multiplier', 1.0) * volatility_adjustment
+            dynamic_trail_pct = float(np.clip(dynamic_trail_pct, 0.0005, 0.2))
+
+            if signal != 0 and position_size > 0:
+                trade_value = portfolio_value * position_size
+                shares = trade_value / current_price
+                commission = trade_value * self.config.backtesting.commission_rate
+                slippage = trade_value * self.config.backtesting.slippage_rate
+                total_cost = trade_value + commission + slippage
+
+                if signal == 1 and cash >= total_cost:
+                    shares_to_buy = shares
+                    cost = shares_to_buy * current_price + commission + slippage
+
+                    if cost <= cash:
+                        cash -= cost
+                        position_shares += shares_to_buy
+                        position_cost_basis += cost
+
+                        activation_multiplier = scenario_config.get('activation_multiplier', 1.0)
+                        activation_rr = trailing_settings['activation_rr'] * activation_multiplier
+                        activation_move = base_stop_loss_pct * activation_rr
+
+                        trailing_state['highest_price'] = current_price
+                        trailing_state['activation_price'] = current_price * (1 + activation_move / max(volatility_adjustment, 1e-6))
+                        trailing_state['activation_time'] = None
+                        trailing_state['entry_time'] = timestamp
+                        trailing_state['entry_index'] = i
+                        trailing_state['entry_price'] = current_price
+                        trailing_state['take_profit_price'] = current_price * (1 + take_profit_pct)
+                        trailing_state['active'] = False
+
+                        trade_log.append({
+                            'timestamp': timestamp,
+                            'action': 'BUY',
+                            'shares': shares_to_buy,
+                            'price': current_price,
+                            'cost': cost,
+                            'scenario': scenario_name,
+                            'regime': regime_value,
+                        })
+
+            exit_reason = None
+            if position_shares > 0:
+                trailing_state['highest_price'] = (
+                    current_price if trailing_state['highest_price'] is None
+                    else max(trailing_state['highest_price'], current_price)
+                )
+
+                if not trailing_state['active'] and trailing_state['activation_price'] is not None:
+                    if current_price >= trailing_state['activation_price']:
+                        trailing_state['active'] = True
+                        trailing_state['activation_time'] = timestamp
+
+                if trailing_state['active'] and trailing_state['highest_price'] is not None:
+                    trail_stop_price = trailing_state['highest_price'] * (1 - dynamic_trail_pct)
+                    if current_price <= trail_stop_price:
+                        exit_reason = 'TP_TRAIL'
+
+                if exit_reason is None and trailing_state['take_profit_price'] is not None:
+                    if current_price >= trailing_state['take_profit_price']:
+                        exit_reason = 'TAKE_PROFIT'
+
+                if exit_reason is None and base_stop_loss_pct > 0 and trailing_state['entry_price'] is not None:
+                    stop_price = trailing_state['entry_price'] * (1 - base_stop_loss_pct)
+                    if current_price <= stop_price:
+                        exit_reason = 'STOP_LOSS'
+
+                if exit_reason is None and signal == -1:
+                    exit_reason = 'SIGNAL_EXIT'
+
+                if exit_reason:
+                    shares_to_sell = position_shares
+                    gross_proceeds = shares_to_sell * current_price
+                    commission = gross_proceeds * self.config.backtesting.commission_rate
+                    slippage = gross_proceeds * self.config.backtesting.slippage_rate
+                    cash += gross_proceeds - commission - slippage
+
+                    profit = gross_proceeds - commission - slippage - position_cost_basis
+                    realized_profits.append(float(profit))
+                    position_shares = 0.0
+                    position_cost_basis = 0.0
+
+                    risk_reward = 0.0
+                    if trailing_state['entry_price'] and base_stop_loss_pct > 0:
+                        risk = trailing_state['entry_price'] * base_stop_loss_pct
+                        reward = current_price - trailing_state['entry_price']
+                        risk_reward = reward / risk if risk > 0 else 0.0
+                        risk_reward_values.append(float(risk_reward))
+
+                    if isinstance(timestamp, pd.Timestamp) and trailing_state['entry_time'] is not None:
+                        duration_seconds = float((timestamp - trailing_state['entry_time']).total_seconds())
+                    else:
+                        duration_seconds = float(i - (trailing_state['entry_index'] or i))
+                    trade_durations.append(duration_seconds)
+
+                    activation_latency = 0.0
+                    if exit_reason == 'TP_TRAIL' and trailing_state['activation_time'] is not None:
+                        if isinstance(timestamp, pd.Timestamp):
+                            activation_latency = float((timestamp - trailing_state['activation_time']).total_seconds())
+                        else:
+                            activation_latency = float(i - (trailing_state['entry_index'] or i))
+                        activation_latencies.append(activation_latency)
+
+                    trade_log.append({
+                        'timestamp': timestamp,
+                        'action': 'SELL',
+                        'shares': shares_to_sell,
+                        'price': current_price,
+                        'profit': float(profit),
+                        'exit_reason': exit_reason,
+                        'scenario': scenario_name,
+                        'regime': regime_value,
+                        'risk_reward_ratio': float(risk_reward),
+                        'duration_seconds': duration_seconds,
+                        'activation_latency_seconds': activation_latency,
+                    })
+
+                    trailing_state = {
+                        'active': False,
+                        'highest_price': None,
+                        'activation_price': None,
+                        'activation_time': None,
+                        'entry_time': None,
+                        'entry_index': None,
+                        'entry_price': None,
+                        'take_profit_price': None,
+                    }
+
+            portfolio_value = cash + (position_shares * current_price)
+            equity_curve.append(portfolio_value)
+
+        latency_metrics = {
+            'average_trade_duration_seconds': float(np.mean(trade_durations)) if trade_durations else 0.0,
+            'average_trailing_latency_seconds': float(np.mean(activation_latencies)) if activation_latencies else 0.0,
+            'latency_buffer_seconds': float(scenario_config.get('latency_buffer_seconds', 0.0)),
+        }
+        latency_metrics['latency_seconds'] = (
+            latency_metrics['average_trailing_latency_seconds'] + latency_metrics['latency_buffer_seconds']
+        )
+
+        performance_metrics = self._calculate_performance_metrics(
+            equity_curve,
+            trade_log,
+            risk_reward_values=risk_reward_values,
+            trade_profits=realized_profits,
+            latency_metrics=latency_metrics,
+        )
+        performance_metrics['scenario'] = scenario_name
+        performance_metrics['latency_seconds'] = latency_metrics['latency_seconds']
+        performance_metrics['latency_metrics'] = latency_metrics
+
+        return {
+            'scenario': scenario_name,
+            'metrics': performance_metrics,
+            'trade_log': trade_log,
+            'equity_curve': equity_curve,
+        }
+
+    def _estimate_noise_sensitivity(
+        self,
+        data: pd.DataFrame,
+        signals: pd.DataFrame,
+        scenario_name: str,
+        scenario_config: Dict[str, Any],
+        base_total_return: float,
+    ) -> float:
+        """Estimate noise sensitivity by perturbing price series."""
+        noise_levels = scenario_config.get('noise_levels', [])
+        if not noise_levels:
+            return 0.0
+
+        sensitivities: List[float] = []
+        for noise in noise_levels:
+            noisy_data = data.copy()
+            noise_series = np.random.normal(0, noise, len(noisy_data))
+            for column in ['open', 'high', 'low', 'close']:
+                if column in noisy_data.columns:
+                    noisy_data[column] = noisy_data[column] * (1 + noise_series)
+
+            scenario_result = self._run_backtest_simulation(noisy_data, signals, scenario_name, scenario_config)
+            trial_return = scenario_result['metrics'].get('total_return', 0.0)
+            sensitivities.append(abs(base_total_return - trial_return))
+
+        return float(np.mean(sensitivities)) if sensitivities else 0.0
+
+    def simulate_trailing_tp_trials(
+        self,
+        data: pd.DataFrame,
+        signals: pd.DataFrame,
+        scenario_configs: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Simulate additional trailing TP scenarios."""
+        scenario_configs = scenario_configs or self._get_volatility_scenarios()
+        trial_results: List[Dict[str, Any]] = []
+
+        for scenario_name, scenario_config in scenario_configs.items():
+            scenario_result = self._run_backtest_simulation(data, signals, scenario_name, scenario_config)
+            metrics = scenario_result['metrics']
+            noise_sensitivity = self._estimate_noise_sensitivity(
+                data,
+                signals,
+                scenario_name,
+                scenario_config,
+                metrics.get('total_return', 0.0)
+            )
+            metrics['noise_sensitivity'] = noise_sensitivity
+
+            trial_results.append({
+                'scenario': scenario_name,
+                'metrics': {
+                    'risk_reward_ratio': metrics.get('risk_reward_ratio', 0.0),
+                    'profit_factor': metrics.get('profit_factor', 0.0),
+                    'latency_seconds': metrics.get('latency_seconds', 0.0),
+                    'noise_sensitivity': metrics.get('noise_sensitivity', 0.0),
+                    'total_return': metrics.get('total_return', 0.0),
+                    'win_rate': metrics.get('win_rate', 0.0),
+                },
+                'latency_metrics': metrics.get('latency_metrics', {}),
+                'trade_count': metrics.get('total_trades', 0),
+                'equity_curve': scenario_result['equity_curve'],
+                'trade_log': scenario_result['trade_log'],
+            })
+
+        return trial_results
+
+    def _calculate_regime_performance(self, trade_log: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Aggregate performance metrics per regime."""
+        regime_stats: Dict[str, Dict[str, Any]] = {}
+        exit_trades = [trade for trade in trade_log if trade.get('action') == 'SELL']
+
+        for trade in exit_trades:
+            regime = str(trade.get('regime', 'global'))
+            stats = regime_stats.setdefault(
+                regime,
+                {
+                    'total_trades': 0,
+                    'winning_trades': 0,
+                    'losing_trades': 0,
+                    'total_profit': 0.0,
+                    'average_rr_values': [],
+                    'profit_components': [],
+                },
+            )
+
+            profit = float(trade.get('profit', 0.0))
+            stats['total_trades'] += 1
+            stats['total_profit'] += profit
+            stats['profit_components'].append(profit)
+            stats['average_rr_values'].append(float(trade.get('risk_reward_ratio', 0.0)))
+
+            if profit > 0:
+                stats['winning_trades'] += 1
+            elif profit < 0:
+                stats['losing_trades'] += 1
+
+        finalized_stats: Dict[str, Dict[str, Any]] = {}
+        for regime, stats in regime_stats.items():
+            trades = stats['total_trades']
+            win_rate = stats['winning_trades'] / trades if trades else 0.0
+            avg_rr = float(np.mean(stats['average_rr_values'])) if stats['average_rr_values'] else 0.0
+            gross_profit = sum(p for p in stats['profit_components'] if p > 0)
+            gross_loss = abs(sum(p for p in stats['profit_components'] if p < 0))
+            profit_factor = gross_profit / gross_loss if gross_loss > 0 else gross_profit
+
+            finalized_stats[regime] = {
+                'total_trades': trades,
+                'winning_trades': stats['winning_trades'],
+                'losing_trades': stats['losing_trades'],
+                'win_rate': win_rate,
+                'total_profit': stats['total_profit'],
+                'average_rr': avg_rr,
+                'profit_factor': profit_factor,
+            }
+
+        return finalized_stats
+
+    def _persist_regime_performance(self, regime_stats: Dict[str, Any]) -> Optional[Path]:
+        """Persist per-regime performance metrics for downstream optimizers."""
+        if not regime_stats:
+            return None
+
+        try:
+            output_dir = Path(self.config.reporting.output_dir or 'reports') / 'backtesting'
+            ensure_directory(str(output_dir))
+            file_path = output_dir / 'per_regime_performance.json'
+
+            serializable = {
+                regime: {
+                    key: float(value) if isinstance(value, (np.floating, float)) else value
+                    for key, value in metrics.items()
+                }
+                for regime, metrics in regime_stats.items()
+            }
+
+            safe_json_dump(serializable, file_path)
+            self.config.custom_params['regime_performance_path'] = str(file_path)
+            return file_path
+        except Exception as e:
+            self.logger.error(f"❌ Failed to persist per-regime performance metrics: {e}")
+            return None
+
+    def _calculate_performance_metrics(
+        self,
+        equity_curve: List[float],
+        trade_log: List[Dict],
+        risk_reward_values: Optional[List[float]] = None,
+        trade_profits: Optional[List[float]] = None,
+        latency_metrics: Optional[Dict[str, float]] = None,
+    ) -> Dict[str, Any]:
         """Calculate comprehensive performance metrics."""
         try:
             if len(equity_curve) < 2:
                 return {}
-            
+
             equity_series = pd.Series(equity_curve)
             returns = equity_series.pct_change().dropna()
-            
-            # Basic metrics
+
             total_return = (equity_curve[-1] - equity_curve[0]) / equity_curve[0]
             annualized_return = (1 + total_return) ** (252 / len(equity_curve)) - 1
             volatility = returns.std() * np.sqrt(252)
             sharpe_ratio = annualized_return / volatility if volatility > 0 else 0
-            
-            # Drawdown analysis
+
             peak = equity_series.expanding().max()
             drawdown = (equity_series - peak) / peak
             max_drawdown = drawdown.min()
-            
-            # Trade analysis
-            winning_trades = [t for t in trade_log if t.get('proceeds', 0) > t.get('cost', 0)]
-            losing_trades = [t for t in trade_log if t.get('proceeds', 0) < t.get('cost', 0)]
-            
-            win_rate = len(winning_trades) / len(trade_log) if trade_log else 0
-            avg_win = np.mean([t.get('proceeds', 0) - t.get('cost', 0) for t in winning_trades]) if winning_trades else 0
-            avg_loss = np.mean([t.get('proceeds', 0) - t.get('cost', 0) for t in losing_trades]) if losing_trades else 0
-            profit_factor = abs(avg_win / avg_loss) if avg_loss != 0 else 0
-            
-            return {
+
+            realized_profits = trade_profits
+            if realized_profits is None:
+                realized_profits = [float(t.get('profit', 0.0)) for t in trade_log if t.get('action') == 'SELL']
+
+            winning_trades = [p for p in realized_profits if p > 0]
+            losing_trades = [p for p in realized_profits if p < 0]
+            total_trades = len(realized_profits)
+            win_rate = len(winning_trades) / total_trades if total_trades else 0.0
+
+            gross_profit = sum(winning_trades)
+            gross_loss = abs(sum(losing_trades))
+            profit_factor = gross_profit / gross_loss if gross_loss > 0 else gross_profit
+
+            avg_win = np.mean(winning_trades) if winning_trades else 0.0
+            avg_loss = np.mean(losing_trades) if losing_trades else 0.0
+
+            risk_reward_ratio = float(np.mean(risk_reward_values)) if risk_reward_values else 0.0
+
+            metrics = {
                 'total_return': total_return,
                 'annualized_return': annualized_return,
                 'volatility': volatility,
@@ -423,17 +809,25 @@ class RealBacktestingEngine:
                 'max_drawdown': max_drawdown,
                 'win_rate': win_rate,
                 'profit_factor': profit_factor,
-                'total_trades': len(trade_log),
+                'total_trades': total_trades,
                 'winning_trades': len(winning_trades),
                 'losing_trades': len(losing_trades),
                 'avg_win': avg_win,
-                'avg_loss': avg_loss
+                'avg_loss': avg_loss,
+                'risk_reward_ratio': risk_reward_ratio,
             }
-            
+
+            if latency_metrics:
+                metrics['latency_metrics'] = {
+                    key: float(value) for key, value in latency_metrics.items()
+                }
+
+            return metrics
+
         except Exception as e:
             self.logger.error(f"❌ Failed to calculate performance metrics: {e}")
             return {}
-    
+
     def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
         """Calculate RSI indicator."""
         delta = prices.diff()

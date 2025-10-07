@@ -20,6 +20,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Tuple
+from pathlib import Path
 import optuna
 import numpy as np
 import logging
@@ -70,13 +71,13 @@ class FinalParametersOptimizer:
         
         # Enhanced search spaces with non-linear transformations
         self.enhanced_search_spaces = self._create_enhanced_search_spaces()
-        
+
         # Optimization settings
         self.n_trials = config.get('n_trials', 50)
         self.timeout = config.get('timeout', 300)
         self.study_name = config.get('study_name', 'final_parameters_optimization')
         self.use_nonlinear_optimization = config.get('use_nonlinear_optimization', True)
-        
+
         self.logger.info("🚀 Final Parameters Optimizer initialized")
         self.logger.info(f"📊 Optimization categories: {len(self.categories)}")
         self.logger.info(f"🔧 Number of trials: {self.n_trials}")
@@ -89,6 +90,15 @@ class FinalParametersOptimizer:
             self.logger.info(f"   • Fractional powers: {self.nonlinear_config.use_fractional_powers}")
             self.logger.info(f"   • Sigmoid transforms: {self.nonlinear_config.use_sigmoid_transforms}")
             self.logger.info(f"   • Adaptive transforms: {self.nonlinear_config.use_adaptive_transforms}")
+
+        # Load per-regime performance statistics for objective adjustments
+        self.regime_performance_path: Optional[str] = None
+        self.regime_performance_stats = self._load_regime_performance_stats()
+        self.regime_performance_modifier = self._calculate_regime_performance_modifier()
+        if self.regime_performance_stats:
+            location = self.regime_performance_path or 'unknown location'
+            self.logger.info(f"📊 Loaded per-regime performance stats from {location}")
+            self.logger.info(f"   • Regime performance modifier: {self.regime_performance_modifier:.4f}")
     
         # Initialize artifact and version managers
         self.artifact_manager = get_artifact_manager()
@@ -1165,7 +1175,9 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             if base_score > 0.0:
                 turnover_penalty = self._calculate_turnover_penalty(params, calibration_results)
                 base_score -= turnover_penalty
-            
+
+            base_score = self._apply_regime_performance_adjustment(category, base_score)
+
             # Enhanced confidence evaluation includes exit confidence optimization
             # This is handled within _evaluate_confidence_params method
 
@@ -2588,6 +2600,102 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         except Exception as e:
             self.logger.warning(f"Error calculating turnover penalty: {e}")
             return 0.001  # Small default penalty
+
+    def _load_regime_performance_stats(self) -> Dict[str, Any]:
+        """Load per-regime performance statistics if available.
+
+        This first checks any explicit configuration overrides and then falls back
+        to standard reporting directories such as ``reports/backtesting`` or
+        ``generated/backtesting``.
+        """
+        path_candidates: List[Path] = []
+
+        config_path = self.config.get('regime_performance_path') if isinstance(self.config, dict) else None
+        if config_path:
+            path_candidates.append(Path(config_path))
+
+        reporting_dir = None
+        if isinstance(self.config, dict):
+            reporting_dir = self.config.get('reporting_output_dir')
+            if reporting_dir is None and 'reporting' in self.config and isinstance(self.config['reporting'], dict):
+                reporting_dir = self.config['reporting'].get('output_dir')
+        if reporting_dir:
+            path_candidates.append(Path(reporting_dir) / 'backtesting' / 'per_regime_performance.json')
+
+        path_candidates.extend([
+            Path('reports/backtesting/per_regime_performance.json'),
+            Path('generated/backtesting/per_regime_performance.json'),
+        ])
+
+        for candidate in path_candidates:
+            try:
+                if candidate.exists():
+                    with candidate.open('r') as fp:
+                        stats = json.load(fp)
+                    self.regime_performance_path = str(candidate)
+                    return stats if isinstance(stats, dict) else {}
+            except Exception as exc:
+                self.logger.error(f"❌ Failed to load regime performance stats from {candidate}: {exc}")
+
+        return {}
+
+    def _calculate_regime_performance_modifier(self) -> float:
+        """Compute an aggregate modifier from per-regime performance stats."""
+        stats = getattr(self, 'regime_performance_stats', {})
+        if not stats:
+            return 0.0
+
+        win_rates: List[float] = []
+        profit_factors: List[float] = []
+        rr_values: List[float] = []
+
+        for metrics in stats.values():
+            if not isinstance(metrics, dict):
+                continue
+            win_rates.append(float(metrics.get('win_rate', 0.0)))
+            profit_factors.append(float(metrics.get('profit_factor', 0.0)))
+            rr_values.append(float(metrics.get('average_rr', metrics.get('risk_reward_ratio', 0.0))))
+
+        if not win_rates:
+            return 0.0
+
+        avg_win = float(np.mean(win_rates))
+        min_win = float(np.min(win_rates))
+        avg_profit_factor = float(np.mean(profit_factors)) if profit_factors else 0.0
+        avg_rr = float(np.mean(rr_values)) if rr_values else 0.0
+        stability_penalty = float(np.std(win_rates)) if len(win_rates) > 1 else 0.0
+
+        normalized_win = avg_win - 0.5
+        normalized_min_win = min_win - 0.5
+        normalized_profit_factor = float(np.tanh(avg_profit_factor - 1.0))
+        normalized_rr = float(np.tanh(avg_rr - 1.0))
+
+        raw_modifier = (
+            (normalized_win * 0.5)
+            + (normalized_profit_factor * 0.2)
+            + (normalized_rr * 0.2)
+            + (normalized_min_win * 0.1)
+            - (stability_penalty * 0.1)
+        )
+
+        return float(np.clip(raw_modifier, -0.25, 0.25))
+
+    def _apply_regime_performance_adjustment(self, category: str, score: float) -> float:
+        """Adjust objective score using per-regime performance insights."""
+        modifier = getattr(self, 'regime_performance_modifier', 0.0)
+        if modifier == 0.0:
+            return score
+
+        weight = 1.0
+        if category in {'tpsl', 'exit_strategy', 'regime_transitions'}:
+            weight = 1.2
+        elif category in {'confidence', 'position_sizing'}:
+            weight = 1.1
+        elif category in {'ensemble', 'model_specific_parameters'}:
+            weight = 0.9
+
+        adjustment = float(np.clip(modifier * weight, -0.2, 0.2))
+        return score + adjustment
 
     def _estimate_turnover_rate(self, params: Dict[str, Any],
                                calibration_results: Dict[str, Any]) -> float:

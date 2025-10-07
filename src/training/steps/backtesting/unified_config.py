@@ -12,6 +12,7 @@ from pathlib import Path
 from enum import Enum
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
+from copy import deepcopy
 
 logger = logging.getLogger(__name__)
 
@@ -166,6 +167,51 @@ class LoggingConfig:
     enable_debug: bool = False
     log_format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
+
+@dataclass
+class TrailingTPConfig:
+    """Configuration for trailing take-profit simulations."""
+
+    activation_rr: float = 1.2
+    trail_distance_pct: float = 0.01
+    volatility_sensitivity: float = 1.0
+    max_latency_seconds: int = 120
+    noise_levels: List[float] = field(default_factory=lambda: [0.0005, 0.001])
+
+
+@dataclass
+class ScenarioSweepConfig:
+    """Configuration for volatility scenario sweeps."""
+
+    scenarios: Dict[str, Dict[str, Any]] = field(
+        default_factory=lambda: {
+            'low': {
+                'trail_multiplier': 0.8,
+                'activation_multiplier': 1.1,
+                'tp_multiplier': 0.9,
+                'volatility_threshold': 0.01,
+                'latency_buffer_seconds': 5,
+                'noise_levels': [0.0003, 0.0006],
+            },
+            'normal': {
+                'trail_multiplier': 1.0,
+                'activation_multiplier': 1.0,
+                'tp_multiplier': 1.0,
+                'volatility_threshold': 0.02,
+                'latency_buffer_seconds': 10,
+                'noise_levels': [0.0005, 0.001],
+            },
+            'high': {
+                'trail_multiplier': 1.3,
+                'activation_multiplier': 0.9,
+                'tp_multiplier': 1.15,
+                'volatility_threshold': 0.035,
+                'latency_buffer_seconds': 20,
+                'noise_levels': [0.001, 0.0015],
+            },
+        }
+    )
+
 @dataclass
 class UnifiedBacktestingConfig:
     """
@@ -189,7 +235,9 @@ class UnifiedBacktestingConfig:
     optimization: OptimizationConfig = field(default_factory=OptimizationConfig)
     reporting: ReportingConfig = field(default_factory=ReportingConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
-    
+    trailing_tp: TrailingTPConfig = field(default_factory=TrailingTPConfig)
+    scenario_sweep: ScenarioSweepConfig = field(default_factory=ScenarioSweepConfig)
+
     # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
     
@@ -210,6 +258,40 @@ class ConfigurationBuilder:
         """Initialize the configuration builder."""
         self._config = UnifiedBacktestingConfig()
         self._component_configs = {}
+        self._ensure_custom_defaults()
+
+    def _ensure_custom_defaults(self) -> None:
+        """Ensure trailing TP and scenario defaults are present in custom params."""
+        trailing_defaults = {
+            'activation_rr': self._config.trailing_tp.activation_rr,
+            'trail_distance_pct': self._config.trailing_tp.trail_distance_pct,
+            'volatility_sensitivity': self._config.trailing_tp.volatility_sensitivity,
+            'max_latency_seconds': self._config.trailing_tp.max_latency_seconds,
+            'noise_levels': list(self._config.trailing_tp.noise_levels),
+        }
+
+        existing_trailing = self._config.custom_params.get('trailing_tp', {})
+        merged_trailing = {**trailing_defaults, **existing_trailing}
+        self._config.custom_params['trailing_tp'] = merged_trailing
+
+        scenario_defaults = {
+            name: deepcopy(cfg)
+            for name, cfg in self._config.scenario_sweep.scenarios.items()
+        }
+
+        existing_scenarios = self._config.custom_params.get('volatility_scenarios', {})
+        merged_scenarios: Dict[str, Dict[str, Any]] = {}
+
+        for name, default_cfg in scenario_defaults.items():
+            custom_cfg = existing_scenarios.get(name, {}) if isinstance(existing_scenarios, dict) else {}
+            merged_scenarios[name] = {**default_cfg, **custom_cfg}
+
+        if isinstance(existing_scenarios, dict):
+            for name, custom_cfg in existing_scenarios.items():
+                if name not in merged_scenarios:
+                    merged_scenarios[name] = custom_cfg
+
+        self._config.custom_params['volatility_scenarios'] = merged_scenarios
     
     def set_mode(self, mode: ExecutionMode) -> 'ConfigurationBuilder':
         """Set the execution mode."""
@@ -297,10 +379,30 @@ class ConfigurationBuilder:
             if hasattr(self._config.logging, key):
                 setattr(self._config.logging, key, value)
         return self
-    
+
     def set_custom_params(self, **kwargs) -> 'ConfigurationBuilder':
         """Set custom parameters."""
         self._config.custom_params.update(kwargs)
+        self._ensure_custom_defaults()
+        return self
+
+    def set_trailing_tp_config(self, **kwargs) -> 'ConfigurationBuilder':
+        """Update trailing take-profit simulation configuration."""
+        for key, value in kwargs.items():
+            if hasattr(self._config.trailing_tp, key):
+                setattr(self._config.trailing_tp, key, value)
+
+        self._ensure_custom_defaults()
+        self._config.custom_params['trailing_tp'].update(kwargs)
+        return self
+
+    def set_scenario_sweep_config(self, scenarios: Dict[str, Dict[str, Any]]) -> 'ConfigurationBuilder':
+        """Set volatility scenario sweep configuration."""
+        if not isinstance(scenarios, dict):
+            raise ValueError("scenarios must be a dictionary")
+
+        self._config.scenario_sweep.scenarios = scenarios
+        self._ensure_custom_defaults()
         return self
     
     def enable_gpu_acceleration(self, enabled: bool = True) -> 'ConfigurationBuilder':

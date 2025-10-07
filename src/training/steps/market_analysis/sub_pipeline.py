@@ -83,7 +83,7 @@ class SubPipelineConfig:
     mode: ExecutionMode = ExecutionMode.FULL
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
-    timeframe: str = "30m"
+    timeframe: str = "4h"  # Updated default timeframe for regime detection
     data_dir: str = "historical_data"
     start_date: Optional[str] = None
     end_date: Optional[str] = None

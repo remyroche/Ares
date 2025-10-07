@@ -425,8 +425,8 @@ class PerfectNASConfig:
         return config
 
     # Multi-timeframe settings
-    trading_timeframes: List[str] = field(default_factory=lambda: ["1m", "5m", "15m"])
-    regime_detection_timeframe: str = "15m"
+    trading_timeframes: List[str] = field(default_factory=lambda: ["1m", "5m", "15m", "1h", "4h"])
+    regime_detection_timeframe: str = "4h"  # Updated to 4h timeframe
     enable_multi_timeframe_training: bool = True
 
     # TAS integration settings

@@ -10,7 +10,7 @@ Implements comprehensive evaluation with:
 - Performance metrics by regime
 """
 
-from typing import Dict, List, Optional, Any, Tuple, Union, Callable
+from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 import pandas as pd
 import numpy as np
@@ -31,9 +31,6 @@ try:
 except ImportError:
     SPA_AVAILABLE = False
     logging.warning("SPA test not available, using simplified version")
-
-
-FeatureLoader = Callable[[], pd.DataFrame]
 
 
 @dataclass
@@ -493,9 +490,13 @@ class AblationEvaluator:
             Dictionary of ablation results
         """
         self.logger.info("Starting ablation study")
-        
+
+        if features is None or features.empty or not list(features.columns):
+            self.logger.warning("Feature matrix empty; skipping ablation study")
+            return {}
+
         ablation_results = {}
-        
+
         # Baseline (all features)
         baseline_ic = self._calculate_group_ic(features, targets, list(features.columns))
         ablation_results['baseline'] = {'ic': baseline_ic, 'n_features': len(features.columns)}
@@ -560,41 +561,73 @@ class WalkForwardEvaluation:
         self.regime_evaluator = RegimeEvaluator(config)
         self.ablation_evaluator = AblationEvaluator(config)
 
-    def _load_feature_matrix(self, feature_source: Optional[Union[pd.DataFrame, FeatureLoader]]) -> pd.DataFrame:
-        """Load or validate the feature matrix used for evaluation."""
-        if isinstance(feature_source, pd.DataFrame):
-            feature_matrix = feature_source
-        elif callable(feature_source):
-            feature_matrix = feature_source()
-        elif feature_source is None:
-            raise ValueError("feature_source must be provided as a DataFrame or callable")
-        else:
-            raise TypeError("feature_source must be a DataFrame or a callable returning a DataFrame")
+    def _prepare_feature_matrix(self,
+                                materialized_htfs: Optional[Dict[str, Any]],
+                                interactions: Optional[List[Any]]) -> pd.DataFrame:
+        """Reconstruct the feature matrix from materialized HTFs and interactions."""
+        feature_data: Dict[str, pd.Series] = {}
 
-        if feature_matrix is None:
-            raise ValueError("feature_source returned no data for evaluation")
+        if isinstance(materialized_htfs, dict):
+            for name, htf in materialized_htfs.items():
+                series = getattr(htf, 'feature_series', None)
+                if isinstance(series, pd.Series):
+                    feature_data[name] = series
 
-        if not isinstance(feature_matrix, pd.DataFrame):
-            raise TypeError("feature_source must produce a pandas DataFrame")
+        if isinstance(interactions, list):
+            for interaction in interactions:
+                interaction_name = getattr(interaction, 'name', None)
+                series = getattr(interaction, 'feature_series', None)
+                if interaction_name and isinstance(series, pd.Series):
+                    feature_data[interaction_name] = series
 
-        if feature_matrix.empty:
-            raise ValueError("feature matrix provided to evaluation is empty")
+        if not feature_data:
+            return pd.DataFrame()
 
-        return feature_matrix.copy()
+        feature_matrix = pd.DataFrame(feature_data)
+        feature_matrix = feature_matrix.dropna()
+        return feature_matrix
+
+    def _create_default_result(self,
+                               reason: str,
+                               extra_metadata: Optional[Dict[str, Any]] = None) -> EvaluationResult:
+        """Create an empty evaluation result with metadata about the reason."""
+        metadata = {
+            'n_folds': 0,
+            'n_features': 0,
+            'evaluation_method': 'walk_forward',
+            'embargo_minutes': self.config.embargo_minutes,
+            'reason': reason
+        }
+
+        if extra_metadata:
+            metadata.update(extra_metadata)
+
+        return EvaluationResult(
+            overall_ic=0.0,
+            overall_ic_std=0.0,
+            overall_ic_ci=(0.0, 0.0),
+            regime_results={},
+            ablation_results={},
+            spa_test_result={},
+            walk_forward_results=[],
+            metadata=metadata
+        )
 
     def evaluate_features(self,
                         final_features: List[str],
                         targets: pd.Series,
                         regime_segments: Optional[Dict[str, Any]] = None,
-                        feature_source: Optional[Union[pd.DataFrame, FeatureLoader]] = None) -> EvaluationResult:
+                        materialized_htfs: Optional[Dict[str, Any]] = None,
+                        interactions: Optional[List[Any]] = None) -> EvaluationResult:
         """
         Evaluate final features using walk-forward validation.
         
         Args:
-            final_features: List of selected features
+            final_features: List of selected feature names
             targets: Target series
             regime_segments: Regime segmentation results
-            feature_source: Pre-computed feature matrix or callable returning one
+            materialized_htfs: Materialized HTF containers keyed by feature name
+            interactions: Interaction feature containers
             
         Returns:
             Evaluation result
@@ -603,39 +636,36 @@ class WalkForwardEvaluation:
 
         if not final_features:
             self.logger.warning("No final features provided for evaluation")
-            return EvaluationResult(
-                overall_ic=0.0,
-                overall_ic_std=0.0,
-                overall_ic_ci=(0.0, 0.0),
-                regime_results={},
-                ablation_results={},
-                spa_test_result={},
-                walk_forward_results=[],
-                metadata={
-                    'n_folds': 0,
-                    'n_features': 0,
-                    'evaluation_method': 'walk_forward',
-                    'embargo_minutes': self.config.embargo_minutes
-                }
-            )
+            return self._create_default_result('no_features_provided')
 
-        feature_matrix = self._load_feature_matrix(feature_source)
+        feature_matrix = self._prepare_feature_matrix(materialized_htfs, interactions)
 
-        # Validate requested features are present
-        missing_features = [f for f in final_features if f not in feature_matrix.columns]
+        if feature_matrix.empty:
+            self.logger.warning("Constructed feature matrix is empty; skipping evaluation")
+            return self._create_default_result('empty_feature_matrix')
+
+        available_features = [f for f in final_features if f in feature_matrix.columns]
+        missing_features = sorted(set(final_features) - set(available_features))
+
         if missing_features:
-            message = (
-                "Requested features are missing from provided feature data: "
-                f"{missing_features}"
+            self.logger.warning(
+                "Missing features from materialized data: %s",
+                missing_features
             )
-            self.logger.error(message)
-            raise ValueError(message)
 
-        # Restrict to the requested features
-        feature_matrix = feature_matrix[final_features]
+        if not available_features:
+            return self._create_default_result(
+                'no_available_features',
+                {'missing_features': missing_features}
+            )
 
-        # Align features with targets
+        feature_matrix = feature_matrix.loc[:, available_features]
+
         aligned_index = feature_matrix.index.intersection(targets.index)
+        if aligned_index.empty:
+            self.logger.warning("No overlapping timestamps between features and targets")
+            return self._create_default_result('no_overlapping_timestamps')
+
         feature_matrix = feature_matrix.loc[aligned_index]
         aligned_targets = targets.loc[aligned_index]
 
@@ -643,8 +673,12 @@ class WalkForwardEvaluation:
         aligned_targets = aligned_targets.loc[feature_matrix.index]
 
         if feature_matrix.empty:
-            raise ValueError("Feature matrix is empty after alignment with targets")
-        
+            self.logger.warning("Feature matrix empty after alignment and NaN removal")
+            return self._create_default_result(
+                'empty_after_alignment',
+                {'missing_features': missing_features}
+            )
+
         # Walk-forward validation
         fold_results = self.walk_forward_validator.validate_features(
             feature_matrix, aligned_targets, regime_segments
@@ -663,7 +697,7 @@ class WalkForwardEvaluation:
             )
         
         # Ablation study
-        feature_groups = self._create_ablation_groups(final_features)
+        feature_groups = self._create_ablation_groups(available_features)
         ablation_results = self.ablation_evaluator.perform_ablation_study(
             feature_matrix, aligned_targets, feature_groups
         )
@@ -684,7 +718,7 @@ class WalkForwardEvaluation:
             walk_forward_results=[self._fold_to_dict(f) for f in fold_results],
             metadata={
                 'n_folds': len(fold_results),
-                'n_features': len(final_features),
+                'n_features': len(available_features),
                 'evaluation_method': 'walk_forward',
                 'embargo_minutes': self.config.embargo_minutes
             }

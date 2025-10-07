@@ -54,6 +54,34 @@ class TradingCosts:
 
 
 @dataclass
+class AsymmetricReturnScalingConfig:
+    """Configuration for asymmetric scaling of expected returns."""
+
+    enabled: bool = False
+    method: str = "weighted_tail"  # "weighted_tail" or "skew_adjusted"
+    upside_weight: float = 1.0
+    downside_weight: float = 1.0
+    upside_tail_percentile: float = 0.75
+    downside_tail_percentile: float = 0.25
+    tail_lookback_window: int = 20
+    blend_ratio: float = 0.5  # Blend between baseline expectation and asymmetric view
+
+
+@dataclass
+class AsymmetricRiskAdjustmentConfig:
+    """Configuration for asymmetric risk awareness adjustments."""
+
+    enable_downside_penalty: bool = False
+    downside_penalty_multiplier: float = 1.0
+    downside_tail_percentile: float = 0.2
+    penalty_lookback_window: int = 20
+    apply_only_to_positive: bool = True
+    enable_asymmetric_clamp: bool = False
+    clamp_min: Optional[float] = None
+    clamp_max: Optional[float] = None
+
+
+@dataclass
 class AnalystLabelConfig:
     """Configuration for Analyst labels."""
 
@@ -82,6 +110,10 @@ class AnalystLabelConfig:
     enable_regime_conditioning: bool = True
     volatility_scaling_factor: float = 1.0
 
+    # Asymmetric behaviour
+    asymmetric_return_scaling: AsymmetricReturnScalingConfig = field(default_factory=AsymmetricReturnScalingConfig)
+    asymmetric_risk_adjustment: AsymmetricRiskAdjustmentConfig = field(default_factory=AsymmetricRiskAdjustmentConfig)
+
 
 @dataclass
 class TacticianLabelConfig:
@@ -104,6 +136,10 @@ class TacticianLabelConfig:
     # Regime conditioning
     enable_regime_conditioning: bool = True
     volatility_sensitivity: float = 1.0
+
+    # Asymmetric behaviour controls (shared structure with analyst config)
+    asymmetric_return_scaling: AsymmetricReturnScalingConfig = field(default_factory=AsymmetricReturnScalingConfig)
+    asymmetric_risk_adjustment: AsymmetricRiskAdjustmentConfig = field(default_factory=AsymmetricRiskAdjustmentConfig)
 
 
 @dataclass
@@ -553,14 +589,64 @@ class EnhancedLabelDefinitions:
         return cleaned
 
     def _calculate_expected_returns(self, market_data: pd.DataFrame, horizon_minutes: int) -> pd.Series:
-        """Calculate expected returns over horizon."""
-        # Simple momentum-based expected return
-        # In practice, this would use more sophisticated models
-        returns = market_data['close'].pct_change()
+        """Calculate expected returns over horizon with optional asymmetric scaling."""
+        close_prices = market_data['close']
 
-        # Rolling return over horizon
+        # Forward returns over the horizon (shifted to align with current bar)
         horizon_bars = max(1, horizon_minutes // 15)  # Assuming 15m bars
-        expected_returns = returns.rolling(horizon_bars).mean().shift(-horizon_bars)
+        forward_returns = close_prices.pct_change(periods=horizon_bars).shift(-horizon_bars)
+        forward_returns = forward_returns.fillna(0)
+
+        baseline_expectation = forward_returns.rolling(horizon_bars, min_periods=1).mean()
+
+        scaling_config = self.analyst_config.asymmetric_return_scaling
+        if not scaling_config.enabled:
+            return baseline_expectation.fillna(0)
+
+        # Ensure blend ratio is within [0, 1]
+        blend_ratio = np.clip(scaling_config.blend_ratio, 0.0, 1.0)
+        lookback = max(horizon_bars, max(1, scaling_config.tail_lookback_window))
+
+        def _weighted_tail_expectation(window: pd.Series) -> float:
+            series = window.dropna()
+            if series.empty:
+                return 0.0
+
+            method = scaling_config.method.lower()
+            if method == "skew_adjusted":
+                mean = series.mean()
+                std = series.std(ddof=0)
+                if std == 0 or np.isnan(std):
+                    return mean
+                skew = series.skew()
+                skew = 0.0 if np.isnan(skew) else skew
+                upside_component = max(skew, 0.0) * scaling_config.upside_weight * std
+                downside_component = abs(min(skew, 0.0)) * scaling_config.downside_weight * std
+                return mean + upside_component - downside_component
+
+            # Default to weighted tail expectation
+            upper_q = series.quantile(np.clip(scaling_config.upside_tail_percentile, 0.0, 1.0))
+            lower_q = series.quantile(np.clip(scaling_config.downside_tail_percentile, 0.0, 1.0))
+            upside_tail = series[series >= upper_q]
+            downside_tail = series[series <= lower_q]
+
+            upside_mean = upside_tail.mean() if not upside_tail.empty else 0.0
+            downside_mean = downside_tail.mean() if not downside_tail.empty else 0.0
+
+            return (
+                scaling_config.upside_weight * upside_mean +
+                scaling_config.downside_weight * downside_mean
+            )
+
+        asymmetric_expectation = forward_returns.rolling(
+            lookback,
+            min_periods=1
+        ).apply(_weighted_tail_expectation, raw=False)
+
+        expected_returns = (
+            (1.0 - blend_ratio) * baseline_expectation.fillna(0) +
+            blend_ratio * asymmetric_expectation.fillna(0)
+        )
 
         return expected_returns.fillna(0)
 
@@ -604,16 +690,40 @@ class EnhancedLabelDefinitions:
 
     def _apply_risk_awareness(self, expected_returns: pd.Series, market_data: pd.DataFrame,
                              portfolio_state: Optional[Dict[str, Any]] = None) -> pd.Series:
-        """Apply risk awareness to expected returns."""
+        """Apply risk awareness to expected returns with configurable asymmetry."""
         risk_adjusted = expected_returns.copy()
 
-        # Apply maximum position size limit
-        max_position_return = self.analyst_config.max_position_size_pct
-        risk_adjusted = np.clip(risk_adjusted, 0, max_position_return)
+        risk_config = self.analyst_config.asymmetric_risk_adjustment
 
-        # Apply maximum drawdown limit
+        if risk_config.enable_downside_penalty:
+            returns = market_data['close'].pct_change().fillna(0)
+            lookback = max(1, risk_config.penalty_lookback_window)
+            downside_tail = returns.rolling(lookback, min_periods=1).quantile(
+                np.clip(risk_config.downside_tail_percentile, 0.0, 1.0)
+            )
+            downside_tail = downside_tail.fillna(0).abs() * risk_config.downside_penalty_multiplier
+
+            if risk_config.apply_only_to_positive:
+                penalty = downside_tail.where(risk_adjusted > 0, 0.0)
+            else:
+                penalty = downside_tail
+
+            risk_adjusted = risk_adjusted - penalty
+
+        # Determine asymmetric clamps (fallback to defaults when not provided)
+        max_position_return = self.analyst_config.max_position_size_pct
         max_drawdown_return = self.analyst_config.max_drawdown_pct
-        risk_adjusted = np.clip(risk_adjusted, -max_drawdown_return, max_position_return)
+
+        clamp_min = -max_drawdown_return
+        clamp_max = max_position_return
+
+        if risk_config.enable_asymmetric_clamp:
+            if risk_config.clamp_min is not None:
+                clamp_min = risk_config.clamp_min
+            if risk_config.clamp_max is not None:
+                clamp_max = risk_config.clamp_max
+
+        risk_adjusted = np.clip(risk_adjusted, clamp_min, clamp_max)
 
         return risk_adjusted
 

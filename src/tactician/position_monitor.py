@@ -554,12 +554,12 @@ class PositionMonitor:
             if latest_atr is not None:
                 try:
                     distance_components.append(float(latest_atr) * atr_multiplier)
-                except Exception:
+                except (ValueError, TypeError):
                     pass
             if latest_sigma is not None:
                 try:
                     distance_components.append(float(latest_sigma))
-                except Exception:
+                except (ValueError, TypeError):
                     pass
 
             if distance_components:

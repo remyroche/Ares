@@ -10,6 +10,7 @@ Implements HTF-aware interaction generation with:
 """
 
 from typing import Dict, List, Optional, Any, Tuple, Union
+from collections import defaultdict
 from dataclasses import dataclass
 import pandas as pd
 import numpy as np
@@ -587,11 +588,31 @@ class InteractionGenerator:
         
         return groups
     
-    def _group_htf_features_by_asset(self, materialized_htfs: Dict[str, Any]) -> Dict[str, List[str]]:
+    def _group_htf_features_by_asset(self, materialized_htfs: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         """Group HTF features by asset."""
-        # For now, assume single asset
-        # In practice, you'd extract asset information from feature names
-        return {'asset1': list(materialized_htfs.keys())}
+        groups: Dict[str, Dict[str, Any]] = defaultdict(dict)
+
+        for feature_name, feature in materialized_htfs.items():
+            asset_name: Optional[str] = None
+
+            metadata = getattr(feature, 'metadata', {}) or {}
+            if isinstance(metadata, dict):
+                asset_name = metadata.get('asset') or metadata.get('symbol')
+
+            if not asset_name:
+                separators = ['__', '::', '|']
+                for sep in separators:
+                    if sep in feature_name:
+                        asset_name = feature_name.split(sep)[0]
+                        break
+
+            if not asset_name and '_' in feature_name:
+                asset_name = feature_name.split('_')[0]
+
+            asset_key = asset_name or 'asset1'
+            groups[asset_key][feature_name] = feature
+
+        return dict(groups)
     
     def _generate_template_interactions(self, 
                                      template: InteractionTemplate,
@@ -663,14 +684,188 @@ class InteractionGenerator:
         
         return interactions
     
-    def _generate_cross_asset_template_interactions(self, 
+    def _generate_cross_asset_template_interactions(self,
                                                   template: InteractionTemplate,
-                                                  asset_groups: Dict[str, List[str]],
+                                                  asset_groups: Dict[str, Dict[str, Any]],
                                                   targets: Optional[pd.Series]) -> List[GeneratedInteraction]:
         """Generate cross-asset interactions for a specific template."""
         interactions = []
-        
-        # For now, return empty list (cross-asset not fully implemented)
+
+        asset_items = [
+            (asset, features)
+            for asset, features in asset_groups.items()
+            if features
+        ]
+
+        if len(asset_items) < 2:
+            return interactions
+
+        lag_values: List[Optional[int]] = [None]
+        if 'lag' in template.optional_features:
+            configured_lags: Any = None
+            if isinstance(self.config, dict):
+                configured_lags = self.config.get('cross_asset_lags')
+            else:
+                configured_lags = getattr(self.config, 'cross_asset_lags', None)
+
+            if configured_lags is None:
+                configured_lags = template.metadata.get('lag_values') or template.metadata.get('lag')
+
+            if configured_lags is None:
+                lag_values = [1]
+            elif isinstance(configured_lags, (list, tuple, set)):
+                lag_values = [int(l) for l in configured_lags if l is not None]
+            else:
+                lag_values = [int(configured_lags)]
+
+            if not lag_values:
+                lag_values = [1]
+
+        def _extract_series(feature_obj: Any) -> Optional[pd.Series]:
+            if isinstance(feature_obj, pd.Series):
+                return feature_obj
+            return getattr(feature_obj, 'feature_series', None)
+
+        seen_names = set()
+
+        for (asset1, features1), (asset2, features2) in combinations(asset_items, 2):
+            if len(interactions) >= template.max_instances:
+                break
+
+            for feature1_name, feature1 in features1.items():
+                series1 = _extract_series(feature1)
+                if series1 is None:
+                    continue
+
+                for feature2_name, feature2 in features2.items():
+                    series2 = _extract_series(feature2)
+                    if series2 is None:
+                        continue
+
+                    for lag_value in lag_values:
+                        if len(interactions) >= template.max_instances:
+                            break
+
+                        placeholder_series: Dict[str, pd.Series] = {}
+                        placeholder_names: Dict[str, str] = {}
+
+                        for placeholder in template.required_features:
+                            lower_placeholder = placeholder.lower()
+                            if 'asset1' in lower_placeholder:
+                                placeholder_series[placeholder] = series1
+                                placeholder_names[placeholder] = feature1_name
+                            elif 'asset2' in lower_placeholder:
+                                placeholder_series[placeholder] = series2
+                                placeholder_names[placeholder] = feature2_name
+                            elif 'market' in lower_placeholder:
+                                if 'market' in asset2.lower() or 'index' in asset2.lower():
+                                    placeholder_series[placeholder] = series2
+                                    placeholder_names[placeholder] = feature2_name
+                                elif 'market' in asset1.lower() or 'index' in asset1.lower():
+                                    placeholder_series[placeholder] = series1
+                                    placeholder_names[placeholder] = feature1_name
+                                else:
+                                    placeholder_series[placeholder] = series2
+                                    placeholder_names[placeholder] = feature2_name
+                            else:
+                                placeholder_series[placeholder] = series1
+                                placeholder_names[placeholder] = feature1_name
+
+                        if 'lag' in template.optional_features:
+                            lag_int = int(lag_value)
+                            lag_value = lag_int
+                            placeholder_series['lag'] = lag_int
+                            placeholder_names['lag'] = str(lag_int)
+
+                        try:
+                            evaluated_series = eval(
+                                template.formula,
+                                {'np': np, 'pd': pd},
+                                placeholder_series
+                            )
+                        except Exception as exc:
+                            self.logger.debug(
+                                "Failed to evaluate cross-asset formula %s: %s",
+                                template.name,
+                                exc
+                            )
+                            continue
+
+                        if isinstance(evaluated_series, pd.DataFrame):
+                            evaluated_series = evaluated_series.iloc[:, 0]
+
+                        if not isinstance(evaluated_series, pd.Series):
+                            evaluated_series = pd.Series(evaluated_series)
+
+                        interaction_series = evaluated_series.dropna()
+                        if interaction_series.empty:
+                            continue
+
+                        name_parts = [template.name, feature1_name, feature2_name]
+                        if 'lag' in template.optional_features:
+                            name_parts.append(f"lag{lag_value}")
+
+                        interaction_name = f"int_{'_'.join(name_parts)}"
+                        if interaction_name in seen_names:
+                            continue
+
+                        seen_names.add(interaction_name)
+
+                        formatted_formula = template.formula
+                        for placeholder, replacement in placeholder_names.items():
+                            formatted_formula = formatted_formula.replace(placeholder, replacement)
+
+                        interaction_series = interaction_series.sort_index()
+                        interaction_series.name = interaction_name
+
+                        utility_score = 0.0
+                        if targets is not None:
+                            aligned = pd.concat(
+                                [interaction_series, targets], axis=1, join='inner'
+                            ).dropna()
+                            if not aligned.empty:
+                                corr = aligned.iloc[:, 0].corr(aligned.iloc[:, 1])
+                                if not pd.isna(corr):
+                                    utility_score = float(corr)
+
+                        parent_features: List[str] = []
+                        for placeholder in template.required_features:
+                            feature_name = placeholder_names.get(placeholder)
+                            if feature_name and feature_name not in parent_features:
+                                parent_features.append(feature_name)
+
+                        interaction_metadata = {
+                            'template_name': template.name,
+                            'template_type': template.template_type,
+                            'priority': template.priority,
+                            'asset1': asset1,
+                            'asset2': asset2
+                        }
+
+                        if 'lag' in template.optional_features:
+                            interaction_metadata['lag'] = lag_value
+
+                        interactions.append(
+                            GeneratedInteraction(
+                                name=interaction_name,
+                                formula=formatted_formula,
+                                parent_features=parent_features,
+                                interaction_type=template.template_type,
+                                feature_series=interaction_series,
+                                utility_score=utility_score,
+                                metadata=interaction_metadata
+                            )
+                        )
+
+                        if len(interactions) >= template.max_instances:
+                            break
+
+                    if len(interactions) >= template.max_instances:
+                        break
+
+                if len(interactions) >= template.max_instances:
+                    break
+
         return interactions
     
     def _generate_feature_combinations(self, 

@@ -24,7 +24,7 @@ from ehu_rih_assignment import EHU_RIH_Assignment
 from knapsack_selection import KnapsackSelection
 from htf_materialization import HTFMaterialization
 from interaction_templates import HTFInteractionTemplates
-from statistical_selection import StatisticalSelection
+from statistical_selection import StatisticalSelection, SelectionResult
 from evaluation import WalkForwardEvaluation
 from monitoring import MonitoringSystem
 
@@ -275,12 +275,26 @@ def run_individual_component_examples():
     
     # Create mock final features and evaluation results
     mock_final_features = ['feature1', 'feature2', 'feature3']
+    mock_selection_result = SelectionResult(
+        selected_features=mock_final_features,
+        selection_frequencies={name: 1.0 for name in mock_final_features},
+        p_values={name: 0.05 for name in mock_final_features},
+        fdr_corrected_p_values={name: 0.05 for name in mock_final_features},
+        conditional_ics={name: 0.1 for name in mock_final_features},
+        group_lasso_groups={},
+        selection_method="example",
+        metadata={'source': 'example_usage'}
+    )
     mock_evaluation_results = {
         'overall_ic': 0.12,
         'overall_ic_ci': (0.08, 0.16)
     }
-    
-    monitoring.setup_monitoring(mock_final_features, mock_evaluation_results)
+
+    monitoring.setup_monitoring(
+        mock_selection_result,
+        mock_final_features,
+        mock_evaluation_results
+    )
     
     # Create mock performance metrics
     from monitoring import PerformanceMetrics

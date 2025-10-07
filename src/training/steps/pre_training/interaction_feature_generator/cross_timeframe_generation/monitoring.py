@@ -22,6 +22,8 @@ from pathlib import Path
 import warnings
 warnings.filterwarnings('ignore')
 
+from .statistical_selection import SelectionResult
+
 # Try to import dashboard libraries
 try:
     import plotly.graph_objects as go
@@ -611,19 +613,29 @@ class MonitoringSystem:
         self.system_state = None
         self.monitoring_enabled = True
     
-    def setup_monitoring(self, 
+    def setup_monitoring(self,
+                        selection_result: Optional[SelectionResult],
                         final_features: List[str],
-                        evaluation_results: Dict[str, Any],
+                        evaluation_results: Optional[Any],
                         regime_segments: Optional[Dict[str, Any]] = None):
-        """Setup monitoring system."""
+        """Setup monitoring system.
+
+        Args:
+            selection_result: Metadata returned from statistical selection.
+            final_features: Plain list of feature names for downstream consumers.
+            evaluation_results: Results from the evaluation stage (if available).
+            regime_segments: Regime segmentation details for contextual monitoring.
+        """
         self.logger.info("Setting up monitoring system")
-        
+
         # Initialize system state
         self.system_state = SystemState(
             timestamp=datetime.now(),
             pipeline_state={
+                'selection_result': selection_result,
                 'final_features': final_features,
-                'evaluation_results': evaluation_results
+                'evaluation_results': evaluation_results,
+                'regime_segments': regime_segments,
             },
             performance_metrics=[],
             alerts=[],

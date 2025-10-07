@@ -5,7 +5,7 @@ import contextlib
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from ...utils.logger import system_logger
 from ...core.decorators import handles_errors
@@ -592,6 +592,11 @@ class TacticsOrchestrator:
             tactician_predictions = await self._generate_tactician_predictions(market_data, analyst_predictions)
             if not tactician_predictions:
                 return
+
+            context_update = self._build_position_context_update(analyst_predictions, tactician_predictions)
+            if context_update:
+                self._propagate_position_context(context_update)
+
             green_light_signal = tactician_predictions.get('green_light_signal', {})
             if green_light_signal.get('signal') == 'GREEN_LIGHT':
                 decision = await self._create_trade_decision(market_data, analyst_predictions, tactician_predictions)
@@ -648,6 +653,163 @@ class TacticsOrchestrator:
         except Exception as e:
             self.logger.exception(failed(f'❌ Error generating Tactician predictions: {e}'))
             return None
+
+    def _build_position_context_update(
+        self,
+        analyst_predictions: dict[str, Any],
+        tactician_predictions: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Assemble contextual updates for active positions."""
+        context: dict[str, Any] = {}
+
+        analyst_momentum = self._parse_momentum_payload(analyst_predictions)
+        if analyst_momentum:
+            context['analyst_momentum'] = analyst_momentum
+
+        tactician_momentum = self._parse_momentum_payload(tactician_predictions)
+        if tactician_momentum:
+            context['tactician_momentum'] = tactician_momentum
+
+        analyst_regime = self._parse_regime_payload(analyst_predictions)
+        if analyst_regime:
+            context['analyst_regime'] = analyst_regime
+
+        tactician_regime = self._parse_regime_payload(tactician_predictions)
+        if tactician_regime:
+            context['tactician_regime'] = tactician_regime
+
+        analyst_confidence = analyst_predictions.get('confidence')
+        if analyst_confidence is not None:
+            try:
+                context['analyst_confidence'] = float(analyst_confidence)
+            except (TypeError, ValueError):
+                pass
+
+        tactician_confidence = tactician_predictions.get('combined_confidence', tactician_predictions.get('tactician_confidence'))
+        if tactician_confidence is not None:
+            try:
+                context['tactician_confidence'] = float(tactician_confidence)
+            except (TypeError, ValueError):
+                pass
+
+        return context
+
+    def _propagate_position_context(self, context_update: dict[str, Any]) -> None:
+        """Send context updates to the position monitor for all tracked positions."""
+        try:
+            if not self.position_monitor or not context_update:
+                return
+
+            active_ids = list(self.position_monitor.get_active_positions().keys())
+            for position_id in active_ids:
+                self.position_monitor.update_position_context(position_id, context_update)
+        except Exception as e:
+            self.logger.exception(failed(f'❌ Error propagating position context: {e}'))
+
+    @staticmethod
+    def _parse_momentum_payload(predictions: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+        """Extract standardized momentum information from model predictions."""
+        if not isinstance(predictions, dict):
+            return None
+
+        candidate = (
+            predictions.get('momentum_prediction')
+            or predictions.get('momentum')
+            or predictions.get('momentum_score')
+        )
+        if candidate is None and isinstance(predictions.get('signals'), dict):
+            candidate = predictions['signals'].get('momentum')
+
+        result: dict[str, Any] = {}
+
+        if isinstance(candidate, dict):
+            label = (
+                candidate.get('label')
+                or candidate.get('prediction')
+                or candidate.get('direction')
+                or candidate.get('state')
+            )
+            value = candidate.get('value')
+            if value is None:
+                value = candidate.get('score')
+            if value is None and isinstance(candidate.get('momentum'), (int, float)):
+                value = candidate.get('momentum')
+            confidence = candidate.get('confidence') or candidate.get('probability')
+            probabilities = candidate.get('probabilities') or candidate.get('scores')
+            if confidence is None and isinstance(probabilities, dict) and label in probabilities:
+                confidence = probabilities[label]
+
+            if value is not None:
+                try:
+                    result['value'] = float(value)
+                except (TypeError, ValueError):
+                    pass
+            if label is not None:
+                result['label'] = label
+            if confidence is not None:
+                try:
+                    result['confidence'] = float(confidence)
+                except (TypeError, ValueError):
+                    pass
+
+        elif isinstance(candidate, (int, float)):
+            result['value'] = float(candidate)
+        elif isinstance(candidate, str):
+            result['label'] = candidate
+
+        if not result and 'direction' in predictions:
+            result['label'] = predictions['direction']
+            conf = predictions.get('confidence')
+            if conf is not None:
+                try:
+                    result['confidence'] = float(conf)
+                except (TypeError, ValueError):
+                    pass
+
+        return result or None
+
+    @staticmethod
+    def _parse_regime_payload(predictions: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+        """Extract standardized regime labels from model predictions."""
+        if not isinstance(predictions, dict):
+            return None
+
+        candidate = predictions.get('regime_prediction') or predictions.get('regime')
+        label = None
+        confidence: Optional[float] = None
+
+        if isinstance(candidate, dict):
+            label = candidate.get('prediction') or candidate.get('label')
+            confidence = candidate.get('confidence')
+            probabilities = candidate.get('probabilities') or candidate.get('scores')
+            if label is None and candidate:
+                try:
+                    label, confidence = max(candidate.items(), key=lambda item: item[1])
+                except ValueError:
+                    label = None
+            elif confidence is None and isinstance(probabilities, dict) and label in probabilities:
+                confidence = probabilities[label]
+        elif isinstance(candidate, str):
+            label = candidate
+            confidence = predictions.get('regime_confidence')
+
+        if label is None and isinstance(predictions.get('regime'), str):
+            label = predictions['regime']
+
+        if confidence is None and predictions.get('regime_confidence') is not None:
+            try:
+                confidence = float(predictions['regime_confidence'])
+            except (TypeError, ValueError):
+                confidence = None
+
+        if label is None:
+            return None
+
+        result: dict[str, Any] = {'label': label}
+        if confidence is not None:
+            result['confidence'] = confidence
+
+        return result
 
     def _extract_analyst_barriers(self, analyst_predictions: dict[str, Any]) -> dict[str, float]:
         """

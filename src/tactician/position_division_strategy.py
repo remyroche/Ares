@@ -6,6 +6,7 @@ from ..core.decorators import handles_errors
 Position Division Strategy for tactical position management.
 Defines strategies for multiple positions, take profit, stop loss, and position closure.
 """
+from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
@@ -48,6 +49,25 @@ class PositionDivisionStrategy:
         self.position_size_limit = self.strategy_config.get("position_size_limit", 0.2)  # 20% per position
         self.take_profit_pct = self.strategy_config.get("take_profit_pct", 0.02)  # 2%
         self.stop_loss_pct = self.strategy_config.get("stop_loss_pct", 0.01)  # 1%
+
+        # Trailing configuration (overridable by monitor)
+        default_trailing = {
+            "enabled": True,
+            "profit_buffer_pct": self.strategy_config.get("profit_buffer_pct", self.take_profit_pct),
+            "atr_multiplier": self.strategy_config.get("atr_multiplier", 1.5),
+            "min_trailing_distance_pct": self.strategy_config.get("min_trailing_distance_pct", 0.01),
+            "time_decay_bars": self.strategy_config.get("time_decay_bars", 8),
+            "time_decay_floor_atr": self.strategy_config.get("time_decay_floor_atr", 0.3),
+        }
+        trailing_from_config = self.strategy_config.get("trailing_config", {})
+        self.trailing_config: dict[str, Any] = {
+            **default_trailing,
+            **trailing_from_config,
+        }
+
+        # Trailing state per child position
+        self.trailing_levels: dict[str, dict[str, Any]] = {}
+        self.child_trailing_templates: list[dict[str, Any]] = []
 
         # State tracking
         self.active_positions: dict[str, dict[str, Any]] = {}
@@ -108,6 +128,18 @@ class PositionDivisionStrategy:
                 self.logger.error("Validation error: Stop loss percentage must be positive")
                 return False
 
+            if self.trailing_config.get("atr_multiplier", 0) <= 0:
+                self.logger.error("Validation error: Trailing ATR multiplier must be positive")
+                return False
+
+            if self.trailing_config.get("time_decay_bars", 0) < 0:
+                self.logger.error("Validation error: Trailing time decay bars must be non-negative")
+                return False
+
+            if self.trailing_config.get("time_decay_floor_atr", 0) < 0:
+                self.logger.error("Validation error: Trailing time decay ATR floor must be non-negative")
+                return False
+
             return True
 
         except Exception as e:
@@ -143,8 +175,13 @@ class PositionDivisionStrategy:
             # Calculate position sizes
             position_sizes = self._calculate_position_sizes(total_capital, num_positions, confidence_score)
 
+            # Allow trailing configuration override from market context/monitor
+            trailing_override = market_conditions.get("trailing_config") if market_conditions else None
+            if trailing_override:
+                self.update_trailing_configuration(trailing_override)
+
             # Calculate take profit and stop loss levels
-            tp_sl_levels = self._calculate_tp_sl_levels(market_conditions)
+            tp_sl_levels = self._calculate_tp_sl_levels(market_conditions, num_positions)
 
             # Create strategy
             strategy = {
@@ -152,6 +189,8 @@ class PositionDivisionStrategy:
                 "position_sizes": position_sizes,
                 "take_profit_levels": tp_sl_levels["take_profit"],
                 "stop_loss_levels": tp_sl_levels["stop_loss"],
+                "trailing_templates": tp_sl_levels.get("trailing", []),
+                "trailing_config": deepcopy(self.trailing_config),
                 "confidence_score": confidence_score,
                 "total_capital": total_capital,
                 "timestamp": datetime.now().isoformat(),
@@ -238,7 +277,7 @@ class PositionDivisionStrategy:
             self.logger.exception(f"❌ Error calculating position sizes: {e}")
             return [total_capital * 0.1]  # Fallback to 10%
 
-    def _calculate_tp_sl_levels(self, market_conditions: dict[str, Any]) -> dict[str, list[float]]:
+    def _calculate_tp_sl_levels(self, market_conditions: dict[str, Any] | None, num_positions: int) -> dict[str, list[Any]]:
         """
         Calculate take profit and stop loss levels.
 
@@ -249,6 +288,7 @@ class PositionDivisionStrategy:
             Dict: Take profit and stop loss levels
         """
         try:
+            market_conditions = market_conditions or {}
             # Get market volatility
             volatility = market_conditions.get("volatility", 0.02)  # Default 2%
 
@@ -258,19 +298,54 @@ class PositionDivisionStrategy:
 
             take_profit_levels = []
             stop_loss_levels = []
+            trailing_templates: list[dict[str, Any]] = []
 
-            # Calculate levels for each position
-            for i in range(self.max_positions):
-                # Progressive TP/SL levels
-                tp_level = self.take_profit_pct + (i * 0.005) + tp_adjustment  # Increase by 0.5% per position
-                sl_level = self.stop_loss_pct + (i * 0.002) + sl_adjustment  # Increase by 0.2% per position
+            trailing_enabled = self.trailing_config.get("enabled", True)
+            profit_buffer_pct = self.trailing_config.get("profit_buffer_pct", self.take_profit_pct)
+            min_trailing_distance_pct = self.trailing_config.get("min_trailing_distance_pct", self.stop_loss_pct)
+            atr_multiplier = self.trailing_config.get("atr_multiplier", 1.5)
+            time_decay_bars = self.trailing_config.get("time_decay_bars", 0)
+            time_decay_floor_atr = self.trailing_config.get("time_decay_floor_atr", 0.0)
 
-                take_profit_levels.append(tp_level)
-                stop_loss_levels.append(sl_level)
+            # Estimate ATR percentage relative to price if available
+            price_reference = market_conditions.get("reference_price") or market_conditions.get("current_price")
+            atr_value = market_conditions.get("atr") or market_conditions.get("atr_value")
+            atr_pct = 0.0
+            if atr_value and price_reference and price_reference > 0:
+                atr_pct = max(atr_value / price_reference, 0.0)
+            else:
+                atr_pct = market_conditions.get("volatility", 0.02)
+
+            base_trailing_distance = max(min_trailing_distance_pct, atr_pct * atr_multiplier)
+
+            # Calculate levels for each position actually deployed
+            for i in range(max(1, num_positions)):
+                position_profit_buffer = profit_buffer_pct + (i * tp_adjustment)
+                trailing_distance_pct = base_trailing_distance + (i * sl_adjustment)
+
+                take_profit_levels.append(position_profit_buffer)
+                stop_loss_levels.append(trailing_distance_pct)
+
+                if trailing_enabled:
+                    trailing_templates.append(
+                        {
+                            "child_index": i,
+                            "activation_buffer_pct": position_profit_buffer,
+                            "trailing_distance_pct": trailing_distance_pct,
+                            "atr_multiplier": atr_multiplier,
+                            "atr_pct_reference": atr_pct,
+                            "time_decay_bars": time_decay_bars,
+                            "time_decay_floor_atr": time_decay_floor_atr,
+                        }
+                    )
+
+            # Persist latest templates for future child position creation
+            self.child_trailing_templates = deepcopy(trailing_templates)
 
             return {
                 "take_profit": take_profit_levels,
                 "stop_loss": stop_loss_levels,
+                "trailing": trailing_templates,
             }
 
         except Exception as e:
@@ -279,6 +354,32 @@ class PositionDivisionStrategy:
                 "take_profit": [self.take_profit_pct] * self.max_positions,
                 "stop_loss": [self.stop_loss_pct] * self.max_positions,
             }
+
+    @handles_errors(ValueError, AttributeError, fallback = False,
+        context="position management",
+    )
+    def update_trailing_configuration(self, trailing_config: dict[str, Any]) -> None:
+        """Update trailing configuration from monitor or external inputs."""
+        try:
+            if not isinstance(trailing_config, dict):
+                self.logger.warning("Trailing configuration update ignored: not a dict")
+                return
+
+            merged = {**self.trailing_config, **trailing_config}
+            self.trailing_config = merged
+            self.logger.info(
+                "Updated trailing configuration: %s",
+                {k: merged[k] for k in [
+                    "enabled",
+                    "profit_buffer_pct",
+                    "atr_multiplier",
+                    "min_trailing_distance_pct",
+                    "time_decay_bars",
+                    "time_decay_floor_atr",
+                ] if k in merged},
+            )
+        except Exception as exc:
+            self.logger.exception(f"❌ Failed to update trailing configuration: {exc}")
 
     @handles_errors(ValueError, AttributeError, fallback = False,
         context="position management",
@@ -305,11 +406,17 @@ class PositionDivisionStrategy:
                 return False
 
             # Add position
+            trailing_state = self._initialize_trailing_state(position_id, position_data)
+
             self.active_positions[position_id] = {
                 **position_data,
                 "added_at": datetime.now().isoformat(),
                 "status": "active",
+                "trailing_state": trailing_state,
             }
+
+            if trailing_state:
+                self.trailing_levels[position_id] = trailing_state
 
             self.logger.info(f"Added position {position_id} to strategy")
             return True
@@ -326,6 +433,7 @@ class PositionDivisionStrategy:
         position_id: str,
         close_reason: str,
         pnl: float,
+        exit_metadata: dict[str, Any] | None = None,
     ) -> bool:
         """
         Close a position and record its performance.
@@ -347,6 +455,11 @@ class PositionDivisionStrategy:
             position_data = self.active_positions[position_id]
 
             # Create closure record
+            trailing_state = self.trailing_levels.get(position_id)
+            closure_metadata = exit_metadata.copy() if exit_metadata else {}
+            if trailing_state:
+                closure_metadata.setdefault("trailing_state", deepcopy(trailing_state))
+
             closure_record = {
                 "position_id": position_id,
                 "symbol": position_data.get("symbol"),
@@ -359,6 +472,7 @@ class PositionDivisionStrategy:
                 "entry_time": position_data.get("added_at"),
                 "exit_time": datetime.now().isoformat(),
                 "hold_time": self._calculate_hold_time(position_data.get("added_at")),
+                "exit_metadata": closure_metadata,
             }
 
             # Add to history
@@ -366,6 +480,8 @@ class PositionDivisionStrategy:
 
             # Remove from active positions
             del self.active_positions[position_id]
+            if position_id in self.trailing_levels:
+                del self.trailing_levels[position_id]
 
             # Update performance metrics
             self._update_performance_metrics(closure_record)
@@ -397,6 +513,65 @@ class PositionDivisionStrategy:
         except Exception as e:
             self.logger.exception(f"❌ Error calculating hold time: {e}")
             return 0.0
+
+    def _initialize_trailing_state(
+        self,
+        position_id: str,
+        position_data: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Create the trailing state snapshot for a new child position."""
+        try:
+            if not self.trailing_config.get("enabled", True):
+                return None
+
+            entry_price = position_data.get("entry_price")
+            if not entry_price:
+                return None
+
+            side = (position_data.get("side") or "").upper()
+            atr_value = position_data.get("atr") or position_data.get("atr_value")
+            reference_price = position_data.get("reference_price") or entry_price
+
+            atr_pct = 0.0
+            if atr_value and reference_price:
+                atr_pct = max(atr_value / reference_price, 0.0)
+
+            trailing_distance_pct = max(
+                self.trailing_config.get("min_trailing_distance_pct", 0.0),
+                atr_pct * self.trailing_config.get("atr_multiplier", 1.5),
+            )
+
+            activation_buffer_pct = self.trailing_config.get("profit_buffer_pct", self.take_profit_pct)
+
+            if side == "LONG":
+                trail_level = entry_price * (1 - trailing_distance_pct)
+                profit_activation = entry_price * (1 + activation_buffer_pct)
+            elif side == "SHORT":
+                trail_level = entry_price * (1 + trailing_distance_pct)
+                profit_activation = entry_price * (1 - activation_buffer_pct)
+            else:
+                trail_level = None
+                profit_activation = None
+
+            trail_state = {
+                "position_id": position_id,
+                "side": side,
+                "activation_price": profit_activation,
+                "current_trail_level": trail_level,
+                "atr_value": atr_value,
+                "atr_pct": atr_pct,
+                "trailing_distance_pct": trailing_distance_pct,
+                "time_decay_bars": self.trailing_config.get("time_decay_bars", 0),
+                "time_decay_floor_atr": self.trailing_config.get("time_decay_floor_atr", 0.0),
+                "last_update": datetime.now().isoformat(),
+                "config_snapshot": deepcopy(self.trailing_config),
+            }
+
+            return trail_state
+
+        except Exception as exc:
+            self.logger.exception(f"❌ Failed to initialize trailing state for {position_id}: {exc}")
+            return None
 
     def _update_performance_metrics(self, closure_record: dict[str, Any]) -> None:
         """
@@ -475,6 +650,8 @@ class PositionDivisionStrategy:
                 "position_size_limit": self.position_size_limit,
                 "take_profit_pct": self.take_profit_pct,
                 "stop_loss_pct": self.stop_loss_pct,
+                "trailing_config": deepcopy(self.trailing_config),
+                "trailing_levels": deepcopy(self.trailing_levels),
                 "performance": self.strategy_performance,
                 "timestamp": datetime.now().isoformat(),
             }
@@ -498,6 +675,8 @@ class PositionDivisionStrategy:
             self.active_positions.clear()
             self.position_history.clear()
             self.strategy_performance.clear()
+            self.trailing_levels.clear()
+            self.child_trailing_templates.clear()
 
             self.logger.info("✅ Position Division Strategy cleanup completed")
 

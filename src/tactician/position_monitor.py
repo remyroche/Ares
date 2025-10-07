@@ -156,6 +156,10 @@ class PositionMonitor:
             # Initialize position strategy
             self.position_strategy = PositionDivisionStrategy(self.config)
             await self.position_strategy.initialize()
+            if self.position_strategy:
+                trailing_update = self._build_trailing_strategy_update()
+                if trailing_update:
+                    self.position_strategy.update_trailing_configuration(trailing_update)
 
             # Validate configuration
             if not self._validate_configuration():
@@ -714,7 +718,7 @@ class PositionMonitor:
         """Get optimized trailing stop configuration."""
         if self.optimized_parameters and "trailing_stop" in self.optimized_parameters:
             return self.optimized_parameters["trailing_stop"]
-        
+
         # Fallback to config or defaults
         return self.monitor_config.get("trailing_stop", {
             "enabled": True,
@@ -722,6 +726,34 @@ class PositionMonitor:
             "min_distance": 0.01,
             "confidence_activation": 0.7
         })
+
+    def _build_trailing_strategy_update(self) -> Dict[str, Any]:
+        """Translate monitor trailing configuration to strategy-friendly values."""
+
+        trailing_config = self.trailing_stop_config or {}
+        update: Dict[str, Any] = {}
+
+        if trailing_config:
+            update["enabled"] = trailing_config.get("enabled", True)
+            update["atr_multiplier"] = trailing_config.get(
+                "atr_multiplier",
+                trailing_config.get("trailing_stop_atr_multiplier", 1.5),
+            )
+            min_distance = trailing_config.get("min_distance")
+            if min_distance is None:
+                min_distance = trailing_config.get("min_trailing_distance_pct")
+            if min_distance is not None:
+                update["min_trailing_distance_pct"] = min_distance
+            if "time_decay_bars" in trailing_config:
+                update["time_decay_bars"] = trailing_config["time_decay_bars"]
+            if "time_decay_floor_atr" in trailing_config:
+                update["time_decay_floor_atr"] = trailing_config["time_decay_floor_atr"]
+
+        profit_buffer = self.pnl_thresholds.get("profit_target")
+        if profit_buffer is not None:
+            update["profit_buffer_pct"] = profit_buffer
+
+        return update
 
     def _get_optimized_regime_aware_config(self) -> Dict[str, Any]:
         """Get optimized regime-aware configuration."""
@@ -754,7 +786,11 @@ class PositionMonitor:
                 self.time_based_config = self._get_optimized_time_based_config()
                 self.trailing_stop_config = self._get_optimized_trailing_stop_config()
                 self.regime_aware_config = self._get_optimized_regime_aware_config()
-                
+                if self.position_strategy:
+                    trailing_update = self._build_trailing_strategy_update()
+                    if trailing_update:
+                        self.position_strategy.update_trailing_configuration(trailing_update)
+
                 self.logger.info("✅ Optimized parameters refreshed successfully")
                 self.logger.info(f"📊 New confidence thresholds: {self.confidence_thresholds}")
                 self.logger.info(f"💰 New profit targets: {self.pnl_thresholds['profit_target']:.1%}")

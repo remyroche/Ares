@@ -594,9 +594,9 @@ class PositionMonitor:
             trailing_metadata["active"] = True
 
             min_distance = self._safe_float(self.trailing_stop_config.get("min_distance")) or 0.0
-            atr_component = (0.8 * atr) if atr is not None else 0.0
-            distance = max(atr_component, profit_buffer or 0.0)
-            distance = max(distance, min_distance)
+            atr_distance_multiplier = self.trailing_stop_config.get("atr_distance_multiplier", 0.8)
+            atr_component = (atr_distance_multiplier * atr) if atr is not None else 0.0
+            distance = max(atr_component, profit_buffer or 0.0, min_distance)
 
             volatility_scaler = self._calculate_volatility_scaler(position_data, state, sigma)
             distance *= volatility_scaler

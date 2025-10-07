@@ -177,14 +177,6 @@ class HTFFeatureGenerator:
 
         transformed_series = self._apply_transforms(
             base_feature,
-        base_feature_func = htf_base_features.get_base_feature_func(base_feature)
-
-        # Compute base feature
-        base_series = base_feature_func(data)
-
-        # Resample to HTF
-        return htf_base_features.resample_to_htf(
-            base_series,
             lookback_minutes,
             htf_series,
         )
@@ -214,6 +206,20 @@ class HTFFeatureGenerator:
         suffix = format_transform_suffix(transform_config[base_feature])
         transformed_series.name = f"t/{base_feature}_htf{lookback_minutes}/{suffix}"
         return transformed_series
+
+
+class FamilyProcessingError(RuntimeError):
+    """Raised when an HTF family fails to yield any viable candidates."""
+
+    def __init__(self, family: str, details: Optional[List[str]] = None):
+        self.family = family
+        self.details = details or []
+
+        message = f"Failed to produce any valid candidates for family '{family}'."
+        if self.details:
+            message = f"{message} {' '.join(self.details)}"
+
+        super().__init__(message)
 
 
 class Phase1HTFProbe:
@@ -273,14 +279,22 @@ class Phase1HTFProbe:
         # Process each HTF family
         for family, base_features in self.htf_generator.htf_families.items():
             self.logger.info(f"Processing family: {family}")
-            
-            family_results = self._process_family(
-                family, base_features, sessionized_data, regime_segments, targets
-            )
-            
+
+            try:
+                family_results = self._process_family(
+                    family, base_features, sessionized_data, regime_segments, targets
+                )
+            except FamilyProcessingError as exc:
+                self.logger.error(
+                    "Phase-1 probe aborted while processing family '%s': %s",
+                    family,
+                    exc,
+                )
+                raise
+
             results['candidates'].extend(family_results['candidates'])
             results['family_performance'][family] = family_results['performance']
-            
+
             if family_results['early_stopped']:
                 results['early_stopped_families'].append(family)
             else:
@@ -306,7 +320,10 @@ class Phase1HTFProbe:
         
         candidates = []
         family_scores = []
-        
+        errors: List[str] = []
+        empty_attempts: List[str] = []
+        has_success = False
+
         # Test each combination of base feature and lookback
         for base_feature, lookback in product(base_features, grid):
             try:
@@ -327,20 +344,47 @@ class Phase1HTFProbe:
                 if regime_candidates:
                     candidates.extend(regime_candidates)
                     family_scores.extend([c.utility_score for c in regime_candidates])
+                    has_success = True
                     self.logger.debug(
                         "Scored %s@%s for %d regime variants",
                         base_feature,
                         lookback,
                         len(regime_candidates)
                     )
+                else:
+                    empty_attempts.append(f"{base_feature}@{lookback}")
 
             except Exception as e:
                 self.logger.warning(f"Failed to process {base_feature}@{lookback}: {e}")
+                errors.append(f"{base_feature}@{lookback}: {e}")
                 continue
-        
+
+        if not has_success:
+            detail_parts: List[str] = []
+            if errors:
+                detail_parts.append(
+                    "Encountered errors for "
+                    + ", ".join(errors)
+                )
+            if empty_attempts:
+                detail_parts.append(
+                    "No viable regimes produced for "
+                    + ", ".join(empty_attempts)
+                )
+            if not detail_parts:
+                detail_parts.append("No candidates evaluated for generated grid.")
+
+            detail_message = " ".join(detail_parts)
+            self.logger.error(
+                "Family '%s' produced no successful candidates. %s",
+                family,
+                detail_message,
+            )
+            raise FamilyProcessingError(family, detail_parts)
+
         # Check for early stopping
         early_stopped = self._check_early_stopping(family_scores)
-        
+
         # Shortlist top candidates
         if not early_stopped:
             shortlisted = self._shortlist_candidates(candidates, family)

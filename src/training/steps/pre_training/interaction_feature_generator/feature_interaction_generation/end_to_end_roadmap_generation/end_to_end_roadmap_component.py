@@ -487,6 +487,14 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
                 best_target = self._select_best_target_with_weights(labeled_data, horizon_weights, target_columns)
                 if best_target:
                     tprint_success(f"✅ Selected best target for roadmap generation: {best_target}")
+                    
+                    # Extract sample weights if available
+                    sample_weights = standardized_output.get('sample_weights', None)
+                    validation_results = standardized_output.get('validation_results', {})
+                    
+                    tprint_info(f"📊 Sample weights: {'Available' if sample_weights is not None else 'Not available'}")
+                    tprint_info(f"✅ Validation status: {'Passed' if validation_results.get('is_valid', False) else 'Failed'}")
+                    
                     return {
                         'targets': labeled_data[best_target],
                         'confidence_scores': confidence_scores,
@@ -494,7 +502,9 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
                         'quality_scores': quality_scores,
                         'horizon_weights': horizon_weights,
                         'target_columns': target_columns,
-                        'selected_target': best_target
+                        'selected_target': best_target,
+                        'sample_weights': sample_weights,
+                        'validation_results': validation_results
                     }
             
             # Fallback to legacy format if standardized format not available

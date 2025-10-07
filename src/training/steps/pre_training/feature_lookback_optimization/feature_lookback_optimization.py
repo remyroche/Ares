@@ -2008,12 +2008,20 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             tprint(f'📈 Market data loaded: {len(market_data)} rows, {len(market_data.columns)} columns')
             self._monitor_performance('data_loaded')
             
-            # Step 3: Get labeled data from previous stage
-            # Check for multi-horizon labeling first (preferred), then fall back to triple barrier
+            # Step 3: Get labeled data from previous stage with enhanced integration
+            # Check for standardized output first (preferred), then multi-horizon, then triple barrier
+            standardized_output = pipeline_state.get('standardized_output', {})
             multi_horizon_labeling = pipeline_state.get('multi_horizon_labeling_result', {})
             triple_barrier_labeling = pipeline_state.get('triple_barrier_labeling_result', {})
             
-            if multi_horizon_labeling:
+            if standardized_output and standardized_output.get('pipeline_ready', False):
+                labeling_data = standardized_output
+                labeling_method = 'standardized_multi_horizon'
+                tprint('🏷️ Standardized multi-horizon labeling data retrieved from pipeline state')
+                tprint_info(f"   → Target columns: {standardized_output.get('target_columns', [])}")
+                tprint_info(f"   → Horizon weights: {standardized_output.get('weights', {})}")
+                tprint_info(f"   → Sample weights available: {standardized_output.get('sample_weights') is not None}")
+            elif multi_horizon_labeling:
                 labeling_data = multi_horizon_labeling
                 labeling_method = 'multi_horizon'
                 tprint('🏷️ Multi-horizon labeling data retrieved from pipeline state')
@@ -2023,15 +2031,22 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 tprint('🏷️ Triple barrier labeling data retrieved from pipeline state')
             else:
                 # Check if labeling data is now available (should be loaded in Step 0.5)
+                standardized_output = pipeline_state.get('standardized_output', {})
                 multi_horizon_labeling = pipeline_state.get('multi_horizon_labeling_result', {})
                 triple_barrier_labeling = pipeline_state.get('triple_barrier_labeling_result', {})
                 
-                if multi_horizon_labeling:
+                if standardized_output and standardized_output.get('pipeline_ready', False):
+                    labeling_data = standardized_output
+                    labeling_method = 'standardized_multi_horizon'
+                    tprint('🏷️ Using pre-loaded standardized multi-horizon labeling data')
+                elif multi_horizon_labeling:
+                    labeling_data = multi_horizon_labeling
                     labeling_method = 'multi_horizon_profit_labeling'
-                    tprint(f'🏷️ Using pre-loaded multi-horizon labeling data')
+                    tprint('🏷️ Using pre-loaded multi-horizon labeling data')
                 elif triple_barrier_labeling:
+                    labeling_data = triple_barrier_labeling
                     labeling_method = 'triple_barrier_labeling'
-                    tprint(f'🏷️ Using pre-loaded triple barrier labeling data')
+                    tprint('🏷️ Using pre-loaded triple barrier labeling data')
                 else:
                     tprint('⚠️ No labeling results found - using fallback optimization mode')
                     tprint('🔄 This is expected when labeling step runs after feature optimization')
@@ -2932,9 +2947,25 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 labeling_method = 'multi_horizon_profit_labeling_standardized'
                 horizon_weights = standardized_output.get('weights', {})
                 target_columns = standardized_output.get('target_columns', [])
+                sample_weights = standardized_output.get('sample_weights', None)
+                quality_scores = standardized_output.get('quality_scores', {})
+                validation_results = standardized_output.get('validation_results', {})
+                
                 tprint_success(f"✅ Loaded standardized format with {len(labeled_data.columns)} targets")
                 tprint_info(f"🎯 Target columns: {target_columns}")
                 tprint_info(f"⚖️ Horizon weights: {horizon_weights}")
+                tprint_info(f"📊 Sample weights: {'Available' if sample_weights is not None else 'Not available'}")
+                tprint_info(f"🔍 Quality scores: {'Available' if quality_scores else 'Not available'}")
+                tprint_info(f"✅ Validation status: {'Passed' if validation_results.get('is_valid', False) else 'Failed'}")
+                
+                # Store additional metadata for optimization
+                labeling_metadata = {
+                    'horizon_weights': horizon_weights,
+                    'target_columns': target_columns,
+                    'sample_weights': sample_weights,
+                    'quality_scores': quality_scores,
+                    'validation_results': validation_results
+                }
             elif 'labeled_data' in labeling_data:
                 # Multi-horizon labeling format (legacy)
                 labeled_data = labeling_data['labeled_data']
@@ -2985,13 +3016,30 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                                 # Use target columns from standardized format if available, otherwise fallback
                                 integration_targets = target_columns if target_columns else ['leverage_adjusted_score', 'immediate_opportunity', 'short_term_opportunity']
                                 tprint_info(f"🎯 Using integration targets: {integration_targets}")
+                                
+                                # Select best target based on horizon weights if available
+                                if horizon_weights and integration_targets:
+                                    best_target = self._select_best_target_by_weights(labeled_df, horizon_weights, integration_targets)
+                                    if best_target:
+                                        tprint_success(f"🎯 Selected best target based on weights: {best_target}")
+                                        integration_targets = [best_target]  # Focus on the best target
+                                
+                                # Add sample weights if available
+                                if sample_weights is not None and hasattr(sample_weights, '__len__'):
+                                    if len(sample_weights) == len(prepared_data):
+                                        prepared_data['sample_weight'] = sample_weights
+                                        tprint_success(f"⚖️ Added sample weights (mean: {np.mean(sample_weights):.4f})")
+                                    else:
+                                        tprint_warning(f"⚠️ Sample weights length mismatch: {len(sample_weights)} vs {len(prepared_data)}")
 
                                 for target_col in integration_targets:
                                     if target_col in labeled_df.columns:
                                         # Align the labeled data with prepared data by index/timestamp
                                         if len(labeled_df) == len(prepared_data):
                                             prepared_data[target_col] = labeled_df[target_col].values
-                                            tprint(f'✅ Added real {target_col} target from labeled data (mean: {prepared_data[target_col].mean():.4f})')
+                                            target_mean = prepared_data[target_col].mean()
+                                            target_std = prepared_data[target_col].std()
+                                            tprint(f'✅ Added real {target_col} target from labeled data (mean: {target_mean:.4f}, std: {target_std:.4f})')
                                         else:
                                             tprint(f'⚠️ Length mismatch: labeled_df={len(labeled_df)}, prepared_data={len(prepared_data)}')
                                 
@@ -3204,6 +3252,67 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             else:
                 # Create a minimal DataFrame for fallback
                 return pd.DataFrame({'fallback_column': [0, 1, 2]})
+    
+    def _select_best_target_by_weights(self, labels_df: pd.DataFrame, horizon_weights: Dict[str, float], target_columns: List[str]) -> Optional[str]:
+        """
+        Select the best target based on horizon weights and availability.
+        
+        Args:
+            labels_df: DataFrame with labels
+            horizon_weights: Dictionary of horizon weights
+            target_columns: List of target column names
+            
+        Returns:
+            Best target column name or None if no suitable target found
+        """
+        try:
+            tprint_info("🎯 Selecting best target based on horizon weights...")
+            
+            if not horizon_weights or not target_columns:
+                tprint_warning("⚠️ No horizon weights or target columns available")
+                return target_columns[0] if target_columns else None
+            
+            # Map target columns to their corresponding horizon weights
+            target_scores = {}
+            
+            for target in target_columns:
+                if target in labels_df.columns:
+                    # Determine horizon type from target name
+                    if 'immediate' in target.lower() or 'small' in target.lower():
+                        horizon_weight = horizon_weights.get('small', 0.0)
+                    elif 'short_term' in target.lower() or 'medium' in target.lower():
+                        horizon_weight = horizon_weights.get('medium', 0.0)
+                    elif 'leverage' in target.lower() or 'high' in target.lower():
+                        horizon_weight = horizon_weights.get('high', 0.0)
+                    else:
+                        horizon_weight = 0.0
+                    
+                    # Calculate data quality score
+                    target_data = labels_df[target].dropna()
+                    if len(target_data) > 0:
+                        data_quality = 1.0 - (target_data.isnull().sum() / len(labels_df))
+                        variance_score = target_data.var() if len(target_data) > 1 else 0.0
+                        
+                        # Combined score: horizon weight + data quality + variance
+                        combined_score = horizon_weight * 0.5 + data_quality * 0.3 + min(variance_score, 1.0) * 0.2
+                        target_scores[target] = combined_score
+                        
+                        tprint_info(f"   → {target}: horizon_weight={horizon_weight:.3f}, quality={data_quality:.3f}, variance={variance_score:.3f}, score={combined_score:.3f}")
+            
+            if not target_scores:
+                tprint_warning("⚠️ No valid targets found for scoring")
+                return target_columns[0] if target_columns else None
+            
+            # Select target with highest score
+            best_target = max(target_scores.items(), key=lambda x: x[1])[0]
+            best_score = target_scores[best_target]
+            
+            tprint_success(f"✅ Selected best target: {best_target} (score: {best_score:.3f})")
+            return best_target
+            
+        except Exception as e:
+            tprint_error(f"❌ Error selecting best target: {e}")
+            return target_columns[0] if target_columns else None
     
     def compute_enhanced_correlation_analysis(self, data: pd.DataFrame, feature_columns: List[str]) -> Dict[str, Any]:
         """Compute enhanced correlation analysis using advanced matrix operations."""

@@ -341,52 +341,71 @@ class VolatilityAwareMultiHorizonLabeler:
         try:
             # Step 1: Event-based bar construction (with caching)
             tprint_info("📊 Step 1: Constructing event-based bars")
-            bar_cache_key = f"bars_{data_hash}_{hash(str(self.config.bar_construction))}"
-            if self.config.enable_caching and bar_cache_key in self.bar_cache:
-                bar_result = self.bar_cache[bar_cache_key]
-                tprint_info("📋 Using cached bar construction")
-            else:
-                bar_result = self.bar_constructor.construct_bars(market_data)
-                if self.config.enable_caching:
-                    self.bar_cache[bar_cache_key] = bar_result
+            try:
+                bar_cache_key = f"bars_{data_hash}_{hash(str(self.config.bar_construction))}"
+                if self.config.enable_caching and bar_cache_key in self.bar_cache:
+                    bar_result = self.bar_cache[bar_cache_key]
+                    tprint_info("📋 Using cached bar construction")
+                else:
+                    bar_result = self.bar_constructor.construct_bars(market_data)
+                    if self.config.enable_caching:
+                        self.bar_cache[bar_cache_key] = bar_result
+                    tprint_success("✅ Bar construction completed")
 
-            result.bar_construction_result = bar_result
+                result.bar_construction_result = bar_result
 
-            if bar_result.cleaned_bars.empty:
-                tprint_warning("⚠️ No valid bars constructed")
+                if bar_result.cleaned_bars.empty:
+                    tprint_error("❌ No valid bars constructed - check data quality")
+                    return self._create_empty_result()
+                else:
+                    tprint_success(f"✅ Constructed {len(bar_result.cleaned_bars)} valid bars")
+            except Exception as e:
+                tprint_error(f"❌ Bar construction failed: {e}")
                 return self._create_empty_result()
             
             # Step 2: Volatility modeling (with caching)
             tprint_info("📈 Step 2: Modeling volatility")
-            vol_cache_key = f"volatility_{data_hash}_{hash(str(self.config.volatility))}"
-            if self.config.enable_caching and vol_cache_key in self.volatility_cache:
-                vol_result = self.volatility_cache[vol_cache_key]
-                tprint_info("📋 Using cached volatility modeling")
-            else:
-                vol_result = self.volatility_modeler.model_volatility(bar_result.cleaned_bars)
-                if self.config.enable_caching:
-                    self.volatility_cache[vol_cache_key] = vol_result
+            try:
+                vol_cache_key = f"volatility_{data_hash}_{hash(str(self.config.volatility))}"
+                if self.config.enable_caching and vol_cache_key in self.volatility_cache:
+                    vol_result = self.volatility_cache[vol_cache_key]
+                    tprint_info("📋 Using cached volatility modeling")
+                else:
+                    vol_result = self.volatility_modeler.model_volatility(bar_result.cleaned_bars)
+                    if self.config.enable_caching:
+                        self.volatility_cache[vol_cache_key] = vol_result
+                    tprint_success("✅ Volatility modeling completed")
 
-            result.volatility_result = vol_result
+                result.volatility_result = vol_result
 
-            if vol_result.volatility_series.empty:
-                tprint_warning("⚠️ No volatility estimates available")
+                if vol_result.volatility_series.empty:
+                    tprint_error("❌ No volatility estimates available - check data quality")
+                    return self._create_empty_result()
+                else:
+                    tprint_success(f"✅ Generated volatility estimates for {len(vol_result.volatility_series)} periods")
+            except Exception as e:
+                tprint_error(f"❌ Volatility modeling failed: {e}")
                 return self._create_empty_result()
             
             # Step 3: Noise gating (with caching)
             tprint_info("🔇 Step 3: Applying noise gating")
-            noise_cache_key = f"noise_{data_hash}_{hash(str(self.config.noise_gating))}"
-            if self.config.enable_caching and noise_cache_key in self.noise_cache:
-                noise_result = self.noise_cache[noise_cache_key]
-                tprint_info("📋 Using cached noise gating")
-            else:
-                noise_result = self.noise_gating_filter.filter_noise(
-                    bar_result.cleaned_bars, vol_result.volatility_series
-                )
-                if self.config.enable_caching:
-                    self.noise_cache[noise_cache_key] = noise_result
+            try:
+                noise_cache_key = f"noise_{data_hash}_{hash(str(self.config.noise_gating))}"
+                if self.config.enable_caching and noise_cache_key in self.noise_cache:
+                    noise_result = self.noise_cache[noise_cache_key]
+                    tprint_info("📋 Using cached noise gating")
+                else:
+                    noise_result = self.noise_gating_filter.filter_noise(
+                        bar_result.cleaned_bars, vol_result.volatility_series
+                    )
+                    if self.config.enable_caching:
+                        self.noise_cache[noise_cache_key] = noise_result
+                    tprint_success("✅ Noise gating completed")
 
-            result.noise_gating_result = noise_result
+                result.noise_gating_result = noise_result
+            except Exception as e:
+                tprint_error(f"❌ Noise gating failed: {e}")
+                return self._create_empty_result()
             
             # Step 4: Multi-target scheme (with caching)
             tprint_info("🎯 Step 4: Generating multi-target labels")

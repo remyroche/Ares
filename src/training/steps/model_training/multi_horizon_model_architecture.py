@@ -13,7 +13,7 @@ Key features:
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Any, Tuple, Union
+from typing import Dict, List, Optional, Any, Tuple, Union, Callable
 from dataclasses import dataclass, field
 import logging
 
@@ -62,7 +62,13 @@ except ImportError:
 
 @dataclass
 class MultiHorizonModelConfig:
-    """Configuration for multi-horizon model architecture."""
+    """Configuration for multi-horizon model architecture.
+
+    The configuration supports fine-grained control of output heads via
+    ``extra_output_heads`` and targeted loss shaping through
+    ``output_loss_overrides``, ``output_loss_weights``, and
+    ``asymmetric_loss_penalties``.
+    """
     
     # Input/Output dimensions
     input_features: int = 50  # Number of input features from 5m data
@@ -105,14 +111,33 @@ class MultiHorizonModelConfig:
     # Multi-output specific
     output_weights: Optional[Dict[str, float]] = None  # Custom weights for different outputs
     shared_layers: int = 2  # Number of shared layers before branching
+    extra_output_heads: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    # Optional dictionary describing additional output heads. Keys correspond to
+    # head names; values can include items such as ``source`` ("shared",
+    # "probability", or "composite"), ``units``, ``activation``, ``loss``,
+    # ``loss_weight``, and ``asymmetric_penalty``.
+
+    # Advanced loss configuration
+    output_loss_overrides: Dict[str, Union[str, Callable]] = field(default_factory=dict)
+    # Per-head loss overrides keyed by output tensor name.
+
+    output_loss_weights: Dict[str, float] = field(default_factory=dict)
+    # Per-head loss weights overriding the default group weighting.
+
+    asymmetric_loss_penalties: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    # Optional asymmetric penalty configs per head (``over``/``under`` keys).
     
     def __post_init__(self):
         """Calculate derived properties."""
         # Total number of probability outputs
         self.num_probability_outputs = len(self.profit_targets) * len(self.time_horizons)
         
-        # Total number of outputs (probabilities + composites)
-        self.total_outputs = self.num_probability_outputs + len(self.composite_targets)
+        # Total number of outputs (probabilities + composites + extras)
+        self.total_outputs = (
+            self.num_probability_outputs +
+            len(self.composite_targets) +
+            len(self.extra_output_heads)
+        )
         
         # Default output weights (equal weighting)
         if self.output_weights is None:
@@ -288,9 +313,31 @@ class MultiHorizonModelBuilder:
                 name=composite_name
             )(composite_branch)
             composite_outputs.append(composite_output)
-        
+
+        # Extra configurable heads
+        extra_outputs = []
+        if self.config.extra_output_heads:
+            for head_name, head_config in self.config.extra_output_heads.items():
+                head_source = head_config.get('source', 'shared')
+                if head_source == 'probability':
+                    head_input = prob_branch
+                elif head_source == 'composite':
+                    head_input = composite_branch
+                else:
+                    head_input = x
+
+                head_units = head_config.get('units', 1)
+                head_activation = head_config.get('activation', self.config.output_activation)
+                extra_outputs.append(
+                    layers.Dense(
+                        head_units,
+                        activation=head_activation,
+                        name=head_name
+                    )(head_input)
+                )
+
         # Combine all outputs
-        all_outputs = probability_outputs + composite_outputs
+        all_outputs = probability_outputs + composite_outputs + extra_outputs
         
         # Create model
         model = Model(inputs=inputs, outputs=all_outputs, name='multi_horizon_profit_model')
@@ -302,34 +349,129 @@ class MultiHorizonModelBuilder:
     
     def _compile_tensorflow_model(self, model: Model):
         """Compile TensorFlow model with appropriate loss and metrics."""
-        # Loss function
-        if self.config.loss_function == 'mse':
-            loss = 'mse'
-        elif self.config.loss_function == 'mae':
-            loss = 'mae'
-        elif self.config.loss_function == 'huber':
-            loss = keras.losses.Huber()
-        elif self.config.loss_function == 'custom_probability':
-            loss = self._custom_probability_loss
-        else:
-            loss = 'mse'
-        
-        # Optimizer
-        if self.config.optimizer == 'adam':
-            optimizer = keras.optimizers.Adam(learning_rate=self.config.learning_rate)
-        elif self.config.optimizer == 'rmsprop':
-            optimizer = keras.optimizers.RMSprop(learning_rate=self.config.learning_rate)
-        else:
-            optimizer = 'adam'
-        
-        # Compile
+        optimizer = self._resolve_optimizer()
+        output_names = [tensor.name.split(':')[0] for tensor in model.outputs]
+        losses, loss_weights = self._build_loss_configuration(output_names)
+
         model.compile(
             optimizer=optimizer,
-            loss=loss,
+            loss=losses,
+            loss_weights=loss_weights,
             metrics=['mae', 'mse']
         )
-        
-        self.logger.info(f'✅ TensorFlow model compiled with {loss} loss and {optimizer} optimizer')
+
+        optimizer_name = type(optimizer).__name__ if hasattr(optimizer, '__class__') else str(optimizer)
+        self.logger.info(
+            '✅ TensorFlow model compiled with custom loss configuration | optimizer=%s | heads=%s',
+            optimizer_name,
+            ', '.join(losses.keys())
+        )
+        self.logger.debug('Loss weights configuration: %s', loss_weights)
+
+    def _resolve_optimizer(self):
+        """Resolve optimizer from configuration."""
+        if self.config.optimizer == 'adam':
+            return keras.optimizers.Adam(learning_rate=self.config.learning_rate)
+        if self.config.optimizer == 'rmsprop':
+            return keras.optimizers.RMSprop(learning_rate=self.config.learning_rate)
+        if self.config.optimizer == 'sgd':
+            return keras.optimizers.SGD(learning_rate=self.config.learning_rate)
+        return keras.optimizers.get(self.config.optimizer)
+
+    def _build_loss_configuration(
+        self,
+        output_names: List[str]
+    ) -> Tuple[Dict[str, Callable], Dict[str, float]]:
+        """Create loss and weight mappings for each output head."""
+        losses: Dict[str, Callable] = {}
+        loss_weights: Dict[str, float] = {}
+
+        probability_heads = {
+            f'{target}_{horizon}_prob'
+            for target in self.config.profit_targets
+            for horizon in self.config.time_horizons
+        }
+        composite_heads = set(self.config.composite_targets)
+
+        for name in output_names:
+            head_config = self.config.extra_output_heads.get(name, {})
+
+            # Determine base loss specification for the head
+            loss_spec = head_config.get(
+                'loss',
+                self.config.output_loss_overrides.get(name, self.config.loss_function)
+            )
+            penalties = head_config.get('asymmetric_penalty') or self.config.asymmetric_loss_penalties.get(name)
+
+            base_loss = self._resolve_loss(loss_spec)
+            if penalties:
+                over_penalty = penalties.get('over', penalties.get('over_penalty', 1.0))
+                under_penalty = penalties.get('under', penalties.get('under_penalty', 1.0))
+                base_loss_override = penalties.get('base_loss')
+                if base_loss_override is not None:
+                    base_loss = self._resolve_loss(base_loss_override)
+                losses[name] = self._build_asymmetric_loss(base_loss, over_penalty, under_penalty)
+            else:
+                losses[name] = base_loss
+
+            # Resolve weights combining group defaults and overrides
+            weight = head_config.get('loss_weight')
+            if weight is None:
+                weight = self.config.output_loss_weights.get(name)
+
+            if weight is None:
+                if name in probability_heads:
+                    weight = self.config.output_weights.get('probabilities', 1.0)
+                elif name in composite_heads:
+                    weight = self.config.output_weights.get('composites', 1.0)
+                else:
+                    weight = 1.0
+
+            loss_weights[name] = weight
+
+        return losses, loss_weights
+
+    def _resolve_loss(self, loss_spec: Union[str, Callable, tf.keras.losses.Loss]) -> Callable:
+        """Resolve a loss specification into a callable."""
+        if isinstance(loss_spec, str):
+            if loss_spec == 'custom_probability':
+                return self._custom_probability_loss
+            try:
+                return keras.losses.get(loss_spec)
+            except ValueError:
+                self.logger.warning(f'Unknown loss "{loss_spec}" specified; defaulting to MSE.')
+                return keras.losses.get('mse')
+
+        if isinstance(loss_spec, tf.keras.losses.Loss):
+            return loss_spec
+
+        if callable(loss_spec):
+            return loss_spec
+
+        # Fallback to default loss if spec cannot be interpreted
+        return keras.losses.get('mse')
+
+    def _build_asymmetric_loss(
+        self,
+        base_loss_fn: Callable,
+        over_penalty: float,
+        under_penalty: float
+    ) -> Callable:
+        """Wrap a base loss with asymmetric penalties for over/under predictions."""
+
+        over_penalty = float(over_penalty)
+        under_penalty = float(under_penalty)
+
+        def loss(y_true, y_pred):
+            residual = y_pred - y_true
+            over_tensor = tf.fill(tf.shape(residual), over_penalty)
+            under_tensor = tf.fill(tf.shape(residual), under_penalty)
+            penalties = tf.where(residual >= 0, over_tensor, under_tensor)
+            base = base_loss_fn(y_true, y_pred)
+            penalties = tf.cast(penalties, base.dtype if hasattr(base, 'dtype') else tf.float32)
+            return base * penalties
+
+        return loss
     
     def _custom_probability_loss(self, y_true, y_pred):
         """Custom loss function optimized for probability prediction."""
@@ -467,7 +609,11 @@ class MultiHorizonModelBuilder:
         
         # Composite targets
         target_names.extend(self.config.composite_targets)
-        
+
+        # Extra heads
+        if self.config.extra_output_heads:
+            target_names.extend(self.config.extra_output_heads.keys())
+
         return target_names
     
     def create_training_callbacks(self, framework: str = 'tensorflow') -> List[Any]:

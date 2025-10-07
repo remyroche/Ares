@@ -15,6 +15,11 @@ from datetime import datetime, timedelta
 import logging
 from enum import Enum
 
+from .staleness_curve import (
+    StalenessCurve,
+    StalenessCurveCalculator,
+)
+
 
 class UpdateStyle(Enum):
     """Update style for HTF features."""
@@ -35,107 +40,6 @@ class AssignmentDecision:
     staleness_curve: Dict[int, float]
     switch_conditions: Optional[Dict[str, Any]]
     metadata: Dict[str, Any]
-
-
-@dataclass
-class StalenessCurve:
-    """Staleness curve for a feature type."""
-    feature_type: str
-    family: str
-    curve_params: Dict[str, float]
-    staleness_values: Dict[int, float]
-
-
-class StalenessCurveCalculator:
-    """Calculates feature-specific staleness curves."""
-    
-    def __init__(self):
-        self.logger = logging.getLogger(__name__)
-    
-    def calculate_staleness_curve(self, 
-                                feature_name: str,
-                                family: str,
-                                lookback: int,
-                                base_timeframe: int = 5) -> StalenessCurve:
-        """
-        Calculate staleness curve for a feature.
-        
-        Args:
-            feature_name: Name of the feature
-            family: Feature family
-            lookback: Lookback period in minutes
-            base_timeframe: Base timeframe in minutes
-            
-        Returns:
-            Staleness curve
-        """
-        # Feature-specific staleness curves
-        if family in ['trend_level_vol']:
-            # EMA/EWσ: s(B) = 1 - exp(-Δt/τ(B)) with τ ≈ B/2
-            tau = lookback / 2
-            curve_params = {'tau': tau, 'type': 'exponential'}
-            
-        elif family == 'anchors':
-            # Session VWAP: step function rising within session
-            curve_params = {'type': 'step', 'session_reset': True}
-            
-        elif family == 'oscillators':
-            # RSI/Stoch: similar to EMA but with larger τ
-            tau = lookback / 1.5
-            curve_params = {'tau': tau, 'type': 'exponential'}
-            
-        elif family == 'liquidity_micro':
-            # Volume-based features: moderate staleness
-            tau = lookback / 2.5
-            curve_params = {'tau': tau, 'type': 'exponential'}
-            
-        else:
-            # Default: moderate staleness
-            tau = lookback / 2
-            curve_params = {'tau': tau, 'type': 'exponential'}
-        
-        # Calculate staleness values for different time lags
-        staleness_values = {}
-        for lag_minutes in range(0, lookback + 1, base_timeframe):
-            staleness = self._calculate_staleness_at_lag(
-                lag_minutes, curve_params, base_timeframe
-            )
-            staleness_values[lag_minutes] = staleness
-        
-        return StalenessCurve(
-            feature_type=feature_name,
-            family=family,
-            curve_params=curve_params,
-            staleness_values=staleness_values
-        )
-    
-    def _calculate_staleness_at_lag(self, 
-                                  lag_minutes: int,
-                                  curve_params: Dict[str, Any],
-                                  base_timeframe: int) -> float:
-        """Calculate staleness at a specific time lag."""
-        curve_type = curve_params.get('type', 'exponential')
-        
-        if curve_type == 'exponential':
-            tau = curve_params['tau']
-            delta_t = lag_minutes
-            return 1 - np.exp(-delta_t / tau)
-        
-        elif curve_type == 'step':
-            # Step function: 0 for first half of session, rising in second half
-            session_reset = curve_params.get('session_reset', False)
-            if session_reset:
-                # Simplified: linear increase after 30 minutes
-                if lag_minutes <= 30:
-                    return 0.0
-                else:
-                    return min(1.0, (lag_minutes - 30) / 60)
-            else:
-                return min(1.0, lag_minutes / 118)  # Linear increase over 2 hours
-        
-        else:
-            # Default: linear increase
-            return min(1.0, lag_minutes / 118)
 
 
 class CostBenefitAnalyzer:
@@ -225,8 +129,7 @@ class CostBenefitAnalyzer:
         """Calculate EHU benefit (IC degradation due to staleness)."""
         # EHU features are stale for the entire HTF period
         # Use average staleness over the HTF period
-        staleness_values = list(staleness_curve.staleness_values.values())
-        avg_staleness = np.mean(staleness_values) if staleness_values else 0.5
+        avg_staleness = staleness_curve.summary.average if staleness_curve.staleness_values else 0.5
         
         # IC degradation is proportional to staleness
         ic_degradation = expected_ic * avg_staleness
@@ -237,7 +140,7 @@ class CostBenefitAnalyzer:
                              staleness_curve: StalenessCurve) -> float:
         """Calculate RIH benefit (minimal staleness)."""
         # RIH features have minimal staleness (just the base timeframe)
-        min_staleness = staleness_curve.staleness_values.get(5, 0.1)  # 5-minute staleness
+        min_staleness = staleness_curve.summary.at_base
         
         # IC degradation is minimal
         ic_degradation = expected_ic * min_staleness

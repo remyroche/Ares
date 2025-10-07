@@ -37,6 +37,8 @@ from dataclasses import dataclass
 from enum import Enum
 import os
 
+from src.training.utils.embedding_postprocessing import filter_embedding_features
+
 # Enhanced imports with comprehensive error handling
 try:
     from src.utils.logger import system_logger
@@ -655,16 +657,54 @@ class AnalystModelsTrainingStep:
             # Create PatchTST model
             patchtst_config = PatchTSTConfig()
             patchtst_model = create_enhanced_patchtst(patchtst_config)
-            
+
             # Fit PatchTST to get features
             patchtst_model.fit(X, y, sample_weight)
-            
-            # Get PatchTST features
-            patchtst_features = patchtst_model.get_features(X)
-            
-            # Combine original features with PatchTST features
-            X_combined = np.hstack([X, patchtst_features['embeddings']])
-            
+
+            # Retrieve stored OOF embeddings
+            oof_features = patchtst_model.get_oof_features()
+            oof_embeddings = None
+            if oof_features and 'oof_embeddings' in oof_features:
+                oof_embeddings = oof_features.get('oof_embeddings')
+
+            if oof_embeddings is None or oof_embeddings.shape[0] != X.shape[0]:
+                tprint_warning(
+                    "⚠️ PatchTST OOF embeddings unavailable or misaligned; falling back to in-sample features"
+                )
+                patchtst_features = patchtst_model.get_features(X)
+                oof_embeddings = patchtst_features['embeddings']
+
+            embedding_names = [f'patchtst_oof_{i}' for i in range(oof_embeddings.shape[1])]
+            filtered_embeddings, filter_metadata = filter_embedding_features(
+                parent_features=X,
+                embedding_features=oof_embeddings,
+                target=y,
+                embedding_names=embedding_names,
+                corr_threshold=patchtst_config.correlation_threshold if hasattr(patchtst_config, 'correlation_threshold') else 0.8,
+                ic_threshold=patchtst_config.ic_threshold if hasattr(patchtst_config, 'ic_threshold') else 0.05,
+                min_embeddings=patchtst_config.export_dims - 4 if patchtst_config.export_dims > 6 else 6,
+                max_embeddings=patchtst_config.export_dims if patchtst_config.export_dims <= 10 else 10
+            )
+
+            if filtered_embeddings.shape[1] == 0:
+                fallback_dims = min(10, max(6, oof_embeddings.shape[1]))
+                filtered_embeddings = oof_embeddings[:, :fallback_dims]
+                filter_metadata['retained_count'] = filtered_embeddings.shape[1]
+                filter_metadata['within_budget'] = 6 <= filtered_embeddings.shape[1] <= 10
+                tprint_warning("⚠️ No embeddings survived filtering; using fallback slice of OOF embeddings")
+
+            if not filter_metadata.get('within_budget', False):
+                tprint_warning(
+                    f"⚠️ Filtered PatchTST embeddings outside budget: {filter_metadata.get('retained_count', 0)}"
+                )
+
+            tprint_info(
+                f"📦 PatchTST OOF embedding dimensions retained: {filtered_embeddings.shape[1]}"
+            )
+
+            # Combine original features with filtered OOF embeddings
+            X_combined = np.hstack([X, filtered_embeddings])
+
             # Train LGBM on combined features
             lgb_config = LGBMConfig()
             import lightgbm as lgb
@@ -691,7 +731,8 @@ class AnalystModelsTrainingStep:
                 'metrics': {
                     'model_type': 'LGBM_PatchTST',
                     'lgbm_config': lgb_config,
-                    'patchtst_config': patchtst_config
+                    'patchtst_config': patchtst_config,
+                    'embedding_filter_metadata': filter_metadata
                 }
             }
 

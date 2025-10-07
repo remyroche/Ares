@@ -38,6 +38,8 @@ import traceback
 from dataclasses import dataclass
 from enum import Enum
 
+from src.training.utils.embedding_postprocessing import filter_embedding_features
+
 # Enhanced imports with comprehensive error handling
 try:
     from src.utils.logger import system_logger
@@ -1903,8 +1905,6 @@ class TacticianModelsTrainingStep:
         try:
             tprint_info("🚀 Training T1: PatchTST-LightGBM model...")
 
-            from src.utils.ml_common.models.model_factory import EnhancedModelFactory, ModelConfig, ModelType
-
             # Load T1-T4 configuration
             config_path = Path("/workspace/config/tactician_t1_t4_models_config.yaml")
             if config_path.exists():
@@ -1942,28 +1942,66 @@ class TacticianModelsTrainingStep:
                     }
                 }
 
-            # Create model configuration
-            model_config = ModelConfig(
-                model_type=ModelType.PATCHTST_LIGHTGBM,
-                model_name="t1_patchtst_lightgbm",
-                n_outputs=len(np.unique(y)) if len(np.unique(y)) > 2 else 1,
-                model_params={
-                    **t1_t4_config['tactician_t1_t4_config']['tree_models']['t1_lightgbm']['params'],
-                    'patchtst_config': t1_t4_config['tactician_t1_t4_config']['patchtst_config']
-                }
+            from src.models.enhanced_patchtst import create_enhanced_patchtst, EnhancedPatchTSTConfig
+            import lightgbm as lgb
+
+            patch_config_values = t1_t4_config['tactician_t1_t4_config'].get('patchtst_config', {})
+            patchtst_config = EnhancedPatchTSTConfig()
+            if 'patch_len' in patch_config_values:
+                patchtst_config.patch_len = patch_config_values['patch_len']
+            if 'stride' in patch_config_values:
+                patchtst_config.stride = patch_config_values['stride']
+
+            patchtst_model = create_enhanced_patchtst(patchtst_config)
+            patchtst_model.fit(X, y, sample_weight)
+
+            oof_features = patchtst_model.get_oof_features()
+            oof_embeddings = None
+            if oof_features and 'oof_embeddings' in oof_features:
+                oof_embeddings = oof_features.get('oof_embeddings')
+
+            if oof_embeddings is None or oof_embeddings.shape[0] != X.shape[0]:
+                tprint_warning(
+                    "⚠️ PatchTST OOF embeddings unavailable or misaligned for T1; using in-sample embeddings"
+                )
+                patch_features = patchtst_model.get_features(X)
+                oof_embeddings = patch_features['embeddings']
+
+            embedding_names = [f't1_patchtst_oof_{i}' for i in range(oof_embeddings.shape[1])]
+            filtered_embeddings, filter_metadata = filter_embedding_features(
+                parent_features=X,
+                embedding_features=oof_embeddings,
+                target=y,
+                embedding_names=embedding_names,
+                corr_threshold=0.8,
+                ic_threshold=0.05,
+                min_embeddings=6,
+                max_embeddings=10
             )
 
-            # Create and train model
-            factory = EnhancedModelFactory()
-            model = factory.create_model(model_config)
+            if filtered_embeddings.shape[1] == 0:
+                fallback_dims = min(10, max(6, oof_embeddings.shape[1]))
+                filtered_embeddings = oof_embeddings[:, :fallback_dims]
+                filter_metadata['retained_count'] = filtered_embeddings.shape[1]
+                filter_metadata['within_budget'] = 6 <= filtered_embeddings.shape[1] <= 10
+                tprint_warning("⚠️ T1 PatchTST filtering removed all embeddings; using fallback slice")
+
+            if not filter_metadata.get('within_budget', False):
+                tprint_warning(
+                    f"⚠️ T1 PatchTST embeddings outside budget: {filter_metadata.get('retained_count', 0)}"
+                )
+
+            X_combined = np.hstack([X, filtered_embeddings])
+
+            tree_params = t1_t4_config['tactician_t1_t4_config']['tree_models']['t1_lightgbm']['params']
+            lgbm_classifier = lgb.LGBMClassifier(**tree_params)
 
             if sample_weight is not None:
-                model.fit(X, y, sample_weight=sample_weight)
+                lgbm_classifier.fit(X_combined, y, sample_weight=sample_weight)
             else:
-                model.fit(X, y)
+                lgbm_classifier.fit(X_combined, y)
 
-            # Get predictions for metrics
-            predictions = model.predict(X)
+            predictions = lgbm_classifier.predict(X_combined)
 
             # Calculate metrics
             from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
@@ -1972,11 +2010,18 @@ class TacticianModelsTrainingStep:
                 'f1_score': f1_score(y, predictions, average='weighted'),
                 'precision': precision_score(y, predictions, average='weighted'),
                 'recall': recall_score(y, predictions, average='weighted'),
-                'model_type': 'T1_PatchTST_LightGBM'
+                'model_type': 'T1_PatchTST_LightGBM',
+                'embedding_filter_metadata': filter_metadata
             }
 
             tprint_success(f"✅ T1: PatchTST-LightGBM trained with accuracy: {metrics['accuracy']:.4f}")
-            return {'models': {'t1_patchtst_lightgbm': model}, 'metrics': metrics}
+            return {
+                'models': {
+                    't1_patchtst_lightgbm': lgbm_classifier,
+                    'patchtst': patchtst_model
+                },
+                'metrics': metrics
+            }
 
         except Exception as e:
             tprint_error(f"❌ T1: PatchTST-LightGBM training failed: {e}")

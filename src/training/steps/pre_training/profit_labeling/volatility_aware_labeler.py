@@ -114,6 +114,7 @@ class VolatilityAwareConfig:
     min_balance_threshold: float = 0.35
     max_balance_threshold: float = 0.65
     max_correlation_threshold: float = 0.4
+    prefer_sigma_payoffs: bool = False
 
     def __post_init__(self):
         """Validate configuration parameters after initialization."""
@@ -187,12 +188,14 @@ class LabelQualityScore:
 @dataclass
 class LabelingResult:
     """Result container for volatility-aware labeling."""
-    
+
     # Core labeling results
     labels: pd.DataFrame
     confidence_scores: pd.DataFrame
     eligibility_masks: pd.DataFrame
-    
+    sigma_payoffs: pd.DataFrame = field(default_factory=pd.DataFrame)
+    training_labels: pd.DataFrame = field(default_factory=pd.DataFrame)
+
     # Quality scores
     quality_scores: Dict[str, LabelQualityScore]
     
@@ -334,6 +337,8 @@ class VolatilityAwareMultiHorizonLabeler:
             labels=pd.DataFrame(),
             confidence_scores=pd.DataFrame(),
             eligibility_masks=pd.DataFrame(),
+            sigma_payoffs=pd.DataFrame(),
+            training_labels=pd.DataFrame(),
             quality_scores={},
             config_used=self.config
         )
@@ -449,7 +454,8 @@ class VolatilityAwareMultiHorizonLabeler:
                     target_result.labels,
                     target_result.confidence_scores,
                     target_result.eligibility_masks,
-                    bar_result.cleaned_bars
+                    bar_result.cleaned_bars,
+                    sigma_payoffs=target_result.sigma_payoffs
                 )
                 if self.config.enable_caching:
                     self.quality_cache[quality_cache_key] = quality_scores
@@ -466,12 +472,16 @@ class VolatilityAwareMultiHorizonLabeler:
             result.labels = filtered_result.labels
             result.confidence_scores = filtered_result.confidence_scores
             result.eligibility_masks = filtered_result.eligibility_masks
-            
+            result.sigma_payoffs = filtered_result.sigma_payoffs
+            result.training_labels = filtered_result.training_labels
+
             # Calculate statistics
-            result.n_samples = len(result.labels)
-            result.n_targets = len([col for col in result.labels.columns if 'target' in col])
+            base_df = result.training_labels if not result.training_labels.empty else result.labels
+            result.n_samples = len(base_df)
+            result.n_targets = len([col for col in base_df.columns if 'target' in col.lower()])
             result.n_horizons = len([col for col in result.labels.columns if 'horizon' in col])
-            result.label_distribution = self._calculate_label_distribution(result.labels)
+            distribution_source = result.training_labels if not result.training_labels.empty else result.labels
+            result.label_distribution = self._calculate_label_distribution(distribution_source)
             
         except Exception as e:
             tprint_error(f"❌ Labeling failed: {e}")
@@ -668,7 +678,9 @@ class VolatilityAwareMultiHorizonLabeler:
             filtered_result = type(target_result)(
                 labels=target_result.labels.copy(),
                 confidence_scores=target_result.confidence_scores.copy(),
-                eligibility_masks=target_result.eligibility_masks.copy()
+                eligibility_masks=target_result.eligibility_masks.copy(),
+                sigma_payoffs=target_result.sigma_payoffs.copy(),
+                training_labels=target_result.training_labels.copy()
             )
             
             # Get quality thresholds
@@ -693,23 +705,37 @@ class VolatilityAwareMultiHorizonLabeler:
             
             # Filter columns based on valid targets
             if valid_targets:
-                target_columns = [col for col in filtered_result.labels.columns 
+                target_columns = [col for col in filtered_result.labels.columns
                                 if any(target in col for target in valid_targets)]
                 filtered_result.labels = filtered_result.labels[target_columns]
-                
-                conf_columns = [col for col in filtered_result.confidence_scores.columns 
+
+                conf_columns = [col for col in filtered_result.confidence_scores.columns
                               if any(target in col for target in valid_targets)]
                 filtered_result.confidence_scores = filtered_result.confidence_scores[conf_columns]
-                
-                mask_columns = [col for col in filtered_result.eligibility_masks.columns 
+
+                mask_columns = [col for col in filtered_result.eligibility_masks.columns
                               if any(target in col for target in valid_targets)]
                 filtered_result.eligibility_masks = filtered_result.eligibility_masks[mask_columns]
+
+                if not filtered_result.sigma_payoffs.empty:
+                    payoff_columns = [col for col in filtered_result.sigma_payoffs.columns
+                                      if any(target in col for target in valid_targets)]
+                    filtered_result.sigma_payoffs = filtered_result.sigma_payoffs[payoff_columns]
+                else:
+                    filtered_result.sigma_payoffs = pd.DataFrame()
+
+                if self.config.prefer_sigma_payoffs and not filtered_result.sigma_payoffs.empty:
+                    filtered_result.training_labels = filtered_result.sigma_payoffs.copy()
+                else:
+                    filtered_result.training_labels = filtered_result.labels.copy()
             else:
                 tprint_warning("⚠️ No targets passed quality thresholds")
                 filtered_result.labels = pd.DataFrame()
                 filtered_result.confidence_scores = pd.DataFrame()
                 filtered_result.eligibility_masks = pd.DataFrame()
-            
+                filtered_result.sigma_payoffs = pd.DataFrame()
+                filtered_result.training_labels = pd.DataFrame()
+
             return filtered_result
             
         except Exception as e:
@@ -799,6 +825,8 @@ class VolatilityAwareMultiHorizonLabeler:
             labels=pd.DataFrame(),
             confidence_scores=pd.DataFrame(),
             eligibility_masks=pd.DataFrame(),
+            sigma_payoffs=pd.DataFrame(),
+            training_labels=pd.DataFrame(),
             quality_scores={},
             config_used=self.config,
             processing_time=0.0
@@ -842,14 +870,24 @@ class VolatilityAwareMultiHorizonLabeler:
             # Save labels
             labels_path = os.path.join(output_dir, 'volatility_aware_labels.csv')
             result.labels.to_csv(labels_path)
-            
+
             # Save confidence scores
             conf_path = os.path.join(output_dir, 'confidence_scores.csv')
             result.confidence_scores.to_csv(conf_path)
-            
+
             # Save eligibility masks
             mask_path = os.path.join(output_dir, 'eligibility_masks.csv')
             result.eligibility_masks.to_csv(mask_path)
+
+            # Save sigma-normalized payoffs if available
+            if not result.sigma_payoffs.empty:
+                sigma_path = os.path.join(output_dir, 'sigma_payoffs.csv')
+                result.sigma_payoffs.to_csv(sigma_path)
+
+            # Save preferred training labels view
+            if not result.training_labels.empty:
+                training_path = os.path.join(output_dir, 'training_labels.csv')
+                result.training_labels.to_csv(training_path)
             
             # Save quality scores
             quality_path = os.path.join(output_dir, 'quality_scores.json')

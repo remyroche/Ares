@@ -131,11 +131,13 @@ class MultiTargetConfig:
 @dataclass
 class TargetSelectionResult:
     """Result container for target selection."""
-    
+
     # Core results
     labels: pd.DataFrame
     confidence_scores: pd.DataFrame
     eligibility_masks: pd.DataFrame
+    sigma_payoffs: pd.DataFrame = field(default_factory=pd.DataFrame)
+    training_labels: pd.DataFrame = field(default_factory=pd.DataFrame)
     
     # Target information
     selected_targets: Dict[str, Dict[str, Any]] = field(default_factory=dict)
@@ -216,6 +218,8 @@ class MultiTargetScheme:
             labels=pd.DataFrame(),
             confidence_scores=pd.DataFrame(),
             eligibility_masks=pd.DataFrame(),
+            sigma_payoffs=pd.DataFrame(),
+            training_labels=pd.DataFrame(),
             config_used=self.config
         )
         
@@ -297,6 +301,8 @@ class MultiTargetScheme:
             result.labels = final_result['labels']
             result.confidence_scores = final_result['confidence_scores']
             result.eligibility_masks = final_result['eligibility_masks']
+            result.sigma_payoffs = final_result.get('sigma_payoffs', pd.DataFrame())
+            result.training_labels = result.labels.copy()
             result.selected_targets = selected_targets
             result.n_targets = len(selected_targets)
             result.target_parameters = {
@@ -1132,61 +1138,97 @@ class MultiTargetScheme:
             # Initialize labels
             labels = pd.Series(0, index=bars.index)
             confidence_scores = pd.Series(0.0, index=bars.index)
+            sigma_payoffs = pd.Series(0.0, index=bars.index, dtype=float)
             
+            def _normalized_conf(distance: float, k_multiplier: float, sigma_scale: float) -> float:
+                """Safely normalize confidence by volatility scale."""
+                try:
+                    if not np.isfinite(distance) or not np.isfinite(sigma_scale) or sigma_scale == 0:
+                        return 0.0
+                    denom = max(k_multiplier * sigma_scale, 1e-12)
+                    return float(min(1.0, distance / denom))
+                except Exception:
+                    return 0.0
+
             # Generate labels using triple barrier method with horizon
             for i in range(len(bars) - horizon):
                 if not eligibility_mask.iloc[i]:
                     continue
-                
+
                 current_price = bars['close'].iloc[i]
                 upper_target = upper_targets.iloc[i]
                 lower_target = lower_targets.iloc[i]
-                
+
                 # Check if price hits targets within horizon
                 future_prices = bars['close'].iloc[i+1:i+horizon+1]
                 if len(future_prices) == 0:
                     continue
-                
+
                 # Find first hit
                 upper_hits = future_prices >= upper_target
                 lower_hits = future_prices <= lower_target
-                
+
+                raw_sigma = float(volatility_series.iloc[i]) if np.isscalar(volatility_series.iloc[i]) else float(volatility_series.iloc[i])
+                if not np.isfinite(raw_sigma):
+                    local_sigma = np.nan
+                else:
+                    local_sigma = raw_sigma
+                sigma_scale = abs(local_sigma) if np.isfinite(local_sigma) and local_sigma != 0 else np.nan
+
+                hit_direction = 0
+                hit_index = None
+
                 if upper_hits.any() and lower_hits.any():
                     # Both hit - check which comes first
                     upper_first_hit = upper_hits.idxmax() if upper_hits.any() else None
                     lower_first_hit = lower_hits.idxmax() if lower_hits.any() else None
-                    
+
                     if upper_first_hit is not None and lower_first_hit is not None:
                         if upper_first_hit <= lower_first_hit:
-                            labels.iloc[i] = 1  # Upper hit first
-                            # Calculate confidence based on distance to opposite barrier
+                            hit_direction = 1  # Upper hit first
+                            hit_index = upper_first_hit
                             distance_to_opposite = abs(future_prices.loc[upper_first_hit] - lower_target)
-                            confidence_scores.iloc[i] = min(1.0, distance_to_opposite / (k_down * volatility_series.iloc[i]))
+                            confidence_scores.iloc[i] = _normalized_conf(distance_to_opposite, k_down, sigma_scale)
                         else:
-                            labels.iloc[i] = -1  # Lower hit first
+                            hit_direction = -1  # Lower hit first
+                            hit_index = lower_first_hit
                             distance_to_opposite = abs(future_prices.loc[lower_first_hit] - upper_target)
-                            confidence_scores.iloc[i] = min(1.0, distance_to_opposite / (k_up * volatility_series.iloc[i]))
+                            confidence_scores.iloc[i] = _normalized_conf(distance_to_opposite, k_up, sigma_scale)
                     elif upper_first_hit is not None:
-                        labels.iloc[i] = 1
+                        hit_direction = 1
+                        hit_index = upper_first_hit
                         distance_to_opposite = abs(future_prices.loc[upper_first_hit] - lower_target)
-                        confidence_scores.iloc[i] = min(1.0, distance_to_opposite / (k_down * volatility_series.iloc[i]))
+                        confidence_scores.iloc[i] = _normalized_conf(distance_to_opposite, k_down, sigma_scale)
                     elif lower_first_hit is not None:
-                        labels.iloc[i] = -1
+                        hit_direction = -1
+                        hit_index = lower_first_hit
                         distance_to_opposite = abs(future_prices.loc[lower_first_hit] - upper_target)
-                        confidence_scores.iloc[i] = min(1.0, distance_to_opposite / (k_up * volatility_series.iloc[i]))
+                        confidence_scores.iloc[i] = _normalized_conf(distance_to_opposite, k_up, sigma_scale)
                 elif upper_hits.any():
-                    labels.iloc[i] = 1
-                    distance_to_opposite = abs(future_prices.loc[upper_hits.idxmax()] - lower_target)
-                    confidence_scores.iloc[i] = min(1.0, distance_to_opposite / (k_down * volatility_series.iloc[i]))
+                    hit_direction = 1
+                    hit_index = upper_hits.idxmax()
+                    distance_to_opposite = abs(future_prices.loc[hit_index] - lower_target)
+                    confidence_scores.iloc[i] = _normalized_conf(distance_to_opposite, k_down, sigma_scale)
                 elif lower_hits.any():
-                    labels.iloc[i] = -1
-                    distance_to_opposite = abs(future_prices.loc[lower_hits.idxmax()] - upper_target)
-                    confidence_scores.iloc[i] = min(1.0, distance_to_opposite / (k_up * volatility_series.iloc[i]))
+                    hit_direction = -1
+                    hit_index = lower_hits.idxmax()
+                    distance_to_opposite = abs(future_prices.loc[hit_index] - upper_target)
+                    confidence_scores.iloc[i] = _normalized_conf(distance_to_opposite, k_up, sigma_scale)
+
+                if hit_direction != 0 and hit_index is not None:
+                    labels.iloc[i] = hit_direction
+                    hit_price = future_prices.loc[hit_index]
+                    payoff = hit_price - current_price
+                    if np.isfinite(sigma_scale) and sigma_scale != 0:
+                        sigma_payoffs.iloc[i] = abs(payoff / sigma_scale)
+                    else:
+                        sigma_payoffs.iloc[i] = 0.0
             
             # Create DataFrame with labels and confidence
             result_df = pd.DataFrame({
                 'labels': labels,
-                'confidence': confidence_scores
+                'confidence': confidence_scores,
+                'sigma_payoff': sigma_payoffs.fillna(0.0)
             }, index=bars.index)
             
             return result_df
@@ -1529,6 +1571,7 @@ class MultiTargetScheme:
         try:
             labels_df = pd.DataFrame(index=bars.index)
             confidence_df = pd.DataFrame(index=bars.index)
+            sigma_payoff_df = pd.DataFrame(index=bars.index)
             eligibility_df = pd.DataFrame(index=bars.index)
             
             for target_name, target_info in selected_targets.items():
@@ -1544,19 +1587,23 @@ class MultiTargetScheme:
                 if not target_result.empty:
                     labels_df[target_name] = target_result['labels']
                     confidence_df[f"{target_name}_confidence"] = target_result['confidence']
+                    if 'sigma_payoff' in target_result:
+                        sigma_payoff_df[target_name] = target_result['sigma_payoff']
                     eligibility_df[f"{target_name}_eligibility"] = eligibility_mask
-            
+
             return {
                 'labels': labels_df,
                 'confidence_scores': confidence_df,
+                'sigma_payoffs': sigma_payoff_df,
                 'eligibility_masks': eligibility_df
             }
-            
+
         except Exception as e:
             tprint_error(f"❌ Error generating final labels: {e}")
             return {
                 'labels': pd.DataFrame(),
                 'confidence_scores': pd.DataFrame(),
+                'sigma_payoffs': pd.DataFrame(),
                 'eligibility_masks': pd.DataFrame()
             }
     

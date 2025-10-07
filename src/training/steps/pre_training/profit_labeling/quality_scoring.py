@@ -163,6 +163,9 @@ class QualityMetrics:
     class_balance: float = 0.0
     mutual_information: float = 0.0
     information_coefficient: float = 0.0
+    sigma_payoff_mean: float = 0.0
+    sigma_payoff_std: float = 0.0
+    sigma_payoff_median: float = 0.0
     
     # Model performance
     baseline_performance: Dict[str, Dict[str, float]] = field(default_factory=dict)
@@ -231,7 +234,8 @@ class LabelQualityScorer:
         tprint_info(f"   → Pareto optimization: {self.config.enable_pareto_optimization}")
     
     def assess_quality(self, labels: pd.DataFrame, confidence_scores: pd.DataFrame,
-                      eligibility_masks: pd.DataFrame, bars: pd.DataFrame) -> Dict[str, QualityMetrics]:
+                      eligibility_masks: pd.DataFrame, bars: pd.DataFrame,
+                      sigma_payoffs: Optional[pd.DataFrame] = None) -> Dict[str, QualityMetrics]:
         """
         Assess quality of labels across all targets.
         
@@ -240,6 +244,7 @@ class LabelQualityScorer:
             confidence_scores: Confidence scores DataFrame
             eligibility_masks: Eligibility masks DataFrame
             bars: Cleaned bars for feature engineering
+            sigma_payoffs: Optional DataFrame containing σ-normalized payoff magnitudes
             
         Returns:
             Dictionary mapping target names to QualityMetrics
@@ -265,23 +270,32 @@ class LabelQualityScorer:
                 target_labels = labels[target_col].dropna()
                 target_confidence = confidence_scores.get(target_col, pd.Series(dtype=float))
                 target_eligibility = eligibility_masks.get(target_col, pd.Series(True, index=target_labels.index))
-                
+                target_sigma_payoffs = None
+                if sigma_payoffs is not None and not sigma_payoffs.empty:
+                    target_sigma_payoffs = sigma_payoffs.get(target_col, pd.Series(dtype=float))
+
                 # Filter by eligibility
                 eligible_mask = target_eligibility & target_eligibility.notna()
                 if not eligible_mask.any():
                     tprint_warning(f"⚠️ No eligible samples for target {target_col}")
                     continue
-                
+
                 target_labels_eligible = target_labels[eligible_mask]
-                
+                if target_sigma_payoffs is not None and not target_sigma_payoffs.empty:
+                    target_sigma_payoffs = target_sigma_payoffs.reindex(target_labels.index)
+                    target_sigma_payoffs = target_sigma_payoffs[eligible_mask]
+                else:
+                    target_sigma_payoffs = None
+
                 # Check minimum samples
                 if len(target_labels_eligible) < self.config.min_samples_for_evaluation:
                     tprint_warning(f"⚠️ Insufficient samples for target {target_col}: {len(target_labels_eligible)}")
                     continue
-                
+
                 # Assess quality for this target
                 quality_metrics = self._assess_single_target_quality(
-                    target_labels_eligible, target_confidence, bars, target_col
+                    target_labels_eligible, target_confidence, bars, target_col,
+                    sigma_payoffs=target_sigma_payoffs
                 )
                 
                 quality_results[target_col] = quality_metrics
@@ -298,7 +312,8 @@ class LabelQualityScorer:
         return quality_results
     
     def _assess_single_target_quality(self, target_labels: pd.Series, confidence_scores: pd.Series,
-                                    bars: pd.DataFrame, target_name: str) -> QualityMetrics:
+                                    bars: pd.DataFrame, target_name: str,
+                                    sigma_payoffs: Optional[pd.Series] = None) -> QualityMetrics:
         """Assess quality for a single target."""
         try:
             start_time = datetime.now()
@@ -355,8 +370,16 @@ class LabelQualityScorer:
             tprint_info(f"   📊 Assessing sparsity for {target_name}")
             sparsity_metrics = self._assess_sparsity(target_labels)
             metrics.sparsity = sparsity_metrics['sparsity']
-            
-            # 7. Calculate composite LQS score
+
+            # 7. σ-normalized payoff statistics (if available)
+            if sigma_payoffs is not None and not sigma_payoffs.empty:
+                aligned_payoffs = sigma_payoffs.reindex(target_labels.index).dropna()
+                if not aligned_payoffs.empty:
+                    metrics.sigma_payoff_mean = float(aligned_payoffs.mean())
+                    metrics.sigma_payoff_std = float(aligned_payoffs.std(ddof=0))
+                    metrics.sigma_payoff_median = float(aligned_payoffs.median())
+
+            # 8. Calculate composite LQS score
             metrics.lqs_score = self._calculate_lqs_score(metrics)
             
             # Calculate processing time

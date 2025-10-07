@@ -26,10 +26,10 @@ logger = logging.getLogger(__name__)
 class StackerLGBMCalibratedConfig:
     """Configuration for Stacker LGBM Calibrated meta-learner."""
     # LGBM parameters (updated hyperparameters)
-    max_depth: int = 3  # 3-4 range
-    num_leaves: int = 12  # 8-16 range
+    max_depth: int = 2  # Explicitly constrain depth for calibrated stacker
+    num_leaves: int = 4  # Consistent with depth-2 trees (<= 2^depth)
     min_child_samples: int = 800  # 600-1000 range
-    lambda_l2: float = 30.0  # 10-50 range
+    lambda_l2: float = 40.0  # Slightly stronger regularization for shallow trees
     feature_fraction: float = 0.7  # 0.6-0.8 range
     learning_rate: float = 0.05
     n_estimators: int = 500

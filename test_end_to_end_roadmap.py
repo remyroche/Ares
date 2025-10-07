@@ -164,22 +164,52 @@ def test_interaction_engine():
         
         config = create_default_interaction_config()
         engine = InteractionEngine(config)
-        
+
+        expected_new = {
+            'i/vol/sigmaew_x_posmom5_guard',
+            'i/vol/sigmaew_x_negmom5_guard',
+            'i/vol/sigmaslope_x_trendguard'
+        }
+
+        assert expected_new.issubset(set(config.keys())), "New convex interactions missing from config"
+
         print(f"✅ Interaction engine created with {len(config)} interactions")
-        
-        # Test data
+
+        # Test data covering required fields
+        rng = np.random.default_rng(123)
         test_data = pd.DataFrame({
-            't/mom5/ewz12': np.random.randn(100),
-            't/mom20/ewz12': np.random.randn(100),
-            't/sigma_ew/ewz12': np.random.randn(100),
-            't/spread_z18/ewz12': np.random.randn(100)
+            't/mom5': rng.normal(size=100),
+            't/mom20': rng.normal(size=100),
+            't/rsi14': rng.normal(size=100),
+            't/sigma_ew': np.abs(rng.normal(size=100)),
+            't/bollz20': rng.normal(size=100),
+            't/spread_z18': np.abs(rng.normal(size=100)),
+            't/vwap_session_dist': rng.normal(size=100),
+            'p/open30': rng.integers(0, 2, size=100),
+            't/ofi_proxy': rng.normal(size=100),
+            't/tradecount_z18': rng.normal(size=100),
+            't/microprice_dev': rng.normal(size=100),
+            't/dollarvol_z18': rng.normal(size=100),
+            't/r1': rng.normal(size=100),
+            't/r3': rng.normal(size=100),
+            't/rv_short_3': np.abs(rng.normal(size=100)),
+            't/autocorr_r1_w': rng.normal(size=100),
+            't/sigma_slope_6': rng.normal(size=100),
+            't/price_ema10_pct': rng.normal(size=100),
+            't/price_ema20_pct': rng.normal(size=100)
         })
-        
+
         interactions = engine.build_interactions(test_data)
         print(f"✅ Generated {len(interactions.columns)} interactions")
-        
+
+        assert len(interactions.columns) == len(config), "Interaction catalogue did not fully materialize"
+
+        for name in expected_new:
+            assert name in interactions.columns, f"Missing computed interaction: {name}"
+            assert (interactions[name] >= 0).all(), f"Guardrails failed for {name}"
+
         return True
-        
+
     except Exception as e:
         print(f"❌ Interaction engine test failed: {e}")
         return False

@@ -160,6 +160,12 @@ class InteractionEngine:
             return self._vol_vwapdist_x_rvshort(data)
         elif interaction_id == 'i/vol/autocorr_x_rvshort':
             return self._vol_autocorr_x_rvshort(data)
+        elif interaction_id == 'i/vol/sigmaew_x_posmom5_guard':
+            return self._vol_sigmaew_x_posmom5_guard(data)
+        elif interaction_id == 'i/vol/sigmaew_x_negmom5_guard':
+            return self._vol_sigmaew_x_negmom5_guard(data)
+        elif interaction_id == 'i/vol/sigmaslope_x_trendguard':
+            return self._vol_sigmaslope_x_trendguard(data)
         elif interaction_id == 'i/model/yhat1_x_rvshort':
             return self._model_yhat1_x_rvshort(data, patch_features)
         elif interaction_id == 'i/model/yhat1_x_vwapdist':
@@ -314,15 +320,57 @@ class InteractionEngine:
         """t/autocorr_r1_w/* × t/rv_short_3/*"""
         autocorr_cols = [col for col in data.columns if 't/autocorr_r1_w' in col]
         rv_cols = [col for col in data.columns if 't/rv_short_3' in col]
-        
+
         if not autocorr_cols or not rv_cols:
             return pd.Series(0, index=data.index)
-        
+
         autocorr = data[autocorr_cols].mean(axis=1)
         rv = data[rv_cols].mean(axis=1)
-        
+
         return autocorr * rv
-    
+
+    def _vol_sigmaew_x_posmom5_guard(self, data: pd.DataFrame) -> pd.Series:
+        """t/sigma_ew/* × max(t/mom5/*, 0)"""
+        sigma_cols = [col for col in data.columns if 't/sigma_ew' in col]
+        mom_cols = [col for col in data.columns if 't/mom5' in col]
+
+        if not sigma_cols or not mom_cols:
+            return pd.Series(0, index=data.index)
+
+        sigma = data[sigma_cols].mean(axis=1)
+        pos_mom = data[mom_cols].mean(axis=1).clip(lower=0)
+
+        return sigma * pos_mom
+
+    def _vol_sigmaew_x_negmom5_guard(self, data: pd.DataFrame) -> pd.Series:
+        """t/sigma_ew/* × max(-t/mom5/*, 0)"""
+        sigma_cols = [col for col in data.columns if 't/sigma_ew' in col]
+        mom_cols = [col for col in data.columns if 't/mom5' in col]
+
+        if not sigma_cols or not mom_cols:
+            return pd.Series(0, index=data.index)
+
+        sigma = data[sigma_cols].mean(axis=1)
+        neg_mom = data[mom_cols].mean(axis=1).clip(upper=0).abs()
+
+        return sigma * neg_mom
+
+    def _vol_sigmaslope_x_trendguard(self, data: pd.DataFrame) -> pd.Series:
+        """t/sigma_slope_6/* × |t/price_ema10_pct/*| (with EMA20 fallback)"""
+        sigmaslope_cols = [col for col in data.columns if 't/sigma_slope_6' in col]
+        trend_cols = [col for col in data.columns if 't/price_ema10_pct' in col]
+
+        if not trend_cols:
+            trend_cols = [col for col in data.columns if 't/price_ema20_pct' in col]
+
+        if not sigmaslope_cols or not trend_cols:
+            return pd.Series(0, index=data.index)
+
+        sigmaslope = data[sigmaslope_cols].mean(axis=1)
+        trend_guard = data[trend_cols].mean(axis=1).abs()
+
+        return sigmaslope * trend_guard
+
     # Model interactions
     def _model_yhat1_x_rvshort(self, data: pd.DataFrame, patch_features: Optional[Dict[str, pd.Series]]) -> pd.Series:
         """y_hat_h1 × t/rv_short_3/*"""
@@ -477,7 +525,34 @@ def create_default_interaction_config() -> Dict[str, InteractionConfig]:
         interaction_type=InteractionType.VOL,
         description='Return autocorrelation vs short-term volatility'
     )
-    
+
+    config['i/vol/sigmaew_x_posmom5_guard'] = InteractionConfig(
+        interaction_id='i/vol/sigmaew_x_posmom5_guard',
+        formula='t/sigma_ew/* × max(t/mom5/*, 0)',
+        required_fields=['t/sigma_ew', 't/mom5'],
+        regime_dependent=False,
+        interaction_type=InteractionType.VOL,
+        description='Volatility with positive momentum guard'
+    )
+
+    config['i/vol/sigmaew_x_negmom5_guard'] = InteractionConfig(
+        interaction_id='i/vol/sigmaew_x_negmom5_guard',
+        formula='t/sigma_ew/* × max(-t/mom5/*, 0)',
+        required_fields=['t/sigma_ew', 't/mom5'],
+        regime_dependent=False,
+        interaction_type=InteractionType.VOL,
+        description='Volatility with negative momentum guard'
+    )
+
+    config['i/vol/sigmaslope_x_trendguard'] = InteractionConfig(
+        interaction_id='i/vol/sigmaslope_x_trendguard',
+        formula='t/sigma_slope_6/* × |t/price_ema10_pct/*|',
+        required_fields=['t/sigma_slope_6', 't/price_ema10_pct'],
+        regime_dependent=False,
+        interaction_type=InteractionType.VOL,
+        description='Volatility slope gated by trend strength'
+    )
+
     # Model interactions
     config['i/model/yhat1_x_rvshort'] = InteractionConfig(
         interaction_id='i/model/yhat1_x_rvshort',

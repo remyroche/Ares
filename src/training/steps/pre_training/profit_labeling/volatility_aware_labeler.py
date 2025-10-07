@@ -18,6 +18,7 @@ import pandas as pd
 from typing import Dict, List, Optional, Any, Tuple, Union
 from dataclasses import dataclass, field
 from enum import Enum
+from copy import deepcopy
 import logging
 from datetime import datetime
 import warnings
@@ -52,6 +53,7 @@ from .enhanced_label_definitions import (
     EnhancedLabelDefinitions, LabelDefinitionType,
     AnalystLabelConfig, TacticianLabelConfig, RegimeConditionedConfig,
     RiskAwareConfig, DataCleaningConfig, StabilityCheckConfig,
+    TradingCosts,
     create_trading_aware_config
 )
 
@@ -100,6 +102,7 @@ class VolatilityAwareConfig:
     cache_duration_minutes: int = 60
     parallel_processing: bool = True
     max_workers: Optional[int] = None
+    enable_quality_scoring: bool = True
     
     # Output settings
     save_intermediate_results: bool = True
@@ -143,15 +146,15 @@ class VolatilityAwareConfig:
             raise ValueError("max_correlation_threshold must be between 0 and 1")
 
         # Validate component configurations
-        if self.bar_construction:
+        if self.bar_construction and hasattr(self.bar_construction, '_validate_config'):
             self.bar_construction._validate_config()
-        if self.volatility:
+        if self.volatility and hasattr(self.volatility, '_validate_config'):
             self.volatility._validate_config()
-        if self.noise_gating:
+        if self.noise_gating and hasattr(self.noise_gating, '_validate_config'):
             self.noise_gating._validate_config()
-        if self.quality_scoring:
+        if self.quality_scoring and hasattr(self.quality_scoring, '_validate_config'):
             self.quality_scoring._validate_config()
-        if self.multi_target:
+        if self.multi_target and hasattr(self.multi_target, '_validate_config'):
             self.multi_target._validate_config()
 
 
@@ -197,7 +200,10 @@ class LabelingResult:
     training_labels: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     # Quality scores
-    quality_scores: Dict[str, LabelQualityScore]
+    quality_scores: Dict[str, LabelQualityScore] = field(default_factory=dict)
+
+    # Forward return smoothing metadata
+    smoothing_settings: Dict[str, Any] = field(default_factory=dict)
     
     # Component results
     bar_construction_result: Optional[Any] = None
@@ -243,7 +249,10 @@ class VolatilityAwareMultiHorizonLabeler:
         self.bar_constructor = EventBasedBarConstructor(self.config.bar_construction)
         self.volatility_modeler = VolatilityModeler(self.config.volatility)
         self.noise_gating_filter = NoiseGatingFilter(self.config.noise_gating)
-        self.quality_scorer = LabelQualityScorer(self.config.quality_scoring)
+        if self.config.enable_quality_scoring:
+            self.quality_scorer = LabelQualityScorer(self.config.quality_scoring)
+        else:
+            self.quality_scorer = None
         self.multi_target_scheme = MultiTargetScheme(self.config.multi_target)
 
         # Initialize enhanced label definitions if enabled
@@ -439,34 +448,44 @@ class VolatilityAwareMultiHorizonLabeler:
 
             result.multi_target_result = target_result
 
+            # Apply forward return smoothing before further processing
+            self._apply_forward_return_smoothing(target_result)
+
             if target_result.labels.empty:
                 tprint_warning("⚠️ No valid targets generated")
                 return self._create_empty_result()
 
             # Step 5: Quality scoring (with caching)
-            tprint_info("📊 Step 5: Assessing label quality")
-            quality_cache_key = f"quality_{data_hash}_{hash(str(self.config.quality_scoring))}"
-            if self.config.enable_caching and quality_cache_key in self.quality_cache:
-                quality_scores = self.quality_cache[quality_cache_key]
-                tprint_info("📋 Using cached quality scoring")
+            if self.config.enable_quality_scoring and self.quality_scorer:
+                tprint_info("📊 Step 5: Assessing label quality")
+                quality_cache_key = f"quality_{data_hash}_{hash(str(self.config.quality_scoring))}"
+                if self.config.enable_caching and quality_cache_key in self.quality_cache:
+                    quality_scores = self.quality_cache[quality_cache_key]
+                    tprint_info("📋 Using cached quality scoring")
+                else:
+                    quality_scores = self.quality_scorer.assess_quality(
+                        target_result.labels,
+                        target_result.confidence_scores,
+                        target_result.eligibility_masks,
+                        bar_result.cleaned_bars,
+                        sigma_payoffs=target_result.sigma_payoffs
+                    )
+                    if self.config.enable_caching:
+                        self.quality_cache[quality_cache_key] = quality_scores
             else:
-                quality_scores = self.quality_scorer.assess_quality(
-                    target_result.labels,
-                    target_result.confidence_scores,
-                    target_result.eligibility_masks,
-                    bar_result.cleaned_bars,
-                    sigma_payoffs=target_result.sigma_payoffs
-                )
-                if self.config.enable_caching:
-                    self.quality_cache[quality_cache_key] = quality_scores
+                quality_scores = {}
+                tprint_info("ℹ️ Quality scoring disabled; skipping assessment")
 
             result.quality_scores = quality_scores
-            
+
             # Step 6: Filter by quality thresholds
-            tprint_info("🔍 Step 6: Filtering by quality thresholds")
-            filtered_result = self._filter_by_quality_thresholds(
-                target_result, quality_scores
-            )
+            if quality_scores:
+                tprint_info("🔍 Step 6: Filtering by quality thresholds")
+                filtered_result = self._filter_by_quality_thresholds(
+                    target_result, quality_scores
+                )
+            else:
+                filtered_result = target_result
             
             # Update result with filtered data
             result.labels = filtered_result.labels
@@ -474,6 +493,11 @@ class VolatilityAwareMultiHorizonLabeler:
             result.eligibility_masks = filtered_result.eligibility_masks
             result.sigma_payoffs = filtered_result.sigma_payoffs
             result.training_labels = filtered_result.training_labels
+            result.smoothing_settings = getattr(
+                filtered_result,
+                'smoothing_settings',
+                getattr(target_result, 'smoothing_settings', {})
+            )
 
             # Calculate statistics
             base_df = result.training_labels if not result.training_labels.empty else result.labels
@@ -682,6 +706,27 @@ class VolatilityAwareMultiHorizonLabeler:
                 sigma_payoffs=target_result.sigma_payoffs.copy(),
                 training_labels=target_result.training_labels.copy()
             )
+
+            # Preserve extended metadata when available
+            for attr_name in [
+                'selected_targets',
+                'target_bands',
+                'target_parameters',
+                'target_quality_scores',
+                'target_correlations',
+                'diversity_score',
+                'target_coverage',
+                'config_used',
+                'processing_time',
+                'timestamp',
+                'smoothing_settings'
+            ]:
+                if hasattr(target_result, attr_name):
+                    setattr(
+                        filtered_result,
+                        attr_name,
+                        deepcopy(getattr(target_result, attr_name))
+                    )
             
             # Get quality thresholds
             min_auc = self.config.min_auc_threshold
@@ -724,6 +769,13 @@ class VolatilityAwareMultiHorizonLabeler:
                 else:
                     filtered_result.sigma_payoffs = pd.DataFrame()
 
+                if hasattr(filtered_result, 'smoothing_settings') and filtered_result.smoothing_settings:
+                    filtered_result.smoothing_settings = {
+                        name: settings
+                        for name, settings in filtered_result.smoothing_settings.items()
+                        if name in target_columns or name in payoff_columns
+                    }
+
                 if self.config.prefer_sigma_payoffs and not filtered_result.sigma_payoffs.empty:
                     filtered_result.training_labels = filtered_result.sigma_payoffs.copy()
                 else:
@@ -735,12 +787,122 @@ class VolatilityAwareMultiHorizonLabeler:
                 filtered_result.eligibility_masks = pd.DataFrame()
                 filtered_result.sigma_payoffs = pd.DataFrame()
                 filtered_result.training_labels = pd.DataFrame()
+                if hasattr(filtered_result, 'smoothing_settings'):
+                    filtered_result.smoothing_settings = {}
 
             return filtered_result
-            
+
         except Exception as e:
             tprint_error(f"❌ Quality filtering failed: {e}")
             return target_result
+
+    def _apply_forward_return_smoothing(self, target_result: Any) -> None:
+        """Apply exponential half-life smoothing to forward return proxies."""
+        try:
+            if target_result is None:
+                return
+
+            if getattr(target_result, '_smoothing_applied', False):
+                return
+
+            smoothing_cfg = getattr(self.config.multi_target, 'forward_return_smoothing', None)
+            if not smoothing_cfg or not getattr(smoothing_cfg, 'enabled', False):
+                if hasattr(target_result, 'smoothing_settings'):
+                    target_result.smoothing_settings = {}
+                return
+
+            sigma_payoffs = getattr(target_result, 'sigma_payoffs', None)
+            if sigma_payoffs is None or sigma_payoffs.empty:
+                target_result.smoothing_settings = {}
+                return
+
+            existing_settings = {}
+            if hasattr(target_result, 'smoothing_settings') and target_result.smoothing_settings:
+                existing_settings = dict(target_result.smoothing_settings)
+
+            target_params = getattr(target_result, 'target_parameters', {})
+            if not existing_settings and isinstance(target_params, dict) and target_params:
+                for name, params in target_params.items():
+                    horizon_value = params.get('horizon')
+                    decay_lambda = params.get('decay_lambda')
+                    if decay_lambda is None:
+                        decay_lambda = self._resolve_decay_lambda_from_config(horizon_value)
+                        params['decay_lambda'] = decay_lambda
+
+                    halflife = np.log(2) / max(decay_lambda, 1e-12) if decay_lambda and decay_lambda > 0 else 0.0
+                    existing_settings[name] = {
+                        'decay_lambda': float(decay_lambda) if decay_lambda else 0.0,
+                        'halflife': float(halflife) if halflife else 0.0,
+                        'horizon': horizon_value,
+                        'method': 'ewm_halflife'
+                    }
+
+            smoothed_df = pd.DataFrame(index=sigma_payoffs.index)
+            updated_settings: Dict[str, Dict[str, Any]] = {}
+
+            for column in sigma_payoffs.columns:
+                series = sigma_payoffs[column]
+                settings = existing_settings.get(column, {})
+                decay_lambda = settings.get('decay_lambda')
+                horizon_value = settings.get('horizon')
+
+                if decay_lambda is None or decay_lambda <= 0:
+                    candidate_params = target_params.get(column) if isinstance(target_params, dict) else {}
+                    if horizon_value is None and candidate_params:
+                        horizon_value = candidate_params.get('horizon')
+                    decay_lambda = self._resolve_decay_lambda_from_config(horizon_value)
+
+                halflife = settings.get('halflife')
+                if halflife is None or halflife <= 0:
+                    halflife = np.log(2) / max(decay_lambda, 1e-12) if decay_lambda > 0 else 0.0
+
+                if halflife and halflife > 0:
+                    smoothed_series = series.ewm(halflife=halflife, adjust=False, min_periods=1).mean()
+                else:
+                    smoothed_series = series.copy()
+
+                smoothed_df[column] = smoothed_series
+                updated_settings[column] = {
+                    'decay_lambda': float(decay_lambda) if decay_lambda is not None else None,
+                    'halflife': float(halflife) if halflife is not None else None,
+                    'horizon': horizon_value,
+                    'method': 'ewm_halflife',
+                    'aggregation': 'exponential_weighted_mean'
+                }
+
+            target_result.raw_forward_returns = sigma_payoffs.copy()
+            target_result.sigma_payoffs = smoothed_df
+            target_result.smoothed_forward_returns = smoothed_df
+            target_result.smoothing_settings = updated_settings
+            target_result._smoothing_applied = True
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Error applying forward return smoothing: {e}")
+
+    def _resolve_decay_lambda_from_config(self, horizon: Optional[Union[int, float]]) -> float:
+        """Resolve decay lambda from configuration for given horizon."""
+        smoothing_cfg = getattr(self.config.multi_target, 'forward_return_smoothing', None)
+        if not smoothing_cfg:
+            return 0.0
+
+        lambda_value: Optional[float] = None
+        if horizon is not None and smoothing_cfg.per_horizon_lambdas:
+            horizon_key = int(round(float(horizon)))
+            if horizon_key in smoothing_cfg.per_horizon_lambdas:
+                lambda_value = smoothing_cfg.per_horizon_lambdas[horizon_key]
+            elif str(horizon_key) in smoothing_cfg.per_horizon_lambdas:
+                lambda_value = smoothing_cfg.per_horizon_lambdas[str(horizon_key)]
+
+        if lambda_value is None:
+            lambda_value = smoothing_cfg.default_lambda
+
+        lower, upper = smoothing_cfg.lambda_bounds
+        if lower is not None:
+            lambda_value = max(lower, lambda_value)
+        if upper is not None:
+            lambda_value = min(upper, lambda_value)
+
+        return float(lambda_value)
     
     def _calculate_label_distribution(self, labels: pd.DataFrame) -> Dict[str, Any]:
         """Calculate label distribution statistics."""
@@ -1123,87 +1285,109 @@ def generate_volatility_aware_labels(market_data: pd.DataFrame,
 
 def create_enhanced_analyst_labeler() -> VolatilityAwareMultiHorizonLabeler:
     """Create a labeler optimized for Analyst labels (Should we trade?)."""
-    config = VolatilityAwareConfig(
-        enable_enhanced_labels=True,
-        label_definition_type=LabelDefinitionType.ANALYST,
-        analyst_config=AnalystLabelConfig(
-            horizon_minutes=60,
-            min_profit_threshold_usd=5.0,
-            trading_costs=TradingCosts(
-                maker_fee=0.001,
-                taker_fee=0.002,
-                slippage_pct=0.001
+    try:
+        config = VolatilityAwareConfig(
+            enable_enhanced_labels=True,
+            enable_quality_scoring=False,
+            label_definition_type=LabelDefinitionType.ANALYST,
+            analyst_config=AnalystLabelConfig(
+                horizon_minutes=60,
+                min_profit_threshold_usd=5.0,
+                trading_costs=TradingCosts(
+                    maker_fee=0.001,
+                    taker_fee=0.002,
+                    slippage_pct=0.001
+                ),
+                enable_regime_conditioning=True,
+                volatility_scaling_factor=1.0
             ),
-            enable_regime_conditioning=True,
-            volatility_scaling_factor=1.0
-        ),
-        regime_config=RegimeConditionedConfig(
-            volatility_scaling_enabled=True,
-            base_threshold_multiplier=1.0,
-            adaptive_thresholds=True,
-            lookback_window=50
-        ),
-        risk_config=RiskAwareConfig(
-            stop_loss_pct=0.02,
-            take_profit_pct=0.04,
-            min_risk_reward_ratio=2.0,
-            max_portfolio_risk_pct=0.02
-        ),
-        cleaning_config=DataCleaningConfig(
-            outlier_method="iqr",
-            outlier_threshold=3.0,
-            min_volume_threshold=1000.0,
-            enforce_timestamp_alignment=True
-        ),
-        stability_config=StabilityCheckConfig(
-            recompute_on_refresh=True,
-            max_autocorrelation_threshold=0.3,
-            enable_oos_balance_check=True,
-            balance_tolerance=0.05,
-            enable_drift_detection=True,
-            drift_threshold=0.1
+            regime_config=RegimeConditionedConfig(
+                volatility_scaling_enabled=True,
+                base_threshold_multiplier=1.0,
+                adaptive_thresholds=True,
+                lookback_window=50
+            ),
+            risk_config=RiskAwareConfig(
+                stop_loss_pct=0.02,
+                take_profit_pct=0.04,
+                min_risk_reward_ratio=2.0,
+                max_portfolio_risk_pct=0.02
+            ),
+            cleaning_config=DataCleaningConfig(
+                outlier_method="iqr",
+                outlier_threshold=3.0,
+                min_volume_threshold=1000.0,
+                enforce_timestamp_alignment=True
+            ),
+            stability_config=StabilityCheckConfig(
+                recompute_on_refresh=True,
+                max_autocorrelation_threshold=0.3,
+                enable_oos_balance_check=True,
+                balance_tolerance=0.05,
+                enable_drift_detection=True,
+                drift_threshold=0.1
+            )
         )
-    )
-    return VolatilityAwareMultiHorizonLabeler(config)
+        return VolatilityAwareMultiHorizonLabeler(config)
+    except Exception as exc:
+        tprint_warning(
+            f"⚠️ Enhanced analyst labeler initialization failed ({exc}); falling back to standard configuration"
+        )
+        fallback_config = VolatilityAwareConfig(
+            enable_enhanced_labels=False,
+            enable_quality_scoring=False
+        )
+        return VolatilityAwareMultiHorizonLabeler(fallback_config)
 
 
 def create_enhanced_tactician_labeler() -> VolatilityAwareMultiHorizonLabeler:
     """Create a labeler optimized for Tactician labels (Direction/Magnitude)."""
-    config = VolatilityAwareConfig(
-        enable_enhanced_labels=True,
-        label_definition_type=LabelDefinitionType.TACTICIAN,
-        tactician_config=TacticianLabelConfig(
-            favorable_excursion_threshold=1.0,
-            adverse_excursion_threshold=-2.0,
-            horizon_minutes=30,
-            enable_regime_conditioning=True,
-            volatility_sensitivity=1.0
-        ),
-        regime_config=RegimeConditionedConfig(
-            volatility_scaling_enabled=True,
-            base_threshold_multiplier=1.0,
-            adaptive_thresholds=True,
-            lookback_window=50
-        ),
-        risk_config=RiskAwareConfig(
-            stop_loss_pct=0.02,
-            take_profit_pct=0.04,
-            min_risk_reward_ratio=2.0,
-            max_portfolio_risk_pct=0.02
-        ),
-        cleaning_config=DataCleaningConfig(
-            outlier_method="iqr",
-            outlier_threshold=3.0,
-            min_volume_threshold=1000.0,
-            enforce_timestamp_alignment=True
-        ),
-        stability_config=StabilityCheckConfig(
-            recompute_on_refresh=True,
-            max_autocorrelation_threshold=0.3,
-            enable_oos_balance_check=True,
-            balance_tolerance=0.05,
-            enable_drift_detection=True,
-            drift_threshold=0.1
+    try:
+        config = VolatilityAwareConfig(
+            enable_enhanced_labels=True,
+            enable_quality_scoring=False,
+            label_definition_type=LabelDefinitionType.TACTICIAN,
+            tactician_config=TacticianLabelConfig(
+                favorable_excursion_threshold=1.0,
+                adverse_excursion_threshold=-2.0,
+                horizon_minutes=30,
+                enable_regime_conditioning=True,
+                volatility_sensitivity=1.0
+            ),
+            regime_config=RegimeConditionedConfig(
+                volatility_scaling_enabled=True,
+                base_threshold_multiplier=1.0,
+                adaptive_thresholds=True,
+                lookback_window=50
+            ),
+            risk_config=RiskAwareConfig(
+                stop_loss_pct=0.02,
+                take_profit_pct=0.04,
+                min_risk_reward_ratio=2.0,
+                max_portfolio_risk_pct=0.02
+            ),
+            cleaning_config=DataCleaningConfig(
+                outlier_method="iqr",
+                outlier_threshold=3.0,
+                min_volume_threshold=1000.0,
+                enforce_timestamp_alignment=True
+            ),
+            stability_config=StabilityCheckConfig(
+                recompute_on_refresh=True,
+                max_autocorrelation_threshold=0.3,
+                enable_oos_balance_check=True,
+                balance_tolerance=0.05,
+                enable_drift_detection=True,
+                drift_threshold=0.1
+            )
         )
-    )
-    return VolatilityAwareMultiHorizonLabeler(config)
+        return VolatilityAwareMultiHorizonLabeler(config)
+    except Exception as exc:
+        tprint_warning(
+            f"⚠️ Enhanced tactician labeler initialization failed ({exc}); using standard configuration"
+        )
+        fallback_config = VolatilityAwareConfig(
+            enable_enhanced_labels=False,
+            enable_quality_scoring=False
+        )
+        return VolatilityAwareMultiHorizonLabeler(fallback_config)

@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 import logging
 from pathlib import Path
 
@@ -243,6 +243,9 @@ class MultiHorizonProfitLabeler:
             else:
                 tprint_success("✅ Data structure validated for downstream compatibility")
 
+            # Build smoothing metadata for downstream consumers
+            smoothing_metadata = self._build_smoothing_metadata(balanced_labeling_result)
+
             # Create enhanced artifacts with comprehensive metadata for downstream components
             artifacts = {
                 'multi_horizon_labeling_result': {
@@ -257,6 +260,7 @@ class MultiHorizonProfitLabeler:
                     'balancing_applied': self.config.enable_label_balancing or self.config.enable_sample_weighting,
                     'sample_weights': getattr(balanced_labeling_result, 'sample_weights', None),  # Sample weights for training
                     'validation_results': validation_results,  # Downstream compatibility validation
+                    'smoothing_settings': smoothing_metadata['settings'],
                     'metadata': {
                         'symbol': symbol,
                         'exchange': exchange,
@@ -268,7 +272,8 @@ class MultiHorizonProfitLabeler:
                         'n_horizons': balanced_labeling_result.n_horizons,
                         'target_distribution': self._calculate_target_distribution(mapped_labels),
                         'quality_summary': self._summarize_quality_scores(balanced_labeling_result.quality_scores),
-                        'downstream_ready': validation_results['is_valid']
+                        'downstream_ready': validation_results['is_valid'],
+                        'forward_return_smoothing': smoothing_metadata
                     }
                 },
                 'labeling_report': report,
@@ -281,11 +286,13 @@ class MultiHorizonProfitLabeler:
                     'eligibility_masks': balanced_labeling_result.eligibility_masks,
                     'sample_weights': getattr(balanced_labeling_result, 'sample_weights', None),
                     'validation_results': validation_results,
+                    'smoothing_settings': smoothing_metadata['settings'],
                     'metadata': {
                         'source_component': 'multi_horizon_profit_labeler',
                         'creation_time': datetime.now().isoformat(),
                         'pipeline_ready': validation_results['is_valid'],
-                        'downstream_compatibility': validation_results
+                        'downstream_compatibility': validation_results,
+                        'forward_return_smoothing': smoothing_metadata
                     }
                 }
             }
@@ -303,7 +310,9 @@ class MultiHorizonProfitLabeler:
             tprint_error(f"❌ Multi-horizon labeling failed: {e}")
             import traceback
             tprint_error(f"🔍 Error details: {traceback.format_exc()}")
-            
+
+            error_smoothing_metadata = self._build_smoothing_metadata()
+
             # Create error artifacts with proper structure for downstream components
             error_artifacts = {
                 'multi_horizon_labeling_result': {
@@ -318,6 +327,7 @@ class MultiHorizonProfitLabeler:
                     'balancing_applied': False,
                     'sample_weights': None,
                     'validation_results': {'is_valid': False, 'issues': [f'Labeling failed: {str(e)}']},
+                    'smoothing_settings': error_smoothing_metadata['settings'],
                     'metadata': {
                         'symbol': symbol,
                         'exchange': exchange,
@@ -330,6 +340,7 @@ class MultiHorizonProfitLabeler:
                         'target_distribution': {},
                         'quality_summary': {},
                         'downstream_ready': False,
+                        'forward_return_smoothing': error_smoothing_metadata,
                         'error': str(e),
                         'error_traceback': traceback.format_exc()
                     }
@@ -349,11 +360,13 @@ class MultiHorizonProfitLabeler:
                     'eligibility_masks': pd.DataFrame(),
                     'sample_weights': None,
                     'validation_results': {'is_valid': False, 'issues': [f'Labeling failed: {str(e)}']},
+                    'smoothing_settings': error_smoothing_metadata['settings'],
                     'metadata': {
                         'source_component': 'multi_horizon_profit_labeler',
                         'creation_time': datetime.now().isoformat(),
                         'pipeline_ready': False,
                         'downstream_compatibility': {'is_valid': False, 'issues': [f'Labeling failed: {str(e)}']},
+                        'forward_return_smoothing': error_smoothing_metadata,
                         'error': str(e)
                     }
                 }
@@ -536,6 +549,9 @@ class MultiHorizonProfitLabeler:
                 n_targets=labeling_result.n_targets,
                 processing_time=labeling_result.processing_time        # Keep original processing time
             )
+
+            balanced_result.multi_target_result = getattr(labeling_result, 'multi_target_result', None)
+            balanced_result.smoothing_settings = getattr(labeling_result, 'smoothing_settings', {})
 
             # Add balancing metadata
             balanced_result.balancing_applied = True
@@ -1197,6 +1213,47 @@ class MultiHorizonProfitLabeler:
         except Exception as e:
             tprint_warning(f"⚠️ Error summarizing quality scores: {e}")
             return {}
+
+    def _build_smoothing_metadata(self, labeling_result: Optional[LabelingResult] = None) -> Dict[str, Any]:
+        """Create a standardized smoothing metadata payload."""
+        try:
+            smoothing_cfg = getattr(
+                self.volatility_labeler.config.multi_target,
+                'forward_return_smoothing',
+                None
+            )
+
+            settings = {}
+            if labeling_result is not None:
+                settings = getattr(labeling_result, 'smoothing_settings', {}) or {}
+
+            enabled = bool(smoothing_cfg and getattr(smoothing_cfg, 'enabled', False))
+            config_dict = asdict(smoothing_cfg) if smoothing_cfg else {}
+
+            metadata = {
+                'enabled': enabled,
+                'method': 'ewm_halflife' if enabled else None,
+                'aggregation': 'exponential_weighted_mean' if enabled else None,
+                'settings': settings,
+                'applied_columns': list(settings.keys()),
+                'config': config_dict
+            }
+
+            if not settings:
+                metadata['applied_columns'] = []
+
+            return metadata
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Error building smoothing metadata: {e}")
+            return {
+                'enabled': False,
+                'method': None,
+                'aggregation': None,
+                'settings': {},
+                'applied_columns': [],
+                'config': {}
+            }
 
     async def _generate_comprehensive_report(
         self,

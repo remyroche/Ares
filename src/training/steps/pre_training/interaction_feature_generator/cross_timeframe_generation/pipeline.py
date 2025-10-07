@@ -110,9 +110,9 @@ class CrossTimeframePipeline:
         # Initialize components
         self.feature_registry = FeatureRegistry()
         self.regime_segmentation = RegimeSegmentation(config)
-        self.phase1_probe = Phase1HTFProbe(config)
-        self.phase2_optimization = Phase2Optimization(config)
         self.scoring_system = AdaptiveScoringSystem(config)
+        self.phase1_probe = Phase1HTFProbe(config, scoring_system=self.scoring_system)
+        self.phase2_optimization = Phase2Optimization(config)
         self.ehu_rih_assignment = EHU_RIH_Assignment(config)
         self.knapsack_selection = KnapsackSelection(config)
         self.htf_materialization = HTFMaterialization(config)

@@ -496,17 +496,32 @@ class AdaptiveScoringSystem:
         
         return pass_count / total_folds if total_folds > 0 else 0.0
     
-    def _calculate_utility_score(self, 
+    def _calculate_utility_score(self,
                                ic_oos: float,
                                se_wild_bootstrap: float,
                                cpu_p95: float,
                                staleness: float,
                                penalties: Dict[str, float]) -> float:
         """Calculate utility score with penalties."""
-        return (ic_oos - 
+        return (ic_oos -
                 penalties['lambda_unc'] * se_wild_bootstrap -
                 penalties['lambda_cost'] * cpu_p95 -
                 penalties['lambda_stale'] * staleness)
+
+    def calculate_utility_score(self,
+                                ic_oos: float,
+                                se_wild_bootstrap: float,
+                                cpu_p95: float,
+                                staleness: float) -> float:
+        """Public helper to calculate utility using current adaptive penalties."""
+        penalties = self.get_current_penalties()
+        return self._calculate_utility_score(
+            ic_oos=ic_oos,
+            se_wild_bootstrap=se_wild_bootstrap,
+            cpu_p95=cpu_p95,
+            staleness=staleness,
+            penalties=penalties,
+        )
     
     def _calculate_regime_weight(self, 
                                regime: str, 

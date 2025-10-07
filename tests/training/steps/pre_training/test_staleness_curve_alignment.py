@@ -28,6 +28,9 @@ import pandas as pd
 from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.phase1_probe import (
     Phase1HTFProbe,
 )
+from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.scoring_system import (
+    AdaptiveScoringSystem,
+)
 from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.ehu_rih_assignment import (
     EHU_RIH_Assignment,
 )
@@ -50,7 +53,8 @@ def _make_series(length: int, base_freq: int) -> pd.Series:
 
 def test_phase1_assignment_share_staleness_curves():
     config = PipelineConfig()
-    phase1_probe = Phase1HTFProbe(config)
+    scoring_system = AdaptiveScoringSystem(config)
+    phase1_probe = Phase1HTFProbe(config, scoring_system=scoring_system)
     assignment = EHU_RIH_Assignment(config)
 
     test_cases = [
@@ -65,7 +69,7 @@ def test_phase1_assignment_share_staleness_curves():
     for base_feature, family, lookback in test_cases:
         feature = _make_series(240, base_freq)
 
-        candidate = phase1_probe._score_candidate(
+        candidates = phase1_probe._score_candidate(
             htf_feature=feature,
             base_feature=base_feature,
             lookback=lookback,
@@ -74,7 +78,9 @@ def test_phase1_assignment_share_staleness_curves():
             targets=target,
         )
 
-        assert candidate is not None
+        assert candidates, "Expected Phase-1 to return at least one candidate"
+
+        candidate = candidates[0]
 
         summary_phase1 = candidate.metadata["staleness_summary"]
         summary_assignment = assignment.staleness_calculator.get_summary(

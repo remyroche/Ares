@@ -18,8 +18,6 @@ from itertools import product
 from scipy import stats
 from sklearn.model_selection import TimeSeriesSplit
 
-from .staleness_curve import StalenessCurveCalculator
-
 # Import existing components
 import sys
 sys.path.append('src/training/steps/pre_training/interaction_feature_generator/feature_interaction_generation')
@@ -29,6 +27,7 @@ from .htf_utils import (
     build_htf_family_catalog,
     format_transform_suffix,
     resample_htf_series,
+)
 from ..feature_interaction_generation.feature_engineering import (
     FeatureRegistry,
     FeatureFamily,
@@ -228,14 +227,24 @@ class Phase1HTFProbe:
 
         self.grid_generator = CoarseGridGenerator(config)
         self.htf_generator = HTFFeatureGenerator(config)
-        self.scoring_system = scoring_system
+        self.scoring_system: Optional[AdaptiveScoringSystem] = None
+
+        if scoring_system is not None:
+            self.set_scoring_system(scoring_system)
 
     def set_scoring_system(self, scoring_system: AdaptiveScoringSystem) -> None:
         """Inject the centralized adaptive scoring system."""
-        self.scoring_system = None  # Will be injected
-        self.staleness_calculator = StalenessCurveCalculator(
-            default_base_timeframe=getattr(config, 'base_timeframe_minutes', 5)
-        )
+        self.scoring_system = scoring_system
+
+    def _ensure_scoring_system(self) -> AdaptiveScoringSystem:
+        """Return the adaptive scoring system or raise a helpful error."""
+        if self.scoring_system is None:
+            raise RuntimeError(
+                "Phase1HTFProbe requires an adaptive scoring system before scoring. "
+                "Provide one via the constructor or set_scoring_system()."
+            )
+
+        return self.scoring_system
         
     def run_probe_stage(self, 
                        sessionized_data: Dict[str, Any],
@@ -253,6 +262,8 @@ class Phase1HTFProbe:
             Phase-1 results with shortlisted HTF candidates
         """
         self.logger.info("Starting Phase-1 HTF probe stage")
+
+        self._ensure_scoring_system()
         
         results = {
             'candidates': [],
@@ -382,7 +393,9 @@ class Phase1HTFProbe:
             ic_oos = self._calculate_ic(feature_slice, target_slice)
             se_wild_bootstrap = self._calculate_wild_bootstrap_se(feature_slice, target_slice)
             cpu_p95 = self._estimate_cpu_cost(lookback, family)
-            staleness = self._calculate_staleness(lookback, family)
+            staleness, staleness_summary = self._calculate_staleness(
+                base_feature, lookback, family
+            )
             fold_pass_rate = self._calculate_fold_pass_rate(feature_slice, target_slice)
 
             utility_score = self._calculate_utility_score(
@@ -401,6 +414,9 @@ class Phase1HTFProbe:
                     'fold_pass_rate': fold_pass_rate
                 }
             }
+
+            if staleness_summary is not None:
+                metadata['staleness_summary'] = staleness_summary
 
             return HTFCandidate(
                 family=family,
@@ -539,15 +555,49 @@ class Phase1HTFProbe:
                                cpu_p95: float,
                                staleness: float) -> float:
         """Calculate utility score using the centralized scoring system."""
-        if self.scoring_system is None:
-            raise ValueError("Adaptive scoring system must be provided to Phase1HTFProbe")
+        scoring_system = self._ensure_scoring_system()
 
-        return self.scoring_system.calculate_utility_score(
+        return scoring_system.calculate_utility_score(
             ic_oos=ic_oos,
             se_wild_bootstrap=se_wild_bootstrap,
             cpu_p95=cpu_p95,
             staleness=staleness,
         )
+
+    def _calculate_staleness(
+        self,
+        base_feature: str,
+        lookback: int,
+        family: str,
+    ) -> Tuple[float, Optional[Any]]:
+        """Calculate staleness using the shared adaptive scoring system."""
+        scoring_system = self._ensure_scoring_system()
+
+        staleness_calculator = getattr(scoring_system, 'staleness_calculator', None)
+        if staleness_calculator is None:
+            raise RuntimeError(
+                "Adaptive scoring system does not expose a staleness calculator, "
+                "which is required for Phase-1 scoring."
+            )
+
+        base_timeframe = getattr(self.config, 'base_timeframe_minutes', 5)
+        staleness_value = staleness_calculator.calculate_staleness(
+            lookback=lookback,
+            family=family,
+            base_timeframe=base_timeframe,
+        )
+
+        staleness_summary = None
+        curve_calculator = getattr(staleness_calculator, 'curve_calculator', None)
+        if curve_calculator is not None and base_feature:
+            staleness_summary = curve_calculator.get_summary(
+                feature_name=base_feature,
+                family=family,
+                lookback=lookback,
+                base_timeframe=base_timeframe,
+            )
+
+        return staleness_value, staleness_summary
     
     def _check_early_stopping(self, family_scores: List[float]) -> bool:
         """Check if family should be early stopped."""

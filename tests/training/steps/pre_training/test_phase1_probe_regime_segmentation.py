@@ -21,6 +21,7 @@ _phase1_probe = _load_module(
     'src/training/steps/pre_training/interaction_feature_generator/cross_timeframe_generation/phase1_probe.py',
 )
 Phase1HTFProbe = _phase1_probe.Phase1HTFProbe
+AdaptiveScoringSystem = _phase1_probe.AdaptiveScoringSystem
 
 _regime_segmentation = _load_module(
     'regime_segmentation_module',
@@ -37,6 +38,7 @@ class _MinimalConfig:
     lambda_cost: float = 0.05
     lambda_stale: float = 0.05
     base_timeframe_minutes: int = 5
+    meta_learning_range: float = 0.05
 
 
 def _build_segments(index: pd.DatetimeIndex) -> dict:
@@ -68,7 +70,8 @@ def _build_segments(index: pd.DatetimeIndex) -> dict:
 
 def test_score_candidate_creates_regime_specific_variants():
     config = _MinimalConfig()
-    probe = Phase1HTFProbe(config)
+    scoring_system = AdaptiveScoringSystem(config)
+    probe = Phase1HTFProbe(config, scoring_system=scoring_system)
 
     index = pd.date_range('2021-01-01', periods=240, freq='5min')
     feature_values = np.concatenate([np.linspace(0, 1, 120), np.linspace(0, 1, 120)])
@@ -112,7 +115,8 @@ def test_score_candidate_creates_regime_specific_variants():
 
 def test_score_candidate_falls_back_to_mixed_when_no_segments():
     config = _MinimalConfig()
-    probe = Phase1HTFProbe(config)
+    scoring_system = AdaptiveScoringSystem(config)
+    probe = Phase1HTFProbe(config, scoring_system=scoring_system)
 
     index = pd.date_range('2021-01-01', periods=200, freq='5min')
     feature_values = np.linspace(0, 1, len(index))

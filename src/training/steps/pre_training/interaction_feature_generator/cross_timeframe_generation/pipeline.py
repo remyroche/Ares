@@ -278,6 +278,33 @@ class CrossTimeframePipeline:
                     )
                     evaluation_summary = None
 
+            recent_performance: List[Dict[str, Any]] = []
+            market_state: Dict[str, Any] = {}
+            if self.config.adaptive_penalties:
+                try:
+                    recent_performance = self._synthesize_recent_performance(
+                        evaluation_summary,
+                        final_feature_list,
+                    )
+                    market_state = self._derive_market_state(
+                        evaluation_summary,
+                        self.regime_segments,
+                    )
+
+                    if recent_performance:
+                        self.scoring_system.update_meta_learning(
+                            recent_performance,
+                            market_state,
+                        )
+                        self.logger.info(
+                            "Updated adaptive scoring meta-learner with recent performance context",
+                        )
+                except Exception as meta_learning_error:
+                    self.logger.warning(
+                        "Failed to update scoring meta-learner: %s",
+                        meta_learning_error,
+                    )
+
             # Step 10: Monitoring & automation
             self.logger.info("Step 10: Setting up monitoring")
             self.monitoring.setup_monitoring(
@@ -317,6 +344,198 @@ class CrossTimeframePipeline:
         except Exception as e:
             self.logger.error(f"Pipeline failed: {str(e)}")
             raise
+
+    def _synthesize_recent_performance(
+        self,
+        evaluation_summary: Optional[Dict[str, Any]],
+        final_feature_list: List[str],
+    ) -> List[Dict[str, Any]]:
+        """Create a recent performance payload for the scoring meta-learner."""
+
+        if not evaluation_summary:
+            return []
+
+        overall_ic = float(evaluation_summary.get('overall_ic', 0.0) or 0.0)
+        overall_se = evaluation_summary.get('overall_ic_std')
+
+        if overall_se is None:
+            overall_ci = evaluation_summary.get('overall_ic_ci')
+            if overall_ci and all(value is not None for value in overall_ci):
+                lower, upper = overall_ci
+                try:
+                    overall_se = abs(float(upper) - float(lower)) / (2 * 1.96)
+                except Exception:
+                    overall_se = None
+
+        if overall_se is None:
+            overall_se = 0.05
+
+        avg_cpu, avg_staleness = self._estimate_resource_penalties(final_feature_list)
+
+        base_entry = {
+            'ic_oos': overall_ic,
+            'se_wild_bootstrap': float(overall_se),
+            'cpu_p95': float(avg_cpu),
+            'staleness': float(avg_staleness),
+            'regime': evaluation_summary.get('regime', 'overall'),
+            'n_features': len(final_feature_list),
+        }
+
+        recent_performance: List[Dict[str, Any]] = [base_entry]
+
+        regime_results = evaluation_summary.get('regime_results', {}) or {}
+        for regime_name, metrics in regime_results.items():
+            regime_ic = metrics.get('ic_mean')
+            if regime_ic is None:
+                continue
+
+            regime_se = metrics.get('ic_std')
+            if regime_se is None:
+                regime_se = overall_se
+
+            recent_performance.append({
+                'ic_oos': float(regime_ic),
+                'se_wild_bootstrap': float(regime_se) if regime_se is not None else float(overall_se),
+                'cpu_p95': float(avg_cpu),
+                'staleness': float(avg_staleness),
+                'regime': regime_name,
+                'n_features': len(final_feature_list),
+            })
+
+        return [entry for entry in recent_performance if entry['ic_oos'] is not None]
+
+    def _estimate_resource_penalties(self, final_feature_list: List[str]) -> Tuple[float, float]:
+        """Estimate average CPU cost and staleness for selected features."""
+
+        cpu_samples: List[float] = []
+        staleness_samples: List[float] = []
+
+        feature_names = set(final_feature_list)
+        selected_names = list(final_feature_list)
+
+        def _append_samples(family: Optional[str], lookback: Optional[int]) -> None:
+            if not family or not lookback:
+                return
+            try:
+                cpu_samples.append(
+                    float(
+                        self.scoring_system.cost_estimator.estimate_cpu_cost(
+                            lookback,
+                            family,
+                        )
+                    )
+                )
+                staleness_samples.append(
+                    float(
+                        self.scoring_system.staleness_calculator.calculate_staleness(
+                            lookback,
+                            family,
+                            self.config.base_timeframe_minutes,
+                        )
+                    )
+                )
+            except Exception as estimation_error:
+                self.logger.debug(
+                    "Failed to estimate resource penalties for %s/%s: %s",
+                    family,
+                    lookback,
+                    estimation_error,
+                )
+
+        if isinstance(self.materialized_htfs, dict):
+            for name in feature_names:
+                htf_obj = self.materialized_htfs.get(name)
+                if not htf_obj:
+                    continue
+
+                family = getattr(htf_obj, 'family', None) or getattr(htf_obj, 'metadata', {}).get('family')
+                lookback = getattr(htf_obj, 'lookback', None) or getattr(htf_obj, 'metadata', {}).get('lookback')
+                _append_samples(family, lookback)
+
+        phase2_data = self.phase2_results if isinstance(self.phase2_results, dict) else {}
+        optimized_features = phase2_data.get('optimized_features', [])
+        for optimized in optimized_features:
+            feature_name = getattr(optimized, 'feature_name', None)
+            if selected_names and feature_name and not any(feature_name in selected for selected in selected_names):
+                continue
+
+            family = getattr(optimized, 'family', None)
+            lookback = getattr(optimized, 'optimal_lookback', None) or getattr(optimized, 'base_lookback', None)
+            _append_samples(family, lookback)
+
+        if not cpu_samples:
+            default_cpu = 0.0
+            if final_feature_list:
+                default_cpu = self.config.max_cost_ms / max(len(final_feature_list), 1)
+            cpu_samples.append(float(default_cpu))
+
+        if not staleness_samples:
+            staleness_samples.append(0.5)
+
+        return float(np.mean(cpu_samples)), float(np.mean(staleness_samples))
+
+    def _derive_market_state(
+        self,
+        evaluation_summary: Optional[Dict[str, Any]],
+        regime_segments: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Derive market state hints for the scoring meta-learner."""
+
+        evaluation_summary = evaluation_summary or {}
+        metadata = evaluation_summary.get('metadata', {}) or {}
+        market_conditions = evaluation_summary.get('market_conditions', {}) or {}
+
+        volatility_level = metadata.get('volatility_level')
+        if volatility_level is None:
+            volatility_level = market_conditions.get('volatility_level', 0.5)
+
+        news_proximity = metadata.get('news_proximity')
+        if news_proximity is None:
+            news_proximity = market_conditions.get('news_proximity', 0.0)
+
+        regime = metadata.get('dominant_regime') or evaluation_summary.get('regime')
+
+        if not regime:
+            regime_results = evaluation_summary.get('regime_results', {}) or {}
+            if regime_results:
+                try:
+                    regime = max(
+                        regime_results.items(),
+                        key=lambda item: item[1].get('ic_mean', float('-inf')),
+                    )[0]
+                except Exception:
+                    regime = None
+
+        if not regime and regime_segments:
+            segments = regime_segments.get('segments', []) or []
+            regime_counts: Dict[str, int] = {}
+            for segment in segments:
+                regime_type = getattr(segment, 'regime_type', None)
+                if not regime_type:
+                    continue
+                regime_counts[regime_type] = regime_counts.get(regime_type, 0) + 1
+
+            if regime_counts:
+                regime = max(regime_counts.items(), key=lambda item: item[1])[0]
+
+        if not regime:
+            regime = 'mixed'
+
+        try:
+            volatility_level = float(volatility_level)
+        except (TypeError, ValueError):
+            volatility_level = 0.5
+
+        try:
+            news_proximity = float(news_proximity)
+        except (TypeError, ValueError):
+            news_proximity = 0.0
+
+        return {
+            'volatility_level': volatility_level,
+            'news_proximity': news_proximity,
+            'regime': regime,
+        }
 
     def _collect_selected_feature_matrix(self, selected_features: List[str]) -> pd.DataFrame:
         """Materialize the selected feature series into a DataFrame."""

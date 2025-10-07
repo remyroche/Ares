@@ -1161,14 +1161,251 @@ class PositionMonitor:
     def _convert_optimization_results(self, exit_strategy_params: Dict[str, Any]) -> Dict[str, Any]:
         """
         Convert optimization results to position monitor format.
-        
+
         Args:
             exit_strategy_params: Raw optimization parameters
-            
+
         Returns:
             Dict: Converted parameters for position monitor
         """
         try:
+            def _ensure_dict(value: Any) -> Dict[str, Any]:
+                return value if isinstance(value, dict) else {}
+
+            def _parse_schedule(schedule_value: Any, default: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+                if isinstance(schedule_value, str):
+                    try:
+                        schedule_value = json.loads(schedule_value)
+                    except json.JSONDecodeError:
+                        return default
+                if isinstance(schedule_value, list):
+                    if not schedule_value or not isinstance(schedule_value[0], list):
+                        return schedule_value  # Assume correct format or empty
+                    # Convert list of lists [[mins, mod]] to list of dicts
+                    return [{"minutes": item[0], "modifier": item[1]} for item in schedule_value]
+                return default
+
+            def _merge_dict(defaults: Dict[str, Any], *candidates: Dict[str, Any]) -> Dict[str, Any]:
+                merged = dict(defaults)
+                for candidate in candidates:
+                    if isinstance(candidate, dict):
+                        for key, value in candidate.items():
+                            merged[key] = value
+                return merged
+
+            def _resolve_scalar(
+                nested_key: str,
+                fallback_keys: List[str],
+                default: Any,
+                *sources: Dict[str, Any],
+            ) -> Any:
+                for source in sources:
+                    if isinstance(source, dict) and nested_key in source and source[nested_key] is not None:
+                        return source[nested_key]
+                for key in fallback_keys:
+                    if key in exit_strategy_params and exit_strategy_params[key] is not None:
+                        return exit_strategy_params[key]
+                return default
+
+            # Prepare defaults for new advanced exit parameters
+            stop_loss_defaults = {
+                "profit_buffer": 0.001,
+                "trail_activation_thresholds": {
+                    "activate_at_0_5_atr": 0.5,
+                    "trail_tighten_at_0_8_atr": 0.8,
+                    "hard_stop_at_1_2_atr": 1.2,
+                },
+                "regime_bands": {
+                    "bull_trend": 0.9,
+                    "bear_trend": 1.1,
+                    "sideways_range": 1.0,
+                },
+                "time_decay_modifiers": {
+                    "enabled": True,
+                    "time_decay_schedule": [
+                        {"minutes": 0, "modifier": 1.0},
+                        {"minutes": 45, "modifier": 0.95},
+                        {"minutes": 90, "modifier": 0.9},
+                    ],
+                },
+            }
+
+            take_profit_defaults = {
+                "profit_buffer": 0.0025,
+                "trail_activation_thresholds": {
+                    "activate_at_0_5_atr": 0.55,
+                    "trail_tighten_at_0_8_atr": 0.95,
+                    "hard_stop_at_1_2_atr": 1.4,
+                },
+                "regime_bands": {
+                    "bull_trend": 1.1,
+                    "bear_trend": 0.9,
+                    "sideways_range": 1.0,
+                },
+                "time_decay_modifiers": {
+                    "enabled": True,
+                    "time_decay_schedule": [
+                        {"minutes": 0, "modifier": 1.0},
+                        {"minutes": 90, "modifier": 0.9},
+                        {"minutes": 180, "modifier": 0.85},
+                    ],
+                },
+            }
+
+            stop_loss_section = _ensure_dict(exit_strategy_params.get("stop_loss"))
+            trailing_stop_section = _ensure_dict(stop_loss_section.get("trailing_stop_config"))
+            take_profit_section = _ensure_dict(exit_strategy_params.get("take_profit"))
+            dynamic_take_profit_section = _ensure_dict(take_profit_section.get("dynamic_take_profit_config"))
+            profit_taking_section = _ensure_dict(exit_strategy_params.get("profit_taking"))
+
+            stop_loss_trail_activation_dict = _ensure_dict(
+                trailing_stop_section.get("trail_activation_thresholds")
+            )
+            take_profit_trail_activation_dict = _ensure_dict(
+                dynamic_take_profit_section.get("trail_activation_thresholds")
+            )
+
+            stop_loss_profit_buffer = _resolve_scalar(
+                "profit_buffer",
+                ["stop_loss_profit_buffer", "profit_buffer"],
+                stop_loss_defaults["profit_buffer"],
+                trailing_stop_section,
+                stop_loss_section,
+            )
+
+            take_profit_profit_buffer = _resolve_scalar(
+                "profit_buffer",
+                ["take_profit_profit_buffer", "profit_buffer"],
+                take_profit_defaults["profit_buffer"],
+                dynamic_take_profit_section,
+                take_profit_section,
+                profit_taking_section,
+            )
+
+            stop_loss_trail_activation = {
+                "activate_at_0_5_atr": _resolve_scalar(
+                    "activate_at_0_5_atr",
+                    [
+                        "stop_loss_trail_activate_at_0_5_atr",
+                        "trail_activate_at_0_5_atr",
+                    ],
+                    stop_loss_defaults["trail_activation_thresholds"]["activate_at_0_5_atr"],
+                    stop_loss_trail_activation_dict,
+                    trailing_stop_section,
+                ),
+                "trail_tighten_at_0_8_atr": _resolve_scalar(
+                    "trail_tighten_at_0_8_atr",
+                    ["stop_loss_trail_tighten_at_0_8_atr", "trail_tighten_at_0_8_atr"],
+                    stop_loss_defaults["trail_activation_thresholds"]["trail_tighten_at_0_8_atr"],
+                    stop_loss_trail_activation_dict,
+                    trailing_stop_section,
+                ),
+                "hard_stop_at_1_2_atr": _resolve_scalar(
+                    "hard_stop_at_1_2_atr",
+                    ["stop_loss_hard_stop_at_1_2_atr", "hard_stop_at_1_2_atr"],
+                    stop_loss_defaults["trail_activation_thresholds"]["hard_stop_at_1_2_atr"],
+                    stop_loss_trail_activation_dict,
+                    trailing_stop_section,
+                ),
+            }
+
+            take_profit_trail_activation = {
+                "activate_at_0_5_atr": _resolve_scalar(
+                    "activate_at_0_5_atr",
+                    [
+                        "take_profit_trail_activate_at_0_5_atr",
+                        "trail_activate_at_0_5_atr",
+                    ],
+                    take_profit_defaults["trail_activation_thresholds"]["activate_at_0_5_atr"],
+                    take_profit_trail_activation_dict,
+                    dynamic_take_profit_section,
+                    profit_taking_section,
+                ),
+                "trail_tighten_at_0_8_atr": _resolve_scalar(
+                    "trail_tighten_at_0_8_atr",
+                    ["take_profit_trail_tighten_at_0_8_atr", "trail_tighten_at_0_8_atr"],
+                    take_profit_defaults["trail_activation_thresholds"]["trail_tighten_at_0_8_atr"],
+                    take_profit_trail_activation_dict,
+                    dynamic_take_profit_section,
+                    profit_taking_section,
+                ),
+                "hard_stop_at_1_2_atr": _resolve_scalar(
+                    "hard_stop_at_1_2_atr",
+                    ["take_profit_hard_stop_at_1_2_atr", "hard_stop_at_1_2_atr"],
+                    take_profit_defaults["trail_activation_thresholds"]["hard_stop_at_1_2_atr"],
+                    take_profit_trail_activation_dict,
+                    dynamic_take_profit_section,
+                    profit_taking_section,
+                ),
+            }
+
+            stop_loss_regime_bands = _merge_dict(
+                stop_loss_defaults["regime_bands"],
+                _ensure_dict(trailing_stop_section.get("regime_bands")),
+                _ensure_dict(stop_loss_section.get("regime_bands")),
+                _ensure_dict(exit_strategy_params.get("stop_loss_regime_bands")),
+            )
+
+            take_profit_regime_bands = _merge_dict(
+                take_profit_defaults["regime_bands"],
+                _ensure_dict(dynamic_take_profit_section.get("regime_bands")),
+                _ensure_dict(take_profit_section.get("regime_bands")),
+                _ensure_dict(profit_taking_section.get("regime_bands")),
+                _ensure_dict(exit_strategy_params.get("take_profit_regime_bands")),
+            )
+
+            stop_loss_time_decay_dict = _ensure_dict(
+                trailing_stop_section.get("time_decay_modifiers")
+            )
+            take_profit_time_decay_dict = _ensure_dict(
+                dynamic_take_profit_section.get("time_decay_modifiers")
+            )
+
+            stop_loss_time_decay_enabled = _resolve_scalar(
+                "enabled",
+                ["stop_loss_time_decay_enabled", "time_decay_enabled"],
+                stop_loss_defaults["time_decay_modifiers"]["enabled"],
+                stop_loss_time_decay_dict,
+            )
+            take_profit_time_decay_enabled = _resolve_scalar(
+                "enabled",
+                ["take_profit_time_decay_enabled", "time_decay_enabled"],
+                take_profit_defaults["time_decay_modifiers"]["enabled"],
+                take_profit_time_decay_dict,
+                profit_taking_section,
+            )
+
+            raw_stop_loss_schedule = _resolve_scalar(
+                "time_decay_schedule",
+                ["stop_loss_time_decay_schedule", "time_decay_schedule"],
+                stop_loss_defaults["time_decay_modifiers"]["time_decay_schedule"],
+                stop_loss_time_decay_dict,
+            )
+            stop_loss_time_decay_schedule = _parse_schedule(
+                raw_stop_loss_schedule,
+                stop_loss_defaults["time_decay_modifiers"]["time_decay_schedule"],
+            )
+
+            raw_take_profit_schedule = _resolve_scalar(
+                "time_decay_schedule",
+                ["take_profit_time_decay_schedule", "time_decay_schedule"],
+                take_profit_defaults["time_decay_modifiers"]["time_decay_schedule"],
+                take_profit_time_decay_dict,
+                profit_taking_section,
+            )
+            take_profit_time_decay_schedule = _parse_schedule(
+                raw_take_profit_schedule,
+                take_profit_defaults["time_decay_modifiers"]["time_decay_schedule"],
+            )
+
+            stop_loss_time_decay_modifiers = {
+                "enabled": stop_loss_time_decay_enabled,
+                "time_decay_schedule": stop_loss_time_decay_schedule,
+            }
+
+            take_profit_time_decay_modifiers = {
+                "enabled": take_profit_time_decay_enabled,
+                "time_decay_schedule": take_profit_time_decay_schedule,
             regime_bands = {
                 "trending": exit_strategy_params.get("regime_trending_profit_band", 0.75),
                 "ranging": exit_strategy_params.get("regime_ranging_profit_band", 0.55),
@@ -1195,12 +1432,20 @@ class PositionMonitor:
                         exit_strategy_params.get("profit_tier_2", 0.5),
                         exit_strategy_params.get("profit_tier_3", 0.75)
                     ],
+                    "profit_buffer": take_profit_profit_buffer,
+                    "trail_activation_thresholds": take_profit_trail_activation,
+                    "regime_bands": take_profit_regime_bands,
+                    "time_decay_modifiers": take_profit_time_decay_modifiers,
                     "regime_bands": regime_bands
                 },
                 "stop_loss": {
                     "base_stop_loss": exit_strategy_params.get("base_stop_loss", -0.05),
                     "atr_multiplier": exit_strategy_params.get("atr_multiplier", 1.5),
-                    "volatility_adjustment_factor": exit_strategy_params.get("volatility_adjustment_factor", 1.0)
+                    "volatility_adjustment_factor": exit_strategy_params.get("volatility_adjustment_factor", 1.0),
+                    "profit_buffer": stop_loss_profit_buffer,
+                    "trail_activation_thresholds": stop_loss_trail_activation,
+                    "regime_bands": stop_loss_regime_bands,
+                    "time_decay_modifiers": stop_loss_time_decay_modifiers,
                 },
                 "time_based": {
                     "max_hold_time": exit_strategy_params.get("max_hold_time", 10800),

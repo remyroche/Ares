@@ -53,3 +53,45 @@ position_monitor:
 # Higher confidence = Lower profit targets (hold longer for bigger gains)
 # Lower confidence = Higher profit targets (take profit sooner)
 # This creates an adaptive system that balances risk and reward based on model confidence
+
+stop_loss:
+  trailing_stop_config:
+    profit_buffer: 0.001
+    trail_activation_thresholds:
+      activate_at_0_5_atr: 0.5
+      trail_tighten_at_0_8_atr: 0.8
+      hard_stop_at_1_2_atr: 1.2
+    regime_bands:
+      bull_trend: 0.9
+      bear_trend: 1.1
+      sideways_range: 1.0
+    time_decay_modifiers:
+      enabled: true
+      time_decay_schedule:
+        - minutes: 0
+          modifier: 1.0
+        - minutes: 45
+          modifier: 0.95
+        - minutes: 90
+          modifier: 0.9
+
+take_profit:
+  dynamic_take_profit_config:
+    profit_buffer: 0.0025
+    trail_activation_thresholds:
+      activate_at_0_5_atr: 0.55
+      trail_tighten_at_0_8_atr: 0.95
+      hard_stop_at_1_2_atr: 1.4
+    regime_bands:
+      bull_trend: 1.1
+      bear_trend: 0.9
+      sideways_range: 1.0
+    time_decay_modifiers:
+      enabled: true
+      time_decay_schedule:
+        - minutes: 0
+          modifier: 1.0
+        - minutes: 90
+          modifier: 0.9
+        - minutes: 180
+          modifier: 0.85

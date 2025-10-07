@@ -216,18 +216,49 @@ class ModelSelectorService:
             ensemble_weights = {}
             
             if model_types is None:
-                model_types = self.config.analyst_models if timeframe == '15m' else self.config.tactician_models
-            
-            for model_type in model_types:
+                model_types = (
+                    self.config.analyst_models
+                    if timeframe == '15m'
+                    else self.config.tactician_models
+                )
+
+            requested_model_types = list(model_types)
+
+            model_candidates_by_type: Dict[str, List[str]] = {}
+            for model_type in requested_model_types:
+                config_attr = f"{model_type}_models"
+
+                if hasattr(self.config, config_attr):
+                    configured_models = getattr(self.config, config_attr) or [model_type]
+                    available_models = [
+                        self._format_model_name(model_name, timeframe)
+                        for model_name in configured_models
+                    ]
+                else:
+                    available_models = self._resolve_available_models(model_type, timeframe)
+
+                # Remove potential duplicates while preserving order
+                seen = set()
+                unique_models = []
+                for model_name in available_models:
+                    if model_name not in seen:
+                        seen.add(model_name)
+                        unique_models.append(model_name)
+
+                model_candidates_by_type[model_type] = (
+                    unique_models
+                    if unique_models
+                    else [self._format_model_name(model_type, timeframe)]
+                )
+
+            for model_type, available_models in model_candidates_by_type.items():
                 try:
                     # Get available models for this type and timeframe
-                    available_models = [f"{model_type}_{timeframe}" for model_type in model_types]
-                    
                     # Select best model for current regime
                     selected_model, weights = self.model_selector.select_model_for_regime(
                         current_regime, available_models
                     )
-                    
+
                     selected_models[model_type] = selected_model
                     ensemble_weights[model_type] = weights
                     
@@ -251,7 +282,7 @@ class ModelSelectorService:
                     'symbol': symbol,
                     'timeframe': timeframe,
                     'regime_detection_time': regime_result.execution_time,
-                    'model_types': model_types,
+                    'model_types': requested_model_types,
                     'timestamp': datetime.now().isoformat()
                 },
                 execution_time=execution_time
@@ -405,6 +436,39 @@ class ModelSelectorService:
                 'max_ensemble_models': self.config.max_ensemble_models
             }
         }
+
+    def _resolve_available_models(self, model_type: str, timeframe: str) -> List[str]:
+        """Resolve available model names for a specific type and timeframe."""
+        type_to_models = {
+            'analyst': self.config.analyst_models,
+            'tactician': self.config.tactician_models
+        }
+
+        base_models = type_to_models.get(model_type)
+
+        if base_models is None:
+            base_models = [model_type]
+        elif not base_models:
+            # Fall back to the provided type name when the configured list is empty
+            base_models = [model_type]
+
+        formatted_models = [self._format_model_name(model_name, timeframe) for model_name in base_models]
+
+        # Remove potential duplicates while preserving order
+        seen = set()
+        unique_models = []
+        for model_name in formatted_models:
+            if model_name not in seen:
+                seen.add(model_name)
+                unique_models.append(model_name)
+
+        return unique_models if unique_models else [self._format_model_name(model_type, timeframe)]
+
+    @staticmethod
+    def _format_model_name(model_name: str, timeframe: str) -> str:
+        """Ensure model names are consistently formatted with timeframe suffix."""
+        suffix = f"_{timeframe}"
+        return model_name if model_name.endswith(suffix) else f"{model_name}{suffix}"
 
 
 # Global instance for trading system

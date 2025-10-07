@@ -1,293 +1,377 @@
 """
-Example Usage of Optimized Data-Driven Lookback System
+Example Usage of Optimized Interaction Feature Generation
 
-This example demonstrates how to use the optimized lookback optimization system
-with matrix operations and hardware acceleration in the Ares pipeline.
+This script demonstrates how to use the optimized interaction feature generation
+pipeline with extensive logging, matrix operations, and hardware optimization.
+
+Key Features Demonstrated:
+- Complete pipeline execution
+- Matrix operations optimization
+- M1 hardware acceleration
+- Extensive tprint logging
+- Integration with sub_pipeline
+- Performance monitoring
 """
 
 import asyncio
-import logging
-import numpy as np
+import time
 import pandas as pd
-from datetime import datetime, timedelta
+import numpy as np
+from pathlib import Path
+from typing import Dict, Any
 
-# Import the optimized system
-from .optimized_lookback_component import OptimizedLookbackComponent
-from .config import create_production_config, create_development_config, FamilyType
+# Import tprint utilities
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint_debug, tprint_performance, tprint_progress
+)
 
-# Import pipeline components
-from ...components.component_factory import ComponentFactory
-from ...sub_pipeline import SubPipelineConfig, ExecutionMode
+# Import the optimized orchestrator
+from .optimized_interaction_orchestrator import (
+    OptimizedInteractionOrchestrator, OptimizedInteractionConfig, generate_optimized_interaction_features
+)
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Import the roadmap component
+from .roadmap_feature_generation_component import (
+    RoadmapFeatureGenerationComponent, RoadmapFeatureGenerationConfig, execute_roadmap_feature_generation
+)
+
+# Import sub_pipeline
+from ..sub_pipeline import PreTrainingSubPipeline, SubPipelineConfig, ExecutionMode
 
 
-def generate_sample_market_data(n_days: int = 2000) -> pd.DataFrame:
-    """Generate sample market data for demonstration."""
-    logger.info(f"Generating sample market data for {n_days} days...")
+def create_sample_data(n_rows: int = 1000) -> pd.DataFrame:
+    """Create sample market data for testing."""
+    tprint_info("📊 Creating sample market data...")
     
-    # Generate price data
-    np.random.seed(42)
-    returns = np.random.normal(0.0001, 0.02, n_days)
-    prices = 100 * np.exp(np.cumsum(returns))
+    # Generate timestamps
+    timestamps = pd.date_range(start='2024-01-01', periods=n_rows, freq='15min')
     
     # Generate OHLCV data
-    high_low_noise = np.random.uniform(0.001, 0.005, n_days)
-    df = pd.DataFrame({
-        'open': prices * (1 + np.random.uniform(-0.001, 0.001, n_days)),
-        'high': prices * (1 + high_low_noise),
-        'low': prices * (1 - high_low_noise),
+    np.random.seed(42)  # For reproducibility
+    
+    # Generate price data with some trend and volatility
+    base_price = 100.0
+    returns = np.random.normal(0, 0.02, n_rows)
+    prices = [base_price]
+    
+    for ret in returns[1:]:
+        new_price = prices[-1] * (1 + ret)
+        prices.append(new_price)
+    
+    prices = np.array(prices)
+    
+    # Generate OHLC from prices
+    high_multiplier = 1 + np.abs(np.random.normal(0, 0.01, n_rows))
+    low_multiplier = 1 - np.abs(np.random.normal(0, 0.01, n_rows))
+    
+    data = pd.DataFrame({
+        'timestamp': timestamps,
+        'open': prices * (1 + np.random.normal(0, 0.005, n_rows)),
+        'high': prices * high_multiplier,
+        'low': prices * low_multiplier,
         'close': prices,
-        'volume': np.random.uniform(1000000, 5000000, n_days)
+        'volume': np.random.lognormal(10, 1, n_rows),
+        'trade_count': np.random.poisson(50, n_rows),
+        'bid': prices * (1 - np.random.uniform(0.0001, 0.001, n_rows)),
+        'ask': prices * (1 + np.random.uniform(0.0001, 0.001, n_rows)),
+        'bid_size': np.random.lognormal(8, 1, n_rows),
+        'ask_size': np.random.lognormal(8, 1, n_rows)
     })
     
-    # Add some technical indicators
-    df['sma_20'] = df['close'].rolling(20).mean()
-    df['sma_50'] = df['close'].rolling(50).mean()
+    # Set timestamp as index
+    data.set_index('timestamp', inplace=True)
     
-    return df
+    tprint_success(f"✅ Created sample data: {data.shape[0]} rows, {data.shape[1]} columns")
+    return data
 
 
-def generate_sample_targets(data: pd.DataFrame) -> np.ndarray:
-    """Generate sample target variables."""
-    # Generate future returns as targets
-    future_returns = data['close'].pct_change(5).shift(-5)
-    return future_returns.fillna(0).values
-
-
-async def example_optimized_component_usage():
-    """Example of using the optimized lookback component directly."""
-    logger.info("🚀 Example: Direct Component Usage")
+def create_sample_targets(data: pd.DataFrame) -> Dict[int, pd.Series]:
+    """Create sample targets for feature generation."""
+    tprint_info("🎯 Creating sample targets...")
     
-    # Generate sample data
-    market_data = generate_sample_market_data(1000)
-    targets = generate_sample_targets(market_data)
+    # Generate simple targets based on future returns
+    future_returns = data['close'].pct_change().shift(-1)  # 1-step ahead returns
     
-    # Create pipeline state
-    pipeline_state = {
-        'symbol': 'ETHUSDT',
-        'exchange': 'binance',
-        'timeframe': '15m',
-        'market_data': market_data,
-        'multi_horizon_labeling_result': {
-            'labeled_data': pd.DataFrame({'target': targets})
-        }
+    targets = {
+        1: future_returns,  # 1-step target
+        3: data['close'].pct_change().shift(-3),  # 3-step target
+        5: data['close'].pct_change().shift(-5)   # 5-step target
     }
     
-    # Create optimized component
-    component = OptimizedLookbackComponent()
-    
-    # Execute component
-    result = await component.execute(None, pipeline_state)
-    
-    if result.success:
-        logger.info("✅ Optimized component execution successful!")
-        logger.info(f"📊 Generated {len(result.artifacts['feature_names'])} features")
-        logger.info(f"⚡ Matrix operations used: {result.artifacts['optimization_metrics']['matrix_ops_used']}")
-        logger.info(f"🚀 Hardware accelerated ops: {result.artifacts['optimization_metrics']['hardware_accelerated_ops']}")
-        
-        # Access generated features
-        feature_matrix = result.artifacts['feature_interaction_matrix']
-        feature_names = result.artifacts['feature_names']
-        
-        logger.info(f"Feature matrix shape: {feature_matrix.shape}")
-        logger.info(f"Feature names: {feature_names[:5]}...")  # Show first 5
-        
-    else:
-        logger.error(f"❌ Component execution failed: {result.error_message}")
-    
-    return result
+    tprint_success(f"✅ Created {len(targets)} target series")
+    return targets
 
 
-async def example_pipeline_integration():
-    """Example of using the optimized system through the pipeline."""
-    logger.info("🚀 Example: Pipeline Integration")
+async def example_direct_orchestrator_usage():
+    """Example of using the orchestrator directly."""
+    tprint_success("🚀 Example 1: Direct Orchestrator Usage")
     
-    # Create pipeline configuration
-    config = SubPipelineConfig(
-        symbol='ETHUSDT',
-        exchange='binance',
-        timeframe='15m',
-        mode=ExecutionMode.FULL,
-        parallel_processing=True,
-        max_workers=4
+    # Create sample data
+    data = create_sample_data(1000)
+    targets = create_sample_targets(data)
+    
+    # Create configuration
+    config = OptimizedInteractionConfig(
+        symbol="ETHUSDT",
+        exchange="binance",
+        timeframe="15m",
+        feature_budget_pre=50,  # Smaller for demo
+        interactions_cap=10,
+        enable_matrix_optimization=True,
+        enable_hardware_optimization=True,
+        verbose_logging=True
     )
     
-    # Create component using factory
-    component = ComponentFactory.create_component('optimized_lookback_generation', config)
+    # Create training input and pipeline state
+    training_input = {
+        'data': data,
+        'targets': targets
+    }
     
-    # Generate sample data
-    market_data = generate_sample_market_data(2000)
-    targets = generate_sample_targets(market_data)
-    
-    # Create pipeline state
     pipeline_state = {
         'symbol': 'ETHUSDT',
         'exchange': 'binance',
         'timeframe': '15m',
-        'market_data': market_data,
-        'multi_horizon_labeling_result': {
-            'labeled_data': pd.DataFrame({'target': targets})
-        }
+        'data_dir': 'historical_data'
     }
     
-    # Execute component
-    result = await component.execute(None, pipeline_state)
+    # Execute feature generation
+    tprint_info("🔧 Executing feature generation...")
+    result = await generate_optimized_interaction_features(
+        training_input, pipeline_state, config
+    )
     
+    # Display results
     if result.success:
-        logger.info("✅ Pipeline integration successful!")
+        tprint_success("✅ Feature generation completed successfully!")
+        tprint_info(f"📊 Generated {len(result.feature_names)} total features")
+        tprint_info(f"🎯 Selected {len(result.selected_features)} features")
+        tprint_info(f"🔗 Generated {len(result.interaction_features.columns)} interactions")
+        tprint_info(f"⏰ Generated {len(result.cross_timeframe_features.columns)} cross-timeframe features")
+        tprint_info(f"💾 Memory usage: {result.memory_usage_mb:.2f} MB")
+        tprint_info(f"⏱️ Execution time: {result.execution_time:.3f}s")
         
-        # Access optimization results
-        optimization_results = result.artifacts['optimized_lookback_results']
-        logger.info(f"📊 Optimization completed in {optimization_results['execution_time']:.3f}s")
-        logger.info(f"📈 Symbols processed: {len(optimization_results['ic_surface_results'])}")
+        # Show some feature names
+        tprint_debug("Sample feature names:")
+        for i, name in enumerate(result.feature_names[:10]):
+            tprint_debug(f"  {i+1}. {name}")
         
-        # Access feature generation results
-        feature_metadata = result.artifacts['feature_generation_metadata']
-        logger.info(f"⚙️ Features generated: {feature_metadata['total_features']}")
-        logger.info(f"🔧 Base features: {feature_metadata['base_features']}")
-        logger.info(f"🔗 Interaction features: {feature_metadata['interaction_features']}")
-        
+        if len(result.feature_names) > 10:
+            tprint_debug(f"  ... and {len(result.feature_names) - 10} more")
     else:
-        logger.error(f"❌ Pipeline integration failed: {result.error_message}")
+        tprint_error(f"❌ Feature generation failed: {result.error_message}")
+
+
+async def example_component_usage():
+    """Example of using the component interface."""
+    tprint_success("🚀 Example 2: Component Usage")
     
-    return result
+    # Create sample data
+    data = create_sample_data(1000)
+    targets = create_sample_targets(data)
+    
+    # Create component configuration
+    config = RoadmapFeatureGenerationConfig(
+        symbol="ETHUSDT",
+        exchange="binance",
+        timeframe="15m",
+        feature_budget_pre=50,
+        interactions_cap=10,
+        enable_matrix_optimization=True,
+        enable_hardware_optimization=True,
+        verbose_logging=True
+    )
+    
+    # Create training input and pipeline state
+    training_input = {
+        'data': data,
+        'targets': targets
+    }
+    
+    pipeline_state = {
+        'symbol': 'ETHUSDT',
+        'exchange': 'binance',
+        'timeframe': '15m',
+        'data_dir': 'historical_data'
+    }
+    
+    # Execute using component
+    tprint_info("🔧 Executing feature generation using component...")
+    result = await execute_roadmap_feature_generation(
+        training_input, pipeline_state, config
+    )
+    
+    # Display results
+    if result.success:
+        tprint_success("✅ Component execution completed successfully!")
+        tprint_info(f"📊 Generated features: {result.artifacts['roadmap_feature_generation_result']['feature_names']}")
+        tprint_info(f"🎯 Selected features: {len(result.artifacts['roadmap_feature_generation_result']['selected_features'])}")
+        tprint_info(f"⏱️ Execution time: {result.execution_time:.3f}s")
+        tprint_info(f"📁 Output files: {result.output_files}")
+    else:
+        tprint_error(f"❌ Component execution failed: {result.error_message}")
+
+
+async def example_sub_pipeline_usage():
+    """Example of using the sub_pipeline integration."""
+    tprint_success("🚀 Example 3: Sub-Pipeline Integration")
+    
+    # Create sample data
+    data = create_sample_data(1000)
+    targets = create_sample_targets(data)
+    
+    # Create sub-pipeline configuration
+    config = SubPipelineConfig(
+        mode=ExecutionMode.FULL,
+        symbol="ETHUSDT",
+        exchange="binance",
+        timeframe="15m",
+        data_dir="historical_data",
+        parallel_processing=True,
+        max_workers=2,
+        custom_params={
+            'feature_budget_pre': 50,
+            'interactions_cap': 10,
+            'enable_matrix_optimization': True,
+            'enable_hardware_optimization': True,
+            'verbose_logging': True
+        }
+    )
+    
+    # Create training input and pipeline state
+    training_input = {
+        'data': data,
+        'targets': targets
+    }
+    
+    pipeline_state = {
+        'symbol': 'ETHUSDT',
+        'exchange': 'binance',
+        'timeframe': '15m',
+        'data_dir': 'historical_data'
+    }
+    
+    # Execute sub-pipeline
+    tprint_info("🔧 Executing sub-pipeline...")
+    pipeline = PreTrainingSubPipeline()
+    
+    # Execute just the roadmap feature generation step
+    result = await pipeline._execute_roadmap_feature_generation(config)
+    
+    # Display results
+    if result.success:
+        tprint_success("✅ Sub-pipeline execution completed successfully!")
+        tprint_info(f"📊 Status: {result.status.value}")
+        tprint_info(f"⏱️ Duration: {result.duration_seconds:.3f}s")
+        tprint_info(f"📁 Output files: {result.output_files}")
+        tprint_info(f"📊 Metadata: {result.metadata}")
+    else:
+        tprint_error(f"❌ Sub-pipeline execution failed: {result.error_message}")
 
 
 async def example_performance_comparison():
-    """Example comparing optimized vs basic approaches."""
-    logger.info("🚀 Example: Performance Comparison")
+    """Example comparing performance with and without optimizations."""
+    tprint_success("🚀 Example 4: Performance Comparison")
     
-    # Generate larger dataset for comparison
-    market_data = generate_sample_market_data(5000)
-    targets = generate_sample_targets(market_data)
+    # Create sample data
+    data = create_sample_data(2000)  # Larger dataset for better comparison
+    targets = create_sample_targets(data)
     
-    # Test with development config (faster)
-    from .config import create_development_config
+    training_input = {
+        'data': data,
+        'targets': targets
+    }
     
-    dev_config = create_development_config()
-    dev_component = OptimizedLookbackComponent()
-    dev_component.optimization_config = dev_config
-    
-    # Test with production config (more thorough)
-    prod_config = create_production_config()
-    prod_component = OptimizedLookbackComponent()
-    prod_component.optimization_config = prod_config
-    
-    # Create pipeline state
     pipeline_state = {
         'symbol': 'ETHUSDT',
         'exchange': 'binance',
         'timeframe': '15m',
-        'market_data': market_data,
-        'multi_horizon_labeling_result': {
-            'labeled_data': pd.DataFrame({'target': targets})
-        }
+        'data_dir': 'historical_data'
     }
     
-    # Test development config
-    logger.info("Testing development configuration...")
-    start_time = datetime.now()
-    dev_result = await dev_component.execute(None, pipeline_state)
-    dev_time = (datetime.now() - start_time).total_seconds()
+    # Test with optimizations enabled
+    tprint_info("🔧 Testing with optimizations enabled...")
+    config_optimized = OptimizedInteractionConfig(
+        symbol="ETHUSDT",
+        exchange="binance",
+        timeframe="15m",
+        feature_budget_pre=100,
+        interactions_cap=15,
+        enable_matrix_optimization=True,
+        enable_hardware_optimization=True,
+        verbose_logging=False  # Reduce logging for cleaner output
+    )
     
-    # Test production config
-    logger.info("Testing production configuration...")
-    start_time = datetime.now()
-    prod_result = await prod_component.execute(None, pipeline_state)
-    prod_time = (datetime.now() - start_time).total_seconds()
+    start_time = time.time()
+    result_optimized = await generate_optimized_interaction_features(
+        training_input, pipeline_state, config_optimized
+    )
+    optimized_time = time.time() - start_time
+    
+    # Test with optimizations disabled
+    tprint_info("🔧 Testing with optimizations disabled...")
+    config_unoptimized = OptimizedInteractionConfig(
+        symbol="ETHUSDT",
+        exchange="binance",
+        timeframe="15m",
+        feature_budget_pre=100,
+        interactions_cap=15,
+        enable_matrix_optimization=False,
+        enable_hardware_optimization=False,
+        verbose_logging=False
+    )
+    
+    start_time = time.time()
+    result_unoptimized = await generate_optimized_interaction_features(
+        training_input, pipeline_state, config_unoptimized
+    )
+    unoptimized_time = time.time() - start_time
     
     # Compare results
-    logger.info("📊 Performance Comparison Results:")
-    logger.info(f"Development config: {dev_time:.3f}s")
-    logger.info(f"Production config: {prod_time:.3f}s")
-    logger.info(f"Speed improvement: {prod_time/dev_time:.2f}x slower (but more thorough)")
+    tprint_success("📊 Performance Comparison Results:")
+    tprint_info(f"With optimizations: {optimized_time:.3f}s")
+    tprint_info(f"Without optimizations: {unoptimized_time:.3f}s")
     
-    if dev_result.success and prod_result.success:
-        dev_features = len(dev_result.artifacts['feature_names'])
-        prod_features = len(prod_result.artifacts['feature_names'])
-        logger.info(f"Development features: {dev_features}")
-        logger.info(f"Production features: {prod_features}")
+    if optimized_time < unoptimized_time:
+        speedup = unoptimized_time / optimized_time
+        tprint_success(f"🚀 Speedup: {speedup:.2f}x faster with optimizations!")
+    else:
+        tprint_warning("⚠️ Optimizations did not provide speedup (may be due to small dataset)")
     
-    return dev_result, prod_result
-
-
-async def example_hardware_optimization():
-    """Example demonstrating hardware optimization features."""
-    logger.info("🚀 Example: Hardware Optimization")
-    
-    # Check hardware availability
-    try:
-        from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
-        from src.utils.matrix_operations.hardware_integration import HardwareOptimizedMatrixProcessor
-        
-        hardware_manager = UnifiedHardwareManager()
-        logger.info("✅ Hardware optimizations available")
-        
-        # Get hardware info
-        hardware_info = hardware_manager.get_system_info()
-        logger.info(f"CPU cores: {hardware_info.get('cpu_cores', 'Unknown')}")
-        logger.info(f"Memory: {hardware_info.get('memory_gb', 'Unknown')} GB")
-        logger.info(f"GPU available: {hardware_info.get('gpu_available', False)}")
-        
-    except ImportError:
-        logger.warning("⚠️ Hardware optimizations not available")
-    
-    # Test matrix operations
-    try:
-        from src.utils.matrix_operations.unified_operations import get_unified_matrix_operations
-        
-        matrix_ops = get_unified_matrix_operations()
-        logger.info("✅ Matrix operations available")
-        
-        # Test vectorized operations
-        test_data = np.random.randn(1000, 10)
-        test_target = np.random.randn(1000)
-        
-        # This would use optimized matrix operations
-        logger.info("Testing vectorized operations...")
-        
-    except ImportError:
-        logger.warning("⚠️ Matrix operations not available")
-    
-    return True
+    # Compare memory usage
+    if result_optimized.success and result_unoptimized.success:
+        tprint_info(f"Memory usage (optimized): {result_optimized.memory_usage_mb:.2f} MB")
+        tprint_info(f"Memory usage (unoptimized): {result_unoptimized.memory_usage_mb:.2f} MB")
 
 
 async def main():
-    """Main example function."""
-    print("Data-Driven Lookback Optimization System - Optimized Usage Examples")
-    print("=" * 80)
+    """Main function to run all examples."""
+    tprint_success("🎉 Starting Optimized Interaction Feature Generation Examples")
+    tprint_info("=" * 80)
     
     try:
-        # Example 1: Direct component usage
-        print("\n1. Direct Component Usage")
-        print("-" * 40)
-        await example_optimized_component_usage()
+        # Example 1: Direct orchestrator usage
+        await example_direct_orchestrator_usage()
+        tprint_info("=" * 80)
         
-        # Example 2: Pipeline integration
-        print("\n2. Pipeline Integration")
-        print("-" * 40)
-        await example_pipeline_integration()
+        # Example 2: Component usage
+        await example_component_usage()
+        tprint_info("=" * 80)
         
-        # Example 3: Performance comparison
-        print("\n3. Performance Comparison")
-        print("-" * 40)
+        # Example 3: Sub-pipeline integration
+        await example_sub_pipeline_usage()
+        tprint_info("=" * 80)
+        
+        # Example 4: Performance comparison
         await example_performance_comparison()
+        tprint_info("=" * 80)
         
-        # Example 4: Hardware optimization
-        print("\n4. Hardware Optimization")
-        print("-" * 40)
-        await example_hardware_optimization()
-        
-        print("\n" + "=" * 80)
-        print("✅ All examples completed successfully!")
-        print("=" * 80)
+        tprint_success("🎉 All examples completed successfully!")
         
     except Exception as e:
-        logger.error(f"❌ Example execution failed: {e}")
-        print(f"\n❌ Example execution failed: {e}")
+        tprint_error(f"❌ Example execution failed: {e}")
+        raise
 
 
 if __name__ == "__main__":

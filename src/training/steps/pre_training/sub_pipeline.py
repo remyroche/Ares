@@ -358,17 +358,31 @@ class PreTrainingSubPipeline:
         )
 
         try:
-            # Convert config to component config
-            component_config = ComponentConfig(
+            # Import the new roadmap feature generation component
+            from .interaction_feature_generator.feature_interaction_generation.roadmap_feature_generation_component import (
+                create_roadmap_feature_generation_component, RoadmapFeatureGenerationConfig
+            )
+            
+            tprint("🔧 Using optimized roadmap feature generation component")
+            
+            # Create component configuration
+            component_config = RoadmapFeatureGenerationConfig(
                 symbol=config.symbol,
                 exchange=config.exchange,
                 timeframe=config.timeframe,
                 data_dir=config.data_dir,
-                custom_params=config.custom_params
+                feature_budget_pre=config.custom_params.get('feature_budget_pre', 120),
+                feature_budget_post=config.custom_params.get('feature_budget_post', (30, 60)),
+                interactions_cap=config.custom_params.get('interactions_cap', 15),
+                enable_matrix_optimization=config.custom_params.get('enable_matrix_optimization', True),
+                enable_hardware_optimization=config.custom_params.get('enable_hardware_optimization', True),
+                enable_parallel_processing=config.parallel_processing,
+                max_workers=config.max_workers,
+                verbose_logging=config.custom_params.get('verbose_logging', True)
             )
 
-            # Create component using factory
-            component = ComponentFactory.create_component('roadmap_feature_generation', component_config)
+            # Create component
+            component = create_roadmap_feature_generation_component(component_config)
 
             # Execute component
             pipeline_state = self._prepare_component_pipeline_state(config)
@@ -379,6 +393,8 @@ class PreTrainingSubPipeline:
             result.end_time = datetime.now()
             result.duration_seconds = (result.end_time - result.start_time).total_seconds()
             result.artifacts = component_result.artifacts
+            result.output_files = component_result.output_files
+            result.metadata = component_result.metadata
             result.error_message = component_result.error_message
 
         except Exception as e:
@@ -386,6 +402,7 @@ class PreTrainingSubPipeline:
             result.error_message = str(e)
             result.end_time = datetime.now()
             result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            tprint_error(f"❌ Roadmap feature generation failed: {e}")
 
         return result
 

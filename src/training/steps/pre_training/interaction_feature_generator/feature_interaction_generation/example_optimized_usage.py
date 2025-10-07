@@ -31,9 +31,9 @@ from .optimized_interaction_orchestrator import (
     OptimizedInteractionOrchestrator, OptimizedInteractionConfig, generate_optimized_interaction_features
 )
 
-# Import the roadmap component
-from .roadmap_feature_generation_component import (
-    RoadmapFeatureGenerationComponent, RoadmapFeatureGenerationConfig, execute_roadmap_feature_generation
+# Import the interactive component
+from .interactive_feature_generation_component import (
+    InteractiveFeatureGenerationComponent, InteractiveFeatureGenerationConfig, execute_interactive_feature_generation
 )
 
 # Import sub_pipeline
@@ -198,15 +198,15 @@ async def example_component_usage():
     
     # Execute using component
     tprint_info("🔧 Executing feature generation using component...")
-    result = await execute_roadmap_feature_generation(
+    result = await execute_interactive_feature_generation(
         training_input, pipeline_state, config
     )
     
     # Display results
     if result.success:
         tprint_success("✅ Component execution completed successfully!")
-        tprint_info(f"📊 Generated features: {result.artifacts['roadmap_feature_generation_result']['feature_names']}")
-        tprint_info(f"🎯 Selected features: {len(result.artifacts['roadmap_feature_generation_result']['selected_features'])}")
+        tprint_info(f"📊 Generated features: {result.artifacts['interactive_feature_generation_result']['feature_names']}")
+        tprint_info(f"🎯 Selected features: {len(result.artifacts['interactive_feature_generation_result']['selected_features'])}")
         tprint_info(f"⏱️ Execution time: {result.execution_time:.3f}s")
         tprint_info(f"📁 Output files: {result.output_files}")
     else:
@@ -257,7 +257,7 @@ async def example_sub_pipeline_usage():
     pipeline = PreTrainingSubPipeline()
     
     # Execute just the roadmap feature generation step
-    result = await pipeline._execute_roadmap_feature_generation(config)
+    result = await pipeline._execute_interactive_feature_generation(config)
     
     # Display results
     if result.success:

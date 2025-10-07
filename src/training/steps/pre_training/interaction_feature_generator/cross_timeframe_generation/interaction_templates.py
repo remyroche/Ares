@@ -542,24 +542,29 @@ class InteractionGenerator:
         }
         
         for name, series in features.items():
+            lower_name = name.lower()
+
             # Categorize based on feature name
-            if any(x in name.lower() for x in ['price', 'close', 'open', 'high', 'low']):
+            if any(x in lower_name for x in ['price', 'close', 'open', 'high', 'low']):
                 groups['price_feature'].append(name)
-            elif any(x in name.lower() for x in ['vol', 'sigma', 'rv', 'gk']):
-                groups['volatility_feature'].append(name)
-            elif any(x in name.lower() for x in ['mom', 'momentum']):
-                groups['momentum_feature'].append(name)
-            elif any(x in name.lower() for x in ['rsi', 'stoch', 'mean_rev']):
-                groups['mean_reversion_feature'].append(name)
-            elif any(x in name.lower() for x in ['volume', 'liquidity']):
-                groups['liquidity_feature'].append(name)
-            elif 'volume' in name.lower():
+            elif 'volume' in lower_name:
                 groups['volume_feature'].append(name)
-            elif any(x in name.lower() for x in ['tod', 'time']):
+            elif any(x in lower_name for x in ['liquidity', 'liq', 'depth', 'spread']):
+                groups['liquidity_feature'].append(name)
+            elif (
+                ('vol' in lower_name and 'volume' not in lower_name)
+                or any(x in lower_name for x in ['volatility', 'sigma', 'rv', 'gk'])
+            ):
+                groups['volatility_feature'].append(name)
+            elif any(x in lower_name for x in ['mom', 'momentum']):
+                groups['momentum_feature'].append(name)
+            elif any(x in lower_name for x in ['rsi', 'stoch', 'mean_rev']):
+                groups['mean_reversion_feature'].append(name)
+            elif any(x in lower_name for x in ['tod', 'time']):
                 groups['tod_indicator'].append(name)
-            elif any(x in name.lower() for x in ['regime', 'vol_regime']):
+            elif any(x in lower_name for x in ['regime', 'vol_regime']):
                 groups['regime_indicator'].append(name)
-        
+
         return groups
     
     def _group_htf_features_by_type(self, materialized_htfs: Dict[str, Any]) -> Dict[str, List[str]]:

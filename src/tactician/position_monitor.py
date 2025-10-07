@@ -1,6 +1,8 @@
 # src/tactician/position_monitor.py
-from ...utils.logger import system_logger
-from ...core.decorators import handles_errors
+from src.utils.logger import system_logger
+from src.core.decorators import handles_errors
+from src.core.error_classes import initialization_error
+from src.utils.warning_symbols import error, failed, invalid, missing, warning
 
 """
 Position Monitor for real-time position monitoring and confidence assessment.
@@ -18,15 +20,7 @@ from typing import Any, Dict, List, Optional
 
 from .enhanced_order_manager import EnhancedOrderManager
 from .position_division_strategy import PositionDivisionStrategy
-from ...utils.confidence import normalize_dual_confidence
-from ...core.exceptions import (
-    error,
-    failed,
-    initialization_error,
-    invalid,
-    missing,
-    warning,
-)
+from src.utils.confidence import normalize_dual_confidence
 import json
 import logging
 import time
@@ -494,8 +488,8 @@ class PositionMonitor:
             return PositionAction.STAY, f"Error in profit evaluation: {e}"
 
     def _evaluate_trailing_stop(
-        self, 
-        position_data: Dict[str, Any], 
+        self,
+        position_data: Dict[str, Any],
         combined_confidence: float
     ) -> tuple[PositionAction, str]:
         """
@@ -509,15 +503,150 @@ class PositionMonitor:
             tuple: (PositionAction, reason)
         """
         try:
-            # This is a placeholder for trailing stop logic
-            # In a full implementation, you would:
-            # 1. Calculate ATR-based trailing stop distance
-            # 2. Check if current price has moved against the position
-            # 3. Update trailing stop level if price moves favorably
-            # 4. Trigger exit if trailing stop is hit
-            
-            # For now, return STAY to indicate no trailing stop action needed
-            return PositionAction.STAY, "Trailing stop evaluation (placeholder)"
+            trailing_config = self.trailing_stop_config or {}
+            if not trailing_config.get("enabled", True):
+                return PositionAction.STAY, "Trailing stop disabled"
+
+            activation_threshold = trailing_config.get("confidence_activation", 0.7)
+            if combined_confidence < activation_threshold:
+                return PositionAction.STAY, (
+                    f"Confidence {combined_confidence:.3f} below trailing activation "
+                    f"threshold {activation_threshold:.3f}"
+                )
+
+            side = position_data.get("side", "LONG").upper()
+            entry_price = float(position_data.get("entry_price", 0) or 0)
+            current_price = float(position_data.get("current_price", entry_price) or entry_price)
+
+            if entry_price <= 0:
+                return PositionAction.STAY, "Invalid entry price for trailing stop"
+
+            def _latest_value(series: Any) -> Optional[float]:
+                if series is None:
+                    return None
+                try:
+                    if hasattr(series, "iloc"):
+                        return float(series.iloc[-1])
+                    if hasattr(series, "__getitem__"):
+                        return float(series[-1])
+                except Exception:
+                    pass
+                try:
+                    seq = list(series)
+                    if not seq:
+                        return None
+                    return float(seq[-1])
+                except Exception:
+                    return None
+
+            latest_atr = _latest_value(position_data.get("atr_series"))
+            if latest_atr is None:
+                latest_atr = position_data.get("atr")
+            sigma_source = position_data.get("sigma_series")
+            if sigma_source is None:
+                sigma_source = position_data.get("volatility_series")
+            latest_sigma = _latest_value(sigma_source)
+
+            atr_multiplier = float(trailing_config.get("atr_multiplier", 1.5))
+            min_distance = float(trailing_config.get("min_distance", 0.01))
+
+            distance_components = []
+            if latest_atr is not None:
+                try:
+                    distance_components.append(float(latest_atr) * atr_multiplier)
+                except Exception:
+                    pass
+            if latest_sigma is not None:
+                try:
+                    distance_components.append(float(latest_sigma))
+                except Exception:
+                    pass
+
+            if distance_components:
+                trailing_distance = sum(distance_components) / len(distance_components)
+            else:
+                trailing_distance = min_distance
+
+            trailing_distance = max(trailing_distance, min_distance)
+
+            if side == "SHORT":
+                profit_pct = max(0.0, (entry_price - current_price) / entry_price)
+            else:
+                profit_pct = max(0.0, (current_price - entry_price) / entry_price)
+
+            tightening_factor = 1.0 / (1.0 + profit_pct * 5.0)
+            trailing_distance = max(min_distance, trailing_distance * tightening_factor)
+
+            trailing_state = position_data.setdefault("trailing_stop_state", {})
+
+            action_on_update = PositionAction.TRAILING_STOP
+            update_reason = ""
+
+            if side == "SHORT":
+                trough_price = min(
+                    float(trailing_state.get("trough_price", entry_price) or entry_price),
+                    current_price
+                )
+                trailing_state["trough_price"] = trough_price
+                new_level = trough_price + trailing_distance
+                previous_level = trailing_state.get("level")
+                if previous_level is not None:
+                    new_level = min(float(previous_level), new_level)
+                trailing_state["level"] = new_level
+                trailing_state["distance"] = trailing_distance
+                update_reason = (
+                    f"Short trailing stop updated to {new_level:.4f} "
+                    f"(distance {trailing_distance:.4f})"
+                )
+                if current_price >= new_level:
+                    trailing_state["triggered"] = True
+                    if profit_pct > 0:
+                        return (
+                            PositionAction.TAKE_PROFIT,
+                            f"Short trailing stop triggered at {new_level:.4f}"
+                        )
+                    return (
+                        PositionAction.STOP_LOSS,
+                        f"Short trailing stop hit at {new_level:.4f}"
+                    )
+
+            else:  # Default to LONG behaviour
+                peak_price = max(
+                    float(trailing_state.get("peak_price", entry_price) or entry_price),
+                    current_price
+                )
+                trailing_state["peak_price"] = peak_price
+                new_level = peak_price - trailing_distance
+                previous_level = trailing_state.get("level")
+                if previous_level is not None:
+                    new_level = max(float(previous_level), new_level)
+                trailing_state["level"] = new_level
+                trailing_state["distance"] = trailing_distance
+                update_reason = (
+                    f"Long trailing stop updated to {new_level:.4f} "
+                    f"(distance {trailing_distance:.4f})"
+                )
+                if current_price <= new_level:
+                    trailing_state["triggered"] = True
+                    if profit_pct > 0:
+                        return (
+                            PositionAction.TAKE_PROFIT,
+                            f"Long trailing stop triggered at {new_level:.4f}"
+                        )
+                    return (
+                        PositionAction.STOP_LOSS,
+                        f"Long trailing stop hit at {new_level:.4f}"
+                    )
+
+            previous_level = position_data["trailing_stop_state"].get("previous_reported_level")
+            current_level = position_data["trailing_stop_state"].get("level")
+            tolerance = 1e-6
+            position_data["trailing_stop_state"]["previous_reported_level"] = current_level
+
+            if previous_level is None or abs(float(previous_level) - float(current_level)) > tolerance:
+                return action_on_update, update_reason
+
+            return PositionAction.STAY, "Trailing stop unchanged"
 
         except Exception as e:
             self.logger.error(failed(f"❌ Error evaluating trailing stop: {e}"))

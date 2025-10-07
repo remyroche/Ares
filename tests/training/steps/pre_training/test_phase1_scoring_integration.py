@@ -22,18 +22,20 @@ from src.training.steps.pre_training.interaction_feature_generator.cross_timefra
 from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.scoring_system import (
     AdaptiveScoringSystem,
 )
+from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.config import (
+    SessionConfig,
+    ProbeConfig,
+    ScoringConfig,
+)
 
 
 @pytest.fixture
 def phase1_with_scoring():
-    config = SimpleNamespace(
-        coarse_grid_min=15,
-        coarse_grid_max=298,
-        meta_learning_range=0.05,
-        base_timeframe_minutes=5,
-    )
-    scoring_system = AdaptiveScoringSystem(config)
-    probe = Phase1HTFProbe(config, scoring_system=scoring_system)
+    session_config = SessionConfig(base_timeframe_minutes=5)
+    probe_config = ProbeConfig(coarse_grid_min=15, coarse_grid_max=298)
+    scoring_config = ScoringConfig(meta_learning_range=0.05)
+    scoring_system = AdaptiveScoringSystem(scoring_config, session_config)
+    probe = Phase1HTFProbe(session_config, probe_config, scoring_system=scoring_system)
     return probe, scoring_system
 
 

@@ -19,7 +19,7 @@ from scipy import stats
 from sklearn.model_selection import TimeSeriesSplit
 
 from .staleness_curve import StalenessCurveCalculator
-from .config import SessionConfig, ProbeConfig
+from .config import SessionConfig, ProbeConfig, PipelineConfig
 
 # Import existing components
 import sys
@@ -309,10 +309,68 @@ class Phase1HTFProbe:
 
     def __init__(
         self,
-        session_config: SessionConfig,
-        probe_config: ProbeConfig,
+        session_config: Union[SessionConfig, PipelineConfig],
+        probe_config: Optional[ProbeConfig] = None,
         scoring_system: Optional[AdaptiveScoringSystem] = None,
     ):
+        """Create a new Phase-1 probe stage instance.
+
+        Args:
+            session_config: Either a dedicated :class:`SessionConfig` instance or
+                a legacy :class:`PipelineConfig`. When a ``PipelineConfig`` is
+                supplied the session and probe slices are extracted to keep the
+                constructor backward compatible.
+            probe_config: Configuration for the probing stage. This may be
+                omitted when ``session_config`` is a ``PipelineConfig`` as it
+                will be inferred automatically.
+            scoring_system: Optional adaptive scoring system dependency.
+        """
+
+        if isinstance(session_config, PipelineConfig):
+            pipeline_session = session_config.session
+            pipeline_probe = session_config.probe
+            session_config = pipeline_session
+            if probe_config is None:
+                probe_config = pipeline_probe
+        elif not isinstance(session_config, SessionConfig):
+            # Legacy single-config path
+            legacy = session_config
+            session_config = SessionConfig(
+                base_timeframe_minutes=getattr(
+                    legacy, "base_timeframe_minutes", SessionConfig().base_timeframe_minutes
+                ),
+                session_start_hour=getattr(
+                    legacy, "session_start_hour", SessionConfig().session_start_hour
+                ),
+                session_end_hour=getattr(
+                    legacy, "session_end_hour", SessionConfig().session_end_hour
+                ),
+                dst_handling=getattr(legacy, "dst_handling", SessionConfig().dst_handling),
+                market_timezone=getattr(
+                    legacy, "market_timezone", SessionConfig().market_timezone
+                ),
+            )
+
+            if probe_config is None:
+                probe_config = ProbeConfig(
+                    coarse_grid_min=getattr(
+                        legacy, "coarse_grid_min", ProbeConfig().coarse_grid_min
+                    ),
+                    coarse_grid_max=getattr(
+                        legacy, "coarse_grid_max", ProbeConfig().coarse_grid_max
+                    ),
+                    adaptive_refinement_threshold=getattr(
+                        legacy,
+                        "adaptive_refinement_threshold",
+                        ProbeConfig().adaptive_refinement_threshold,
+                    ),
+                )
+
+        if probe_config is None:
+            raise TypeError(
+                "probe_config must be provided unless a PipelineConfig or legacy config supplies it"
+            )
+
         self.session_config = session_config
         self.probe_config = probe_config
         self.logger = logging.getLogger(__name__)

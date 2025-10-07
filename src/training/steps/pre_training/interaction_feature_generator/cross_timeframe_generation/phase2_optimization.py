@@ -24,6 +24,7 @@ warnings.filterwarnings('ignore')
 
 # Local imports
 from .phase1_probe import HTFFeatureGenerator
+from .config import OptimizationConfig
 # Try to import PyMC for Bayesian optimization
 try:
     import pymc as pm
@@ -595,7 +596,7 @@ class ExportDecisionMaker:
 class Phase2Optimization:
     """Main Phase-2 optimization system."""
 
-    def __init__(self, config, scoring_system: Optional[Any] = None):
+    def __init__(self, config: OptimizationConfig, scoring_system: Optional[Any] = None):
         self.config = config
         self.logger = logging.getLogger(__name__)
         self.scoring_system = scoring_system

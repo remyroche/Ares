@@ -501,7 +501,8 @@ class VolatilityAwareMultiHorizonLabeler:
             result.smoothing_settings = getattr(
                 filtered_result,
                 'smoothing_settings',
-                getattr(target_result, 'smoothing_settings', {})
+                getattr(target_result, 'smoothing_settings', {}),
+            )
             result.normalization_factors = self._build_normalization_factors(
                 vol_result, filtered_result
             )

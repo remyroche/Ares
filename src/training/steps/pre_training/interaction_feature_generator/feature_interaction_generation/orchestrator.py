@@ -39,6 +39,24 @@ from .hierarchical import HierarchicalBayesianShrinkage, HierarchicalResult, Mul
 from .decision import LookbackDecisionMaker, DecisionResult, MultiFamilyDecisionMaker
 from .feature_families import MultiFamilyFeatureGenerator, FeatureResult
 
+# Import comprehensive utility modules
+try:
+    from src.utils.tprint import (
+        tprint, tprint_info, tprint_error, tprint_warning, tprint_success,
+        tprint_debug, tprint_performance, tprint_progress
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print(*args, **kwargs)
+    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_performance(*args, **kwargs): print("PERF:", *args, **kwargs)
+    def tprint_progress(*args, **kwargs): print("PROGRESS:", *args, **kwargs)
+
 # Import profit labeling framework for quality-based optimization
 try:
     from src.training.steps.pre_training.profit_labeling.quality_scoring import (
@@ -58,24 +76,6 @@ try:
 except ImportError as e:
     PROFIT_LABELING_AVAILABLE = False
     tprint_warning(f"⚠️ Profit labeling framework not available: {e}")
-
-# Import comprehensive utility modules
-try:
-    from src.utils.tprint import (
-        tprint, tprint_info, tprint_error, tprint_warning, tprint_success,
-        tprint_debug, tprint_performance, tprint_progress
-    )
-    TPRINT_AVAILABLE = True
-except ImportError:
-    TPRINT_AVAILABLE = False
-    def tprint(*args, **kwargs): print(*args, **kwargs)
-    def tprint_info(*args, **kwargs): print("INFO:", *args, **kwargs)
-    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
-    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
-    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
-    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
-    def tprint_performance(*args, **kwargs): print("PERF:", *args, **kwargs)
-    def tprint_progress(*args, **kwargs): print("PROGRESS:", *args, **kwargs)
 
 # Import common operations and utilities
 try:

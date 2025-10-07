@@ -24,6 +24,8 @@ from scipy.stats import bootstrap
 import warnings
 warnings.filterwarnings('ignore')
 
+from .config import EvaluationConfig
+
 # Try to import SPA test implementation
 try:
     from scipy.stats import norm
@@ -65,7 +67,7 @@ class WalkForwardFold:
 class WalkForwardValidator:
     """Implements walk-forward validation with purging and embargo."""
     
-    def __init__(self, config):
+    def __init__(self, config: EvaluationConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
         
@@ -241,7 +243,7 @@ class WalkForwardValidator:
 class BootstrapEvaluator:
     """Implements wild bootstrap evaluation."""
     
-    def __init__(self, config):
+    def __init__(self, config: EvaluationConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
     
@@ -304,7 +306,7 @@ class BootstrapEvaluator:
 class SPATester:
     """Implements Superior Predictive Ability (SPA) test."""
     
-    def __init__(self, config):
+    def __init__(self, config: EvaluationConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
     
@@ -402,7 +404,7 @@ class SPATester:
 class RegimeEvaluator:
     """Implements regime-aware evaluation."""
     
-    def __init__(self, config):
+    def __init__(self, config: EvaluationConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
     
@@ -470,7 +472,7 @@ class RegimeEvaluator:
 class AblationEvaluator:
     """Implements ablation studies."""
     
-    def __init__(self, config):
+    def __init__(self, config: EvaluationConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
     
@@ -551,7 +553,7 @@ class AblationEvaluator:
 class WalkForwardEvaluation:
     """Main walk-forward evaluation system."""
     
-    def __init__(self, config):
+    def __init__(self, config: EvaluationConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
         

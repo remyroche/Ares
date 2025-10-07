@@ -37,6 +37,7 @@ from ..feature_interaction_generation.feature_engineering import (
 
 from .scoring_system import AdaptiveScoringSystem
 from . import htf_base_features
+from .config import ProbeConfig, SessionConfig
 
 
 @dataclass
@@ -57,8 +58,8 @@ class HTFCandidate:
 
 class CoarseGridGenerator:
     """Generates coarse adaptive grids for HTF features."""
-    
-    def __init__(self, config):
+
+    def __init__(self, config: ProbeConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
         
@@ -135,8 +136,8 @@ class CoarseGridGenerator:
 class HTFFeatureGenerator:
     """Generates HTF features from base features."""
 
-    def __init__(self, config):
-        self.config = config
+    def __init__(self, session_config: SessionConfig):
+        self.session_config = session_config
         self.feature_registry = FeatureRegistry()
         self.logger = logging.getLogger(__name__)
         self.htf_families, self.base_feature_to_family = build_htf_family_catalog(
@@ -178,17 +179,9 @@ class HTFFeatureGenerator:
         htf_series = resample_htf_series(base_series, lookback_minutes, metadata.family)
 
         transformed_series = self._apply_transforms(
-            base_feature,
-        base_feature_func = htf_base_features.get_base_feature_func(base_feature)
-
-        # Compute base feature
-        base_series = base_feature_func(data)
-
-        # Resample to HTF
-        return htf_base_features.resample_to_htf(
-            base_series,
-            lookback_minutes,
-            htf_series,
+            base_feature=base_feature,
+            lookback_minutes=lookback_minutes,
+            htf_series=htf_series,
         )
 
         return transformed_series
@@ -221,12 +214,18 @@ class HTFFeatureGenerator:
 class Phase1HTFProbe:
     """Phase-1 HTF probe stage implementation."""
 
-    def __init__(self, config, scoring_system: Optional[AdaptiveScoringSystem] = None):
-        self.config = config
+    def __init__(
+        self,
+        probe_config: ProbeConfig,
+        session_config: SessionConfig,
+        scoring_system: Optional[AdaptiveScoringSystem] = None,
+    ):
+        self.probe_config = probe_config
+        self.session_config = session_config
         self.logger = logging.getLogger(__name__)
 
-        self.grid_generator = CoarseGridGenerator(config)
-        self.htf_generator = HTFFeatureGenerator(config)
+        self.grid_generator = CoarseGridGenerator(probe_config)
+        self.htf_generator = HTFFeatureGenerator(session_config)
         self.scoring_system: Optional[AdaptiveScoringSystem] = None
 
         if scoring_system is not None:
@@ -378,7 +377,10 @@ class Phase1HTFProbe:
             return []
 
         segments = (regime_segments or {}).get('segments', [])
-        min_segment_points = max(50, int(self.config.base_timeframe_minutes * 4))
+        min_segment_points = max(
+            50,
+            int(self.session_config.base_timeframe_minutes * 4),
+        )
 
         def _build_candidate(segment_data: pd.DataFrame,
                              regime_label: str,
@@ -580,7 +582,7 @@ class Phase1HTFProbe:
                 "which is required for Phase-1 scoring."
             )
 
-        base_timeframe = getattr(self.config, 'base_timeframe_minutes', 5)
+        base_timeframe = getattr(self.session_config, 'base_timeframe_minutes', 5)
         staleness_value = staleness_calculator.calculate_staleness(
             lookback=lookback,
             family=family,

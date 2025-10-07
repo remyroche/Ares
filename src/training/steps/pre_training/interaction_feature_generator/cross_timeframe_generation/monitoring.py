@@ -22,6 +22,8 @@ from pathlib import Path
 import warnings
 warnings.filterwarnings('ignore')
 
+from .config import MonitoringConfig, ScoringConfig, RegimeConfig
+
 # Try to import dashboard libraries
 try:
     import plotly.graph_objects as go
@@ -70,8 +72,8 @@ class SystemState:
 
 class AdaptivePenaltyLearner:
     """Meta-learns penalty parameters based on recent performance."""
-    
-    def __init__(self, config):
+
+    def __init__(self, config: ScoringConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
         
@@ -201,11 +203,11 @@ class AdaptivePenaltyLearner:
 
 class BOCPDTrigger:
     """BOCPD-based triggers for regime changes."""
-    
-    def __init__(self, config):
+
+    def __init__(self, config: RegimeConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
+
         self.hazard = config.bocpd_hazard
         self.change_threshold = 0.5
         self.alert_threshold = 0.8
@@ -281,8 +283,8 @@ class BOCPDTrigger:
 
 class PerformanceDashboard:
     """Performance monitoring dashboard."""
-    
-    def __init__(self, config):
+
+    def __init__(self, config: MonitoringConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
         
@@ -407,8 +409,8 @@ class PerformanceDashboard:
 
 class AlertSystem:
     """Alert system for monitoring."""
-    
-    def __init__(self, config):
+
+    def __init__(self, config: MonitoringConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
         
@@ -499,8 +501,8 @@ class AlertSystem:
 
 class RetrainingTrigger:
     """Automated retraining triggers."""
-    
-    def __init__(self, config):
+
+    def __init__(self, config: MonitoringConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
         
@@ -597,16 +599,23 @@ class RetrainingTrigger:
 
 class MonitoringSystem:
     """Main monitoring and automation system."""
-    
-    def __init__(self, config):
-        self.config = config
+
+    def __init__(
+        self,
+        monitoring_config: MonitoringConfig,
+        scoring_config: ScoringConfig,
+        regime_config: RegimeConfig,
+    ):
+        self.config = monitoring_config
+        self.scoring_config = scoring_config
+        self.regime_config = regime_config
         self.logger = logging.getLogger(__name__)
-        
-        self.penalty_learner = AdaptivePenaltyLearner(config)
-        self.bocpd_trigger = BOCPDTrigger(config)
-        self.dashboard = PerformanceDashboard(config)
-        self.alert_system = AlertSystem(config)
-        self.retraining_trigger = RetrainingTrigger(config)
+
+        self.penalty_learner = AdaptivePenaltyLearner(scoring_config)
+        self.bocpd_trigger = BOCPDTrigger(regime_config)
+        self.dashboard = PerformanceDashboard(monitoring_config)
+        self.alert_system = AlertSystem(monitoring_config)
+        self.retraining_trigger = RetrainingTrigger(monitoring_config)
         
         self.system_state = None
         self.monitoring_enabled = True

@@ -36,8 +36,8 @@ except ImportError:
 
 
 @dataclass
-class SelectionResult:
-    """Result of statistical selection."""
+class StatisticalSelectionResult:
+    """Result of the statistical validation and pruning stage."""
     selected_features: List[str]
     selection_frequencies: Dict[str, float]
     p_values: Dict[str, float]
@@ -556,7 +556,7 @@ class StatisticalSelection:
     def select_final_features(self, 
                             materialized_htfs: Dict[str, Any],
                             interactions: List[Any],
-                            targets: Optional[pd.Series] = None) -> SelectionResult:
+                            targets: Optional[pd.Series] = None) -> StatisticalSelectionResult:
         """
         Select final features using statistical methods.
         
@@ -577,7 +577,7 @@ class StatisticalSelection:
         
         if feature_matrix.empty or targets is None:
             self.logger.warning("No features or targets available for selection")
-            return SelectionResult(
+            return StatisticalSelectionResult(
                 selected_features=[],
                 selection_frequencies={},
                 p_values={},
@@ -626,7 +626,7 @@ class StatisticalSelection:
         )
         
         # Create selection result
-        result = SelectionResult(
+        result = StatisticalSelectionResult(
             selected_features=selected_features,
             selection_frequencies=selection_frequencies,
             p_values=p_values,
@@ -749,7 +749,7 @@ class StatisticalSelection:
         
         return selected_features
     
-    def get_selection_summary(self, result: SelectionResult) -> Dict[str, Any]:
+    def get_selection_summary(self, result: StatisticalSelectionResult) -> Dict[str, Any]:
         """Get summary of selection results."""
         return {
             'total_selected': len(result.selected_features),

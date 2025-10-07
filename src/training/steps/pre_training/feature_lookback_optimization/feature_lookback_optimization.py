@@ -113,7 +113,7 @@ class OptimizedFeatureLookbackConfig:
 
     # Lookback optimization settings
     min_lookback: int = 5
-    max_lookback: int = 100
+    max_lookback: int = 98
     lookback_step: int = 5
 
     # Feature selection settings
@@ -4193,7 +4193,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         """Find optimal lookback period using grid search/bandit method."""
         try:
             # Grid search: test different lookback periods
-            grid_periods = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 200]  # Fibonacci-based grid
+            grid_periods = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 198]  # Fibonacci-based grid
             best_period = 1
             best_score = 0.0
             
@@ -4209,7 +4209,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             
             # Bandit refinement: search around best grid point
             if best_period > 1:
-                refinement_periods = range(max(1, best_period - 5), min(201, best_period + 6))
+                refinement_periods = range(max(1, best_period - 5), min(199, best_period + 6))
                 for period in refinement_periods:
                     if period in grid_periods:  # Skip already tested periods
                         continue
@@ -4319,8 +4319,8 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             best_period = 1
             best_score = 0.0
             
-            # Test different lookback periods (1-200 for 5m timeframe)
-            for period in range(1, 201):
+            # Test different lookback periods (1-198 for 5m timeframe)
+            for period in range(1, 199):
                 # Calculate MRMR & Pearson correlation score for this period
                 score = self._calculate_mrmr_pearson_score(
                     data, feature, targets, period, horizon_weights, direction
@@ -4421,7 +4421,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         """Coarse-to-fine multi-resolution search for optimal lookback period."""
         try:
             # Phase 1: Coarse grid with log spacing (15-25 points)
-            coarse_periods = self._generate_coarse_grid(1, 200)
+            coarse_periods = self._generate_coarse_grid(1, 198)
             coarse_scores = []
             
             tprint(f"🔍 Phase 1: Coarse grid search for {feature} ({len(coarse_periods)} points)")
@@ -4472,7 +4472,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         
         # Ensure unique periods and add some linear spacing for very short periods
         periods = list(set(periods))
-        periods.extend([1, 2, 3, 5, 10, 15, 20, 25, 30, 50, 100, 150, 200])
+        periods.extend([1, 2, 3, 5, 10, 15, 20, 25, 30, 50, 100, 150, 198])
         periods = sorted(list(set(periods)))
         
         return periods
@@ -4489,7 +4489,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 # Dense neighborhood: ±15 periods with step 2
                 neighborhood = range(
                     max(1, candidate_period - 15),
-                    min(201, candidate_period + 16),
+                    min(199, candidate_period + 16),
                     2
                 )
                 

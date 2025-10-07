@@ -432,8 +432,8 @@ class FeatureRegistry:
         """Validate feature against gates."""
         metadata = self.get_feature_metadata(feature_name)
         
-        # Check lookback ceiling (120 minutes)
-        if lookback > 120:
+        # Check lookback ceiling (118 minutes)
+        if lookback > 118:
             return False
         
         # Check compute cost (2ms p95)

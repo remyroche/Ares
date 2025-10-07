@@ -99,7 +99,7 @@ class LocalGridGenerator:
         
         # Ensure grid is within bounds
         min_lookback = max(15, int(base_lookback * 0.5))
-        max_lookback = min(300, int(base_lookback * 2.0))
+        max_lookback = min(298, int(base_lookback * 2.0))
         
         grid_points = [p for p in grid_points if min_lookback <= p <= max_lookback]
         
@@ -504,7 +504,7 @@ class ExportDecisionMaker:
                               ic_surface_result: Dict[str, Any]) -> Dict[str, Any]:
         """Create discrete export strategy."""
         # Snap to canonical lookbacks
-        canonical_lookbacks = [15, 30, 60, 90, 120, 180, 240, 300]
+        canonical_lookbacks = [15, 30, 60, 90, 120, 180, 240, 298]
         closest_canonical = min(canonical_lookbacks, 
                               key=lambda x: abs(x - optimal_lookback))
         
@@ -528,7 +528,7 @@ class ExportDecisionMaker:
         optimal_lookback = ic_surface_result['optimal_lookback']
         
         # Find adjacent canonical lookbacks
-        canonical_lookbacks = [15, 30, 60, 90, 120, 180, 240, 300]
+        canonical_lookbacks = [15, 30, 60, 90, 120, 180, 240, 298]
         sorted_canonical = sorted(canonical_lookbacks)
         
         # Find the two lookbacks that bracket the optimal

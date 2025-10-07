@@ -42,7 +42,7 @@ class AssemblyConfig:
     feature_budget_post: Tuple[int, int] = (30, 60)
     interactions_cap: int = 15
     transforms_per_parent: int = 1
-    lookback_ceiling_minutes: int = 120
+    lookback_ceiling_minutes: int = 118
     latency_budget_ms: int = 50
     patch_model_type: ModelType = ModelType.GRU
     patch_sequence_length: int = 24  # 2h at 5min bars

@@ -40,7 +40,7 @@ feature_lookback_optimization:
   
   # Lookback range
   min_lookback: 5
-  max_lookback: 100
+  max_lookback: 98
   lookback_step: 5
   
   # Quality thresholds (inherited from global)

@@ -44,7 +44,7 @@ class PipelineConfig:
     
     # Phase-1 configuration
     coarse_grid_min: int = 15  # Minimum HTF lookback (minutes)
-    coarse_grid_max: int = 300  # Maximum HTF lookback (minutes)
+    coarse_grid_max: int = 298  # Maximum HTF lookback (minutes)
     adaptive_refinement_threshold: float = 0.75  # Top-quartile threshold for refinement
     
     # Phase-2 configuration

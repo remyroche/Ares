@@ -88,6 +88,7 @@ except ImportError:
 from src.utils.logger import get_logger
 from src.utils.matrix_operations import get_unified_matrix_operations
 from src.utils.tprint import tprint
+from src.feature_selection import EntropyBalancerConfig, EntropyFilterResult, EntropyStabilityFilter
 
 @dataclass
 class FeatureSelectionConfig:
@@ -176,6 +177,15 @@ class FeatureSelectionConfig:
         'temporal_stability': 0.10
     })
 
+    # NEW: Entropy stability filtering
+    enable_entropy_balancing: bool = True
+    entropy_num_slices: int = 12
+    entropy_min_slice_size: int = 100
+    entropy_variance_threshold: float = 0.12
+    entropy_max_bins: int = 15
+    entropy_min_unique_values: int = 5
+    entropy_use_time_index: bool = True
+
     # NEW: Early termination and smart pruning
     enable_early_termination: bool = True
     early_termination_threshold: float = 0.01  # Stop processing features below this importance threshold
@@ -251,6 +261,9 @@ class FeatureSelectionResult:
     correlation_analysis: Dict[str, Any] = field(default_factory=dict)
     variance_analysis: Dict[str, Any] = field(default_factory=dict)
     stability_scores: Dict[str, float] = field(default_factory=dict)
+    entropy_variance: Dict[str, float] = field(default_factory=dict)
+    entropy_stability: Dict[str, float] = field(default_factory=dict)
+    entropy_removed_features: Dict[str, float] = field(default_factory=dict)
 
 class MultiStageFeatureSelector:
     """Multi-stage feature selection using RandomForest and SHAP with vectorization and caching."""
@@ -826,6 +839,14 @@ class MultiStageFeatureSelector:
             tprint(f"📊 After correlation filtering: {X.shape[1]} features")
         else:
             tprint("✅ No highly correlated features to remove")
+
+        # Apply entropy stability filtering before staging if enabled
+        if self.config.enable_entropy_balancing and len(X.columns) > 0:
+            tprint("🔄 Evaluating entropy stability across temporal slices...")
+            X = self._apply_entropy_balancing_filter(X)
+            tprint(f"📊 After entropy balancing: {X.shape[1]} features")
+        else:
+            tprint("⏭️ Entropy balancing disabled or no features available for evaluation")
         
         # Select top features if we have too many using vectorized operations
         if len(X.columns) > self.config.initial_features:
@@ -839,6 +860,51 @@ class MultiStageFeatureSelector:
             tprint(f"📊 After top feature selection: {X.shape[1]} features")
         
         tprint(f"✅ Prepared {len(X.columns)} features for selection")
+        return X
+
+    def _apply_entropy_balancing_filter(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Apply entropy stability filtering and record diagnostics."""
+
+        balancer_config = EntropyBalancerConfig(
+            num_slices=self.config.entropy_num_slices,
+            min_slice_size=self.config.entropy_min_slice_size,
+            max_entropy_variance=self.config.entropy_variance_threshold,
+            max_bins=self.config.entropy_max_bins,
+            min_unique_values=self.config.entropy_min_unique_values,
+            use_time_index=self.config.entropy_use_time_index,
+        )
+
+        filter_engine = EntropyStabilityFilter(balancer_config)
+        filter_result: EntropyFilterResult = filter_engine.filter(X)
+
+        self.results.entropy_variance = filter_result.entropy_variance
+        self.results.entropy_stability = filter_result.stability_scores
+        self.results.entropy_removed_features = filter_result.dropped_features
+
+        if filter_result.dropped_features:
+            dropped_preview = list(filter_result.dropped_features.items())[:5]
+            tprint(f"🗑️ Entropy filter removed {len(filter_result.dropped_features)} unstable features")
+            for feature, variance in dropped_preview:
+                tprint(f"   • {feature}: variance={variance:.4f}")
+            if filter_result.selected_features:
+                return X[filter_result.selected_features]
+
+            # Fallback: retain lowest variance features to avoid empty set
+            tprint("⚠️ All features flagged as unstable; retaining the most stable subset")
+            sorted_features = sorted(
+                filter_result.entropy_variance.items(),
+                key=lambda item: item[1]
+            )
+            fallback_count = max(1, int(len(sorted_features) * 0.5))
+            fallback_features = [feature for feature, _ in sorted_features[:fallback_count]]
+            self.results.entropy_removed_features = {
+                feature: variance
+                for feature, variance in filter_result.entropy_variance.items()
+                if feature not in fallback_features
+            }
+            return X[fallback_features]
+
+        tprint("✅ Entropy filter retained all features")
         return X
 
     def _find_highly_correlated_features_vectorized(self, X: pd.DataFrame, threshold: float) -> List[str]:
@@ -1812,6 +1878,18 @@ class MultiStageFeatureSelector:
                     'stage_2': self.results.stage_2_scores,
                     'stage_3': self.results.stage_3_scores,
                     'final': self.results.final_scores
+                },
+                'entropy_filter': {
+                    'removed_features': self.results.entropy_removed_features,
+                    'stability_scores': self.results.entropy_stability,
+                    'variance': self.results.entropy_variance,
+                    'config': {
+                        'num_slices': self.config.entropy_num_slices,
+                        'min_slice_size': self.config.entropy_min_slice_size,
+                        'variance_threshold': self.config.entropy_variance_threshold,
+                        'max_bins': self.config.entropy_max_bins,
+                        'min_unique_values': self.config.entropy_min_unique_values,
+                    },
                 },
                 'selection_time': self.results.selection_time,
                 'config': {

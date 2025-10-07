@@ -8,7 +8,7 @@ ensemble models during training and trading.
 
 Key Features:
 - Integrates with existing Analyst and Tactician training pipelines
-- Uses NAS/TAS regime detection (not HMM clustering)
+- Supports pluggable regime detection (external assignments or internal detectors)
 - Trains per-regime models for both 5m and 15m timeframes
 - Provides model selection for trading system
 - Maintains compatibility with existing training structure
@@ -16,7 +16,7 @@ Key Features:
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Any, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass, field
 import logging
 import time
@@ -32,13 +32,21 @@ warnings.filterwarnings('ignore')
 from src.utils.ml_common.training.per_regime_training_step import PerRegimeTrainingStep
 from src.utils.ml_common.config.base_training_config import PerRegimeTrainingConfig
 
-# Import NAS/TAS regime detection
-from src.training.steps.market_analysis.hybrid_nas_tas_regime.core.hybrid_regime_detector import (
-    HybridNASTASRegimeDetector, HybridRegimeResult
-)
-from src.training.steps.market_analysis.hybrid_nas_tas_regime.config.hybrid_regime_config import (
-    HybridRegimeConfig, RegimeCombinationStrategy
-)
+# Import NAS/TAS regime detection if available for backward compatibility
+try:
+    from src.training.steps.market_analysis.hybrid_nas_tas_regime.core.hybrid_regime_detector import (
+        HybridNASTASRegimeDetector, HybridRegimeResult
+    )
+    from src.training.steps.market_analysis.hybrid_nas_tas_regime.config.hybrid_regime_config import (
+        HybridRegimeConfig, RegimeCombinationStrategy
+    )
+    HYBRID_REGIME_AVAILABLE = True
+except Exception:  # pragma: no cover - optional dependency
+    HybridNASTASRegimeDetector = None  # type: ignore[assignment]
+    HybridRegimeResult = Any  # type: ignore[assignment]
+    HybridRegimeConfig = None  # type: ignore[assignment]
+    RegimeCombinationStrategy = None  # type: ignore[assignment]
+    HYBRID_REGIME_AVAILABLE = False
 
 # Import model selection
 from src.training.steps.market_analysis.hybrid_nas_tas_regime.regime_model_mapping.data_driven_model_selector import (
@@ -51,6 +59,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PerRegimeTrainingResult:
     """Result from per-regime training integration."""
+
     success: bool
     regime_models: Dict[int, Dict[str, Any]] = field(default_factory=dict)
     regime_metadata: Dict[int, Dict[str, Any]] = field(default_factory=dict)
@@ -59,6 +68,7 @@ class PerRegimeTrainingResult:
     training_metrics: Dict[str, Any] = field(default_factory=dict)
     execution_time: float = 0.0
     error_message: Optional[str] = None
+    regime_assignment_source: str = "external"
 
 
 class PerRegimeTrainingIntegration:
@@ -107,19 +117,46 @@ class PerRegimeTrainingIntegration:
             return False
     
     def _initialize_regime_detector(self):
-        """Initialize NAS/TAS regime detector."""
-        try:
-            regime_config = HybridRegimeConfig(
-                n_regimes=self.config.get('n_regimes', 8),
-                combination_strategy=RegimeCombinationStrategy.ADAPTIVE_FUSION
-            )
-            
-            self.regime_detector = HybridNASTASRegimeDetector(regime_config)
-            self.logger.info("✅ NAS/TAS regime detector initialized")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to initialize regime detector: {e}")
-            raise
+        """Initialize the configured regime detector if requested."""
+        detector_factory: Optional[Callable[[], Any]] = self.config.get('regime_detector_factory')
+
+        if callable(detector_factory):
+            try:
+                self.regime_detector = detector_factory()
+                self.logger.info("✅ Custom regime detector initialized via factory")
+            except Exception as exc:  # pragma: no cover - factory provided by runtime config
+                self.logger.error(f"❌ Failed to initialize custom regime detector: {exc}")
+                raise
+            return
+
+        if self.config.get('use_hybrid_regime_detector', False):
+            if not HYBRID_REGIME_AVAILABLE:
+                raise RuntimeError("Hybrid NAS/TAS detector requested but not available in this environment")
+
+            try:
+                hybrid_config_data = self.config.get('hybrid_regime_config', {})
+                if isinstance(hybrid_config_data, HybridRegimeConfig):
+                    regime_config = hybrid_config_data
+                else:
+                    regime_config = HybridRegimeConfig(
+                        n_regimes=hybrid_config_data.get('n_regimes', self.config.get('n_regimes', 8)),
+                        combination_strategy=hybrid_config_data.get(
+                            'combination_strategy',
+                            RegimeCombinationStrategy.ADAPTIVE_FUSION,
+                        ),
+                    )
+
+                self.regime_detector = HybridNASTASRegimeDetector(regime_config)
+                self.logger.info("✅ Hybrid NAS/TAS regime detector initialized")
+            except Exception as exc:
+                self.logger.error(f"❌ Failed to initialize hybrid regime detector: {exc}")
+                raise
+            return
+
+        self.regime_detector = None
+        self.logger.info(
+            "ℹ️ No internal regime detector configured; expecting external regime assignments"
+        )
     
     def _initialize_model_selector(self):
         """Initialize data-driven model selector."""
@@ -238,24 +275,34 @@ class PerRegimeTrainingIntegration:
         try:
             self.logger.info(f"🎯 Starting per-regime training for {model_type} ({timeframe})...")
             
-            # Step 1: Detect regimes using NAS/TAS if not provided
+            # Step 1: Resolve regime assignments
             if regime_assignments is None:
-                self.logger.info("🔍 Detecting regimes using NAS/TAS...")
-                regime_result = self.regime_detector.detect_regimes(
+                if self.regime_detector is None:
+                    raise RuntimeError(
+                        "Regime assignments were not provided and no regime detector is configured."
+                    )
+
+                self.logger.info("🔍 Detecting regimes using configured detector...")
+                regime_result = self.regime_detector.detect_regimes(  # type: ignore[union-attr]
                     market_data=training_data[['open', 'high', 'low', 'close', 'volume']],
                     validate_economic_significance=True,
                     validate_financial_relevance=True
                 )
-                
-                if not regime_result.success:
-                    raise RuntimeError(f"Regime detection failed: {regime_result.error_message}")
-                
-                regime_labels = regime_result.regime_predictions
+
+                if not getattr(regime_result, 'success', True):
+                    raise RuntimeError(f"Regime detection failed: {getattr(regime_result, 'error_message', 'unknown error')}")
+
+                regime_labels = getattr(regime_result, 'regime_predictions', None)
+                if regime_labels is None:
+                    raise RuntimeError("Configured regime detector did not return predictions")
+
+                assignment_source = 'detector'
                 self.logger.info(f"✅ Detected {len(np.unique(regime_labels))} regimes")
             else:
                 # Use provided regime assignments
                 regime_labels = regime_assignments['regime'].values
                 regime_result = None
+                assignment_source = 'external'
                 self.logger.info(f"✅ Using provided regime assignments: {len(np.unique(regime_labels))} regimes")
             
             # Step 2: Prepare training data
@@ -282,19 +329,31 @@ class PerRegimeTrainingIntegration:
             # Step 5: Create result
             execution_time = time.time() - start_time
             
+            raw_metadata = training_result.get('metadata', {})
+            if isinstance(raw_metadata, dict):
+                regime_metadata = raw_metadata.copy()
+            else:
+                regime_metadata = {'raw_metadata': raw_metadata}
+            regime_metadata['assignment_source'] = assignment_source
+
             result = PerRegimeTrainingResult(
                 success=True,
                 regime_models=training_result.get('models', {}),
-                regime_metadata=training_result.get('metadata', {}),
+                regime_metadata=regime_metadata,
                 model_selector=self.model_selector,
                 regime_detection_result=regime_result,
                 training_metrics=training_result.get('evaluation_results', {}),
-                execution_time=execution_time
+                execution_time=execution_time,
+                regime_assignment_source=assignment_source
             )
             
             # Store results
             self.training_results[f"{model_type}_{timeframe}"] = result
-            
+
+            self.logger.info(
+                f"📌 Regime assignments sourced from: {assignment_source}"
+            )
+
             self.logger.info(f"✅ Per-regime training completed for {model_type} ({timeframe}) in {execution_time:.2f}s")
             return result
             

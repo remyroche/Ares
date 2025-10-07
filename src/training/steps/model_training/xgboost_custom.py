@@ -40,6 +40,9 @@ class XGBoostCustom(BaseEstimator, RegressorMixin):
                  eval_metric: str = 'rmse',
                  enable_categorical: bool = True,
                  tree_method: str = 'hist',
+                 enable_cyclic_noise: bool = True,
+                 cyclic_noise_scale: float = 1e-3,
+                 cyclic_noise_cycle: int = 512,
                  **kwargs):
         """
         Initialize custom XGBoost for entry timing optimization.
@@ -60,6 +63,9 @@ class XGBoostCustom(BaseEstimator, RegressorMixin):
             eval_metric: Evaluation metric
             enable_categorical: Enable categorical features
             tree_method: Tree construction method
+            enable_cyclic_noise: Whether to inject deterministic noise before training
+            cyclic_noise_scale: Amplitude of the injected noise relative to feature scale
+            cyclic_noise_cycle: Number of samples in the repeating noise pattern
             **kwargs: Additional XGBoost parameters
         """
         self.n_estimators = n_estimators
@@ -77,6 +83,9 @@ class XGBoostCustom(BaseEstimator, RegressorMixin):
         self.eval_metric = eval_metric
         self.enable_categorical = enable_categorical
         self.tree_method = tree_method
+        self.enable_cyclic_noise = enable_cyclic_noise
+        self.cyclic_noise_scale = cyclic_noise_scale
+        self.cyclic_noise_cycle = cyclic_noise_cycle
         
         # Additional parameters
         self.kwargs = kwargs
@@ -141,20 +150,40 @@ class XGBoostCustom(BaseEstimator, RegressorMixin):
             
             # Create model
             self.model_ = self._create_xgboost_model()
-            
+
+            # Prepare input features (optionally injecting cyclic noise)
+            X_train = X
+            eval_data = eval_set
+            if self.enable_cyclic_noise:
+                from src.training.steps.model_training.utils.noise_injection import (
+                    CyclicNoiseConfig,
+                    add_cyclic_noise,
+                )
+
+                noise_config = CyclicNoiseConfig(
+                    noise_scale=self.cyclic_noise_scale,
+                    cycle_length=self.cyclic_noise_cycle,
+                    random_state=self.random_state,
+                )
+                X_train = add_cyclic_noise(X, noise_config)
+                if eval_set is not None:
+                    eval_features, eval_target = eval_set
+                    eval_features_noisy = add_cyclic_noise(eval_features, noise_config)
+                    eval_data = (eval_features_noisy, eval_target)
+
             # Prepare fit parameters
             fit_kwargs = {
                 'verbose': False,
-                'early_stopping_rounds': self.early_stopping_rounds if eval_set is not None else None,
+                'early_stopping_rounds': self.early_stopping_rounds if eval_data is not None else None,
             }
             fit_kwargs.update(fit_params)
-            
+
             # Add eval_set if provided
-            if eval_set is not None:
-                fit_kwargs['eval_set'] = [eval_set]
-            
+            if eval_data is not None:
+                fit_kwargs['eval_set'] = [eval_data]
+
             # Fit model
-            self.model_.fit(X, y, **fit_kwargs)
+            self.model_.fit(X_train, y, **fit_kwargs)
             
             # Extract feature importance
             self._extract_feature_importance()

@@ -291,8 +291,8 @@ class StalenessCalculator:
 
 class MetaLearner:
     """Meta-learns penalty parameters based on recent performance."""
-    
-    def __init__(self, 
+
+    def __init__(self,
                  learning_rate: float = 0.01,
                  adaptation_range: float = 0.05):
         self.learning_rate = learning_rate
@@ -355,9 +355,9 @@ class MetaLearner:
         })
         
         self.penalty_history.append(self._get_current_penalties())
-        
+
         return self._get_current_penalties()
-    
+
     def _get_current_penalties(self) -> Dict[str, float]:
         """Get current penalty parameters."""
         return {
@@ -365,6 +365,17 @@ class MetaLearner:
             'lambda_cost': self.lambda_cost,
             'lambda_stale': self.lambda_stale
         }
+
+    def set_penalties(self, penalties: Dict[str, float]):
+        """Force-set penalty parameters from external adaptive learners."""
+        if 'lambda_unc' in penalties:
+            self.lambda_unc = float(penalties['lambda_unc'])
+        if 'lambda_cost' in penalties:
+            self.lambda_cost = float(penalties['lambda_cost'])
+        if 'lambda_stale' in penalties:
+            self.lambda_stale = float(penalties['lambda_stale'])
+
+        self.penalty_history.append(self._get_current_penalties())
 
 
 class AdaptiveScoringSystem:
@@ -561,12 +572,23 @@ class AdaptiveScoringSystem:
             metadata={}
         )
     
-    def update_meta_learning(self, 
+    def update_meta_learning(self,
                            recent_performance: List[Dict[str, Any]],
                            market_state: Dict[str, Any]):
         """Update meta-learning with recent performance."""
         self.meta_learner.update_penalties(recent_performance, market_state)
-    
+
+    def apply_penalty_parameters(self, penalty_parameters: Dict[str, float]):
+        """Apply externally provided penalty parameters to the scorer."""
+        if not penalty_parameters:
+            return
+
+        self.meta_learner.set_penalties(penalty_parameters)
+        self.logger.info(
+            "Adaptive scoring penalties updated from monitoring system: %s",
+            penalty_parameters,
+        )
+
     def get_current_penalties(self) -> Dict[str, float]:
         """Get current penalty parameters."""
         return self.meta_learner._get_current_penalties()

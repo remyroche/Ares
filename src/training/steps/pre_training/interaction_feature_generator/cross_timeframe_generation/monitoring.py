@@ -22,8 +22,6 @@ from pathlib import Path
 import warnings
 warnings.filterwarnings('ignore')
 
-from .statistical_selection import SelectionResult
-
 # Try to import dashboard libraries
 try:
     import plotly.graph_objects as go
@@ -614,37 +612,122 @@ class MonitoringSystem:
         self.monitoring_enabled = True
     
     def setup_monitoring(self,
-                        selection_result: Optional[SelectionResult],
                         final_features: List[str],
-                        evaluation_results: Optional[Any],
+                        evaluation_summary: Optional[Dict[str, Any]],
                         regime_segments: Optional[Dict[str, Any]] = None):
         """Setup monitoring system.
 
         Args:
-            selection_result: Metadata returned from statistical selection.
             final_features: Plain list of feature names for downstream consumers.
-            evaluation_results: Results from the evaluation stage (if available).
+            evaluation_summary: Aggregated evaluation summary for monitoring.
             regime_segments: Regime segmentation details for contextual monitoring.
         """
         self.logger.info("Setting up monitoring system")
+
+        performance_metrics: List[PerformanceMetrics] = []
+        penalty_parameters = self.penalty_learner.get_penalty_parameters()
+
+        if evaluation_summary:
+            metrics_entry = self._convert_summary_to_metrics(
+                evaluation_summary,
+                len(final_features)
+            )
+            if metrics_entry:
+                performance_metrics.append(metrics_entry)
+
+                if self.config.adaptive_penalties:
+                    market_conditions = self._extract_market_conditions(evaluation_summary)
+                    penalty_parameters = self.penalty_learner.update_penalties(
+                        [metrics_entry],
+                        market_conditions,
+                    )
+                    self.logger.info(
+                        "Adaptive penalty parameters updated during monitoring setup: %s",
+                        penalty_parameters,
+                    )
 
         # Initialize system state
         self.system_state = SystemState(
             timestamp=datetime.now(),
             pipeline_state={
-                'selection_result': selection_result,
-                'final_features': final_features,
-                'evaluation_results': evaluation_results,
+                'selected_features': final_features,
+                'evaluation_summary': evaluation_summary,
                 'regime_segments': regime_segments,
             },
-            performance_metrics=[],
+            performance_metrics=performance_metrics,
             alerts=[],
-            penalty_parameters=self.penalty_learner.get_penalty_parameters(),
+            penalty_parameters=penalty_parameters,
             bocpd_state=self.bocpd_trigger.get_current_state(),
             metadata={'monitoring_enabled': True}
         )
-        
+
         self.logger.info("Monitoring system setup completed")
+
+    def _convert_summary_to_metrics(self,
+                                    evaluation_summary: Dict[str, Any],
+                                    feature_count: int) -> Optional[PerformanceMetrics]:
+        """Convert evaluation summary into performance metrics for monitoring."""
+        if not evaluation_summary:
+            return None
+
+        ic = float(evaluation_summary.get('overall_ic', np.nan))
+
+        ic_std = evaluation_summary.get('overall_ic_std')
+        if ic_std is None and evaluation_summary.get('overall_ic_ci'):
+            lower, upper = evaluation_summary['overall_ic_ci']
+            if lower is not None and upper is not None:
+                ic_std = abs(upper - lower) / (2 * 1.96)
+
+        sharpe = evaluation_summary.get('mean_sharpe')
+        if sharpe is None:
+            sharpe = evaluation_summary.get('sharpe')
+        if sharpe is None:
+            sharpe = 0.0
+
+        max_drawdown = evaluation_summary.get('max_drawdown')
+        if max_drawdown is None:
+            max_drawdown = 0.0
+
+        metadata = evaluation_summary.get('metadata', {}) or {}
+        metadata = metadata.copy()
+        metadata['evaluation_summary'] = evaluation_summary
+
+        regime = evaluation_summary.get('regime')
+        if not regime:
+            regime = metadata.get('dominant_regime', 'overall')
+
+        return PerformanceMetrics(
+            timestamp=datetime.now(),
+            ic=ic,
+            ic_std=float(ic_std) if ic_std is not None else np.nan,
+            sharpe=float(sharpe),
+            max_drawdown=float(max_drawdown),
+            feature_count=feature_count,
+            regime=regime,
+            metadata=metadata,
+        )
+
+    def _extract_market_conditions(self, evaluation_summary: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Extract market condition hints from evaluation metadata."""
+        if not evaluation_summary:
+            return {}
+
+        metadata = evaluation_summary.get('metadata', {}) or {}
+        market_conditions = evaluation_summary.get('market_conditions', {}) or {}
+
+        volatility_level = metadata.get(
+            'volatility_level',
+            market_conditions.get('volatility_level', 0.5),
+        )
+        news_proximity = metadata.get(
+            'news_proximity',
+            market_conditions.get('news_proximity', 0.0),
+        )
+
+        return {
+            'volatility_level': volatility_level,
+            'news_proximity': news_proximity,
+        }
     
     def update_monitoring(self, 
                          new_metrics: PerformanceMetrics,
@@ -698,6 +781,10 @@ class MonitoringSystem:
     def get_dashboard_data(self) -> Dict[str, Any]:
         """Get dashboard data."""
         return self.dashboard.generate_dashboard()
+
+    def get_penalty_parameters(self) -> Dict[str, float]:
+        """Expose the latest adaptive penalty parameters."""
+        return self.penalty_learner.get_penalty_parameters()
     
     def get_alert_summary(self) -> Dict[str, Any]:
         """Get alert summary."""

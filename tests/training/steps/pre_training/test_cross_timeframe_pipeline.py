@@ -1,9 +1,10 @@
-import numpy as np
-import pandas as pd
-
-from types import SimpleNamespace
 import sys
 import types
+from types import SimpleNamespace
+
+import numpy as np
+import pandas as pd
+import pytest
 
 
 if "cvxpy" not in sys.modules:
@@ -58,15 +59,26 @@ class DummyEvaluation:
         assert isinstance(feature_source, pd.DataFrame)
         self.calls.append((final_features, targets, regime_segments, feature_source))
         return EvaluationResult(
-            overall_ic=0.0,
-            overall_ic_std=0.0,
-            overall_ic_ci=(0.0, 0.0),
+            overall_ic=0.02,
+            overall_ic_std=0.01,
+            overall_ic_ci=(0.0, 0.04),
             regime_results={},
             ablation_results={},
             spa_test_result={},
             walk_forward_results=[],
-            metadata={},
+            metadata={'n_features': len(final_features)},
         )
+
+    def get_evaluation_summary(self, result):
+        return {
+            'overall_ic': result.overall_ic,
+            'overall_ic_std': result.overall_ic_std,
+            'overall_ic_ci': result.overall_ic_ci,
+            'mean_sharpe': 0.25,
+            'max_drawdown': -0.01,
+            'feature_count': result.metadata.get('n_features', 0),
+            'metadata': result.metadata,
+        }
 
 
 class DummyMonitoring:
@@ -75,10 +87,46 @@ class DummyMonitoring:
     def __init__(self):
         self.calls = []
 
-    def setup_monitoring(self, selection_result, final_features, evaluation_results, regime_segments):
-        assert selection_result is None or isinstance(selection_result, SelectionResult)
+    def setup_monitoring(self, final_features, evaluation_summary, regime_segments):
         assert isinstance(final_features, list)
-        self.calls.append((selection_result, final_features, evaluation_results, regime_segments))
+        assert evaluation_summary is None or isinstance(evaluation_summary, dict)
+        self.calls.append((final_features, evaluation_summary, regime_segments))
+
+    def get_penalty_parameters(self):
+        return {}
+
+
+class LowICEvaluation:
+    """Evaluation stub that produces weak IC to trigger penalty increases."""
+
+    def __init__(self):
+        self.calls = []
+
+    def evaluate_features(self, final_features, targets, regime_segments, feature_source=None):
+        assert isinstance(final_features, list)
+        assert isinstance(feature_source, pd.DataFrame)
+        self.calls.append((final_features, targets, regime_segments, feature_source))
+        return EvaluationResult(
+            overall_ic=0.01,
+            overall_ic_std=0.015,
+            overall_ic_ci=(-0.01, 0.03),
+            regime_results={},
+            ablation_results={},
+            spa_test_result={},
+            walk_forward_results=[],
+            metadata={'n_features': len(final_features), 'volatility_level': 0.4},
+        )
+
+    def get_evaluation_summary(self, result):
+        return {
+            'overall_ic': result.overall_ic,
+            'overall_ic_std': result.overall_ic_std,
+            'overall_ic_ci': result.overall_ic_ci,
+            'mean_sharpe': 0.1,
+            'max_drawdown': -0.05,
+            'feature_count': result.metadata.get('n_features', 0),
+            'metadata': {'volatility_level': result.metadata.get('volatility_level', 0.4)},
+        }
 
 
 def _build_dummy_series(index):
@@ -105,8 +153,8 @@ def test_pipeline_passes_feature_list_to_evaluation_and_monitoring():
 
     pipeline.htf_materialization.materialize_htfs = _materialize_htfs
 
-    def _generate_interactions(materialized_htfs, sessionized_data):
-        index = sessionized_data["aligned_data"].index
+    def _generate_interactions(materialized_htfs, base_features, targets):
+        index = next(iter(materialized_htfs.values())).feature_series.index
         interaction = SimpleNamespace(
             name="interaction_feature",
             feature_series=_build_dummy_series(index),
@@ -159,7 +207,73 @@ def test_pipeline_passes_feature_list_to_evaluation_and_monitoring():
 
     assert dummy_monitoring.calls, "Monitoring should receive pipeline outputs"
     monitoring_call = dummy_monitoring.calls[0]
-    assert monitoring_call[0] is selection_result
-    assert monitoring_call[1] == selection_result.selected_features
+    assert monitoring_call[0] == selection_result.selected_features
+    assert monitoring_call[1]['overall_ic'] == pytest.approx(0.02)
 
     assert results["selected_feature_list"] == selection_result.selected_features
+
+
+def test_monitoring_penalties_propagate_to_scoring():
+    config = PipelineConfig(adaptive_penalties=True)
+    pipeline = CrossTimeframePipeline(config)
+
+    pipeline._sessionize_and_align = lambda ohlcv, optional: {"aligned_data": ohlcv}
+    pipeline.regime_segmentation.segment_regimes = lambda sessionized, targets: {"segments": []}
+    pipeline.phase1_probe.run_probe_stage = lambda sessionized, segments, targets: {"phase1": True}
+    pipeline.phase2_optimization.optimize_lookbacks = lambda data, phase1, segments, targets: {"phase2": True}
+    pipeline.ehu_rih_assignment.assign_htf_features = lambda phase2, data: {"feature_b": {}}
+    pipeline.knapsack_selection.select_features = lambda phase2, assignments: ["feature_b"]
+
+    def _materialize(sessionized_data, selected_htfs):
+        index = sessionized_data["aligned_data"].index
+        feature = SimpleNamespace(feature_series=_build_dummy_series(index))
+        return {"feature_b": feature}
+
+    pipeline.htf_materialization.materialize_htfs = _materialize
+
+    pipeline.interaction_templates.generate_interactions = (
+        lambda materialized, base_features, targets: []
+    )
+
+    selection_result = SelectionResult(
+        selected_features=["feature_b"],
+        selection_frequencies={"feature_b": 1.0},
+        p_values={"feature_b": 0.05},
+        fdr_corrected_p_values={"feature_b": 0.05},
+        conditional_ics={"feature_b": 0.02},
+        group_lasso_groups={},
+        selection_method="stub",
+        metadata={"source": "test"},
+    )
+
+    pipeline.statistical_selection.select_final_features = (
+        lambda materialized_htfs, interactions, targets: selection_result
+    )
+
+    low_ic_evaluation = LowICEvaluation()
+    pipeline.evaluation = low_ic_evaluation
+
+    index = pd.date_range("2023-01-03 09:00:00", periods=32, freq="min")
+    ohlcv = pd.DataFrame(
+        {
+            "open": np.random.rand(len(index)),
+            "high": np.random.rand(len(index)),
+            "low": np.random.rand(len(index)),
+            "close": np.random.rand(len(index)),
+            "volume": np.random.randint(100, 200, size=len(index)),
+        },
+        index=index,
+    )
+    targets = pd.Series(np.random.randn(len(index)), index=index)
+
+    pipeline.run_pipeline(ohlcv_data=ohlcv, targets=targets)
+
+    penalties_from_monitoring = pipeline.monitoring.get_penalty_parameters()
+    assert penalties_from_monitoring["lambda_unc"] > 0.10
+
+    scorer_penalties = pipeline.scoring_system.get_current_penalties()
+    assert scorer_penalties["lambda_unc"] == pytest.approx(
+        penalties_from_monitoring["lambda_unc"]
+    )
+
+    assert pipeline.monitoring.system_state.performance_metrics

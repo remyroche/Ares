@@ -26,6 +26,8 @@ sys.path.append('src/training/steps/pre_training/interaction_feature_generator/f
 from feature_engineering.feature_registry import FeatureRegistry, FeatureFamily
 from feature_engineering.transforms import TransformRouter, create_default_transform_config
 
+from . import htf_base_features
+
 
 class UpdateStyle(Enum):
     """Update style for HTF features."""
@@ -350,13 +352,13 @@ class HTFFeatureGenerator:
             Materialized HTF feature
         """
         # Get base feature computation function
-        base_feature_func = self._get_base_feature_func(feature_name)
+        base_feature_func = htf_base_features.get_base_feature_func(feature_name)
         
         # Compute base feature
         base_series = base_feature_func(data)
         
         # Resample to HTF
-        htf_series = self._resample_to_htf(base_series, lookback, family)
+        htf_series = htf_base_features.resample_to_htf(base_series, lookback, family)
         
         # Apply transform
         transform_router = self._create_transform_router([feature_name])
@@ -392,129 +394,10 @@ class HTFFeatureGenerator:
         
         return materialized_htf
     
-    def _get_base_feature_func(self, base_feature: str):
-        """Get base feature computation function."""
-        # Map feature names to computation functions
-        feature_map = {
-            'p/price_ema10_pct': self._price_ema10_pct,
-            'p/price_ema20_pct': self._price_ema20_pct,
-            'p/bollz20': self._bollz20,
-            'p/sigma_ew': self._sigma_ew,
-            'p/gk_w': self._gk_w,
-            'p/rv_bipower_12': self._rv_bipower_12,
-            'p/rv_short_3': self._rv_short_3,
-            'p/rsi7': self._rsi7,
-            'p/rsi14': self._rsi14,
-            'p/stochk14': self._stochk14,
-            'p/autocorr_r1_w': self._autocorr_r1_w,
-            'p/vwap_session_dist': self._vwap_session_dist,
-            'p/vwap_roll12_dist': self._vwap_roll12_dist
-        }
-        
-        if base_feature not in feature_map:
-            raise ValueError(f"Unknown base feature: {base_feature}")
-        
-        return feature_map[base_feature]
-    
-    def _resample_to_htf(self, 
-                        base_series: pd.Series, 
-                        lookback_minutes: int,
-                        family: str) -> pd.Series:
-        """Resample base feature to higher timeframe."""
-        if family in ['trend_level_vol', 'anchors']:
-            # Use last value (most recent)
-            return base_series.resample(f'{lookback_minutes}min').last()
-        elif family == 'oscillators':
-            # Use mean (smoothing)
-            return base_series.resample(f'{lookback_minutes}min').mean()
-        else:
-            # Default to last value
-            return base_series.resample(f'{lookback_minutes}min').last()
-    
     def _create_transform_router(self, feature_names: List[str]) -> TransformRouter:
         """Create transform router for features."""
         config = create_default_transform_config(feature_names)
         return TransformRouter(config)
-    
-    # Base feature computation functions (same as in phase1_probe.py)
-    def _price_ema10_pct(self, data: pd.DataFrame) -> pd.Series:
-        """Price vs EMA10 percentage."""
-        ema10 = data['close'].ewm(span=10).mean()
-        return (data['close'] - ema10) / ema10
-    
-    def _price_ema20_pct(self, data: pd.DataFrame) -> pd.Series:
-        """Price vs EMA20 percentage."""
-        ema20 = data['close'].ewm(span=20).mean()
-        return (data['close'] - ema20) / ema20
-    
-    def _bollz20(self, data: pd.DataFrame) -> pd.Series:
-        """Bollinger z-score."""
-        ma20 = data['close'].rolling(20).mean()
-        sd20 = data['close'].rolling(20).std()
-        return (data['close'] - ma20) / sd20
-    
-    def _sigma_ew(self, data: pd.DataFrame) -> pd.Series:
-        """EW standard deviation of r1."""
-        r1 = np.log(data['close'] / data['close'].shift(1))
-        return r1.ewm(halflife=12).std()
-    
-    def _gk_w(self, data: pd.DataFrame) -> pd.Series:
-        """Garman-Klass estimator."""
-        log_hl = np.log(data['high'] / data['low'])
-        log_co = np.log(data['close'] / data['open'])
-        gk = 0.5 * log_hl**2 - (2*np.log(2) - 1) * log_co**2
-        return np.sqrt(gk.rolling(12).mean())
-    
-    def _rv_bipower_12(self, data: pd.DataFrame) -> pd.Series:
-        """Bipower variation."""
-        r1 = np.log(data['close'] / data['close'].shift(1))
-        r1_abs = np.abs(r1)
-        bipower = r1_abs * r1_abs.shift(1)
-        return np.sqrt(bipower.rolling(12).mean())
-    
-    def _rv_short_3(self, data: pd.DataFrame) -> pd.Series:
-        """Short-term realized volatility."""
-        r1 = np.log(data['close'] / data['close'].shift(1))
-        return np.sqrt((r1**2).rolling(3).sum())
-    
-    def _rsi7(self, data: pd.DataFrame) -> pd.Series:
-        """7-period RSI."""
-        return self._rsi(data, 7)
-    
-    def _rsi14(self, data: pd.DataFrame) -> pd.Series:
-        """14-period RSI."""
-        return self._rsi(data, 14)
-    
-    def _rsi(self, data: pd.DataFrame, period: int) -> pd.Series:
-        """RSI calculation."""
-        delta = data['close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss
-        return 100 - (100 / (1 + rs))
-    
-    def _stochk14(self, data: pd.DataFrame) -> pd.Series:
-        """14-period Stochastic %K."""
-        low14 = data['low'].rolling(14).min()
-        high14 = data['high'].rolling(14).max()
-        return 100 * (data['close'] - low14) / (high14 - low14)
-    
-    def _autocorr_r1_w(self, data: pd.DataFrame) -> pd.Series:
-        """Autocorrelation of r1."""
-        r1 = np.log(data['close'] / data['close'].shift(1))
-        return r1.rolling(12).apply(lambda x: x.autocorr(lag=1), raw=False)
-    
-    def _vwap_session_dist(self, data: pd.DataFrame) -> pd.Series:
-        """Session VWAP distance."""
-        vwap = (data['high'] + data['low'] + data['close']) / 3
-        vwap_session = vwap.rolling(12).mean()
-        return (data['close'] - vwap_session) / vwap_session
-    
-    def _vwap_roll12_dist(self, data: pd.DataFrame) -> pd.Series:
-        """Rolling VWAP distance."""
-        vwap = (data['high'] + data['low'] + data['close']) / 3
-        vwap_roll = vwap.rolling(12).mean()
-        return (data['close'] - vwap_roll) / vwap_roll
 
 
 class HTFMaterialization:

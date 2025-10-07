@@ -11,7 +11,8 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass
 import pandas as pd
-import numpy as np
+
+from src.trading.utils.ohlcv import ensure_ohlcv_dataframe
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
@@ -372,30 +373,6 @@ class MarketDataProvider:
         except Exception:
             return False
 
-    def _prepare_ohlcv_dataframe(self, df: pd.DataFrame, limit: int) -> pd.DataFrame:
-        """Ensure a DataFrame exposes the expected OHLCV columns."""
-        if df is None or df.empty:
-            return pd.DataFrame(columns=self._default_ohlcv_columns)
-
-        formatted = df.copy()
-        available_columns = [col for col in self._default_ohlcv_columns if col in formatted.columns]
-
-        if available_columns:
-            formatted = formatted[available_columns]
-        else:
-            formatted = formatted.iloc[:, :0]
-
-        for column in self._default_ohlcv_columns:
-            if column not in formatted.columns:
-                formatted[column] = np.nan
-            formatted[column] = pd.to_numeric(formatted[column], errors='coerce')
-
-        formatted = formatted[self._default_ohlcv_columns]
-        formatted = formatted.sort_index()
-        if limit > 0 and len(formatted) > limit:
-            formatted = formatted.tail(limit)
-        return formatted
-
     def _get_cached_dataframe(self, cache_key: str, limit: int, allow_stale: bool = False) -> Optional[pd.DataFrame]:
         """Retrieve cached OHLCV data respecting TTL constraints."""
         cached = self.historical_data_cache.get(cache_key)
@@ -403,7 +380,11 @@ class MarketDataProvider:
             return None
         if not allow_stale and not self._is_cache_fresh(cache_key):
             return None
-        return self._prepare_ohlcv_dataframe(cached, limit)
+        return ensure_ohlcv_dataframe(
+            cached,
+            required_columns=self._default_ohlcv_columns,
+            limit=limit,
+        )
 
     async def _get_symbol_interval_dataframe(
         self,
@@ -430,7 +411,67 @@ class MarketDataProvider:
                 return cached_df
             return pd.DataFrame(columns=self._default_ohlcv_columns)
 
-        return self._prepare_ohlcv_dataframe(df, limit)
+        return ensure_ohlcv_dataframe(
+            df,
+            required_columns=self._default_ohlcv_columns,
+            limit=limit,
+        )
+
+    async def get_multi_timeframe_data(
+        self,
+        symbol: str,
+        timeframe_limits: Optional[Dict[str, int]] = None,
+        force_refresh: bool = False,
+    ) -> Dict[str, Any]:
+        """Return a cached bundle of OHLCV data for the requested symbol."""
+
+        if not self.is_initialized:
+            raise RuntimeError("Market Data Provider not initialized")
+
+        limits = timeframe_limits or {"15m": 500, "1h": 500}
+        timeframes: Dict[str, pd.DataFrame] = {}
+
+        for interval, limit in limits.items():
+            timeframes[interval] = await self._get_symbol_interval_dataframe(
+                symbol,
+                interval,
+                limit=limit,
+                force_refresh=force_refresh,
+            )
+
+        latest_price = None
+        latest_timestamp = None
+
+        for preferred_interval in ("15m", "1h"):
+            if preferred_interval in timeframes and not timeframes[preferred_interval].empty:
+                latest_price = float(timeframes[preferred_interval]["close"].iloc[-1])
+                latest_timestamp = timeframes[preferred_interval].index[-1]
+                break
+
+        if latest_price is None:
+            for df in timeframes.values():
+                if not df.empty:
+                    latest_price = float(df["close"].iloc[-1])
+                    latest_timestamp = df.index[-1]
+                    break
+
+        cache_timestamp = None
+        for interval in limits.keys():
+            cache_key = f"{symbol}_{interval}"
+            if cache_key in self.last_update_time:
+                cache_timestamp = self.last_update_time[cache_key]
+                break
+
+        return {
+            "symbol": symbol,
+            "latest_price": latest_price,
+            "latest_timestamp": latest_timestamp,
+            "timeframes": timeframes,
+            "metadata": {
+                "source": self.exchange.value if self.exchange else "unknown",
+                "cache_timestamp": cache_timestamp,
+            },
+        }
 
     async def get_ethusdt_multi_timeframe_data(
         self,
@@ -438,48 +479,14 @@ class MarketDataProvider:
         limit_1h: int = 500,
         force_refresh: bool = False,
     ) -> Dict[str, Any]:
-        """Return a cached bundle of ETHUSDT OHLCV data across 15m and 1h intervals."""
+        """Backward-compatible wrapper returning ETHUSDT multi-timeframe data."""
 
-        if not self.is_initialized:
-            raise RuntimeError("Market Data Provider not initialized")
-
-        symbol = "ETHUSDT"
-
-        data_15m = await self._get_symbol_interval_dataframe(
-            symbol,
-            "15m",
-            limit=limit_15m,
+        limits = {"15m": limit_15m, "1h": limit_1h}
+        return await self.get_multi_timeframe_data(
+            symbol="ETHUSDT",
+            timeframe_limits=limits,
             force_refresh=force_refresh,
         )
-        data_1h = await self._get_symbol_interval_dataframe(
-            symbol,
-            "1h",
-            limit=limit_1h,
-            force_refresh=force_refresh,
-        )
-
-        latest_price = None
-        latest_timestamp = None
-        if not data_15m.empty:
-            latest_price = float(data_15m["close"].iloc[-1])
-            latest_timestamp = data_15m.index[-1]
-        elif not data_1h.empty:
-            latest_price = float(data_1h["close"].iloc[-1])
-            latest_timestamp = data_1h.index[-1]
-
-        return {
-            "symbol": symbol,
-            "latest_price": latest_price,
-            "latest_timestamp": latest_timestamp,
-            "timeframes": {
-                "15m": data_15m,
-                "1h": data_1h,
-            },
-            "metadata": {
-                "source": self.exchange.value if self.exchange else "unknown",
-                "cache_timestamp": self.last_update_time.get("ETHUSDT_15m") or self.last_update_time.get("ETHUSDT_1h"),
-            },
-        }
     
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""

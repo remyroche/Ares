@@ -14,14 +14,24 @@ from dataclasses import dataclass
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+from pathlib import Path
 import logging
+import sys
 from scipy import stats
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.linear_model import Ridge
 import warnings
 warnings.filterwarnings('ignore')
 
-from .staleness_curve import StalenessCurveCalculator
+cross_timeframe_dir = Path(__file__).resolve().parent
+cross_timeframe_path = str(cross_timeframe_dir)
+if cross_timeframe_path not in sys.path:
+    sys.path.append(cross_timeframe_path)
+
+try:  # pragma: no cover - support standalone imports
+    from .staleness_curve import StalenessCurveCalculator
+except ImportError:  # pragma: no cover
+    from staleness_curve import StalenessCurveCalculator
 
 
 @dataclass
@@ -389,7 +399,7 @@ class AdaptiveScoringSystem:
         self.cost_estimator = CostEstimator()
         self.staleness_calculator = StalenessCalculator()
         self.meta_learner = MetaLearner(
-            adaptation_range=config.meta_learning_range
+            adaptation_range=getattr(config, 'meta_learning_range', 0.05)
         )
     
     def score_feature_candidate(self, 

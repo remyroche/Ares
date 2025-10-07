@@ -14,13 +14,25 @@ from dataclasses import dataclass
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+from pathlib import Path
 import logging
+import sys
 from scipy import stats, optimize
 from scipy.interpolate import UnivariateSpline
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 import warnings
 warnings.filterwarnings('ignore')
+
+cross_timeframe_dir = Path(__file__).resolve().parent
+cross_timeframe_path = str(cross_timeframe_dir)
+if cross_timeframe_path not in sys.path:
+    sys.path.append(cross_timeframe_path)
+
+try:  # pragma: no cover - support standalone test imports
+    from .scoring_system import AdaptiveScoringSystem
+except ImportError:  # pragma: no cover
+    from scoring_system import AdaptiveScoringSystem
 
 # Try to import PyMC for Bayesian optimization
 try:
@@ -48,6 +60,7 @@ class LocalGridResult:
     export_type: str  # 'discrete' or 'blend'
     blend_weights: Optional[Dict[int, float]]
     metadata: Dict[str, Any]
+    utility_score: Optional[float] = None
 
 
 @dataclass
@@ -591,15 +604,16 @@ class ExportDecisionMaker:
 
 class Phase2Optimization:
     """Main Phase-2 optimization system."""
-    
-    def __init__(self, config):
+
+    def __init__(self, config, scoring_system: Optional[AdaptiveScoringSystem] = None):
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
+
         self.local_grid_generator = LocalGridGenerator(config)
         self.ic_surface_fitter = ICSurfaceFitter(config.ic_surface_smoothing)
         self.hierarchical_shrinkage = HierarchicalShrinkage(config)
         self.export_decision_maker = ExportDecisionMaker(config)
+        self.scoring_system = scoring_system
     
     def optimize_lookbacks(self, 
                          sessionized_data: Dict[str, Any],
@@ -657,7 +671,36 @@ class Phase2Optimization:
                     blend_weights=None,
                     metadata=ic_surface_result
                 )
-                
+
+                if self.scoring_system is not None:
+                    refined_cpu = self.scoring_system.cost_estimator.estimate_cpu_cost(
+                        local_grid_result.optimal_lookback,
+                        candidate.family,
+                    )
+                    refined_staleness = self.scoring_system.staleness_calculator.calculate_staleness(
+                        local_grid_result.optimal_lookback,
+                        candidate.family,
+                        getattr(self.config, 'base_timeframe_minutes', 5),
+                    )
+
+                    local_grid_result.utility_score = self.scoring_system.calculate_utility_score(
+                        ic_oos=local_grid_result.optimal_ic,
+                        se_wild_bootstrap=local_grid_result.optimal_se,
+                        cpu_p95=refined_cpu,
+                        staleness=refined_staleness,
+                    )
+
+                    scoring_metadata = {
+                        'cpu_p95': refined_cpu,
+                        'staleness': refined_staleness,
+                        'penalties': self.scoring_system.get_current_penalties(),
+                    }
+
+                    metadata = local_grid_result.metadata or {}
+                    metadata.setdefault('scoring', {}).update(scoring_metadata)
+                    metadata.setdefault('performance', {})['utility_score'] = local_grid_result.utility_score
+                    local_grid_result.metadata = metadata
+
                 optimized_features.append(local_grid_result)
                 
             except Exception as e:

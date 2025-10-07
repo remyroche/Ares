@@ -113,7 +113,7 @@ class CrossTimeframePipeline:
         self.regime_segmentation = RegimeSegmentation(config)
         self.scoring_system = AdaptiveScoringSystem(config)
         self.phase1_probe = Phase1HTFProbe(config, scoring_system=self.scoring_system)
-        self.phase2_optimization = Phase2Optimization(config)
+        self.phase2_optimization = Phase2Optimization(config, scoring_system=self.scoring_system)
         self.ehu_rih_assignment = EHU_RIH_Assignment(config)
         self.knapsack_selection = KnapsackSelection(config)
         self.htf_materialization = HTFMaterialization(config)
@@ -281,6 +281,17 @@ class CrossTimeframePipeline:
 
             # Step 10: Monitoring & automation
             self.logger.info("Step 10: Setting up monitoring")
+
+            if self.scoring_system and self.config.adaptive_penalties:
+                recent_performance = self._collect_recent_performance_for_meta_learning()
+                market_state = self._summarize_market_state(evaluation_summary)
+                if recent_performance:
+                    self.scoring_system.update_meta_learning(recent_performance, market_state)
+                    self.logger.info(
+                        "Updated adaptive scoring meta-learner with %d performance records",
+                        len(recent_performance),
+                    )
+
             self.monitoring.setup_monitoring(
                 final_feature_list,
                 evaluation_summary,
@@ -349,6 +360,62 @@ class CrossTimeframePipeline:
         feature_matrix = pd.DataFrame(feature_data)
         ordered_columns = [name for name in selected_features if name in feature_matrix.columns]
         return feature_matrix.loc[:, ordered_columns]
+
+    def _collect_recent_performance_for_meta_learning(self) -> List[Dict[str, Any]]:
+        """Aggregate recent feature performance for the adaptive scorer."""
+        performance_records: List[Dict[str, Any]] = []
+
+        if isinstance(self.phase2_results, dict):
+            for feature in self.phase2_results.get('optimized_features', []) or []:
+                record = {
+                    'feature_name': getattr(feature, 'feature_name', None),
+                    'family': getattr(feature, 'family', None),
+                    'lookback_minutes': getattr(feature, 'optimal_lookback', None),
+                    'ic_oos': getattr(feature, 'optimal_ic', None),
+                    'se_wild_bootstrap': getattr(feature, 'optimal_se', None),
+                    'utility_score': getattr(feature, 'utility_score', None),
+                }
+
+                metadata = getattr(feature, 'metadata', {}) or {}
+                if isinstance(metadata, dict):
+                    scoring_meta = metadata.get('scoring', {}) or {}
+                    record['cpu_p95'] = scoring_meta.get('cpu_p95')
+                    record['staleness'] = scoring_meta.get('staleness')
+                    record['penalties'] = scoring_meta.get('penalties')
+
+                performance_records.append(record)
+
+        if not performance_records and isinstance(self.phase1_results, dict):
+            for candidate in self.phase1_results.get('shortlisted_candidates', []) or []:
+                record = {
+                    'feature_name': f"{candidate.base_feature}@{candidate.lookback_minutes}",
+                    'family': candidate.family,
+                    'lookback_minutes': candidate.lookback_minutes,
+                    'ic_oos': candidate.ic_oos,
+                    'se_wild_bootstrap': candidate.se_wild_bootstrap,
+                    'cpu_p95': candidate.cpu_p95,
+                    'staleness': candidate.staleness,
+                    'utility_score': candidate.utility_score,
+                    'regime': candidate.regime,
+                }
+                performance_records.append(record)
+
+        return performance_records
+
+    def _summarize_market_state(self, evaluation_summary: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Summarize current market context for adaptive scoring updates."""
+        segments = (self.regime_segments or {}).get('segments', []) or []
+        regime_counts: Dict[str, int] = {}
+
+        for segment in segments:
+            regime_type = getattr(segment, 'regime_type', 'unknown')
+            regime_counts[regime_type] = regime_counts.get(regime_type, 0) + 1
+
+        return {
+            'regime_counts': regime_counts,
+            'total_segments': len(segments),
+            'evaluation_summary': evaluation_summary,
+        }
 
     def _sessionize_and_align(self,
                             ohlcv_data: pd.DataFrame,

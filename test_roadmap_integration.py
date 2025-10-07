@@ -99,7 +99,7 @@ def test_imports():
 def test_configuration():
     """Test configuration loading."""
     print("\n=== Testing Configuration ===")
-    
+
     try:
         config_path = "src/training/steps/pre_training/interaction_feature_generator/feature_interaction_generation/end_to_end_roadmap_config.yaml"
         
@@ -129,6 +129,115 @@ def test_configuration():
         print(f"❌ Configuration test failed: {e}")
         return False
 
+
+def test_final_parameters_optimizer_extended_schema():
+    """Validate FinalParametersOptimizer directional schema and JSON output."""
+    print("\n=== Testing FinalParametersOptimizer Extended Schema ===")
+
+    try:
+        from src.training.steps.backtesting.final_parameters_optimization import FinalParametersOptimizer
+
+        config = {'n_trials': 1, 'timeout': 1}
+        optimizer = FinalParametersOptimizer(config)
+
+        required_categories = {
+            'long_specific_parameters', 'short_specific_parameters',
+            'directional_thresholds', 'asymmetric_risk_management',
+            'tactician_analyst_integration', 'analyst_oof_weights',
+            'merged_feature_importance'
+        }
+
+        missing_categories = sorted(required_categories - set(optimizer.categories))
+        if missing_categories:
+            print(f"❌ Missing optimizer categories: {missing_categories}")
+            return False
+
+        exit_space = optimizer.default_search_spaces.get('exit_strategy', {})
+        trailing_keys = [
+            'trailing_atr_multiplier', 'trailing_min_distance', 'trailing_confidence_activation'
+        ]
+        if not all(key in exit_space for key in trailing_keys):
+            print("❌ Exit strategy search space missing trailing stop keys")
+            return False
+
+        sample_results = {
+            'exit_strategy': {
+                'confidence_very_low': 0.18,
+                'confidence_low': 0.35,
+                'confidence_medium': 0.58,
+                'confidence_high': 0.82,
+                'base_profit_target': 0.05,
+                'min_confidence_for_profit': 0.62,
+                'confidence_profit_multiplier': 0.4,
+                'profit_tier_1': 0.25,
+                'profit_tier_2': 0.5,
+                'profit_tier_3': 0.75,
+                'base_stop_loss': -0.04,
+                'atr_multiplier': 1.9,
+                'volatility_adjustment_factor': 1.2,
+                'max_hold_time': 5400,
+                'min_hold_time': 180,
+                'confidence_time_scaling_factor': 1.1,
+                'trailing_atr_multiplier': 2.0,
+                'trailing_min_distance': 0.012,
+                'trailing_confidence_activation': 0.7,
+                'regime_transition_penalty': 0.15,
+                'regime_specific_scaling': 1.05,
+            },
+            'long_specific_parameters': {'long_entry_patience': 1.1},
+            'short_specific_parameters': {'short_entry_urgency': 1.2},
+            'directional_thresholds': {'long_vs_short_bias_threshold': 0.2},
+            'asymmetric_risk_management': {'long_max_position_duration': 30},
+            'tactician_analyst_integration': {'integration_method': 'ensemble'},
+            'analyst_oof_weights': {'adaptive_weighting': 'dynamic'},
+            'merged_feature_importance': {'feature_selection_threshold': 0.05},
+        }
+
+        import asyncio
+        import json
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                asyncio.run(
+                    optimizer.save_optimization_results(
+                        sample_results,
+                        'ETHUSDT',
+                        'BINANCE',
+                        'generated'
+                    )
+                )
+
+                json_path = Path('generated/backtesting/optimization_results/BINANCE_ETHUSDT_final_parameters.json')
+                if not json_path.exists():
+                    print("❌ Optimizer did not emit JSON output")
+                    return False
+
+                with open(json_path, 'r') as handle:
+                    payload = json.load(handle)
+
+                for category in required_categories:
+                    if category not in payload:
+                        print(f"❌ JSON output missing category: {category}")
+                        return False
+
+                exit_payload = payload.get('exit_strategy', {})
+                if not all(key in exit_payload for key in trailing_keys):
+                    print("❌ JSON output missing trailing stop keys")
+                    return False
+
+            finally:
+                os.chdir(cwd)
+
+        print("✅ FinalParametersOptimizer extended schema validated")
+        return True
+
+    except Exception as exc:  # pragma: no cover - integration diagnostic
+        print(f"❌ FinalParametersOptimizer test failed: {exc}")
+        return False
+
 def main():
     """Run all tests."""
     print("Roadmap Integration Test Suite")
@@ -138,7 +247,8 @@ def main():
         ("Imports", test_imports),
         ("Configuration", test_configuration),
         ("Component Factory", test_component_factory),
-        ("Sub-Pipeline", test_sub_pipeline)
+        ("Sub-Pipeline", test_sub_pipeline),
+        ("Final Parameters Optimizer", test_final_parameters_optimizer_extended_schema)
     ]
     
     passed = 0

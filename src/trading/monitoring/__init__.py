@@ -27,6 +27,9 @@ from .alert_manager import (
     AlertManager, AlertRule, Alert, NotificationChannel, AlertType,
     AlertPriority, NotificationResult, create_alert_manager, get_alert_manager
 )
+from .unified_trailing_manager import (
+    UnifiedTrailingManager, TrailingAction, TrailingDecision
+)
 
 __all__ = [
     # Trade Monitor
@@ -69,5 +72,10 @@ __all__ = [
     "AlertPriority",
     "NotificationResult",
     "create_alert_manager",
-    "get_alert_manager"
+    "get_alert_manager",
+
+    # Unified trailing manager
+    "UnifiedTrailingManager",
+    "TrailingAction",
+    "TrailingDecision",
 ]

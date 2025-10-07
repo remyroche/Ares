@@ -11,7 +11,8 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Union
 from dataclasses import dataclass
 import pandas as pd
-import numpy as np
+
+from src.trading.utils.ohlcv import ensure_ohlcv_dataframe
 
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors, traced, log_execution_time
@@ -54,6 +55,7 @@ class MarketDataProvider:
         # State
         self.is_initialized = False
         self.last_update_time: Dict[str, datetime] = {}
+        self._default_ohlcv_columns = ['open', 'high', 'low', 'close', 'volume']
         
     @handles_errors
     async def initialize(self) -> bool:
@@ -207,7 +209,7 @@ class MarketDataProvider:
                     
                     # Update cache
                     self._update_cache(cache_key, df)
-                    
+
                     return df
             
             # Return empty DataFrame if no data available
@@ -350,15 +352,141 @@ class MarketDataProvider:
                 combined_data = combined_data.sort_index()
             else:
                 combined_data = new_data.copy()
-            
+
             # Limit cache size
             if len(combined_data) > self.cache_size:
                 combined_data = combined_data.tail(self.cache_size)
-            
+
             self.historical_data_cache[cache_key] = combined_data
-            
+            self.last_update_time[cache_key] = datetime.utcnow()
+
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to update cache for {cache_key}: {e}")
+
+    def _is_cache_fresh(self, cache_key: str) -> bool:
+        """Check whether cached data has been refreshed within the TTL."""
+        last_update = self.last_update_time.get(cache_key)
+        if last_update is None:
+            return False
+        try:
+            return (datetime.utcnow() - last_update).total_seconds() < self.cache_ttl
+        except Exception:
+            return False
+
+    def _get_cached_dataframe(self, cache_key: str, limit: int, allow_stale: bool = False) -> Optional[pd.DataFrame]:
+        """Retrieve cached OHLCV data respecting TTL constraints."""
+        cached = self.historical_data_cache.get(cache_key)
+        if cached is None or cached.empty:
+            return None
+        if not allow_stale and not self._is_cache_fresh(cache_key):
+            return None
+        return ensure_ohlcv_dataframe(
+            cached,
+            required_columns=self._default_ohlcv_columns,
+            limit=limit,
+        )
+
+    async def _get_symbol_interval_dataframe(
+        self,
+        symbol: str,
+        interval: str,
+        limit: int = 500,
+        force_refresh: bool = False,
+    ) -> pd.DataFrame:
+        """Fetch OHLCV data for a symbol/interval pair with caching."""
+
+        cache_key = f"{symbol}_{interval}"
+
+        if not force_refresh:
+            cached_df = self._get_cached_dataframe(cache_key, limit)
+            if cached_df is not None and not cached_df.empty:
+                return cached_df
+
+        df = await self.get_historical_data(symbol, interval, limit=limit)
+
+        if df is None or df.empty:
+            # Optionally return stale cache to avoid gaps if available
+            cached_df = self._get_cached_dataframe(cache_key, limit, allow_stale=True)
+            if cached_df is not None:
+                return cached_df
+            return pd.DataFrame(columns=self._default_ohlcv_columns)
+
+        return ensure_ohlcv_dataframe(
+            df,
+            required_columns=self._default_ohlcv_columns,
+            limit=limit,
+        )
+
+    async def get_multi_timeframe_data(
+        self,
+        symbol: str,
+        timeframe_limits: Optional[Dict[str, int]] = None,
+        force_refresh: bool = False,
+    ) -> Dict[str, Any]:
+        """Return a cached bundle of OHLCV data for the requested symbol."""
+
+        if not self.is_initialized:
+            raise RuntimeError("Market Data Provider not initialized")
+
+        limits = timeframe_limits or {"15m": 500, "1h": 500}
+        timeframes: Dict[str, pd.DataFrame] = {}
+
+        for interval, limit in limits.items():
+            timeframes[interval] = await self._get_symbol_interval_dataframe(
+                symbol,
+                interval,
+                limit=limit,
+                force_refresh=force_refresh,
+            )
+
+        latest_price = None
+        latest_timestamp = None
+
+        for preferred_interval in ("15m", "1h"):
+            if preferred_interval in timeframes and not timeframes[preferred_interval].empty:
+                latest_price = float(timeframes[preferred_interval]["close"].iloc[-1])
+                latest_timestamp = timeframes[preferred_interval].index[-1]
+                break
+
+        if latest_price is None:
+            for df in timeframes.values():
+                if not df.empty:
+                    latest_price = float(df["close"].iloc[-1])
+                    latest_timestamp = df.index[-1]
+                    break
+
+        cache_timestamp = None
+        for interval in limits.keys():
+            cache_key = f"{symbol}_{interval}"
+            if cache_key in self.last_update_time:
+                cache_timestamp = self.last_update_time[cache_key]
+                break
+
+        return {
+            "symbol": symbol,
+            "latest_price": latest_price,
+            "latest_timestamp": latest_timestamp,
+            "timeframes": timeframes,
+            "metadata": {
+                "source": self.exchange.value if self.exchange else "unknown",
+                "cache_timestamp": cache_timestamp,
+            },
+        }
+
+    async def get_ethusdt_multi_timeframe_data(
+        self,
+        limit_15m: int = 500,
+        limit_1h: int = 500,
+        force_refresh: bool = False,
+    ) -> Dict[str, Any]:
+        """Backward-compatible wrapper returning ETHUSDT multi-timeframe data."""
+
+        limits = {"15m": limit_15m, "1h": limit_1h}
+        return await self.get_multi_timeframe_data(
+            symbol="ETHUSDT",
+            timeframe_limits=limits,
+            force_refresh=force_refresh,
+        )
     
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""

@@ -465,10 +465,12 @@ class NASEnsembleTrainingComponent(BaseMarketAnalysisComponent):
                 'use_transformer_attention': True,
                 'regime_aware': True,
                 'attention_dropout': 0.1,
-                'num_heads': 4
+                'num_heads': 4,
+                'sign_dropout_rate': 0.0,
+                'sign_threshold': 0.2
             }
-            
-            wrapped_model = create_patchtst_wrapper(base_model, patchtst_config)
+
+            wrapped_model = create_patchtst_wrapper(base_model, **patchtst_config)
             tprint(f"✅ [NAS_ENSEMBLE] {model_name} enhanced with PatchTST wrapper", color="green")
             return wrapped_model
         except Exception as e:

@@ -69,17 +69,51 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        close_prices = data['close'].values
-        volatility = self._calculate_volatility(close_prices, period=self.period)
+        if data.empty:
+            return pd.Series(dtype=float, index=data.index, name=f'volatility_{self.period}')
+
+        close_prices = data['close'].astype(float).values
+        state = self.get_state()
+        history = state.get('close_history') or []
+
+        if history:
+            try:
+                history_array = np.asarray(history, dtype=float)
+            except Exception:
+                history_array = np.array(history, dtype=float)
+            combined_closes = np.concatenate([history_array, close_prices])
+        else:
+            combined_closes = close_prices
+
+        combined_volatility = self._calculate_volatility(combined_closes, period=self.period)
+        volatility = combined_volatility[-len(close_prices):] if len(close_prices) else np.array([])
+
         return pd.Series(volatility, index=data.index, name=f'volatility_{self.period}')
     
     def _calculate_volatility(self, prices: np.ndarray, period: int = 20) -> np.ndarray:
         if len(prices) < period:
             return np.full(len(prices), np.nan)
-        
+
         returns = np.diff(np.log(prices))
         volatility = pd.Series(returns).rolling(window=period-1).std().values
         return np.concatenate([[np.nan], volatility])
+
+    def _finalize_state(self, data: pd.DataFrame, feature_data: pd.Series) -> None:
+        if not data.empty:
+            closes = data['close'].astype(float)
+            history_window = max(self.period, 1)
+            close_history = closes.tolist()[-history_window:]
+            state_update = {
+                'last_close': float(closes.iloc[-1]),
+                'close_history': close_history
+            }
+            if not feature_data.empty:
+                last_vol = feature_data.iloc[-1]
+                if pd.notna(last_vol):
+                    state_update['last_volatility'] = float(last_vol)
+            self.update_state(state_update)
+
+        super()._finalize_state(data, feature_data)
     
     @classmethod
     def generate_batch_features(cls,

@@ -138,6 +138,7 @@ class ArtifactsRegistry:
     lookback_choices: Dict[str, LookbackChoice]
     interaction_configs: Dict[str, InteractionConfig]
     model_artifacts: Dict[str, ModelArtifact]
+    rotation_metadata: Optional[Dict[str, Any]] = None
     patch_weights: Optional[Dict[str, Any]] = None
     residual_std: Optional[float] = None
     spec_hash: str = ""

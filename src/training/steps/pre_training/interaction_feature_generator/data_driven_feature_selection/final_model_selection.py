@@ -28,6 +28,7 @@ from sklearn.ensemble import RandomForestRegressor
 
 # Import utilities
 from .utils import FeatureGeneratorWrapper
+from feature_engineering.feature_registry import FeatureRegistry
 from .interaction_generator import InteractionFeature
 from .config import FinalSelectionConfig
 
@@ -75,6 +76,10 @@ class FinalSelectionResult:
     execution_time: float
     n_features_selected: int
     target_achieved: bool
+
+    family_contributions: Dict[str, float] = field(default_factory=dict)
+    dropped_families: List[str] = field(default_factory=list)
+    retained_families: List[str] = field(default_factory=list)
     
     # Performance metrics
     matrix_ops_used: int = 0
@@ -94,6 +99,9 @@ class FinalSelectionResult:
             'execution_time': self.execution_time,
             'n_features_selected': self.n_features_selected,
             'target_achieved': self.target_achieved,
+            'family_contributions': self.family_contributions,
+            'dropped_families': self.dropped_families,
+            'retained_families': self.retained_families,
             'matrix_ops_used': self.matrix_ops_used,
             'vectorized_ops': self.vectorized_ops,
             'stability_selections': self.stability_selections,
@@ -108,7 +116,12 @@ class FinalModelSelection:
         self.config = config
         self.matrix_ops = matrix_ops
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
-        
+        try:
+            self.feature_registry = FeatureRegistry()
+        except Exception as exc:
+            self.logger.warning(f"Failed to initialize FeatureRegistry: {exc}")
+            self.feature_registry = None
+
         # Performance tracking
         self.performance_metrics = {
             'matrix_ops_used': 0,
@@ -118,7 +131,7 @@ class FinalModelSelection:
             'bootstrap_samples': 0
         }
     
-    def select_final_features(self, selected_wrappers: List[FeatureGeneratorWrapper], 
+    def select_final_features(self, selected_wrappers: List[FeatureGeneratorWrapper],
                             selected_interactions: List[InteractionFeature],
                             data: pd.DataFrame, target: np.ndarray) -> FinalSelectionResult:
         """Select final features using stability selection and FDR control."""
@@ -159,16 +172,74 @@ class FinalModelSelection:
                 )
             else:
                 group_heredity_features = fdr_controlled_features
-            
+
+            group_regularized_features = list(group_heredity_features)
+            group_contributions: Dict[str, float] = {}
+            dropped_families: List[str] = []
+            retained_families: List[str] = []
+
+            if getattr(self.config, 'enable_group_regularization', False):
+                tprint_info("🧮 Evaluating feature families...")
+                (group_regularized_features,
+                 group_contributions,
+                 dropped_families) = self._apply_group_regularization(
+                    feature_matrix,
+                    target,
+                    feature_names,
+                    group_regularized_features,
+                    feature_metadata
+                )
+
+                if not group_regularized_features and group_heredity_features:
+                    warning_msg = (
+                        "Group regularization removed all candidates; "
+                        "reverting to pre-regularization set."
+                    )
+                    tprint_warning(f"⚠️ {warning_msg}")
+                    self.logger.warning(warning_msg)
+                    group_regularized_features = list(group_heredity_features)
+                    dropped_families = []
+                    group_contributions = {}
+
+                if group_contributions:
+                    retained_families = sorted(
+                        [family for family in group_contributions.keys() if family not in dropped_families]
+                    )
+                else:
+                    retained_families = sorted({
+                        self._normalize_family_name(feature_metadata.get(name, {}).get('family')) or 'unassigned'
+                        for name in group_regularized_features
+                    }) if group_regularized_features else []
+            else:
+                retained_families = sorted({
+                    self._normalize_family_name(feature_metadata.get(name, {}).get('family')) or 'unassigned'
+                    for name in group_regularized_features
+                }) if group_regularized_features else []
+
             # Final feature selection
             final_features = self._select_final_features(
                 feature_matrix,
                 target,
                 feature_names,
-                group_heredity_features,
+                group_regularized_features,
                 feature_metadata
             )
-            
+
+            final_family_snapshot = sorted({
+                fam
+                for feature in final_features
+                for fam in self._extract_feature_families(feature_metadata.get(feature, {}))
+                if fam
+            })
+
+            family_message = (
+                f"Final feature families -> {', '.join(final_family_snapshot)}"
+                if final_family_snapshot else
+                "Final feature families -> none"
+            )
+            self.logger.info(family_message)
+            tprint_info(family_message)
+
             # Generate final feature matrix
             final_matrix = self._generate_final_matrix(feature_matrix, feature_names, final_features)
             
@@ -188,12 +259,21 @@ class FinalModelSelection:
                 execution_time=execution_time,
                 n_features_selected=len(final_features),
                 target_achieved=self._check_target_achievement(len(final_features)),
+                family_contributions=group_contributions,
+                dropped_families=dropped_families,
+                retained_families=retained_families,
                 matrix_ops_used=self.performance_metrics['matrix_ops_used'],
                 vectorized_ops=self.performance_metrics['vectorized_ops'],
                 stability_selections=self.performance_metrics['stability_selections'],
                 fdr_controls=self.performance_metrics['fdr_controls']
             )
-            
+
+            self._log_group_regularization_summary(
+                result.family_contributions,
+                result.dropped_families,
+                result.retained_families
+            )
+
             tprint_success(f"✅ Final selection completed in {execution_time:.3f}s")
             tprint_success(f"📊 Selected {len(final_features)} final features")
             tprint_success(f"🎯 Target achieved: {result.target_achieved}")
@@ -206,7 +286,32 @@ class FinalModelSelection:
             self.logger.error(f"Error details: {traceback.format_exc()}")
             
             return self._create_empty_result(execution_time)
-    
+
+    def _lookup_feature_family(self, feature_name: str, fallback: Optional[str] = None) -> Optional[str]:
+        """Resolve the canonical feature family for a given feature name."""
+        if self.feature_registry is None:
+            return fallback
+
+        try:
+            metadata = self.feature_registry.get_feature_metadata(feature_name)
+            family = getattr(metadata, 'family', None)
+            if family is None:
+                return fallback
+            return getattr(family, 'value', str(family))
+        except Exception:
+            return fallback
+
+    @staticmethod
+    def _normalize_family_name(family: Optional[Union[str, Any]]) -> Optional[str]:
+        """Normalize family identifiers to lowercase strings."""
+        if family is None:
+            return None
+        if hasattr(family, 'value'):
+            family = family.value
+        if isinstance(family, str):
+            return family.lower()
+        return str(family).lower()
+
     def _generate_feature_matrix(self, selected_wrappers: List[FeatureGeneratorWrapper],
                                selected_interactions: List[InteractionFeature],
                                data: pd.DataFrame) -> Tuple[Optional[np.ndarray], List[str], Dict[str, Dict[str, Any]]]:
@@ -216,6 +321,7 @@ class FinalModelSelection:
             feature_names = []
             feature_metadata: Dict[str, Dict[str, Any]] = {}
             wrapper_category_map: Dict[str, str] = {}
+            wrapper_family_map: Dict[str, List[str]] = {}
 
             # Generate base features
             for wrapper in selected_wrappers:
@@ -225,13 +331,22 @@ class FinalModelSelection:
                         features.append(feature_values)
                         feature_names.append(wrapper.name)
                         feature_type = self._determine_feature_bucket(wrapper)
+                        resolved_family = self._lookup_feature_family(
+                            wrapper.name,
+                            fallback=self._normalize_family_name(wrapper.family)
+                        )
+                        normalized_family = self._normalize_family_name(resolved_family)
+                        families = [normalized_family] if normalized_family else []
+
                         feature_metadata[wrapper.name] = {
-                            'family': wrapper.family,
+                            'family': normalized_family,
+                            'families': families if families else ['unassigned'],
                             'category': wrapper.category,
                             'feature_type': feature_type,
                             'source': 'base'
                         }
                         wrapper_category_map[wrapper.name] = feature_type
+                        wrapper_family_map[wrapper.name] = families if families else ['unassigned']
                 except Exception as e:
                     self.logger.debug(f"Failed to generate feature for {wrapper.name}: {e}")
                     continue
@@ -247,13 +362,27 @@ class FinalModelSelection:
                             wrapper_category_map.get(interaction.parent1),
                             wrapper_category_map.get(interaction.parent2)
                         ])
+                        parent_families = list({
+                            fam
+                            for parent in [interaction.parent1, interaction.parent2]
+                            for fam in wrapper_family_map.get(parent, [])
+                            if fam
+                        })
+
+                        if not parent_families:
+                            parent_families = ['interaction']
+
+                        primary_family = parent_families[0] if parent_families else 'interaction'
+
                         feature_metadata[interaction.name] = {
-                            'family': 'interaction',
+                            'family': primary_family,
+                            'families': parent_families,
                             'category': interaction.interaction_type,
                             'feature_type': feature_type,
                             'parents': [interaction.parent1, interaction.parent2],
                             'source': 'interaction'
                         }
+                        wrapper_family_map[interaction.name] = parent_families
                 except Exception as e:
                     self.logger.debug(f"Failed to generate interaction {interaction.name}: {e}")
                     continue
@@ -369,6 +498,253 @@ class FinalModelSelection:
 
         # Mixed parents – default to engineered to avoid double counting specialised quotas
         return 'engineered'
+
+    def _apply_group_regularization(self,
+                                    feature_matrix: np.ndarray,
+                                    target: np.ndarray,
+                                    feature_names: List[str],
+                                    candidate_features: List[str],
+                                    feature_metadata: Dict[str, Dict[str, Any]]) -> Tuple[List[str], Dict[str, float], List[str]]:
+        """Evaluate family-level contributions and drop low-signal families."""
+        try:
+            if not candidate_features:
+                return candidate_features, {}, []
+
+            candidate_indices = [i for i, name in enumerate(feature_names) if name in candidate_features]
+
+            if not candidate_indices:
+                return candidate_features, {}, []
+
+            candidate_names = [feature_names[i] for i in candidate_indices]
+            X_candidate = feature_matrix[:, candidate_indices]
+
+            feature_groups = {
+                name: self._extract_feature_families(feature_metadata.get(name, {}))
+                for name in candidate_names
+            }
+
+            contributions = self._estimate_group_contributions(
+                X_candidate,
+                target,
+                candidate_names,
+                feature_groups
+            )
+
+            if not contributions:
+                return candidate_features, contributions, []
+
+            threshold = float(getattr(self.config, 'group_contribution_threshold', 0.0) or 0.0)
+            threshold = max(0.0, threshold)
+
+            dropped_families = [
+                family for family, value in contributions.items()
+                if family not in {'unassigned', 'interaction'} and value < threshold
+            ]
+
+            retained_set = {
+                name for name in candidate_names
+                if not any(family in dropped_families for family in feature_groups.get(name, []))
+            }
+
+            retained_ordered = [name for name in candidate_features if name in retained_set]
+
+            return retained_ordered, contributions, dropped_families
+
+        except Exception as exc:
+            self.logger.warning(f"Group regularization failed: {exc}")
+            return candidate_features, {}, []
+
+    def _extract_feature_families(self, metadata: Dict[str, Any]) -> List[str]:
+        """Extract normalized family assignments for a feature."""
+        families: List[str] = []
+
+        raw_families = metadata.get('families')
+        if isinstance(raw_families, (list, tuple, set)):
+            families.extend(
+                [fam for fam in (self._normalize_family_name(f) for f in raw_families) if fam]
+            )
+
+        if not families:
+            fallback = self._normalize_family_name(metadata.get('family'))
+            if fallback:
+                families.append(fallback)
+
+        if not families:
+            families.append('unassigned')
+
+        return families
+
+    def _estimate_group_contributions(self,
+                                       X_candidate: np.ndarray,
+                                       target: np.ndarray,
+                                       candidate_names: List[str],
+                                       feature_groups: Dict[str, List[str]]) -> Dict[str, float]:
+        """Estimate contribution of each family using configured method."""
+        method = str(getattr(self.config, 'group_regularization_method', 'shap') or 'shap').lower()
+
+        try:
+            if method == 'shap' and LIGHTGBM_AVAILABLE:
+                feature_scores = self._estimate_contributions_with_shap(
+                    X_candidate,
+                    target,
+                    candidate_names
+                )
+            elif method == 'lasso':
+                feature_scores = self._estimate_contributions_with_lasso(
+                    X_candidate,
+                    target,
+                    candidate_names
+                )
+            elif method == 'shap':
+                raise RuntimeError('LightGBM not available for SHAP contributions')
+            else:
+                feature_scores = self._estimate_contributions_with_lasso(
+                    X_candidate,
+                    target,
+                    candidate_names
+                )
+        except Exception as exc:
+            self.logger.warning(
+                f"Primary group contribution method '{method}' failed: {exc}"
+            )
+            feature_scores = self._estimate_contributions_with_lasso(
+                X_candidate,
+                target,
+                candidate_names
+            )
+
+        return self._aggregate_group_scores(feature_scores, feature_groups)
+
+    def _estimate_contributions_with_shap(self,
+                                          X_candidate: np.ndarray,
+                                          target: np.ndarray,
+                                          candidate_names: List[str]) -> Dict[str, float]:
+        """Approximate SHAP contributions via LightGBM."""
+        model = lgb.LGBMRegressor(
+            n_estimators=min(256, max(50, getattr(self.config, 'n_estimators', 100))),
+            learning_rate=getattr(self.config, 'learning_rate', 0.1),
+            max_depth=getattr(self.config, 'max_depth', -1),
+            subsample=0.8,
+            colsample_bytree=0.8,
+            random_state=42
+        )
+
+        model.fit(X_candidate, target)
+
+        try:
+            shap_values = model.predict(X_candidate, pred_contrib=True)
+        except TypeError:
+            shap_values = model.booster_.predict(X_candidate, pred_contrib=True)
+
+        if shap_values.ndim != 2:
+            raise ValueError('Unexpected SHAP value shape')
+
+        feature_values = shap_values[:, :len(candidate_names)]
+        mean_abs = np.mean(np.abs(feature_values), axis=0)
+
+        return {
+            name: float(value)
+            for name, value in zip(candidate_names, mean_abs.tolist())
+        }
+
+    def _estimate_contributions_with_lasso(self,
+                                           X_candidate: np.ndarray,
+                                           target: np.ndarray,
+                                           candidate_names: List[str]) -> Dict[str, float]:
+        """Estimate contributions using Lasso coefficients as proxy."""
+        try:
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X_candidate)
+            n_samples = X_candidate.shape[0]
+            cv_folds = min(5, max(2, min(3, n_samples - 1)))
+            if cv_folds < 2 or cv_folds >= n_samples:
+                raise ValueError("Insufficient samples for LassoCV")
+            lasso = LassoCV(cv=cv_folds, random_state=42)
+            lasso.fit(X_scaled, target)
+            coefs = np.abs(lasso.coef_)
+        except Exception as exc:
+            self.logger.debug(f"Lasso contribution estimation failed: {exc}")
+            coefs = []
+            for i in range(X_candidate.shape[1]):
+                try:
+                    corr = np.corrcoef(X_candidate[:, i], target)[0, 1]
+                    coefs.append(abs(corr) if not np.isnan(corr) else 0.0)
+                except Exception:
+                    coefs.append(0.0)
+
+        coefs = np.nan_to_num(np.asarray(coefs, dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
+
+        return {
+            name: float(value)
+            for name, value in zip(candidate_names, coefs.tolist())
+        }
+
+    def _aggregate_group_scores(self,
+                                feature_scores: Dict[str, float],
+                                feature_groups: Dict[str, List[str]]) -> Dict[str, float]:
+        """Aggregate feature-level scores into family contributions."""
+        contributions: Dict[str, float] = {}
+
+        for feature_name, score in feature_scores.items():
+            families = feature_groups.get(feature_name, ['unassigned'])
+
+            if not families:
+                families = ['unassigned']
+
+            share = score / len(families) if families else score
+
+            for family in families:
+                contributions[family] = contributions.get(family, 0.0) + share
+
+        total = sum(contributions.values())
+        if total > 0:
+            contributions = {
+                family: value / total
+                for family, value in contributions.items()
+            }
+
+        return dict(sorted(contributions.items(), key=lambda item: item[1], reverse=True))
+
+    def _log_group_regularization_summary(self,
+                                          contributions: Dict[str, float],
+                                          dropped: List[str],
+                                          retained: List[str]) -> None:
+        """Log the outcome of the group regularization stage."""
+        if not contributions:
+            if retained:
+                summary = ", ".join(retained)
+                message = f"Group regularization not applied; families observed -> {summary}"
+            else:
+                message = "Group regularization contributions unavailable."
+            self.logger.info(message)
+            tprint_info(message)
+            return
+
+        contribution_summary = ", ".join(
+            f"{family}: {value:.3f}" for family, value in contributions.items()
+        )
+        self.logger.info(f"Family contribution summary -> {contribution_summary}")
+        tprint_info(f"Family contribution summary -> {contribution_summary}")
+
+        if dropped:
+            dropped_summary = ", ".join(sorted(dropped))
+            message = f"Families removed by regularization -> {dropped_summary}"
+            self.logger.info(message)
+            tprint_warning(message)
+        else:
+            message = "No families removed by regularization."
+            self.logger.info(message)
+            tprint_info(message)
+
+        if retained:
+            retained_summary = ", ".join(retained)
+            message = f"Families retained after regularization -> {retained_summary}"
+            self.logger.info(message)
+            tprint_success(message)
+        else:
+            message = "No families retained after regularization."
+            self.logger.warning(message)
+            tprint_warning(message)
 
     def _resolve_feature_bucket(self, feature_name: str, metadata: Dict[str, Dict[str, Any]]) -> str:
         """Resolve the bucket for a feature from metadata."""
@@ -914,5 +1290,8 @@ class FinalModelSelection:
             group_heredity_features=[],
             execution_time=execution_time,
             n_features_selected=0,
-            target_achieved=False
+            target_achieved=False,
+            family_contributions={},
+            dropped_families=[],
+            retained_families=[]
         )

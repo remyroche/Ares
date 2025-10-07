@@ -1937,7 +1937,9 @@ class TacticianModelsTrainingStep:
                             'use_transformer_attention': True,
                             'regime_aware': True,
                             'attention_dropout': 0.1,
-                            'num_heads': 4
+                            'num_heads': 4,
+                            'sign_dropout_rate': 0.0,
+                            'sign_threshold': 0.2
                         }
                     }
                 }
@@ -2068,7 +2070,9 @@ class TacticianModelsTrainingStep:
                             'use_transformer_attention': True,
                             'regime_aware': True,
                             'attention_dropout': 0.1,
-                            'num_heads': 4
+                            'num_heads': 4,
+                            'sign_dropout_rate': 0.0,
+                            'sign_threshold': 0.2
                         }
                     }
                 }
@@ -2152,7 +2156,9 @@ class TacticianModelsTrainingStep:
                             'use_transformer_attention': True,
                             'regime_aware': True,
                             'attention_dropout': 0.1,
-                            'num_heads': 4
+                            'num_heads': 4,
+                            'sign_dropout_rate': 0.0,
+                            'sign_threshold': 0.2
                         }
                     }
                 }

@@ -103,7 +103,9 @@ class BaseEnsemble:
             'use_transformer_attention': True,
             'regime_aware': True,
             'attention_dropout': 0.1,
-            'num_heads': 4
+            'num_heads': 4,
+            'sign_dropout_rate': 0.0,
+            'sign_threshold': 0.2
         })
         
         # Tree-based model types that support PatchTST wrapper
@@ -622,7 +624,7 @@ def train_ensemble(self, historical_features: pd.DataFrame, historical_targets: 
             return base_model
         
         try:
-            wrapped_model = create_patchtst_wrapper(base_model, self.patchtst_config)
+            wrapped_model = create_patchtst_wrapper(base_model, **self.patchtst_config)
             self.logger.info(f"✅ {model_name} enhanced with PatchTST wrapper")
             return wrapped_model
         except Exception as e:

@@ -10,11 +10,12 @@ re-assessment and position decision logic every 10 seconds, using the existing
 PositionDivisionStrategy for consistency.
 """
 import asyncio
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from .enhanced_order_manager import EnhancedOrderManager
 from .position_division_strategy import PositionDivisionStrategy
@@ -129,6 +130,7 @@ class PositionMonitor:
 
         # Monitoring state
         self.active_positions: Dict[str, Dict[str, Any]] = {}
+        self.trailing_state: Dict[str, Dict[str, Any]] = {}
         self.position_assessments: List[PositionAssessment] = []
         self.position_alerts: List[PositionAlert] = []
         self.monitoring_task: Optional[asyncio.Task] = None
@@ -494,8 +496,8 @@ class PositionMonitor:
             return PositionAction.STAY, f"Error in profit evaluation: {e}"
 
     def _evaluate_trailing_stop(
-        self, 
-        position_data: Dict[str, Any], 
+        self,
+        position_data: Dict[str, Any],
         combined_confidence: float
     ) -> tuple[PositionAction, str]:
         """
@@ -509,19 +511,580 @@ class PositionMonitor:
             tuple: (PositionAction, reason)
         """
         try:
-            # This is a placeholder for trailing stop logic
-            # In a full implementation, you would:
-            # 1. Calculate ATR-based trailing stop distance
-            # 2. Check if current price has moved against the position
-            # 3. Update trailing stop level if price moves favorably
-            # 4. Trigger exit if trailing stop is hit
-            
-            # For now, return STAY to indicate no trailing stop action needed
-            return PositionAction.STAY, "Trailing stop evaluation (placeholder)"
+            if not self.trailing_stop_config.get("enabled", True):
+                return PositionAction.STAY, "Trailing stop disabled"
+
+            position_id = position_data.get("position_id")
+            if not position_id:
+                return PositionAction.STAY, "Position missing identifier for trailing management"
+
+            state = self.trailing_state.get(position_id)
+            if state is None:
+                state = self._initialize_trailing_state(position_id, position_data)
+                if state is None:
+                    return PositionAction.STAY, "Unable to initialize trailing state"
+
+            side = str(state.get("side", position_data.get("side", "LONG"))).upper()
+            state["side"] = side
+
+            current_price = self._safe_float(position_data.get("current_price"))
+            if current_price is None:
+                return PositionAction.STAY, "Current price unavailable for trailing stop evaluation"
+
+            entry_price = self._safe_float(state.get("entry_price"))
+            if entry_price is None:
+                entry_price = self._safe_float(position_data.get("entry_price")) or current_price
+                state["entry_price"] = entry_price
+
+            reference_extreme = self._update_trailing_extreme(state, current_price, entry_price)
+
+            atr = self._extract_atr(position_data)
+            if atr is not None:
+                state["last_atr"] = atr
+                if self._safe_float(state.get("entry_atr")) is None:
+                    state["entry_atr"] = atr
+            else:
+                atr = self._safe_float(state.get("last_atr")) or self._safe_float(state.get("entry_atr"))
+
+            sigma = self._extract_sigma(position_data)
+            if sigma is not None:
+                state["last_sigma"] = sigma
+                if self._safe_float(state.get("entry_sigma")) is None:
+                    state["entry_sigma"] = sigma
+            else:
+                sigma = self._safe_float(state.get("last_sigma"))
+
+            profit_buffer = state.get("profit_buffer")
+            if profit_buffer is None:
+                profit_buffer = self._compute_profit_buffer(entry_price, position_data)
+                state["profit_buffer"] = profit_buffer
+
+            breakeven_buffer = state.get("breakeven_buffer")
+            if breakeven_buffer is None:
+                breakeven_buffer = self._compute_breakeven_buffer(entry_price, position_data)
+                state["breakeven_buffer"] = breakeven_buffer
+
+            trailing_metadata = position_data.setdefault("metadata", {}).setdefault("trailing", {})
+            trailing_metadata.update(
+                {
+                    "side": side,
+                    "peak_price": state.get("peak_price"),
+                    "trough_price": state.get("trough_price"),
+                    "entry_price": entry_price,
+                    "last_atr": atr,
+                    "last_sigma": sigma,
+                    "profit_buffer": profit_buffer,
+                    "breakeven_buffer": breakeven_buffer,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
+
+            activation_threshold = self.trailing_stop_config.get("confidence_activation", 0.0)
+            trailing_metadata["activation_threshold"] = activation_threshold
+            trailing_metadata["combined_confidence"] = combined_confidence
+
+            if combined_confidence < activation_threshold:
+                trailing_metadata["active"] = False
+                self.trailing_state[position_id] = state
+                return (
+                    PositionAction.STAY,
+                    f"Confidence {combined_confidence:.3f} below trailing activation {activation_threshold:.3f}",
+                )
+
+            trailing_metadata["active"] = True
+
+            min_distance = self._safe_float(self.trailing_stop_config.get("min_distance")) or 0.0
+            atr_component = (0.8 * atr) if atr is not None else 0.0
+            distance = max(atr_component, profit_buffer or 0.0)
+            distance = max(distance, min_distance)
+
+            volatility_scaler = self._calculate_volatility_scaler(position_data, state, sigma)
+            distance *= volatility_scaler
+            trailing_metadata["volatility_scaler"] = volatility_scaler
+
+            profit = (current_price - entry_price) if side == "LONG" else (entry_price - current_price)
+            atr_reference = self._determine_atr_reference(entry_price, atr, state)
+
+            distance = self._apply_tightening_tiers(distance, profit, atr_reference, state)
+            trailing_metadata["trail_distance"] = distance
+
+            prev_stop = self._safe_float(state.get("trailing_stop"))
+            if prev_stop is not None:
+                stop_hit = (side == "LONG" and current_price <= prev_stop) or (
+                    side == "SHORT" and current_price >= prev_stop
+                )
+                if stop_hit:
+                    trailing_metadata.update(
+                        {
+                            "trailing_stop": prev_stop,
+                            "stop_hit": True,
+                            "trail_distance": state.get("last_distance", distance),
+                        }
+                    )
+                    state["trailing_stop"] = prev_stop
+                    self.trailing_state[position_id] = state
+                    return PositionAction.STOP_LOSS, f"Trailing stop hit at {prev_stop:.4f}"
+
+            new_stop = self._calculate_trailing_stop(side, reference_extreme, distance)
+
+            breakeven_applied = self._maybe_apply_breakeven(
+                side,
+                profit,
+                atr_reference,
+                entry_price,
+                breakeven_buffer,
+                state,
+            )
+            if breakeven_applied or state.get("breakeven_applied"):
+                state["breakeven_applied"] = True
+                if side == "LONG":
+                    new_stop = max(new_stop, entry_price + (breakeven_buffer or 0.0))
+                else:
+                    new_stop = min(new_stop, entry_price - (breakeven_buffer or 0.0))
+
+            state["last_distance"] = distance
+            stop_improved = (
+                prev_stop is None
+                or (side == "LONG" and new_stop > prev_stop)
+                or (side == "SHORT" and new_stop < prev_stop)
+            )
+
+            if stop_improved:
+                state["trailing_stop"] = new_stop
+                trailing_metadata["trailing_stop"] = new_stop
+            else:
+                trailing_metadata["trailing_stop"] = prev_stop if prev_stop is not None else new_stop
+
+            trailing_metadata.update(
+                {
+                    "trail_distance": distance,
+                    "breakeven_applied": state.get("breakeven_applied", False),
+                    "tightening_triggers": sorted(state.get("tightening_triggered", set())),
+                }
+            )
+
+            partial_signal = self._extract_trailing_tp_signal(position_data)
+            if partial_signal:
+                partial_action = self._handle_trailing_partial(
+                    position_id, partial_signal, trailing_metadata, state
+                )
+                if partial_action is not None:
+                    self.trailing_state[position_id] = state
+                    return partial_action
+
+            if stop_improved:
+                self.trailing_state[position_id] = state
+                return PositionAction.TRAILING_STOP, f"Updated trailing stop to {new_stop:.4f}"
+
+            self.trailing_state[position_id] = state
+            effective_stop = state.get("trailing_stop") or prev_stop or new_stop
+            return PositionAction.STAY, f"Trailing stop unchanged at {effective_stop:.4f}"
 
         except Exception as e:
             self.logger.error(failed(f"❌ Error evaluating trailing stop: {e}"))
             return PositionAction.STAY, f"Error in trailing stop evaluation: {e}"
+
+    def _initialize_trailing_state(
+        self, position_id: str, position_data: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Create initial trailing stop state for a position."""
+
+        try:
+            side = str(position_data.get("side", "LONG")).upper()
+            entry_price = self._safe_float(position_data.get("entry_price"))
+            current_price = self._safe_float(position_data.get("current_price"))
+
+            if entry_price is None and current_price is None:
+                self.logger.warning(
+                    warning(f"Unable to initialize trailing state for {position_id}: missing price information")
+                )
+                return None
+
+            if entry_price is None:
+                entry_price = current_price
+
+            atr = self._extract_atr(position_data)
+            sigma = self._extract_sigma(position_data)
+            profit_buffer = self._compute_profit_buffer(entry_price, position_data)
+            breakeven_buffer = self._compute_breakeven_buffer(entry_price, position_data)
+
+            state: Dict[str, Any] = {
+                "position_id": position_id,
+                "side": side,
+                "entry_price": entry_price,
+                "entry_atr": atr,
+                "entry_sigma": sigma,
+                "profit_buffer": profit_buffer,
+                "breakeven_buffer": breakeven_buffer,
+                "peak_price": current_price if side == "LONG" else None,
+                "trough_price": current_price if side == "SHORT" else None,
+                "trailing_stop": None,
+                "breakeven_applied": False,
+                "tightening_triggered": set(),
+                "tp_triggers": set(),
+            }
+
+            self.trailing_state[position_id] = state
+
+            position_data.setdefault("metadata", {}).setdefault("trailing", {}).update(
+                {
+                    "initialized": True,
+                    "trail_distance": None,
+                    "trailing_stop": None,
+                    "profit_buffer": profit_buffer,
+                    "breakeven_buffer": breakeven_buffer,
+                }
+            )
+
+            return state
+
+        except Exception as exc:
+            self.logger.error(failed(f"❌ Error initializing trailing state for {position_id}: {exc}"))
+            return None
+
+    def _update_trailing_extreme(
+        self, state: Dict[str, Any], current_price: float, entry_price: float
+    ) -> float:
+        """Update peak/trough price for trailing logic and return the reference extreme."""
+
+        side = state.get("side", "LONG")
+        if str(side).upper() == "LONG":
+            peak = self._safe_float(state.get("peak_price")) or entry_price
+            peak = max(peak, current_price)
+            state["peak_price"] = peak
+            return peak
+
+        trough = self._safe_float(state.get("trough_price")) or entry_price
+        trough = min(trough, current_price)
+        state["trough_price"] = trough
+        return trough
+
+    def _extract_atr(self, position_data: Dict[str, Any]) -> Optional[float]:
+        """Extract ATR value from position data if available."""
+
+        candidates = [
+            position_data.get("atr"),
+            position_data.get("ATR"),
+            position_data.get("entry_atr"),
+            position_data.get("initial_atr"),
+        ]
+
+        for key in ("volatility", "volatility_metrics", "indicators", "analytics"):
+            section = position_data.get(key)
+            if isinstance(section, dict):
+                candidates.append(section.get("atr"))
+
+        for value in candidates:
+            atr_value = self._safe_float(value)
+            if atr_value is not None:
+                return atr_value
+
+        return None
+
+    def _extract_sigma(self, position_data: Dict[str, Any]) -> Optional[float]:
+        """Extract volatility sigma from position data."""
+
+        candidates = [
+            position_data.get("sigma"),
+            position_data.get("volatility_sigma"),
+            position_data.get("entry_sigma"),
+            position_data.get("std"),
+            position_data.get("stddev"),
+        ]
+
+        for key in ("volatility", "volatility_metrics", "analytics"):
+            section = position_data.get(key)
+            if isinstance(section, dict):
+                for sigma_key in ("sigma", "std", "stddev"):
+                    if sigma_key in section:
+                        candidates.append(section.get(sigma_key))
+
+        for value in candidates:
+            sigma_value = self._safe_float(value)
+            if sigma_value is not None:
+                return sigma_value
+
+        return None
+
+    def _compute_profit_buffer(self, entry_price: Optional[float], position_data: Dict[str, Any]) -> float:
+        """Determine the profit buffer used for trailing distance floors."""
+
+        explicit = self._safe_float(position_data.get("profit_buffer"))
+        if explicit is None:
+            explicit = self._safe_float(position_data.get("trail_profit_buffer"))
+        if explicit is not None:
+            return max(0.0, explicit)
+
+        buffer_pct = self._safe_float(position_data.get("profit_buffer_pct"))
+        if buffer_pct is None:
+            buffer_pct = self._safe_float(self.trailing_stop_config.get("profit_buffer_pct"))
+
+        if buffer_pct is not None and entry_price is not None:
+            return max(0.0, abs(entry_price) * buffer_pct)
+
+        min_distance = self._safe_float(self.trailing_stop_config.get("min_distance"))
+        return max(0.0, min_distance or 0.0)
+
+    def _compute_breakeven_buffer(self, entry_price: Optional[float], position_data: Dict[str, Any]) -> float:
+        """Determine the breakeven buffer to apply once activated."""
+
+        explicit = self._safe_float(position_data.get("breakeven_buffer"))
+        if explicit is None:
+            explicit = self._safe_float(position_data.get("breakeven_offset"))
+        if explicit is not None:
+            return max(0.0, explicit)
+
+        buffer_pct = self._safe_float(position_data.get("breakeven_buffer_pct"))
+        if buffer_pct is None:
+            buffer_pct = self._safe_float(self.trailing_stop_config.get("breakeven_buffer_pct"))
+
+        if buffer_pct is not None and entry_price is not None:
+            return max(0.0, abs(entry_price) * buffer_pct)
+
+        return 0.0
+
+    def _calculate_volatility_scaler(
+        self, position_data: Dict[str, Any], state: Dict[str, Any], sigma: Optional[float]
+    ) -> float:
+        """Compute scaling factor for trailing distance based on volatility regime."""
+
+        scaler = 1.0
+        regime = (
+            position_data.get("volatility_regime")
+            or position_data.get("regime")
+            or position_data.get("market_regime")
+            or state.get("volatility_regime")
+            or "normal"
+        )
+        regime = str(regime).lower()
+        state["volatility_regime"] = regime
+
+        scaling = self.trailing_stop_config.get("volatility_regime_scaling", {})
+        if isinstance(scaling, dict):
+            regime_scale = self._safe_float(scaling.get(regime))
+            if regime_scale is None:
+                regime_scale = self._safe_float(scaling.get("default"))
+            if regime_scale is not None:
+                scaler *= regime_scale
+
+        if sigma is None:
+            sigma = self._safe_float(state.get("last_sigma")) or self._safe_float(state.get("entry_sigma"))
+
+        sigma_tiers = self.trailing_stop_config.get("sigma_tiers", [])
+        if isinstance(sigma_tiers, list) and sigma is not None:
+            for tier in sigma_tiers:
+                if not isinstance(tier, dict):
+                    continue
+                threshold = self._safe_float(tier.get("threshold"))
+                multiplier = self._safe_float(tier.get("multiplier"))
+                if threshold is None or multiplier is None:
+                    continue
+                if sigma >= threshold:
+                    scaler *= multiplier
+
+        return scaler
+
+    def _determine_atr_reference(
+        self, entry_price: Optional[float], atr: Optional[float], state: Dict[str, Any]
+    ) -> float:
+        """Determine the ATR-like reference used for profit multiples."""
+
+        for candidate in (atr, state.get("entry_atr"), self.trailing_stop_config.get("min_distance")):
+            value = self._safe_float(candidate)
+            if value is not None and value > 0:
+                return value
+
+        if entry_price is not None:
+            return max(abs(entry_price) * 0.001, 1e-6)
+
+        return 1e-6
+
+    def _apply_tightening_tiers(
+        self,
+        distance: float,
+        profit: float,
+        atr_reference: float,
+        state: Dict[str, Any],
+    ) -> float:
+        """Apply configured tightening tiers to trailing distance."""
+
+        tiers = self.trailing_stop_config.get("tightening_tiers", [])
+        if not isinstance(tiers, list) or atr_reference <= 0:
+            return distance
+
+        triggered: Set[int] = state.setdefault("tightening_triggered", set())
+        min_distance = self._safe_float(self.trailing_stop_config.get("min_distance")) or 0.0
+
+        for index, tier in enumerate(tiers):
+            if not isinstance(tier, dict) or index in triggered:
+                continue
+
+            trigger_multiple = self._safe_float(tier.get("profit_multiple", tier.get("trigger_multiple")))
+            if trigger_multiple is None:
+                continue
+
+            if profit < trigger_multiple * atr_reference:
+                continue
+
+            tighten_value = tier.get("distance_multiplier")
+            if tighten_value is None:
+                tighten_value = tier.get("trail_factor")
+            if tighten_value is None:
+                tighten_value = tier.get("tighten_to")
+
+            tighten_factor = self._safe_float(tighten_value)
+            if tighten_factor is None or tighten_factor <= 0:
+                continue
+
+            if tighten_factor < 1:
+                distance = max(distance * tighten_factor, min_distance)
+            else:
+                distance = max(tighten_factor, min_distance)
+
+            triggered.add(index)
+
+        state["tightening_triggered"] = triggered
+        return distance
+
+    def _calculate_trailing_stop(self, side: str, reference_extreme: float, distance: float) -> float:
+        """Calculate the trailing stop level based on side and distance."""
+
+        if str(side).upper() == "LONG":
+            return reference_extreme - distance
+        return reference_extreme + distance
+
+    def _maybe_apply_breakeven(
+        self,
+        side: str,
+        profit: float,
+        atr_reference: float,
+        entry_price: float,
+        breakeven_buffer: Optional[float],
+        state: Dict[str, Any],
+    ) -> bool:
+        """Determine whether breakeven protection should activate."""
+
+        if breakeven_buffer is None or breakeven_buffer <= 0:
+            return False
+
+        if state.get("breakeven_applied"):
+            return True
+
+        threshold_multiple = self._safe_float(self.trailing_stop_config.get("breakeven_activation_multiple"))
+        if threshold_multiple is None:
+            threshold_multiple = 1.0
+
+        if atr_reference <= 0:
+            atr_reference = 1e-6
+
+        if profit >= threshold_multiple * atr_reference:
+            state["breakeven_applied"] = True
+            return True
+
+        return False
+
+    def _extract_trailing_tp_signal(self, position_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Extract a trailing take-profit signal if available."""
+
+        signal_sources: List[Dict[str, Any]] = []
+        for key in ("signals", "tactician_signals", "trailing_signals"):
+            source = position_data.get(key)
+            if isinstance(source, dict):
+                signal_sources.append(source)
+
+        metadata = position_data.get("metadata")
+        if isinstance(metadata, dict):
+            for key in ("signals", "trailing_signals"):
+                source = metadata.get(key)
+                if isinstance(source, dict):
+                    signal_sources.append(source)
+
+        for source in signal_sources:
+            for signal_name in ("TP_trail", "tp_trail", "tpTrail"):
+                if signal_name not in source:
+                    continue
+                raw_signal = source[signal_name]
+                if isinstance(raw_signal, dict):
+                    signal = dict(raw_signal)
+                    signal.setdefault("id", signal_name)
+                    signal.setdefault("active", True)
+                    return signal
+                if raw_signal:
+                    return {"id": signal_name, "active": True}
+
+        fallback = position_data.get("TP_trail") or position_data.get("tp_trail")
+        if isinstance(fallback, dict):
+            signal = dict(fallback)
+            signal.setdefault("id", "tp_trail")
+            signal.setdefault("active", True)
+            return signal
+        if fallback:
+            return {"id": "tp_trail", "active": True}
+
+        return None
+
+    def _handle_trailing_partial(
+        self,
+        position_id: str,
+        signal: Dict[str, Any],
+        trailing_metadata: Dict[str, Any],
+        state: Dict[str, Any],
+    ) -> Optional[tuple[PositionAction, str]]:
+        """Handle trailing take-profit signals and return action if triggered."""
+
+        if not signal.get("active", True):
+            return None
+
+        triggers: Set[str] = state.setdefault("tp_triggers", set())
+        signal_identifier = str(
+            signal.get("id")
+            or signal.get("name")
+            or signal.get("tier")
+            or f"tp_trail_{len(triggers) + 1}"
+        )
+
+        if signal_identifier in triggers:
+            return None
+
+        partial_size = self._safe_float(signal.get("size"))
+        if partial_size is None:
+            default_size = self._safe_float(self.trailing_stop_config.get("default_partial_size"))
+            if default_size is None:
+                default_size = 0.25
+            partial_size = default_size
+
+        partial_size = max(0.0, min(1.0, partial_size))
+
+        triggers.add(signal_identifier)
+        state["tp_triggers"] = triggers
+
+        trailing_metadata.update(
+            {
+                "tp_signal_id": signal_identifier,
+                "partial_size": partial_size,
+                "partial_reason": signal.get("reason", "TP_trail signal"),
+            }
+        )
+
+        if "target" in signal:
+            trailing_metadata["partial_target"] = signal.get("target")
+
+        reason = signal.get("reason") or f"Trailing TP signal triggered ({partial_size:.2f})"
+        return PositionAction.PARTIAL_PROFIT, reason
+
+    @staticmethod
+    def _safe_float(value: Any) -> Optional[float]:
+        """Convert value to float if possible."""
+
+        try:
+            if value is None:
+                return None
+            result = float(value)
+            if math.isnan(result) or math.isinf(result):
+                return None
+            return result
+        except (TypeError, ValueError):
+            return None
 
     def _has_taken_profit_at_tier(self, position_id: str, tier: int) -> bool:
         """
@@ -712,16 +1275,58 @@ class PositionMonitor:
 
     def _get_optimized_trailing_stop_config(self) -> Dict[str, Any]:
         """Get optimized trailing stop configuration."""
-        if self.optimized_parameters and "trailing_stop" in self.optimized_parameters:
-            return self.optimized_parameters["trailing_stop"]
-        
-        # Fallback to config or defaults
-        return self.monitor_config.get("trailing_stop", {
+        base_config: Dict[str, Any] = {
             "enabled": True,
             "atr_multiplier": 1.5,
             "min_distance": 0.01,
-            "confidence_activation": 0.7
-        })
+            "confidence_activation": 0.7,
+            "profit_buffer_pct": 0.002,
+            "breakeven_buffer_pct": 0.0005,
+            "breakeven_activation_multiple": 1.0,
+            "volatility_regime_scaling": {
+                "low": 0.9,
+                "normal": 1.0,
+                "high": 1.2,
+                "extreme": 1.35,
+                "default": 1.0,
+            },
+            "sigma_tiers": [
+                {"threshold": 0.02, "multiplier": 1.05},
+                {"threshold": 0.04, "multiplier": 1.15},
+            ],
+            "tightening_tiers": [
+                {"profit_multiple": 1.5, "distance_multiplier": 0.75},
+                {"profit_multiple": 2.5, "distance_multiplier": 0.55},
+                {"profit_multiple": 3.5, "distance_multiplier": 0.4},
+            ],
+            "default_partial_size": 0.25,
+        }
+
+        if self.optimized_parameters and "trailing_stop" in self.optimized_parameters:
+            optimized_config = self.optimized_parameters["trailing_stop"] or {}
+            return self._merge_trailing_configs(base_config, optimized_config)
+
+        user_config = self.monitor_config.get("trailing_stop", {})
+        return self._merge_trailing_configs(base_config, user_config)
+
+    def _merge_trailing_configs(self, base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+        """Merge trailing stop configuration dictionaries with nested support."""
+
+        merged = {**base}
+        if not override:
+            return merged
+
+        for key, value in override.items():
+            if key == "volatility_regime_scaling" and isinstance(value, dict):
+                base_scaling = dict(base.get("volatility_regime_scaling", {}))
+                base_scaling.update(value)
+                merged[key] = base_scaling
+            elif key in {"sigma_tiers", "tightening_tiers"} and isinstance(value, list):
+                merged[key] = value
+            else:
+                merged[key] = value
+
+        return merged
 
     def _get_optimized_regime_aware_config(self) -> Dict[str, Any]:
         """Get optimized regime-aware configuration."""
@@ -939,6 +1544,7 @@ class PositionMonitor:
 
             for position_id in positions_to_remove:
                 del self.active_positions[position_id]
+                self.trailing_state.pop(position_id, None)
                 self.logger.info(f"Removed old position: {position_id}")
 
         except Exception as e:
@@ -1038,7 +1644,14 @@ class PositionMonitor:
                 self.logger.error(missing("Position ID is required"))
                 return
 
-            self.active_positions[position_id] = position_data
+            stored_data = dict(position_data)
+            stored_data["position_id"] = position_id
+            stored_data.setdefault("metadata", {})
+            if "current_price" not in stored_data and "entry_price" in stored_data:
+                stored_data["current_price"] = stored_data.get("entry_price")
+
+            self.active_positions[position_id] = stored_data
+            self._initialize_trailing_state(position_id, stored_data)
             self.logger.info(f"Added position to monitoring: {position_id}")
 
         except Exception as e:
@@ -1054,6 +1667,7 @@ class PositionMonitor:
         try:
             if position_id in self.active_positions:
                 del self.active_positions[position_id]
+                self.trailing_state.pop(position_id, None)
                 self.logger.info(f"Removed position from monitoring: {position_id}")
             else:
                 self.logger.warning(warning(f"Position not found: {position_id}"))
@@ -1138,6 +1752,8 @@ class PositionMonitor:
 
             if self.position_strategy:
                 await self.position_strategy.cleanup()
+
+            self.trailing_state.clear()
 
             self.logger.info("✅ Position Monitor cleanup completed")
 

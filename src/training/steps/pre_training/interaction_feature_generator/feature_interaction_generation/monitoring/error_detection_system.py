@@ -11,6 +11,18 @@ from typing import Any
 
 import logging
 
+# Import tprint for enhanced logging
+try:
+    from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print(*args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+
 class AlertSeverity(Enum):
     INFO = "info"
     WARNING = "warning"
@@ -46,6 +58,8 @@ class ErrorDetectionSystem:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("ErrorDetectionSystem")
+        tprint("🔧 Initializing Error Detection System...")
+        tprint(f"   → Configuration loaded: {len(config)} parameters")
 
     @handles_errors(
         error_handlers={

@@ -28,6 +28,19 @@ import pandas as pd
 
 from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
+
+# Import tprint for enhanced logging
+try:
+    from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug, tprint_performance
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print(*args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
 from .enhanced_ml_monitoring import (
     EnhancedMLMonitor, TradeContext, TradingIndicator, MLModelDecision, 
     EnsembleDecision, TradeDecision, TradingMode, ModelType, 
@@ -173,8 +186,12 @@ class EnhancedMonitoringOrchestrator:
         self.config = config
         self.logger = system_logger.getChild("EnhancedMonitoringOrchestrator")
         
+        tprint("🔧 Initializing Enhanced Monitoring Orchestrator...")
+        tprint(f"   → Configuration loaded: {len(config)} parameters")
+        
         # Load configuration
         self.monitor_config = EnhancedMonitoringConfig(**config.get("enhanced_monitoring", {}))
+        tprint("   → Enhanced monitoring configuration loaded")
         
         # Initialize components
         self.enhanced_ml_monitor = EnhancedMLMonitor(config)

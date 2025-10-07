@@ -14,6 +14,16 @@ import logging
 
 import numpy as np
 
+# Import tprint for enhanced logging
+try:
+    from src.utils.tprint import tprint, tprint_debug, tprint_success
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print(*args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+
 
 @dataclass(frozen=True)
 class StalenessSummary:

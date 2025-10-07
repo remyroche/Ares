@@ -23,6 +23,18 @@ warnings.filterwarnings('ignore')
 from .htf_materialization import HTFFeatureGenerator, UpdateStyle
 from .config import SelectionConfig
 
+# Import tprint for enhanced logging
+try:
+    from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print(*args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+
 # Try to import optimization solvers
 try:
     import cvxpy as cp
@@ -451,12 +463,17 @@ class KnapsackSelection:
             Selection result with selected features
         """
         self.logger.info("Starting knapsack selection")
+        tprint("🎯 Starting knapsack feature selection")
+        tprint(f"   → Phase2 results: {len(phase2_results)} items")
+        tprint(f"   → EHU/RIH assignments: {len(ehu_rih_assignments)} items")
         
         # Create feature candidates
         candidates = self._create_feature_candidates(phase2_results, ehu_rih_assignments)
+        tprint(f"   → Created {len(candidates)} feature candidates")
         
         if not candidates:
             self.logger.warning("No feature candidates available")
+            tprint_warning("⚠️ No feature candidates available for selection")
             return CrossTimeframeKnapsackSelectionResult(
                 selected_features=[],
                 total_utility=0.0,

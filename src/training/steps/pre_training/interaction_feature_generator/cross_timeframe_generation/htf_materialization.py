@@ -39,6 +39,18 @@ from ..feature_interaction_generation.feature_engineering import (
 
 from . import htf_base_features
 
+# Import tprint for enhanced logging
+try:
+    from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print(*args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+
 
 class UpdateStyle(Enum):
     """Update style for HTF features."""
@@ -467,6 +479,9 @@ class HTFMaterialization:
             Dictionary of materialized HTF features
         """
         self.logger.info("Starting HTF materialization")
+        tprint("🔧 Starting HTF materialization")
+        tprint(f"   → Selected features: {len(selected_features)}")
+        tprint(f"   → Sessionized data keys: {list(sessionized_data.keys())}")
         
         aligned_data = sessionized_data['aligned_data']
         materialized_features = {}

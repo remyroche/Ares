@@ -6,7 +6,7 @@ that were moved from market_analysis:
 
 1. multi_horizon_profit_labeler - Apply multi-horizon profit labeling
 2. feature_lookback_optimization - Optimize feature lookback periods
-3. roadmap_feature_generation - End-to-end roadmap feature generation with comprehensive approach
+3. interactive_feature_generation - End-to-end interactive feature generation with comprehensive approach
 4. final_feature_selection - Final multi-stage feature selection (120→100→80→60)
 
 Each step can receive a timeframe parameter, with default 15m.
@@ -91,7 +91,7 @@ class PreTrainingSubPipeline:
     Executes the 4 feature engineering steps in sequence:
     1. multi_horizon_profit_labeler
     2. feature_lookback_optimization
-    3. roadmap_feature_generation
+    3. interactive_feature_generation
     4. final_feature_selection
     """
 
@@ -157,19 +157,19 @@ class PreTrainingSubPipeline:
             results['results']['feature_lookback_optimization'] = flo_result.artifacts
             self._current_pipeline_state.update(flo_result.artifacts)
 
-            # Step 3: Roadmap Feature Generation
-            tprint("🔧 Step 3: Roadmap Feature Generation")
-            self.logger.info('🔧 Step 3: Roadmap Feature Generation')
-            roadmap_result = await self._execute_roadmap_feature_generation(config)
-            if not roadmap_result.success:
-                tprint(f"❌ Roadmap feature generation failed: {roadmap_result.error_message}")
-                self.logger.error(f'❌ Roadmap feature generation failed: {roadmap_result.error_message}')
+            # Step 3: Interactive Feature Generation
+            tprint("🔧 Step 3: Interactive Feature Generation")
+            self.logger.info('🔧 Step 3: Interactive Feature Generation')
+            interactive_result = await self._execute_interactive_feature_generation(config)
+            if not interactive_result.success:
+                tprint(f"❌ Interactive feature generation failed: {interactive_result.error_message}")
+                self.logger.error(f'❌ Interactive feature generation failed: {interactive_result.error_message}')
                 return results
 
-            tprint(f"✅ Roadmap feature generation completed for {config.symbol}")
-            tprint(f"   → Features generated: {len(roadmap_result.artifacts.get('roadmap_feature_generation_result', {}).get('features', {}))}")
-            results['results']['roadmap_feature_generation'] = roadmap_result.artifacts
-            self._current_pipeline_state.update(roadmap_result.artifacts)
+            tprint(f"✅ Interactive feature generation completed for {config.symbol}")
+            tprint(f"   → Features generated: {len(interactive_result.artifacts.get('interactive_feature_generation_result', {}).get('features', {}))}")
+            results['results']['interactive_feature_generation'] = interactive_result.artifacts
+            self._current_pipeline_state.update(interactive_result.artifacts)
 
             # Step 4: Final Feature Selection
             tprint("🎯 Step 4: Final Feature Selection")
@@ -349,24 +349,24 @@ class PreTrainingSubPipeline:
 
         return result
 
-    async def _execute_roadmap_feature_generation(self, config: SubPipelineConfig) -> SubPipelineResult:
-        """Execute roadmap feature generation with timeframe support."""
+    async def _execute_interactive_feature_generation(self, config: SubPipelineConfig) -> SubPipelineResult:
+        """Execute interactive feature generation with timeframe support."""
         result = SubPipelineResult(
-            sub_pipeline_name='roadmap_feature_generation',
+            sub_pipeline_name='interactive_feature_generation',
             status=SubPipelineStatus.RUNNING,
             start_time=datetime.now()
         )
 
         try:
-            # Import the new roadmap feature generation component
-            from .interaction_feature_generator.feature_interaction_generation.roadmap_feature_generation_component import (
-                create_roadmap_feature_generation_component, RoadmapFeatureGenerationConfig
+            # Import the new interactive feature generation component
+            from .interaction_feature_generator.feature_interaction_generation.interactive_feature_generation_component import (
+                create_interactive_feature_generation_component, InteractiveFeatureGenerationConfig
             )
             
-            tprint("🔧 Using optimized roadmap feature generation component")
+            tprint("🔧 Using optimized interactive feature generation component")
             
             # Create component configuration
-            component_config = RoadmapFeatureGenerationConfig(
+            component_config = InteractiveFeatureGenerationConfig(
                 symbol=config.symbol,
                 exchange=config.exchange,
                 timeframe=config.timeframe,
@@ -382,7 +382,7 @@ class PreTrainingSubPipeline:
             )
 
             # Create component
-            component = create_roadmap_feature_generation_component(component_config)
+            component = create_interactive_feature_generation_component(component_config)
 
             # Execute component
             pipeline_state = self._prepare_component_pipeline_state(config)
@@ -506,8 +506,8 @@ class PreTrainingSubPipeline:
             return await self._execute_pid_based_feature_generation(config)
         elif sub_pipeline_name == 'optimized_lookback_generation':
             return await self._execute_optimized_lookback_generation(config)
-        elif sub_pipeline_name == 'roadmap_feature_generation':
-            return await self._execute_roadmap_feature_generation(config)
+        elif sub_pipeline_name == 'interactive_feature_generation':
+            return await self._execute_interactive_feature_generation(config)
         elif sub_pipeline_name == 'final_feature_selection':
             return await self._execute_final_feature_selection(config)
         else:

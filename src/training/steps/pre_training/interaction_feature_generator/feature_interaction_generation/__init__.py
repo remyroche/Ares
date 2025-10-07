@@ -96,22 +96,20 @@ __all__ = [
     "MultiFamilyFeatureGenerator",
     "FeatureResult",
 ]
-=======
-Feature Interaction Generation Module
 
-This module provides the end-to-end roadmap feature generation system
-that replaces PID-based feature generation with a comprehensive approach.
+# Feature Interaction Generation Module
+# This module provides the end-to-end interactive feature generation system
+# that replaces PID-based feature generation with a comprehensive approach.
 
-Key Components:
-- RoadmapFeatureGenerationComponent: Main component for roadmap generation
-- End-to-end roadmap system with all modules
-- Complete feature engineering pipeline
-- Validation, monitoring, and deployment systems
-"""
+# Key Components:
+# - InteractiveFeatureGenerationComponent: Main component for interactive generation
+# - End-to-end interactive system with all modules
+# - Complete feature engineering pipeline
+# - Validation, monitoring, and deployment systems
 
-from .roadmap_feature_generation_component import (
-    RoadmapFeatureGenerationComponent,
-    RoadmapStatus
+from .interactive_feature_generation_component import (
+    InteractiveFeatureGenerationComponent,
+    InteractiveFeatureGenerationStatus
 )
 
 from .end_to_end_roadmap import (
@@ -123,8 +121,8 @@ from .end_to_end_roadmap import (
 )
 
 __all__ = [
-    'RoadmapFeatureGenerationComponent',
-    'RoadmapStatus',
+    'InteractiveFeatureGenerationComponent',
+    'InteractiveFeatureGenerationStatus',
     'EndToEndRoadmapSystem',
     'SystemConfig',
     'SystemResult',

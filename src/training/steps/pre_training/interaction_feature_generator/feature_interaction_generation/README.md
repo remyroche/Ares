@@ -31,7 +31,7 @@ This module provides a fully wired, optimized interaction feature generation pip
 ```
 feature_interaction_generation/
 ├── optimized_interaction_orchestrator.py    # Main orchestrator
-├── roadmap_feature_generation_component.py  # Sub-pipeline integration
+├── interactive_feature_generation_component.py  # Sub-pipeline integration
 ├── example_optimized_usage.py              # Usage examples
 ├── test_integration.py                     # Integration tests
 ├── README.md                               # This file
@@ -73,19 +73,19 @@ result = await generate_optimized_interaction_features(
 )
 ```
 
-### 2. RoadmapFeatureGenerationComponent
+### 2. InteractiveFeatureGenerationComponent
 
 Sub-pipeline integration component:
 
 ```python
-from .roadmap_feature_generation_component import (
-    RoadmapFeatureGenerationComponent,
-    RoadmapFeatureGenerationConfig,
-    execute_roadmap_feature_generation
+from .interactive_feature_generation_component import (
+    InteractiveFeatureGenerationComponent,
+    InteractiveFeatureGenerationConfig,
+    execute_interactive_feature_generation
 )
 
 # Create component
-component = RoadmapFeatureGenerationComponent(config)
+component = InteractiveFeatureGenerationComponent(config)
 
 # Execute
 result = await component.execute(training_input, pipeline_state)
@@ -160,7 +160,7 @@ config = SubPipelineConfig(
 )
 
 # Execute roadmap feature generation
-result = await pipeline._execute_roadmap_feature_generation(config)
+result = await pipeline._execute_interactive_feature_generation(config)
 ```
 
 ## 🔧 Configuration Options
@@ -361,7 +361,7 @@ config = SubPipelineConfig(
 )
 
 # Execute roadmap feature generation
-result = await pipeline._execute_roadmap_feature_generation(config)
+result = await pipeline._execute_interactive_feature_generation(config)
 ```
 
 ## 📚 Additional Resources

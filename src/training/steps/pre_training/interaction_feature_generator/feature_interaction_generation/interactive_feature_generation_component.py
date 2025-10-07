@@ -1,5 +1,5 @@
 """
-Roadmap Feature Generation Component
+Interactive Feature Generation Component
 
 This component integrates the optimized interaction feature generation pipeline
 with the pre-training sub_pipeline architecture. It provides a clean interface
@@ -93,8 +93,8 @@ from ..components.component_factory import ComponentFactory
 logger = logging.getLogger(__name__)
 
 
-class RoadmapFeatureGenerationStatus(Enum):
-    """Status of roadmap feature generation."""
+class InteractiveFeatureGenerationStatus(Enum):
+    """Status of interactive feature generation."""
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -103,8 +103,8 @@ class RoadmapFeatureGenerationStatus(Enum):
 
 
 @dataclass
-class RoadmapFeatureGenerationConfig:
-    """Configuration for roadmap feature generation component."""
+class InteractiveFeatureGenerationConfig:
+    """Configuration for interactive feature generation component."""
     # Basic configuration
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
@@ -140,8 +140,8 @@ class RoadmapFeatureGenerationConfig:
 
 
 @dataclass
-class RoadmapFeatureGenerationResult:
-    """Result of roadmap feature generation."""
+class InteractiveFeatureGenerationResult:
+    """Result of interactive feature generation."""
     # Core results
     features: pd.DataFrame
     feature_names: List[str]
@@ -167,20 +167,20 @@ class RoadmapFeatureGenerationResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
-class RoadmapFeatureGenerationComponent(BaseComponent):
+class InteractiveFeatureGenerationComponent(BaseComponent):
     """
-    Roadmap Feature Generation Component for Pre-Training Pipeline.
+    Interactive Feature Generation Component for Pre-Training Pipeline.
     
     This component integrates the optimized interaction feature generation
     pipeline with the pre-training sub_pipeline architecture.
     """
     
-    def __init__(self, config: Optional[RoadmapFeatureGenerationConfig] = None):
-        """Initialize the roadmap feature generation component."""
+    def __init__(self, config: Optional[InteractiveFeatureGenerationConfig] = None):
+        """Initialize the interactive feature generation component."""
         super().__init__()
         
-        self.config = config or RoadmapFeatureGenerationConfig()
-        self.logger = logger.getChild('RoadmapFeatureGenerationComponent')
+        self.config = config or InteractiveFeatureGenerationConfig()
+        self.logger = logger.getChild('InteractiveFeatureGenerationComponent')
         
         # Initialize the optimized orchestrator
         self._initialize_orchestrator()
@@ -188,7 +188,7 @@ class RoadmapFeatureGenerationComponent(BaseComponent):
         # Performance tracking
         self.performance_metrics = {}
         
-        tprint_success("🚀 Roadmap Feature Generation Component initialized")
+        tprint_success("🚀 Interactive Feature Generation Component initialized")
         tprint_info(f"📊 Symbol: {self.config.symbol}, Exchange: {self.config.exchange}")
         tprint_info(f"⏰ Timeframe: {self.config.timeframe}")
         tprint_info(f"🔧 Matrix ops: {MATRIX_OPS_AVAILABLE}, ML common: {ML_COMMON_AVAILABLE}")
@@ -227,7 +227,7 @@ class RoadmapFeatureGenerationComponent(BaseComponent):
                      training_input: Dict[str, Any], 
                      pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
-        Execute the roadmap feature generation component.
+        Execute the interactive feature generation component.
         
         Args:
             training_input: Input data for feature generation
@@ -237,7 +237,7 @@ class RoadmapFeatureGenerationComponent(BaseComponent):
             ComponentResult with generated features
         """
         start_time = time.time()
-        tprint_success("🚀 Starting roadmap feature generation")
+        tprint_success("🚀 Starting interactive feature generation")
         
         try:
             # Validate inputs
@@ -264,7 +264,7 @@ class RoadmapFeatureGenerationComponent(BaseComponent):
             component_result = self._convert_to_component_result(result, start_time)
             
             # Log success
-            tprint_success("✅ Roadmap feature generation completed successfully")
+            tprint_success("✅ Interactive feature generation completed successfully")
             tprint_info(f"📊 Generated {len(result.feature_names)} total features")
             tprint_info(f"🎯 Selected {len(result.selected_features)} features")
             tprint_info(f"🔗 Generated {len(result.interaction_features.columns)} interactions")
@@ -276,10 +276,10 @@ class RoadmapFeatureGenerationComponent(BaseComponent):
             
         except Exception as e:
             execution_time = time.time() - start_time
-            error_message = f"Roadmap feature generation failed: {str(e)}"
+            error_message = f"Interactive feature generation failed: {str(e)}"
             
             tprint_error(f"❌ {error_message}")
-            self.logger.error(f"Roadmap feature generation failed: {error_message}", exc_info=True)
+            self.logger.error(f"Interactive feature generation failed: {error_message}", exc_info=True)
             
             return ComponentResult(
                 success=False,
@@ -352,7 +352,7 @@ class RoadmapFeatureGenerationComponent(BaseComponent):
         
         # Create artifacts
         artifacts = {
-            'roadmap_feature_generation_result': {
+            'interactive_feature_generation_result': {
                 'features': result.features,
                 'feature_names': result.feature_names,
                 'selected_features': result.selected_features,
@@ -378,7 +378,7 @@ class RoadmapFeatureGenerationComponent(BaseComponent):
         
         # Create metadata
         metadata = {
-            'component_type': 'roadmap_feature_generation',
+            'component_type': 'interactive_feature_generation',
             'symbol': self.config.symbol,
             'exchange': self.config.exchange,
             'timeframe': self.config.timeframe,
@@ -407,7 +407,7 @@ class RoadmapFeatureGenerationComponent(BaseComponent):
     def get_component_info(self) -> Dict[str, Any]:
         """Get component information."""
         return {
-            'name': 'roadmap_feature_generation',
+            'name': 'interactive_feature_generation',
             'description': 'Optimized interaction feature generation with matrix operations and hardware acceleration',
             'version': '1.0.0',
             'dependencies': [
@@ -445,7 +445,7 @@ class RoadmapFeatureGenerationComponent(BaseComponent):
     
     def cleanup(self):
         """Cleanup resources."""
-        tprint_debug("🧹 Cleaning up roadmap feature generation component...")
+        tprint_debug("🧹 Cleaning up interactive feature generation component...")
         
         # Cleanup orchestrator resources
         if hasattr(self.orchestrator, 'cleanup'):
@@ -458,47 +458,47 @@ class RoadmapFeatureGenerationComponent(BaseComponent):
 
 
 # Factory function for component creation
-def create_roadmap_feature_generation_component(
-    config: Optional[RoadmapFeatureGenerationConfig] = None
-) -> RoadmapFeatureGenerationComponent:
+def create_interactive_feature_generation_component(
+    config: Optional[InteractiveFeatureGenerationConfig] = None
+) -> InteractiveFeatureGenerationComponent:
     """
-    Create a roadmap feature generation component.
+    Create an interactive feature generation component.
     
     Args:
         config: Configuration for the component
         
     Returns:
-        RoadmapFeatureGenerationComponent instance
+        InteractiveFeatureGenerationComponent instance
     """
-    return RoadmapFeatureGenerationComponent(config)
+    return InteractiveFeatureGenerationComponent(config)
 
 
 # Integration with component factory
-def register_roadmap_feature_generation_component():
-    """Register the roadmap feature generation component with the factory."""
+def register_interactive_feature_generation_component():
+    """Register the interactive feature generation component with the factory."""
     try:
         from ..components.component_factory import ComponentFactory
         
         # Register the component
         ComponentFactory.register_component(
-            'roadmap_feature_generation',
-            create_roadmap_feature_generation_component
+            'interactive_feature_generation',
+            create_interactive_feature_generation_component
         )
         
-        tprint_success("✅ Roadmap feature generation component registered with factory")
+        tprint_success("✅ Interactive feature generation component registered with factory")
         
     except ImportError as e:
         tprint_warning(f"⚠️ Could not register component with factory: {e}")
 
 
 # Convenience function for direct execution
-async def execute_roadmap_feature_generation(
+async def execute_interactive_feature_generation(
     training_input: Dict[str, Any],
     pipeline_state: Dict[str, Any],
-    config: Optional[RoadmapFeatureGenerationConfig] = None
+    config: Optional[InteractiveFeatureGenerationConfig] = None
 ) -> ComponentResult:
     """
-    Execute roadmap feature generation with the given configuration.
+    Execute interactive feature generation with the given configuration.
     
     Args:
         training_input: Input data for feature generation
@@ -508,10 +508,10 @@ async def execute_roadmap_feature_generation(
     Returns:
         ComponentResult with generated features
     """
-    component = create_roadmap_feature_generation_component(config)
+    component = create_interactive_feature_generation_component(config)
     return await component.execute(training_input, pipeline_state)
 
 
 # Auto-register component on import
 if __name__ != "__main__":
-    register_roadmap_feature_generation_component()
+    register_interactive_feature_generation_component()

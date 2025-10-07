@@ -30,12 +30,12 @@ try:
 except ImportError:
     OPTIMIZED_LOOKBACK_AVAILABLE = False
 
-# Import roadmap feature generation component
+# Import interactive feature generation component
 try:
-    from ..interaction_feature_generator.feature_interaction_generation.roadmap_feature_generation_component import RoadmapFeatureGenerationComponent
-    ROADMAP_COMPONENT_AVAILABLE = True
+    from ..interaction_feature_generator.feature_interaction_generation.interactive_feature_generation_component import InteractiveFeatureGenerationComponent
+    INTERACTIVE_COMPONENT_AVAILABLE = True
 except ImportError:
-    ROADMAP_COMPONENT_AVAILABLE = False
+    INTERACTIVE_COMPONENT_AVAILABLE = False
 
 # Import multi-horizon profit labeler
 try:

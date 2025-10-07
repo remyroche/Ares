@@ -19,6 +19,7 @@ from .staleness_curve import (
     StalenessCurve,
     StalenessCurveCalculator,
 )
+from .config import AssignmentConfig
 
 
 class UpdateStyle(Enum):
@@ -45,7 +46,7 @@ class AssignmentDecision:
 class CostBenefitAnalyzer:
     """Analyzes cost-benefit trade-offs for EHU vs RIH."""
     
-    def __init__(self, config):
+    def __init__(self, config: AssignmentConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
     
@@ -150,7 +151,7 @@ class CostBenefitAnalyzer:
 class HybridModeManager:
     """Manages hybrid mode switching between EHU and RIH."""
     
-    def __init__(self, config):
+    def __init__(self, config: AssignmentConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
         
@@ -261,7 +262,7 @@ class HybridModeManager:
 class EHU_RIH_Assignment:
     """Main EHU/RIH assignment system."""
     
-    def __init__(self, config):
+    def __init__(self, config: AssignmentConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
         

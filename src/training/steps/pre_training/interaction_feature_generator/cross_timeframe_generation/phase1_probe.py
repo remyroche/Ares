@@ -19,6 +19,7 @@ from scipy import stats
 from sklearn.model_selection import TimeSeriesSplit
 
 from .staleness_curve import StalenessCurveCalculator
+from .config import SessionConfig, ProbeConfig
 
 # Import existing components
 import sys
@@ -48,7 +49,7 @@ class HTFCandidate:
 class CoarseGridGenerator:
     """Generates coarse adaptive grids for HTF features."""
     
-    def __init__(self, config):
+    def __init__(self, config: ProbeConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
         
@@ -139,7 +140,7 @@ class CoarseGridGenerator:
 class HTFFeatureGenerator:
     """Generates HTF features from base features."""
     
-    def __init__(self, config):
+    def __init__(self, config: ProbeConfig):
         self.config = config
         self.feature_registry = FeatureRegistry()
         self.logger = logging.getLogger(__name__)
@@ -306,19 +307,29 @@ class HTFFeatureGenerator:
 class Phase1HTFProbe:
     """Phase-1 HTF probe stage implementation."""
 
-    def __init__(self, config, scoring_system: Optional[AdaptiveScoringSystem] = None):
-        self.config = config
+    def __init__(
+        self,
+        session_config: SessionConfig,
+        probe_config: ProbeConfig,
+        scoring_system: Optional[AdaptiveScoringSystem] = None,
+    ):
+        self.session_config = session_config
+        self.probe_config = probe_config
         self.logger = logging.getLogger(__name__)
 
-        self.grid_generator = CoarseGridGenerator(config)
-        self.htf_generator = HTFFeatureGenerator(config)
+        self.grid_generator = CoarseGridGenerator(probe_config)
+        self.htf_generator = HTFFeatureGenerator(probe_config)
         self.scoring_system = scoring_system
+        self.staleness_calculator = StalenessCurveCalculator(
+            default_base_timeframe=session_config.base_timeframe_minutes
+        )
 
     def set_scoring_system(self, scoring_system: AdaptiveScoringSystem) -> None:
         """Inject the centralized adaptive scoring system."""
         self.scoring_system = None  # Will be injected
+        self.scoring_system = scoring_system
         self.staleness_calculator = StalenessCurveCalculator(
-            default_base_timeframe=getattr(config, 'base_timeframe_minutes', 5)
+            default_base_timeframe=getattr(self.session_config, 'base_timeframe_minutes', 5)
         )
         
     def run_probe_stage(self, 
@@ -451,7 +462,7 @@ class Phase1HTFProbe:
             return []
 
         segments = (regime_segments or {}).get('segments', [])
-        min_segment_points = max(50, int(self.config.base_timeframe_minutes * 4))
+        min_segment_points = max(50, int(self.session_config.base_timeframe_minutes * 4))
 
         def _build_candidate(segment_data: pd.DataFrame,
                              regime_label: str,
@@ -466,7 +477,7 @@ class Phase1HTFProbe:
             ic_oos = self._calculate_ic(feature_slice, target_slice)
             se_wild_bootstrap = self._calculate_wild_bootstrap_se(feature_slice, target_slice)
             cpu_p95 = self._estimate_cpu_cost(lookback, family)
-            staleness = self._calculate_staleness(lookback, family)
+            staleness, staleness_summary = self._calculate_staleness(lookback, family)
             fold_pass_rate = self._calculate_fold_pass_rate(feature_slice, target_slice)
 
             utility_score = self._calculate_utility_score(
@@ -483,7 +494,8 @@ class Phase1HTFProbe:
                     'utility_score': utility_score,
                     'se_wild_bootstrap': se_wild_bootstrap,
                     'fold_pass_rate': fold_pass_rate
-                }
+                },
+                'staleness_summary': staleness_summary,
             }
 
             return HTFCandidate(
@@ -546,6 +558,18 @@ class Phase1HTFProbe:
                 candidates.append(fallback_candidate)
 
         return candidates
+
+    def _calculate_staleness(self, lookback: int, family: str):
+        """Estimate staleness penalty and return its summary."""
+
+        summary = self.staleness_calculator.get_summary(
+            feature_name=f"{family}_{lookback}",
+            family=family,
+            lookback=lookback,
+            base_timeframe=self.session_config.base_timeframe_minutes,
+        )
+        staleness_value = getattr(summary, 'at_base', 0.0)
+        return staleness_value, summary
     
     def _calculate_ic(self, feature: pd.Series, target: pd.Series) -> float:
         """Calculate Information Coefficient."""

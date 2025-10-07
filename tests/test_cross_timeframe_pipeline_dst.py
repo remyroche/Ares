@@ -29,8 +29,11 @@ if "cvxpy" not in sys.modules:
     sys.modules["cvxpy"] = dummy_cvxpy
 
 from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.pipeline import (
-    PipelineConfig,
     CrossTimeframePipeline,
+)
+from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.config import (
+    PipelineConfig,
+    SessionConfig,
 )
 
 
@@ -81,10 +84,12 @@ def _build_sample_data():
 def test_dst_sessions_and_alignment_contiguous():
     ohlcv, optional = _build_sample_data()
     config = PipelineConfig(
-        base_timeframe_minutes=5,
-        session_start_hour=9,
-        session_end_hour=16,
-        dst_handling=True,
+        session=SessionConfig(
+            base_timeframe_minutes=5,
+            session_start_hour=9,
+            session_end_hour=16,
+            dst_handling=True,
+        )
     )
     pipeline = CrossTimeframePipeline(config)
 

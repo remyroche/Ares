@@ -19,6 +19,8 @@ from sklearn.cluster import KMeans
 import warnings
 warnings.filterwarnings('ignore')
 
+from .config import RegimeConfig
+
 # Try to import ruptures for change-point detection
 try:
     import ruptures as rpt
@@ -327,7 +329,7 @@ class RegimeClassifier:
 class RegimeSegmentation:
     """Main regime segmentation system."""
     
-    def __init__(self, config):
+    def __init__(self, config: RegimeConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
         

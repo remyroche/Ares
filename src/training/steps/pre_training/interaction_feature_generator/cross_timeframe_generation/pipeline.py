@@ -6,7 +6,6 @@ Implements the high-level DAG per asset with sessionization, alignment, and caus
 """
 
 from typing import Dict, List, Optional, Any, Tuple, Union
-from dataclasses import dataclass
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -25,66 +24,13 @@ from .interaction_templates import HTFInteractionTemplates
 from .statistical_selection import StatisticalSelection
 from .evaluation import WalkForwardEvaluation
 from .monitoring import MonitoringSystem
+from .config import PipelineConfig
 
 # Import existing feature generation components
 import sys
 sys.path.append('src/training/steps/pre_training/interaction_feature_generator/feature_interaction_generation')
 from feature_engineering.feature_registry import FeatureRegistry, FeatureFamily
 from feature_engineering.transforms import TransformRouter, create_default_transform_config
-
-
-@dataclass
-class PipelineConfig:
-    """Configuration for the cross-timeframe pipeline."""
-    
-    # Data configuration
-    base_timeframe_minutes: int = 5  # Base timeframe (5m or 15m)
-    session_start_hour: int = 9  # Market session start hour
-    session_end_hour: int = 16  # Market session end hour
-    dst_handling: bool = True  # Handle DST transitions
-    
-    # Phase-1 configuration
-    coarse_grid_min: int = 15  # Minimum HTF lookback (minutes)
-    coarse_grid_max: int = 298  # Maximum HTF lookback (minutes)
-    adaptive_refinement_threshold: float = 0.75  # Top-quartile threshold for refinement
-    
-    # Phase-2 configuration
-    local_grid_factor: float = 0.5  # Local grid around shortlisted B
-    ic_surface_smoothing: str = 'spline'  # 'spline' or 'gp'
-    
-    # Regime segmentation
-    change_point_method: str = 'PELT'  # 'PELT' or 'CUSUM'
-    regime_vol_quantile: float = 0.6  # Q60 for vol regime classification
-    bocpd_hazard: float = 1/200  # BOCPD hazard rate
-    
-    # Scoring configuration
-    lambda_unc: float = 0.10  # Uncertainty penalty
-    lambda_cost: float = 0.05  # Cost penalty
-    lambda_stale: float = 0.05  # Staleness penalty
-    meta_learning_range: float = 0.05  # Meta-learner adjustment range
-    
-    # EHU/RIH assignment
-    rih_threshold: float = 0.01  # ΔIC/Δms threshold for RIH
-    hybrid_mode: bool = True  # Allow runtime switching
-    
-    # Knapsack constraints
-    max_cost_ms: float = 25.0  # Maximum total cost in ms
-    max_features: int = 120  # Maximum number of features
-    max_correlation: float = 0.8  # Maximum partial correlation
-    
-    # Selection configuration
-    stability_resamples: int = 80  # Bootstrap resamples for stability selection
-    fdr_q: float = 0.1  # FDR threshold
-    min_conditional_ic: float = 0.25  # Minimum conditional IC improvement
-    
-    # Evaluation configuration
-    embargo_minutes: int = 60  # Minimum embargo period
-    walk_forward_folds: int = 5  # Number of walk-forward folds
-    spa_test: bool = True  # Include SPA test
-    
-    # Monitoring
-    adaptive_penalties: bool = True  # Enable meta-learning of penalties
-    dashboard_enabled: bool = True  # Enable monitoring dashboard
 
 
 class CrossTimeframePipeline:
@@ -107,20 +53,28 @@ class CrossTimeframePipeline:
     def __init__(self, config: PipelineConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
+
         # Initialize components
         self.feature_registry = FeatureRegistry()
-        self.regime_segmentation = RegimeSegmentation(config)
-        self.scoring_system = AdaptiveScoringSystem(config)
-        self.phase1_probe = Phase1HTFProbe(config, scoring_system=self.scoring_system)
-        self.phase2_optimization = Phase2Optimization(config)
-        self.ehu_rih_assignment = EHU_RIH_Assignment(config)
-        self.knapsack_selection = KnapsackSelection(config)
-        self.htf_materialization = HTFMaterialization(config)
-        self.interaction_templates = HTFInteractionTemplates(config)
-        self.statistical_selection = StatisticalSelection(config)
-        self.evaluation = WalkForwardEvaluation(config)
-        self.monitoring = MonitoringSystem(config)
+        self.regime_segmentation = RegimeSegmentation(config.regime)
+        self.scoring_system = AdaptiveScoringSystem(config.scoring, config.session)
+        self.phase1_probe = Phase1HTFProbe(
+            session_config=config.session,
+            probe_config=config.probe,
+            scoring_system=self.scoring_system,
+        )
+        self.phase2_optimization = Phase2Optimization(config.optimization)
+        self.ehu_rih_assignment = EHU_RIH_Assignment(config.assignment)
+        self.knapsack_selection = KnapsackSelection(config.selection)
+        self.htf_materialization = HTFMaterialization(config.session)
+        self.interaction_templates = HTFInteractionTemplates(config.selection)
+        self.statistical_selection = StatisticalSelection(config.selection)
+        self.evaluation = WalkForwardEvaluation(config.evaluation)
+        self.monitoring = MonitoringSystem(
+            monitoring_config=config.monitoring,
+            scoring_config=config.scoring,
+            regime_config=config.regime,
+        )
         
         # Pipeline state
         self.sessionized_data = None

@@ -87,7 +87,8 @@ pip install pymc  # For Bayesian optimization (optional)
 ## Quick Start
 
 ```python
-from pipeline import CrossTimeframePipeline, PipelineConfig
+from pipeline import CrossTimeframePipeline
+from config import PipelineConfig
 import pandas as pd
 import numpy as np
 

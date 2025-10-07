@@ -38,6 +38,9 @@ if "cvxpy" not in sys.modules:
 
 from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.pipeline import (
     CrossTimeframePipeline,
+)
+from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.config import (
+    MonitoringConfig,
     PipelineConfig,
 )
 from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation import (
@@ -110,10 +113,20 @@ class LowICEvaluation:
     def __init__(self):
         self.calls = []
 
-    def evaluate_features(self, final_features, targets, regime_segments, feature_source=None):
+    def evaluate_features(
+        self,
+        final_features,
+        targets,
+        regime_segments,
+        materialized_htfs=None,
+        interactions=None,
+        **kwargs,
+    ):
         assert isinstance(final_features, list)
-        assert isinstance(feature_source, pd.DataFrame)
-        self.calls.append((final_features, targets, regime_segments, feature_source))
+        assert isinstance(materialized_htfs, dict)
+        self.calls.append(
+            (final_features, targets, regime_segments, materialized_htfs, interactions)
+        )
         return EvaluationResult(
             overall_ic=0.01,
             overall_ic_std=0.015,
@@ -228,7 +241,7 @@ def test_pipeline_passes_feature_list_to_evaluation_and_monitoring():
 
 
 def test_monitoring_penalties_propagate_to_scoring():
-    config = PipelineConfig(adaptive_penalties=True)
+    config = PipelineConfig(monitoring=MonitoringConfig(adaptive_penalties=True))
     pipeline = CrossTimeframePipeline(config)
 
     pipeline._sessionize_and_align = lambda ohlcv, optional: {"aligned_data": ohlcv}
@@ -236,7 +249,9 @@ def test_monitoring_penalties_propagate_to_scoring():
     pipeline.phase1_probe.run_probe_stage = lambda sessionized, segments, targets: {"phase1": True}
     pipeline.phase2_optimization.optimize_lookbacks = lambda data, phase1, segments, targets: {"phase2": True}
     pipeline.ehu_rih_assignment.assign_htf_features = lambda phase2, data: {"feature_b": {}}
-    pipeline.knapsack_selection.select_features = lambda phase2, assignments: ["feature_b"]
+    pipeline.knapsack_selection.select_features = (
+        lambda phase2, assignments, sessionized_data=None: ["feature_b"]
+    )
 
     def _materialize(sessionized_data, selected_htfs):
         index = sessionized_data["aligned_data"].index

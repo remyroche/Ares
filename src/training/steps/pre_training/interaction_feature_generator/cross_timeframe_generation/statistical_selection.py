@@ -25,6 +25,8 @@ from scipy.stats import permutation_test
 import warnings
 warnings.filterwarnings('ignore')
 
+from .config import SelectionConfig
+
 # Try to import Group LASSO
 try:
     from sklearn.linear_model import Lasso
@@ -51,7 +53,7 @@ class StatisticalSelectionResult:
 class StabilitySelector:
     """Implements stability selection with block bootstrap."""
     
-    def __init__(self, config):
+    def __init__(self, config: SelectionConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
         
@@ -181,7 +183,7 @@ class StabilitySelector:
 class PermutationTester:
     """Implements permutation importance testing."""
     
-    def __init__(self, config):
+    def __init__(self, config: SelectionConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
     
@@ -261,7 +263,7 @@ class PermutationTester:
 class FDRController:
     """Implements Benjamini-Hochberg FDR control."""
     
-    def __init__(self, config):
+    def __init__(self, config: SelectionConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
         
@@ -313,7 +315,7 @@ class FDRController:
 class ConditionalICTester:
     """Implements conditional IC testing."""
     
-    def __init__(self, config):
+    def __init__(self, config: SelectionConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
         
@@ -418,7 +420,7 @@ class ConditionalICTester:
 class GroupLASSOSelector:
     """Implements Group LASSO for feature selection."""
     
-    def __init__(self, config):
+    def __init__(self, config: SelectionConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
     
@@ -543,10 +545,10 @@ class GroupLASSOSelector:
 class StatisticalSelection:
     """Main statistical selection system."""
     
-    def __init__(self, config):
+    def __init__(self, config: SelectionConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
+
         self.stability_selector = StabilitySelector(config)
         self.permutation_tester = PermutationTester(config)
         self.fdr_controller = FDRController(config)
@@ -611,7 +613,7 @@ class StatisticalSelection:
         
         # Group LASSO (if enabled)
         group_lasso_groups = {}
-        if self.config.get('enable_group_lasso', False):
+        if getattr(self.config, 'enable_group_lasso', False):
             feature_groups = self._create_feature_groups(materialized_htfs, interactions)
             group_lasso_groups = self.group_lasso_selector.select_features(
                 feature_matrix, targets, feature_groups

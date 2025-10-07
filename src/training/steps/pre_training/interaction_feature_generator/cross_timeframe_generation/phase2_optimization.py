@@ -22,6 +22,8 @@ from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 import warnings
 warnings.filterwarnings('ignore')
 
+from .config import OptimizationConfig
+
 # Try to import PyMC for Bayesian optimization
 try:
     import pymc as pm
@@ -68,7 +70,7 @@ class HierarchicalShrinkageResult:
 class LocalGridGenerator:
     """Generates local grids around shortlisted candidates."""
     
-    def __init__(self, config):
+    def __init__(self, config: OptimizationConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
     
@@ -592,10 +594,10 @@ class ExportDecisionMaker:
 class Phase2Optimization:
     """Main Phase-2 optimization system."""
     
-    def __init__(self, config):
+    def __init__(self, config: OptimizationConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
+
         self.local_grid_generator = LocalGridGenerator(config)
         self.ic_surface_fitter = ICSurfaceFitter(config.ic_surface_smoothing)
         self.hierarchical_shrinkage = HierarchicalShrinkage(config)

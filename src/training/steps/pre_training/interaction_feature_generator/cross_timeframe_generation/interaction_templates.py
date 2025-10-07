@@ -410,7 +410,7 @@ class InteractionGenerator:
         
         # Generate cross-asset interactions (if enabled)
         cross_asset_interactions = []
-        if self.config.get('enable_cross_asset', False):
+        if getattr(self.config, 'enable_cross_asset', False):
             cross_asset_interactions = self._generate_cross_asset_interactions(
                 materialized_htfs, targets, budget_allocation['cross_asset']
             )

@@ -19,6 +19,8 @@ from types import SimpleNamespace
 import warnings
 warnings.filterwarnings('ignore')
 
+from .config import SelectionConfig
+
 # Local imports
 from .htf_materialization import HTFFeatureGenerator, UpdateStyle
 
@@ -191,7 +193,7 @@ class CorrelationCalculator:
 class IntegerProgramSolver:
     """Solves the knapsack problem using integer programming."""
     
-    def __init__(self, config):
+    def __init__(self, config: SelectionConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
     
@@ -426,7 +428,7 @@ class IntegerProgramSolver:
 class KnapsackSelection:
     """Main knapsack selection system."""
     
-    def __init__(self, config):
+    def __init__(self, config: SelectionConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
 
@@ -585,7 +587,7 @@ class KnapsackSelection:
         if feature_df.empty or feature_df.shape[1] < 2:
             return pd.DataFrame()
 
-        min_samples = getattr(self.config, "min_samples_for_correlation", 30)
+        min_samples = self.config.min_samples_for_correlation
         valid_columns = [
             column
             for column in feature_df.columns

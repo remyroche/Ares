@@ -15,7 +15,8 @@ from pathlib import Path
 # Add the current directory to Python path
 sys.path.append(str(Path(__file__).parent))
 
-from pipeline import CrossTimeframePipeline, PipelineConfig
+from .pipeline import CrossTimeframePipeline
+from .config import PipelineConfig, SessionConfig, ProbeConfig, SelectionConfig
 from phase1_probe import Phase1HTFProbe
 from phase2_optimization import Phase2Optimization
 from regime_segmentation import RegimeSegmentation

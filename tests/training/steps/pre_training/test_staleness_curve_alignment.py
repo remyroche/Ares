@@ -28,11 +28,17 @@ import pandas as pd
 from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.phase1_probe import (
     Phase1HTFProbe,
 )
+from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.scoring_system import (
+    AdaptiveScoringSystem,
+)
 from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.ehu_rih_assignment import (
     EHU_RIH_Assignment,
 )
-from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.pipeline import (
-    PipelineConfig,
+from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.config import (
+    AssignmentConfig,
+    ProbeConfig,
+    ScoringConfig,
+    SessionConfig,
 )
 
 
@@ -49,9 +55,12 @@ def _make_series(length: int, base_freq: int) -> pd.Series:
 
 
 def test_phase1_assignment_share_staleness_curves():
-    config = PipelineConfig()
-    phase1_probe = Phase1HTFProbe(config)
-    assignment = EHU_RIH_Assignment(config)
+    session_config = SessionConfig()
+    probe_config = ProbeConfig()
+    scoring_system = AdaptiveScoringSystem(ScoringConfig(), session_config)
+    assignment_config = AssignmentConfig()
+    phase1_probe = Phase1HTFProbe(session_config, probe_config, scoring_system=scoring_system)
+    assignment = EHU_RIH_Assignment(assignment_config)
 
     test_cases = [
         ("p/price_ema10_pct", "trend_level_vol", 60),
@@ -59,13 +68,13 @@ def test_phase1_assignment_share_staleness_curves():
         ("p/vwap_session_dist", "anchors", 45),
     ]
 
-    base_freq = config.base_timeframe_minutes
+    base_freq = session_config.base_timeframe_minutes
     target = _make_series(240, base_freq)
 
     for base_feature, family, lookback in test_cases:
         feature = _make_series(240, base_freq)
 
-        candidate = phase1_probe._score_candidate(
+        candidates = phase1_probe._score_candidate(
             htf_feature=feature,
             base_feature=base_feature,
             lookback=lookback,
@@ -74,8 +83,9 @@ def test_phase1_assignment_share_staleness_curves():
             targets=target,
         )
 
-        assert candidate is not None
+        assert candidates
 
+        candidate = candidates[0]
         summary_phase1 = candidate.metadata["staleness_summary"]
         summary_assignment = assignment.staleness_calculator.get_summary(
             feature_name=base_feature,

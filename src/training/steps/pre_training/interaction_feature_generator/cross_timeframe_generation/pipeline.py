@@ -204,14 +204,27 @@ class CrossTimeframePipeline:
             
             # Step 9: Walk-forward evaluation
             self.logger.info("Step 9: Walk-forward evaluation")
-            self.evaluation_results = self.evaluation.evaluate_features(
-                self.final_features, targets, self.regime_segments
+            final_feature_list = (
+                self.final_features.selected_features
+                if self.final_features is not None
+                else []
             )
-            
+
+            if targets is not None:
+                self.evaluation_results = self.evaluation.evaluate_features(
+                    final_feature_list, targets, self.regime_segments
+                )
+            else:
+                self.logger.warning("Targets not provided – skipping evaluation stage")
+                self.evaluation_results = None
+
             # Step 10: Monitoring & automation
             self.logger.info("Step 10: Setting up monitoring")
             self.monitoring.setup_monitoring(
-                self.final_features, self.evaluation_results, self.regime_segments
+                self.final_features,
+                final_feature_list,
+                self.evaluation_results,
+                self.regime_segments,
             )
             
             # Compile results
@@ -224,6 +237,7 @@ class CrossTimeframePipeline:
                 'materialized_htfs': self.materialized_htfs,
                 'interactions': self.interactions,
                 'final_features': self.final_features,
+                'selected_feature_list': final_feature_list,
                 'evaluation_results': self.evaluation_results,
                 'pipeline_config': self.config
             }

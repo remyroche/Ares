@@ -1,0 +1,161 @@
+import numpy as np
+import pandas as pd
+
+from types import SimpleNamespace
+import sys
+import types
+
+
+if "cvxpy" not in sys.modules:
+    cvxpy_stub = types.ModuleType("cvxpy")
+
+    class _Dummy:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __matmul__(self, other):  # pragma: no cover - unused but kept for safety
+            return 0
+
+    class _DummyProblem:
+        def __init__(self, *args, **kwargs):
+            self.status = "optimal"
+
+        def solve(self, *args, **kwargs):
+            return None
+
+    cvxpy_stub.Variable = _Dummy
+    cvxpy_stub.Parameter = _Dummy
+    cvxpy_stub.Problem = _DummyProblem
+    cvxpy_stub.Maximize = lambda *args, **kwargs: None
+    cvxpy_stub.Minimize = lambda *args, **kwargs: None
+    cvxpy_stub.sum = lambda *args, **kwargs: 0
+    cvxpy_stub.CBC = "CBC"
+    cvxpy_stub.OPTIMAL = "optimal"
+    cvxpy_stub.Constraint = _Dummy
+
+    sys.modules["cvxpy"] = cvxpy_stub
+
+from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.pipeline import (
+    CrossTimeframePipeline,
+    PipelineConfig,
+)
+from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.statistical_selection import (
+    SelectionResult,
+)
+from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.evaluation import (
+    EvaluationResult,
+)
+
+
+class DummyEvaluation:
+    """Stub evaluation component that validates the received feature list."""
+
+    def __init__(self):
+        self.calls = []
+
+    def evaluate_features(self, final_features, targets, regime_segments):
+        assert isinstance(final_features, list)
+        self.calls.append((final_features, targets, regime_segments))
+        return EvaluationResult(
+            overall_ic=0.0,
+            overall_ic_std=0.0,
+            overall_ic_ci=(0.0, 0.0),
+            regime_results={},
+            ablation_results={},
+            spa_test_result={},
+            walk_forward_results=[],
+            metadata={},
+        )
+
+
+class DummyMonitoring:
+    """Stub monitoring system that asserts input compatibility."""
+
+    def __init__(self):
+        self.calls = []
+
+    def setup_monitoring(self, selection_result, final_features, evaluation_results, regime_segments):
+        assert selection_result is None or isinstance(selection_result, SelectionResult)
+        assert isinstance(final_features, list)
+        self.calls.append((selection_result, final_features, evaluation_results, regime_segments))
+
+
+def _build_dummy_series(index):
+    values = np.linspace(0.0, 1.0, len(index))
+    return pd.Series(values, index=index)
+
+
+def test_pipeline_passes_feature_list_to_evaluation_and_monitoring():
+    config = PipelineConfig()
+    pipeline = CrossTimeframePipeline(config)
+
+    # Replace heavy dependencies with lightweight stubs
+    pipeline.regime_segmentation.segment_regimes = lambda sessionized, targets: {"segments": []}
+    pipeline.phase1_probe.run_probe_stage = lambda sessionized, segments, targets: {"phase1": True}
+    pipeline.phase2_optimization.optimize_lookbacks = lambda data, phase1, segments, targets: {"phase2": True}
+    pipeline.ehu_rih_assignment.assign_htf_features = lambda phase2, data: {"feature_a": {}}
+    pipeline.knapsack_selection.select_features = lambda phase2, assignments: ["feature_a"]
+
+    def _materialize_htfs(sessionized_data, selected_htfs):
+        index = sessionized_data["aligned_data"].index
+        feature = SimpleNamespace(feature_series=_build_dummy_series(index))
+        return {"feature_a": feature}
+
+    pipeline.htf_materialization.materialize_htfs = _materialize_htfs
+
+    def _generate_interactions(materialized_htfs, sessionized_data):
+        index = sessionized_data["aligned_data"].index
+        interaction = SimpleNamespace(
+            name="interaction_feature",
+            feature_series=_build_dummy_series(index),
+        )
+        return [interaction]
+
+    pipeline.interaction_templates.generate_interactions = _generate_interactions
+
+    selection_result = SelectionResult(
+        selected_features=["feature_a", "interaction_feature"],
+        selection_frequencies={"feature_a": 1.0, "interaction_feature": 0.8},
+        p_values={"feature_a": 0.01, "interaction_feature": 0.02},
+        fdr_corrected_p_values={"feature_a": 0.02, "interaction_feature": 0.03},
+        conditional_ics={"feature_a": 0.1, "interaction_feature": 0.05},
+        group_lasso_groups={},
+        selection_method="stub",
+        metadata={"source": "test"},
+    )
+
+    pipeline.statistical_selection.select_final_features = (
+        lambda materialized_htfs, interactions, targets: selection_result
+    )
+
+    dummy_evaluation = DummyEvaluation()
+    dummy_monitoring = DummyMonitoring()
+    pipeline.evaluation = dummy_evaluation
+    pipeline.monitoring = dummy_monitoring
+
+    # Create simple OHLCV data within the configured session hours
+    index = pd.date_range("2023-01-02 09:00:00", periods=32, freq="min")
+    ohlcv = pd.DataFrame(
+        {
+            "open": np.random.rand(len(index)),
+            "high": np.random.rand(len(index)),
+            "low": np.random.rand(len(index)),
+            "close": np.random.rand(len(index)),
+            "volume": np.random.randint(100, 200, size=len(index)),
+        },
+        index=index,
+    )
+    targets = pd.Series(np.random.randn(len(index)), index=index)
+
+    results = pipeline.run_pipeline(ohlcv_data=ohlcv, targets=targets)
+
+    assert dummy_evaluation.calls, "Evaluation should be executed once"
+    eval_features, _, _ = dummy_evaluation.calls[0]
+    assert eval_features == selection_result.selected_features
+
+    assert dummy_monitoring.calls, "Monitoring should receive pipeline outputs"
+    monitoring_call = dummy_monitoring.calls[0]
+    assert monitoring_call[0] is selection_result
+    assert monitoring_call[1] == selection_result.selected_features
+
+    assert results["selected_feature_list"] == selection_result.selected_features

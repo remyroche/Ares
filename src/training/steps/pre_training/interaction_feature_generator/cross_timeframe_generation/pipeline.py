@@ -19,10 +19,10 @@ from .phase2_optimization import Phase2Optimization
 from .regime_segmentation import RegimeSegmentation
 from .scoring_system import AdaptiveScoringSystem
 from .ehu_rih_assignment import EHU_RIH_Assignment
-from .knapsack_selection import KnapsackSelection
+from .knapsack_selection import KnapsackSelection, CrossTimeframeKnapsackSelectionResult
 from .htf_materialization import HTFMaterialization
 from .interaction_templates import HTFInteractionTemplates
-from .statistical_selection import StatisticalSelection
+from .statistical_selection import StatisticalSelection, CrossTimeframeStatisticalSelectionResult
 from .evaluation import WalkForwardEvaluation
 from .monitoring import MonitoringSystem
 
@@ -97,10 +97,10 @@ class CrossTimeframePipeline:
     2. Phase-1 HTF probes (coarse grids)
     3. Phase-2 optimization (local grids)
     4. EHU/RIH assignment
-    5. Knapsack selection (produces ``KnapsackSelectionResult``)
+    5. Knapsack selection (produces ``CrossTimeframeKnapsackSelectionResult``)
     6. Materialize HTFs
     7. Generate interactions
-    8. Statistical selection (produces ``StatisticalSelectionResult``)
+    8. Statistical selection (produces ``CrossTimeframeStatisticalSelectionResult``)
     9. Walk-forward evaluation
     10. Monitoring & automation
     """
@@ -128,12 +128,12 @@ class CrossTimeframePipeline:
         self.regime_segments = None
         self.phase1_results = None
         self.phase2_results = None
-        # Holds the resource allocation output (KnapsackSelectionResult)
+        # Holds the resource allocation output (CrossTimeframeKnapsackSelectionResult)
         # before statistical pruning narrows the candidate set.
         self.selected_htfs = None
         self.materialized_htfs = None
         self.interactions = None
-        # Holds the final statistical pruning output (StatisticalSelectionResult)
+        # Holds the final statistical pruning output (CrossTimeframeStatisticalSelectionResult)
         self.final_features = None
         self.evaluation_results = None
         
@@ -151,9 +151,9 @@ class CrossTimeframePipeline:
             
         Returns:
             Dictionary containing all pipeline results. The knapsack stage
-            returns a ``KnapsackSelectionResult`` under ``selected_htfs`` while
+            returns a ``CrossTimeframeKnapsackSelectionResult`` under ``selected_htfs`` while
             the statistical pruning stage returns a
-            ``StatisticalSelectionResult`` under ``final_features`` so callers
+            ``CrossTimeframeStatisticalSelectionResult`` under ``final_features`` so callers
             can differentiate between the two selection phases.
         """
         self.logger.info("Starting cross-timeframe pipeline")

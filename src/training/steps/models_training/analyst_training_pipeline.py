@@ -68,6 +68,20 @@ except ImportError as e:
     print(f"❌ CRITICAL ERROR: tprint is required but not available: {e}")
     TPRINT_AVAILABLE = False
 
+# Import negative learning integration
+try:
+    from .negative_learning_training_integration import (
+        initialize_negative_learning_integration,
+        get_negative_learning_integration
+    )
+    from .negative_learning_training_patches import (
+        apply_negative_learning_patches
+    )
+    NEGATIVE_LEARNING_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: Negative learning integration not available: {e}")
+    NEGATIVE_LEARNING_AVAILABLE = False
+
 
 class TrainingPhase(Enum):
     """Training phase enumeration."""
@@ -223,6 +237,19 @@ class AnalystTrainingPipeline:
             else:
                 self.ensemble_trainer = None
 
+            # Initialize negative learning integration
+            if NEGATIVE_LEARNING_AVAILABLE:
+                try:
+                    self.nl_integration = initialize_negative_learning_integration(
+                        self.config.negative_learning_config if hasattr(self.config, 'negative_learning_config') else {}
+                    )
+                    tprint_success("✅ Negative learning integration initialized")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to initialize negative learning: {e}")
+                    self.nl_integration = None
+            else:
+                self.nl_integration = None
+
             tprint_success("✅ AnalystTrainingPipeline initialized successfully")
 
         except Exception as e:
@@ -255,6 +282,27 @@ class AnalystTrainingPipeline:
 
         result = AnalystTrainingPipelineResult()
         result.training_phase = TrainingPhase.BASE_MODEL_TRAINING
+
+        # Initialize negative learning for this training session
+        if self.nl_integration:
+            try:
+                # Extract target for negative learning initialization
+                target_series = training_data[target_columns[0]] if target_columns else pd.Series()
+                
+                init_results = self.nl_integration.initialize_for_training(
+                    analyst_features=training_data[feature_columns],
+                    analyst_target=target_series,
+                    tactician_features=pd.DataFrame(),  # Not needed for Analyst
+                    tactician_target=pd.Series(dtype=float),
+                    retrain_timestamp=None
+                )
+                
+                if init_results.get('status') == 'success':
+                    tprint_success("✅ Negative learning initialized for Analyst training")
+                else:
+                    tprint_warning(f"⚠️ Negative learning initialization failed: {init_results.get('error', 'Unknown error')}")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to initialize negative learning: {e}")
 
         try:
             # Step 1: Train base models

@@ -136,7 +136,7 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
             io_orchestration_ms=20,
             
             # Lookback ceiling (from roadmap spec)
-            lookback_ceiling_minutes=120,
+            lookback_ceiling_minutes=118,
             
             # Retrain settings (from roadmap spec)
             retrain_scheduled="02:00 America/New_York",

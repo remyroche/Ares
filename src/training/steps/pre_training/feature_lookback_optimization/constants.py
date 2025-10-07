@@ -18,7 +18,7 @@ class OptimizationConstants:
     
     # Lookback period constraints
     DEFAULT_MIN_LOOKBACK: int = 5
-    DEFAULT_MAX_LOOKBACK: int = 300
+    DEFAULT_MAX_LOOKBACK: int = 298
     DEFAULT_LOOKBACK_STEP: int = 1
     
     # Grid search parameters

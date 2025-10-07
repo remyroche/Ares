@@ -47,7 +47,7 @@ class BudgetValidator:
                  interactions_cap: int = 15,
                  transforms_per_parent: int = 1,
                  latency_budget_ms: int = 50,
-                 lookback_ceiling_minutes: int = 120):
+                 lookback_ceiling_minutes: int = 118):
         self.feature_budget_pre = feature_budget_pre
         self.feature_budget_post = feature_budget_post
         self.interactions_cap = interactions_cap

@@ -146,7 +146,7 @@ class LookbackOptimizationConfig:
     
     # Lookback Period Constraints
     min_lookback: int = 5
-    max_lookback: int = 300
+    max_lookback: int = 298
     lookback_step: int = 1
     
     # Refinement Factors

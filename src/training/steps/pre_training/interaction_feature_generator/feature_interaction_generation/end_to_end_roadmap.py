@@ -55,7 +55,7 @@ class SystemConfig:
     io_orchestration_ms: int = 20
     
     # Lookback ceiling
-    lookback_ceiling_minutes: int = 120
+    lookback_ceiling_minutes: int = 118
     
     # Retrain settings
     retrain_scheduled: str = "02:00 America/New_York"

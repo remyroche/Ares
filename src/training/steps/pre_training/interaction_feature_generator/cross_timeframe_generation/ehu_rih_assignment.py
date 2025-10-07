@@ -131,11 +131,11 @@ class StalenessCurveCalculator:
                 else:
                     return min(1.0, (lag_minutes - 30) / 60)
             else:
-                return min(1.0, lag_minutes / 120)  # Linear increase over 2 hours
+                return min(1.0, lag_minutes / 118)  # Linear increase over 2 hours
         
         else:
             # Default: linear increase
-            return min(1.0, lag_minutes / 120)
+            return min(1.0, lag_minutes / 118)
 
 
 class CostBenefitAnalyzer:

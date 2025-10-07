@@ -64,7 +64,7 @@ class OptimizedFeatureLookbackConfig:
 
     # Lookback optimization settings
     min_lookback: int = 5
-    max_lookback: int = 100
+    max_lookback: int = 98
     lookback_step: int = 5
 
     # Feature selection settings - exclude specified categories

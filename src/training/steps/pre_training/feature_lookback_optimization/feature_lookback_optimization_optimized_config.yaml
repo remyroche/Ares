@@ -13,7 +13,7 @@ optimized_feature_lookback_optimization:
   
   # Lookback optimization settings
   min_lookback: 5
-  max_lookback: 100
+  max_lookback: 98
   lookback_step: 5
   
   # Feature selection settings - exclude specified categories

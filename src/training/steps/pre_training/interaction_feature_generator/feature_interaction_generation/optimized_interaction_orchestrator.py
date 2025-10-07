@@ -152,7 +152,7 @@ class OptimizedInteractionConfig:
     feature_budget_post: Tuple[int, int] = (30, 60)
     interactions_cap: int = 15
     transforms_per_parent: int = 1
-    lookback_ceiling_minutes: int = 120
+    lookback_ceiling_minutes: int = 118
     latency_budget_ms: int = 50
     
     # Optimization configuration

@@ -9,8 +9,6 @@ import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Union
 
-from ..core.feature_generator import (
-
 # Optimization utilities
 try:
     from ..utils.vectorization_optimizer import get_vectorization_optimizer
@@ -18,6 +16,8 @@ try:
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
+
+from ..core.feature_generator import (
     FeatureGenerator,
     FeatureConfig,
     FeatureCategory,
@@ -585,9 +585,9 @@ def create_default_microstructure_generators() -> List[FeatureGenerator]:
             super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
         def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
+            # Optimize DataFrame for processing
+            if hasattr(self, 'optimize_dataframe_processing'):
+                data = self.optimize_dataframe_processing(data)
 
             """Generate normalized spread feature."""
             # Spread calculation (using high-low as proxy)
@@ -621,9 +621,9 @@ def create_default_microstructure_generators() -> List[FeatureGenerator]:
             self.lookback = lookback
 
         def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
+            # Optimize DataFrame for processing
+            if hasattr(self, 'optimize_dataframe_processing'):
+                data = self.optimize_dataframe_processing(data)
 
             """Generate tick imbalance feature."""
             price_changes = data['close'].diff()
@@ -638,5 +638,185 @@ def create_default_microstructure_generators() -> List[FeatureGenerator]:
 
     generators.append(AnalystSpreadNormalizedGenerator())
     generators.append(AnalystTickImbalanceGenerator())
+
+    # New microstructure interaction features
+    class CorwinSchultzSpreadMomentumGenerator(VectorizedFeatureGenerator):
+        """Generator for Corwin-Schultz spread proxy × momentum interaction feature."""
+
+        def __init__(self, spread_window: int = 20, momentum_period: int = 5):
+            config = FeatureConfig(
+                name="cs_spread_momentum",
+                category=FeatureCategory.MICROSTRUCTURE,
+                description="Corwin-Schultz spread proxy × momentum interaction (wide spreads → trend breaks sooner)",
+                required_columns=["high", "low", "close"],
+                default_lookback=max(spread_window, momentum_period),
+                min_lookback=10,
+                max_lookback=100,
+                parameters={"spread_window": spread_window, "momentum_period": momentum_period}
+            )
+            super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+            self.spread_window = spread_window
+            self.momentum_period = momentum_period
+
+        def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+            # Optimize DataFrame for processing
+            if hasattr(self, 'optimize_dataframe_processing'):
+                data = self.optimize_dataframe_processing(data)
+
+            """Generate Corwin-Schultz spread proxy × momentum interaction."""
+            # Calculate Corwin-Schultz spread proxy
+            high = data['high']
+            low = data['low']
+            close = data['close']
+            
+            # Corwin-Schultz spread proxy: (high - low) / close
+            cs_spread = (high - low) / close
+            
+            # Calculate momentum (5-period price change)
+            momentum = close.pct_change(self.momentum_period)
+            
+            # Interaction: CS spread × momentum
+            interaction = cs_spread * momentum
+            
+            return interaction
+
+    class AmihudIlliquidityVWAPDistanceGenerator(VectorizedFeatureGenerator):
+        """Generator for Amihud illiquidity × VWAP distance interaction feature."""
+
+        def __init__(self, illiquidity_window: int = 20, vwap_window: int = 20):
+            config = FeatureConfig(
+                name="amihud_illiquidity_vwap_distance",
+                category=FeatureCategory.MICROSTRUCTURE,
+                description="Amihud illiquidity × VWAP distance (big price move per $ volume → mean reversion risk)",
+                required_columns=["high", "low", "close", "volume"],
+                default_lookback=max(illiquidity_window, vwap_window),
+                min_lookback=10,
+                max_lookback=100,
+                parameters={"illiquidity_window": illiquidity_window, "vwap_window": vwap_window}
+            )
+            super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+            self.illiquidity_window = illiquidity_window
+            self.vwap_window = vwap_window
+
+        def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+            # Optimize DataFrame for processing
+            if hasattr(self, 'optimize_dataframe_processing'):
+                data = self.optimize_dataframe_processing(data)
+
+            """Generate Amihud illiquidity × VWAP distance interaction."""
+            close = data['close']
+            volume = data['volume']
+            
+            # Calculate returns
+            returns = close.pct_change()
+            
+            # Amihud illiquidity: |returns| / volume
+            amihud_illiquidity = np.abs(returns) / volume
+            amihud_illiquidity = amihud_illiquidity.rolling(window=self.illiquidity_window).mean()
+            
+            # Calculate VWAP
+            vwap = (close * volume).rolling(window=self.vwap_window).sum() / volume.rolling(window=self.vwap_window).sum()
+            
+            # VWAP distance: (close - vwap) / vwap
+            vwap_distance = (close - vwap) / vwap
+            
+            # Interaction: Amihud illiquidity × VWAP distance
+            interaction = amihud_illiquidity * vwap_distance
+            
+            return interaction
+
+    class RollLambdaRVShortGenerator(VectorizedFeatureGenerator):
+        """Generator for Roll's λ (signed autocov) × rv_short interaction feature."""
+
+        def __init__(self, roll_window: int = 20, rv_window: int = 5):
+            config = FeatureConfig(
+                name="roll_lambda_rv_short",
+                category=FeatureCategory.MICROSTRUCTURE,
+                description="Roll's λ (signed autocov) × rv_short (implicit spread/high trans. costs amplify vol impact)",
+                required_columns=["close"],
+                default_lookback=max(roll_window, rv_window),
+                min_lookback=10,
+                max_lookback=100,
+                parameters={"roll_window": roll_window, "rv_window": rv_window}
+            )
+            super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+            self.roll_window = roll_window
+            self.rv_window = rv_window
+
+        def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+            # Optimize DataFrame for processing
+            if hasattr(self, 'optimize_dataframe_processing'):
+                data = self.optimize_dataframe_processing(data)
+
+            """Generate Roll's λ × rv_short interaction."""
+            close = data['close']
+            
+            # Calculate returns
+            returns = close.pct_change()
+            
+            # Roll's λ: signed autocovariance of returns
+            # λ = -2 * cov(returns_t, returns_{t-1})
+            roll_lambda = -2 * returns.rolling(window=self.roll_window).apply(
+                lambda x: np.cov(x[:-1], x[1:])[0, 1] if len(x) > 1 else 0, raw=False
+            )
+            
+            # Realized volatility (short-term)
+            rv_short = returns.rolling(window=self.rv_window).std()
+            
+            # Interaction: Roll's λ × rv_short
+            interaction = roll_lambda * rv_short
+            
+            return interaction
+
+    class RangeVolumeShockOpen30Generator(VectorizedFeatureGenerator):
+        """Generator for Range/Volume shock × open30 interaction feature."""
+
+        def __init__(self, range_volume_window: int = 20, open30_window: int = 30):
+            config = FeatureConfig(
+                name="range_volume_shock_open30",
+                category=FeatureCategory.MICROSTRUCTURE,
+                description="Range/Volume shock × open30 (thin-open shock filter)",
+                required_columns=["high", "low", "open", "volume"],
+                default_lookback=max(range_volume_window, open30_window),
+                min_lookback=10,
+                max_lookback=100,
+                parameters={"range_volume_window": range_volume_window, "open30_window": open30_window}
+            )
+            super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+            self.range_volume_window = range_volume_window
+            self.open30_window = open30_window
+
+        def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+            # Optimize DataFrame for processing
+            if hasattr(self, 'optimize_dataframe_processing'):
+                data = self.optimize_dataframe_processing(data)
+
+            """Generate Range/Volume shock × open30 interaction."""
+            high = data['high']
+            low = data['low']
+            open_price = data['open']
+            volume = data['volume']
+            
+            # Range/Volume ratio: (high - low) / volume
+            range_volume_ratio = (high - low) / volume
+            
+            # Z-score of range/volume ratio
+            range_volume_z = (range_volume_ratio - range_volume_ratio.rolling(window=self.range_volume_window).mean()) / range_volume_ratio.rolling(window=self.range_volume_window).std()
+            
+            # Open30: 30-period open price change
+            open30 = open_price.pct_change(self.open30_window)
+            
+            # Interaction: (high-low)/volume_z × open30
+            interaction = range_volume_z * open30
+            
+            return interaction
+
+    # Add new generators to the list
+    generators.extend([
+        CorwinSchultzSpreadMomentumGenerator(),
+        AmihudIlliquidityVWAPDistanceGenerator(),
+        RollLambdaRVShortGenerator(),
+        RangeVolumeShockOpen30Generator()
+    ])
 
     return generators

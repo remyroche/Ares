@@ -2452,8 +2452,54 @@ class TacticianModelsTrainingStep:
             raise ValueError("Base model OOF predictions are required for stacker training")
 
         try:
-            from src.models.stacker_lgbm_calibrated import create_stacker_lgbm_calibrated, StackerLGBMCalibratedConfig
+            from src.models.stacker_lgbm_gate import (
+                create_stacker_lgbm_gate,
+                StackerLGBMGateConfig,
+            )
 
+            oof_predictions = kwargs.get('oof_predictions') or {}
+            if not oof_predictions:
+                raise ValueError(
+                    "Out-of-fold predictions for Analyst and Tactician are required for the gated stacker"
+                )
+
+            regime_features = self._assemble_regime_feature_tensor(
+                X,
+                oof_predictions,
+                sample_weight,
+                **kwargs,
+            )
+
+            config = StackerLGBMGateConfig()
+            model = create_stacker_lgbm_gate(config)
+            model.fit(
+                base_predictions=oof_predictions,
+                y=y.ravel(),
+                regime_features=regime_features,
+                sample_weight=sample_weight,
+            )
+
+            gating_state = model.get_gating_state()
+            calibration_state = model.get_calibration_state()
+            loss_history = model.get_gating_loss_history()
+
+            metrics = {
+                'model_type': 'Stacker_LGBM_Gate',
+                'config': config,
+                'gating_final_loss': loss_history[-1] if loss_history else None,
+                'gating_entropy_penalty': config.gating.entropy_penalty,
+            }
+
+            return {
+                'models': {
+                    'stacker_lgbm_gate': model,
+                    'stacker_lgbm_calibrated': model,
+                },
+                'metrics': metrics,
+                'artifacts': {
+                    'stacker_gating_state': gating_state,
+                    'stacker_calibration_state': calibration_state,
+                },
             config = StackerLGBMCalibratedConfig()
             model = create_stacker_lgbm_calibrated(config)
 
@@ -2500,7 +2546,82 @@ class TacticianModelsTrainingStep:
 
         except Exception as e:
             tprint_error(f"❌ Stacker LGBM Calibrated training failed: {e}")
-            return {'models': {}, 'metrics': {}}
+            return {'models': {}, 'metrics': {}, 'artifacts': {}}
+
+    def _assemble_regime_feature_tensor(
+        self,
+        X: np.ndarray,
+        oof_predictions: Dict[str, Any],
+        sample_weight: np.ndarray,
+        **kwargs,
+    ) -> Dict[str, np.ndarray]:
+        """Construct regime/context features required by the gating head."""
+
+        n_samples = X.shape[0]
+        feature_map: Dict[str, np.ndarray] = {}
+
+        dict_sources: List[Dict[str, Any]] = []
+        dataframe_sources: List[pd.DataFrame] = []
+
+        for key in (
+            'regime_features',
+            'regime_context',
+            'additional_context',
+            'regime_feature_map',
+        ):
+            value = kwargs.get(key)
+            if isinstance(value, dict):
+                dict_sources.append(value)
+
+        for key in ('training_dataframe', 'regime_feature_frame', 'market_context_frame'):
+            df_candidate = kwargs.get(key)
+            if isinstance(df_candidate, pd.DataFrame):
+                dataframe_sources.append(df_candidate)
+
+        def _lookup(*names: str) -> Optional[Any]:
+            for name in names:
+                for source in dict_sources:
+                    if name in source and source[name] is not None:
+                        return source[name]
+                for frame in dataframe_sources:
+                    if name in frame.columns:
+                        return frame[name].values
+            return None
+
+        volatility = _lookup('volatility_level', 'volatility', 'volatility_score')
+        if volatility is None:
+            if X.size:
+                volatility = np.std(X, axis=1)
+            else:
+                volatility = np.zeros(n_samples)
+        feature_map['volatility_level'] = self._ensure_feature_array(volatility, n_samples)
+
+        # Trend signal primarily uses the `trend_score` feature with fallbacks for legacy names.
+        trend = _lookup('trend_score', 'trend_strength', 'momentum_score', 'market_health_score')
+        if trend is None:
+            if X.size:
+                trend = np.mean(X, axis=1)
+            else:
+                trend = np.zeros(n_samples)
+        feature_map['trend_score'] = self._ensure_feature_array(trend, n_samples)
+
+        liquidity = _lookup('liquidity_z', 'liquidity_score', 'liquidity')
+        if liquidity is None:
+            liquidity = np.zeros(n_samples)
+        feature_map['liquidity_z'] = self._ensure_feature_array(liquidity, n_samples)
+
+        return feature_map
+
+    def _ensure_feature_array(self, values: Any, n_samples: int) -> np.ndarray:
+        arr = np.asarray(values, dtype=float)
+        if arr.ndim == 0:
+            arr = np.full(n_samples, float(arr))
+        if arr.shape[0] != n_samples:
+            if arr.shape[0] == 1:
+                arr = np.full(n_samples, float(arr[0]))
+            else:
+                raise ValueError("Regime feature length mismatch while assembling gating tensor")
+        return arr
 
 
 # Convenience function for external usage

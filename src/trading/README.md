@@ -92,6 +92,14 @@ src/trading/
 - **Sequential model calls**: analyst base models → analyst meta model → tactician base models → tactician meta model
 - **Confidence score optimization** based on backtesting parameters
 - **Confidence scoring** and signal validation
+- **Regime-aware gating** blends Analyst and Tactician experts using volatility, trend, and liquidity context
+
+#### Regime-Aware Expert Gating
+
+- The dedicated `stacker_lgbm_gate` meta-learner includes a neural gating head that consumes regime/context features together with out-of-fold Analyst/Tactician predictions to produce softmax-normalized expert weights. The head applies a small entropy penalty plus a monotonicity constraint that increases Analyst weighting as volatility and trend intensify. 【F:src/models/stacker_lgbm_gate.py†L1-L620】
+- Analyst and Tactician training pipelines assemble the required regime feature tensor (volatility level, trend score, and liquidity z-score), train the gater strictly on OOF predictions, and persist gating/calibration artifacts for inference reuse. 【F:src/training/steps/models_training/analyst_models_training.py†L671-L764】【F:src/training/steps/models_training/tactician_models_training.py†L2365-L2460】
+- The signal combiner reconstructs the same regime vector from live signal metadata (volatility level, trend score, liquidity z) and uses the returned expert weights to blend probabilities, confidences, and utilities before issuing the final action. Gated outputs are recorded in signal metadata for downstream analytics. 【F:src/trading/signal_generation/signal_combiner.py†L720-L884】
+- Regression tests bucket synthetic trades by regime to confirm analyst dominance in high-volatility regimes, reduced loss versus equal-weight baselines, and correct wiring through the signal combiner. 【F:tests/test_gated_stacker.py†L1-L298】
 
 ### 5. Data (`data/`)
 - **Live data collection** with real-time market data feeds

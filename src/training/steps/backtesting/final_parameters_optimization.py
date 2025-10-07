@@ -748,6 +748,40 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'trailing_atr_multiplier': {'type': 'float', 'min': 1.0, 'max': 3.0},
                 'trailing_min_distance': {'type': 'float', 'min': 0.005, 'max': 0.03},
                 'trailing_confidence_activation': {'type': 'float', 'min': 0.6, 'max': 0.9},
+
+                # Unified trailing framework parameters
+                'profit_buffer_atr_multiplier': {'type': 'float', 'min': 0.3, 'max': 0.9},
+                'profit_buffer_min_fraction': {'type': 'float', 'min': 0.0005, 'max': 0.002},
+                'trail_base_atr_multiplier': {'type': 'float', 'min': 0.6, 'max': 1.2},
+                'breakeven_activation_atr': {'type': 'float', 'min': 0.8, 'max': 1.5},
+                'trail_activation_atr': {'type': 'float', 'min': 0.8, 'max': 1.5},
+                'tp_trail_activation_atr': {'type': 'float', 'min': 1.8, 'max': 2.5},
+                'tp_trail_trigger_atr': {'type': 'float', 'min': 2.0, 'max': 3.5},
+                'partial_take_fraction': {'type': 'float', 'min': 0.3, 'max': 0.7},
+                'drawdown_tighten_atr': {'type': 'float', 'min': 0.6, 'max': 1.0},
+                'tighten_trail_atr': {'type': 'float', 'min': 0.3, 'max': 0.8},
+                'drawdown_exit_atr': {'type': 'float', 'min': 1.0, 'max': 1.6},
+                'volatility_tighten_threshold': {'type': 'float', 'min': 0.6, 'max': 0.9},
+                'volatility_tighten_adjustment': {'type': 'float', 'min': 0.1, 'max': 0.5},
+                'volatility_loosen_threshold': {'type': 'float', 'min': 1.1, 'max': 1.6},
+                'volatility_loosen_adjustment': {'type': 'float', 'min': 0.1, 'max': 0.4},
+                'time_decay_bars': {'type': 'int', 'min': 6, 'max': 12},
+                'time_decay_threshold_atr': {'type': 'float', 'min': 0.2, 'max': 0.6},
+                'ml_confidence_tighten_threshold': {'type': 'float', 'min': 0.2, 'max': 0.5},
+                'ml_confidence_tighten_atr': {'type': 'float', 'min': 0.2, 'max': 0.6},
+                'ml_regime_partial_fraction': {'type': 'float', 'min': 0.3, 'max': 0.7},
+                'low_vol_sl_atr': {'type': 'float', 'min': 1.0, 'max': 1.6},
+                'low_vol_tp_atr': {'type': 'float', 'min': 1.8, 'max': 2.6},
+                'low_vol_trail_atr': {'type': 'float', 'min': 0.6, 'max': 1.0},
+                'low_vol_tp_trail': {'type': 'float', 'min': 2.0, 'max': 2.6},
+                'normal_vol_sl_atr': {'type': 'float', 'min': 1.3, 'max': 1.9},
+                'normal_vol_tp_atr': {'type': 'float', 'min': 2.2, 'max': 3.0},
+                'normal_vol_trail_atr': {'type': 'float', 'min': 0.8, 'max': 1.2},
+                'normal_vol_tp_trail': {'type': 'float', 'min': 2.2, 'max': 3.0},
+                'high_vol_sl_atr': {'type': 'float', 'min': 1.5, 'max': 2.2},
+                'high_vol_tp_atr': {'type': 'float', 'min': 2.6, 'max': 3.6},
+                'high_vol_trail_atr': {'type': 'float', 'min': 1.0, 'max': 1.5},
+                'high_vol_tp_trail': {'type': 'float', 'min': 2.6, 'max': 3.6},
                 'trailing_tightening_threshold': {'type': 'float', 'min': 0.01, 'max': 0.05},
                 'trailing_time_decay': {'type': 'float', 'min': 0.9, 'max': 0.995},
                 'trailing_ml_adjustment_weight': {'type': 'float', 'min': 0.1, 'max': 0.6},
@@ -1992,6 +2026,47 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 trailing_atr = params['trailing_atr_multiplier']
                 min_dist = params['trailing_min_distance']
                 conf_act = params['trailing_confidence_activation']
+                
+                # Validate trailing stop parameters
+                if (1.0 <= trailing_atr <= 3.0 and 
+                    0.005 <= min_dist <= 0.03 and 
+                    0.6 <= conf_act <= 0.9):
+                    score += 0.1
+            
+            # 6. Unified trailing parameter validation (0.15 weight)
+            unified_keys = [
+                'profit_buffer_atr_multiplier',
+                'trail_base_atr_multiplier',
+                'drawdown_tighten_atr',
+                'drawdown_exit_atr',
+                'tp_trail_trigger_atr',
+                'time_decay_bars',
+            ]
+            if all(param in params for param in unified_keys):
+                buffer_mult = params['profit_buffer_atr_multiplier']
+                trail_mult = params['trail_base_atr_multiplier']
+                tighten_atr = params['drawdown_tighten_atr']
+                exit_atr = params['drawdown_exit_atr']
+                trigger_atr = params['tp_trail_trigger_atr']
+                decay_bars = params['time_decay_bars']
+
+                if 0.3 <= buffer_mult <= 0.9 and 0.6 <= trail_mult <= 1.2:
+                    score += 0.05
+                if tighten_atr < exit_atr:
+                    score += 0.05
+                if 2.0 <= trigger_atr <= 3.5:
+                    score += 0.03
+                if 6 <= decay_bars <= 12:
+                    score += 0.02
+
+            # 7. Volatility adjustment validation (0.05 weight)
+            if all(param in params for param in ['volatility_tighten_threshold', 'volatility_loosen_threshold']):
+                tighten_th = params['volatility_tighten_threshold']
+                loosen_th = params['volatility_loosen_threshold']
+                if 0.6 <= tighten_th < loosen_th <= 1.6:
+                    score += 0.05
+
+            # 8. Regime-aware parameters validation (0.1 weight)
 
                 if (1.2 <= trailing_atr <= 2.5 and 0.006 <= min_dist <= 0.025 and 0.65 <= conf_act <= 0.85):
                     score += 0.08
@@ -2032,6 +2107,32 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 transition_penalty = params['regime_transition_penalty']
                 regime_scaling = params['regime_specific_scaling']
 
+                # Validate regime parameters
+                if 0.05 <= transition_penalty <= 0.2 and 0.8 <= regime_scaling <= 1.2:
+                    score += 0.1
+
+            # 9. Regime band alignment (bonus)
+            band_keys = [
+                'low_vol_tp_trail',
+                'normal_vol_tp_trail',
+                'high_vol_tp_trail',
+            ]
+            if all(param in params for param in band_keys):
+                low_tp = params['low_vol_tp_trail']
+                normal_tp = params['normal_vol_tp_trail']
+                high_tp = params['high_vol_tp_trail']
+                if low_tp <= normal_tp <= high_tp:
+                    score += 0.03
+
+            # 10. Profit tier validation (bonus)
+            tier_params = ['profit_tier_1', 'profit_tier_2', 'profit_tier_3']
+            if all(param in params for param in tier_params):
+                tiers = [params[param] for param in tier_params]
+                # Check if tiers are in ascending order
+                if all(tiers[i] <= tiers[i+1] for i in range(len(tiers)-1)):
+                    score += 0.05
+
+            # 11. Risk-reward ratio validation (bonus)
                 if 0.07 <= transition_penalty <= 0.15:
                     score += 0.05
                 elif 0.05 <= transition_penalty <= 0.2:

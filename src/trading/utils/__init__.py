@@ -13,5 +13,7 @@ __all__ = [
     'TradingError', 'RegimeDetectionError', 'SignalGenerationError',
     'PositionSizingError', 'ExecutionError', 'DataCollectionError',
     'trading_error_handler', 'validate_trading_config', 'validate_market_data',
-    'calculate_returns', 'normalize_price_data', 'format_trading_metrics'
+    'calculate_returns', 'normalize_price_data', 'format_trading_metrics',
+    'calculate_atr14', 'calculate_realized_volatility', 'calculate_three_bar_momentum',
+    'calculate_three_bar_rsi', 'calculate_volatility_slope'
 ]

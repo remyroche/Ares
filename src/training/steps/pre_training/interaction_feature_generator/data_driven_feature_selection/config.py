@@ -109,7 +109,7 @@ class Phase2Config:
     
     # Stability testing
     enable_stability_test: bool = True
-    stability_threshold: float = 0.8  # Collapse threshold
+    stability_threshold: float = 0.7  # Minimum stability score (<=30% sign flips)
     sign_flip_tolerance: float = 0.1  # Sign flip tolerance
     
     # Data availability requirements
@@ -143,6 +143,28 @@ class InteractionConfig:
 
 
 @dataclass
+class FeatureCategoryQuotas:
+    """Desired allocation of features across high-level categories."""
+    engineered: int = 25
+    htf: int = 10
+    regime: int = 5
+    embedding: int = 5
+
+    def to_dict(self) -> Dict[str, int]:
+        """Return a dictionary representation of the quotas."""
+        return {
+            'engineered': self.engineered,
+            'htf': self.htf,
+            'regime': self.regime,
+            'embedding': self.embedding
+        }
+
+    def total(self) -> int:
+        """Total number of slots represented by the quotas."""
+        return self.engineered + self.htf + self.regime + self.embedding
+
+
+@dataclass
 class FinalSelectionConfig:
     """Configuration for final model-level selection."""
     # Stability selection
@@ -158,11 +180,14 @@ class FinalSelectionConfig:
     enable_group_heredity: bool = True
     min_parents_required: int = 1  # At least one parent must be kept
     prefer_both_parents: bool = True
-    
+
     # Final feature count
     target_feature_count: int = 45
     min_feature_count: int = 30
     max_feature_count: int = 60
+
+    # Category allocation
+    category_quotas: 'FeatureCategoryQuotas' = field(default_factory=lambda: FeatureCategoryQuotas())
     
     # Model settings
     model_type: str = "lightgbm"
@@ -208,7 +233,7 @@ class DataDrivenFeatureSelectionConfig:
             'phase1': self.phase1.__dict__,
             'phase2': self.phase2.__dict__,
             'interaction': self.interaction.__dict__,
-            'final_selection': self.final_selection.__dict__,
+            'final_selection': self._final_selection_dict(),
             'budget': self.budget.__dict__,
             'enable_parallel_processing': self.enable_parallel_processing,
             'max_workers': self.max_workers,
@@ -235,7 +260,11 @@ class DataDrivenFeatureSelectionConfig:
         if 'interaction' in config_dict:
             config.interaction = InteractionConfig(**config_dict['interaction'])
         if 'final_selection' in config_dict:
-            config.final_selection = FinalSelectionConfig(**config_dict['final_selection'])
+            final_selection_dict = dict(config_dict['final_selection'])
+            category_quotas = final_selection_dict.get('category_quotas')
+            if isinstance(category_quotas, dict):
+                final_selection_dict['category_quotas'] = FeatureCategoryQuotas(**category_quotas)
+            config.final_selection = FinalSelectionConfig(**final_selection_dict)
         if 'budget' in config_dict:
             config.budget = BudgetConfig(**config_dict['budget'])
         
@@ -245,6 +274,12 @@ class DataDrivenFeatureSelectionConfig:
                 setattr(config, key, value)
         
         return config
+
+    def _final_selection_dict(self) -> Dict[str, Any]:
+        """Serialize final selection configuration with nested quotas."""
+        final_selection_dict = dict(self.final_selection.__dict__)
+        final_selection_dict['category_quotas'] = self.final_selection.category_quotas.to_dict()
+        return final_selection_dict
 
 
 def create_development_config() -> DataDrivenFeatureSelectionConfig:

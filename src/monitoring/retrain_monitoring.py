@@ -9,15 +9,16 @@ Implements:
 - Retrain decision tree with graceful degradation
 """
 
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
 import pandas as pd
 import numpy as np
 import warnings
-from datetime import datetime, timedelta
+from datetime import datetime
 from collections import deque
 import logging
+from zoneinfo import ZoneInfo
 
 
 class MonitoringStatus(Enum):
@@ -50,7 +51,9 @@ class MonitoringConfig:
     monitoring_interval_minutes: int = 5
     retrain_check_interval_hours: int = 2
     scheduled_retrain_time: str = "02:00"  # ET
+    scheduled_retrain_timezone: str = "America/New_York"
     fallback_model_latency_ms: float = 2.0
+    psi_monitor_columns: Tuple[str, ...] = ("σ_EW", "vwap_dist")
 
 
 @dataclass
@@ -89,6 +92,8 @@ class CalibrationMonitor:
             'mid': deque(maxlen=100),
             'close': deque(maxlen=100)
         }
+        self.consecutive_breaches = 0
+        self.last_loss = 0.0
     
     def update_calibration(self, 
                           predictions: np.ndarray,
@@ -110,14 +115,28 @@ class CalibrationMonitor:
                 if np.any(bucket_mask):
                     bucket_mse = np.mean((predictions[bucket_mask] - actual[bucket_mask]) ** 2)
                     self.bucket_calibrations[bucket].append(bucket_mse)
-        
-        return mse
-    
+
+        loss = self._calculate_loss()
+        self.last_loss = loss
+
+        if loss > self.config.calibration_loss_threshold:
+            self.consecutive_breaches += 1
+        else:
+            self.consecutive_breaches = 0
+
+        return loss
+
     def get_calibration_loss(self) -> float:
         """Get current calibration loss (in sigma units)."""
+        loss = self._calculate_loss()
+        self.last_loss = loss
+        return loss
+
+    def _calculate_loss(self) -> float:
+        """Calculate calibration loss using history."""
         if len(self.calibration_history) < 10:
             return 0.0
-        
+
         recent_mse = np.mean(list(self.calibration_history)[-10:])
         historical_mse = np.mean(list(self.calibration_history)[:-10]) if len(self.calibration_history) > 10 else recent_mse
         
@@ -131,6 +150,10 @@ class CalibrationMonitor:
         
         loss = (recent_mse - historical_mse) / sigma
         return loss
+
+    def has_persistent_breach(self) -> bool:
+        """Return True if calibration breach persisted for required duration."""
+        return self.consecutive_breaches >= 3
     
     def get_bucket_calibration(self) -> Dict[str, float]:
         """Get calibration by session bucket."""
@@ -163,10 +186,14 @@ class PSIMonitor:
         self.config = config
         self.reference_distributions = {}
         self.current_distributions = {}
-    
+        self.monitored_columns = set(config.psi_monitor_columns or [])
+
     def update_reference(self, features: pd.DataFrame):
         """Update reference distributions from training data."""
+        monitored_columns = self.monitored_columns
         for col in features.columns:
+            if monitored_columns and col not in monitored_columns:
+                continue
             if features[col].dtype in ['float64', 'int64']:
                 # Create histogram bins
                 finite_data = features[col].dropna()
@@ -182,11 +209,14 @@ class PSIMonitor:
     def calculate_psi(self, features: pd.DataFrame) -> Dict[str, float]:
         """Calculate PSI for all features."""
         psi_scores = {}
-        
+
+        monitored_columns = self.monitored_columns
         for col in features.columns:
+            if monitored_columns and col not in monitored_columns:
+                continue
             if col not in self.reference_distributions:
                 continue
-            
+
             finite_data = features[col].dropna()
             if len(finite_data) == 0:
                 psi_scores[col] = 0.0
@@ -342,7 +372,10 @@ class RetrainDecisionTree:
         urgency_levels = []
         
         # Check calibration loss
-        if current_metrics.calibration_loss > self.config.calibration_loss_threshold:
+        if (
+            current_metrics.calibration_loss > self.config.calibration_loss_threshold
+            and self.calibration_monitor.has_persistent_breach()
+        ):
             triggers.append(RetrainTrigger.CALIBRATION_LOSS)
             urgency_levels.append('high')
         
@@ -406,14 +439,49 @@ class RetrainDecisionTree:
             estimated_duration_minutes=duration
         )
     
-    def _is_scheduled_retrain_time(self) -> bool:
-        """Check if it's time for scheduled retrain."""
+    def _is_scheduled_retrain_time(self, current_time: Optional[datetime] = None) -> bool:
+        """Check if it's time for scheduled retrain based on configured clock."""
+        scheduled_time_str = self.config.scheduled_retrain_time
+        if not scheduled_time_str:
+            return False
+
+        try:
+            hour, minute = [int(part) for part in scheduled_time_str.split(":")]
+        except ValueError:
+            warnings.warn("Invalid scheduled_retrain_time format. Expected HH:MM.")
+            return False
+
+        try:
+            tz = ZoneInfo(self.config.scheduled_retrain_timezone)
+        except Exception:
+            warnings.warn("Invalid timezone for scheduled retrain; defaulting to UTC.")
+            tz = ZoneInfo("UTC")
+
+        if current_time is None:
+            now = datetime.now(tz)
+        else:
+            now = current_time.astimezone(tz) if current_time.tzinfo else current_time.replace(tzinfo=tz)
+
+        scheduled_today = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if now < scheduled_today:
+            return False
+
         if self.last_retrain is None:
             return True
-        
-        # Check if 24 hours have passed since last retrain
-        time_since_retrain = datetime.now() - self.last_retrain
-        return time_since_retrain >= timedelta(hours=24)
+
+        last_retrain = self.last_retrain
+        if last_retrain.tzinfo is None:
+            last_retrain = last_retrain.replace(tzinfo=tz)
+        else:
+            last_retrain = last_retrain.astimezone(tz)
+
+        if last_retrain >= scheduled_today:
+            return False
+
+        if last_retrain.date() == now.date():
+            return False
+
+        return True
     
     def _estimate_retrain_duration(self, urgency: str) -> int:
         """Estimate retrain duration in minutes."""
@@ -448,10 +516,11 @@ class MonitoringSystem:
         # Update calibration
         calibration_loss = 0.0
         if predictions is not None and actual is not None:
-            calibration_loss = self.decision_tree.calibration_monitor.get_calibration_loss()
-            self.decision_tree.calibration_monitor.update_calibration(
+            calibration_loss = self.decision_tree.calibration_monitor.update_calibration(
                 predictions, actual, session_buckets
             )
+        else:
+            calibration_loss = self.decision_tree.calibration_monitor.get_calibration_loss()
         
         # Update PSI
         psi_scores = self.decision_tree.psi_monitor.calculate_psi(features)
@@ -487,7 +556,10 @@ class MonitoringSystem:
         )
         
         # Add alerts
-        if calibration_loss > self.config.calibration_loss_threshold:
+        if (
+            calibration_loss > self.config.calibration_loss_threshold
+            and self.decision_tree.calibration_monitor.has_persistent_breach()
+        ):
             metrics.alerts.append(f"High calibration loss: {calibration_loss:.2f}σ")
         
         if max(psi_scores.values()) if psi_scores else 0.0 > self.config.psi_threshold:

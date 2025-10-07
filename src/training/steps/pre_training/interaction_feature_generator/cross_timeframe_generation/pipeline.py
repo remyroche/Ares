@@ -248,12 +248,12 @@ class CrossTimeframePipeline:
             )
 
             if targets is not None:
-                feature_matrix = self._collect_selected_feature_matrix(final_feature_list)
                 self.evaluation_results = self.evaluation.evaluate_features(
                     final_feature_list,
                     targets,
                     self.regime_segments,
-                    feature_matrix
+                    materialized_htfs=self.materialized_htfs,
+                    interactions=self.interactions,
                 )
             else:
                 self.logger.warning("Targets not provided – skipping evaluation stage")

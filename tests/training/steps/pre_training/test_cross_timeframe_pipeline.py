@@ -59,13 +59,16 @@ class DummyEvaluation:
         final_features,
         targets,
         regime_segments,
+        feature_source=None,
         materialized_htfs=None,
         interactions=None,
     ):
         assert isinstance(final_features, list)
         assert isinstance(materialized_htfs, dict)
         assert isinstance(interactions, list)
-        self.calls.append((final_features, targets, regime_segments, materialized_htfs, interactions))
+        self.calls.append(
+            (final_features, targets, regime_segments, feature_source, materialized_htfs, interactions)
+        )
         return EvaluationResult(
             overall_ic=0.02,
             overall_ic_std=0.01,
@@ -110,10 +113,21 @@ class LowICEvaluation:
     def __init__(self):
         self.calls = []
 
-    def evaluate_features(self, final_features, targets, regime_segments, feature_source=None):
+    def evaluate_features(
+        self,
+        final_features,
+        targets,
+        regime_segments,
+        feature_source=None,
+        materialized_htfs=None,
+        interactions=None,
+    ):
         assert isinstance(final_features, list)
-        assert isinstance(feature_source, pd.DataFrame)
-        self.calls.append((final_features, targets, regime_segments, feature_source))
+        if feature_source is not None:
+            assert isinstance(feature_source, pd.DataFrame)
+        self.calls.append(
+            (final_features, targets, regime_segments, feature_source, materialized_htfs, interactions)
+        )
         return EvaluationResult(
             overall_ic=0.01,
             overall_ic_std=0.015,
@@ -177,7 +191,7 @@ def test_pipeline_passes_feature_list_to_evaluation_and_monitoring():
 
     pipeline.interaction_templates.generate_interactions = _generate_interactions
 
-    selection_result = statistical_selection_module.StatisticalSelectionResult(
+    selection_result = statistical_selection_module.CrossTimeframeStatisticalSelectionResult(
         selected_features=["feature_a", "interaction_feature"],
         selection_frequencies={"feature_a": 1.0, "interaction_feature": 0.8},
         p_values={"feature_a": 0.01, "interaction_feature": 0.02},
@@ -214,8 +228,9 @@ def test_pipeline_passes_feature_list_to_evaluation_and_monitoring():
     results = pipeline.run_pipeline(ohlcv_data=ohlcv, targets=targets)
 
     assert dummy_evaluation.calls, "Evaluation should be executed once"
-    eval_features, _, _, materialized_htfs, interactions = dummy_evaluation.calls[0]
+    eval_features, _, _, feature_source, materialized_htfs, interactions = dummy_evaluation.calls[0]
     assert eval_features == selection_result.selected_features
+    assert feature_source is None or isinstance(feature_source, pd.DataFrame)
     assert set(materialized_htfs.keys()) == {"feature_a"}
     assert interactions and interactions[0].name == "interaction_feature"
 
@@ -236,7 +251,9 @@ def test_monitoring_penalties_propagate_to_scoring():
     pipeline.phase1_probe.run_probe_stage = lambda sessionized, segments, targets: {"phase1": True}
     pipeline.phase2_optimization.optimize_lookbacks = lambda data, phase1, segments, targets: {"phase2": True}
     pipeline.ehu_rih_assignment.assign_htf_features = lambda phase2, data: {"feature_b": {}}
-    pipeline.knapsack_selection.select_features = lambda phase2, assignments: ["feature_b"]
+    pipeline.knapsack_selection.select_features = (
+        lambda phase2, assignments, sessionized=None: ["feature_b"]
+    )
 
     def _materialize(sessionized_data, selected_htfs):
         index = sessionized_data["aligned_data"].index
@@ -249,7 +266,7 @@ def test_monitoring_penalties_propagate_to_scoring():
         lambda materialized, base_features, targets: []
     )
 
-    selection_result = statistical_selection_module.StatisticalSelectionResult(
+    selection_result = statistical_selection_module.CrossTimeframeStatisticalSelectionResult(
         selected_features=["feature_b"],
         selection_frequencies={"feature_b": 1.0},
         p_values={"feature_b": 0.05},

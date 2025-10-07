@@ -597,7 +597,12 @@ class StackerLGBMGate(BaseEstimator, RegressorMixin):
             self.calibration_model = model
             self.calibration_method = "isotonic"
         elif method == "sigmoid":
-            model = LogisticRegression(solver="lbfgs", max_iter=1000)
+            model = LogisticRegression(
+                solver="lbfgs",
+                max_iter=1000,
+                class_weight="balanced",
+                random_state=self.config.random_state,
+            )
             model.coef_ = np.asarray(state.get("coef_", [[]]))
             model.intercept_ = np.asarray(state.get("intercept_", [0.0]))
             model.classes_ = np.asarray(state.get("classes_", [0, 1]))

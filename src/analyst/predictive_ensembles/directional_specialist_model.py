@@ -54,7 +54,7 @@ class DirectionType(Enum):
 @dataclass
 class DirectionalConfig:
     """Configuration for directional specialist model."""
-    
+
     # LightGBM parameters optimized for directional prediction
     n_estimators: int = 500
     learning_rate: float = 0.05
@@ -71,17 +71,19 @@ class DirectionalConfig:
     directional_weight_boost: float = 1.5  # Boost weight for strong directional moves
     asymmetric_loss_alpha: float = 0.7     # Asymmetric loss parameter
     min_directional_threshold: float = 0.1  # Minimum threshold for directional moves
-    
+    tau: float = 7.0  # Exponential decay time constant in days for recency weighting
+
     # Feature engineering parameters
     enable_directional_features: bool = True
     directional_lookback_periods: List[int] = None
     momentum_periods: List[int] = None
-    
+
     def __post_init__(self):
         if self.directional_lookback_periods is None:
             self.directional_lookback_periods = [5, 10, 15, 20, 30]
         if self.momentum_periods is None:
             self.momentum_periods = [3, 5, 8, 13, 21]
+        validate_positive(self.tau, "tau")
 
 
 class DirectionalFeatureEngineer:
@@ -279,9 +281,27 @@ class DirectionalSpecialistModel:
         # Create directional features
         X_enhanced = self.feature_engineer.create_directional_features(X, y)
         
-        # Create directional sample weights
+        # Create directional sample weights with recency decay
+        timestamps = X.index if isinstance(X, pd.DataFrame) else None
+        directional_weights = self._create_directional_sample_weights(y, timestamps=timestamps)
+
         if sample_weight is None:
-            sample_weight = self._create_directional_sample_weights(y)
+            sample_weight = directional_weights
+        else:
+            base_weights = np.asarray(sample_weight, dtype=float)
+            if base_weights.shape[0] != directional_weights.shape[0]:
+                raise ValueError(
+                    "Provided sample_weight must have the same length as y for directional weighting"
+                )
+            sample_weight = base_weights * directional_weights
+
+        half_life_days = self.config.tau * np.log(2)
+        half_life_td = pd.to_timedelta(half_life_days, unit='D')
+        self.logger.info(
+            "   Recency half-life: %s (tau=%.2f days)",
+            half_life_td,
+            self.config.tau,
+        )
         
         # Initialize LightGBM model
         self.model = lgb.LGBMRegressor(
@@ -410,20 +430,61 @@ class DirectionalSpecialistModel:
         
         return categorized_importance
     
-    def _create_directional_sample_weights(self, y: np.ndarray) -> np.ndarray:
-        """Create sample weights that emphasize directional clarity."""
-        weights = np.ones(len(y))
-        
+    def _create_directional_sample_weights(
+        self,
+        y: np.ndarray,
+        timestamps: Optional[Union[pd.Index, pd.Series, np.ndarray]] = None,
+    ) -> np.ndarray:
+        """Create sample weights that emphasize directional clarity and recency."""
+        weights = np.ones(len(y), dtype=float)
+
         # Higher weight for strong directional moves
         strong_threshold = np.percentile(np.abs(y), 75)
         strong_moves = np.abs(y) > strong_threshold
         weights[strong_moves] *= self.config.directional_weight_boost
-        
+
         # Slightly higher weight for clear directional signals
         clear_long = y > self.config.min_directional_threshold
         clear_short = y < -self.config.min_directional_threshold
         weights[clear_long | clear_short] *= 1.2
-        
+
+        if timestamps is not None:
+            timestamp_index = pd.Index(timestamps)
+
+            if len(timestamp_index) != len(y):
+                self.logger.warning(
+                    "Timestamp index length %d does not match target length %d; skipping recency decay.",
+                    len(timestamp_index),
+                    len(y),
+                )
+            else:
+                if not pd.api.types.is_datetime64_any_dtype(timestamp_index):
+                    timestamp_index = pd.to_datetime(timestamp_index, errors='coerce')
+                else:
+                    timestamp_index = pd.DatetimeIndex(timestamp_index)
+
+                valid_mask = ~timestamp_index.isna()
+                if valid_mask.any():
+                    latest_time = timestamp_index[valid_mask].max()
+                    age = latest_time - timestamp_index[valid_mask]
+                    age_in_days = age / np.timedelta64(1, 'D')
+                    tau_days = max(self.config.tau, np.finfo(float).eps)
+                    recency_decay = np.exp(-age_in_days / tau_days)
+
+                    recency_factor = np.ones(len(y), dtype=float)
+                    recency_factor[valid_mask] = recency_decay
+                    if (~valid_mask).any():
+                        self.logger.debug(
+                            "Encountered %d NaT timestamps; assigning neutral recency weight of 1.0.",
+                            np.count_nonzero(~valid_mask),
+                        )
+
+                    weights *= recency_factor
+                else:
+                    self.logger.warning(
+                        "All provided timestamps are NaT after conversion; skipping recency decay."
+                    )
+
         return weights
     
     def _calculate_directional_statistics(self, y: np.ndarray, sample_weight: np.ndarray) -> Dict[str, Any]:

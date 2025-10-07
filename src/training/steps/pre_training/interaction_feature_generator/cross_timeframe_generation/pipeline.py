@@ -12,6 +12,7 @@ import numpy as np
 from datetime import datetime, timedelta
 import logging
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from .phase1_probe import Phase1HTFProbe
 from .phase2_optimization import Phase2Optimization
@@ -264,19 +265,37 @@ class CrossTimeframePipeline:
         """
         # Create session boundaries
         sessions = self._create_sessions(ohlcv_data)
-        
+
         # Handle DST transitions
         if self.config.dst_handling:
             sessions = self._handle_dst_transitions(sessions)
-        
+
         # Align data to sessions
-        aligned_data = self._align_to_sessions(ohlcv_data, sessions)
-        
+        aligned_base = self._align_to_sessions(ohlcv_data, sessions)
+        aligned_data = aligned_base
+
         # Add optional data if provided
         if optional_data:
             for name, data in optional_data.items():
-                aligned_data[name] = self._align_to_sessions(data, sessions)
-        
+                aligned_optional = self._align_to_sessions(data, sessions)
+
+                if aligned_optional.empty:
+                    continue
+
+                if 'session_id' in aligned_optional.columns:
+                    aligned_optional = aligned_optional.drop(columns=['session_id'])
+
+                if isinstance(aligned_data, pd.DataFrame):
+                    opt_columns = list(aligned_optional.columns)
+                    renamed = {
+                        col: col if col.startswith(f"{name}_") or col == name else f"{name}_{col}"
+                        for col in opt_columns
+                    }
+                    aligned_optional = aligned_optional.rename(columns=renamed)
+                    aligned_data = aligned_data.join(aligned_optional, how='left')
+                else:
+                    aligned_data[name] = aligned_optional
+
         return {
             'sessions': sessions,
             'aligned_data': aligned_data,
@@ -318,16 +337,133 @@ class CrossTimeframePipeline:
     
     def _handle_dst_transitions(self, sessions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Handle DST transitions in session data."""
-        # This is a simplified implementation
-        # In practice, you'd need to handle the actual DST transition dates
-        # and adjust session boundaries accordingly
-        return sessions
-    
+        if not sessions:
+            return sessions
+
+        tz_candidates = []
+        for session in sessions:
+            if session.get('bars'):
+                first_bar = pd.Timestamp(session['bars'][0])
+                if first_bar.tzinfo is not None:
+                    tz_candidates.append(first_bar.tzinfo)
+        if not tz_candidates:
+            open_dt = pd.Timestamp(sessions[0]['open_dt'])
+            if open_dt.tzinfo is not None:
+                tz_candidates.append(open_dt.tzinfo)
+
+        market_tz = getattr(self.config, 'market_timezone', None)
+        if market_tz:
+            timezone = ZoneInfo(market_tz)
+        elif tz_candidates:
+            tz_candidate = tz_candidates[0]
+            tz_name = getattr(tz_candidate, 'key', None) or getattr(tz_candidate, 'zone', None)
+            timezone = ZoneInfo(tz_name) if tz_name else tz_candidate
+        else:
+            timezone = ZoneInfo('America/New_York')
+
+        def ensure_timezone(ts: Any) -> pd.Timestamp:
+            ts = pd.Timestamp(ts)
+            if ts.tzinfo is None:
+                return ts.tz_localize(timezone)
+            return ts.tz_convert(timezone)
+
+        start_ts = ensure_timezone(sessions[0]['open_dt'])
+        end_ts = ensure_timezone(sessions[-1]['close_dt'])
+
+        dst_transition_dates = self._compute_dst_transition_dates(timezone, start_ts, end_ts)
+
+        adjusted_sessions: List[Dict[str, Any]] = []
+        for session in sessions:
+            adjusted_session = session.copy()
+            bars = [ensure_timezone(bar) for bar in session.get('bars', [])]
+            adjusted_session['bars'] = bars
+
+            if not bars:
+                open_ts = ensure_timezone(session['open_dt'])
+                close_ts = ensure_timezone(session['close_dt'])
+            else:
+                open_ts = bars[0]
+                close_ts = bars[-1]
+
+            session_date = open_ts.date()
+            if session_date in dst_transition_dates:
+                open_time = open_ts.time()
+                close_time = close_ts.time()
+                open_ts = pd.Timestamp(datetime.combine(session_date, open_time), tz=timezone)
+                close_ts = pd.Timestamp(datetime.combine(session_date, close_time), tz=timezone)
+                adjusted_session['dst_transition'] = True
+            else:
+                open_ts = open_ts.tz_convert(timezone)
+                close_ts = close_ts.tz_convert(timezone)
+
+            adjusted_session['open_dt'] = open_ts
+            adjusted_session['close_dt'] = close_ts
+            adjusted_sessions.append(adjusted_session)
+
+        return adjusted_sessions
+
+    def _compute_dst_transition_dates(self, timezone: ZoneInfo, start: pd.Timestamp, end: pd.Timestamp) -> set:
+        """Return set of local dates where DST transitions occur within the window."""
+        check_start = start.normalize() - pd.Timedelta(days=2)
+        check_end = end.normalize() + pd.Timedelta(days=2)
+        hourly_index = pd.date_range(start=check_start, end=check_end, freq='h', tz=timezone)
+
+        transition_dates = set()
+        previous_offset: Optional[timedelta] = None
+        for ts in hourly_index:
+            offset = ts.utcoffset()
+            if previous_offset is not None and offset != previous_offset:
+                transition_dates.add(ts.date())
+            previous_offset = offset
+
+        return transition_dates
+
     def _align_to_sessions(self, data: pd.DataFrame, sessions: List[Dict[str, Any]]) -> pd.DataFrame:
         """Align data to session boundaries."""
-        # For now, return the data as-is
-        # In practice, you'd align timestamps to session boundaries
-        return data
+        if data is None or data.empty or not sessions:
+            return pd.DataFrame()
+
+        if isinstance(data, pd.Series):
+            data = data.to_frame(name=data.name or 'value')
+
+        data = data.sort_index()
+        base_freq = f"{self.config.base_timeframe_minutes}min"
+        aligned_frames: List[pd.DataFrame] = []
+        last_values: Optional[pd.Series] = None
+
+        for session in sessions:
+            open_dt = pd.Timestamp(session['open_dt'])
+            close_dt = pd.Timestamp(session['close_dt'])
+            if pd.isna(open_dt) or pd.isna(close_dt):
+                continue
+
+            session_mask = (data.index >= open_dt) & (data.index <= close_dt)
+            session_data = data.loc[session_mask].copy()
+
+            session_index = pd.date_range(start=open_dt, end=close_dt, freq=base_freq, tz=open_dt.tzinfo)
+            if session_index.empty:
+                continue
+
+            session_data = session_data.reindex(session_index)
+
+            session_data = session_data.ffill()
+
+            if session_data.isna().any().any() and last_values is not None:
+                session_data = session_data.fillna(last_values)
+                session_data = session_data.ffill()
+
+            session_data['session_id'] = session['session_id']
+
+            if not session_data.empty:
+                last_values = session_data.iloc[-1][data.columns]
+            aligned_frames.append(session_data)
+
+        if not aligned_frames:
+            return pd.DataFrame()
+
+        aligned_data = pd.concat(aligned_frames)
+        aligned_data = aligned_data[~aligned_data.index.duplicated(keep='first')]
+        return aligned_data
     
     def get_pipeline_status(self) -> Dict[str, Any]:
         """Get current pipeline status and progress."""

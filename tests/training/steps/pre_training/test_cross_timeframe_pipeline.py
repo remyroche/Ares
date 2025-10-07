@@ -152,7 +152,9 @@ def test_pipeline_passes_feature_list_to_evaluation_and_monitoring():
     pipeline.phase1_probe.run_probe_stage = lambda sessionized, segments, targets: {"phase1": True}
     pipeline.phase2_optimization.optimize_lookbacks = lambda data, phase1, segments, targets: {"phase2": True}
     pipeline.ehu_rih_assignment.assign_htf_features = lambda phase2, data: {"feature_a": {}}
-    pipeline.knapsack_selection.select_features = lambda phase2, assignments: ["feature_a"]
+    pipeline.knapsack_selection.select_features = (
+        lambda phase2, assignments, sessionized=None: ["feature_a"]
+    )
 
     def _materialize_htfs(sessionized_data, selected_htfs):
         index = sessionized_data["aligned_data"].index

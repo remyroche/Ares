@@ -200,6 +200,10 @@ class CrossTimeframePipeline:
                 selected_feature_candidates = []
             elif isinstance(self.selected_htfs, list):
                 selected_feature_candidates = self.selected_htfs
+            elif isinstance(self.selected_htfs, CrossTimeframeKnapsackSelectionResult):
+                selected_feature_candidates = (
+                    self.selected_htfs.selected_features or []
+                )
             else:
                 selected_feature_candidates = getattr(
                     self.selected_htfs, 'selected_features', []

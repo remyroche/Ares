@@ -56,7 +56,8 @@ from .quality_scoring import (
 from .multi_target_scheme import (
     MultiTargetScheme,
     MultiTargetConfig,
-    TargetSelectionResult
+    TargetSelectionResult,
+    BandHorizonRule,
 )
 
 from .profit_labeling_report_generator import (
@@ -99,6 +100,7 @@ __all__ = [
     "MultiTargetScheme",
     "MultiTargetConfig",
     "TargetSelectionResult",
+    "BandHorizonRule",
 
     # Report generation
     "ProfitLabelingReportGenerator",

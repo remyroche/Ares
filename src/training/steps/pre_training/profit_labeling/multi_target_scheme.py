@@ -58,9 +58,20 @@ class TargetBand(Enum):
 
 
 @dataclass
+class BandHorizonRule:
+    """Configuration for adaptive horizon adjustments within a target band."""
+
+    min_bars: Optional[int] = None
+    max_bars: Optional[int] = None
+    volatility_thresholds: List[Dict[str, float]] = field(default_factory=list)
+    regime_multipliers: Dict[str, float] = field(default_factory=dict)
+    default_multiplier: float = 1.0
+
+
+@dataclass
 class MultiTargetConfig:
     """Configuration for multi-target scheme."""
-    
+
     # Target band definitions
     small_band: Tuple[float, float] = (0.4, 0.8)  # k_s range
     medium_band: Tuple[float, float] = (0.8, 1.3)  # k_m range
@@ -80,6 +91,15 @@ class MultiTargetConfig:
     max_horizon: int = 100  # Maximum horizon in bars
     horizon_smoothing: bool = True
     horizon_ema_alpha: float = 0.1  # EMA alpha for horizon smoothing
+
+    # Adaptive horizon modifiers per band
+    band_horizon_rules: Dict[TargetBand, BandHorizonRule] = field(
+        default_factory=lambda: {
+            TargetBand.SMALL: BandHorizonRule(),
+            TargetBand.MEDIUM: BandHorizonRule(),
+            TargetBand.HIGH: BandHorizonRule(),
+        }
+    )
     
     # Target selection
     max_targets_per_band: int = 2  # Maximum targets per band
@@ -175,7 +195,8 @@ class MultiTargetScheme:
         tprint_info(f"   → Parallel processing: {self.config.enable_parallel_processing}")
     
     def generate_targets(self, bars: pd.DataFrame, volatility_series: pd.Series,
-                        eligibility_mask: pd.Series) -> TargetSelectionResult:
+                        eligibility_mask: pd.Series,
+                        regime_context: Optional[Dict[str, Any]] = None) -> TargetSelectionResult:
         """
         Generate multi-target labels with data-driven selection.
         
@@ -225,8 +246,21 @@ class MultiTargetScheme:
             
             # Step 2: Calculate FPT-based horizons
             tprint_info("⏱️ Step 2: Calculating FPT-based horizons")
-            horizons = self._calculate_fpt_horizons(candidate_targets, bars_aligned, vol_aligned)
-            
+            horizons = self._calculate_fpt_horizons(
+                candidate_targets, bars_aligned, vol_aligned, regime_context
+            )
+
+            for candidate in candidate_targets:
+                horizon_info = horizons.get(candidate['target_name']) if isinstance(horizons, dict) else None
+                if isinstance(horizon_info, dict):
+                    candidate['horizon'] = horizon_info.get('horizon', self.config.min_horizon)
+                    candidate['horizon_context'] = horizon_info
+                else:
+                    candidate['horizon'] = horizon_info or self.config.min_horizon
+                    candidate['horizon_context'] = {'horizon': candidate['horizon']}
+                candidate.setdefault('parameters', {})
+                candidate['parameters']['horizon'] = candidate['horizon']
+
             # Step 3: Generate labels for all candidates
             tprint_info("🏷️ Step 3: Generating labels for candidates")
             candidate_labels = self._generate_candidate_labels(
@@ -265,7 +299,18 @@ class MultiTargetScheme:
             result.eligibility_masks = final_result['eligibility_masks']
             result.selected_targets = selected_targets
             result.n_targets = len(selected_targets)
-            
+            result.target_parameters = {
+                name: {
+                    **(info.get('parameters', {})),
+                    'horizon': info.get('horizon'),
+                    'horizon_context': info.get('horizon_context'),
+                }
+                for name, info in selected_targets.items()
+            }
+            result.target_bands = {
+                name: info.get('band') for name, info in selected_targets.items()
+            }
+
             # Calculate additional metrics
             result.target_correlations = self._calculate_target_correlations(result.labels)
             result.diversity_score = self._calculate_diversity_score(result.labels)
@@ -823,32 +868,124 @@ class MultiTargetScheme:
             return 0.0
     
     def _calculate_fpt_horizons(self, candidate_targets: List[Dict[str, Any]],
-                              bars: pd.DataFrame, volatility_series: pd.Series) -> Dict[str, int]:
-        """Calculate first-passage time based horizons."""
+                              bars: pd.DataFrame, volatility_series: pd.Series,
+                              regime_context: Optional[Dict[str, Any]] = None) -> Dict[str, Dict[str, Any]]:
+        """Calculate first-passage time based horizons with adaptive modifiers."""
         try:
-            horizons = {}
-            
+            horizons: Dict[str, Dict[str, Any]] = {}
+
+            active_regime = None
+            regime_series = None
+            regime_masks: Dict[str, pd.Series] = {}
+
+            if regime_context:
+                regime_series = regime_context.get('regime_series')
+                if isinstance(regime_series, pd.Series) and not regime_series.empty:
+                    active_regime = regime_context.get('active_regime', regime_series.iloc[-1])
+                else:
+                    active_regime = regime_context.get('active_regime')
+
+                regime_masks = {
+                    name: mask for name, mask in (regime_context.get('regime_masks') or {}).items()
+                    if isinstance(mask, pd.Series)
+                }
+
+                if active_regime is None and regime_masks:
+                    # Use mask coverage to infer dominant regime
+                    coverage_scores = {
+                        name: float(mask.reindex(bars.index, fill_value=False).mean())
+                        for name, mask in regime_masks.items() if len(mask) > 0
+                    }
+                    if coverage_scores:
+                        active_regime = max(coverage_scores.items(), key=lambda item: item[1])[0]
+
+            vol_metric: Optional[float] = None
+            if len(volatility_series) > 0:
+                vol_array = pd.to_numeric(volatility_series, errors='coerce').values
+                finite_mask = np.isfinite(vol_array)
+                if finite_mask.any():
+                    vol_metric = float(np.median(vol_array[finite_mask]))
+
             for candidate in candidate_targets:
                 target_name = candidate['target_name']
                 k_up = candidate['k_up']
                 k_down = candidate['k_down']
-                
+                band = candidate.get('band', TargetBand.MEDIUM)
+
                 # Calculate FPT for this target
                 fpt = self._calculate_fpt_for_target(k_up, k_down, bars, volatility_series)
-                
+
                 if fpt is not None and len(fpt) > 0:
-                    # Use middle quantile of FPT distribution as horizon
-                    horizon = int(fpt[1])  # fpt is already an array of quantiles [q25, q50, q75]
-                    horizon = max(self.config.min_horizon, min(self.config.max_horizon, horizon))
-                    horizons[target_name] = horizon
+                    # Use middle quantile of FPT distribution as base horizon
+                    base_horizon = max(self.config.min_horizon, int(fpt[1]))
                 else:
-                    horizons[target_name] = self.config.min_horizon
-            
+                    base_horizon = self.config.min_horizon
+
+                rule = self.config.band_horizon_rules.get(band, BandHorizonRule())
+                multiplier = rule.default_multiplier or 1.0
+                matched_vol_rule: Optional[Dict[str, float]] = None
+
+                if vol_metric is not None and not np.isnan(vol_metric) and rule.volatility_thresholds:
+                    for threshold in rule.volatility_thresholds:
+                        min_vol = threshold.get('min', -np.inf)
+                        max_vol = threshold.get('max', np.inf)
+                        if min_vol <= vol_metric <= max_vol:
+                            multiplier *= threshold.get('multiplier', 1.0)
+                            matched_vol_rule = threshold
+                            break
+
+                applied_regime = active_regime
+                if rule.regime_multipliers and active_regime in rule.regime_multipliers:
+                    multiplier *= rule.regime_multipliers[active_regime]
+                elif rule.regime_multipliers and regime_masks:
+                    # Check for regime masks with highest recent coverage
+                    mask_scores = {
+                        name: float(mask.reindex(bars.index, fill_value=False).tail(base_horizon).mean())
+                        for name, mask in regime_masks.items() if len(mask) > 0
+                    }
+                    if mask_scores:
+                        applied_regime, score = max(mask_scores.items(), key=lambda item: item[1])
+                        if applied_regime in rule.regime_multipliers:
+                            multiplier *= rule.regime_multipliers[applied_regime]
+
+                adjusted_horizon = int(round(base_horizon * max(multiplier, 0.0)))
+
+                # Clamp using band rules first, then global config
+                band_min = rule.min_bars if rule.min_bars is not None else self.config.min_horizon
+                band_max = rule.max_bars if rule.max_bars is not None else self.config.max_horizon
+
+                adjusted_horizon = max(band_min, adjusted_horizon)
+                adjusted_horizon = min(band_max, adjusted_horizon)
+                adjusted_horizon = max(self.config.min_horizon, min(self.config.max_horizon, adjusted_horizon))
+
+                horizons[target_name] = {
+                    'horizon': adjusted_horizon,
+                    'base_horizon': base_horizon,
+                    'applied_multiplier': multiplier,
+                    'volatility_metric': vol_metric,
+                    'matched_volatility_rule': matched_vol_rule,
+                    'active_regime': applied_regime,
+                    'band_min': band_min,
+                    'band_max': band_max,
+                }
+
             return horizons
-            
+
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating FPT horizons: {e}")
-            return {target['target_name']: self.config.min_horizon for target in candidate_targets}
+            return {
+                target['target_name']: {
+                    'horizon': self.config.min_horizon,
+                    'base_horizon': self.config.min_horizon,
+                    'applied_multiplier': 1.0,
+                    'volatility_metric': None,
+                    'matched_volatility_rule': None,
+                    'active_regime': None,
+                    'band_min': self.config.min_horizon,
+                    'band_max': self.config.max_horizon,
+                }
+                for target in candidate_targets
+            }
     
     def _calculate_fpt_for_target(self, k_up: float, k_down: float, bars: pd.DataFrame,
                                 volatility_series: pd.Series) -> Optional[np.ndarray]:
@@ -949,7 +1086,7 @@ class MultiTargetScheme:
             return np.ones(len(times))
     
     def _generate_candidate_labels(self, candidate_targets: List[Dict[str, Any]],
-                                 horizons: Dict[str, int], bars: pd.DataFrame,
+                                 horizons: Dict[str, Any], bars: pd.DataFrame,
                                  volatility_series: pd.Series, eligibility_mask: pd.Series) -> Dict[str, pd.DataFrame]:
         """Generate labels for all candidate targets."""
         try:
@@ -959,16 +1096,24 @@ class MultiTargetScheme:
                 target_name = candidate['target_name']
                 k_up = candidate['k_up']
                 k_down = candidate['k_down']
-                horizon = horizons.get(target_name, self.config.min_horizon)
-                
+
+                horizon_info = horizons.get(target_name, {}) if isinstance(horizons, dict) else {}
+                if isinstance(horizon_info, dict):
+                    horizon = horizon_info.get('horizon', self.config.min_horizon)
+                else:
+                    horizon = horizon_info or self.config.min_horizon
+
                 # Generate labels with specific horizon
                 labels = self._generate_labels_with_horizon(
                     k_up, k_down, horizon, bars, volatility_series, eligibility_mask
                 )
-                
+
                 if not labels.empty:
+                    if isinstance(horizon_info, dict):
+                        labels.attrs['horizon_context'] = horizon_info
+                    labels.attrs['horizon'] = horizon
                     candidate_labels[target_name] = labels
-            
+
             return candidate_labels
             
         except Exception as e:

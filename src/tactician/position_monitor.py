@@ -10,6 +10,7 @@ re-assessment and position decision logic every 10 seconds, using the existing
 PositionDivisionStrategy for consistency.
 """
 import asyncio
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -122,6 +123,12 @@ class PositionMonitor:
         self.time_based_config = self._get_optimized_time_based_config()
         self.trailing_stop_config = self._get_optimized_trailing_stop_config()
         self.regime_aware_config = self._get_optimized_regime_aware_config()
+
+        # Trailing-stop contextual cache configuration
+        self.context_cache_size = max(
+            1,
+            int(self.trailing_stop_config.get("context_window", 5))
+        )
 
         # Component managers
         self.order_manager: Optional[EnhancedOrderManager] = None
@@ -494,8 +501,8 @@ class PositionMonitor:
             return PositionAction.STAY, f"Error in profit evaluation: {e}"
 
     def _evaluate_trailing_stop(
-        self, 
-        position_data: Dict[str, Any], 
+        self,
+        position_data: Dict[str, Any],
         combined_confidence: float
     ) -> tuple[PositionAction, str]:
         """
@@ -509,15 +516,151 @@ class PositionMonitor:
             tuple: (PositionAction, reason)
         """
         try:
-            # This is a placeholder for trailing stop logic
-            # In a full implementation, you would:
-            # 1. Calculate ATR-based trailing stop distance
-            # 2. Check if current price has moved against the position
-            # 3. Update trailing stop level if price moves favorably
-            # 4. Trigger exit if trailing stop is hit
-            
-            # For now, return STAY to indicate no trailing stop action needed
-            return PositionAction.STAY, "Trailing stop evaluation (placeholder)"
+            if not self.trailing_stop_config.get("enabled", True):
+                return PositionAction.STAY, "Trailing stop disabled"
+
+            trailing_state = self._ensure_trailing_state(position_data)
+            context_cache = self._ensure_position_context_cache(position_data)
+
+            current_price = position_data.get("current_price")
+            entry_price = position_data.get("entry_price")
+            side = (position_data.get("side") or "").upper()
+            if current_price is None or entry_price is None or side not in {"LONG", "SHORT"}:
+                return PositionAction.STAY, "Insufficient price data for trailing stop"
+
+            try:
+                entry_price = float(entry_price)
+                current_price = float(current_price)
+            except (TypeError, ValueError):
+                return PositionAction.STAY, "Invalid price data for trailing stop"
+
+            def _to_float(value: Any) -> Optional[float]:
+                try:
+                    return float(value)
+                except (TypeError, ValueError):
+                    return None
+
+            atr_value = None
+            for candidate in (position_data.get("atr"), position_data.get("atr_value"), position_data.get("average_true_range")):
+                atr_value = _to_float(candidate)
+                if atr_value is not None:
+                    break
+
+            min_distance_pct = float(self.trailing_stop_config.get("min_distance", 0.01))
+            atr_multiplier = float(self.trailing_stop_config.get("atr_multiplier", 1.5))
+            base_distance = max(entry_price, current_price) * min_distance_pct
+            if atr_value is not None:
+                base_distance = max(base_distance, atr_value * atr_multiplier)
+            base_distance = max(base_distance, 1e-6 * max(entry_price, current_price))
+
+            momentum_score = self._aggregate_momentum_score(context_cache)
+            regime_label = self._latest_regime_label(context_cache)
+            last_regime = trailing_state.get("last_regime")
+
+            if (
+                trailing_state.get("is_active")
+                and regime_label
+                and last_regime
+                and regime_label != last_regime
+            ):
+                reset_strength = float(self.trailing_stop_config.get("regime_reset_strength", 0.5))
+                trailing_state["peak_price"] = self._apply_regime_reset(
+                    trailing_state.get("peak_price"),
+                    current_price,
+                    side,
+                    reset_strength,
+                )
+
+            trailing_state["last_regime"] = regime_label
+
+            activation_threshold = float(self.trailing_stop_config.get("confidence_activation", 0.7))
+            momentum_threshold = float(self.trailing_stop_config.get("momentum_activation_threshold", 0.0))
+            unrealized_pnl = _to_float(position_data.get("unrealized_pnl")) or 0.0
+
+            activated_this_cycle = False
+            activation_reason = None
+            if not trailing_state.get("is_active"):
+                momentum_triggered = (
+                    momentum_score is not None
+                    and momentum_score < momentum_threshold
+                    and unrealized_pnl > 0
+                )
+                confidence_triggered = unrealized_pnl > 0 and combined_confidence >= activation_threshold
+
+                if momentum_triggered:
+                    activation_reason = "negative_momentum"
+                elif confidence_triggered:
+                    activation_reason = "confidence_activation"
+
+                if momentum_triggered or confidence_triggered:
+                    trailing_state["is_active"] = True
+                    activated_this_cycle = True
+                    trailing_state["activation_reason"] = activation_reason
+                    if side == "LONG":
+                        trailing_state["peak_price"] = max(entry_price, current_price)
+                    else:
+                        trailing_state["peak_price"] = min(entry_price, current_price)
+                    trailing_state["last_confidence"] = combined_confidence
+
+            if not trailing_state.get("is_active"):
+                reason = "Trailing stop inactive: insufficient profit or confidence"
+                if momentum_score is not None and momentum_score >= momentum_threshold:
+                    reason += f" (momentum={momentum_score:.3f})"
+                return PositionAction.STAY, reason
+
+            peak_price = trailing_state.get("peak_price")
+            if peak_price is None:
+                peak_price = current_price
+
+            if side == "LONG":
+                peak_price = max(peak_price, current_price)
+            else:
+                peak_price = min(peak_price, current_price)
+            trailing_state["peak_price"] = peak_price
+
+            last_conf = trailing_state.get("last_confidence")
+            drop = 0.0
+            if last_conf is not None:
+                drop = max(0.0, last_conf - combined_confidence)
+            tightening_factor = float(self.trailing_stop_config.get("confidence_tightening_factor", 0.0))
+            tightening_floor = float(self.trailing_stop_config.get("confidence_tightening_floor", 0.2))
+            if tightening_factor > 0 and drop > 0:
+                scale = max(tightening_floor, 1.0 - drop * tightening_factor)
+                base_distance *= scale
+            trailing_state["last_confidence"] = combined_confidence
+
+            if side == "LONG":
+                trailing_level = peak_price - base_distance
+                triggered = current_price <= trailing_level
+            else:
+                trailing_level = peak_price + base_distance
+                triggered = current_price >= trailing_level
+
+            trailing_state["trailing_stop"] = trailing_level
+            trailing_state["last_update"] = datetime.now().isoformat()
+
+            if triggered:
+                trailing_state["is_active"] = False
+                trailing_state["activation_reason"] = None
+                action_reason = (
+                    f"Trailing stop hit at {trailing_level:.4f} "
+                    f"(current {current_price:.4f})"
+                )
+                return PositionAction.FULL_CLOSE, action_reason
+
+            reason_parts = [
+                "Trailing stop activated" if activated_this_cycle else "Trailing stop updated",
+                f"level={trailing_level:.4f}",
+                f"peak={peak_price:.4f}",
+            ]
+            if momentum_score is not None:
+                reason_parts.append(f"momentum={momentum_score:.3f}")
+            if regime_label:
+                reason_parts.append(f"regime={regime_label}")
+            if activation_reason:
+                reason_parts.append(f"trigger={activation_reason}")
+
+            return PositionAction.TRAILING_STOP, "; ".join(reason_parts)
 
         except Exception as e:
             self.logger.error(failed(f"❌ Error evaluating trailing stop: {e}"))
@@ -619,9 +762,23 @@ class PositionMonitor:
                     "confidence_time_scaling_factor": exit_strategy_params.get("confidence_time_scaling_factor", 1.0)
                 },
                 "trailing_stop": {
+                    "enabled": exit_strategy_params.get("trailing_enabled", True),
                     "atr_multiplier": exit_strategy_params.get("trailing_atr_multiplier", 1.5),
                     "min_distance": exit_strategy_params.get("trailing_min_distance", 0.01),
-                    "confidence_activation": exit_strategy_params.get("trailing_confidence_activation", 0.7)
+                    "confidence_activation": exit_strategy_params.get("trailing_confidence_activation", 0.7),
+                    "momentum_activation_threshold": exit_strategy_params.get(
+                        "trailing_momentum_activation_threshold", 0.0
+                    ),
+                    "confidence_tightening_factor": exit_strategy_params.get(
+                        "trailing_confidence_tightening", 0.5
+                    ),
+                    "confidence_tightening_floor": exit_strategy_params.get(
+                        "trailing_confidence_tightening_floor", 0.2
+                    ),
+                    "regime_reset_strength": exit_strategy_params.get(
+                        "trailing_regime_reset_strength", 0.5
+                    ),
+                    "context_window": exit_strategy_params.get("trailing_context_window", 5)
                 },
                 "regime_aware": {
                     "transition_penalty": exit_strategy_params.get("regime_transition_penalty", 0.1),
@@ -712,16 +869,24 @@ class PositionMonitor:
 
     def _get_optimized_trailing_stop_config(self) -> Dict[str, Any]:
         """Get optimized trailing stop configuration."""
-        if self.optimized_parameters and "trailing_stop" in self.optimized_parameters:
-            return self.optimized_parameters["trailing_stop"]
-        
-        # Fallback to config or defaults
-        return self.monitor_config.get("trailing_stop", {
+        defaults = {
             "enabled": True,
             "atr_multiplier": 1.5,
             "min_distance": 0.01,
-            "confidence_activation": 0.7
-        })
+            "confidence_activation": 0.7,
+            "momentum_activation_threshold": 0.0,
+            "confidence_tightening_factor": 0.5,
+            "confidence_tightening_floor": 0.2,
+            "regime_reset_strength": 0.5,
+            "context_window": 5,
+        }
+
+        if self.optimized_parameters and "trailing_stop" in self.optimized_parameters:
+            return {**defaults, **self.optimized_parameters["trailing_stop"]}
+
+        # Fallback to config or defaults
+        config = self.monitor_config.get("trailing_stop", {})
+        return {**defaults, **config}
 
     def _get_optimized_regime_aware_config(self) -> Dict[str, Any]:
         """Get optimized regime-aware configuration."""
@@ -985,7 +1150,7 @@ class PositionMonitor:
     def _load_updated_step12_config(self) -> Optional[Dict[str, Any]]:
         """
         Load updated step12 configuration from results files.
-        
+
         Returns:
             Dict: Updated configuration or None if no updates found
         """
@@ -1025,6 +1190,198 @@ class PositionMonitor:
             self.logger.error(failed(f"❌ Error loading updated step12 config: {e}"))
             return None
 
+    def _ensure_position_context_cache(self, position_data: Dict[str, Any]) -> Dict[str, deque]:
+        """Ensure the contextual cache structure exists for a position."""
+        cache = position_data.get("context_cache")
+        if not isinstance(cache, dict):
+            cache = {}
+
+        def _normalize_existing(values: Any) -> deque:
+            if isinstance(values, deque):
+                return deque(list(values)[-self.context_cache_size:], maxlen=self.context_cache_size)
+            if isinstance(values, list):
+                return deque(values[-self.context_cache_size:], maxlen=self.context_cache_size)
+            return deque(maxlen=self.context_cache_size)
+
+        for key in ("analyst_momentum", "tactician_momentum", "analyst_regime", "tactician_regime"):
+            cache[key] = _normalize_existing(cache.get(key))
+
+        position_data["context_cache"] = cache
+        return cache
+
+    def _append_context_entry(self, cache: Dict[str, deque], key: str, entry: Any) -> None:
+        """Append a normalized context entry to the cache."""
+        if entry is None:
+            return
+
+        normalized: Dict[str, Any] = {}
+        if isinstance(entry, dict):
+            label = entry.get("label") or entry.get("prediction") or entry.get("state")
+            if label is not None:
+                normalized["label"] = label
+            value = entry.get("value")
+            if value is None:
+                value = entry.get("score")
+            if value is None and label is not None:
+                converted = self._momentum_label_to_score(str(label))
+                if converted is not None:
+                    value = converted
+            if value is not None:
+                try:
+                    normalized["value"] = float(value)
+                except (TypeError, ValueError):
+                    pass
+            confidence = entry.get("confidence") or entry.get("probability")
+            if confidence is None and isinstance(entry.get("probabilities"), dict) and label in entry["probabilities"]:
+                confidence = entry["probabilities"][label]
+            if confidence is not None:
+                try:
+                    normalized["confidence"] = float(confidence)
+                except (TypeError, ValueError):
+                    pass
+        elif isinstance(entry, (int, float)):
+            normalized["value"] = float(entry)
+        else:
+            normalized["label"] = str(entry)
+
+        if not normalized:
+            return
+
+        cache.setdefault(key, deque(maxlen=self.context_cache_size)).append(normalized)
+
+    def _ensure_trailing_state(self, position_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Ensure trailing state storage is present for a position."""
+        state = position_data.get("trailing_state")
+        if not isinstance(state, dict):
+            state = {}
+
+        if "is_active" not in state:
+            state["is_active"] = False
+        if "peak_price" not in state:
+            state["peak_price"] = position_data.get("entry_price")
+        if "trailing_stop" not in state:
+            state["trailing_stop"] = None
+        if "last_confidence" not in state:
+            analyst_conf = position_data.get("analyst_confidence")
+            tactician_conf = position_data.get("tactician_confidence")
+            if analyst_conf is not None and tactician_conf is not None:
+                state["last_confidence"] = normalize_dual_confidence(analyst_conf, tactician_conf)
+            else:
+                state["last_confidence"] = None
+        if "last_regime" not in state:
+            state["last_regime"] = None
+        if "activation_reason" not in state:
+            state["activation_reason"] = None
+
+        position_data["trailing_state"] = state
+        return state
+
+    def _aggregate_momentum_score(self, context_cache: Dict[str, deque]) -> Optional[float]:
+        """Aggregate the most recent momentum estimate from caches."""
+        scores: List[float] = []
+        for key in ("analyst_momentum", "tactician_momentum"):
+            series = context_cache.get(key)
+            if series and len(series) > 0:
+                latest = series[-1]
+                if isinstance(latest, dict):
+                    value = latest.get("value")
+                    if value is None and latest.get("label") is not None:
+                        value = self._momentum_label_to_score(str(latest["label"]))
+                    if value is not None:
+                        try:
+                            scores.append(float(value))
+                        except (TypeError, ValueError):
+                            continue
+        if not scores:
+            return None
+        return sum(scores) / len(scores)
+
+    @staticmethod
+    def _momentum_label_to_score(label: str) -> Optional[float]:
+        """Convert textual momentum labels to numeric scores."""
+        mapping = {
+            "bullish": 1.0,
+            "bearish": -1.0,
+            "positive": 1.0,
+            "negative": -1.0,
+            "up": 1.0,
+            "down": -1.0,
+            "neutral": 0.0,
+        }
+        normalized = label.lower()
+        if normalized in mapping:
+            return mapping[normalized]
+        return None
+
+    def _latest_regime_label(self, context_cache: Dict[str, deque]) -> Optional[str]:
+        """Return the latest observed regime label, prioritizing tactician data."""
+        for key in ("tactician_regime", "analyst_regime"):
+            series = context_cache.get(key)
+            if series and len(series) > 0:
+                latest = series[-1]
+                if isinstance(latest, dict):
+                    label = latest.get("label")
+                else:
+                    label = latest
+                if label is not None:
+                    return str(label)
+        return None
+
+    @staticmethod
+    def _apply_regime_reset(
+        peak_price: Optional[float],
+        current_price: Optional[float],
+        side: str,
+        strength: float,
+    ) -> Optional[float]:
+        """Blend the peak price toward the current price on regime change."""
+        if peak_price is None or current_price is None:
+            return peak_price
+        strength = max(0.0, min(1.0, strength))
+        if strength == 0:
+            return peak_price
+
+        side_upper = (side or "").upper()
+        if side_upper == "LONG":
+            return current_price + (peak_price - current_price) * (1 - strength)
+        if side_upper == "SHORT":
+            return current_price - (current_price - peak_price) * (1 - strength)
+        return peak_price
+
+    def update_position_context(self, position_id: str, context_update: Dict[str, Any]) -> None:
+        """Update cached contextual information for an active position."""
+        try:
+            position = self.active_positions.get(position_id)
+            if not position:
+                return
+
+            cache = self._ensure_position_context_cache(position)
+
+            if "analyst_momentum" in context_update:
+                self._append_context_entry(cache, "analyst_momentum", context_update.get("analyst_momentum"))
+            if "tactician_momentum" in context_update:
+                self._append_context_entry(cache, "tactician_momentum", context_update.get("tactician_momentum"))
+            if "analyst_regime" in context_update:
+                self._append_context_entry(cache, "analyst_regime", context_update.get("analyst_regime"))
+            if "tactician_regime" in context_update:
+                self._append_context_entry(cache, "tactician_regime", context_update.get("tactician_regime"))
+
+            if context_update.get("analyst_confidence") is not None:
+                try:
+                    position["analyst_confidence"] = float(context_update["analyst_confidence"])
+                except (TypeError, ValueError):
+                    pass
+            if context_update.get("tactician_confidence") is not None:
+                try:
+                    position["tactician_confidence"] = float(context_update["tactician_confidence"])
+                except (TypeError, ValueError):
+                    pass
+
+            self._ensure_trailing_state(position)
+
+        except Exception as e:
+            self.logger.error(failed(f"❌ Error updating position context: {e}"))
+
     def add_position(self, position_data: Dict[str, Any]) -> None:
         """
         Add a position to monitoring.
@@ -1038,7 +1395,14 @@ class PositionMonitor:
                 self.logger.error(missing("Position ID is required"))
                 return
 
-            self.active_positions[position_id] = position_data
+            enriched_position = {**position_data, "position_id": position_id}
+            if "entry_time" not in enriched_position:
+                enriched_position["entry_time"] = datetime.now().isoformat()
+
+            self._ensure_position_context_cache(enriched_position)
+            self._ensure_trailing_state(enriched_position)
+
+            self.active_positions[position_id] = enriched_position
             self.logger.info(f"Added position to monitoring: {position_id}")
 
         except Exception as e:

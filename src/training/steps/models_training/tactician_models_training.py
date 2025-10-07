@@ -26,6 +26,7 @@ ENHANCED FEATURES:
 """
 
 import json
+import os
 import pickle
 from pathlib import Path
 import numpy as np
@@ -379,6 +380,7 @@ class TacticianModelsTrainingStep:
             # Train models
             all_models = {}
             all_metrics = {}
+            all_oof_predictions: Dict[str, np.ndarray] = {}
 
             for model_type in self.config.model_types:
                 try:
@@ -412,8 +414,16 @@ class TacticianModelsTrainingStep:
                                 model_type, training_config
                             )
                         else:
+                            extra_kwargs = dict(kwargs)
+                            extra_kwargs['model_type_for_filtering'] = model_type.value
+                            extra_kwargs['output_directory'] = training_config['output_directory']
+
+                            if model_type == TacticianModelType.STACKER_LGBM_CALIBRATED:
+                                extra_kwargs['base_models'] = all_models
+                                extra_kwargs['base_model_oof_predictions'] = all_oof_predictions
+
                             training_result = await self._train_model_directly(
-                                model_type, X, y, sample_weight, model_type_for_filtering=model_type.value, **kwargs
+                                model_type, X, y, sample_weight, **extra_kwargs
                             )
 
                     # Store results
@@ -433,6 +443,10 @@ class TacticianModelsTrainingStep:
                             all_metrics[metrics_key] = combined_metrics
                         else:
                             all_metrics[metrics_key] = training_result['metrics']
+
+                    if training_result.get('oof_predictions'):
+                        for base_name, preds in training_result['oof_predictions'].items():
+                            all_oof_predictions[base_name] = np.asarray(preds)
 
                     tprint_success(f"✅ {model_type.value} model trained")
 
@@ -500,6 +514,43 @@ class TacticianModelsTrainingStep:
                 'training_time': execution_time,
                 'error': str(e)
             }
+
+    def _generate_model_oof_predictions(
+        self,
+        model_builder,
+        X: np.ndarray,
+        y: np.ndarray,
+        sample_weight: Optional[np.ndarray],
+        n_splits: int = 5,
+        prediction_fn=None
+    ) -> Optional[np.ndarray]:
+        """Generate OOF predictions for a regressor using outer cross-validation folds."""
+        try:
+            from sklearn.model_selection import KFold
+
+            y_flat = y.reshape(-1)
+            oof_predictions = np.zeros_like(y_flat, dtype=float)
+            kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+
+            for fold, (train_idx, val_idx) in enumerate(kf.split(X)):
+                model = model_builder()
+                fit_kwargs = {}
+                if sample_weight is not None:
+                    fit_kwargs['sample_weight'] = sample_weight[train_idx]
+
+                model.fit(X[train_idx], y_flat[train_idx], **fit_kwargs)
+
+                if prediction_fn is not None:
+                    preds = prediction_fn(model, X[val_idx])
+                else:
+                    preds = model.predict(X[val_idx])
+
+                oof_predictions[val_idx] = preds.reshape(-1)
+
+            return oof_predictions
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to generate model OOF predictions: {e}")
+            return None
 
     async def _train_model_with_existing_trainer(
         self,
@@ -2328,10 +2379,35 @@ class TacticianModelsTrainingStep:
 
             model.fit(X, y.ravel(), sample_weight=sample_weight)
 
-            return {
+            def _build_model():
+                return CatBoostRegressor(
+                    depth=config.depth,
+                    learning_rate=config.learning_rate,
+                    l2_leaf_reg=config.l2_leaf_reg,
+                    iterations=config.iterations,
+                    subsample=config.subsample,
+                    colsample_bylevel=config.colsample_bylevel,
+                    random_seed=config.random_seed,
+                    verbose=config.verbose
+                )
+
+            oof_predictions = self._generate_model_oof_predictions(
+                _build_model,
+                X,
+                y,
+                sample_weight,
+                n_splits=5
+            )
+
+            result = {
                 'models': {'catboost': model},
                 'metrics': {'model_type': 'CatBoost', 'config': config}
             }
+
+            if oof_predictions is not None:
+                result['oof_predictions'] = {'catboost': oof_predictions.tolist()}
+
+            return result
 
         except Exception as e:
             tprint_error(f"❌ CatBoost training failed: {e}")
@@ -2370,24 +2446,56 @@ class TacticianModelsTrainingStep:
         **kwargs
     ) -> Dict[str, Any]:
         """Train Stacker LGBM Calibrated meta-learner."""
+        base_model_oof_predictions = kwargs.get('base_model_oof_predictions') or {}
+
+        if not base_model_oof_predictions:
+            raise ValueError("Base model OOF predictions are required for stacker training")
+
         try:
             from src.models.stacker_lgbm_calibrated import create_stacker_lgbm_calibrated, StackerLGBMCalibratedConfig
 
-            # This is a meta-learner, so it needs base model predictions
             config = StackerLGBMCalibratedConfig()
             model = create_stacker_lgbm_calibrated(config)
-            
-            # For demonstration, we'll use the input features as "base predictions"
-            base_predictions = {
-                'base_model_1': X[:, :min(10, X.shape[1])],  # Use first 10 features as base predictions
-                'base_model_2': X[:, 10:min(20, X.shape[1])] if X.shape[1] > 10 else X[:, :5]
+
+            formatted_predictions: Dict[str, np.ndarray] = {}
+            for name, preds in base_model_oof_predictions.items():
+                if preds is None:
+                    continue
+                array_preds = np.asarray(preds)
+                if array_preds.ndim == 1:
+                    formatted_predictions[name] = array_preds
+                elif array_preds.ndim == 2:
+                    formatted_predictions[name] = array_preds
+                else:
+                    raise ValueError(f"Unsupported prediction shape for {name}: {array_preds.shape}")
+
+            if not formatted_predictions:
+                raise ValueError("No valid OOF predictions available for stacker training")
+
+            meta_oof_matrix = model._prepare_stacking_features(formatted_predictions)
+
+            stacker_output_dir = kwargs.get('output_directory') or os.path.join(
+                self.config.output_directory, 'stacker_lgbm_calibrated'
+            )
+            os.makedirs(stacker_output_dir, exist_ok=True)
+
+            meta_oof_path = os.path.join(stacker_output_dir, 'meta_oof_predictions.npy')
+            np.save(meta_oof_path, meta_oof_matrix)
+
+            model.fit(formatted_predictions, y.ravel(), sample_weight)
+
+            metrics = {
+                'model_type': 'Stacker_LGBM_Calibrated',
+                'config': config,
+                'base_models_used': list(formatted_predictions.keys()),
+                'meta_oof_path': meta_oof_path,
+                'meta_oof_shape': meta_oof_matrix.shape,
             }
-            
-            model.fit(base_predictions, y.ravel(), sample_weight)
 
             return {
                 'models': {'stacker_lgbm_calibrated': model},
-                'metrics': {'model_type': 'Stacker_LGBM_Calibrated', 'config': config}
+                'metrics': metrics,
+                'meta_oof_predictions': meta_oof_matrix.tolist(),
             }
 
         except Exception as e:

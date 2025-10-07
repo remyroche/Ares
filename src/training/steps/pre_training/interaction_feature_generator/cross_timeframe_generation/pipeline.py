@@ -216,35 +216,29 @@ class CrossTimeframePipeline:
             # Step 7: Generate interactions
             self.logger.info("Step 7: Generating HTF-aware interactions")
 
-            base_feature_series: Dict[str, pd.Series] = {}
-            base_feature_structure: Optional[Union[pd.DataFrame, Dict[str, pd.Series]]] = None
+            aligned_features: Optional[Union[pd.DataFrame, Dict[str, pd.Series]]] = None
 
             if isinstance(self.sessionized_data, dict):
-                aligned_base_features = self.sessionized_data.get('aligned_data')
+                aligned_candidate = self.sessionized_data.get('aligned_data')
 
-                if isinstance(aligned_base_features, pd.DataFrame):
-                    base_feature_structure = aligned_base_features
-                    base_feature_series = {
-                        column: aligned_base_features[column]
-                        for column in aligned_base_features.columns
-                    }
-                elif isinstance(aligned_base_features, dict):
-                    filtered_series = {
+                if isinstance(aligned_candidate, pd.DataFrame):
+                    aligned_features = aligned_candidate
+                elif isinstance(aligned_candidate, dict):
+                    aligned_series = {
                         name: series
-                        for name, series in aligned_base_features.items()
+                        for name, series in aligned_candidate.items()
                         if isinstance(series, pd.Series)
                     }
-                    base_feature_structure = filtered_series
-                    base_feature_series = filtered_series
+                    aligned_features = aligned_series if aligned_series else None
 
-            if not base_feature_series:
+            if aligned_features is None:
                 self.logger.warning(
-                    "No base features available from sessionized data; interaction grouping may be limited."
+                    "No aligned base features available; interaction generation will only rely on HTFs."
                 )
 
             self.interactions = self.interaction_templates.generate_interactions(
                 self.materialized_htfs,
-                base_feature_structure if base_feature_structure is not None else base_feature_series,
+                aligned_features,
                 targets,
             )
             

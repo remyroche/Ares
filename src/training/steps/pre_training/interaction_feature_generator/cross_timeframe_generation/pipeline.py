@@ -182,7 +182,7 @@ class CrossTimeframePipeline:
             # Step 5: Knapsack selection
             self.logger.info("Step 5: Knapsack selection")
             self.selected_htfs = self.knapsack_selection.select_features(
-                self.phase2_results, ehu_rih_assignments
+                self.phase2_results, ehu_rih_assignments, self.sessionized_data
             )
             
             # Step 6: Materialize HTFs

@@ -15,14 +15,27 @@ import numpy as np
 from datetime import datetime, timedelta
 import logging
 from itertools import combinations
+from types import SimpleNamespace
 import warnings
 warnings.filterwarnings('ignore')
+
+# Local imports
+from .htf_materialization import HTFFeatureGenerator, UpdateStyle
 
 # Try to import optimization solvers
 try:
     import cvxpy as cp
     CVXPY_AVAILABLE = True
 except ImportError:
+    dummy_class = type('DummyCP', (), {'__init__': lambda self, *args, **kwargs: None})
+    cp = SimpleNamespace(
+        Variable=dummy_class,
+        Constraint=dummy_class,
+        sum=lambda *args, **kwargs: 0,
+        CBC='CBC',
+        OPTIMAL='optimal',
+        Maximize=lambda *args, **kwargs: None,
+    )
     CVXPY_AVAILABLE = False
     logging.warning("CVXPY not available, using greedy algorithm")
 
@@ -339,8 +352,15 @@ class IntegerProgramSolver:
                     corr = abs(correlation_matrix.loc[name1, name2])
                     if corr > self.config.max_correlation:
                         # Add constraint: x[i] + x[j] <= 1
+                        self.logger.info(
+                            "Applying correlation constraint: %s vs %s (|ρ|=%.3f > %.2f)",
+                            name1,
+                            name2,
+                            corr,
+                            self.config.max_correlation,
+                        )
                         constraints.append(x[i] + x[j] <= 1)
-        
+
         return constraints
     
     def _solve_greedy(self, 
@@ -391,8 +411,15 @@ class IntegerProgramSolver:
             if selected.feature_name in correlation_matrix.columns:
                 corr = abs(correlation_matrix.loc[feature.feature_name, selected.feature_name])
                 if corr > self.config.max_correlation:
+                    self.logger.info(
+                        "Skipping %s due to correlation %.3f with %s (threshold %.2f)",
+                        feature.feature_name,
+                        corr,
+                        selected.feature_name,
+                        self.config.max_correlation,
+                    )
                     return True
-        
+
         return False
 
 
@@ -402,13 +429,16 @@ class KnapsackSelection:
     def __init__(self, config):
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
+
         self.correlation_calculator = CorrelationCalculator()
         self.solver = IntegerProgramSolver(config)
-    
-    def select_features(self, 
+        self.htf_generator = HTFFeatureGenerator(config)
+        self._series_cache: Dict[str, pd.Series] = {}
+
+    def select_features(self,
                        phase2_results: Dict[str, Any],
-                       ehu_rih_assignments: List[Any]) -> SelectionResult:
+                       ehu_rih_assignments: List[Any],
+                       sessionized_data: Optional[Dict[str, Any]] = None) -> SelectionResult:
         """
         Select features using knapsack optimization.
         
@@ -437,7 +467,11 @@ class KnapsackSelection:
             )
         
         # Calculate correlations (if data available)
-        correlation_matrix = self._calculate_correlations(candidates)
+        correlation_matrix = self._calculate_correlations(
+            candidates,
+            phase2_results,
+            sessionized_data,
+        )
         
         # Solve knapsack problem
         selected_features = self.solver.solve_knapsack(candidates, correlation_matrix)
@@ -514,25 +548,148 @@ class KnapsackSelection:
         
         return candidates
     
-    def _calculate_correlations(self, 
-                              candidates: List[FeatureCandidate]) -> pd.DataFrame:
-        """Calculate correlations between candidates."""
-        # For now, return empty correlation matrix
-        # In practice, you'd need the actual feature data
-        feature_names = [c.feature_name for c in candidates]
-        n_features = len(feature_names)
-        
-        if n_features < 2:
+    def _calculate_correlations(
+        self,
+        candidates: List[FeatureCandidate],
+        phase2_results: Optional[Dict[str, Any]] = None,
+        sessionized_data: Optional[Dict[str, Any]] = None,
+    ) -> pd.DataFrame:
+        """Calculate partial correlations between candidates."""
+
+        if len(candidates) < 2:
             return pd.DataFrame()
-        
-        # Create identity matrix as placeholder
-        correlation_matrix = pd.DataFrame(
-            np.eye(n_features),
-            index=feature_names,
-            columns=feature_names
+
+        aligned_data = self._extract_aligned_data(sessionized_data)
+        feature_series: Dict[str, pd.Series] = {}
+        missing_series: List[str] = []
+
+        for candidate in candidates:
+            series = self._get_candidate_series(candidate, phase2_results, aligned_data)
+            if isinstance(series, pd.Series) and not series.empty:
+                feature_series[candidate.feature_name] = series.sort_index()
+            else:
+                missing_series.append(candidate.feature_name)
+
+        if len(feature_series) < 2:
+            if missing_series:
+                self.logger.warning(
+                    "Insufficient feature series for correlation calculation; missing %d/%d candidates",
+                    len(missing_series),
+                    len(candidates),
+                )
+            return pd.DataFrame()
+
+        feature_df = pd.DataFrame(feature_series)
+        feature_df = feature_df.dropna(how='all')
+
+        if feature_df.empty or feature_df.shape[1] < 2:
+            return pd.DataFrame()
+
+        min_samples = getattr(self.config, "min_samples_for_correlation", 30)
+        valid_columns = [
+            column
+            for column in feature_df.columns
+            if feature_df[column].dropna().shape[0] >= min_samples
+        ]
+
+        if len(valid_columns) < 2:
+            self.logger.warning(
+                "Not enough overlapping samples to compute correlations (required=%d)",
+                min_samples,
+            )
+            return pd.DataFrame()
+
+        feature_df = feature_df[valid_columns].sort_index()
+
+        available_candidates = [
+            candidate for candidate in candidates if candidate.feature_name in feature_df.columns
+        ]
+
+        correlation_matrix = self.correlation_calculator.calculate_partial_correlations(
+            available_candidates,
+            feature_df,
         )
-        
+
+        if correlation_matrix.empty:
+            return correlation_matrix
+
+        # Ensure ordering matches the subset of candidates with data
+        ordered_names = [candidate.feature_name for candidate in available_candidates]
+        correlation_matrix = correlation_matrix.reindex(index=ordered_names, columns=ordered_names)
+
         return correlation_matrix
+
+    def _extract_aligned_data(
+        self, sessionized_data: Optional[Dict[str, Any]]
+    ) -> Optional[pd.DataFrame]:
+        """Extract aligned base timeframe data if available."""
+
+        if sessionized_data is None:
+            return None
+
+        if isinstance(sessionized_data, pd.DataFrame):
+            return sessionized_data
+
+        if isinstance(sessionized_data, dict):
+            aligned = sessionized_data.get('aligned_data')
+            if isinstance(aligned, pd.DataFrame):
+                return aligned
+
+        return None
+
+    def _get_candidate_series(
+        self,
+        candidate: FeatureCandidate,
+        phase2_results: Optional[Dict[str, Any]],
+        aligned_data: Optional[pd.DataFrame],
+    ) -> Optional[pd.Series]:
+        """Fetch or materialize the time series for a candidate."""
+
+        cache_key = candidate.feature_id
+        if cache_key in self._series_cache:
+            return self._series_cache[cache_key]
+
+        metadata_series = candidate.metadata.get('feature_series') if candidate.metadata else None
+        if isinstance(metadata_series, pd.Series):
+            self._series_cache[cache_key] = metadata_series
+            return metadata_series
+
+        if phase2_results:
+            for cache_key_name in ('feature_series', 'feature_series_cache', 'series_cache'):
+                cache = phase2_results.get(cache_key_name)
+                if isinstance(cache, dict):
+                    series = cache.get(candidate.feature_name)
+                    if isinstance(series, pd.Series):
+                        self._series_cache[cache_key] = series
+                        return series
+
+        if aligned_data is not None:
+            try:
+                update_style = UpdateStyle(candidate.update_style.lower()) if isinstance(candidate.update_style, str) else UpdateStyle.EHU
+            except ValueError:
+                update_style = UpdateStyle.EHU
+
+            try:
+                materialized = self.htf_generator.generate_htf_feature(
+                    aligned_data,
+                    candidate.feature_name,
+                    candidate.family,
+                    candidate.lookback,
+                    update_style,
+                )
+                series = materialized.feature_series
+                if isinstance(series, pd.Series):
+                    self._series_cache[cache_key] = series
+                    return series
+            except Exception as exc:  # pragma: no cover - defensive logging
+                self.logger.warning(
+                    "Failed to materialize series for %s (lookback=%s): %s",
+                    candidate.feature_name,
+                    candidate.lookback,
+                    exc,
+                )
+
+        return None
     
     def get_selection_summary(self, result: SelectionResult) -> Dict[str, Any]:
         """Get summary of selection results."""

@@ -1,0 +1,621 @@
+"""
+Phase-1 HTF Probe Stage
+
+Implements coarse, adaptive grid generation for HTF features with:
+- Coarse grids per family (Trend/Level & Vol, Osc, Anchor)
+- Adaptive refinement based on top-quartile performance
+- Regime-aware scoring with change-point handling
+- Early stopping and shortlisting
+"""
+
+from typing import Dict, List, Optional, Any, Tuple, Union
+from dataclasses import dataclass
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+import logging
+from itertools import product
+from scipy import stats
+from sklearn.model_selection import TimeSeriesSplit
+
+# Import existing components
+import sys
+sys.path.append('src/training/steps/pre_training/interaction_feature_generator/feature_interaction_generation')
+from feature_engineering.feature_registry import FeatureRegistry, FeatureFamily
+from feature_engineering.transforms import TransformRouter, create_default_transform_config
+
+
+@dataclass
+class HTFCandidate:
+    """Represents an HTF feature candidate."""
+    family: str
+    base_feature: str
+    lookback_minutes: int
+    regime: str
+    utility_score: float
+    ic_oos: float
+    se_wild_bootstrap: float
+    cpu_p95: float
+    staleness: float
+    fold_pass_rate: float
+    metadata: Dict[str, Any]
+
+
+class CoarseGridGenerator:
+    """Generates coarse adaptive grids for HTF features."""
+    
+    def __init__(self, config):
+        self.config = config
+        self.logger = logging.getLogger(__name__)
+        
+        # Define HTF families and their base features
+        self.htf_families = {
+            'trend_level_vol': [
+                'p/price_ema10_pct', 'p/price_ema20_pct', 'p/bollz20',
+                'p/sigma_ew', 'p/gk_w', 'p/rv_bipower_12', 'p/rv_short_3'
+            ],
+            'oscillators': [
+                'p/rsi7', 'p/rsi14', 'p/stochk14', 'p/autocorr_r1_w'
+            ],
+            'anchors': [
+                'p/vwap_session_dist', 'p/vwap_roll12_dist'
+            ]
+        }
+        
+        # Base coarse grid (15m to 300m)
+        self.base_coarse_grid = self._generate_coarse_grid()
+        
+    def _generate_coarse_grid(self) -> List[int]:
+        """Generate base coarse grid in minutes."""
+        # Log-spaced grid from 15m to 300m
+        min_minutes = self.config.coarse_grid_min
+        max_minutes = self.config.coarse_grid_max
+        
+        # Create log-spaced grid
+        n_points = 8  # Start with 8 points
+        log_min = np.log(min_minutes)
+        log_max = np.log(max_minutes)
+        log_points = np.linspace(log_min, log_max, n_points)
+        
+        grid = np.exp(log_points).astype(int)
+        return sorted(list(set(grid)))  # Remove duplicates and sort
+    
+    def generate_adaptive_grid(self, 
+                             family: str, 
+                             performance_history: Dict[int, float]) -> List[int]:
+        """
+        Generate adaptive grid based on performance history.
+        
+        Args:
+            family: HTF family name
+            performance_history: Dict mapping lookback -> utility score
+            
+        Returns:
+            List of lookback values to probe
+        """
+        base_grid = self.base_coarse_grid.copy()
+        
+        # Find top-quartile performers
+        if performance_history:
+            scores = list(performance_history.values())
+            threshold = np.percentile(scores, 75)
+            
+            # Add neighbors for top-quartile performers
+            for lookback, score in performance_history.items():
+                if score >= threshold:
+                    # Add neighbors (e.g., 45/90m around 60)
+                    neighbors = self._generate_neighbors(lookback)
+                    base_grid.extend(neighbors)
+        
+        # Remove duplicates and sort
+        return sorted(list(set(base_grid)))
+    
+    def _generate_neighbors(self, lookback: int) -> List[int]:
+        """Generate neighbor lookbacks around a given value."""
+        # Generate neighbors with 0.75x and 1.33x factors
+        neighbors = [
+            int(lookback * 0.75),
+            int(lookback * 1.33)
+        ]
+        
+        # Add some additional nearby values
+        neighbors.extend([
+            lookback - 15,
+            lookback + 15,
+            lookback - 30,
+            lookback + 30
+        ])
+        
+        # Filter to valid range
+        min_val = self.config.coarse_grid_min
+        max_val = self.config.coarse_grid_max
+        return [n for n in neighbors if min_val <= n <= max_val]
+
+
+class HTFFeatureGenerator:
+    """Generates HTF features from base features."""
+    
+    def __init__(self, config):
+        self.config = config
+        self.feature_registry = FeatureRegistry()
+        self.logger = logging.getLogger(__name__)
+    
+    def generate_htf_feature(self, 
+                           data: pd.DataFrame,
+                           base_feature: str,
+                           lookback_minutes: int,
+                           family: str) -> pd.Series:
+        """
+        Generate HTF feature by resampling base feature to higher timeframe.
+        
+        Args:
+            data: OHLCV data
+            base_feature: Base feature name
+            lookback_minutes: HTF lookback in minutes
+            family: Feature family
+            
+        Returns:
+            HTF feature series
+        """
+        # Get base feature computation function
+        base_feature_func = self._get_base_feature_func(base_feature)
+        
+        # Compute base feature
+        base_series = base_feature_func(data)
+        
+        # Resample to HTF
+        htf_series = self._resample_to_htf(
+            base_series, 
+            lookback_minutes,
+            family
+        )
+        
+        return htf_series
+    
+    def _get_base_feature_func(self, base_feature: str):
+        """Get base feature computation function."""
+        # Map feature names to computation functions
+        feature_map = {
+            'p/price_ema10_pct': self._price_ema10_pct,
+            'p/price_ema20_pct': self._price_ema20_pct,
+            'p/bollz20': self._bollz20,
+            'p/sigma_ew': self._sigma_ew,
+            'p/gk_w': self._gk_w,
+            'p/rv_bipower_12': self._rv_bipower_12,
+            'p/rv_short_3': self._rv_short_3,
+            'p/rsi7': self._rsi7,
+            'p/rsi14': self._rsi14,
+            'p/stochk14': self._stochk14,
+            'p/autocorr_r1_w': self._autocorr_r1_w,
+            'p/vwap_session_dist': self._vwap_session_dist,
+            'p/vwap_roll12_dist': self._vwap_roll12_dist
+        }
+        
+        if base_feature not in feature_map:
+            raise ValueError(f"Unknown base feature: {base_feature}")
+        
+        return feature_map[base_feature]
+    
+    def _resample_to_htf(self, 
+                        base_series: pd.Series, 
+                        lookback_minutes: int,
+                        family: str) -> pd.Series:
+        """
+        Resample base feature to higher timeframe.
+        
+        For different families, use different resampling strategies:
+        - Trend/Level & Vol: Use last value (most recent)
+        - Oscillators: Use mean (smoothing)
+        - Anchors: Use last value (most recent)
+        """
+        if family in ['trend_level_vol', 'anchors']:
+            # Use last value (most recent)
+            return base_series.resample(f'{lookback_minutes}min').last()
+        elif family == 'oscillators':
+            # Use mean (smoothing)
+            return base_series.resample(f'{lookback_minutes}min').mean()
+        else:
+            # Default to last value
+            return base_series.resample(f'{lookback_minutes}min').last()
+    
+    # Base feature computation functions
+    def _price_ema10_pct(self, data: pd.DataFrame) -> pd.Series:
+        """Price vs EMA10 percentage."""
+        ema10 = data['close'].ewm(span=10).mean()
+        return (data['close'] - ema10) / ema10
+    
+    def _price_ema20_pct(self, data: pd.DataFrame) -> pd.Series:
+        """Price vs EMA20 percentage."""
+        ema20 = data['close'].ewm(span=20).mean()
+        return (data['close'] - ema20) / ema20
+    
+    def _bollz20(self, data: pd.DataFrame) -> pd.Series:
+        """Bollinger z-score."""
+        ma20 = data['close'].rolling(20).mean()
+        sd20 = data['close'].rolling(20).std()
+        return (data['close'] - ma20) / sd20
+    
+    def _sigma_ew(self, data: pd.DataFrame) -> pd.Series:
+        """EW standard deviation of r1."""
+        r1 = np.log(data['close'] / data['close'].shift(1))
+        return r1.ewm(halflife=12).std()
+    
+    def _gk_w(self, data: pd.DataFrame) -> pd.Series:
+        """Garman-Klass estimator."""
+        log_hl = np.log(data['high'] / data['low'])
+        log_co = np.log(data['close'] / data['open'])
+        gk = 0.5 * log_hl**2 - (2*np.log(2) - 1) * log_co**2
+        return np.sqrt(gk.rolling(12).mean())
+    
+    def _rv_bipower_12(self, data: pd.DataFrame) -> pd.Series:
+        """Bipower variation."""
+        r1 = np.log(data['close'] / data['close'].shift(1))
+        r1_abs = np.abs(r1)
+        bipower = r1_abs * r1_abs.shift(1)
+        return np.sqrt(bipower.rolling(12).mean())
+    
+    def _rv_short_3(self, data: pd.DataFrame) -> pd.Series:
+        """Short-term realized volatility."""
+        r1 = np.log(data['close'] / data['close'].shift(1))
+        return np.sqrt((r1**2).rolling(3).sum())
+    
+    def _rsi7(self, data: pd.DataFrame) -> pd.Series:
+        """7-period RSI."""
+        return self._rsi(data, 7)
+    
+    def _rsi14(self, data: pd.DataFrame) -> pd.Series:
+        """14-period RSI."""
+        return self._rsi(data, 14)
+    
+    def _rsi(self, data: pd.DataFrame, period: int) -> pd.Series:
+        """RSI calculation."""
+        delta = data['close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        rs = gain / loss
+        return 100 - (100 / (1 + rs))
+    
+    def _stochk14(self, data: pd.DataFrame) -> pd.Series:
+        """14-period Stochastic %K."""
+        low14 = data['low'].rolling(14).min()
+        high14 = data['high'].rolling(14).max()
+        return 100 * (data['close'] - low14) / (high14 - low14)
+    
+    def _autocorr_r1_w(self, data: pd.DataFrame) -> pd.Series:
+        """Autocorrelation of r1."""
+        r1 = np.log(data['close'] / data['close'].shift(1))
+        return r1.rolling(12).apply(lambda x: x.autocorr(lag=1), raw=False)
+    
+    def _vwap_session_dist(self, data: pd.DataFrame) -> pd.Series:
+        """Session VWAP distance."""
+        vwap = (data['high'] + data['low'] + data['close']) / 3
+        vwap_session = vwap.rolling(12).mean()
+        return (data['close'] - vwap_session) / vwap_session
+    
+    def _vwap_roll12_dist(self, data: pd.DataFrame) -> pd.Series:
+        """Rolling VWAP distance."""
+        vwap = (data['high'] + data['low'] + data['close']) / 3
+        vwap_roll = vwap.rolling(12).mean()
+        return (data['close'] - vwap_roll) / vwap_roll
+
+
+class Phase1HTFProbe:
+    """Phase-1 HTF probe stage implementation."""
+    
+    def __init__(self, config):
+        self.config = config
+        self.logger = logging.getLogger(__name__)
+        
+        self.grid_generator = CoarseGridGenerator(config)
+        self.htf_generator = HTFFeatureGenerator(config)
+        self.scoring_system = None  # Will be injected
+        
+    def run_probe_stage(self, 
+                       sessionized_data: Dict[str, Any],
+                       regime_segments: Dict[str, Any],
+                       targets: Optional[pd.Series] = None) -> Dict[str, Any]:
+        """
+        Run Phase-1 HTF probe stage.
+        
+        Args:
+            sessionized_data: Sessionized and aligned data
+            regime_segments: Regime segmentation results
+            targets: Target variables
+            
+        Returns:
+            Phase-1 results with shortlisted HTF candidates
+        """
+        self.logger.info("Starting Phase-1 HTF probe stage")
+        
+        results = {
+            'candidates': [],
+            'family_performance': {},
+            'shortlisted_candidates': [],
+            'early_stopped_families': []
+        }
+        
+        # Process each HTF family
+        for family, base_features in self.htf_generator.htf_families.items():
+            self.logger.info(f"Processing family: {family}")
+            
+            family_results = self._process_family(
+                family, base_features, sessionized_data, regime_segments, targets
+            )
+            
+            results['candidates'].extend(family_results['candidates'])
+            results['family_performance'][family] = family_results['performance']
+            
+            if family_results['early_stopped']:
+                results['early_stopped_families'].append(family)
+            else:
+                results['shortlisted_candidates'].extend(family_results['shortlisted'])
+        
+        # Apply early stopping across families
+        results = self._apply_early_stopping(results)
+        
+        self.logger.info(f"Phase-1 completed: {len(results['shortlisted_candidates'])} candidates shortlisted")
+        return results
+    
+    def _process_family(self, 
+                       family: str,
+                       base_features: List[str],
+                       sessionized_data: Dict[str, Any],
+                       regime_segments: Dict[str, Any],
+                       targets: Optional[pd.Series] = None) -> Dict[str, Any]:
+        """Process a single HTF family."""
+        
+        # Generate adaptive grid for family
+        performance_history = {}  # Would be populated from previous runs
+        grid = self.grid_generator.generate_adaptive_grid(family, performance_history)
+        
+        candidates = []
+        family_scores = []
+        
+        # Test each combination of base feature and lookback
+        for base_feature, lookback in product(base_features, grid):
+            try:
+                # Generate HTF feature
+                htf_feature = self.htf_generator.generate_htf_feature(
+                    sessionized_data['aligned_data'],
+                    base_feature,
+                    lookback,
+                    family
+                )
+                
+                # Score the candidate
+                candidate = self._score_candidate(
+                    htf_feature, base_feature, lookback, family,
+                    regime_segments, targets
+                )
+                
+                if candidate:
+                    candidates.append(candidate)
+                    family_scores.append(candidate.utility_score)
+                    
+            except Exception as e:
+                self.logger.warning(f"Failed to process {base_feature}@{lookback}: {e}")
+                continue
+        
+        # Check for early stopping
+        early_stopped = self._check_early_stopping(family_scores)
+        
+        # Shortlist top candidates
+        if not early_stopped:
+            shortlisted = self._shortlist_candidates(candidates, family)
+        else:
+            shortlisted = []
+        
+        return {
+            'candidates': candidates,
+            'performance': family_scores,
+            'shortlisted': shortlisted,
+            'early_stopped': early_stopped
+        }
+    
+    def _score_candidate(self, 
+                        htf_feature: pd.Series,
+                        base_feature: str,
+                        lookback: int,
+                        family: str,
+                        regime_segments: Dict[str, Any],
+                        targets: Optional[pd.Series] = None) -> Optional[HTFCandidate]:
+        """Score an HTF candidate."""
+        
+        if targets is None or len(htf_feature) == 0:
+            return None
+        
+        # Align features and targets
+        aligned_data = pd.DataFrame({
+            'htf_feature': htf_feature,
+            'target': targets
+        }).dropna()
+        
+        if len(aligned_data) < 100:  # Need sufficient data
+            return None
+        
+        # Calculate IC and other metrics
+        ic_oos = self._calculate_ic(aligned_data['htf_feature'], aligned_data['target'])
+        se_wild_bootstrap = self._calculate_wild_bootstrap_se(
+            aligned_data['htf_feature'], aligned_data['target']
+        )
+        cpu_p95 = self._estimate_cpu_cost(lookback, family)
+        staleness = self._calculate_staleness(lookback, family)
+        fold_pass_rate = self._calculate_fold_pass_rate(
+            aligned_data['htf_feature'], aligned_data['target']
+        )
+        
+        # Calculate utility score
+        utility_score = self._calculate_utility_score(
+            ic_oos, se_wild_bootstrap, cpu_p95, staleness
+        )
+        
+        return HTFCandidate(
+            family=family,
+            base_feature=base_feature,
+            lookback_minutes=lookback,
+            regime='mixed',  # Would be determined by regime segmentation
+            utility_score=utility_score,
+            ic_oos=ic_oos,
+            se_wild_bootstrap=se_wild_bootstrap,
+            cpu_p95=cpu_p95,
+            staleness=staleness,
+            fold_pass_rate=fold_pass_rate,
+            metadata={}
+        )
+    
+    def _calculate_ic(self, feature: pd.Series, target: pd.Series) -> float:
+        """Calculate Information Coefficient."""
+        correlation = feature.corr(target)
+        return correlation if not pd.isna(correlation) else 0.0
+    
+    def _calculate_wild_bootstrap_se(self, feature: pd.Series, target: pd.Series) -> float:
+        """Calculate wild bootstrap standard error."""
+        # Simplified implementation
+        n = len(feature)
+        if n < 10:
+            return 1.0
+        
+        # Wild bootstrap with Rademacher weights
+        n_bootstrap = 100
+        correlations = []
+        
+        for _ in range(n_bootstrap):
+            weights = np.random.choice([-1, 1], size=n)
+            weighted_feature = feature * weights
+            corr = weighted_feature.corr(target)
+            if not pd.isna(corr):
+                correlations.append(corr)
+        
+        return np.std(correlations) if correlations else 1.0
+    
+    def _estimate_cpu_cost(self, lookback: int, family: str) -> float:
+        """Estimate CPU cost in milliseconds."""
+        # Base cost per lookback minute
+        base_cost = 0.01  # ms per minute
+        
+        # Family-specific multipliers
+        family_multipliers = {
+            'trend_level_vol': 1.0,
+            'oscillators': 1.2,
+            'anchors': 0.8
+        }
+        
+        multiplier = family_multipliers.get(family, 1.0)
+        return base_cost * lookback * multiplier
+    
+    def _calculate_staleness(self, lookback: int, family: str) -> float:
+        """Calculate staleness score."""
+        # Feature-specific staleness curves
+        if family in ['trend_level_vol']:
+            # EMA/EWσ: s(B) = 1 - exp(-Δt/τ(B)) with τ ≈ B/2
+            tau = lookback / 2
+            delta_t = 5  # 5-minute base timeframe
+            return 1 - np.exp(-delta_t / tau)
+        elif family == 'anchors':
+            # Session VWAP: step function rising within session
+            return 0.1  # Simplified
+        else:
+            # RSI/Stoch: similar to EMA but with larger τ
+            tau = lookback / 1.5
+            delta_t = 5
+            return 1 - np.exp(-delta_t / tau)
+    
+    def _calculate_fold_pass_rate(self, feature: pd.Series, target: pd.Series) -> float:
+        """Calculate fold pass rate using time series cross-validation."""
+        if len(feature) < 50:
+            return 0.0
+        
+        # Use 3-fold time series split
+        tscv = TimeSeriesSplit(n_splits=3)
+        pass_count = 0
+        total_folds = 0
+        
+        for train_idx, val_idx in tscv.split(feature):
+            if len(val_idx) < 10:
+                continue
+                
+            train_feature = feature.iloc[train_idx]
+            train_target = target.iloc[train_idx]
+            val_feature = feature.iloc[val_idx]
+            val_target = target.iloc[val_idx]
+            
+            # Calculate IC on validation set
+            val_ic = val_feature.corr(val_target)
+            
+            # Pass if IC > 0.05
+            if not pd.isna(val_ic) and val_ic > 0.05:
+                pass_count += 1
+            
+            total_folds += 1
+        
+        return pass_count / total_folds if total_folds > 0 else 0.0
+    
+    def _calculate_utility_score(self, 
+                               ic_oos: float,
+                               se_wild_bootstrap: float,
+                               cpu_p95: float,
+                               staleness: float) -> float:
+        """Calculate utility score with penalties."""
+        return (ic_oos - 
+                self.config.lambda_unc * se_wild_bootstrap -
+                self.config.lambda_cost * cpu_p95 -
+                self.config.lambda_stale * staleness)
+    
+    def _check_early_stopping(self, family_scores: List[float]) -> bool:
+        """Check if family should be early stopped."""
+        if not family_scores:
+            return True
+        
+        # Early stop if all scores < 0
+        return all(score < 0 for score in family_scores)
+    
+    def _shortlist_candidates(self, 
+                             candidates: List[HTFCandidate],
+                             family: str) -> List[HTFCandidate]:
+        """Shortlist top candidates for a family."""
+        if not candidates:
+            return []
+        
+        # Sort by utility score
+        sorted_candidates = sorted(candidates, key=lambda x: x.utility_score, reverse=True)
+        
+        # Keep top 2 with positive utility and fold pass rate >= 60%
+        shortlisted = []
+        for candidate in sorted_candidates:
+            if (candidate.utility_score > 0 and 
+                candidate.fold_pass_rate >= 0.6 and 
+                len(shortlisted) < 2):
+                shortlisted.append(candidate)
+        
+        return shortlisted
+    
+    def _apply_early_stopping(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply early stopping across families."""
+        # If all families are early stopped, keep the best performing one
+        if len(results['early_stopped_families']) == len(self.htf_generator.htf_families):
+            # Find the family with the best performance
+            best_family = None
+            best_score = -np.inf
+            
+            for family, performance in results['family_performance'].items():
+                if performance:
+                    max_score = max(performance)
+                    if max_score > best_score:
+                        best_score = max_score
+                        best_family = family
+            
+            if best_family:
+                # Remove from early stopped and add to shortlisted
+                results['early_stopped_families'] = [
+                    f for f in results['early_stopped_families'] if f != best_family
+                ]
+                # Add best candidates from this family
+                family_candidates = [
+                    c for c in results['candidates'] 
+                    if c.family == best_family
+                ]
+                results['shortlisted_candidates'].extend(
+                    self._shortlist_candidates(family_candidates, best_family)
+                )
+        
+        return results

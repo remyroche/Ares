@@ -187,8 +187,18 @@ class CrossTimeframePipeline:
             
             # Step 6: Materialize HTFs
             self.logger.info("Step 6: Materializing HTFs")
+            selected_feature_candidates: List[Any]
+            if self.selected_htfs is None:
+                selected_feature_candidates = []
+            elif isinstance(self.selected_htfs, list):
+                selected_feature_candidates = self.selected_htfs
+            else:
+                selected_feature_candidates = getattr(
+                    self.selected_htfs, 'selected_features', []
+                ) or []
+
             self.materialized_htfs = self.htf_materialization.materialize_htfs(
-                self.sessionized_data, self.selected_htfs
+                self.sessionized_data, selected_feature_candidates
             )
             
             # Step 7: Generate interactions

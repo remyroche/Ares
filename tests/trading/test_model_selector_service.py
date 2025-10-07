@@ -197,6 +197,8 @@ def test_select_models_for_trading_mixed_categories(monkeypatch):
 
     assert result.ensemble_weights['analyst'] == {'analyst_rf_5m': 1.0}
     assert result.ensemble_weights['tactician'] == {'tactician_rf_5m': 1.0}
+    assert result.confirmation_status == 'single_timeframe'
+    assert result.confirmation_details == {}
 
 
 def test_select_models_for_trading_preserves_direct_model_keys(monkeypatch):
@@ -229,3 +231,5 @@ def test_select_models_for_trading_preserves_direct_model_keys(monkeypatch):
     ]
 
     assert service.model_selector.calls == expected_calls
+    assert result.confirmation_status == 'single_timeframe'
+    assert result.confirmation_details == {}

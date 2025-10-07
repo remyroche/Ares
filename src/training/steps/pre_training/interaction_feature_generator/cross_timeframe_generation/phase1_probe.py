@@ -535,10 +535,21 @@ class Phase1HTFProbe:
         except Exception:
             fold_pass_rate = 0.0
 
+        regime_weight = 1.0
         try:
-            regime_weight = self.scoring_system._calculate_regime_weight(regime_label, regime_segments)
+            calculated_weight = self.scoring_system._calculate_regime_weight(
+                regime_label,
+                regime_segments,
+            )
         except Exception:
-            regime_weight = 1.0
+            calculated_weight = None
+
+        if calculated_weight is not None:
+            # The mixed regime fallback shouldn't inherit zero-weighted segments
+            if regime_label == 'mixed' and calculated_weight == 0.0:
+                regime_weight = 1.0
+            else:
+                regime_weight = calculated_weight
 
         utility_score = self.scoring_system.calculate_utility_score(
             ic_oos=ic_oos,

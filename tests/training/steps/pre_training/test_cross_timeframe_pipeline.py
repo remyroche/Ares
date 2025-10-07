@@ -49,15 +49,23 @@ from src.training.steps.pre_training.interaction_feature_generator.cross_timefra
 
 
 class DummyEvaluation:
-    """Stub evaluation component that validates the received feature list."""
+    """Stub evaluation component that validates the received feature inputs."""
 
     def __init__(self):
         self.calls = []
 
-    def evaluate_features(self, final_features, targets, regime_segments, feature_source=None):
+    def evaluate_features(
+        self,
+        final_features,
+        targets,
+        regime_segments,
+        materialized_htfs=None,
+        interactions=None,
+    ):
         assert isinstance(final_features, list)
-        assert isinstance(feature_source, pd.DataFrame)
-        self.calls.append((final_features, targets, regime_segments, feature_source))
+        assert isinstance(materialized_htfs, dict)
+        assert isinstance(interactions, list)
+        self.calls.append((final_features, targets, regime_segments, materialized_htfs, interactions))
         return EvaluationResult(
             overall_ic=0.02,
             overall_ic_std=0.01,
@@ -153,8 +161,12 @@ def test_pipeline_passes_feature_list_to_evaluation_and_monitoring():
 
     pipeline.htf_materialization.materialize_htfs = _materialize_htfs
 
-    def _generate_interactions(materialized_htfs, base_features, targets):
-        index = next(iter(materialized_htfs.values())).feature_series.index
+    
+    def _generate_interactions(materialized_htfs, base_feature_series, targets):
+        if materialized_htfs:
+            index = next(iter(materialized_htfs.values())).feature_series.index
+        else:
+            index = targets.index
         interaction = SimpleNamespace(
             name="interaction_feature",
             feature_series=_build_dummy_series(index),
@@ -200,10 +212,10 @@ def test_pipeline_passes_feature_list_to_evaluation_and_monitoring():
     results = pipeline.run_pipeline(ohlcv_data=ohlcv, targets=targets)
 
     assert dummy_evaluation.calls, "Evaluation should be executed once"
-    eval_features, _, _, feature_matrix = dummy_evaluation.calls[0]
+    eval_features, _, _, materialized_htfs, interactions = dummy_evaluation.calls[0]
     assert eval_features == selection_result.selected_features
-    assert list(feature_matrix.columns) == selection_result.selected_features
-    assert feature_matrix.index.equals(targets.index)
+    assert set(materialized_htfs.keys()) == {"feature_a"}
+    assert interactions and interactions[0].name == "interaction_feature"
 
     assert dummy_monitoring.calls, "Monitoring should receive pipeline outputs"
     monitoring_call = dummy_monitoring.calls[0]

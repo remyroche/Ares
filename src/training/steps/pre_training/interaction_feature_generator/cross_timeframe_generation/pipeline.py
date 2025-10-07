@@ -248,26 +248,44 @@ class CrossTimeframePipeline:
             )
 
             if targets is not None:
-                feature_matrix = self._collect_selected_feature_matrix(final_feature_list)
                 self.evaluation_results = self.evaluation.evaluate_features(
                     final_feature_list,
                     targets,
                     self.regime_segments,
-                    feature_matrix
+                    materialized_htfs=self.materialized_htfs,
+                    interactions=self.interactions,
                 )
             else:
                 self.logger.warning("Targets not provided – skipping evaluation stage")
                 self.evaluation_results = None
 
+            evaluation_summary = None
+            if self.evaluation_results is not None and hasattr(self.evaluation, "get_evaluation_summary"):
+                try:
+                    evaluation_summary = self.evaluation.get_evaluation_summary(self.evaluation_results)
+                except Exception as summary_error:
+                    self.logger.warning(
+                        "Failed to summarize evaluation results: %s", summary_error
+                    )
+                    evaluation_summary = None
+
             # Step 10: Monitoring & automation
             self.logger.info("Step 10: Setting up monitoring")
             self.monitoring.setup_monitoring(
-                self.final_features,
                 final_feature_list,
-                self.evaluation_results,
+                evaluation_summary,
                 self.regime_segments,
             )
-            
+
+            if self.config.adaptive_penalties:
+                updated_penalties = self.monitoring.get_penalty_parameters()
+                if updated_penalties:
+                    self.scoring_system.apply_penalty_parameters(updated_penalties)
+                    self.logger.info(
+                        "Applied refreshed adaptive penalties to scoring system: %s",
+                        updated_penalties,
+                    )
+
             # Compile results
             results = {
                 'sessionized_data': self.sessionized_data,
@@ -280,6 +298,7 @@ class CrossTimeframePipeline:
                 'final_features': self.final_features,
                 'selected_feature_list': final_feature_list,
                 'evaluation_results': self.evaluation_results,
+                'evaluation_summary': evaluation_summary,
                 'pipeline_config': self.config
             }
             

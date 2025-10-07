@@ -4,13 +4,41 @@ from typing import List
 import numpy as np
 import pandas as pd
 import pytest
+import types
+import sys
+
+if "pymc" not in sys.modules:
+    pymc_stub = types.ModuleType("pymc")
+
+    class _DummyModel:
+        pass
+
+    pymc_stub.Model = _DummyModel
+    pymc_stub.sample = lambda *args, **kwargs: None
+
+    sys.modules["pymc"] = pymc_stub
+
+if "aesara" not in sys.modules:
+    aesara_stub = types.ModuleType("aesara")
+    tensor_stub = types.ModuleType("aesara.tensor")
+
+    def _dummy_attr(*args, **kwargs):
+        return None
+
+    tensor_stub.__getattr__ = lambda name: _dummy_attr
+
+    sys.modules["aesara"] = aesara_stub
+    sys.modules["aesara.tensor"] = tensor_stub
+
+if "arviz" not in sys.modules:
+    sys.modules["arviz"] = types.ModuleType("arviz")
 
 from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.knapsack_selection import (
     FeatureCandidate,
     KnapsackSelection,
 )
-from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.pipeline import (
-    PipelineConfig,
+from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.config import (
+    SelectionConfig,
 )
 
 
@@ -28,10 +56,9 @@ def _build_candidate(feature_id: str, feature_name: str, series: pd.Series) -> F
 
 
 def test_knapsack_selection_applies_correlation_constraint(caplog: pytest.LogCaptureFixture) -> None:
-    config = PipelineConfig()
-    config.max_correlation = 0.2
+    selection_config = SelectionConfig(max_correlation=0.2)
 
-    selection = KnapsackSelection(config)
+    selection = KnapsackSelection(selection_config)
 
     # Force deterministic solver path for testing
     selection.solver.solve_knapsack = lambda features, matrix: selection.solver._solve_greedy(
@@ -58,7 +85,7 @@ def test_knapsack_selection_applies_correlation_constraint(caplog: pytest.LogCap
     corr_value = result.correlation_matrix.loc[
         candidates[0].feature_name, candidates[1].feature_name
     ]
-    assert abs(corr_value) >= config.max_correlation - 1e-6
+    assert abs(corr_value) >= selection_config.max_correlation - 1e-6
 
     logged = [record.message.lower() for record in caplog.records]
     assert any("correlation" in message for message in logged)

@@ -22,6 +22,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from .staleness_curve import StalenessCurveCalculator
+from .config import ScoringConfig, SessionConfig
 
 
 @dataclass
@@ -380,17 +381,24 @@ class MetaLearner:
 
 class AdaptiveScoringSystem:
     """Main adaptive scoring system."""
-    
-    def __init__(self, config):
-        self.config = config
+
+    def __init__(self, scoring_config: ScoringConfig, session_config: SessionConfig):
+        self.scoring_config = scoring_config
+        self.session_config = session_config
         self.logger = logging.getLogger(__name__)
-        
+
         self.uncertainty_estimator = UncertaintyEstimator()
         self.cost_estimator = CostEstimator()
         self.staleness_calculator = StalenessCalculator()
         self.meta_learner = MetaLearner(
-            adaptation_range=config.meta_learning_range
+            adaptation_range=scoring_config.meta_learning_range
         )
+        self.lambda_unc = scoring_config.lambda_unc
+        self.lambda_cost = scoring_config.lambda_cost
+        self.lambda_stale = scoring_config.lambda_stale
+        self.meta_learner.lambda_unc = scoring_config.lambda_unc
+        self.meta_learner.lambda_cost = scoring_config.lambda_cost
+        self.meta_learner.lambda_stale = scoring_config.lambda_stale
     
     def score_feature_candidate(self, 
                               feature: pd.Series,
@@ -444,7 +452,9 @@ class AdaptiveScoringSystem:
         
         # Calculate staleness
         staleness = self.staleness_calculator.calculate_staleness(
-            lookback, family, self.config.base_timeframe_minutes
+            lookback,
+            family,
+            self.session_config.base_timeframe_minutes,
         )
         
         # Calculate fold pass rate

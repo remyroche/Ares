@@ -36,9 +36,38 @@ if "cvxpy" not in sys.modules:
 
     sys.modules["cvxpy"] = cvxpy_stub
 
+if "pymc" not in sys.modules:
+    pymc_stub = types.ModuleType("pymc")
+
+    class _DummyModel:
+        pass
+
+    pymc_stub.Model = _DummyModel
+    pymc_stub.sample = lambda *args, **kwargs: None
+
+    sys.modules["pymc"] = pymc_stub
+
+if "aesara" not in sys.modules:
+    aesara_stub = types.ModuleType("aesara")
+    tensor_stub = types.ModuleType("aesara.tensor")
+
+    def _dummy_attr(*args, **kwargs):
+        return None
+
+    tensor_stub.__getattr__ = lambda name: _dummy_attr
+
+    sys.modules["aesara"] = aesara_stub
+    sys.modules["aesara.tensor"] = tensor_stub
+
+if "arviz" not in sys.modules:
+    sys.modules["arviz"] = types.ModuleType("arviz")
+
 from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.pipeline import (
     CrossTimeframePipeline,
     PipelineConfig,
+)
+from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.config import (
+    MonitoringConfig,
 )
 from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation import (
     statistical_selection as statistical_selection_module,
@@ -243,7 +272,7 @@ def test_pipeline_passes_feature_list_to_evaluation_and_monitoring():
 
 
 def test_monitoring_penalties_propagate_to_scoring():
-    config = PipelineConfig(adaptive_penalties=True)
+    config = PipelineConfig(monitoring=MonitoringConfig(adaptive_penalties=True))
     pipeline = CrossTimeframePipeline(config)
 
     pipeline._sessionize_and_align = lambda ohlcv, optional: {"aligned_data": ohlcv}

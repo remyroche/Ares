@@ -34,16 +34,110 @@ from src.utils.tprint import (
 )
 
 # Import common operations and utilities
-from src.utils.common_operations import (
-    safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
-    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-    optimize_memory_usage, parallel_processing_optimizer, safe_correlation,
-    safe_dataframe_operation, optimize_dataframe_dtypes, safe_fillna,
-    create_data_quality_report, get_dataframe_info, safe_rolling,
-    safe_groupby_operation, safe_apply_function, safe_filter_dataframe,
-    create_summary_statistics, safe_to_parquet, safe_read_parquet,
-    memory_checkpoint, gpu_context, optimize_memory, get_memory_usage
-)
+try:
+    from src.utils.common_operations import (
+        safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
+        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+        optimize_memory_usage, parallel_processing_optimizer, safe_correlation,
+        safe_dataframe_operation, optimize_dataframe_dtypes, safe_fillna,
+        create_data_quality_report, get_dataframe_info, safe_rolling,
+        safe_groupby_operation, safe_apply_function, safe_filter_dataframe,
+        create_summary_statistics, safe_to_parquet, safe_read_parquet,
+        memory_checkpoint, gpu_context, optimize_memory, get_memory_usage
+    )
+    COMMON_OPS_AVAILABLE = True
+except ImportError as e:
+    tprint_warning(f"⚠️ Common operations not available: {e}")
+    COMMON_OPS_AVAILABLE = False
+
+    def safe_divide(a, b):
+        return np.divide(a, b)
+
+    def safe_log(x):
+        return np.log(x)
+
+    def safe_sqrt(x):
+        return np.sqrt(x)
+
+    def safe_power(x, y):
+        return np.power(x, y)
+
+    def validate_finite(x):
+        return np.isfinite(x).all()
+
+    def get_m1_gpu_manager():
+        return None
+
+    def get_m1_memory_optimizer():
+        return None
+
+    def get_m1_cpu_optimizer():
+        return None
+
+    def optimize_memory_usage(*args, **kwargs):
+        return None
+
+    def parallel_processing_optimizer(*args, **kwargs):
+        return None
+
+    def safe_correlation(x, y):
+        return np.corrcoef(x, y)[0, 1]
+
+    def safe_dataframe_operation(df, func, *args, **kwargs):
+        return func(df, *args, **kwargs)
+
+    def optimize_dataframe_dtypes(df):
+        return df
+
+    def safe_fillna(obj, value=0):
+        return obj.fillna(value)
+
+    def create_data_quality_report(*args, **kwargs):
+        return {}
+
+    def get_dataframe_info(df):
+        return {
+            "shape": getattr(df, "shape", None),
+            "columns": list(getattr(df, "columns", [])),
+        }
+
+    def safe_rolling(series, *args, **kwargs):
+        return series.rolling(*args, **kwargs)
+
+    def safe_groupby_operation(df, *args, **kwargs):
+        groupby_obj = df.groupby(*args, **kwargs)
+        return groupby_obj
+
+    def safe_apply_function(obj, func, *args, **kwargs):
+        return func(obj, *args, **kwargs)
+
+    def safe_filter_dataframe(df, condition):
+        return df[condition]
+
+    def create_summary_statistics(df):
+        return df.describe(include="all")
+
+    def safe_to_parquet(*args, **kwargs):
+        pass
+
+    def safe_read_parquet(*args, **kwargs):
+        return None
+
+    def memory_checkpoint(*args, **kwargs):
+        return None
+
+    class gpu_context:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def optimize_memory(*args, **kwargs):
+        return None
+
+    def get_memory_usage(*args, **kwargs):
+        return 0.0
 
 # Import math validation
 from src.utils.math_validation import (

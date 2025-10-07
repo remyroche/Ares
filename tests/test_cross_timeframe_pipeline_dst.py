@@ -28,9 +28,38 @@ if "cvxpy" not in sys.modules:
 
     sys.modules["cvxpy"] = dummy_cvxpy
 
+if "pymc" not in sys.modules:
+    pymc_stub = types.ModuleType("pymc")
+
+    class _DummyModel:
+        pass
+
+    pymc_stub.Model = _DummyModel
+    pymc_stub.sample = lambda *args, **kwargs: None
+
+    sys.modules["pymc"] = pymc_stub
+
+if "aesara" not in sys.modules:
+    aesara_stub = types.ModuleType("aesara")
+    tensor_stub = types.ModuleType("aesara.tensor")
+
+    def _dummy_attr(*args, **kwargs):
+        return None
+
+    tensor_stub.__getattr__ = lambda name: _dummy_attr
+
+    sys.modules["aesara"] = aesara_stub
+    sys.modules["aesara.tensor"] = tensor_stub
+
+if "arviz" not in sys.modules:
+    sys.modules["arviz"] = types.ModuleType("arviz")
+
 from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.pipeline import (
     PipelineConfig,
     CrossTimeframePipeline,
+)
+from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.config import (
+    SessionConfig,
 )
 
 
@@ -81,10 +110,12 @@ def _build_sample_data():
 def test_dst_sessions_and_alignment_contiguous():
     ohlcv, optional = _build_sample_data()
     config = PipelineConfig(
-        base_timeframe_minutes=5,
-        session_start_hour=9,
-        session_end_hour=16,
-        dst_handling=True,
+        session=SessionConfig(
+            base_timeframe_minutes=5,
+            session_start_hour=9,
+            session_end_hour=16,
+            dst_handling=True,
+        )
     )
     pipeline = CrossTimeframePipeline(config)
 

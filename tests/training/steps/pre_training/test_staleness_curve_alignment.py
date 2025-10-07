@@ -24,6 +24,34 @@ if "cvxpy" not in sys.modules:
 
 import numpy as np
 import pandas as pd
+import types
+import sys
+
+if "pymc" not in sys.modules:
+    pymc_stub = types.ModuleType("pymc")
+
+    class _DummyModel:
+        pass
+
+    pymc_stub.Model = _DummyModel
+    pymc_stub.sample = lambda *args, **kwargs: None
+
+    sys.modules["pymc"] = pymc_stub
+
+if "aesara" not in sys.modules:
+    aesara_stub = types.ModuleType("aesara")
+    tensor_stub = types.ModuleType("aesara.tensor")
+
+    def _dummy_attr(*args, **kwargs):
+        return None
+
+    tensor_stub.__getattr__ = lambda name: _dummy_attr
+
+    sys.modules["aesara"] = aesara_stub
+    sys.modules["aesara.tensor"] = tensor_stub
+
+if "arviz" not in sys.modules:
+    sys.modules["arviz"] = types.ModuleType("arviz")
 
 from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.phase1_probe import (
     Phase1HTFProbe,
@@ -53,9 +81,13 @@ def _make_series(length: int, base_freq: int) -> pd.Series:
 
 def test_phase1_assignment_share_staleness_curves():
     config = PipelineConfig()
-    scoring_system = AdaptiveScoringSystem(config)
-    phase1_probe = Phase1HTFProbe(config, scoring_system=scoring_system)
-    assignment = EHU_RIH_Assignment(config)
+    scoring_system = AdaptiveScoringSystem(config.scoring, config.session)
+    phase1_probe = Phase1HTFProbe(
+        config.probe,
+        config.session,
+        scoring_system=scoring_system,
+    )
+    assignment = EHU_RIH_Assignment(config.assignment)
 
     test_cases = [
         ("p/price_ema10_pct", "trend_level_vol", 60),
@@ -63,7 +95,7 @@ def test_phase1_assignment_share_staleness_curves():
         ("p/vwap_session_dist", "anchors", 45),
     ]
 
-    base_freq = config.base_timeframe_minutes
+    base_freq = config.session.base_timeframe_minutes
     target = _make_series(240, base_freq)
 
     for base_feature, family, lookback in test_cases:

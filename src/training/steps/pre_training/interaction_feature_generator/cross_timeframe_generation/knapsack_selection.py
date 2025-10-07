@@ -21,6 +21,7 @@ warnings.filterwarnings('ignore')
 
 # Local imports
 from .htf_materialization import HTFFeatureGenerator, UpdateStyle
+from .config import SelectionConfig
 
 # Try to import optimization solvers
 try:
@@ -190,8 +191,8 @@ class CorrelationCalculator:
 
 class IntegerProgramSolver:
     """Solves the knapsack problem using integer programming."""
-    
-    def __init__(self, config):
+
+    def __init__(self, config: SelectionConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
     
@@ -425,8 +426,8 @@ class IntegerProgramSolver:
 
 class KnapsackSelection:
     """Main knapsack selection system."""
-    
-    def __init__(self, config):
+
+    def __init__(self, config: SelectionConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
 

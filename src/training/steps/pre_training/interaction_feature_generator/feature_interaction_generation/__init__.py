@@ -107,29 +107,41 @@ __all__ = [
 # - Complete feature engineering pipeline
 # - Validation, monitoring, and deployment systems
 
-from .interactive_feature_generation_component import (
-    InteractiveFeatureGenerationComponent,
-    InteractiveFeatureGenerationStatus
+try:
+    from .interactive_feature_generation_component import (
+        InteractiveFeatureGenerationComponent,
+        InteractiveFeatureGenerationStatus,
+    )
+except Exception as exc:  # pragma: no cover - optional dependency path
+    InteractiveFeatureGenerationComponent = None  # type: ignore
+    InteractiveFeatureGenerationStatus = None  # type: ignore
+
+try:
+    from .end_to_end_roadmap import (
+        EndToEndRoadmapSystem,
+        SystemConfig,
+        SystemResult,
+        create_end_to_end_system,
+        run_end_to_end_pipeline,
+    )
+except Exception as exc:  # pragma: no cover - optional dependency path
+    EndToEndRoadmapSystem = None  # type: ignore
+    SystemConfig = None  # type: ignore
+    SystemResult = None  # type: ignore
+    create_end_to_end_system = None  # type: ignore
+    run_end_to_end_pipeline = None  # type: ignore
+
+# Extend the public API only with available optional components
+__all__.extend(
+    name
+    for name, value in [
+        ("InteractiveFeatureGenerationComponent", InteractiveFeatureGenerationComponent),
+        ("InteractiveFeatureGenerationStatus", InteractiveFeatureGenerationStatus),
+        ("EndToEndRoadmapSystem", EndToEndRoadmapSystem),
+        ("SystemConfig", SystemConfig),
+        ("SystemResult", SystemResult),
+        ("create_end_to_end_system", create_end_to_end_system),
+        ("run_end_to_end_pipeline", run_end_to_end_pipeline),
+    ]
+    if value is not None
 )
-
-from .end_to_end_roadmap import (
-    EndToEndRoadmapSystem,
-    SystemConfig,
-    SystemResult,
-    create_end_to_end_system,
-    run_end_to_end_pipeline
-)
-
-__all__ = [
-    'InteractiveFeatureGenerationComponent',
-    'InteractiveFeatureGenerationStatus',
-    'EndToEndRoadmapSystem',
-    'SystemConfig',
-    'SystemResult',
-    'create_end_to_end_system',
-    'run_end_to_end_pipeline'
-]
-
-__version__ = '1.0.0'
-__author__ = 'End-to-End Roadmap System'
-__description__ = 'Comprehensive end-to-end roadmap feature generation system'

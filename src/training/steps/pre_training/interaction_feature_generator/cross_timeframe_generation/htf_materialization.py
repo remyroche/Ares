@@ -385,20 +385,6 @@ class HTFFeatureGenerator:
             feature_name,
             lookback,
             htf_series,
-        # Get base feature computation function
-        base_feature_func = htf_base_features.get_base_feature_func(feature_name)
-        
-        # Compute base feature
-        base_series = base_feature_func(data)
-        
-        # Resample to HTF
-        htf_series = htf_base_features.resample_to_htf(base_series, lookback, family)
-        
-        # Apply transform
-        transform_router = self._create_transform_router([feature_name])
-        transformed_data = transform_router.fit_transform(
-            pd.DataFrame({feature_name: htf_series}),
-            pd.DataFrame({feature_name: htf_series})
         )
         
         # Create state

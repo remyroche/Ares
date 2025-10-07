@@ -118,6 +118,11 @@ class DirectionalConfig:
     reg_alpha: float = 0.1
     reg_lambda: float = 0.1
     random_state: int = 42
+
+    # Cyclic noise injection parameters
+    enable_cyclic_noise: bool = True
+    cyclic_noise_scale: float = 1e-3
+    cyclic_noise_period: int = 512
     
     # Directional optimization parameters
     directional_weight_boost: float = 1.5  # Boost weight for strong directional moves
@@ -365,11 +370,22 @@ class DirectionalSpecialistModel:
         self.logger.info("🚀 Training directional specialist model...")
         
         # Create directional features
-        X_enhanced = self.feature_engineer.create_directional_features(X, y, fit=True)
+        X_enhanced = self.feature_engineer.create_directional_features(X, y)
 
-        if self.config.enable_directional_quantiles:
-            self._validate_quantile_feature_range(X_enhanced)
-        
+        if self.config.enable_cyclic_noise:
+            from src.training.steps.model_training.utils.noise_injection import (
+                CyclicNoiseConfig,
+                add_cyclic_noise,
+            )
+
+            noise_config = CyclicNoiseConfig(
+                noise_scale=self.config.cyclic_noise_scale,
+                cycle_length=self.config.cyclic_noise_period,
+                random_state=self.config.random_state,
+            )
+            X_prepared = add_cyclic_noise(X_enhanced, noise_config)
+        else:
+            X_prepared = X_enhanced
 
         # Create directional sample weights with recency decay
         timestamps = X.index if isinstance(X, pd.DataFrame) else None
@@ -413,16 +429,16 @@ class DirectionalSpecialistModel:
         
         # Fit model with directional optimization
         self.model.fit(
-            X_enhanced, 
-            y, 
+            X_prepared,
+            y,
             sample_weight=sample_weight,
-            eval_set=[(X_enhanced, y)],
+            eval_set=[(X_prepared, y)],
             eval_metric='l1',
             callbacks=[lgb.early_stopping(50), lgb.log_evaluation(0)]
         )
-        
+
         # Store feature columns and statistics
-        self.feature_columns = X_enhanced.columns.tolist()
+        self.feature_columns = X_prepared.columns.tolist()
         self.directional_stats = self._calculate_directional_statistics(y, sample_weight)
         self.is_fitted = True
         

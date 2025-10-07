@@ -10,6 +10,7 @@ Implements HTF-aware interaction generation with:
 """
 
 from typing import Dict, List, Optional, Any, Tuple, Union
+from collections.abc import Mapping
 from dataclasses import dataclass
 import pandas as pd
 import numpy as np
@@ -374,9 +375,9 @@ class InteractionGenerator:
         self.htf_aware_templates = HTFAwareTemplates()
         self.cross_asset_templates = CrossAssetTemplates()
     
-    def generate_interactions(self, 
+    def generate_interactions(self,
                             materialized_htfs: Dict[str, Any],
-                            base_features: Dict[str, pd.Series],
+                            base_features: Union[pd.DataFrame, Mapping[str, pd.Series], None],
                             targets: Optional[pd.Series] = None) -> List[GeneratedInteraction]:
         """
         Generate interactions from templates.
@@ -391,17 +392,19 @@ class InteractionGenerator:
         """
         self.logger.info("Starting interaction generation")
         
+        normalized_base_features = self._normalize_base_features(base_features)
+
         # Determine budget allocation
         budget_allocation = self._determine_budget_allocation(materialized_htfs)
-        
+
         # Generate core interactions
         core_interactions = self._generate_core_interactions(
-            base_features, targets, budget_allocation['core']
+            normalized_base_features, targets, budget_allocation['core']
         )
-        
+
         # Generate HTF-aware interactions
         htf_interactions = self._generate_htf_aware_interactions(
-            materialized_htfs, base_features, targets, budget_allocation['htf_aware']
+            materialized_htfs, normalized_base_features, targets, budget_allocation['htf_aware']
         )
         
         # Generate cross-asset interactions (if enabled)
@@ -451,7 +454,7 @@ class InteractionGenerator:
             'cross_asset': cross_asset_budget
         }
     
-    def _generate_core_interactions(self, 
+    def _generate_core_interactions(self,
                                   base_features: Dict[str, pd.Series],
                                   targets: Optional[pd.Series],
                                   budget: int) -> List[GeneratedInteraction]:
@@ -476,7 +479,7 @@ class InteractionGenerator:
         
         return interactions[:budget]
     
-    def _generate_htf_aware_interactions(self, 
+    def _generate_htf_aware_interactions(self,
                                        materialized_htfs: Dict[str, Any],
                                        base_features: Dict[str, pd.Series],
                                        targets: Optional[pd.Series],
@@ -561,6 +564,32 @@ class InteractionGenerator:
                 groups['regime_indicator'].append(name)
         
         return groups
+
+    def _normalize_base_features(self,
+                                 base_features: Union[pd.DataFrame, Mapping[str, pd.Series], None]
+                                 ) -> Dict[str, pd.Series]:
+        """Convert supported base feature structures into a column-keyed mapping."""
+        normalized: Dict[str, pd.Series] = {}
+
+        if base_features is None:
+            return normalized
+
+        if isinstance(base_features, pd.DataFrame):
+            for column in base_features.columns:
+                series = base_features[column]
+                if isinstance(series, pd.Series):
+                    normalized[column] = series
+        elif isinstance(base_features, Mapping):
+            for name, series in base_features.items():
+                if isinstance(series, pd.Series):
+                    normalized[name] = series
+        else:
+            self.logger.warning(
+                "Unsupported base feature structure %s; expected DataFrame or mapping of Series.",
+                type(base_features)
+            )
+
+        return normalized
     
     def _group_htf_features_by_type(self, materialized_htfs: Dict[str, Any]) -> Dict[str, List[str]]:
         """Group HTF features by type."""
@@ -779,16 +808,16 @@ class HTFInteractionTemplates:
         
         self.interaction_generator = InteractionGenerator(config)
     
-    def generate_interactions(self, 
+    def generate_interactions(self,
                             materialized_htfs: Dict[str, Any],
-                            base_features: Dict[str, pd.Series],
+                            base_features: Union[pd.DataFrame, Mapping[str, pd.Series], None],
                             targets: Optional[pd.Series] = None) -> List[GeneratedInteraction]:
         """
         Generate HTF-aware interactions.
         
         Args:
             materialized_htfs: Materialized HTF features
-            base_features: Base features
+            base_features: Base features as a DataFrame or mapping
             targets: Target variables
             
         Returns:

@@ -205,22 +205,25 @@ class CrossTimeframePipeline:
             self.logger.info("Step 7: Generating HTF-aware interactions")
 
             base_feature_series: Dict[str, pd.Series] = {}
-            aligned_base_features = None
+            base_feature_structure: Optional[Union[pd.DataFrame, Dict[str, pd.Series]]] = None
 
             if isinstance(self.sessionized_data, dict):
                 aligned_base_features = self.sessionized_data.get('aligned_data')
 
-            if isinstance(aligned_base_features, pd.DataFrame):
-                base_feature_series = {
-                    column: aligned_base_features[column]
-                    for column in aligned_base_features.columns
-                }
-            elif isinstance(aligned_base_features, dict):
-                base_feature_series = {
-                    name: series
-                    for name, series in aligned_base_features.items()
-                    if isinstance(series, pd.Series)
-                }
+                if isinstance(aligned_base_features, pd.DataFrame):
+                    base_feature_structure = aligned_base_features
+                    base_feature_series = {
+                        column: aligned_base_features[column]
+                        for column in aligned_base_features.columns
+                    }
+                elif isinstance(aligned_base_features, dict):
+                    filtered_series = {
+                        name: series
+                        for name, series in aligned_base_features.items()
+                        if isinstance(series, pd.Series)
+                    }
+                    base_feature_structure = filtered_series
+                    base_feature_series = filtered_series
 
             if not base_feature_series:
                 self.logger.warning(
@@ -229,7 +232,7 @@ class CrossTimeframePipeline:
 
             self.interactions = self.interaction_templates.generate_interactions(
                 self.materialized_htfs,
-                base_feature_series,
+                base_feature_structure if base_feature_structure is not None else base_feature_series,
                 targets,
             )
             

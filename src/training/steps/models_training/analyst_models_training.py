@@ -47,6 +47,18 @@ except ImportError as e:
     print(f"❌ CRITICAL: Failed to import core ML utilities: {e}")
     ANALYST_TRAINING_AVAILABLE = False
 
+# Import negative learning integration
+try:
+    from .negative_learning_training_patches import apply_negative_learning_patches
+    from .negative_learning_training_integration import (
+        initialize_negative_learning_integration,
+        get_negative_learning_integration
+    )
+    NEGATIVE_LEARNING_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: Negative learning integration not available: {e}")
+    NEGATIVE_LEARNING_AVAILABLE = False
+
 # Import enhanced logging and utilities - CRITICAL: Fast fail if not available
 try:
     from src.utils.tprint import (
@@ -1164,3 +1176,12 @@ async def execute_analyst_models_training(
     return await trainer.train_analyst_models(
         training_data, feature_columns, target_columns, sample_weight, **kwargs
     )
+
+
+# Apply negative learning patches
+if NEGATIVE_LEARNING_AVAILABLE:
+    try:
+        apply_negative_learning_patches()
+        print("✅ Negative learning patches applied to Analyst training")
+    except Exception as e:
+        print(f"⚠️ Failed to apply negative learning patches: {e}")

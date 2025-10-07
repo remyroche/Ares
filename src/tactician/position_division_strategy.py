@@ -533,7 +533,7 @@ class PositionDivisionStrategy:
             reference_price = position_data.get("reference_price") or entry_price
 
             atr_pct = 0.0
-            if atr_value and reference_price:
+            if atr_value and reference_price and reference_price > 0:
                 atr_pct = max(atr_value / reference_price, 0.0)
 
             trailing_distance_pct = max(

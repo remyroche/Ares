@@ -20,11 +20,12 @@ from sklearn.model_selection import TimeSeriesSplit
 
 from .staleness_curve import StalenessCurveCalculator
 
-# Import existing components
-import sys
-sys.path.append('src/training/steps/pre_training/interaction_feature_generator/feature_interaction_generation')
-from feature_engineering.feature_registry import FeatureRegistry, FeatureFamily
-from feature_engineering.transforms import TransformRouter, create_default_transform_config
+from ..feature_interaction_generation.feature_engineering import (
+    FeatureRegistry,
+    FeatureFamily,
+    TransformRouter,
+    create_default_transform_config,
+)
 
 from .scoring_system import AdaptiveScoringSystem
 

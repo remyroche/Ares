@@ -133,7 +133,7 @@ class CrossTimeframePipeline:
         self.final_features = None
         self.evaluation_results = None
         
-    def run_pipeline(self, 
+    def run_pipeline(self,
                     ohlcv_data: pd.DataFrame,
                     optional_data: Optional[Dict[str, pd.DataFrame]] = None,
                     targets: Optional[pd.Series] = None) -> Dict[str, Any]:
@@ -212,8 +212,12 @@ class CrossTimeframePipeline:
             )
 
             if targets is not None:
+                feature_matrix = self._collect_selected_feature_matrix(final_feature_list)
                 self.evaluation_results = self.evaluation.evaluate_features(
-                    final_feature_list, targets, self.regime_segments
+                    final_feature_list,
+                    targets,
+                    self.regime_segments,
+                    feature_matrix
                 )
             else:
                 self.logger.warning("Targets not provided – skipping evaluation stage")
@@ -249,8 +253,39 @@ class CrossTimeframePipeline:
         except Exception as e:
             self.logger.error(f"Pipeline failed: {str(e)}")
             raise
-    
-    def _sessionize_and_align(self, 
+
+    def _collect_selected_feature_matrix(self, selected_features: List[str]) -> pd.DataFrame:
+        """Materialize the selected feature series into a DataFrame."""
+        if not selected_features:
+            return pd.DataFrame()
+
+        feature_data: Dict[str, pd.Series] = {}
+
+        # Materialized HTFs
+        if isinstance(self.materialized_htfs, dict):
+            for name, htf in self.materialized_htfs.items():
+                if name in selected_features and hasattr(htf, 'feature_series'):
+                    series = getattr(htf, 'feature_series')
+                    if isinstance(series, pd.Series):
+                        feature_data[name] = series
+
+        # Interaction features
+        if isinstance(self.interactions, list):
+            for interaction in self.interactions:
+                interaction_name = getattr(interaction, 'name', None)
+                if interaction_name in selected_features and hasattr(interaction, 'feature_series'):
+                    series = getattr(interaction, 'feature_series')
+                    if isinstance(series, pd.Series):
+                        feature_data[interaction_name] = series
+
+        if not feature_data:
+            return pd.DataFrame()
+
+        feature_matrix = pd.DataFrame(feature_data)
+        ordered_columns = [name for name in selected_features if name in feature_matrix.columns]
+        return feature_matrix.loc[:, ordered_columns]
+
+    def _sessionize_and_align(self,
                             ohlcv_data: pd.DataFrame,
                             optional_data: Optional[Dict[str, pd.DataFrame]] = None) -> Dict[str, Any]:
         """

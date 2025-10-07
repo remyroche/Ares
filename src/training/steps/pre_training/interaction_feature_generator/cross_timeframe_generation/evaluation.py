@@ -10,7 +10,7 @@ Implements comprehensive evaluation with:
 - Performance metrics by regime
 """
 
-from typing import Dict, List, Optional, Any, Tuple, Union
+from typing import Dict, List, Optional, Any, Tuple, Union, Callable
 from dataclasses import dataclass
 import pandas as pd
 import numpy as np
@@ -31,6 +31,9 @@ try:
 except ImportError:
     SPA_AVAILABLE = False
     logging.warning("SPA test not available, using simplified version")
+
+
+FeatureLoader = Callable[[], pd.DataFrame]
 
 
 @dataclass
@@ -556,11 +559,34 @@ class WalkForwardEvaluation:
         self.spa_tester = SPATester(config)
         self.regime_evaluator = RegimeEvaluator(config)
         self.ablation_evaluator = AblationEvaluator(config)
-    
-    def evaluate_features(self, 
+
+    def _load_feature_matrix(self, feature_source: Optional[Union[pd.DataFrame, FeatureLoader]]) -> pd.DataFrame:
+        """Load or validate the feature matrix used for evaluation."""
+        if isinstance(feature_source, pd.DataFrame):
+            feature_matrix = feature_source
+        elif callable(feature_source):
+            feature_matrix = feature_source()
+        elif feature_source is None:
+            raise ValueError("feature_source must be provided as a DataFrame or callable")
+        else:
+            raise TypeError("feature_source must be a DataFrame or a callable returning a DataFrame")
+
+        if feature_matrix is None:
+            raise ValueError("feature_source returned no data for evaluation")
+
+        if not isinstance(feature_matrix, pd.DataFrame):
+            raise TypeError("feature_source must produce a pandas DataFrame")
+
+        if feature_matrix.empty:
+            raise ValueError("feature matrix provided to evaluation is empty")
+
+        return feature_matrix.copy()
+
+    def evaluate_features(self,
                         final_features: List[str],
                         targets: pd.Series,
-                        regime_segments: Optional[Dict[str, Any]] = None) -> EvaluationResult:
+                        regime_segments: Optional[Dict[str, Any]] = None,
+                        feature_source: Optional[Union[pd.DataFrame, FeatureLoader]] = None) -> EvaluationResult:
         """
         Evaluate final features using walk-forward validation.
         
@@ -568,27 +594,62 @@ class WalkForwardEvaluation:
             final_features: List of selected features
             targets: Target series
             regime_segments: Regime segmentation results
+            feature_source: Pre-computed feature matrix or callable returning one
             
         Returns:
             Evaluation result
         """
         self.logger.info("Starting walk-forward evaluation")
-        
-        # Create feature matrix (simplified)
-        # In practice, you'd load the actual feature data
-        n_samples = len(targets)
-        n_features = len(final_features)
-        feature_matrix = pd.DataFrame(
-            np.random.randn(n_samples, n_features),
-            columns=final_features,
-            index=targets.index
-        )
+
+        if not final_features:
+            self.logger.warning("No final features provided for evaluation")
+            return EvaluationResult(
+                overall_ic=0.0,
+                overall_ic_std=0.0,
+                overall_ic_ci=(0.0, 0.0),
+                regime_results={},
+                ablation_results={},
+                spa_test_result={},
+                walk_forward_results=[],
+                metadata={
+                    'n_folds': 0,
+                    'n_features': 0,
+                    'evaluation_method': 'walk_forward',
+                    'embargo_minutes': self.config.embargo_minutes
+                }
+            )
+
+        feature_matrix = self._load_feature_matrix(feature_source)
+
+        # Validate requested features are present
+        missing_features = [f for f in final_features if f not in feature_matrix.columns]
+        if missing_features:
+            message = (
+                "Requested features are missing from provided feature data: "
+                f"{missing_features}"
+            )
+            self.logger.error(message)
+            raise ValueError(message)
+
+        # Restrict to the requested features
+        feature_matrix = feature_matrix[final_features]
+
+        # Align features with targets
+        aligned_index = feature_matrix.index.intersection(targets.index)
+        feature_matrix = feature_matrix.loc[aligned_index]
+        aligned_targets = targets.loc[aligned_index]
+
+        feature_matrix = feature_matrix.dropna()
+        aligned_targets = aligned_targets.loc[feature_matrix.index]
+
+        if feature_matrix.empty:
+            raise ValueError("Feature matrix is empty after alignment with targets")
         
         # Walk-forward validation
         fold_results = self.walk_forward_validator.validate_features(
-            feature_matrix, targets, regime_segments
+            feature_matrix, aligned_targets, regime_segments
         )
-        
+
         # Calculate overall metrics
         overall_ic, overall_ic_std, overall_ic_ci = self.bootstrap_evaluator.calculate_confidence_intervals(
             fold_results, 'ic'
@@ -604,7 +665,7 @@ class WalkForwardEvaluation:
         # Ablation study
         feature_groups = self._create_ablation_groups(final_features)
         ablation_results = self.ablation_evaluator.perform_ablation_study(
-            feature_matrix, targets, feature_groups
+            feature_matrix, aligned_targets, feature_groups
         )
         
         # SPA test

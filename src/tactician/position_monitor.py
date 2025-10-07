@@ -527,16 +527,16 @@ class PositionMonitor:
                 try:
                     if hasattr(series, "iloc"):
                         return float(series.iloc[-1])
-                    if hasattr(series, "__getitem__"):
+                    if hasattr(series, "__getitem__") and not isinstance(series, str):
                         return float(series[-1])
-                except Exception:
+                except (IndexError, TypeError, ValueError):
                     pass
                 try:
                     seq = list(series)
                     if not seq:
                         return None
                     return float(seq[-1])
-                except Exception:
+                except (TypeError, ValueError):
                     return None
 
             latest_atr = _latest_value(position_data.get("atr_series"))

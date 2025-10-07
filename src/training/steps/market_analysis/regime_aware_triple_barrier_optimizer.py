@@ -46,7 +46,7 @@ class RegimeBarrierParams:
     stop_loss_multiplier: float = 0.001
     time_barrier_minutes: int = 30
     max_lookahead: int = 100
-    transaction_cost: float = 0.0008
+    transaction_cost: float = 0.001
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -123,7 +123,7 @@ class RegimeAwareTripleBarrierOptimizer:
             'stop_loss_range': (0.0005, 0.005),   # 0.05% to 0.5%
             'time_barrier_range': (15, 60),       # 15 to 60 minutes
             'max_lookahead_range': (50, 200),     # 50 to 200 points
-            'transaction_cost': 0.0008,           # 0.08%
+            'transaction_cost': 0.001,            # 0.10%
             'optimization_method': 'minimize',
             'objective_function': 'sharpe_ratio',
             'max_iterations': 100,

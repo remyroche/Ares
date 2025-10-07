@@ -104,11 +104,10 @@ except ImportError as e:
 
 class AnalystModelType(Enum):
     """Analyst model types."""
-    TCN = "TCN"
-    LIGHTGBM = "LIGHTGBM"
-    RIDGE = "RIDGE"
-    ELASTIC_NET = "ELASTIC_NET"
-    RANDOM_FOREST = "RANDOM_FOREST"
+    LGBM = "LGBM"
+    LGBM_PATCHTST = "LGBM_PatchTST"
+    CATBOOST = "CATBOOST"
+    STACKER_LGBM_CALIBRATED = "STACKER_LGBM_CALIBRATED"
     NAS = "NAS"  # Neural Architecture Search
     TAS = "TAS"  # Tree-based Architecture Search
 
@@ -133,22 +132,20 @@ class AnalystModelsTrainingConfig:
     def __post_init__(self):
         """Post-initialization setup."""
         supported_types = [
-            AnalystModelType.TCN,
-            AnalystModelType.LIGHTGBM,
-            AnalystModelType.RIDGE,
-            AnalystModelType.ELASTIC_NET,
-            AnalystModelType.RANDOM_FOREST,
+            AnalystModelType.LGBM,
+            AnalystModelType.LGBM_PATCHTST,
+            AnalystModelType.CATBOOST,
+            AnalystModelType.STACKER_LGBM_CALIBRATED,
             AnalystModelType.NAS,
             AnalystModelType.TAS,
         ]
 
         if self.model_types is None:
             self.model_types = [
-                AnalystModelType.TCN,
-                AnalystModelType.LIGHTGBM,
-                AnalystModelType.RIDGE,
-                AnalystModelType.ELASTIC_NET,
-                AnalystModelType.RANDOM_FOREST,
+                AnalystModelType.LGBM,
+                AnalystModelType.LGBM_PATCHTST,
+                AnalystModelType.CATBOOST,
+                AnalystModelType.STACKER_LGBM_CALIBRATED,
                 AnalystModelType.NAS,
                 AnalystModelType.TAS
             ]
@@ -371,16 +368,14 @@ class AnalystModelsTrainingStep:
     ) -> Dict[str, Any]:
         """Train model directly."""
         try:
-            if model_type == AnalystModelType.TCN:
-                return await self._train_tcn(X, y, sample_weight, **kwargs)
-            elif model_type == AnalystModelType.LIGHTGBM:
-                return await self._train_lightgbm(X, y, sample_weight, **kwargs)
-            elif model_type == AnalystModelType.RIDGE:
-                return await self._train_ridge(X, y, sample_weight, **kwargs)
-            elif model_type == AnalystModelType.ELASTIC_NET:
-                return await self._train_elastic_net(X, y, sample_weight, **kwargs)
-            elif model_type == AnalystModelType.RANDOM_FOREST:
-                return await self._train_random_forest(X, y, sample_weight, **kwargs)
+            if model_type == AnalystModelType.LGBM:
+                return await self._train_lgbm(X, y, sample_weight, **kwargs)
+            elif model_type == AnalystModelType.LGBM_PATCHTST:
+                return await self._train_lgbm_patchtst(X, y, sample_weight, **kwargs)
+            elif model_type == AnalystModelType.CATBOOST:
+                return await self._train_catboost(X, y, sample_weight, **kwargs)
+            elif model_type == AnalystModelType.STACKER_LGBM_CALIBRATED:
+                return await self._train_stacker_lgbm_calibrated(X, y, sample_weight, **kwargs)
             elif model_type == AnalystModelType.NAS:
                 return await self._train_nas(X, y, sample_weight, **kwargs)
             elif model_type == AnalystModelType.TAS:
@@ -416,147 +411,168 @@ class AnalystModelsTrainingStep:
             tprint_error(f"❌ Failed to train {model_type.value} directly: {e}")
             return {'models': {}, 'metrics': {}}
 
-    async def _train_tcn(
+    async def _train_lgbm(
         self,
         X: np.ndarray,
         y: np.ndarray,
         sample_weight: np.ndarray,
         **kwargs
     ) -> Dict[str, Any]:
-        """Train TCN model."""
-        try:
-            # Simplified TCN implementation for now
-            from sklearn.ensemble import RandomForestRegressor
-
-            # Use RandomForest as a placeholder for TCN
-            model = RandomForestRegressor(
-                n_estimators=100,
-                random_state=42,
-                n_jobs=-1 if self.config.enable_parallel_processing else 1
-            )
-
-            model.fit(X, y.ravel(), sample_weight=sample_weight)
-
-            return {
-                'models': {'tcn': model},
-                'metrics': {'model_type': 'TCN'}
-            }
-
-        except Exception as e:
-            tprint_error(f"❌ TCN training failed: {e}")
-            return {'models': {}, 'metrics': {}}
-
-    async def _train_lightgbm(
-        self,
-        X: np.ndarray,
-        y: np.ndarray,
-        sample_weight: np.ndarray,
-        **kwargs
-    ) -> Dict[str, Any]:
-        """Train LightGBM model."""
+        """Train LightGBM model with updated hyperparameters."""
         try:
             import lightgbm as lgb
+            from src.config.updated_model_configs import LGBMConfig
 
+            config = LGBMConfig()
             model = lgb.LGBMRegressor(
-                n_estimators=100,
-                learning_rate=0.1,
-                random_state=42,
-                n_jobs=-1 if self.config.enable_parallel_processing else 1
+                max_depth=config.max_depth,
+                num_leaves=config.num_leaves,
+                min_child_samples=config.min_child_samples,
+                reg_lambda=config.lambda_l2,
+                feature_fraction=config.feature_fraction,
+                learning_rate=config.learning_rate,
+                n_estimators=config.n_estimators,
+                random_state=config.random_state,
+                n_jobs=config.n_jobs,
+                verbose=config.verbose
             )
 
             model.fit(X, y.ravel(), sample_weight=sample_weight)
 
             return {
-                'models': {'lightgbm': model},
-                'metrics': {'model_type': 'LightGBM'}
+                'models': {'lgbm': model},
+                'metrics': {'model_type': 'LGBM', 'config': config}
             }
 
         except Exception as e:
-            tprint_error(f"❌ LightGBM training failed: {e}")
+            tprint_error(f"❌ LGBM training failed: {e}")
             return {'models': {}, 'metrics': {}}
 
-    async def _train_ridge(
+    async def _train_lgbm_patchtst(
         self,
         X: np.ndarray,
         y: np.ndarray,
         sample_weight: np.ndarray,
         **kwargs
     ) -> Dict[str, Any]:
-        """Train Ridge Regression model."""
+        """Train LGBM + PatchTST model."""
         try:
-            from sklearn.linear_model import Ridge
+            from src.models.enhanced_patchtst import create_enhanced_patchtst, EnhancedPatchTSTConfig
+            from src.config.updated_model_configs import LGBMConfig, PatchTSTConfig
 
-            model = Ridge(
-                alpha=1.0,
-                random_state=42
+            # Create PatchTST model
+            patchtst_config = PatchTSTConfig()
+            patchtst_model = create_enhanced_patchtst(patchtst_config)
+            
+            # Fit PatchTST to get features
+            patchtst_model.fit(X, y, sample_weight)
+            
+            # Get PatchTST features
+            patchtst_features = patchtst_model.get_features(X)
+            
+            # Combine original features with PatchTST features
+            X_combined = np.hstack([X, patchtst_features['embeddings']])
+            
+            # Train LGBM on combined features
+            lgb_config = LGBMConfig()
+            import lightgbm as lgb
+            lgbm_model = lgb.LGBMRegressor(
+                max_depth=lgb_config.max_depth,
+                num_leaves=lgb_config.num_leaves,
+                min_child_samples=lgb_config.min_child_samples,
+                reg_lambda=lgb_config.lambda_l2,
+                feature_fraction=lgb_config.feature_fraction,
+                learning_rate=lgb_config.learning_rate,
+                n_estimators=lgb_config.n_estimators,
+                random_state=lgb_config.random_state,
+                n_jobs=lgb_config.n_jobs,
+                verbose=lgb_config.verbose
             )
-
-            model.fit(X, y.ravel(), sample_weight=sample_weight)
+            
+            lgbm_model.fit(X_combined, y.ravel(), sample_weight=sample_weight)
 
             return {
-                'models': {'ridge': model},
-                'metrics': {'model_type': 'Ridge'}
+                'models': {
+                    'lgbm_patchtst': lgbm_model,
+                    'patchtst': patchtst_model
+                },
+                'metrics': {
+                    'model_type': 'LGBM_PatchTST',
+                    'lgbm_config': lgb_config,
+                    'patchtst_config': patchtst_config
+                }
             }
 
         except Exception as e:
-            tprint_error(f"❌ Ridge training failed: {e}")
+            tprint_error(f"❌ LGBM + PatchTST training failed: {e}")
             return {'models': {}, 'metrics': {}}
 
-    async def _train_elastic_net(
+    async def _train_catboost(
         self,
         X: np.ndarray,
         y: np.ndarray,
         sample_weight: np.ndarray,
         **kwargs
     ) -> Dict[str, Any]:
-        """Train Elastic Net model."""
+        """Train CatBoost model."""
         try:
-            from sklearn.linear_model import ElasticNet
+            from catboost import CatBoostRegressor
+            from src.config.updated_model_configs import CatBoostConfig
 
-            model = ElasticNet(
-                alpha=1.0,
-                l1_ratio=0.5,
-                random_state=42,
-                max_iter=1000
+            config = CatBoostConfig()
+            model = CatBoostRegressor(
+                depth=config.depth,
+                learning_rate=config.learning_rate,
+                l2_leaf_reg=config.l2_leaf_reg,
+                iterations=config.iterations,
+                subsample=config.subsample,
+                colsample_bylevel=config.colsample_bylevel,
+                random_seed=config.random_seed,
+                verbose=config.verbose
             )
 
             model.fit(X, y.ravel(), sample_weight=sample_weight)
 
             return {
-                'models': {'elastic_net': model},
-                'metrics': {'model_type': 'ElasticNet'}
+                'models': {'catboost': model},
+                'metrics': {'model_type': 'CatBoost', 'config': config}
             }
 
         except Exception as e:
-            tprint_error(f"❌ Elastic Net training failed: {e}")
+            tprint_error(f"❌ CatBoost training failed: {e}")
             return {'models': {}, 'metrics': {}}
 
-    async def _train_random_forest(
+    async def _train_stacker_lgbm_calibrated(
         self,
         X: np.ndarray,
         y: np.ndarray,
         sample_weight: np.ndarray,
         **kwargs
     ) -> Dict[str, Any]:
-        """Train Random Forest model."""
+        """Train Stacker LGBM Calibrated meta-learner."""
         try:
-            from sklearn.ensemble import RandomForestRegressor
+            from src.models.stacker_lgbm_calibrated import create_stacker_lgbm_calibrated, StackerLGBMCalibratedConfig
 
-            model = RandomForestRegressor(
-                n_estimators=100,
-                random_state=42,
-                n_jobs=-1 if self.config.enable_parallel_processing else 1
-            )
-
-            model.fit(X, y.ravel(), sample_weight=sample_weight)
+            # This is a meta-learner, so it needs base model predictions
+            # For now, we'll create a simple implementation
+            config = StackerLGBMCalibratedConfig()
+            model = create_stacker_lgbm_calibrated(config)
+            
+            # For demonstration, we'll use the input features as "base predictions"
+            base_predictions = {
+                'base_model_1': X[:, :min(10, X.shape[1])],  # Use first 10 features as base predictions
+                'base_model_2': X[:, 10:min(20, X.shape[1])] if X.shape[1] > 10 else X[:, :5]
+            }
+            
+            model.fit(base_predictions, y.ravel(), sample_weight)
 
             return {
-                'models': {'random_forest': model},
-                'metrics': {'model_type': 'RandomForest'}
+                'models': {'stacker_lgbm_calibrated': model},
+                'metrics': {'model_type': 'Stacker_LGBM_Calibrated', 'config': config}
             }
 
         except Exception as e:
-            tprint_error(f"❌ Random Forest training failed: {e}")
+            tprint_error(f"❌ Stacker LGBM Calibrated training failed: {e}")
             return {'models': {}, 'metrics': {}}
 
     async def _train_nas(

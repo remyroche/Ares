@@ -109,15 +109,12 @@ except ImportError as e:
 
 
 class TacticianModelType(Enum):
-    """Tactician T1-T4 model types."""
-    # T1-T3: PatchTST-Enhanced Tree Models
-    T1_PATCHTST_LIGHTGBM = "T1_PATCHTST_LIGHTGBM"  # Classification: up/down/none
-    T2_PATCHTST_XGBOOST_LAMBDAMART = "T2_PATCHTST_XGBOOST_LAMBDAMART"  # Ranking: trade desirability
-    T3_PATCHTST_CATBOOST = "T3_PATCHTST_CATBOOST"  # Binary classification: up_hit/down_hit
-
-    # T4: Sequence Models
-    T4_CAUSAL_DILATED_TCN = "T4_CAUSAL_DILATED_TCN"  # Sequence classification/regression
-    T4_TFT_SMALL = "T4_TFT_SMALL"  # Alternative sequence model
+    """Tactician model types."""
+    # Updated model types as requested
+    LGBM_GRU = "LGBM_GRU"  # LGBM + small GRU as embedding
+    CATBOOST = "CATBOOST"  # CatBoost classifier
+    CAUSAL_TCN = "CAUSAL_TCN"  # Causal Dilated TCN
+    STACKER_LGBM_CALIBRATED = "STACKER_LGBM_CALIBRATED"  # Meta-learner
 
     # Legacy models (for backward compatibility)
     RANDOM_SURVIVAL_FOREST = "RANDOM_SURVIVAL_FOREST"
@@ -147,15 +144,23 @@ class TacticianModelsTrainingConfig:
 
     def __post_init__(self):
         """Post-initialization setup."""
+        supported_types = [
+            TacticianModelType.LGBM_GRU,
+            TacticianModelType.CATBOOST,
+            TacticianModelType.CAUSAL_TCN,
+            TacticianModelType.STACKER_LGBM_CALIBRATED,
+            TacticianModelType.NAS,
+            TacticianModelType.TAS,
+        ]
+
         if self.model_types is None:
             self.model_types = [
-                TacticianModelType.T1_PATCHTST_LIGHTGBM,
-                TacticianModelType.T2_PATCHTST_XGBOOST_LAMBDAMART,
-                TacticianModelType.T3_PATCHTST_CATBOOST,
-                TacticianModelType.T4_CAUSAL_DILATED_TCN,
-                TacticianModelType.ELASTIC_NET_CV,
+                TacticianModelType.LGBM_GRU,
+                TacticianModelType.CATBOOST,
+                TacticianModelType.CAUSAL_TCN,
+                TacticianModelType.STACKER_LGBM_CALIBRATED,
                 TacticianModelType.NAS,
-                TacticianModelType.TAS,
+                TacticianModelType.TAS
             ]
         else:
             normalized_types: List[TacticianModelType] = []
@@ -523,16 +528,14 @@ class TacticianModelsTrainingStep:
             # Add model type for filtering to kwargs
             kwargs['model_type_for_filtering'] = model_type.value
 
-            if model_type == TacticianModelType.T1_PATCHTST_LIGHTGBM:
-                return await self._train_t1_patchtst_lightgbm(X, y, sample_weight, **kwargs)
-            elif model_type == TacticianModelType.T2_PATCHTST_XGBOOST_LAMBDAMART:
-                return await self._train_t2_patchtst_xgboost_lambdamart(X, y, sample_weight, **kwargs)
-            elif model_type == TacticianModelType.T3_PATCHTST_CATBOOST:
-                return await self._train_t3_patchtst_catboost(X, y, sample_weight, **kwargs)
-            elif model_type == TacticianModelType.T4_CAUSAL_DILATED_TCN:
-                return await self._train_t4_causal_dilated_tcn(X, y, sample_weight, **kwargs)
-            elif model_type == TacticianModelType.T4_TFT_SMALL:
-                return await self._train_t4_tft_small(X, y, sample_weight, **kwargs)
+            if model_type == TacticianModelType.LGBM_GRU:
+                return await self._train_lgbm_gru(X, y, sample_weight, **kwargs)
+            elif model_type == TacticianModelType.CATBOOST:
+                return await self._train_catboost(X, y, sample_weight, **kwargs)
+            elif model_type == TacticianModelType.CAUSAL_TCN:
+                return await self._train_causal_tcn(X, y, sample_weight, **kwargs)
+            elif model_type == TacticianModelType.STACKER_LGBM_CALIBRATED:
+                return await self._train_stacker_lgbm_calibrated(X, y, sample_weight, **kwargs)
             elif model_type == TacticianModelType.RANDOM_SURVIVAL_FOREST:
                 return await self._train_random_survival_forest(X, y, sample_weight, **kwargs)
             elif model_type == TacticianModelType.XGBOOST:
@@ -2091,6 +2094,126 @@ class TacticianModelsTrainingStep:
 
         except Exception as e:
             tprint_error(f"❌ T4: TFT-Small training failed: {e}")
+            return {'models': {}, 'metrics': {}}
+
+
+    async def _train_lgbm_gru(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        sample_weight: np.ndarray,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Train LGBM + GRU embedding model."""
+        try:
+            from src.models.lgbm_gru_embedding import create_lgbm_gru_embedding, LGBMGRUConfig
+            from src.config.updated_model_configs import LGBMConfig, GRUConfig
+
+            # Create LGBM + GRU model
+            config = LGBMGRUConfig()
+            model = create_lgbm_gru_embedding(config)
+            
+            model.fit(X, y.ravel(), sample_weight=sample_weight)
+
+            return {
+                'models': {'lgbm_gru': model},
+                'metrics': {'model_type': 'LGBM_GRU', 'config': config}
+            }
+
+        except Exception as e:
+            tprint_error(f"❌ LGBM + GRU training failed: {e}")
+            return {'models': {}, 'metrics': {}}
+
+    async def _train_catboost(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        sample_weight: np.ndarray,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Train CatBoost model."""
+        try:
+            from catboost import CatBoostRegressor
+            from src.config.updated_model_configs import CatBoostConfig
+
+            config = CatBoostConfig()
+            model = CatBoostRegressor(
+                depth=config.depth,
+                learning_rate=config.learning_rate,
+                l2_leaf_reg=config.l2_leaf_reg,
+                iterations=config.iterations,
+                subsample=config.subsample,
+                colsample_bylevel=config.colsample_bylevel,
+                random_seed=config.random_seed,
+                verbose=config.verbose
+            )
+
+            model.fit(X, y.ravel(), sample_weight=sample_weight)
+
+            return {
+                'models': {'catboost': model},
+                'metrics': {'model_type': 'CatBoost', 'config': config}
+            }
+
+        except Exception as e:
+            tprint_error(f"❌ CatBoost training failed: {e}")
+            return {'models': {}, 'metrics': {}}
+
+    async def _train_causal_tcn(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        sample_weight: np.ndarray,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Train Causal Dilated TCN model."""
+        try:
+            from src.models.causal_dilated_tcn import create_causal_dilated_tcn, CausalTCNConfig
+
+            config = CausalTCNConfig()
+            model = create_causal_dilated_tcn(config)
+            
+            model.fit(X, y.ravel(), sample_weight=sample_weight)
+
+            return {
+                'models': {'causal_tcn': model},
+                'metrics': {'model_type': 'Causal_TCN', 'config': config}
+            }
+
+        except Exception as e:
+            tprint_error(f"❌ Causal Dilated TCN training failed: {e}")
+            return {'models': {}, 'metrics': {}}
+
+    async def _train_stacker_lgbm_calibrated(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        sample_weight: np.ndarray,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Train Stacker LGBM Calibrated meta-learner."""
+        try:
+            from src.models.stacker_lgbm_calibrated import create_stacker_lgbm_calibrated, StackerLGBMCalibratedConfig
+
+            # This is a meta-learner, so it needs base model predictions
+            config = StackerLGBMCalibratedConfig()
+            model = create_stacker_lgbm_calibrated(config)
+            
+            # For demonstration, we'll use the input features as "base predictions"
+            base_predictions = {
+                'base_model_1': X[:, :min(10, X.shape[1])],  # Use first 10 features as base predictions
+                'base_model_2': X[:, 10:min(20, X.shape[1])] if X.shape[1] > 10 else X[:, :5]
+            }
+            
+            model.fit(base_predictions, y.ravel(), sample_weight)
+
+            return {
+                'models': {'stacker_lgbm_calibrated': model},
+                'metrics': {'model_type': 'Stacker_LGBM_Calibrated', 'config': config}
+            }
+
+        except Exception as e:
+            tprint_error(f"❌ Stacker LGBM Calibrated training failed: {e}")
             return {'models': {}, 'metrics': {}}
 
 

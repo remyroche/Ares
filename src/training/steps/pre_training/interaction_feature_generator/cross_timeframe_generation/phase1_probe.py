@@ -176,6 +176,16 @@ class HTFFeatureGenerator:
         )
 
 
+class FamilyProbeFailure(RuntimeError):
+    """Raised when an HTF family fails to produce any viable candidates."""
+
+    def __init__(self, family: str, message: Optional[str] = None):
+        if message is None:
+            message = f"Failed to generate any HTF candidates for family '{family}'."
+        super().__init__(message)
+        self.family = family
+
+
 class Phase1HTFProbe:
     """Phase-1 HTF probe stage implementation."""
 
@@ -222,9 +232,15 @@ class Phase1HTFProbe:
         for family, base_features in self.htf_generator.htf_families.items():
             self.logger.info(f"Processing family: {family}")
             
-            family_results = self._process_family(
-                family, base_features, sessionized_data, regime_segments, targets
-            )
+            try:
+                family_results = self._process_family(
+                    family, base_features, sessionized_data, regime_segments, targets
+                )
+            except FamilyProbeFailure as exc:
+                self.logger.error(
+                    "Aborting Phase-1 probe: %s", exc
+                )
+                raise
             
             results['candidates'].extend(family_results['candidates'])
             results['family_performance'][family] = family_results['performance']
@@ -255,6 +271,9 @@ class Phase1HTFProbe:
         candidates = []
         family_scores = []
         
+        # Track whether we produced at least one viable candidate
+        candidate_success = False
+
         # Test each combination of base feature and lookback
         for base_feature, lookback in product(base_features, grid):
             try:
@@ -275,6 +294,7 @@ class Phase1HTFProbe:
                 if regime_candidates:
                     candidates.extend(regime_candidates)
                     family_scores.extend([c.utility_score for c in regime_candidates])
+                    candidate_success = True
                     self.logger.debug(
                         "Scored %s@%s for %d regime variants",
                         base_feature,
@@ -286,6 +306,14 @@ class Phase1HTFProbe:
                 self.logger.warning(f"Failed to process {base_feature}@{lookback}: {e}")
                 continue
         
+        if not candidate_success:
+            error_message = (
+                f"Family '{family}' produced no valid HTF candidates after probing "
+                "available base features and lookbacks."
+            )
+            self.logger.error(error_message)
+            raise FamilyProbeFailure(family, error_message)
+
         # Check for early stopping
         early_stopped = self._check_early_stopping(family_scores)
         

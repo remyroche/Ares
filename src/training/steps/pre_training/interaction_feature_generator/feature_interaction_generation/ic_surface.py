@@ -402,7 +402,8 @@ class ICSurfaceEstimator:
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
     
     def estimate_surface(self, data: pd.DataFrame, target: np.ndarray, 
-                        family: FamilyType, feature_name: str) -> ICSurfaceResult:
+                        family: FamilyType, feature_name: str, 
+                        quality_scorer=None) -> ICSurfaceResult:
         """Estimate IC surface for a single feature family."""
         start_time = time.time()
         
@@ -434,8 +435,8 @@ class ICSurfaceEstimator:
                         uncertainty_costs.append(1.0)
                         continue
                     
-                    # Compute IC and standard error
-                    ic, ic_error = self._compute_ic_with_hac(feature_values, target)
+                    # Compute IC and standard error (with LQS if available)
+                    ic, ic_error = self._compute_ic_with_hac(feature_values, target, quality_scorer)
                     
                     ic_values.append(ic)
                     ic_errors.append(ic_error)
@@ -576,8 +577,9 @@ class ICSurfaceEstimator:
             # Placeholder for other families
             return np.zeros(len(data))
     
-    def _compute_ic_with_hac(self, feature: np.ndarray, target: np.ndarray) -> Tuple[float, float]:
-        """Compute IC with HAC standard errors."""
+    def _compute_ic_with_hac(self, feature: np.ndarray, target: np.ndarray, 
+                           quality_scorer=None) -> Tuple[float, float]:
+        """Compute IC with HAC standard errors, optionally using LQS scoring."""
         # Remove NaN values
         valid_mask = np.isfinite(feature) & np.isfinite(target)
         if np.sum(valid_mask) < 10:
@@ -586,7 +588,23 @@ class ICSurfaceEstimator:
         feature_clean = feature[valid_mask]
         target_clean = target[valid_mask]
         
-        # Compute correlation (IC)
+        # Use LQS scoring if quality scorer is available
+        if quality_scorer is not None:
+            try:
+                feature_series = pd.Series(feature_clean, name='feature')
+                target_series = pd.Series(target_clean, name='target')
+                lqs_result = quality_scorer.calculate_lqs_score(feature_series, target_series)
+                
+                if lqs_result and hasattr(lqs_result, 'overall_quality'):
+                    # Use LQS as the primary score
+                    ic = lqs_result.overall_quality
+                    # Use stability as error proxy
+                    ic_error = 1.0 - lqs_result.stability if hasattr(lqs_result, 'stability') else 0.1
+                    return ic, ic_error
+            except Exception as e:
+                tprint_warning(f"LQS calculation failed, falling back to correlation: {e}")
+        
+        # Fallback to correlation-based IC
         ic = np.corrcoef(feature_clean, target_clean)[0, 1]
         
         if np.isnan(ic):

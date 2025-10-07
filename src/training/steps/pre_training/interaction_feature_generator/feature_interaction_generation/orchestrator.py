@@ -39,6 +39,26 @@ from .hierarchical import HierarchicalBayesianShrinkage, HierarchicalResult, Mul
 from .decision import LookbackDecisionMaker, DecisionResult, MultiFamilyDecisionMaker
 from .feature_families import MultiFamilyFeatureGenerator, FeatureResult
 
+# Import profit labeling framework for quality-based optimization
+try:
+    from src.training.steps.pre_training.profit_labeling.quality_scoring import (
+        LabelQualityScorer, QualityScoringConfig, QualityMetrics, QualityMetric
+    )
+    from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler import (
+        VolatilityAwareMultiHorizonLabeler, VolatilityAwareConfig, LabelQualityScore
+    )
+    from src.training.steps.pre_training.profit_labeling.multi_target_scheme import (
+        MultiTargetScheme, MultiTargetConfig, TargetBand
+    )
+    from src.training.steps.pre_training.profit_labeling.noise_gating import (
+        NoiseGatingFilter, NoiseGatingConfig
+    )
+    PROFIT_LABELING_AVAILABLE = True
+    tprint_success("✅ Profit labeling framework imported successfully")
+except ImportError as e:
+    PROFIT_LABELING_AVAILABLE = False
+    tprint_warning(f"⚠️ Profit labeling framework not available: {e}")
+
 # Import comprehensive utility modules
 try:
     from src.utils.tprint import (
@@ -229,6 +249,9 @@ class LookbackOptimizationOrchestrator:
             tprint_error(f"❌ Failed to initialize Feature Generator: {e}")
             raise
         
+        # Initialize profit labeling framework components
+        self._initialize_profit_labeling_components()
+        
         # Initialize utility components
         self._initialize_utility_components()
         
@@ -240,6 +263,89 @@ class LookbackOptimizationOrchestrator:
             tprint_warning(f"⚠️ Failed to create output directory: {e}")
         
         tprint_success("🚀 Enhanced Lookback Optimization Orchestrator initialized successfully")
+    
+    def _initialize_profit_labeling_components(self):
+        """Initialize profit labeling framework components for quality-based optimization."""
+        tprint_debug("🔧 Initializing profit labeling framework components...")
+        
+        if not PROFIT_LABELING_AVAILABLE:
+            tprint_warning("⚠️ Profit labeling framework not available, skipping initialization")
+            self.quality_scorer = None
+            self.volatility_labeler = None
+            self.multi_target_scheme = None
+            self.noise_gating_filter = None
+            return
+        
+        # Initialize quality scorer
+        try:
+            quality_config = QualityScoringConfig(
+                baseline_models=['logistic', 'random_forest'],
+                test_size=0.2,
+                n_splits=5,
+                random_state=42,
+                min_lqs_score=0.3,
+                min_auc_threshold=0.55,
+                max_auc_std_threshold=0.03,
+                min_psi_threshold=0.1,
+                max_flip_rate_threshold=0.15,
+                min_balance_threshold=0.35,
+                max_balance_threshold=0.65,
+                max_correlation_threshold=0.4
+            )
+            self.quality_scorer = LabelQualityScorer(quality_config)
+            tprint_success("✅ Quality scorer initialized")
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to initialize quality scorer: {e}")
+            self.quality_scorer = None
+        
+        # Initialize volatility labeler
+        try:
+            volatility_config = VolatilityAwareConfig(
+                min_data_points=1000,
+                generate_reports=True,
+                save_intermediate_results=True,
+                enable_volatility_normalization=True,
+                enable_multi_target_scheme=True
+            )
+            self.volatility_labeler = VolatilityAwareMultiHorizonLabeler(volatility_config)
+            tprint_success("✅ Volatility labeler initialized")
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to initialize volatility labeler: {e}")
+            self.volatility_labeler = None
+        
+        # Initialize multi-target scheme
+        try:
+            multi_target_config = MultiTargetConfig(
+                small_band=(0.4, 0.8),
+                medium_band=(0.8, 1.3),
+                high_band=(1.3, 2.0),
+                enable_optimization=True,
+                optimization_method='bayesian',
+                n_trials=50,
+                optimization_metric='lqs'
+            )
+            self.multi_target_scheme = MultiTargetScheme(multi_target_config)
+            tprint_success("✅ Multi-target scheme initialized")
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to initialize multi-target scheme: {e}")
+            self.multi_target_scheme = None
+        
+        # Initialize noise gating filter
+        try:
+            noise_config = NoiseGatingConfig(
+                min_volume_threshold=1000,
+                max_spread_ratio=0.01,
+                min_tick_count=10,
+                enable_volatility_filtering=True,
+                volatility_threshold_percentile=5.0
+            )
+            self.noise_gating_filter = NoiseGatingFilter(noise_config)
+            tprint_success("✅ Noise gating filter initialized")
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to initialize noise gating filter: {e}")
+            self.noise_gating_filter = None
+        
+        tprint_success("✅ Profit labeling framework components initialized")
     
     def _initialize_utility_components(self):
         """Initialize utility components with comprehensive error handling."""
@@ -565,7 +671,8 @@ class LookbackOptimizationOrchestrator:
                     feature_name = feature_names[family]
                     
                     ic_result = self.ic_estimator.estimate_surface(
-                        symbol_data, symbol_target, family, feature_name
+                        symbol_data, symbol_target, family, feature_name,
+                        quality_scorer=self.quality_scorer
                     )
                     
                     symbol_results[family] = ic_result

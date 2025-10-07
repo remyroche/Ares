@@ -69,6 +69,31 @@ class BandHorizonRule:
 
 
 @dataclass
+class ForwardReturnSmoothingConfig:
+    """Configuration for forward return smoothing by horizon."""
+
+    enabled: bool = True
+    default_lambda: float = 0.2
+    per_horizon_lambdas: Dict[Union[int, str], float] = field(default_factory=dict)
+    lambda_bounds: Tuple[float, float] = (0.05, 2.0)
+
+    def _validate_config(self) -> None:
+        """Validate smoothing configuration values."""
+        if self.default_lambda <= 0:
+            raise ValueError("default_lambda must be positive")
+
+        lower, upper = self.lambda_bounds
+        if lower <= 0 or upper <= 0 or lower >= upper:
+            raise ValueError("lambda_bounds must be positive with lower < upper")
+
+        for horizon, value in self.per_horizon_lambdas.items():
+            if value <= 0:
+                raise ValueError(
+                    f"Smoothing lambda for horizon '{horizon}' must be positive"
+                )
+
+
+@dataclass
 class MultiTargetConfig:
     """Configuration for multi-target scheme."""
 
@@ -127,6 +152,19 @@ class MultiTargetConfig:
     max_workers: Optional[int] = None  # None = use all available cores
     parallel_method: str = 'thread'  # 'thread' or 'process'
 
+    # Forward return smoothing configuration
+    forward_return_smoothing: ForwardReturnSmoothingConfig = field(default_factory=ForwardReturnSmoothingConfig)
+
+    def _validate_config(self) -> None:
+        """Validate multi-target configuration values."""
+        if self.min_horizon < 1:
+            raise ValueError("min_horizon must be at least 1")
+        if self.max_horizon < self.min_horizon:
+            raise ValueError("max_horizon must be greater than or equal to min_horizon")
+
+        if self.forward_return_smoothing:
+            self.forward_return_smoothing._validate_config()
+
 
 @dataclass
 class TargetSelectionResult:
@@ -144,6 +182,7 @@ class TargetSelectionResult:
     selected_targets: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     target_bands: Dict[str, TargetBand] = field(default_factory=dict)
     target_parameters: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    smoothing_settings: Dict[str, Dict[str, float]] = field(default_factory=dict)
     
     # Quality metrics
     target_quality_scores: Dict[str, float] = field(default_factory=dict)
@@ -266,6 +305,8 @@ class MultiTargetScheme:
                 candidate.setdefault('parameters', {})
                 candidate['parameters']['horizon'] = candidate['horizon']
 
+            self._apply_smoothing_parameters(candidate_targets)
+
             # Step 3: Generate labels for all candidates
             tprint_info("🏷️ Step 3: Generating labels for candidates")
             candidate_labels = self._generate_candidate_labels(
@@ -315,6 +356,7 @@ class MultiTargetScheme:
                 }
                 for name, info in selected_targets.items()
             }
+            result.smoothing_settings = self._extract_smoothing_settings(result.target_parameters)
             result.target_bands = {
                 name: info.get('band') for name, info in selected_targets.items()
             }
@@ -400,7 +442,7 @@ class MultiTargetScheme:
         except Exception as e:
             tprint_error(f"❌ Error generating candidate targets: {e}")
             return []
-    
+
     def _generate_band_candidates(self, band: TargetBand, bars: pd.DataFrame,
                                 volatility_series: pd.Series, eligibility_mask: pd.Series) -> List[Dict[str, Any]]:
         """Generate candidates for a specific band with conditional thresholds."""
@@ -444,6 +486,78 @@ class MultiTargetScheme:
         except Exception as e:
             tprint_warning(f"⚠️ Error generating candidates for band {band.value}: {e}")
             return []
+
+    def _apply_smoothing_parameters(self, candidate_targets: List[Dict[str, Any]]) -> None:
+        """Attach decay lambda parameters to each candidate based on horizon."""
+        try:
+            smoothing_cfg = getattr(self.config, 'forward_return_smoothing', None)
+            if not smoothing_cfg or not smoothing_cfg.enabled:
+                return
+
+            for candidate in candidate_targets:
+                horizon_value = candidate.get('horizon', self.config.min_horizon)
+                decay_lambda = self._determine_decay_lambda(horizon_value)
+                candidate.setdefault('parameters', {})['decay_lambda'] = decay_lambda
+        except Exception as e:
+            tprint_warning(f"⚠️ Error applying smoothing parameters: {e}")
+
+    def _determine_decay_lambda(self, horizon: Optional[Union[int, float]]) -> float:
+        """Resolve decay lambda for a given horizon using configuration overrides."""
+        smoothing_cfg = getattr(self.config, 'forward_return_smoothing', None)
+        if not smoothing_cfg:
+            return 0.0
+
+        lambda_value: Optional[float] = None
+        if horizon is not None and smoothing_cfg.per_horizon_lambdas:
+            horizon_key_int = int(round(float(horizon)))
+            if horizon_key_int in smoothing_cfg.per_horizon_lambdas:
+                lambda_value = smoothing_cfg.per_horizon_lambdas[horizon_key_int]
+            elif str(horizon_key_int) in smoothing_cfg.per_horizon_lambdas:
+                lambda_value = smoothing_cfg.per_horizon_lambdas[str(horizon_key_int)]
+
+        if lambda_value is None:
+            lambda_value = smoothing_cfg.default_lambda
+
+        lower, upper = smoothing_cfg.lambda_bounds
+        if lower is not None:
+            lambda_value = max(lower, lambda_value)
+        if upper is not None:
+            lambda_value = min(upper, lambda_value)
+
+        return float(lambda_value)
+
+    def _extract_smoothing_settings(self, target_parameters: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
+        """Build smoothing metadata for selected targets."""
+        smoothing_cfg = getattr(self.config, 'forward_return_smoothing', None)
+        if not smoothing_cfg or not smoothing_cfg.enabled:
+            return {}
+
+        smoothing_settings: Dict[str, Dict[str, float]] = {}
+        for name, params in (target_parameters or {}).items():
+            if params is None:
+                continue
+
+            horizon_value = params.get('horizon')
+            decay_lambda = params.get('decay_lambda')
+            if decay_lambda is None:
+                decay_lambda = self._determine_decay_lambda(horizon_value)
+                params['decay_lambda'] = decay_lambda
+
+            halflife = self._lambda_to_halflife(decay_lambda) if decay_lambda > 0 else 0.0
+            smoothing_settings[name] = {
+                'decay_lambda': float(decay_lambda),
+                'halflife': float(halflife),
+                'horizon': float(horizon_value) if horizon_value is not None else None,
+                'method': 'ewm_halflife',
+                'aggregation': 'exponential_weighted_mean'
+            }
+
+        return smoothing_settings
+
+    @staticmethod
+    def _lambda_to_halflife(decay_lambda: float) -> float:
+        """Convert exponential decay lambda to half-life units."""
+        return float(np.log(2) / max(decay_lambda, 1e-12))
     
     def _apply_conditional_thresholds(self, k_range: Tuple[float, float], 
                                     volatility_series: pd.Series, band: TargetBand) -> Tuple[float, float]:

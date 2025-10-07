@@ -36,6 +36,7 @@ from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler im
 from src.training.steps.pre_training.profit_labeling.multi_target_scheme import (
     MultiTargetScheme, MultiTargetConfig, TargetBand
 )
+from src.training.steps.pre_training.standardized_labeling_interface import assert_labels_sigma_scaled
 
 # Import multi-horizon profit labeler for proper alignment
 from src.training.steps.pre_training.multi_horizon_profit_labeler import (
@@ -337,6 +338,7 @@ class OptimizedFeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent)
             labeling_result = pipeline_state.get('multi_horizon_labeling_result', {})
             if labeling_result and 'labeled_data' in labeling_result:
                 labeled_data = labeling_result['labeled_data']
+                assert_labels_sigma_scaled(labeled_data)
                 if not labeled_data.empty:
                     tprint_success("✅ Using pre-computed labels from multi_horizon_profit_labeler")
                     tprint_info(f"   → Found {len(labeled_data.columns)} target columns")
@@ -346,6 +348,7 @@ class OptimizedFeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent)
             standardized_output = pipeline_state.get('standardized_output', {})
             if standardized_output and 'labels' in standardized_output:
                 labels = standardized_output['labels']
+                assert_labels_sigma_scaled(labels)
                 if not labels.empty:
                     tprint_success("✅ Using standardized output labels from multi_horizon_profit_labeler")
                     tprint_info(f"   → Found {len(labels.columns)} target columns")
@@ -365,6 +368,7 @@ class OptimizedFeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent)
             standardized_output = pipeline_state.get('standardized_output', {})
             if standardized_output and 'labels' in standardized_output:
                 labels = standardized_output['labels']
+                assert_labels_sigma_scaled(labels)
                 if not labels.empty:
                     # Use the first target column (immediate_opportunity)
                     if 'immediate_opportunity' in labels.columns:
@@ -379,6 +383,7 @@ class OptimizedFeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent)
             labeling_result = pipeline_state.get('multi_horizon_labeling_result', {})
             if labeling_result and 'labeled_data' in labeling_result:
                 labeled_data = labeling_result['labeled_data']
+                assert_labels_sigma_scaled(labeled_data)
                 if not labeled_data.empty:
                     # Use the first target column
                     forward_returns = labeled_data.iloc[:, 0]

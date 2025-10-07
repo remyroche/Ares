@@ -13,6 +13,8 @@ import logging
 from pathlib import Path
 import asyncio
 
+from src.training.steps.pre_training.standardized_labeling_interface import assert_labels_sigma_scaled
+
 # Import the final feature selection pipeline
 from .final_feature_selection_pipeline import (
     MultiStageFeatureSelector, FeatureSelectionConfig, 
@@ -218,6 +220,8 @@ class FinalFeatureSelectionStep:
                             else:
                                 self.logger.warning("⚠️ Target data in unexpected format")
                                 return None
+
+                            assert_labels_sigma_scaled(target_df)
 
                             # Select the best target based on weights
                             best_target = self._select_best_target_with_weights(target_df, weights, target_columns)

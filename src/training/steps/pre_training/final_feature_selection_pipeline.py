@@ -21,6 +21,7 @@ from sklearn.metrics import mean_squared_error, accuracy_score
 import joblib
 from functools import lru_cache
 import hashlib
+from collections import defaultdict
 
 # Try to import SHAP, fallback if not available
 try:
@@ -88,6 +89,7 @@ except ImportError:
 from src.utils.logger import get_logger
 from src.utils.matrix_operations import get_unified_matrix_operations
 from src.utils.tprint import tprint
+from src.feature_selection import EntropyBalancerConfig, EntropyFilterResult, EntropyStabilityFilter
 
 @dataclass
 class FeatureSelectionConfig:
@@ -176,6 +178,15 @@ class FeatureSelectionConfig:
         'temporal_stability': 0.10
     })
 
+    # NEW: Entropy stability filtering
+    enable_entropy_balancing: bool = True
+    entropy_num_slices: int = 12
+    entropy_min_slice_size: int = 100
+    entropy_variance_threshold: float = 0.12
+    entropy_max_bins: int = 15
+    entropy_min_unique_values: int = 5
+    entropy_use_time_index: bool = True
+
     # NEW: Early termination and smart pruning
     enable_early_termination: bool = True
     early_termination_threshold: float = 0.01  # Stop processing features below this importance threshold
@@ -251,6 +262,9 @@ class FeatureSelectionResult:
     correlation_analysis: Dict[str, Any] = field(default_factory=dict)
     variance_analysis: Dict[str, Any] = field(default_factory=dict)
     stability_scores: Dict[str, float] = field(default_factory=dict)
+    entropy_variance: Dict[str, float] = field(default_factory=dict)
+    entropy_stability: Dict[str, float] = field(default_factory=dict)
+    entropy_removed_features: Dict[str, float] = field(default_factory=dict)
 
 class MultiStageFeatureSelector:
     """Multi-stage feature selection using RandomForest and SHAP with vectorization and caching."""
@@ -289,6 +303,8 @@ class MultiStageFeatureSelector:
 
         # Initialize results
         self.results = FeatureSelectionResult()
+        self.results.polarity_adjustments = {}
+        self.results.sign_stability = {}
 
         # Set model-specific parameters
         self._set_model_specific_parameters()
@@ -297,6 +313,10 @@ class MultiStageFeatureSelector:
         if self.config.separate_directional_features:
             self.long_results = FeatureSelectionResult()
             self.short_results = FeatureSelectionResult()
+            self.long_results.polarity_adjustments = {}
+            self.short_results.polarity_adjustments = {}
+            self.long_results.sign_stability = {}
+            self.short_results.sign_stability = {}
 
         # Initialize caching system for vectorized operations
         self._cache = {}
@@ -306,6 +326,11 @@ class MultiStageFeatureSelector:
         # Initialize vectorized computation arrays
         self._vectorized_arrays = {}
         self._computation_cache = {}
+
+        # Initialize polarity tracking containers
+        self.feature_polarity_adjustments: Dict[str, Dict[str, Any]] = {}
+        self.feature_polarity_history: Dict[str, List[float]] = {}
+        self.feature_sign_stability: Dict[str, float] = {}
 
         tprint("🚀 MultiStageFeatureSelector initialized with vectorization and caching")
         tprint(f"🎯 Model Type: {self.config.model_type}")
@@ -652,6 +677,10 @@ class MultiStageFeatureSelector:
         result.selection_time = execution_time
         tprint(f"⏱️ Total execution time: {execution_time:.3f} seconds")
 
+        # Ensure polarity adjustments are attached to the result payload
+        result.polarity_adjustments = getattr(self, 'feature_polarity_adjustments', {})
+        result.sign_stability = getattr(self, 'feature_sign_stability', {})
+
         return result
 
     def _get_directions_to_process(self) -> List[str]:
@@ -788,10 +817,148 @@ class MultiStageFeatureSelector:
             self._save_analysis()
 
         return self.results
-    
+
+    def _evaluate_feature_polarity(self, X: pd.DataFrame, y: pd.Series) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, List[float]], Dict[str, float]]:
+        """Evaluate rolling feature polarity stability and adjust unstable features."""
+
+        adjustments: Dict[str, Dict[str, Any]] = {}
+        correlation_history: Dict[str, List[float]] = {}
+        sign_stability: Dict[str, float] = {}
+
+        if X.empty:
+            return adjustments, correlation_history, sign_stability
+
+        y_series = y if isinstance(y, pd.Series) else pd.Series(y, index=X.index)
+        try:
+            y_numeric = pd.to_numeric(y_series, errors='coerce')
+        except Exception:
+            y_numeric = pd.Series(y_series, index=y_series.index, dtype=float)
+
+        if not y_numeric.index.equals(X.index):
+            y_numeric = y_numeric.reindex(X.index)
+
+        valid_mask = ~y_numeric.isna()
+        X_numeric = X.select_dtypes(include=[np.number])
+
+        if X_numeric.empty:
+            return adjustments, correlation_history, sign_stability
+
+        X_numeric = X_numeric.loc[valid_mask]
+        y_valid = y_numeric.loc[valid_mask]
+
+        total_rows = len(X_numeric)
+        if total_rows < 15:
+            for col in X_numeric.columns:
+                sign_stability[col] = 1.0
+            return adjustments, correlation_history, sign_stability
+
+        window_size = max(total_rows // 5, 10)
+        window_size = min(window_size, total_rows - 1)
+        if window_size < 5:
+            for col in X_numeric.columns:
+                sign_stability[col] = 1.0
+            return adjustments, correlation_history, sign_stability
+
+        step_size = max(window_size // 2, 1)
+
+        correlation_accumulator: Dict[str, List[float]] = defaultdict(list)
+        sign_accumulator: Dict[str, List[int]] = defaultdict(list)
+
+        for start in range(0, total_rows - window_size + 1, step_size):
+            end = start + window_size
+            window_X = X_numeric.iloc[start:end]
+            window_y = y_valid.iloc[start:end]
+
+            if window_y.std(ddof=0) == 0:
+                continue
+
+            window_correlations = window_X.corrwith(window_y)
+
+            for feature, corr_value in window_correlations.items():
+                if pd.isna(corr_value):
+                    continue
+
+                corr_float = float(corr_value)
+                correlation_accumulator[feature].append(corr_float)
+
+                if abs(corr_float) < 1e-9:
+                    sign_accumulator[feature].append(0)
+                else:
+                    sign_accumulator[feature].append(1 if corr_float > 0 else -1)
+
+        recent_window_depth = 10
+        valid_index = y_valid.index
+
+        for feature in X_numeric.columns:
+            history = correlation_accumulator.get(feature, [])
+            correlation_history[feature] = history[-recent_window_depth:]
+
+            signs = sign_accumulator.get(feature, [])
+            recent_signs = signs[-recent_window_depth:]
+            non_zero_signs = [s for s in recent_signs if s != 0]
+
+            if len(non_zero_signs) <= 1:
+                flip_rate = 0.0
+            else:
+                flips = sum(
+                    non_zero_signs[idx] != non_zero_signs[idx - 1]
+                    for idx in range(1, len(non_zero_signs))
+                )
+                flip_rate = flips / (len(non_zero_signs) - 1)
+
+            stability_score = max(0.0, 1.0 - flip_rate)
+            sign_stability[feature] = stability_score
+
+            if flip_rate <= 0.7:
+                continue
+
+            dominant_sign = 0
+            if non_zero_signs:
+                positives = non_zero_signs.count(1)
+                negatives = non_zero_signs.count(-1)
+                if positives > negatives:
+                    dominant_sign = 1
+                elif negatives > positives:
+                    dominant_sign = -1
+
+            original_corr = X_numeric[feature].corr(y_valid)
+            final_corr = original_corr
+            action = 're_standardized'
+
+            if pd.notna(original_corr) and original_corr < 0:
+                X[feature] = -X[feature]
+                final_corr = X.loc[valid_index, feature].corr(y_valid)
+                action = 'inverted'
+            else:
+                std = X[feature].std(ddof=0)
+                if std and std > 0:
+                    mean = X[feature].mean()
+                    X[feature] = (X[feature] - mean) / std
+                    final_corr = X.loc[valid_index, feature].corr(y_valid)
+                else:
+                    action = 're_standardization_skipped_zero_variance'
+
+            adjustments[feature] = {
+                'action': action,
+                'flip_rate': float(flip_rate),
+                'sign_stability': float(stability_score),
+                'window_size': int(window_size),
+                'step_size': int(step_size),
+                'evaluated_windows': int(len(non_zero_signs)),
+                'dominant_sign': int(dominant_sign),
+                'original_correlation': None if pd.isna(original_corr) else float(original_corr),
+                'final_correlation': None if pd.isna(final_corr) else float(final_corr),
+                'correlation_history': [float(v) for v in correlation_history[feature]],
+                'recent_signs': non_zero_signs,
+                'reason': 'dominant_sign_flipped_gt_70_percent',
+                'timestamp': time.time(),
+            }
+
+        return adjustments, correlation_history, sign_stability
+
     def _prepare_initial_features(self, X: pd.DataFrame, y: pd.Series, feature_names: Optional[List[str]] = None) -> pd.DataFrame:
         """Prepare initial features for selection using vectorized operations."""
-        
+
         tprint("🔄 Preparing initial features with vectorized operations...")
         tprint(f"📊 Input: {X.shape[0]} samples, {X.shape[1]} features")
         
@@ -814,7 +981,21 @@ class MultiStageFeatureSelector:
             tprint(f"📊 After variance filtering: {X.shape[1]} features")
         else:
             tprint("✅ No low variance features to remove")
-        
+
+        # Analyze rolling correlation polarity before correlation filtering
+        tprint("🔍 Evaluating rolling feature-target correlation stability...")
+        adjustments, correlation_history, sign_stability = self._evaluate_feature_polarity(X, y)
+        self.feature_polarity_adjustments = adjustments
+        self.feature_polarity_history = correlation_history
+        self.feature_sign_stability = sign_stability
+        self.results.polarity_adjustments = adjustments
+        self.results.sign_stability = sign_stability
+
+        if adjustments:
+            tprint(f"⚖️ Applied polarity adjustments to {len(adjustments)} features")
+        else:
+            tprint("✅ No polarity adjustments required")
+
         # Remove highly correlated features using vectorized correlation computation
         tprint("🔄 Computing vectorized correlation analysis...")
         correlation_threshold = self.config.min_correlation_threshold
@@ -826,6 +1007,14 @@ class MultiStageFeatureSelector:
             tprint(f"📊 After correlation filtering: {X.shape[1]} features")
         else:
             tprint("✅ No highly correlated features to remove")
+
+        # Apply entropy stability filtering before staging if enabled
+        if self.config.enable_entropy_balancing and len(X.columns) > 0:
+            tprint("🔄 Evaluating entropy stability across temporal slices...")
+            X = self._apply_entropy_balancing_filter(X)
+            tprint(f"📊 After entropy balancing: {X.shape[1]} features")
+        else:
+            tprint("⏭️ Entropy balancing disabled or no features available for evaluation")
         
         # Select top features if we have too many using vectorized operations
         if len(X.columns) > self.config.initial_features:
@@ -839,6 +1028,51 @@ class MultiStageFeatureSelector:
             tprint(f"📊 After top feature selection: {X.shape[1]} features")
         
         tprint(f"✅ Prepared {len(X.columns)} features for selection")
+        return X
+
+    def _apply_entropy_balancing_filter(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Apply entropy stability filtering and record diagnostics."""
+
+        balancer_config = EntropyBalancerConfig(
+            num_slices=self.config.entropy_num_slices,
+            min_slice_size=self.config.entropy_min_slice_size,
+            max_entropy_variance=self.config.entropy_variance_threshold,
+            max_bins=self.config.entropy_max_bins,
+            min_unique_values=self.config.entropy_min_unique_values,
+            use_time_index=self.config.entropy_use_time_index,
+        )
+
+        filter_engine = EntropyStabilityFilter(balancer_config)
+        filter_result: EntropyFilterResult = filter_engine.filter(X)
+
+        self.results.entropy_variance = filter_result.entropy_variance
+        self.results.entropy_stability = filter_result.stability_scores
+        self.results.entropy_removed_features = filter_result.dropped_features
+
+        if filter_result.dropped_features:
+            dropped_preview = list(filter_result.dropped_features.items())[:5]
+            tprint(f"🗑️ Entropy filter removed {len(filter_result.dropped_features)} unstable features")
+            for feature, variance in dropped_preview:
+                tprint(f"   • {feature}: variance={variance:.4f}")
+            if filter_result.selected_features:
+                return X[filter_result.selected_features]
+
+            # Fallback: retain lowest variance features to avoid empty set
+            tprint("⚠️ All features flagged as unstable; retaining the most stable subset")
+            sorted_features = sorted(
+                filter_result.entropy_variance.items(),
+                key=lambda item: item[1]
+            )
+            fallback_count = max(1, int(len(sorted_features) * 0.5))
+            fallback_features = [feature for feature, _ in sorted_features[:fallback_count]]
+            self.results.entropy_removed_features = {
+                feature: variance
+                for feature, variance in filter_result.entropy_variance.items()
+                if feature not in fallback_features
+            }
+            return X[fallback_features]
+
+        tprint("✅ Entropy filter retained all features")
         return X
 
     def _find_highly_correlated_features_vectorized(self, X: pd.DataFrame, threshold: float) -> List[str]:
@@ -1729,7 +1963,7 @@ class MultiStageFeatureSelector:
         self.results.stage_1_scores = stage_1_scores
         self.results.stage_2_scores = stage_2_scores
         self.results.stage_3_scores = stage_3_scores
-        
+
         # Calculate final model performance
         final_model = self._train_random_forest(X[stage_3_features], y)
         try:
@@ -1760,6 +1994,9 @@ class MultiStageFeatureSelector:
             'cv_scores': cv_scores.tolist(),
             'feature_importance': dict(zip(stage_3_features, final_model.feature_importances_))
         }
+
+        self.results.polarity_adjustments = getattr(self, 'feature_polarity_adjustments', {})
+        self.results.sign_stability = getattr(self, 'feature_sign_stability', {})
     
     def _handle_insufficient_features(self, X: pd.DataFrame, y: pd.Series) -> FeatureSelectionResult:
         """Handle case where we don't have enough features."""
@@ -1788,7 +2025,10 @@ class MultiStageFeatureSelector:
             'stage_3': len(X.columns),
             'final': len(X.columns)
         }
-        
+
+        self.results.polarity_adjustments = getattr(self, 'feature_polarity_adjustments', {})
+        self.results.sign_stability = getattr(self, 'feature_sign_stability', {})
+
         return self.results
     
     def _save_analysis(self):
@@ -1813,6 +2053,20 @@ class MultiStageFeatureSelector:
                     'stage_3': self.results.stage_3_scores,
                     'final': self.results.final_scores
                 },
+                'entropy_filter': {
+                    'removed_features': self.results.entropy_removed_features,
+                    'stability_scores': self.results.entropy_stability,
+                    'variance': self.results.entropy_variance,
+                    'config': {
+                        'num_slices': self.config.entropy_num_slices,
+                        'min_slice_size': self.config.entropy_min_slice_size,
+                        'variance_threshold': self.config.entropy_variance_threshold,
+                        'max_bins': self.config.entropy_max_bins,
+                        'min_unique_values': self.config.entropy_min_unique_values,
+                    },
+                },
+                'polarity_adjustments': getattr(self.results, 'polarity_adjustments', {}),
+                'sign_stability': getattr(self.results, 'sign_stability', {}),
                 'selection_time': self.results.selection_time,
                 'config': {
                     'initial_features': self.config.initial_features,

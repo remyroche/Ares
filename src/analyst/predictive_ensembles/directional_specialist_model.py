@@ -16,6 +16,7 @@ Key Features:
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Any, Tuple, Union
+from collections.abc import Sequence
 import logging
 from dataclasses import dataclass
 from enum import Enum
@@ -51,10 +52,61 @@ class DirectionType(Enum):
     BOTH = "both"
 
 
+class StreamingQuantileTransformer:
+    """Streaming quantile transformer storing state for incremental updates."""
+
+    def __init__(self):
+        self._state: Dict[str, np.ndarray] = {}
+
+    def _update_state(self, feature: str, values: np.ndarray) -> None:
+        if values.size == 0:
+            return
+
+        existing = self._state.get(feature)
+        if existing is not None and existing.size:
+            combined = np.concatenate([existing, values])
+            combined.sort()
+            self._state[feature] = combined
+        else:
+            self._state[feature] = np.sort(values)
+
+    def _transform_values(self, feature: str, values: np.ndarray) -> np.ndarray:
+        state = self._state.get(feature)
+        if state is None or state.size == 0:
+            return np.zeros_like(values, dtype=float)
+
+        ranks = np.searchsorted(state, values, side='right').astype(float)
+        transformed = ranks / float(len(state))
+        return np.clip(transformed, 0.0, 1.0)
+
+    def fit_transform(self, df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
+        transformed_df = df.copy()
+        for col in columns:
+            series = transformed_df[col]
+            mask = series.notna()
+            values = series[mask].astype(float).values
+            self._update_state(col, values)
+            transformed = self._transform_values(col, values)
+            series.loc[mask] = transformed
+            transformed_df[col] = series
+        return transformed_df
+
+    def transform(self, df: pd.DataFrame, columns: List[str]) -> pd.DataFrame:
+        transformed_df = df.copy()
+        for col in columns:
+            series = transformed_df[col]
+            mask = series.notna()
+            values = series[mask].astype(float).values
+            transformed = self._transform_values(col, values)
+            series.loc[mask] = transformed
+            transformed_df[col] = series
+        return transformed_df
+
+
 @dataclass
 class DirectionalConfig:
     """Configuration for directional specialist model."""
-    
+
     # LightGBM parameters optimized for directional prediction
     n_estimators: int = 500
     learning_rate: float = 0.05
@@ -66,22 +118,34 @@ class DirectionalConfig:
     reg_alpha: float = 0.1
     reg_lambda: float = 0.1
     random_state: int = 42
+
+    # Cyclic noise injection parameters
+    enable_cyclic_noise: bool = True
+    cyclic_noise_scale: float = 1e-3
+    cyclic_noise_period: int = 512
     
     # Directional optimization parameters
     directional_weight_boost: float = 1.5  # Boost weight for strong directional moves
     asymmetric_loss_alpha: float = 0.7     # Asymmetric loss parameter
     min_directional_threshold: float = 0.1  # Minimum threshold for directional moves
+    temporal_decay_tau: float = 7 * 24 * 3600  # Temporal decay constant (seconds)
     
+    tau: float = 7.0  # Exponential decay time constant in days for recency weighting
+
     # Feature engineering parameters
     enable_directional_features: bool = True
     directional_lookback_periods: List[int] = None
     momentum_periods: List[int] = None
+
+    # Feature normalization parameters
+    enable_directional_quantiles: bool = False
     
     def __post_init__(self):
         if self.directional_lookback_periods is None:
             self.directional_lookback_periods = [5, 10, 15, 20, 30]
         if self.momentum_periods is None:
             self.momentum_periods = [3, 5, 8, 13, 21]
+        validate_positive(self.tau, "tau")
 
 
 class DirectionalFeatureEngineer:
@@ -90,15 +154,24 @@ class DirectionalFeatureEngineer:
     def __init__(self, config: DirectionalConfig):
         self.config = config
         self.logger = logger.getChild('DirectionalFeatureEngineer')
-    
-    def create_directional_features(self, df: pd.DataFrame, target: np.ndarray) -> pd.DataFrame:
+        self.quantile_transformer: Optional[StreamingQuantileTransformer] = None
+        if self.config.enable_directional_quantiles:
+            self.quantile_transformer = StreamingQuantileTransformer()
+
+    def create_directional_features(
+        self,
+        df: pd.DataFrame,
+        target: np.ndarray,
+        fit: bool = False
+    ) -> pd.DataFrame:
         """
         Create features optimized for directional prediction.
-        
+
         Args:
             df: Input dataframe with OHLCV data
             target: Target values for directional optimization
-            
+            fit: Whether to update quantile transformer state
+
         Returns:
             DataFrame with enhanced directional features
         """
@@ -123,7 +196,20 @@ class DirectionalFeatureEngineer:
         
         self.logger.debug(f"Created {df_enhanced.shape[1] - df.shape[1]} directional features")
         
+        if self.quantile_transformer is not None:
+            df_enhanced = self._apply_quantile_transform(df_enhanced, fit=fit)
+
         return df_enhanced
+
+    def _apply_quantile_transform(self, df: pd.DataFrame, fit: bool) -> pd.DataFrame:
+        numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
+        if not numeric_columns:
+            return df
+
+        if fit:
+            return self.quantile_transformer.fit_transform(df, numeric_columns)
+
+        return self.quantile_transformer.transform(df, numeric_columns)
     
     def _add_directional_momentum_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add momentum features optimized for directional prediction."""
@@ -262,7 +348,13 @@ class DirectionalSpecialistModel:
         self.logger.info(f"   Directional features: {self.config.enable_directional_features}")
         self.logger.info(f"   Asymmetric loss alpha: {self.config.asymmetric_loss_alpha}")
     
-    def fit(self, X: pd.DataFrame, y: np.ndarray, sample_weight: Optional[np.ndarray] = None) -> 'DirectionalSpecialistModel':
+    def fit(
+        self,
+        X: pd.DataFrame,
+        y: np.ndarray,
+        sample_weight: Optional[np.ndarray] = None,
+        timestamps: Optional[Union[pd.Series, np.ndarray, Sequence[Any]]] = None
+    ) -> 'DirectionalSpecialistModel':
         """
         Fit the directional specialist model.
         
@@ -270,6 +362,7 @@ class DirectionalSpecialistModel:
             X: Input features
             y: Target values
             sample_weight: Optional sample weights
+            timestamps: Optional timestamps aligned with samples for temporal decay
             
         Returns:
             Self for method chaining
@@ -278,10 +371,43 @@ class DirectionalSpecialistModel:
         
         # Create directional features
         X_enhanced = self.feature_engineer.create_directional_features(X, y)
-        
-        # Create directional sample weights
+
+        if self.config.enable_cyclic_noise:
+            from src.training.steps.model_training.utils.noise_injection import (
+                CyclicNoiseConfig,
+                add_cyclic_noise,
+            )
+
+            noise_config = CyclicNoiseConfig(
+                noise_scale=self.config.cyclic_noise_scale,
+                cycle_length=self.config.cyclic_noise_period,
+                random_state=self.config.random_state,
+            )
+            X_prepared = add_cyclic_noise(X_enhanced, noise_config)
+        else:
+            X_prepared = X_enhanced
+
+        # Create directional sample weights with recency decay
+        timestamps = X.index if isinstance(X, pd.DataFrame) else None
+        directional_weights = self._create_directional_sample_weights(y, timestamps=timestamps)
+
         if sample_weight is None:
-            sample_weight = self._create_directional_sample_weights(y)
+            sample_weight = directional_weights
+        else:
+            base_weights = np.asarray(sample_weight, dtype=float)
+            if base_weights.shape[0] != directional_weights.shape[0]:
+                raise ValueError(
+                    "Provided sample_weight must have the same length as y for directional weighting"
+                )
+            sample_weight = base_weights * directional_weights
+
+        half_life_days = self.config.tau * np.log(2)
+        half_life_td = pd.to_timedelta(half_life_days, unit='D')
+        self.logger.info(
+            "   Recency half-life: %s (tau=%.2f days)",
+            half_life_td,
+            self.config.tau,
+        )
         
         # Initialize LightGBM model
         self.model = lgb.LGBMRegressor(
@@ -303,16 +429,16 @@ class DirectionalSpecialistModel:
         
         # Fit model with directional optimization
         self.model.fit(
-            X_enhanced, 
-            y, 
+            X_prepared,
+            y,
             sample_weight=sample_weight,
-            eval_set=[(X_enhanced, y)],
+            eval_set=[(X_prepared, y)],
             eval_metric='l1',
             callbacks=[lgb.early_stopping(50), lgb.log_evaluation(0)]
         )
-        
+
         # Store feature columns and statistics
-        self.feature_columns = X_enhanced.columns.tolist()
+        self.feature_columns = X_prepared.columns.tolist()
         self.directional_stats = self._calculate_directional_statistics(y, sample_weight)
         self.is_fitted = True
         
@@ -339,7 +465,7 @@ class DirectionalSpecialistModel:
         
         # Create directional features (using dummy target for feature engineering)
         dummy_target = np.zeros(len(X))
-        X_enhanced = self.feature_engineer.create_directional_features(X, dummy_target)
+        X_enhanced = self.feature_engineer.create_directional_features(X, dummy_target, fit=False)
         
         # Ensure feature alignment
         X_aligned = X_enhanced.reindex(columns=self.feature_columns, fill_value=0)
@@ -410,28 +536,198 @@ class DirectionalSpecialistModel:
         
         return categorized_importance
     
-    def _create_directional_sample_weights(self, y: np.ndarray) -> np.ndarray:
-        """Create sample weights that emphasize directional clarity."""
+    def _create_directional_sample_weights(
+        self,
+        y: np.ndarray,
+        timestamps: Optional[Union[pd.Series, np.ndarray, Sequence[Any]]] = None
+    ) -> np.ndarray:
+        """Create sample weights that emphasize directional clarity with temporal decay."""
+
         weights = np.ones(len(y))
-        
+
+        if len(y) == 0:
+            return weights
+
         # Higher weight for strong directional moves
         strong_threshold = np.percentile(np.abs(y), 75)
         strong_moves = np.abs(y) > strong_threshold
         weights[strong_moves] *= self.config.directional_weight_boost
-        
+
         # Slightly higher weight for clear directional signals
         clear_long = y > self.config.min_directional_threshold
         clear_short = y < -self.config.min_directional_threshold
         weights[clear_long | clear_short] *= 1.2
-        
+
+
+        if timestamps is not None:
+            timestamp_index = pd.Index(timestamps)
+
+            if len(timestamp_index) != len(y):
+                self.logger.warning(
+                    "Timestamp index length %d does not match target length %d; skipping recency decay.",
+                    len(timestamp_index),
+                    len(y),
+                )
+            else:
+                if not pd.api.types.is_datetime64_any_dtype(timestamp_index):
+                    timestamp_index = pd.to_datetime(timestamp_index, errors='coerce')
+                else:
+                    timestamp_index = pd.DatetimeIndex(timestamp_index)
+
+                valid_mask = ~timestamp_index.isna()
+                if valid_mask.any():
+                    latest_time = timestamp_index[valid_mask].max()
+                    age = latest_time - timestamp_index[valid_mask]
+                    age_in_days = age / np.timedelta64(1, 'D')
+                    tau_days = max(self.config.tau, np.finfo(float).eps)
+                    recency_decay = np.exp(-age_in_days / tau_days)
+
+                    recency_factor = np.ones(len(y), dtype=float)
+                    recency_factor[valid_mask] = recency_decay
+                    if (~valid_mask).any():
+                        self.logger.debug(
+                            "Encountered %d NaT timestamps; assigning neutral recency weight of 1.0.",
+                            np.count_nonzero(~valid_mask),
+                        )
+
+                    weights *= recency_factor
+                else:
+                    self.logger.warning(
+                        "All provided timestamps are NaT after conversion; skipping recency decay."
+                    )
+
         return weights
+
+    @staticmethod
+    def _extract_timestamps(X: pd.DataFrame) -> Optional[pd.Series]:
+        """Extract timestamp information from feature dataframe if available."""
+
+        if isinstance(X.index, pd.DatetimeIndex):
+            return pd.Series(X.index, index=X.index)
+
+        for candidate in ['timestamp', 'time', 'datetime']:
+            if candidate in X.columns:
+                try:
+                    return pd.to_datetime(X[candidate], errors='coerce')
+                except Exception:
+                    continue
+
+        return None
+
+    def _compute_temporal_decay(
+        self,
+        timestamps: Optional[Union[pd.Series, np.ndarray, Sequence[Any]]],
+        n_samples: int
+    ) -> Optional[np.ndarray]:
+        """Compute exponential decay factors based on sample timestamps."""
+
+        if timestamps is None:
+            return None
+
+        try:
+            if isinstance(timestamps, pd.Series):
+                ts_series = timestamps.reset_index(drop=True)
+            elif isinstance(timestamps, (pd.Index, pd.DatetimeIndex)):
+                ts_series = pd.Series(timestamps)
+            else:
+                if isinstance(timestamps, (str, bytes)):
+                    raise TypeError("Timestamps must be an iterable of values, not a single string/bytes object.")
+                ts_series = pd.Series(list(timestamps))
+        except Exception as exc:
+            self.logger.warning(f"⚠️ Failed to interpret timestamps for temporal decay: {exc}")
+            return None
+
+        if len(ts_series) != n_samples:
+            self.logger.warning(
+                "⚠️ Timestamp count (%s) does not match sample count (%s); skipping temporal decay.",
+                len(ts_series),
+                n_samples
+            )
+            return None
+
+        # Attempt to coerce timestamps into datetime values with heuristics for numeric units
+        ts_datetime = self._coerce_to_datetime(ts_series)
+        if ts_datetime is None or ts_datetime.isna().all():
+            self.logger.warning("⚠️ Unable to parse timestamps for temporal decay; skipping decay application.")
+            return None
+
+        valid_mask = ~ts_datetime.isna()
+        if not valid_mask.any():
+            return None
+
+        valid_timestamps = ts_datetime[valid_mask]
+        reference_time = valid_timestamps.max()
+        tau = max(float(self.config.temporal_decay_tau), 1.0)
+
+        delta_seconds = (reference_time - valid_timestamps).dt.total_seconds().clip(lower=0.0)
+        decay_values = np.exp(-delta_seconds / tau)
+
+        decay = np.ones(n_samples)
+        decay[valid_mask.to_numpy()] = decay_values.to_numpy()
+
+        if not valid_mask.all():
+            self.logger.warning(
+                "⚠️ %d timestamps were invalid for temporal decay and received neutral weight.",
+                (~valid_mask).sum()
+            )
+
+        return decay
+
+    @staticmethod
+    def _coerce_to_datetime(series: pd.Series) -> Optional[pd.Series]:
+        """Convert a series of timestamps to datetime, handling common numeric units."""
+
+        if series.empty:
+            return None
+
+        if np.issubdtype(series.dtype, np.datetime64):
+            return pd.to_datetime(series, utc=True, errors='coerce').tz_convert(None)
+
+        # Handle pandas Period
+        if isinstance(series.dtype, pd.PeriodDtype):
+            period_converted = series.dt.to_timestamp().astype('datetime64[ns]')
+            return pd.to_datetime(period_converted, errors='coerce')
+
+        # Try direct conversion first
+        converted = pd.to_datetime(series, errors='coerce', utc=True)
+        if not converted.isna().all():
+            return converted.tz_convert(None)
+
+        # Numeric fallback with unit detection
+        try:
+            numeric_series = pd.to_numeric(series, errors='coerce')
+        except Exception:
+            return None
+
+        if numeric_series.isna().all():
+            return None
+
+        max_abs = np.nanmax(np.abs(numeric_series.to_numpy()))
+        if max_abs > 1e18:
+            unit = 'ns'
+        elif max_abs > 1e15:
+            unit = 'us'
+        elif max_abs > 1e12:
+            unit = 'ms'
+        else:
+            unit = 's'
+
+        converted_numeric = pd.to_datetime(numeric_series, unit=unit, errors='coerce', utc=True)
+        return converted_numeric.tz_convert(None)
     
     def _calculate_directional_statistics(self, y: np.ndarray, sample_weight: np.ndarray) -> Dict[str, Any]:
         """Calculate statistics about directional distribution."""
-        
+
         long_mask = y > self.config.min_directional_threshold
         short_mask = y < -self.config.min_directional_threshold
-        
+
+        weight_sum = float(np.sum(sample_weight))
+        weight_mean = float(weight_sum / len(y)) if len(y) > 0 else 0.0
+        weight_sq_sum = float(np.sum(np.square(sample_weight)))
+        effective_sample_count = (
+            (weight_sum ** 2) / weight_sq_sum if weight_sq_sum > 0 else float(len(y))
+        )
+
         stats = {
             'total_samples': len(y),
             'long_samples': np.sum(long_mask),
@@ -444,11 +740,28 @@ class DirectionalSpecialistModel:
             'weighted_short_ratio': np.sum(sample_weight[short_mask]) / np.sum(sample_weight),
             'mean_target': np.mean(y),
             'std_target': np.std(y),
-            'directional_bias': 'long' if np.mean(y) > 0 else 'short'
+            'directional_bias': 'long' if np.mean(y) > 0 else 'short',
+            'weight_sum': weight_sum,
+            'weight_mean': weight_mean,
+            'effective_sample_count': effective_sample_count
         }
-        
+
         return stats
-    
+
+    def _validate_quantile_feature_range(self, df: pd.DataFrame) -> None:
+        numeric_df = df.select_dtypes(include=[np.number])
+        if numeric_df.empty:
+            return
+
+        min_val = numeric_df.min().min()
+        max_val = numeric_df.max().max()
+
+        if min_val < -1e-6 or max_val > 1.0 + 1e-6:
+            raise ValueError(
+                "Quantile-transformed features must be within [0, 1]. "
+                f"Observed range: [{min_val}, {max_val}]"
+            )
+
     def _calculate_prediction_confidence(self, X: pd.DataFrame, predictions: np.ndarray) -> np.ndarray:
         """Calculate confidence scores for predictions."""
         
@@ -479,7 +792,9 @@ class DirectionalSpecialistEnsemble(BaseEnsemble):
     
     def fit(self, X: pd.DataFrame, y: np.ndarray, **kwargs) -> 'DirectionalSpecialistEnsemble':
         """Fit the directional specialist ensemble."""
-        self.directional_model.fit(X, y)
+        timestamps = kwargs.get('timestamps')
+        sample_weight = kwargs.get('sample_weight')
+        self.directional_model.fit(X, y, sample_weight=sample_weight, timestamps=timestamps)
         return self
     
     def predict(self, X: pd.DataFrame) -> np.ndarray:

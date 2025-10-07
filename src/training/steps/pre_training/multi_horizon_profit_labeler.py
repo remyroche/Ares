@@ -6,6 +6,7 @@ to create differentiated profit labels for different market regimes.
 """
 
 import asyncio
+import copy
 import numpy as np
 import pandas as pd
 from typing import Dict, Any, Optional, List, Tuple
@@ -31,6 +32,7 @@ from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler im
     create_enhanced_tactician_labeler,
     LabelDefinitionType
 )
+from src.training.steps.pre_training.standardized_labeling_interface import assert_labels_sigma_scaled
 
 # Import the label balancing system
 try:
@@ -245,6 +247,7 @@ class MultiHorizonProfitLabeler:
 
             # Build smoothing metadata for downstream consumers
             smoothing_metadata = self._build_smoothing_metadata(balanced_labeling_result)
+            normalization_factors = copy.deepcopy(balanced_labeling_result.normalization_factors or {})
 
             # Create enhanced artifacts with comprehensive metadata for downstream components
             artifacts = {
@@ -253,9 +256,11 @@ class MultiHorizonProfitLabeler:
                     'labels': mapped_labels,  # Backward compatibility
                     'confidence_scores': balanced_labeling_result.confidence_scores,
                     'eligibility_masks': balanced_labeling_result.eligibility_masks,
+                    'sigma_payoffs': balanced_labeling_result.sigma_payoffs,
                     'quality_scores': balanced_labeling_result.quality_scores,
                     'horizon_weights': horizon_weights,  # New: weights for different horizons
                     'target_columns': target_columns,    # New: target columns for optimization
+                    'normalization_factors': normalization_factors,
                     'method': 'multi_horizon_profit_labeling',
                     'balancing_applied': self.config.enable_label_balancing or self.config.enable_sample_weighting,
                     'sample_weights': getattr(balanced_labeling_result, 'sample_weights', None),  # Sample weights for training
@@ -284,7 +289,9 @@ class MultiHorizonProfitLabeler:
                     'quality_scores': balanced_labeling_result.quality_scores,
                     'confidence_scores': balanced_labeling_result.confidence_scores,
                     'eligibility_masks': balanced_labeling_result.eligibility_masks,
+                    'sigma_payoffs': balanced_labeling_result.sigma_payoffs,
                     'sample_weights': getattr(balanced_labeling_result, 'sample_weights', None),
+                    'normalization_factors': normalization_factors,
                     'validation_results': validation_results,
                     'smoothing_settings': smoothing_metadata['settings'],
                     'metadata': {
@@ -320,9 +327,11 @@ class MultiHorizonProfitLabeler:
                     'labels': pd.DataFrame(),
                     'confidence_scores': pd.DataFrame(),
                     'eligibility_masks': pd.DataFrame(),
+                    'sigma_payoffs': pd.DataFrame(),
                     'quality_scores': {},
                     'horizon_weights': {},
                     'target_columns': [],
+                    'normalization_factors': {},
                     'method': 'multi_horizon_profit_labeling',
                     'balancing_applied': False,
                     'sample_weights': None,
@@ -358,7 +367,9 @@ class MultiHorizonProfitLabeler:
                     'quality_scores': {},
                     'confidence_scores': pd.DataFrame(),
                     'eligibility_masks': pd.DataFrame(),
+                    'sigma_payoffs': pd.DataFrame(),
                     'sample_weights': None,
+                    'normalization_factors': {},
                     'validation_results': {'is_valid': False, 'issues': [f'Labeling failed: {str(e)}']},
                     'smoothing_settings': error_smoothing_metadata['settings'],
                     'metadata': {
@@ -414,7 +425,14 @@ class MultiHorizonProfitLabeler:
                     is_valid = False
                 else:
                     tprint_info("✅ All target columns present in labels")
-            
+                    try:
+                        assert_labels_sigma_scaled(labels_df[target_columns])
+                        tprint_success("✅ Target labels confirmed to be σ-normalized")
+                    except ValueError as scaling_error:
+                        issues.append(str(scaling_error))
+                        is_valid = False
+                        tprint_warning(f"⚠️ Label scaling validation failed: {scaling_error}")
+
             # Check if we have horizon weights
             if not horizon_weights:
                 issues.append("No horizon weights calculated")
@@ -542,16 +560,29 @@ class MultiHorizonProfitLabeler:
             # Create new labeling result with balanced data
             balanced_result = LabelingResult(
                 labels=pd.DataFrame({target_cols[0]: y_balanced}, index=y_balanced.index),
-                confidence_scores=labeling_result.confidence_scores,  # Keep original confidence scores
-                eligibility_masks=labeling_result.eligibility_masks,   # Keep original masks
-                quality_scores=labeling_result.quality_scores,         # Keep original quality scores
+                confidence_scores=labeling_result.confidence_scores,
+                eligibility_masks=labeling_result.eligibility_masks,
+                sigma_payoffs=pd.DataFrame(),
+                training_labels=pd.DataFrame({target_cols[0]: y_balanced}, index=y_balanced.index),
+                normalization_factors=labeling_result.normalization_factors.copy(),
+                quality_scores=labeling_result.quality_scores,
                 n_samples=len(y_balanced),
                 n_targets=labeling_result.n_targets,
-                processing_time=labeling_result.processing_time        # Keep original processing time
+                processing_time=labeling_result.processing_time
             )
 
-            balanced_result.multi_target_result = getattr(labeling_result, 'multi_target_result', None)
             balanced_result.smoothing_settings = getattr(labeling_result, 'smoothing_settings', {})
+            if not labeling_result.sigma_payoffs.empty:
+                balanced_result.sigma_payoffs = labeling_result.sigma_payoffs.reindex(y_balanced.index)
+
+            if balanced_result.normalization_factors:
+                normalization_factors = copy.deepcopy(balanced_result.normalization_factors)
+                if 'sigma_payoffs' in normalization_factors and isinstance(normalization_factors['sigma_payoffs'], pd.DataFrame):
+                    normalization_factors['sigma_payoffs'] = normalization_factors['sigma_payoffs'].reindex(y_balanced.index)
+                raw_payoffs = normalization_factors.get('raw_payoffs')
+                if isinstance(raw_payoffs, pd.DataFrame):
+                    normalization_factors['raw_payoffs'] = raw_payoffs.reindex(y_balanced.index)
+                balanced_result.normalization_factors = normalization_factors
 
             # Add balancing metadata
             balanced_result.balancing_applied = True
@@ -773,6 +804,8 @@ class MultiHorizonProfitLabeler:
             # Create regime-specific labels using the volatility-aware labeler for each regime
             regime_labels = {}
             regime_quality_scores = {}
+            regime_sigma_payoffs = {}
+            regime_normalization_factors = {}
             total_processing_time = 0.0
 
             for regime in regimes:
@@ -792,6 +825,10 @@ class MultiHorizonProfitLabeler:
                 if not regime_result.labels.empty:
                     # Add regime suffix to column names to differentiate between regimes
                     regime_labels[regime] = regime_result.labels.add_suffix(f'_regime_{regime}')
+                    if not regime_result.sigma_payoffs.empty:
+                        regime_sigma_payoffs[regime] = regime_result.sigma_payoffs.add_suffix(f'_regime_{regime}')
+                    if regime_result.normalization_factors:
+                        regime_normalization_factors[regime] = regime_result.normalization_factors
                     regime_quality_scores.update({
                         f"{target}_regime_{regime}": quality_score
                         for target, quality_score in regime_result.quality_scores.items()
@@ -801,12 +838,17 @@ class MultiHorizonProfitLabeler:
             # Combine regime-specific labels
             if regime_labels:
                 combined_labels = pd.concat(regime_labels.values(), axis=1)
+                combined_sigma_payoffs = pd.concat(regime_sigma_payoffs.values(), axis=1) if regime_sigma_payoffs else pd.DataFrame(index=combined_labels.index)
+                combined_normalization = {'regimes': regime_normalization_factors}
 
                 # Create combined result with proper metadata
                 combined_result = LabelingResult(
                     labels=combined_labels,
-                    confidence_scores=pd.DataFrame(index=combined_labels.index),  # Will be populated by individual regime results
-                    eligibility_masks=pd.DataFrame(index=combined_labels.index),   # Will be populated by individual regime results
+                    confidence_scores=pd.DataFrame(index=combined_labels.index),
+                    eligibility_masks=pd.DataFrame(index=combined_labels.index),
+                    sigma_payoffs=combined_sigma_payoffs,
+                    training_labels=combined_labels.copy(),
+                    normalization_factors=combined_normalization,
                     quality_scores=regime_quality_scores,
                     n_samples=len(combined_labels),
                     n_targets=len([col for col in combined_labels.columns if 'target' in col]),

@@ -7,6 +7,7 @@ select and generate features by category, with support for lookback optimization
 and matrix operations integration.
 """
 
+import copy
 import logging
 import time
 from typing import Any, Dict, List, Optional, Union, Set
@@ -16,6 +17,7 @@ import numpy as np
 
 from .feature_generator import FeatureGenerator, FeatureCategory, FeatureResult, FeatureConfig
 from .feature_registry import FeatureRegistry
+from src.utils.unified_cache import UnifiedCache
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,10 @@ class FeatureBankConfig:
     memory_efficient: bool = True
     cache_results: bool = True
     default_lookback: int = 20
+    persist_generator_state: bool = True
+    state_cache_dir: str = "data_cache/feature_states"
+    state_cache_namespace: str = "feature_bank"
+    state_cache_ttl_seconds: Optional[int] = None
 
 class FeatureBank:
     """
@@ -51,7 +57,7 @@ class FeatureBank:
         """
         self.config = config or FeatureBankConfig()
         self.logger = logger.getChild('FeatureBank')
-        
+
         # Initialize feature registry
         self.registry = FeatureRegistry()
         
@@ -111,7 +117,23 @@ class FeatureBank:
         }
         
         # Cache for generated features
-        self.feature_cache = {} if self.config.cache_results else None
+        self.feature_cache = {} if self._get_config_value('cache_results', True) else None
+
+        # Persistent state cache for generator-level rolling state
+        self.persist_generator_state = self._get_config_value('persist_generator_state', True)
+        if self.persist_generator_state:
+            state_cache_dir = self._get_config_value('state_cache_dir', 'data_cache/feature_states')
+            state_cache_namespace = self._get_config_value('state_cache_namespace', 'feature_bank')
+            state_cache_ttl = self._get_config_value('state_cache_ttl_seconds', None)
+            self.state_cache = UnifiedCache(
+                cache_dir=state_cache_dir,
+                namespace=state_cache_namespace,
+                default_ttl_seconds=state_cache_ttl,
+                enable_disk=True,
+                enable_compression=True
+            )
+        else:
+            self.state_cache = None
         
         # Auto-register default generators
         print("🔍 DEBUG: About to call _auto_register_generators")
@@ -128,6 +150,12 @@ class FeatureBank:
         self.logger.info(f"📊 Matrix ops: {self.config.enable_matrix_operations}, "
                         f"GPU: {self.config.enable_gpu_acceleration}, "
                         f"Lookback opt: {self.config.enable_lookback_optimization}")
+
+    def _get_config_value(self, key: str, default: Any = None) -> Any:
+        """Helper to fetch values from dataclass or dict configs."""
+        if isinstance(self.config, dict):
+            return self.config.get(key, default)
+        return getattr(self.config, key, default)
 
     def _auto_register_generators(self) -> None:
         """
@@ -1240,16 +1268,26 @@ class FeatureBank:
                 cache_key = self._get_cache_key(generator, data, **kwargs)
                 if self.feature_cache and cache_key in self.feature_cache:
                     self.logger.debug(f"Using cached result for {generator.config.name}")
-                    results.append(self.feature_cache[cache_key])
+                    cached_result = self.feature_cache[cache_key]
+                    results.append(cached_result)
+                    if self.persist_generator_state:
+                        self._store_generator_state(generator, self._extract_state_from_result(generator, cached_result))
                     continue
-                
+
+                state_payload = self._load_generator_state(generator)
+                if state_payload:
+                    generator.load_state(state_payload)
+
                 # Generate feature
                 result = generator.generate(data, **kwargs)
                 results.append(result)
-                
+
                 # Cache result
                 if self.feature_cache:
                     self.feature_cache[cache_key] = result
+
+                if self.persist_generator_state:
+                    self._store_generator_state(generator, self._extract_state_from_result(generator, result))
                 
             except Exception as e:
                 self.logger.error(f"Error generating {generator.config.name}: {e}")
@@ -1313,7 +1351,7 @@ class FeatureBank:
         
         return results
     
-    def _generate_single_feature(self, 
+    def _generate_single_feature(self,
                                generator: FeatureGenerator,
                                data: pd.DataFrame,
                                **kwargs) -> FeatureResult:
@@ -1332,15 +1370,25 @@ class FeatureBank:
             # Check cache first
             cache_key = self._get_cache_key(generator, data, **kwargs)
             if self.feature_cache and cache_key in self.feature_cache:
-                return self.feature_cache[cache_key]
-            
+                cached_result = self.feature_cache[cache_key]
+                if self.persist_generator_state:
+                    self._store_generator_state(generator, self._extract_state_from_result(generator, cached_result))
+                return cached_result
+
+            state_payload = self._load_generator_state(generator)
+            if state_payload:
+                generator.load_state(state_payload)
+
             # Generate feature
             result = generator.generate(data, **kwargs)
-            
+
             # Cache result
             if self.feature_cache:
                 self.feature_cache[cache_key] = result
-            
+
+            if self.persist_generator_state:
+                self._store_generator_state(generator, self._extract_state_from_result(generator, result))
+
             return result
             
         except Exception as e:
@@ -1352,7 +1400,34 @@ class FeatureBank:
                 success=False,
                 error_message=str(e)
             )
-    
+
+    def _extract_state_from_result(self, generator: FeatureGenerator, result: FeatureResult) -> Optional[Dict[str, Any]]:
+        if result and result.metadata:
+            state_payload = result.metadata.get('state')
+            if state_payload is not None:
+                return copy.deepcopy(state_payload)
+        # Fallback to generator's current state snapshot
+        current_state = generator.get_state()
+        return copy.deepcopy(current_state) if current_state else None
+
+    def _state_cache_key(self, generator: FeatureGenerator) -> str:
+        return f"{generator.__class__.__name__}:{generator.config.name}"
+
+    def _load_generator_state(self, generator: FeatureGenerator) -> Optional[Dict[str, Any]]:
+        if not self.state_cache:
+            return None
+        cache_key = self._state_cache_key(generator)
+        cached_state = self.state_cache.get(cache_key)
+        if cached_state is None:
+            return None
+        return copy.deepcopy(cached_state)
+
+    def _store_generator_state(self, generator: FeatureGenerator, state: Optional[Dict[str, Any]]) -> None:
+        if not self.state_cache or state is None:
+            return
+        cache_key = self._state_cache_key(generator)
+        self.state_cache.set(cache_key, copy.deepcopy(state), persist=True)
+
     def _combine_results(self, results: List[FeatureResult], index: pd.Index) -> pd.DataFrame:
         """
         Combine feature results into a single DataFrame.

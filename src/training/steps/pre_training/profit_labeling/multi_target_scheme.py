@@ -176,6 +176,7 @@ class TargetSelectionResult:
     eligibility_masks: pd.DataFrame
     sigma_payoffs: pd.DataFrame = field(default_factory=pd.DataFrame)
     training_labels: pd.DataFrame = field(default_factory=pd.DataFrame)
+    raw_payoffs: pd.DataFrame = field(default_factory=pd.DataFrame)
     
     # Target information
     selected_targets: Dict[str, Dict[str, Any]] = field(default_factory=dict)
@@ -343,6 +344,7 @@ class MultiTargetScheme:
             result.confidence_scores = final_result['confidence_scores']
             result.eligibility_masks = final_result['eligibility_masks']
             result.sigma_payoffs = final_result.get('sigma_payoffs', pd.DataFrame())
+            result.raw_payoffs = final_result.get('raw_payoffs', pd.DataFrame())
             result.training_labels = result.labels.copy()
             result.selected_targets = selected_targets
             result.n_targets = len(selected_targets)
@@ -1252,7 +1254,8 @@ class MultiTargetScheme:
             # Initialize labels
             labels = pd.Series(0, index=bars.index)
             confidence_scores = pd.Series(0.0, index=bars.index)
-            sigma_payoffs = pd.Series(0.0, index=bars.index, dtype=float)
+            sigma_payoffs = pd.Series(np.nan, index=bars.index, dtype=float)
+            raw_payoffs = pd.Series(np.nan, index=bars.index, dtype=float)
             
             def _normalized_conf(distance: float, k_multiplier: float, sigma_scale: float) -> float:
                 """Safely normalize confidence by volatility scale."""
@@ -1333,16 +1336,23 @@ class MultiTargetScheme:
                     labels.iloc[i] = hit_direction
                     hit_price = future_prices.loc[hit_index]
                     payoff = hit_price - current_price
+                    raw_payoffs.iloc[i] = payoff
+
                     if np.isfinite(sigma_scale) and sigma_scale != 0:
-                        sigma_payoffs.iloc[i] = abs(payoff / sigma_scale)
+                        normalized_payoff = payoff / sigma_scale
+                        if np.isfinite(normalized_payoff):
+                            sigma_payoffs.iloc[i] = normalized_payoff
+                        else:
+                            sigma_payoffs.iloc[i] = np.nan
                     else:
-                        sigma_payoffs.iloc[i] = 0.0
+                        sigma_payoffs.iloc[i] = np.nan
             
             # Create DataFrame with labels and confidence
             result_df = pd.DataFrame({
                 'labels': labels,
                 'confidence': confidence_scores,
-                'sigma_payoff': sigma_payoffs.fillna(0.0)
+                'sigma_payoff': sigma_payoffs,
+                'raw_payoff': raw_payoffs
             }, index=bars.index)
             
             return result_df
@@ -1686,6 +1696,7 @@ class MultiTargetScheme:
             labels_df = pd.DataFrame(index=bars.index)
             confidence_df = pd.DataFrame(index=bars.index)
             sigma_payoff_df = pd.DataFrame(index=bars.index)
+            raw_payoff_df = pd.DataFrame(index=bars.index)
             eligibility_df = pd.DataFrame(index=bars.index)
             
             for target_name, target_info in selected_targets.items():
@@ -1703,12 +1714,15 @@ class MultiTargetScheme:
                     confidence_df[f"{target_name}_confidence"] = target_result['confidence']
                     if 'sigma_payoff' in target_result:
                         sigma_payoff_df[target_name] = target_result['sigma_payoff']
+                    if 'raw_payoff' in target_result:
+                        raw_payoff_df[target_name] = target_result['raw_payoff']
                     eligibility_df[f"{target_name}_eligibility"] = eligibility_mask
 
             return {
                 'labels': labels_df,
                 'confidence_scores': confidence_df,
                 'sigma_payoffs': sigma_payoff_df,
+                'raw_payoffs': raw_payoff_df,
                 'eligibility_masks': eligibility_df
             }
 
@@ -1718,6 +1732,7 @@ class MultiTargetScheme:
                 'labels': pd.DataFrame(),
                 'confidence_scores': pd.DataFrame(),
                 'sigma_payoffs': pd.DataFrame(),
+                'raw_payoffs': pd.DataFrame(),
                 'eligibility_masks': pd.DataFrame()
             }
     

@@ -198,6 +198,7 @@ class LabelingResult:
     eligibility_masks: pd.DataFrame
     sigma_payoffs: pd.DataFrame = field(default_factory=pd.DataFrame)
     training_labels: pd.DataFrame = field(default_factory=pd.DataFrame)
+    normalization_factors: Dict[str, Any] = field(default_factory=dict)
 
     # Quality scores
     quality_scores: Dict[str, LabelQualityScore] = field(default_factory=dict)
@@ -348,6 +349,7 @@ class VolatilityAwareMultiHorizonLabeler:
             eligibility_masks=pd.DataFrame(),
             sigma_payoffs=pd.DataFrame(),
             training_labels=pd.DataFrame(),
+            normalization_factors={},
             quality_scores={},
             config_used=self.config
         )
@@ -455,6 +457,9 @@ class VolatilityAwareMultiHorizonLabeler:
                 tprint_warning("⚠️ No valid targets generated")
                 return self._create_empty_result()
 
+            # Ensure sigma-normalized payoffs are computed before quality filtering
+            self._ensure_sigma_normalization(target_result, vol_result.volatility_series)
+
             # Step 5: Quality scoring (with caching)
             if self.config.enable_quality_scoring and self.quality_scorer:
                 tprint_info("📊 Step 5: Assessing label quality")
@@ -497,6 +502,8 @@ class VolatilityAwareMultiHorizonLabeler:
                 filtered_result,
                 'smoothing_settings',
                 getattr(target_result, 'smoothing_settings', {})
+            result.normalization_factors = self._build_normalization_factors(
+                vol_result, filtered_result
             )
 
             # Calculate statistics
@@ -704,7 +711,8 @@ class VolatilityAwareMultiHorizonLabeler:
                 confidence_scores=target_result.confidence_scores.copy(),
                 eligibility_masks=target_result.eligibility_masks.copy(),
                 sigma_payoffs=target_result.sigma_payoffs.copy(),
-                training_labels=target_result.training_labels.copy()
+                training_labels=target_result.training_labels.copy(),
+                raw_payoffs=getattr(target_result, 'raw_payoffs', pd.DataFrame()).copy()
             )
 
             # Preserve extended metadata when available
@@ -775,6 +783,14 @@ class VolatilityAwareMultiHorizonLabeler:
                         for name, settings in filtered_result.smoothing_settings.items()
                         if name in target_columns or name in payoff_columns
                     }
+                if hasattr(filtered_result, 'raw_payoffs') and not filtered_result.raw_payoffs.empty:
+                    raw_payoff_columns = [
+                        col for col in filtered_result.raw_payoffs.columns
+                        if any(target in col for target in valid_targets)
+                    ]
+                    filtered_result.raw_payoffs = filtered_result.raw_payoffs[raw_payoff_columns]
+                elif hasattr(filtered_result, 'raw_payoffs'):
+                    filtered_result.raw_payoffs = pd.DataFrame()
 
                 if self.config.prefer_sigma_payoffs and not filtered_result.sigma_payoffs.empty:
                     filtered_result.training_labels = filtered_result.sigma_payoffs.copy()
@@ -786,6 +802,8 @@ class VolatilityAwareMultiHorizonLabeler:
                 filtered_result.confidence_scores = pd.DataFrame()
                 filtered_result.eligibility_masks = pd.DataFrame()
                 filtered_result.sigma_payoffs = pd.DataFrame()
+                if hasattr(filtered_result, 'raw_payoffs'):
+                    filtered_result.raw_payoffs = pd.DataFrame()
                 filtered_result.training_labels = pd.DataFrame()
                 if hasattr(filtered_result, 'smoothing_settings'):
                     filtered_result.smoothing_settings = {}
@@ -928,6 +946,77 @@ class VolatilityAwareMultiHorizonLabeler:
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating label distribution: {e}")
             return {}
+
+    def _build_normalization_factors(self, volatility_result: Any, target_result: Any) -> Dict[str, Any]:
+        """Assemble normalization metadata for downstream auditing."""
+        factors: Dict[str, Any] = {'scaling_reference': 'Per-sample volatility normalization (σ units)'}
+
+        try:
+            if volatility_result and getattr(volatility_result, 'volatility_series', None) is not None:
+                vol_series = volatility_result.volatility_series.copy()
+                factors['volatility_series'] = vol_series
+                factors['volatility_method'] = getattr(volatility_result, 'volatility_method', None)
+                if not vol_series.empty:
+                    factors['volatility_statistics'] = {
+                        'mean': float(vol_series.mean()),
+                        'std': float(vol_series.std(ddof=0)),
+                        'min': float(vol_series.min()),
+                        'max': float(vol_series.max())
+                    }
+
+            if hasattr(target_result, 'raw_payoffs') and target_result.raw_payoffs is not None and not target_result.raw_payoffs.empty:
+                factors['raw_payoffs'] = target_result.raw_payoffs.copy()
+
+            sigma_payoffs = getattr(target_result, 'sigma_payoffs', pd.DataFrame())
+            if sigma_payoffs is not None and not sigma_payoffs.empty:
+                factors['sigma_payoffs'] = sigma_payoffs.copy()
+                sigma_stats: Dict[str, Dict[str, float]] = {}
+                for col in sigma_payoffs.columns:
+                    series = sigma_payoffs[col].dropna()
+                    if not series.empty:
+                        sigma_stats[col] = {
+                            'mean': float(series.mean()),
+                            'std': float(series.std(ddof=0)),
+                            'var': float(series.var(ddof=0))
+                        }
+                if sigma_stats:
+                    factors['sigma_payoff_statistics'] = sigma_stats
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to assemble normalization factors: {e}")
+
+        return factors
+
+    def _ensure_sigma_normalization(self, target_result: Any, volatility_series: pd.Series) -> None:
+        """Normalize raw payoffs by contemporaneous volatility before quality filtering."""
+        try:
+            if target_result is None:
+                return
+
+            raw_payoffs = getattr(target_result, 'raw_payoffs', None)
+            if raw_payoffs is None or raw_payoffs.empty:
+                return
+
+            if volatility_series is None or volatility_series.empty:
+                tprint_warning("⚠️ Volatility series unavailable for payoff normalization")
+                return
+
+            aligned_volatility = volatility_series.reindex(raw_payoffs.index)
+            if aligned_volatility.empty:
+                tprint_warning("⚠️ Failed to align volatility series with raw payoffs")
+                return
+
+            safe_volatility = aligned_volatility.replace({0.0: np.nan})
+            normalized_payoffs = raw_payoffs.divide(safe_volatility, axis=0)
+            normalized_payoffs = normalized_payoffs.replace([np.inf, -np.inf], np.nan)
+
+            target_result.sigma_payoffs = normalized_payoffs
+
+            if getattr(self.config, 'prefer_sigma_payoffs', False):
+                target_result.training_labels = normalized_payoffs.copy()
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to normalize raw payoffs by volatility: {e}")
     
     def _generate_cache_key(self, market_data: pd.DataFrame) -> str:
         """Generate cache key for market data."""
@@ -989,6 +1078,7 @@ class VolatilityAwareMultiHorizonLabeler:
             eligibility_masks=pd.DataFrame(),
             sigma_payoffs=pd.DataFrame(),
             training_labels=pd.DataFrame(),
+            normalization_factors={},
             quality_scores={},
             config_used=self.config,
             processing_time=0.0

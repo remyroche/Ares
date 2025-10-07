@@ -5,6 +5,7 @@ This module defines the base classes and interfaces for feature generation,
 providing a standardized way to create and manage feature generators.
 """
 
+import copy
 import logging
 import time
 from abc import ABC, abstractmethod
@@ -106,7 +107,11 @@ class FeatureGenerator(ABC):
             'average_computation_time': 0.0,
             'total_computation_time': 0.0
         }
-        
+
+        # Optional state storage for incremental generation support
+        self._state: Dict[str, Any] = {}
+        self._state_loaded: bool = False
+
         # Reduced logging - only log at category level, not individual features
         # self.logger.info(f"Initialized {self.__class__.__name__} for {config.name}")
     
@@ -136,23 +141,41 @@ class FeatureGenerator(ABC):
             FeatureResult with the generated feature and metadata
         """
         start_time = time.time()
-        
+
+        # Allow state injection through kwargs for compatibility
+        external_state = kwargs.pop('state', None)
+        if external_state is not None:
+            self.load_state(external_state)
+
+        state_loaded_flag = self._state_loaded
+
         try:
             # Validate input data
             self._validate_data(data)
-            
+
+            # Allow subclasses to adjust internal buffers before generation
+            self._prepare_state(data)
+
             # Generate the feature
             feature_data = self._generate_feature(data, **kwargs)
-            
+
             # Validate output
             self._validate_output(feature_data)
-            
+
+            # Update generator state with latest observations
+            try:
+                self._finalize_state(data, feature_data)
+            except Exception as state_error:
+                self.logger.debug(f"State finalization failed: {state_error}")
+
             # Update performance stats
             computation_time = time.time() - start_time
             self._update_performance_stats(computation_time, success=True)
-            
+
             self.logger.debug(f"Successfully generated {self.config.name} in {computation_time:.3f}s")
-            
+
+            serialized_state = self._serialize_state()
+
             return FeatureResult(
                 name=self.config.name,
                 data=feature_data,
@@ -162,25 +185,111 @@ class FeatureGenerator(ABC):
                 metadata={
                     'generator_class': self.__class__.__name__,
                     'input_shape': data.shape,
-                    'output_length': len(feature_data)
+                    'output_length': len(feature_data),
+                    'state_loaded': state_loaded_flag,
+                    'state': serialized_state
                 }
             )
-            
+
         except Exception as e:
             computation_time = time.time() - start_time
             self._update_performance_stats(computation_time, success=False)
-            
+
             error_msg = f"Failed to generate {self.config.name}: {str(e)}"
             self.logger.error(error_msg)
-            
+
+            failure_metadata = {
+                'generator_class': self.__class__.__name__,
+                'input_shape': data.shape,
+                'state_loaded': state_loaded_flag,
+                'state': self._serialize_state()
+            }
+
             return FeatureResult(
                 name=self.config.name,
                 data=pd.Series(dtype=float, index=data.index),
                 config=self.config,
                 computation_time=computation_time,
                 success=False,
-                error_message=error_msg
+                error_message=error_msg,
+                metadata=failure_metadata
             )
+
+    def load_state(self, state: Optional[Dict[str, Any]]) -> None:
+        """Load previously persisted state for incremental computation."""
+        if state:
+            # Use deepcopy to avoid mutating external structures
+            self._state = copy.deepcopy(self._deserialize_state(state))
+            self._state_loaded = True
+        else:
+            self._state = {}
+            self._state_loaded = False
+
+    def reset_state(self) -> None:
+        """Reset internal state."""
+        self._state = {}
+        self._state_loaded = False
+
+    def get_state(self) -> Dict[str, Any]:
+        """Return a copy of the current generator state."""
+        return copy.deepcopy(self._state)
+
+    def update_state(self, updates: Dict[str, Any]) -> None:
+        """Update internal state with provided values."""
+        if not updates:
+            return
+        self._state.update(copy.deepcopy(updates))
+
+    def _prepare_state(self, data: pd.DataFrame) -> None:
+        """Hook for subclasses to prepare state before generation."""
+        # Default implementation does nothing. Subclasses may override.
+        return
+
+    def _finalize_state(self, data: pd.DataFrame, feature_data: pd.Series) -> None:
+        """Update default state information after successful generation."""
+        if data.empty:
+            return
+
+        last_row = data.iloc[-1]
+        state_update: Dict[str, Any] = {
+            'last_index': data.index[-1],
+            'last_row': last_row.to_dict()
+        }
+
+        if not feature_data.empty:
+            state_update['last_feature_value'] = feature_data.iloc[-1]
+
+        self.update_state(state_update)
+
+    def _serialize_state(self) -> Dict[str, Any]:
+        """Serialize internal state into JSON/pickle friendly types."""
+
+        def _serialize_value(value: Any) -> Any:
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                return value
+            if isinstance(value, (np.integer, np.floating)):
+                return value.item()
+            if isinstance(value, (list, tuple)):
+                return [_serialize_value(v) for v in value]
+            if isinstance(value, dict):
+                return {str(k): _serialize_value(v) for k, v in value.items()}
+            if isinstance(value, np.ndarray):
+                return [_serialize_value(v) for v in value.tolist()]
+            if isinstance(value, pd.Series):
+                return {str(idx): _serialize_value(val) for idx, val in value.items()}
+            if isinstance(value, pd.DataFrame):
+                return value.to_dict(orient='list')
+            if hasattr(value, 'tolist'):
+                return [_serialize_value(v) for v in value.tolist()]
+            return str(value)
+
+        return {str(key): _serialize_value(val) for key, val in self._state.items()}
+
+    def _deserialize_state(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Deserialize state payload back into internal representation."""
+        # Base implementation returns state unchanged. Subclasses can override
+        # if they need to restore complex structures.
+        return state
     
     def _validate_data(self, data: pd.DataFrame) -> None:
         """

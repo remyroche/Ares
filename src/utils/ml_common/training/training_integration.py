@@ -15,6 +15,7 @@ Usage:
 """
 
 import functools
+import inspect
 import time
 from typing import Any, Dict, List, Optional, Tuple, Callable
 import numpy as np
@@ -343,6 +344,9 @@ class TrainingStepEnhancer:
         start_time = time.time()
         
         try:
+            fit_signature = inspect.signature(model.fit)
+            accepts_timestamps = 'timestamps' in fit_signature.parameters
+
             # Step 1: Validate temporal data
             if self.config.enable_lookahead_detection:
                 tprint_info(f"🔍 Validating temporal data for {model_name}...")
@@ -362,7 +366,7 @@ class TrainingStepEnhancer:
                 training_metadata['enhancements_applied'].append('regularization')
             
             # Step 3: Train with enhanced cross-validation and early stopping
-            if self.config.enable_early_stopping and len(X) > 200:
+            if self.config.enable_early_stopping and len(X) > 200 and not accepts_timestamps:
                 tprint_info(f"⏹️ Training {model_name} with enhanced cross-validation and early stopping...")
 
                 # Enhanced cross-validation strategy based on regime information
@@ -407,7 +411,10 @@ class TrainingStepEnhancer:
             else:
                 # Standard training
                 tprint_info(f"🚀 Training {model_name}...")
-                model.fit(X, y)
+                fit_kwargs: Dict[str, Any] = {}
+                if timestamps is not None and accepts_timestamps:
+                    fit_kwargs['timestamps'] = timestamps
+                model.fit(X, y, **fit_kwargs)
             
             # Step 4: Monitor for overfitting with enhanced CV
             if self.config.enable_overfitting_monitoring and len(X) > 200:

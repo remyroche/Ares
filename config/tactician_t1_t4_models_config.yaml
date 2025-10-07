@@ -104,6 +104,8 @@ tactician_t1_t4_config:
     regime_aware: true
     attention_dropout: 0.1
     num_heads: 4
+    sign_dropout_rate: 0.0
+    sign_threshold: 0.2
     embedding_dim: 128
 
   # Training configuration

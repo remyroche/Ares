@@ -38,6 +38,7 @@ from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler im
 from src.training.steps.pre_training.profit_labeling.multi_target_scheme import (
     MultiTargetScheme, MultiTargetConfig, TargetBand, TargetSelectionResult
 )
+from src.training.steps.pre_training.standardized_labeling_interface import assert_labels_sigma_scaled
 from src.training.steps.pre_training.profit_labeling.quality_scoring import (
     LabelQualityScorer, QualityScoringConfig, QualityMetrics, QualityMetric
 )
@@ -1428,6 +1429,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         standardized_output = pipeline_state.get('standardized_output', {})
         if standardized_output and 'labels' in standardized_output:
             labels = standardized_output['labels']
+            assert_labels_sigma_scaled(labels)
             if not labels.empty:
                 tprint_success("✅ Using standardized output labels from multi_horizon_profit_labeler")
                 tprint_info(f"   → Found {len(labels.columns)} target columns")
@@ -1448,7 +1450,9 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             labels = standardized_output['labels']
             weights = standardized_output.get('weights', {})
             target_columns = standardized_output.get('target_columns', [])
-            
+
+            assert_labels_sigma_scaled(labels)
+
             if not labels.empty:
                 tprint_info("📋 Using standardized output labels with weights")
                 tprint_info(f"   → Available target columns: {target_columns}")
@@ -1476,7 +1480,9 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             tprint_info("📊 Using multi_horizon_labeling_result format")
             tprint_info(f"   → Available target columns: {target_columns}")
             tprint_info(f"   → Horizon weights: {horizon_weights}")
-            
+
+            assert_labels_sigma_scaled(labeled_data)
+
             # Select the best target based on weights and availability
             best_target = self._select_best_target_with_weights(labeled_data, horizon_weights, target_columns)
             if best_target is not None:
@@ -3142,6 +3148,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 tprint_info("📋 Using standardized output format from multi_horizon_profit_labeler")
                 standardized_output = labeling_data['standardized_output']
                 labeled_data = standardized_output['labels']
+                assert_labels_sigma_scaled(labeled_data)
                 labeling_method = 'multi_horizon_profit_labeling_standardized'
                 horizon_weights = standardized_output.get('weights', {})
                 target_columns = standardized_output.get('target_columns', [])
@@ -3167,6 +3174,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             elif 'labeled_data' in labeling_data:
                 # Multi-horizon labeling format (legacy)
                 labeled_data = labeling_data['labeled_data']
+                assert_labels_sigma_scaled(labeled_data)
                 labeling_method = labeling_data.get('method', 'multi_horizon_profit_labeling')
                 horizon_weights = labeling_data.get('horizon_weights', {})
                 target_columns = labeling_data.get('target_columns', [])

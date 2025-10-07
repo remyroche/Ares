@@ -16,6 +16,37 @@ from enum import Enum
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 
 
+def assert_labels_sigma_scaled(labels: pd.DataFrame, tolerance: float = 0.35) -> None:
+    """Assert that label variance remains close to 1 (σ-normalized scale)."""
+    if labels is None or labels.empty:
+        return
+
+    numeric_columns = labels.select_dtypes(include=[np.number]).columns
+    target_like_columns = [
+        col for col in numeric_columns if 'target' in col.lower() or 'label' in col.lower()
+    ]
+
+    if not target_like_columns:
+        return
+
+    lower_bound = 1 - tolerance
+    upper_bound = 1 + tolerance
+
+    for col in target_like_columns:
+        series = labels[col].dropna()
+        if series.empty:
+            continue
+
+        variance = float(series.var(ddof=0))
+        if not np.isfinite(variance):
+            raise ValueError(f"Variance for label column '{col}' is not finite.")
+
+        if variance < lower_bound or variance > upper_bound:
+            raise ValueError(
+                f"Label column '{col}' variance {variance:.3f} deviates from expected σ-normalized scale."
+            )
+
+
 class LabelingFormat(Enum):
     """Supported labeling formats."""
     STANDARDIZED = "standardized"
@@ -175,7 +206,7 @@ class StandardizedLabelingInterface:
         """Create standardized result from standardized output format."""
         try:
             tprint_info("🔄 Processing standardized output format")
-            
+
             # Extract data from standardized output
             labels = standardized_output.get('labels', pd.DataFrame())
             weights = standardized_output.get('weights', {})
@@ -183,7 +214,9 @@ class StandardizedLabelingInterface:
             quality_scores = standardized_output.get('quality_scores', {})
             confidence_scores = standardized_output.get('confidence_scores', pd.DataFrame())
             eligibility_masks = standardized_output.get('eligibility_masks', pd.DataFrame())
-            
+
+            assert_labels_sigma_scaled(labels)
+
             # Create metadata
             metadata = LabelingMetadata(
                 source_component=standardized_output.get('metadata', {}).get('source_component', 'unknown'),

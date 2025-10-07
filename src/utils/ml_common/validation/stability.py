@@ -256,7 +256,13 @@ class StabilityAnalyzer:
         # Bootstrap parameters
         self.n_bootstraps = self.config.get('n_bootstraps', 100)
         self.bootstrap_fraction = self.config.get('bootstrap_fraction', 0.8)
-        self.stability_threshold = self.config.get('stability_threshold', 0.6)
+        # Threshold for considering a feature stable. Honour the new
+        # ``stable_feature_threshold`` configuration option when provided while
+        # still supporting the legacy ``stability_threshold`` key.
+        self.stability_threshold = self.config.get(
+            'stable_feature_threshold',
+            self.config.get('stability_threshold', 0.7)
+        )
 
         # Temporal analysis parameters
         self.temporal_windows = self.config.get('temporal_windows', [0.5, 0.7, 0.9])
@@ -344,9 +350,15 @@ class StabilityAnalyzer:
                 stability_score = selection_count / self.n_bootstraps
                 stability_scores[feature] = stability_score
 
-            # Select stable features
-            stable_features = [feature for feature, score in stability_scores.items()
-                             if score >= self.stability_threshold]
+            # Select stable features and surface unstable ones for reporting
+            stable_features = [
+                feature for feature, score in stability_scores.items()
+                if score >= self.stability_threshold
+            ]
+            unstable_features = {
+                feature: score for feature, score in stability_scores.items()
+                if score < self.stability_threshold
+            }
 
             # Calculate stability metrics
             stability_metrics = self._calculate_stability_metrics(bootstrap_results, stability_scores)
@@ -355,6 +367,7 @@ class StabilityAnalyzer:
 
             result = {
                 'stable_features': stable_features,
+                'unstable_features': unstable_features,
                 'stability_scores': stability_scores,
                 'bootstrap_results': bootstrap_results,
                 'stability_metrics': stability_metrics,
@@ -370,6 +383,12 @@ class StabilityAnalyzer:
 
             _LOGGER.info(f"✅ Bootstrap stability analysis completed in {execution_time:.3f}s")
             _LOGGER.info(f"📊 Found {len(stable_features)} stable features out of {len(feature_names)}")
+            if unstable_features:
+                _LOGGER.info(
+                    "🚩 Features below stability threshold %.2f: %s",
+                    self.stability_threshold,
+                    sorted(unstable_features.keys())
+                )
 
             return result
 
@@ -421,6 +440,7 @@ class StabilityAnalyzer:
                 'min_stability_score': np.min(stability_values),
                 'max_stability_score': np.max(stability_values),
                 'features_above_threshold': sum(1 for score in stability_values if score >= self.stability_threshold),
+                'features_below_threshold': sum(1 for score in stability_values if score < self.stability_threshold),
                 'stability_threshold': self.stability_threshold
             }
 

@@ -5,7 +5,7 @@ Defines parent features with exact formulas and metadata.
 Organized by family: price/returns, volatility, mean-reversion, liquidity/micro, anchors/TOD, context.
 """
 
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Callable
 from dataclasses import dataclass
 from enum import Enum
 import pandas as pd
@@ -53,6 +53,7 @@ class ParentFeature(ABC):
         if missing_fields:
             raise ValueError(f"Missing required fields for {self.name}: {missing_fields}")
         return True
+
 
 
 class PriceReturnsFeatures:
@@ -312,10 +313,11 @@ class ContextFeatures:
 
 class FeatureRegistry:
     """Registry of all parent features."""
-    
+
     def __init__(self):
         self.features = {}
         self._register_features()
+        self._compute_fn_map = self._build_compute_function_map()
     
     def _register_features(self):
         """Register all parent features with metadata."""
@@ -413,6 +415,59 @@ class FeatureRegistry:
         
         for name, metadata in all_features:
             self.features[name] = metadata
+
+    def _build_compute_function_map(self) -> Dict[str, Callable[[pd.DataFrame], pd.Series]]:
+        """Create dispatch map from feature name to compute function."""
+
+        compute_map: Dict[str, Callable[[pd.DataFrame], pd.Series]] = {
+            # Price/Returns
+            'p/r1': PriceReturnsFeatures.r1,
+            'p/r3': PriceReturnsFeatures.r3,
+            'p/r5': PriceReturnsFeatures.r5,
+            'p/r10': PriceReturnsFeatures.r10,
+            'p/mom5': PriceReturnsFeatures.mom5,
+            'p/mom10': PriceReturnsFeatures.mom10,
+            'p/mom20': PriceReturnsFeatures.mom20,
+            'p/price_ema10_pct': PriceReturnsFeatures.price_ema10_pct,
+            'p/price_ema20_pct': PriceReturnsFeatures.price_ema20_pct,
+            'p/bollz20': PriceReturnsFeatures.bollz20,
+            # Volatility
+            'p/sigma_ew': VolatilityFeatures.sigma_ew,
+            'p/gk_w': VolatilityFeatures.gk_w,
+            'p/rv_bipower_12': VolatilityFeatures.rv_bipower_12,
+            'p/rv_short_3': VolatilityFeatures.rv_short_3,
+            'p/sigma_slope_6': VolatilityFeatures.sigma_slope_6,
+            'p/range_pct': VolatilityFeatures.range_pct,
+            # Mean reversion
+            'p/rsi7': MeanReversionFeatures.rsi7,
+            'p/rsi14': MeanReversionFeatures.rsi14,
+            'p/stochk14': MeanReversionFeatures.stochk14,
+            'p/autocorr_r1_w': MeanReversionFeatures.autocorr_r1_w,
+            # Liquidity / microstructure
+            'p/volume_z18': LiquidityMicroFeatures.volume_z18,
+            'p/tradecount_z18': LiquidityMicroFeatures.tradecount_z18,
+            'p/spread_z18': LiquidityMicroFeatures.spread_z18,
+            'p/dollarvol_z18': LiquidityMicroFeatures.dollarvol_z18,
+            'p/ofi_proxy': LiquidityMicroFeatures.ofi_proxy,
+            'p/microprice_dev': LiquidityMicroFeatures.microprice_dev,
+            # Anchors / TOD
+            'p/vwap_session_dist': AnchorsTODFeatures.vwap_session_dist,
+            'p/vwap_roll12_dist': AnchorsTODFeatures.vwap_roll12_dist,
+            'p/open30': AnchorsTODFeatures.open30,
+            'p/last30': AnchorsTODFeatures.last30,
+            # Context
+            'p/beta30': ContextFeatures.beta30,
+            'p/mkt_dispersion': ContextFeatures.mkt_dispersion,
+        }
+
+        missing = set(self.features) - set(compute_map)
+        if missing:
+            raise ValueError(
+                "Missing compute function definitions for features: "
+                f"{sorted(missing)}"
+            )
+
+        return compute_map
     
     def get_feature_metadata(self, name: str) -> FeatureMetadata:
         """Get metadata for a specific feature."""
@@ -427,11 +482,29 @@ class FeatureRegistry:
     def get_all_features(self) -> List[str]:
         """Get all feature names."""
         return list(self.features.keys())
-    
+
+    def get_compute_fn(self, name: str) -> Callable[[pd.DataFrame], pd.Series]:
+        """Retrieve the compute function for a feature."""
+        if name not in self._compute_fn_map:
+            raise ValueError(f"Feature '{name}' not found in registry")
+        return self._compute_fn_map[name]
+
+    def compute_feature(self, name: str, data: pd.DataFrame) -> pd.Series:
+        """Compute a feature using the registered implementation."""
+        metadata = self.get_feature_metadata(name)
+        missing_fields = set(metadata.fields_required) - set(data.columns)
+        if missing_fields:
+            raise ValueError(
+                f"Missing required fields for feature '{name}': {sorted(missing_fields)}"
+            )
+
+        compute_fn = self.get_compute_fn(name)
+        return compute_fn(data)
+
     def validate_feature_gates(self, feature_name: str, lookback: int) -> bool:
         """Validate feature against gates."""
         metadata = self.get_feature_metadata(feature_name)
-        
+
         # Check lookback ceiling (120 minutes)
         if lookback > 120:
             return False
@@ -443,5 +516,5 @@ class FeatureRegistry:
         # Check causal requirement
         if not metadata.causal:
             return False
-        
+
         return True

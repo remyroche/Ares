@@ -20,6 +20,16 @@ import pickle
 import json
 from pathlib import Path
 
+# Import existing feature generation components
+import sys
+sys.path.append('src/training/steps/pre_training/interaction_feature_generator/feature_interaction_generation')
+from feature_engineering.feature_registry import FeatureRegistry
+from feature_engineering.transforms import TransformRouter, create_default_transform_config
+from .htf_utils import (
+    build_htf_family_catalog,
+    format_transform_suffix,
+    resample_htf_series,
+)
 from ..feature_interaction_generation.feature_engineering import (
     FeatureRegistry,
     FeatureFamily,
@@ -328,10 +338,13 @@ class HTFFeatureGenerator:
     def __init__(self, config):
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
+
         self.feature_registry = FeatureRegistry()
         self.rih_manager = RIHStateManager()
         self.ehu_manager = EHUStateManager()
+        self.htf_families, self.base_feature_to_family = build_htf_family_catalog(
+            self.feature_registry
+        )
     
     def generate_htf_feature(self, 
                            data: pd.DataFrame,
@@ -352,6 +365,26 @@ class HTFFeatureGenerator:
         Returns:
             Materialized HTF feature
         """
+        if feature_name not in self.base_feature_to_family:
+            raise ValueError(f"Feature '{feature_name}' is not registered for HTF materialization")
+
+        expected_family = self.base_feature_to_family[feature_name]
+        if family != expected_family:
+            self.logger.warning(
+                "Family mismatch for %s: expected %s, received %s",
+                feature_name,
+                expected_family,
+                family,
+            )
+
+        metadata = self.feature_registry.get_feature_metadata(feature_name)
+        base_series = self.feature_registry.compute_feature(feature_name, data)
+        htf_series = resample_htf_series(base_series, lookback, metadata.family)
+
+        transformed_series, transform_suffix = self._apply_transforms(
+            feature_name,
+            lookback,
+            htf_series,
         # Get base feature computation function
         base_feature_func = htf_base_features.get_base_feature_func(feature_name)
         
@@ -368,8 +401,6 @@ class HTFFeatureGenerator:
             pd.DataFrame({feature_name: htf_series})
         )
         
-        transformed_series = transformed_data[feature_name]['train']
-        
         # Create state
         if update_style == UpdateStyle.RIH:
             state = self.rih_manager.initialize_state(feature_name, lookback, family)
@@ -378,12 +409,12 @@ class HTFFeatureGenerator:
         
         # Create materialized HTF
         materialized_htf = MaterializedHTF(
-            feature_name=f"t/{feature_name}_htf{lookback}/ewz12",
+            feature_name=f"t/{feature_name}_htf{lookback}/{transform_suffix}",
             family=family,
             lookback=lookback,
             update_style=update_style,
             feature_series=transformed_series,
-            transform_applied="ewz12",
+            transform_applied=transform_suffix,
             state=state,
             metadata={
                 'base_feature': feature_name,
@@ -392,8 +423,33 @@ class HTFFeatureGenerator:
                 'data_length': len(transformed_series)
             }
         )
-        
+
         return materialized_htf
+
+    def _apply_transforms(
+        self,
+        feature_name: str,
+        lookback: int,
+        htf_series: pd.Series,
+    ) -> Tuple[pd.Series, str]:
+        """Apply default transforms and return the series with its suffix."""
+        transform_config = create_default_transform_config([feature_name])
+        transform_router = TransformRouter(transform_config)
+
+        transformed = transform_router.fit_transform(
+            pd.DataFrame({feature_name: htf_series}),
+            pd.DataFrame({feature_name: htf_series}),
+        )
+
+        transformed_df = transformed.get(feature_name, {}).get('train')
+        if transformed_df is None or transformed_df.empty:
+            empty_series = pd.Series(index=htf_series.index, dtype=float)
+            return empty_series, format_transform_suffix(transform_config[feature_name])
+
+        transformed_series = transformed_df.iloc[:, 0]
+        suffix = format_transform_suffix(transform_config[feature_name])
+        transformed_series.name = f"t/{feature_name}_htf{lookback}/{suffix}"
+        return transformed_series, suffix
     
     def _create_transform_router(self, feature_names: List[str]) -> TransformRouter:
         """Create transform router for features."""

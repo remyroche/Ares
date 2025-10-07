@@ -1,0 +1,68 @@
+"""Shared utilities for HTF feature generation."""
+
+from typing import Dict, List, Set, Tuple
+
+import pandas as pd
+
+from feature_engineering.feature_registry import FeatureFamily, FeatureRegistry
+from feature_engineering.transforms import TransformConfig, TransformType
+
+
+# Mapping from Phase-1 family aliases to registry feature families
+_FAMILY_TO_REGISTRY: Dict[str, Set[FeatureFamily]] = {
+    'trend_level_vol': {FeatureFamily.PRICE_RETURNS, FeatureFamily.VOLATILITY},
+    'oscillators': {FeatureFamily.MEAN_REVERSION},
+    'anchors': {FeatureFamily.ANCHORS_TOD},
+}
+
+
+def build_htf_family_catalog(
+    registry: FeatureRegistry,
+) -> Tuple[Dict[str, List[str]], Dict[str, str]]:
+    """Build HTF family listings and reverse lookup from the registry."""
+    family_to_features: Dict[str, List[str]] = {}
+    feature_to_family: Dict[str, str] = {}
+
+    for alias, registry_families in _FAMILY_TO_REGISTRY.items():
+        features: List[str] = []
+        for registry_family in registry_families:
+            features.extend(registry.get_features_by_family(registry_family))
+
+        # Preserve deterministic ordering for reproducibility
+        unique_features = sorted(set(features))
+        if not unique_features:
+            continue
+
+        family_to_features[alias] = unique_features
+        for feature_name in unique_features:
+            feature_to_family[feature_name] = alias
+
+    return family_to_features, feature_to_family
+
+
+def resample_htf_series(
+    series: pd.Series, lookback_minutes: int, feature_family: FeatureFamily
+) -> pd.Series:
+    """Apply the standard HTF resampling strategy for a feature family."""
+    if series.empty:
+        return series
+
+    rule = f"{lookback_minutes}min"
+
+    if feature_family == FeatureFamily.MEAN_REVERSION:
+        return series.resample(rule).mean()
+
+    # Trend, volatility, anchors, and other context use the latest observation
+    return series.resample(rule).last()
+
+
+def format_transform_suffix(transform_config: TransformConfig) -> str:
+    """Format the transform name with relevant parameterization."""
+    suffix = transform_config.transform_type.value
+
+    if transform_config.transform_type == TransformType.EWZ:
+        halflife = transform_config.params.get('halflife')
+        if halflife is not None:
+            return f"{suffix}{halflife}"
+
+    return suffix

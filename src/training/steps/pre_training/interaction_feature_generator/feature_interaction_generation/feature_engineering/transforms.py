@@ -326,10 +326,11 @@ class TransformRouter:
         for feature_name, transformer in self.transformers.items():
             if feature_name not in train_data.columns:
                 continue
-            
+
+            transform_config = self.config[feature_name]
             # Fit on training data
             train_transformed = transformer.fit_transform(train_data[feature_name])
-            
+
             # Transform validation data
             val_transformed = transformer.transform(val_data[feature_name])
             

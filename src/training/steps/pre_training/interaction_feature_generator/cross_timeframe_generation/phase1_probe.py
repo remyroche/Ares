@@ -20,6 +20,15 @@ from sklearn.model_selection import TimeSeriesSplit
 
 from .staleness_curve import StalenessCurveCalculator
 
+# Import existing components
+import sys
+sys.path.append('src/training/steps/pre_training/interaction_feature_generator/feature_interaction_generation')
+from feature_engineering.feature_registry import FeatureRegistry
+from feature_engineering.transforms import TransformRouter, create_default_transform_config
+from .htf_utils import (
+    build_htf_family_catalog,
+    format_transform_suffix,
+    resample_htf_series,
 from ..feature_interaction_generation.feature_engineering import (
     FeatureRegistry,
     FeatureFamily,
@@ -53,20 +62,6 @@ class CoarseGridGenerator:
     def __init__(self, config):
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
-        # Define HTF families and their base features
-        self.htf_families = {
-            'trend_level_vol': [
-                'p/price_ema10_pct', 'p/price_ema20_pct', 'p/bollz20',
-                'p/sigma_ew', 'p/gk_w', 'p/rv_bipower_12', 'p/rv_short_3'
-            ],
-            'oscillators': [
-                'p/rsi7', 'p/rsi14', 'p/stochk14', 'p/autocorr_r1_w'
-            ],
-            'anchors': [
-                'p/vwap_session_dist', 'p/vwap_roll12_dist'
-            ]
-        }
         
         # Base coarse grid (15m to 300m)
         self.base_coarse_grid = self._generate_coarse_grid()
@@ -140,13 +135,16 @@ class CoarseGridGenerator:
 
 class HTFFeatureGenerator:
     """Generates HTF features from base features."""
-    
+
     def __init__(self, config):
         self.config = config
         self.feature_registry = FeatureRegistry()
         self.logger = logging.getLogger(__name__)
-    
-    def generate_htf_feature(self, 
+        self.htf_families, self.base_feature_to_family = build_htf_family_catalog(
+            self.feature_registry
+        )
+
+    def generate_htf_feature(self,
                            data: pd.DataFrame,
                            base_feature: str,
                            lookback_minutes: int,
@@ -163,6 +161,25 @@ class HTFFeatureGenerator:
         Returns:
             HTF feature series
         """
+        if base_feature not in self.base_feature_to_family:
+            raise ValueError(f"Base feature '{base_feature}' is not registered for HTF usage")
+
+        expected_family = self.base_feature_to_family[base_feature]
+        if family != expected_family:
+            self.logger.warning(
+                "Family mismatch for %s: expected %s, received %s",
+                base_feature,
+                expected_family,
+                family,
+            )
+
+        metadata = self.feature_registry.get_feature_metadata(base_feature)
+        base_series = self.feature_registry.compute_feature(base_feature, data)
+
+        htf_series = resample_htf_series(base_series, lookback_minutes, metadata.family)
+
+        transformed_series = self._apply_transforms(
+            base_feature,
         base_feature_func = htf_base_features.get_base_feature_func(base_feature)
 
         # Compute base feature
@@ -172,8 +189,34 @@ class HTFFeatureGenerator:
         return htf_base_features.resample_to_htf(
             base_series,
             lookback_minutes,
-            family
+            htf_series,
         )
+
+        return transformed_series
+
+    def _apply_transforms(
+        self,
+        base_feature: str,
+        lookback_minutes: int,
+        htf_series: pd.Series,
+    ) -> pd.Series:
+        """Apply the default transform pipeline to a resampled HTF series."""
+        transform_config = create_default_transform_config([base_feature])
+        transform_router = TransformRouter(transform_config)
+
+        transformed = transform_router.fit_transform(
+            pd.DataFrame({base_feature: htf_series}),
+            pd.DataFrame({base_feature: htf_series}),
+        )
+
+        transformed_df = transformed.get(base_feature, {}).get('train')
+        if transformed_df is None or transformed_df.empty:
+            return pd.Series(index=htf_series.index, dtype=float)
+
+        transformed_series = transformed_df.iloc[:, 0]
+        suffix = format_transform_suffix(transform_config[base_feature])
+        transformed_series.name = f"t/{base_feature}_htf{lookback_minutes}/{suffix}"
+        return transformed_series
 
 
 class Phase1HTFProbe:

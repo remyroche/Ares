@@ -24,6 +24,8 @@ sys.path.append('src/training/steps/pre_training/interaction_feature_generator/f
 from feature_engineering.feature_registry import FeatureRegistry, FeatureFamily
 from feature_engineering.transforms import TransformRouter, create_default_transform_config
 
+from .scoring_system import AdaptiveScoringSystem
+
 
 @dataclass
 class HTFCandidate:
@@ -301,14 +303,18 @@ class HTFFeatureGenerator:
 
 class Phase1HTFProbe:
     """Phase-1 HTF probe stage implementation."""
-    
-    def __init__(self, config):
+
+    def __init__(self, config, scoring_system: Optional[AdaptiveScoringSystem] = None):
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
+
         self.grid_generator = CoarseGridGenerator(config)
         self.htf_generator = HTFFeatureGenerator(config)
-        self.scoring_system = None  # Will be injected
+        self.scoring_system = scoring_system
+
+    def set_scoring_system(self, scoring_system: AdaptiveScoringSystem) -> None:
+        """Inject the centralized adaptive scoring system."""
+        self.scoring_system = scoring_system
         
     def run_probe_stage(self, 
                        sessionized_data: Dict[str, Any],
@@ -550,16 +556,21 @@ class Phase1HTFProbe:
         
         return pass_count / total_folds if total_folds > 0 else 0.0
     
-    def _calculate_utility_score(self, 
+    def _calculate_utility_score(self,
                                ic_oos: float,
                                se_wild_bootstrap: float,
                                cpu_p95: float,
                                staleness: float) -> float:
-        """Calculate utility score with penalties."""
-        return (ic_oos - 
-                self.config.lambda_unc * se_wild_bootstrap -
-                self.config.lambda_cost * cpu_p95 -
-                self.config.lambda_stale * staleness)
+        """Calculate utility score using the centralized scoring system."""
+        if self.scoring_system is None:
+            raise ValueError("Adaptive scoring system must be provided to Phase1HTFProbe")
+
+        return self.scoring_system.calculate_utility_score(
+            ic_oos=ic_oos,
+            se_wild_bootstrap=se_wild_bootstrap,
+            cpu_p95=cpu_p95,
+            staleness=staleness,
+        )
     
     def _check_early_stopping(self, family_scores: List[float]) -> bool:
         """Check if family should be early stopped."""

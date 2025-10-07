@@ -237,7 +237,8 @@ def run_individual_component_examples():
     print("\n2. Phase-1 HTF Probe Example")
     print("-" * 40)
     
-    phase1_probe = Phase1HTFProbe(config)
+    scoring_system = AdaptiveScoringSystem(config)
+    phase1_probe = Phase1HTFProbe(config, scoring_system=scoring_system)
     phase1_results = phase1_probe.run_probe_stage(sessionized_data, regime_results, targets)
     print(f"  - Candidates evaluated: {len(phase1_results['candidates'])}")
     print(f"  - Shortlisted: {len(phase1_results['shortlisted_candidates'])}")

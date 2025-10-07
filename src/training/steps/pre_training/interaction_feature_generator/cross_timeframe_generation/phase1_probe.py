@@ -8,15 +8,13 @@ Implements coarse, adaptive grid generation for HTF features with:
 - Early stopping and shortlisting
 """
 
-from typing import Dict, List, Optional, Any, Tuple, Union
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import logging
 from itertools import product
-from scipy import stats
-from sklearn.model_selection import TimeSeriesSplit
 
 # Import existing components
 import sys
@@ -179,9 +177,12 @@ class HTFFeatureGenerator:
         htf_series = resample_htf_series(base_series, lookback_minutes, metadata.family)
 
         transformed_series = self._apply_transforms(
+
             base_feature=base_feature,
             lookback_minutes=lookback_minutes,
             htf_series=htf_series,
+            htf_series,
+
         )
 
         return transformed_series
@@ -209,6 +210,20 @@ class HTFFeatureGenerator:
         suffix = format_transform_suffix(transform_config[base_feature])
         transformed_series.name = f"t/{base_feature}_htf{lookback_minutes}/{suffix}"
         return transformed_series
+
+
+class FamilyProcessingError(RuntimeError):
+    """Raised when an HTF family fails to yield any viable candidates."""
+
+    def __init__(self, family: str, details: Optional[List[str]] = None):
+        self.family = family
+        self.details = details or []
+
+        message = f"Failed to produce any valid candidates for family '{family}'."
+        if self.details:
+            message = f"{message} {' '.join(self.details)}"
+
+        super().__init__(message)
 
 
 class Phase1HTFProbe:
@@ -274,14 +289,22 @@ class Phase1HTFProbe:
         # Process each HTF family
         for family, base_features in self.htf_generator.htf_families.items():
             self.logger.info(f"Processing family: {family}")
-            
-            family_results = self._process_family(
-                family, base_features, sessionized_data, regime_segments, targets
-            )
-            
+
+            try:
+                family_results = self._process_family(
+                    family, base_features, sessionized_data, regime_segments, targets
+                )
+            except FamilyProcessingError as exc:
+                self.logger.error(
+                    "Phase-1 probe aborted while processing family '%s': %s",
+                    family,
+                    exc,
+                )
+                raise
+
             results['candidates'].extend(family_results['candidates'])
             results['family_performance'][family] = family_results['performance']
-            
+
             if family_results['early_stopped']:
                 results['early_stopped_families'].append(family)
             else:
@@ -307,7 +330,10 @@ class Phase1HTFProbe:
         
         candidates = []
         family_scores = []
-        
+        errors: List[str] = []
+        empty_attempts: List[str] = []
+        has_success = False
+
         # Test each combination of base feature and lookback
         for base_feature, lookback in product(base_features, grid):
             try:
@@ -328,20 +354,47 @@ class Phase1HTFProbe:
                 if regime_candidates:
                     candidates.extend(regime_candidates)
                     family_scores.extend([c.utility_score for c in regime_candidates])
+                    has_success = True
                     self.logger.debug(
                         "Scored %s@%s for %d regime variants",
                         base_feature,
                         lookback,
                         len(regime_candidates)
                     )
+                else:
+                    empty_attempts.append(f"{base_feature}@{lookback}")
 
             except Exception as e:
                 self.logger.warning(f"Failed to process {base_feature}@{lookback}: {e}")
+                errors.append(f"{base_feature}@{lookback}: {e}")
                 continue
-        
+
+        if not has_success:
+            detail_parts: List[str] = []
+            if errors:
+                detail_parts.append(
+                    "Encountered errors for "
+                    + ", ".join(errors)
+                )
+            if empty_attempts:
+                detail_parts.append(
+                    "No viable regimes produced for "
+                    + ", ".join(empty_attempts)
+                )
+            if not detail_parts:
+                detail_parts.append("No candidates evaluated for generated grid.")
+
+            detail_message = " ".join(detail_parts)
+            self.logger.error(
+                "Family '%s' produced no successful candidates. %s",
+                family,
+                detail_message,
+            )
+            raise FamilyProcessingError(family, detail_parts)
+
         # Check for early stopping
         early_stopped = self._check_early_stopping(family_scores)
-        
+
         # Shortlist top candidates
         if not early_stopped:
             shortlisted = self._shortlist_candidates(candidates, family)
@@ -382,6 +435,8 @@ class Phase1HTFProbe:
             int(self.session_config.base_timeframe_minutes * 4),
         )
 
+        scoring_system = self._ensure_scoring_system()
+
         def _build_candidate(segment_data: pd.DataFrame,
                              regime_label: str,
                              segment_index: Optional[int],
@@ -392,31 +447,43 @@ class Phase1HTFProbe:
             feature_slice = segment_data['htf_feature']
             target_slice = segment_data['target']
 
-            ic_oos = self._calculate_ic(feature_slice, target_slice)
-            se_wild_bootstrap = self._calculate_wild_bootstrap_se(feature_slice, target_slice)
-            cpu_p95 = self._estimate_cpu_cost(lookback, family)
-            staleness, staleness_summary = self._calculate_staleness(
-                base_feature, lookback, family
-            )
-            fold_pass_rate = self._calculate_fold_pass_rate(feature_slice, target_slice)
-
-            utility_score = self._calculate_utility_score(
-                ic_oos, se_wild_bootstrap, cpu_p95, staleness
+            scoring_result = scoring_system.score_feature_candidate(
+                feature=feature_slice,
+                target=target_slice,
+                lookback=lookback,
+                family=family,
+                regime=regime_label,
+                regime_segments=segments,
             )
 
-            metadata = {
-                'regime_segment': {
-                    'segment_index': segment_index,
-                    **segment_meta
-                },
-                'performance': {
-                    'ic_oos': ic_oos,
-                    'utility_score': utility_score,
-                    'se_wild_bootstrap': se_wild_bootstrap,
-                    'fold_pass_rate': fold_pass_rate
-                }
+            if scoring_result is None:
+                return None
+
+            segment_info = {
+                'segment_index': segment_index,
+                **segment_meta
             }
 
+            performance_metadata = {
+                'utility_score': scoring_result.utility_score,
+                'ic_oos': scoring_result.ic_oos,
+                'se_wild_bootstrap': scoring_result.se_wild_bootstrap,
+                'se_stationary_bootstrap': scoring_result.se_stationary_bootstrap,
+                'fold_pass_rate': scoring_result.fold_pass_rate,
+                'cpu_p95': scoring_result.cpu_p95,
+                'staleness': scoring_result.staleness,
+                'regime_weight': scoring_result.regime_weight,
+            }
+
+            metadata: Dict[str, Any] = {
+                'regime_segment': segment_info,
+                'performance': performance_metadata,
+            }
+
+            if scoring_result.metadata:
+                metadata['scoring_metadata'] = scoring_result.metadata
+
+            staleness_summary = self._get_staleness_summary(base_feature, lookback, family)
             if staleness_summary is not None:
                 metadata['staleness_summary'] = staleness_summary
 
@@ -425,12 +492,12 @@ class Phase1HTFProbe:
                 base_feature=base_feature,
                 lookback_minutes=lookback,
                 regime=regime_label,
-                utility_score=utility_score,
-                ic_oos=ic_oos,
-                se_wild_bootstrap=se_wild_bootstrap,
-                cpu_p95=cpu_p95,
-                staleness=staleness,
-                fold_pass_rate=fold_pass_rate,
+                utility_score=scoring_result.utility_score,
+                ic_oos=scoring_result.ic_oos,
+                se_wild_bootstrap=scoring_result.se_wild_bootstrap,
+                cpu_p95=scoring_result.cpu_p95,
+                staleness=scoring_result.staleness,
+                fold_pass_rate=scoring_result.fold_pass_rate,
                 metadata=metadata
             )
 
@@ -480,107 +547,23 @@ class Phase1HTFProbe:
                 candidates.append(fallback_candidate)
 
         return candidates
-    
-    def _calculate_ic(self, feature: pd.Series, target: pd.Series) -> float:
-        """Calculate Information Coefficient."""
-        correlation = feature.corr(target)
-        return correlation if not pd.isna(correlation) else 0.0
-    
-    def _calculate_wild_bootstrap_se(self, feature: pd.Series, target: pd.Series) -> float:
-        """Calculate wild bootstrap standard error."""
-        # Simplified implementation
-        n = len(feature)
-        if n < 10:
-            return 1.0
-        
-        # Wild bootstrap with Rademacher weights
-        n_bootstrap = 100
-        correlations = []
-        
-        for _ in range(n_bootstrap):
-            weights = np.random.choice([-1, 1], size=n)
-            weighted_feature = feature * weights
-            corr = weighted_feature.corr(target)
-            if not pd.isna(corr):
-                correlations.append(corr)
-        
-        return np.std(correlations) if correlations else 1.0
-    
-    def _estimate_cpu_cost(self, lookback: int, family: str) -> float:
-        """Estimate CPU cost in milliseconds."""
-        # Base cost per lookback minute
-        base_cost = 0.01  # ms per minute
-        
-        # Family-specific multipliers
-        family_multipliers = {
-            'trend_level_vol': 1.0,
-            'oscillators': 1.2,
-            'anchors': 0.8
-        }
-        
-        multiplier = family_multipliers.get(family, 1.0)
-        return base_cost * lookback * multiplier
-    
-    def _calculate_fold_pass_rate(self, feature: pd.Series, target: pd.Series) -> float:
-        """Calculate fold pass rate using time series cross-validation."""
-        if len(feature) < 50:
-            return 0.0
-        
-        # Use 3-fold time series split
-        tscv = TimeSeriesSplit(n_splits=3)
-        pass_count = 0
-        total_folds = 0
-        
-        for train_idx, val_idx in tscv.split(feature):
-            if len(val_idx) < 10:
-                continue
-                
-            train_feature = feature.iloc[train_idx]
-            train_target = target.iloc[train_idx]
-            val_feature = feature.iloc[val_idx]
-            val_target = target.iloc[val_idx]
-            
-            # Calculate IC on validation set
-            val_ic = val_feature.corr(val_target)
-            
-            # Pass if IC > 0.05
-            if not pd.isna(val_ic) and val_ic > 0.05:
-                pass_count += 1
-            
-            total_folds += 1
-        
-        return pass_count / total_folds if total_folds > 0 else 0.0
-    
-    def _calculate_utility_score(self,
-                               ic_oos: float,
-                               se_wild_bootstrap: float,
-                               cpu_p95: float,
-                               staleness: float) -> float:
-        """Calculate utility score using the centralized scoring system."""
-        scoring_system = self._ensure_scoring_system()
 
-        return scoring_system.calculate_utility_score(
-            ic_oos=ic_oos,
-            se_wild_bootstrap=se_wild_bootstrap,
-            cpu_p95=cpu_p95,
-            staleness=staleness,
-        )
-
-    def _calculate_staleness(
+    def _get_staleness_summary(
         self,
         base_feature: str,
         lookback: int,
         family: str,
-    ) -> Tuple[float, Optional[Any]]:
-        """Calculate staleness using the shared adaptive scoring system."""
-        scoring_system = self._ensure_scoring_system()
+    ) -> Optional[Any]:
+        """Fetch staleness curve summary for metadata enrichment."""
 
+        scoring_system = self._ensure_scoring_system()
         staleness_calculator = getattr(scoring_system, 'staleness_calculator', None)
         if staleness_calculator is None:
-            raise RuntimeError(
-                "Adaptive scoring system does not expose a staleness calculator, "
-                "which is required for Phase-1 scoring."
-            )
+            return None
+
+        curve_calculator = getattr(staleness_calculator, 'curve_calculator', None)
+        if curve_calculator is None:
+            return None
 
         base_timeframe = getattr(self.session_config, 'base_timeframe_minutes', 5)
         staleness_value = staleness_calculator.calculate_staleness(
@@ -589,17 +572,22 @@ class Phase1HTFProbe:
             base_timeframe=base_timeframe,
         )
 
-        staleness_summary = None
-        curve_calculator = getattr(staleness_calculator, 'curve_calculator', None)
-        if curve_calculator is not None and base_feature:
-            staleness_summary = curve_calculator.get_summary(
+        try:
+            return curve_calculator.get_summary(
                 feature_name=base_feature,
                 family=family,
                 lookback=lookback,
                 base_timeframe=base_timeframe,
             )
-
-        return staleness_value, staleness_summary
+        except Exception as exc:
+            self.logger.debug(
+                "Failed to fetch staleness summary for %s@%s (%s): %s",
+                base_feature,
+                lookback,
+                family,
+                exc,
+            )
+            return None
     
     def _check_early_stopping(self, family_scores: List[float]) -> bool:
         """Check if family should be early stopped."""

@@ -18,7 +18,9 @@ import os
 import pickle
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Tuple
+from pathlib import Path
 import optuna
 import numpy as np
 import logging
@@ -69,13 +71,13 @@ class FinalParametersOptimizer:
         
         # Enhanced search spaces with non-linear transformations
         self.enhanced_search_spaces = self._create_enhanced_search_spaces()
-        
+
         # Optimization settings
         self.n_trials = config.get('n_trials', 50)
         self.timeout = config.get('timeout', 300)
         self.study_name = config.get('study_name', 'final_parameters_optimization')
         self.use_nonlinear_optimization = config.get('use_nonlinear_optimization', True)
-        
+
         self.logger.info("🚀 Final Parameters Optimizer initialized")
         self.logger.info(f"📊 Optimization categories: {len(self.categories)}")
         self.logger.info(f"🔧 Number of trials: {self.n_trials}")
@@ -88,6 +90,15 @@ class FinalParametersOptimizer:
             self.logger.info(f"   • Fractional powers: {self.nonlinear_config.use_fractional_powers}")
             self.logger.info(f"   • Sigmoid transforms: {self.nonlinear_config.use_sigmoid_transforms}")
             self.logger.info(f"   • Adaptive transforms: {self.nonlinear_config.use_adaptive_transforms}")
+
+        # Load per-regime performance statistics for objective adjustments
+        self.regime_performance_path: Optional[str] = None
+        self.regime_performance_stats = self._load_regime_performance_stats()
+        self.regime_performance_modifier = self._calculate_regime_performance_modifier()
+        if self.regime_performance_stats:
+            location = self.regime_performance_path or 'unknown location'
+            self.logger.info(f"📊 Loaded per-regime performance stats from {location}")
+            self.logger.info(f"   • Regime performance modifier: {self.regime_performance_modifier:.4f}")
     
         # Initialize artifact and version managers
         self.artifact_manager = get_artifact_manager()
@@ -710,33 +721,79 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'confidence_low': {'type': 'float', 'min': 0.3, 'max': 0.5},
                 'confidence_medium': {'type': 'float', 'min': 0.5, 'max': 0.7},
                 'confidence_high': {'type': 'float', 'min': 0.7, 'max': 0.9},
-                
+
                 # Profit-taking parameters
                 'base_profit_target': {'type': 'float', 'min': 0.02, 'max': 0.08},
                 'min_confidence_for_profit': {'type': 'float', 'min': 0.5, 'max': 0.8},
                 'confidence_profit_multiplier': {'type': 'float', 'min': 0.2, 'max': 0.8},
+                'profit_buffer_ratio': {'type': 'float', 'min': 0.005, 'max': 0.025},
+                'profit_time_decay_half_life': {'type': 'int', 'min': 900, 'max': 7200},
+                'profit_ml_adjustment_weight': {'type': 'float', 'min': 0.1, 'max': 0.6},
+                'ml_trigger_confidence_multiplier': {'type': 'float', 'min': 0.85, 'max': 1.15},
                 'profit_tier_1': {'type': 'float', 'min': 0.2, 'max': 0.4},
                 'profit_tier_2': {'type': 'float', 'min': 0.4, 'max': 0.6},
                 'profit_tier_3': {'type': 'float', 'min': 0.6, 'max': 0.8},
-                
+
                 # Stop-loss parameters
                 'base_stop_loss': {'type': 'float', 'min': -0.08, 'max': -0.02},
                 'atr_multiplier': {'type': 'float', 'min': 1.0, 'max': 3.0},
                 'volatility_adjustment_factor': {'type': 'float', 'min': 0.5, 'max': 2.0},
-                
+
                 # Time-based parameters
                 'max_hold_time': {'type': 'int', 'min': 3600, 'max': 14400},  # 1-4 hours
                 'min_hold_time': {'type': 'int', 'min': 60, 'max': 1800},     # 1-30 minutes
                 'confidence_time_scaling_factor': {'type': 'float', 'min': 0.5, 'max': 2.0},
-                
+
                 # Trailing stop parameters
                 'trailing_atr_multiplier': {'type': 'float', 'min': 1.0, 'max': 3.0},
                 'trailing_min_distance': {'type': 'float', 'min': 0.005, 'max': 0.03},
                 'trailing_confidence_activation': {'type': 'float', 'min': 0.6, 'max': 0.9},
-                
+
+                # Unified trailing framework parameters
+                'profit_buffer_atr_multiplier': {'type': 'float', 'min': 0.3, 'max': 0.9},
+                'profit_buffer_min_fraction': {'type': 'float', 'min': 0.0005, 'max': 0.002},
+                'trail_base_atr_multiplier': {'type': 'float', 'min': 0.6, 'max': 1.2},
+                'breakeven_activation_atr': {'type': 'float', 'min': 0.8, 'max': 1.5},
+                'trail_activation_atr': {'type': 'float', 'min': 0.8, 'max': 1.5},
+                'tp_trail_activation_atr': {'type': 'float', 'min': 1.8, 'max': 2.5},
+                'tp_trail_trigger_atr': {'type': 'float', 'min': 2.0, 'max': 3.5},
+                'partial_take_fraction': {'type': 'float', 'min': 0.3, 'max': 0.7},
+                'drawdown_tighten_atr': {'type': 'float', 'min': 0.6, 'max': 1.0},
+                'tighten_trail_atr': {'type': 'float', 'min': 0.3, 'max': 0.8},
+                'drawdown_exit_atr': {'type': 'float', 'min': 1.0, 'max': 1.6},
+                'volatility_tighten_threshold': {'type': 'float', 'min': 0.6, 'max': 0.9},
+                'volatility_tighten_adjustment': {'type': 'float', 'min': 0.1, 'max': 0.5},
+                'volatility_loosen_threshold': {'type': 'float', 'min': 1.1, 'max': 1.6},
+                'volatility_loosen_adjustment': {'type': 'float', 'min': 0.1, 'max': 0.4},
+                'time_decay_bars': {'type': 'int', 'min': 6, 'max': 12},
+                'time_decay_threshold_atr': {'type': 'float', 'min': 0.2, 'max': 0.6},
+                'ml_confidence_tighten_threshold': {'type': 'float', 'min': 0.2, 'max': 0.5},
+                'ml_confidence_tighten_atr': {'type': 'float', 'min': 0.2, 'max': 0.6},
+                'ml_regime_partial_fraction': {'type': 'float', 'min': 0.3, 'max': 0.7},
+                'low_vol_sl_atr': {'type': 'float', 'min': 1.0, 'max': 1.6},
+                'low_vol_tp_atr': {'type': 'float', 'min': 1.8, 'max': 2.6},
+                'low_vol_trail_atr': {'type': 'float', 'min': 0.6, 'max': 1.0},
+                'low_vol_tp_trail': {'type': 'float', 'min': 2.0, 'max': 2.6},
+                'normal_vol_sl_atr': {'type': 'float', 'min': 1.3, 'max': 1.9},
+                'normal_vol_tp_atr': {'type': 'float', 'min': 2.2, 'max': 3.0},
+                'normal_vol_trail_atr': {'type': 'float', 'min': 0.8, 'max': 1.2},
+                'normal_vol_tp_trail': {'type': 'float', 'min': 2.2, 'max': 3.0},
+                'high_vol_sl_atr': {'type': 'float', 'min': 1.5, 'max': 2.2},
+                'high_vol_tp_atr': {'type': 'float', 'min': 2.6, 'max': 3.6},
+                'high_vol_trail_atr': {'type': 'float', 'min': 1.0, 'max': 1.5},
+                'high_vol_tp_trail': {'type': 'float', 'min': 2.6, 'max': 3.6},
+                'trailing_tightening_threshold': {'type': 'float', 'min': 0.01, 'max': 0.05},
+                'trailing_time_decay': {'type': 'float', 'min': 0.9, 'max': 0.995},
+                'trailing_ml_adjustment_weight': {'type': 'float', 'min': 0.1, 'max': 0.6},
+                'ml_trigger_trailing_multiplier': {'type': 'float', 'min': 0.85, 'max': 1.2},
+
                 # Regime-aware parameters
                 'regime_transition_penalty': {'type': 'float', 'min': 0.05, 'max': 0.2},
-                'regime_specific_scaling': {'type': 'float', 'min': 0.8, 'max': 1.2}
+                'regime_specific_scaling': {'type': 'float', 'min': 0.8, 'max': 1.2},
+                'regime_trending_profit_band': {'type': 'float', 'min': 0.6, 'max': 0.9},
+                'regime_ranging_profit_band': {'type': 'float', 'min': 0.4, 'max': 0.7},
+                'regime_high_volatility_profit_band': {'type': 'float', 'min': 0.45, 'max': 0.8},
+                'regime_trailing_sensitivity': {'type': 'float', 'min': 0.8, 'max': 1.2}
             },
             'ensemble': {
                 'analyst_weight': {'type': 'float', 'min': 0.2, 'max': 0.5},
@@ -1152,7 +1209,9 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             if base_score > 0.0:
                 turnover_penalty = self._calculate_turnover_penalty(params, calibration_results)
                 base_score -= turnover_penalty
-            
+
+            base_score = self._apply_regime_performance_adjustment(category, base_score)
+
             # Enhanced confidence evaluation includes exit confidence optimization
             # This is handled within _evaluate_confidence_params method
 
@@ -1855,74 +1914,113 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         
         return score
     
-    def _evaluate_exit_strategy_params(self, params: Dict[str, Any], 
+    def _evaluate_exit_strategy_params(self, params: Dict[str, Any],
                                      calibration_results: Dict[str, Any]) -> float:
         """Evaluate exit strategy parameters."""
         score = 0.0
-        
+
         try:
-            # 1. Confidence thresholds validation (0.3 weight)
+            # 1. Confidence thresholds validation (≈0.25 weight)
             confidence_params = ['confidence_very_low', 'confidence_low', 'confidence_medium', 'confidence_high']
             if all(param in params for param in confidence_params):
                 thresholds = [params[param] for param in confidence_params]
-                # Check if thresholds are in ascending order
-                if all(thresholds[i] <= thresholds[i+1] for i in range(len(thresholds)-1)):
-                    score += 0.3
-                    # Bonus for reasonable spacing
-                    if all(thresholds[i+1] - thresholds[i] >= 0.1 for i in range(len(thresholds)-1)):
-                        score += 0.1
+                if all(thresholds[i] <= thresholds[i + 1] for i in range(len(thresholds) - 1)):
+                    score += 0.2
+                    if all(thresholds[i + 1] - thresholds[i] >= 0.1 for i in range(len(thresholds) - 1)):
+                        score += 0.05
                 else:
-                    score += 0.1  # Partial credit for having all parameters
-            
-            # 2. Profit-taking parameters validation (0.25 weight)
+                    score += 0.1
+
+            # 2. Profit-taking parameters validation (≈0.35 weight)
             profit_params = ['base_profit_target', 'min_confidence_for_profit', 'confidence_profit_multiplier']
             if all(param in params for param in profit_params):
                 base_target = params['base_profit_target']
                 min_conf = params['min_confidence_for_profit']
                 conf_mult = params['confidence_profit_multiplier']
-                
-                # Validate profit target is positive and reasonable
-                if 0.02 <= base_target <= 0.08:
-                    score += 0.1
-                # Validate confidence threshold is reasonable
-                if 0.5 <= min_conf <= 0.8:
-                    score += 0.1
-                # Validate confidence multiplier is reasonable
-                if 0.2 <= conf_mult <= 0.8:
+
+                if 0.03 <= base_target <= 0.07:
+                    score += 0.07
+                elif 0.02 <= base_target <= 0.08:
+                    score += 0.04
+
+                if 0.55 <= min_conf <= 0.75:
                     score += 0.05
-            
-            # 3. Stop-loss parameters validation (0.2 weight)
+                elif 0.5 <= min_conf <= 0.8:
+                    score += 0.03
+
+                if 0.35 <= conf_mult <= 0.65:
+                    score += 0.04
+                elif 0.2 <= conf_mult <= 0.8:
+                    score += 0.02
+
+            if 'profit_buffer_ratio' in params:
+                buffer_ratio = params['profit_buffer_ratio']
+                if 0.008 <= buffer_ratio <= 0.02:
+                    score += 0.05
+                elif 0.005 <= buffer_ratio <= 0.025:
+                    score += 0.02
+
+            if 'profit_time_decay_half_life' in params:
+                half_life = params['profit_time_decay_half_life']
+                if 1800 <= half_life <= 5400:
+                    score += 0.04
+                elif 900 <= half_life <= 7200:
+                    score += 0.02
+
+            if 'profit_ml_adjustment_weight' in params:
+                ml_weight = params['profit_ml_adjustment_weight']
+                if 0.2 <= ml_weight <= 0.4:
+                    score += 0.03
+                elif 0.1 <= ml_weight <= 0.6:
+                    score += 0.01
+
+            if 'ml_trigger_confidence_multiplier' in params:
+                ml_multiplier = params['ml_trigger_confidence_multiplier']
+                if 0.92 <= ml_multiplier <= 1.08:
+                    score += 0.03
+                elif 0.85 <= ml_multiplier <= 1.15:
+                    score += 0.01
+
+            # 3. Stop-loss parameters validation (≈0.15 weight)
             stop_params = ['base_stop_loss', 'atr_multiplier', 'volatility_adjustment_factor']
             if all(param in params for param in stop_params):
                 stop_loss = params['base_stop_loss']
                 atr_mult = params['atr_multiplier']
                 vol_adj = params['volatility_adjustment_factor']
-                
-                # Validate stop loss is negative and reasonable
-                if -0.08 <= stop_loss <= -0.02:
-                    score += 0.1
-                # Validate ATR multiplier is reasonable
-                if 1.0 <= atr_mult <= 3.0:
-                    score += 0.05
-                # Validate volatility adjustment is reasonable
-                if 0.5 <= vol_adj <= 2.0:
-                    score += 0.05
-            
-            # 4. Time-based parameters validation (0.15 weight)
+
+                if -0.07 <= stop_loss <= -0.03:
+                    score += 0.07
+                elif -0.08 <= stop_loss <= -0.02:
+                    score += 0.04
+
+                if 1.5 <= atr_mult <= 2.5:
+                    score += 0.04
+                elif 1.0 <= atr_mult <= 3.0:
+                    score += 0.02
+
+                if 0.8 <= vol_adj <= 1.4:
+                    score += 0.04
+                elif 0.5 <= vol_adj <= 2.0:
+                    score += 0.02
+
+            # 4. Time-based parameters validation (≈0.1 weight)
             time_params = ['max_hold_time', 'min_hold_time', 'confidence_time_scaling_factor']
             if all(param in params for param in time_params):
                 max_time = params['max_hold_time']
                 min_time = params['min_hold_time']
                 time_scaling = params['confidence_time_scaling_factor']
-                
-                # Validate time constraints are reasonable
-                if 3600 <= max_time <= 14400 and 60 <= min_time <= 1800 and min_time < max_time:
-                    score += 0.1
-                # Validate time scaling factor
-                if 0.5 <= time_scaling <= 2.0:
-                    score += 0.05
-            
-            # 5. Trailing stop parameters validation (0.1 weight)
+
+                if 4200 <= max_time <= 12600 and 120 <= min_time <= 1200 and min_time < max_time:
+                    score += 0.07
+                elif 3600 <= max_time <= 14400 and 60 <= min_time <= 1800 and min_time < max_time:
+                    score += 0.04
+
+                if 0.8 <= time_scaling <= 1.4:
+                    score += 0.03
+                elif 0.5 <= time_scaling <= 2.0:
+                    score += 0.01
+
+            # 5. Trailing stop parameters validation (≈0.15 weight)
             trailing_params = ['trailing_atr_multiplier', 'trailing_min_distance', 'trailing_confidence_activation']
             if all(param in params for param in trailing_params):
                 trailing_atr = params['trailing_atr_multiplier']
@@ -1935,40 +2033,160 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                     0.6 <= conf_act <= 0.9):
                     score += 0.1
             
-            # 6. Regime-aware parameters validation (0.1 weight)
+            # 6. Unified trailing parameter validation (0.15 weight)
+            unified_keys = [
+                'profit_buffer_atr_multiplier',
+                'trail_base_atr_multiplier',
+                'drawdown_tighten_atr',
+                'drawdown_exit_atr',
+                'tp_trail_trigger_atr',
+                'time_decay_bars',
+            ]
+            if all(param in params for param in unified_keys):
+                buffer_mult = params['profit_buffer_atr_multiplier']
+                trail_mult = params['trail_base_atr_multiplier']
+                tighten_atr = params['drawdown_tighten_atr']
+                exit_atr = params['drawdown_exit_atr']
+                trigger_atr = params['tp_trail_trigger_atr']
+                decay_bars = params['time_decay_bars']
+
+                if 0.3 <= buffer_mult <= 0.9 and 0.6 <= trail_mult <= 1.2:
+                    score += 0.05
+                if tighten_atr < exit_atr:
+                    score += 0.05
+                if 2.0 <= trigger_atr <= 3.5:
+                    score += 0.03
+                if 6 <= decay_bars <= 12:
+                    score += 0.02
+
+            # 7. Volatility adjustment validation (0.05 weight)
+            if all(param in params for param in ['volatility_tighten_threshold', 'volatility_loosen_threshold']):
+                tighten_th = params['volatility_tighten_threshold']
+                loosen_th = params['volatility_loosen_threshold']
+                if 0.6 <= tighten_th < loosen_th <= 1.6:
+                    score += 0.05
+
+            # 8. Regime-aware parameters validation (0.1 weight)
+
+                if (1.2 <= trailing_atr <= 2.5 and 0.006 <= min_dist <= 0.025 and 0.65 <= conf_act <= 0.85):
+                    score += 0.08
+                elif (1.0 <= trailing_atr <= 3.0 and 0.005 <= min_dist <= 0.03 and 0.6 <= conf_act <= 0.9):
+                    score += 0.05
+
+                tightening_threshold = params.get('trailing_tightening_threshold')
+                if tightening_threshold is not None:
+                    if min_dist and min_dist > 0 and 1.5 * min_dist <= tightening_threshold <= 3.5 * min_dist:
+                        score += 0.04
+                    elif 0.01 <= tightening_threshold <= 0.05:
+                        score += 0.02
+
+                if 'trailing_time_decay' in params:
+                    decay = params['trailing_time_decay']
+                    if 0.93 <= decay <= 0.99:
+                        score += 0.03
+                    elif 0.9 <= decay <= 0.995:
+                        score += 0.01
+
+                if 'trailing_ml_adjustment_weight' in params:
+                    trailing_ml_weight = params['trailing_ml_adjustment_weight']
+                    if 0.2 <= trailing_ml_weight <= 0.4:
+                        score += 0.03
+                    elif 0.1 <= trailing_ml_weight <= 0.6:
+                        score += 0.01
+
+                if 'ml_trigger_trailing_multiplier' in params:
+                    trailing_multiplier = params['ml_trigger_trailing_multiplier']
+                    if 0.92 <= trailing_multiplier <= 1.1:
+                        score += 0.03
+                    elif 0.85 <= trailing_multiplier <= 1.2:
+                        score += 0.01
+
+            # 6. Regime-aware parameters validation (≈0.15 weight)
             regime_params = ['regime_transition_penalty', 'regime_specific_scaling']
             if all(param in params for param in regime_params):
                 transition_penalty = params['regime_transition_penalty']
                 regime_scaling = params['regime_specific_scaling']
-                
+
                 # Validate regime parameters
                 if 0.05 <= transition_penalty <= 0.2 and 0.8 <= regime_scaling <= 1.2:
                     score += 0.1
-            
-            # 7. Profit tier validation (bonus)
+
+            # 9. Regime band alignment (bonus)
+            band_keys = [
+                'low_vol_tp_trail',
+                'normal_vol_tp_trail',
+                'high_vol_tp_trail',
+            ]
+            if all(param in params for param in band_keys):
+                low_tp = params['low_vol_tp_trail']
+                normal_tp = params['normal_vol_tp_trail']
+                high_tp = params['high_vol_tp_trail']
+                if low_tp <= normal_tp <= high_tp:
+                    score += 0.03
+
+            # 10. Profit tier validation (bonus)
             tier_params = ['profit_tier_1', 'profit_tier_2', 'profit_tier_3']
             if all(param in params for param in tier_params):
                 tiers = [params[param] for param in tier_params]
                 # Check if tiers are in ascending order
                 if all(tiers[i] <= tiers[i+1] for i in range(len(tiers)-1)):
                     score += 0.05
-            
-            # 8. Risk-reward ratio validation (bonus)
+
+            # 11. Risk-reward ratio validation (bonus)
+                if 0.07 <= transition_penalty <= 0.15:
+                    score += 0.05
+                elif 0.05 <= transition_penalty <= 0.2:
+                    score += 0.03
+
+                if 0.9 <= regime_scaling <= 1.1:
+                    score += 0.04
+                elif 0.8 <= regime_scaling <= 1.2:
+                    score += 0.02
+
+            trending_band = params.get('regime_trending_profit_band')
+            ranging_band = params.get('regime_ranging_profit_band')
+            volatile_band = params.get('regime_high_volatility_profit_band')
+            if trending_band and ranging_band and volatile_band:
+                ordered = trending_band >= volatile_band >= ranging_band
+                band_ranges = (
+                    0.65 <= trending_band <= 0.85 and
+                    0.45 <= ranging_band <= 0.65 and
+                    0.5 <= volatile_band <= 0.75
+                )
+                if ordered and band_ranges:
+                    score += 0.05
+                elif ordered:
+                    score += 0.02
+
+            if 'regime_trailing_sensitivity' in params:
+                trailing_sensitivity = params['regime_trailing_sensitivity']
+                if 0.95 <= trailing_sensitivity <= 1.1:
+                    score += 0.03
+                elif 0.8 <= trailing_sensitivity <= 1.2:
+                    score += 0.01
+
+            # 7. Profit tier validation (bonus towards RR alignment)
+            tier_params = ['profit_tier_1', 'profit_tier_2', 'profit_tier_3']
+            if all(param in params for param in tier_params):
+                tiers = [params[param] for param in tier_params]
+                if all(tiers[i] <= tiers[i + 1] for i in range(len(tiers) - 1)):
+                    score += 0.04
+
+            # 8. Risk-reward ratio validation (bonus to prioritise profit factor)
             if 'base_profit_target' in params and 'base_stop_loss' in params:
                 profit_target = params['base_profit_target']
                 stop_loss = abs(params['base_stop_loss'])
-                risk_reward_ratio = profit_target / stop_loss
-                
-                # Bonus for good risk-reward ratio
-                if 1.5 <= risk_reward_ratio <= 3.0:
-                    score += 0.1
-                elif 1.0 <= risk_reward_ratio < 1.5:
-                    score += 0.05
-            
+                if stop_loss > 0:
+                    risk_reward_ratio = profit_target / stop_loss
+                    if 1.8 <= risk_reward_ratio <= 3.5:
+                        score += 0.07
+                    elif 1.3 <= risk_reward_ratio < 1.8:
+                        score += 0.03
+
         except Exception as e:
             self.logger.error(f"❌ Error evaluating exit strategy parameters: {e}")
             score = 0.0
-        
+
         return min(score, 1.0)  # Cap at 1.0
     
     def _evaluate_ensemble_params(self, params: Dict[str, Any], 
@@ -2484,6 +2702,102 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             self.logger.warning(f"Error calculating turnover penalty: {e}")
             return 0.001  # Small default penalty
 
+    def _load_regime_performance_stats(self) -> Dict[str, Any]:
+        """Load per-regime performance statistics if available.
+
+        This first checks any explicit configuration overrides and then falls back
+        to standard reporting directories such as ``reports/backtesting`` or
+        ``generated/backtesting``.
+        """
+        path_candidates: List[Path] = []
+
+        config_path = self.config.get('regime_performance_path') if isinstance(self.config, dict) else None
+        if config_path:
+            path_candidates.append(Path(config_path))
+
+        reporting_dir = None
+        if isinstance(self.config, dict):
+            reporting_dir = self.config.get('reporting_output_dir')
+            if reporting_dir is None and 'reporting' in self.config and isinstance(self.config['reporting'], dict):
+                reporting_dir = self.config['reporting'].get('output_dir')
+        if reporting_dir:
+            path_candidates.append(Path(reporting_dir) / 'backtesting' / 'per_regime_performance.json')
+
+        path_candidates.extend([
+            Path('reports/backtesting/per_regime_performance.json'),
+            Path('generated/backtesting/per_regime_performance.json'),
+        ])
+
+        for candidate in path_candidates:
+            try:
+                if candidate.exists():
+                    with candidate.open('r') as fp:
+                        stats = json.load(fp)
+                    self.regime_performance_path = str(candidate)
+                    return stats if isinstance(stats, dict) else {}
+            except Exception as exc:
+                self.logger.error(f"❌ Failed to load regime performance stats from {candidate}: {exc}")
+
+        return {}
+
+    def _calculate_regime_performance_modifier(self) -> float:
+        """Compute an aggregate modifier from per-regime performance stats."""
+        stats = getattr(self, 'regime_performance_stats', {})
+        if not stats:
+            return 0.0
+
+        win_rates: List[float] = []
+        profit_factors: List[float] = []
+        rr_values: List[float] = []
+
+        for metrics in stats.values():
+            if not isinstance(metrics, dict):
+                continue
+            win_rates.append(float(metrics.get('win_rate', 0.0)))
+            profit_factors.append(float(metrics.get('profit_factor', 0.0)))
+            rr_values.append(float(metrics.get('average_rr', metrics.get('risk_reward_ratio', 0.0))))
+
+        if not win_rates:
+            return 0.0
+
+        avg_win = float(np.mean(win_rates))
+        min_win = float(np.min(win_rates))
+        avg_profit_factor = float(np.mean(profit_factors)) if profit_factors else 0.0
+        avg_rr = float(np.mean(rr_values)) if rr_values else 0.0
+        stability_penalty = float(np.std(win_rates)) if len(win_rates) > 1 else 0.0
+
+        normalized_win = avg_win - 0.5
+        normalized_min_win = min_win - 0.5
+        normalized_profit_factor = float(np.tanh(avg_profit_factor - 1.0))
+        normalized_rr = float(np.tanh(avg_rr - 1.0))
+
+        raw_modifier = (
+            (normalized_win * 0.5)
+            + (normalized_profit_factor * 0.2)
+            + (normalized_rr * 0.2)
+            + (normalized_min_win * 0.1)
+            - (stability_penalty * 0.1)
+        )
+
+        return float(np.clip(raw_modifier, -0.25, 0.25))
+
+    def _apply_regime_performance_adjustment(self, category: str, score: float) -> float:
+        """Adjust objective score using per-regime performance insights."""
+        modifier = getattr(self, 'regime_performance_modifier', 0.0)
+        if modifier == 0.0:
+            return score
+
+        weight = 1.0
+        if category in {'tpsl', 'exit_strategy', 'regime_transitions'}:
+            weight = 1.2
+        elif category in {'confidence', 'position_sizing'}:
+            weight = 1.1
+        elif category in {'ensemble', 'model_specific_parameters'}:
+            weight = 0.9
+
+        adjustment = float(np.clip(modifier * weight, -0.2, 0.2))
+        return score + adjustment
+
     def _estimate_turnover_rate(self, params: Dict[str, Any],
                                calibration_results: Dict[str, Any]) -> float:
         """
@@ -2568,18 +2882,83 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
         try:
             analyst_conf = max(0.001, analyst_conf)
             tactician_conf = max(0.001, tactician_conf)
-            
+
             log_combination = (
                 tactician_weight * np.log(tactician_conf) +
                 analyst_weight * np.log(analyst_conf)
             )
-            
+
             logarithmic_conf = np.exp(log_combination)
             return min(1.0, max(0.0, logarithmic_conf))
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error in logarithmic confidence calculation: {e}")
             return 0.5
+
+    def _format_exit_strategy_for_position_monitor(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert flat exit strategy parameters into the schema used by PositionMonitor."""
+
+        try:
+            profit_bands = {
+                'trending': params.get('regime_trending_profit_band', 0.75),
+                'ranging': params.get('regime_ranging_profit_band', 0.55),
+                'high_volatility': params.get('regime_high_volatility_profit_band', 0.65)
+            }
+
+            formatted = {
+                'confidence_thresholds': {
+                    'very_low': params.get('confidence_very_low', 0.2),
+                    'low': params.get('confidence_low', 0.4),
+                    'medium': params.get('confidence_medium', 0.6),
+                    'high': params.get('confidence_high', 0.8)
+                },
+                'profit_taking': {
+                    'base_profit_target': params.get('base_profit_target', 0.04),
+                    'min_confidence_for_profit': params.get('min_confidence_for_profit', 0.6),
+                    'confidence_profit_multiplier': params.get('confidence_profit_multiplier', 0.5),
+                    'profit_buffer': params.get('profit_buffer_ratio', 0.01),
+                    'time_decay_half_life': params.get('profit_time_decay_half_life', 3600),
+                    'ml_adjustment_weight': params.get('profit_ml_adjustment_weight', 0.3),
+                    'ml_trigger_multiplier': params.get('ml_trigger_confidence_multiplier', 1.0),
+                    'scaling_levels': [
+                        params.get('profit_tier_1', 0.25),
+                        params.get('profit_tier_2', 0.5),
+                        params.get('profit_tier_3', 0.75)
+                    ],
+                    'regime_bands': profit_bands
+                },
+                'stop_loss': {
+                    'base_stop_loss': params.get('base_stop_loss', -0.05),
+                    'atr_multiplier': params.get('atr_multiplier', 1.5),
+                    'volatility_adjustment_factor': params.get('volatility_adjustment_factor', 1.0)
+                },
+                'time_based': {
+                    'max_hold_time': params.get('max_hold_time', 10800),
+                    'min_hold_time': params.get('min_hold_time', 300),
+                    'confidence_time_scaling_factor': params.get('confidence_time_scaling_factor', 1.0)
+                },
+                'trailing_stop': {
+                    'atr_multiplier': params.get('trailing_atr_multiplier', 1.5),
+                    'min_distance': params.get('trailing_min_distance', 0.01),
+                    'confidence_activation': params.get('trailing_confidence_activation', 0.7),
+                    'tightening_threshold': params.get('trailing_tightening_threshold', 0.02),
+                    'time_decay': params.get('trailing_time_decay', 0.95),
+                    'ml_adjustment_weight': params.get('trailing_ml_adjustment_weight', 0.3),
+                    'ml_trigger_multiplier': params.get('ml_trigger_trailing_multiplier', 1.0)
+                },
+                'regime_aware': {
+                    'transition_penalty': params.get('regime_transition_penalty', 0.1),
+                    'regime_specific_scaling': params.get('regime_specific_scaling', 1.0),
+                    'profit_bands': profit_bands,
+                    'trailing_sensitivity': params.get('regime_trailing_sensitivity', 1.0)
+                }
+            }
+
+            return formatted
+
+        except Exception as exc:  # pragma: no cover - defensive
+            self.logger.error(f"❌ Error formatting exit strategy for position monitor: {exc}")
+            return {}
 
     async def save_optimization_results(self, optimization_results: Dict[str, Any],
                                       symbol: str, exchange: str, data_dir: str) -> None:
@@ -2608,7 +2987,35 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             self.logger.info(f'📊 Pickle file size: {pickle_size:.1f} KB')
             self.logger.info(f'📊 JSON file size: {json_size:.1f} KB')
             self.logger.info(f'📁 Files saved to: {optimization_dir}')
-            
+
+            # Persist consolidated JSON for runtime consumers (e.g., PositionMonitor)
+            exit_strategy_results = optimization_results.get('exit_strategy', {})
+            exit_strategy_params = exit_strategy_results.get('best_params', {}) if isinstance(exit_strategy_results, dict) else {}
+
+            if exit_strategy_params:
+                formatted_exit = self._format_exit_strategy_for_position_monitor(exit_strategy_params)
+                best_parameter_snapshot = {
+                    category: values.get('best_params', {})
+                    for category, values in optimization_results.items()
+                    if isinstance(values, dict)
+                }
+
+                consolidated_payload = {
+                    'generated_at': datetime.utcnow().isoformat(),
+                    'best_parameters': best_parameter_snapshot,
+                    'position_monitor_exit_strategy': formatted_exit,
+                    'raw_exit_strategy': exit_strategy_params
+                }
+
+                results_dir = Path('results')
+                results_dir.mkdir(parents=True, exist_ok=True)
+                results_path = results_dir / 'final_parameters_optimization.json'
+
+                with open(results_path, 'w') as f:
+                    json.dump(consolidated_payload, f, indent=2, default=str)
+
+                self.logger.info(f'📝 Wrote position monitor schema to: {results_path}')
+
         except Exception as e:
             self.logger.error(f'❌ Error saving optimization results: {e}')
             self.logger.exception("Full traceback:")

@@ -1,17 +1,21 @@
-"""
-Trading Helper Functions
+"""Trading helper functions."""
 
-Utility functions for common trading operations including
-calculations, data processing, and formatting.
-"""
+from __future__ import annotations
 
-import pandas as pd
-import numpy as np
-from typing import Dict, Any, List, Optional, Union, Tuple
-from datetime import datetime, timedelta
 import json
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-from src.utils.tprint import tprint_info, tprint_success, tprint_structured, LogLevel
+import numpy as np
+import pandas as pd
+
+from src.utils.tprint import LogLevel, tprint_info, tprint_structured, tprint_success
+
+
+# ---------------------------------------------------------------------------
+# Core statistical helpers
+# ---------------------------------------------------------------------------
 
 def calculate_returns(
     prices: Union[pd.Series, np.ndarray, List[float]],
@@ -149,6 +153,209 @@ def calculate_max_drawdown(
     peak_idx = np.argmax(peak[:max_dd_idx + 1])
     
     return float(abs(max_drawdown)), int(peak_idx), int(max_dd_idx)
+
+
+# ---------------------------------------------------------------------------
+# Volatility-aware trailing helpers
+# ---------------------------------------------------------------------------
+
+
+def _ensure_datetime_index(data: pd.DataFrame) -> pd.DataFrame:
+    """Ensure a DataFrame is indexed by datetime for resampling."""
+
+    if data.empty:
+        return data
+
+    df = data.copy()
+
+    if "timestamp" in df.columns:
+        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+        df = df.set_index("timestamp")
+    elif not isinstance(df.index, pd.DatetimeIndex):
+        # Assume consecutive bars spaced 1 minute apart when no timestamp exists
+        end_time = datetime.utcnow()
+        index = pd.date_range(end=end_time, periods=len(df), freq="1T")
+        df.index = index
+
+    return df.sort_index()
+
+
+def _resample_ohlcv(data: pd.DataFrame, rule: str) -> pd.DataFrame:
+    """Resample OHLCV data to a new timeframe."""
+
+    if data.empty:
+        return data
+
+    agg = {
+        "open": "first",
+        "high": "max",
+        "low": "min",
+        "close": "last",
+        "volume": "sum",
+    }
+    resampled = data.resample(rule).agg(agg).dropna()
+    return resampled
+
+
+def compute_atr(data: pd.DataFrame, window: int = 14) -> Tuple[pd.Series, float]:
+    """Compute the Average True Range and return the full series and latest value."""
+
+    if data.empty or len(data) < max(window, 2):
+        return pd.Series(dtype=float), 0.0
+
+    high = data["high"]
+    low = data["low"]
+    close = data["close"]
+    prev_close = close.shift(1)
+
+    true_range = pd.concat(
+        [
+            (high - low).abs(),
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+
+    atr_series = true_range.rolling(window=window, min_periods=window).mean()
+    latest_atr = float(atr_series.iloc[-1]) if not atr_series.dropna().empty else 0.0
+    return atr_series, latest_atr
+
+
+def compute_realized_volatility(data: pd.DataFrame, window: int = 20) -> Tuple[pd.Series, float]:
+    """Compute realized volatility using log returns."""
+
+    if data.empty or len(data) < window + 1:
+        return pd.Series(dtype=float), 0.0
+
+    close = data["close"]
+    log_returns = np.log(close / close.shift(1)).dropna()
+    vol_series = (
+        log_returns.rolling(window=window, min_periods=window).std() * np.sqrt(window)
+    )
+    latest_vol = float(vol_series.iloc[-1]) if not vol_series.dropna().empty else 0.0
+    return vol_series, latest_vol
+
+
+def compute_momentum(data: pd.DataFrame, window: int = 3) -> float:
+    """Compute simple momentum over a rolling window."""
+
+    if data.empty or len(data) <= window:
+        return 0.0
+
+    close = data["close"]
+    momentum = float(close.iloc[-1] - close.iloc[-window - 1])
+    return momentum
+
+
+def compute_rsi(data: pd.DataFrame, window: int = 3) -> float:
+    """Compute a short-term RSI."""
+
+    if data.empty or len(data) < window + 1:
+        return 50.0
+
+    close = data["close"]
+    delta = close.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    avg_gain = gain.rolling(window=window, min_periods=window).mean()
+    avg_loss = loss.rolling(window=window, min_periods=window).mean()
+
+    if avg_loss.iloc[-1] == 0:
+        return 100.0
+
+    rs = avg_gain.iloc[-1] / avg_loss.iloc[-1]
+    rsi = 100.0 - (100.0 / (1.0 + rs))
+    return float(rsi)
+
+
+def compute_volatility_slope(series: pd.Series, lookback: int = 5) -> float:
+    """Compute a simple slope for a volatility series."""
+
+    if series.empty or len(series.dropna()) < lookback:
+        return 0.0
+
+    recent = series.dropna().iloc[-lookback:]
+    slope = float(recent.iloc[-1] - recent.iloc[0])
+    return slope
+
+
+@dataclass
+class TrailingFeatureBundle:
+    """Container for trailing management metrics."""
+
+    timestamp: datetime
+    current_price: float
+    bar_seconds: int
+    tactician: Dict[str, float]
+    analyst: Dict[str, float]
+
+
+def prepare_trailing_feature_bundle(
+    market_data: pd.DataFrame,
+    tactician_rule: str = "15T",
+    analyst_rule: str = "1H",
+) -> Optional[TrailingFeatureBundle]:
+    """Prepare volatility and momentum features for trailing management."""
+
+    if market_data is None or market_data.empty:
+        return None
+
+    ohlcv = market_data[[col for col in ["open", "high", "low", "close", "volume"] if col in market_data.columns]].copy()
+    if ohlcv.empty:
+        return None
+
+    base = _ensure_datetime_index(ohlcv)
+    if base.empty:
+        return None
+
+    bar_seconds = 60
+    if len(base.index) > 1:
+        delta = base.index[-1] - base.index[-2]
+        bar_seconds = int(max(delta.total_seconds(), 1))
+
+    tactician_df = _resample_ohlcv(base, tactician_rule)
+    analyst_df = _resample_ohlcv(base, analyst_rule)
+
+    tact_atr_series, tact_atr = compute_atr(tactician_df)
+    tact_vol_series, tact_sigma = compute_realized_volatility(tactician_df)
+    tact_momentum = compute_momentum(tactician_df)
+    tact_rsi = compute_rsi(tactician_df)
+    tact_vol_slope = compute_volatility_slope(tact_vol_series)
+
+    analyst_atr_series, analyst_atr = compute_atr(analyst_df)
+    analyst_vol_series, analyst_sigma = compute_realized_volatility(analyst_df)
+    analyst_momentum = compute_momentum(analyst_df, window=4)
+    analyst_rsi = compute_rsi(analyst_df, window=6)
+    analyst_vol_slope = compute_volatility_slope(analyst_vol_series)
+
+    timestamp = base.index[-1].to_pydatetime()
+    current_price = float(base["close"].iloc[-1])
+
+    tactician_features = {
+        "atr": tact_atr,
+        "sigma": tact_sigma,
+        "momentum": tact_momentum,
+        "rsi": tact_rsi,
+        "vol_slope": tact_vol_slope,
+    }
+
+    analyst_features = {
+        "atr": analyst_atr,
+        "sigma": analyst_sigma,
+        "momentum": analyst_momentum,
+        "rsi": analyst_rsi,
+        "vol_slope": analyst_vol_slope,
+    }
+
+    return TrailingFeatureBundle(
+        timestamp=timestamp,
+        current_price=current_price,
+        bar_seconds=bar_seconds,
+        tactician=tactician_features,
+        analyst=analyst_features,
+    )
 
 def normalize_price_data(
     data: pd.DataFrame,

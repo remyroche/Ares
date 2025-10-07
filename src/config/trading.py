@@ -155,6 +155,25 @@ def get_trading_config() -> dict[str, Any]:
                 "activation_threshold": 0.01,  # Activate trailing stop at 1% profit
                 "trailing_distance": 0.005,  # 0.5% trailing distance
                 "lock_profit_threshold": 0.03,  # Lock profit at 3% gain
+                "profit_buffer": 0.001,  # Maintain a buffer when trailing to avoid premature exits
+                "trail_activation_thresholds": {
+                    "activate_at_0_5_atr": 0.5,
+                    "trail_tighten_at_0_8_atr": 0.8,
+                    "hard_stop_at_1_2_atr": 1.2,
+                },
+                "regime_bands": {
+                    "bull_trend": 0.9,
+                    "bear_trend": 1.1,
+                    "sideways_range": 1.0,
+                },
+                "time_decay_modifiers": {
+                    "enabled": True,
+                    "time_decay_schedule": [
+                        {"minutes": 0, "modifier": 1.0},
+                        {"minutes": 45, "modifier": 0.95},
+                        {"minutes": 90, "modifier": 0.9},
+                    ],
+                },
             },
         },
         "take_profit": {
@@ -165,6 +184,25 @@ def get_trading_config() -> dict[str, Any]:
                 "base_take_profit": 0.03,  # 3% base take profit
                 "volatility_multiplier": 1.5,  # Multiply by volatility
                 "max_take_profit": 0.15,  # Maximum 15% take profit
+                "profit_buffer": 0.0025,  # Additional buffer before locking in profits
+                "trail_activation_thresholds": {
+                    "activate_at_0_5_atr": 0.55,
+                    "trail_tighten_at_0_8_atr": 0.95,
+                    "hard_stop_at_1_2_atr": 1.4,
+                },
+                "regime_bands": {
+                    "bull_trend": 1.1,
+                    "bear_trend": 0.9,
+                    "sideways_range": 1.0,
+                },
+                "time_decay_modifiers": {
+                    "enabled": True,
+                    "time_decay_schedule": [
+                        {"minutes": 0, "modifier": 1.0},
+                        {"minutes": 90, "modifier": 0.9},
+                        {"minutes": 180, "modifier": 0.85},
+                    ],
+                },
             },
         },
         # --- Time-based Exit Configuration ---

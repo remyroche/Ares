@@ -65,6 +65,9 @@ class TradingConfig:
     enable_dynamic_sizing: bool = True
     enable_risk_scaling: bool = True
     
+    # Exit strategy configuration (optimized trailing settings)
+    exit_strategy: Dict[str, Any] = field(default_factory=dict)
+
     # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
     
@@ -107,5 +110,5 @@ class TradingConfig:
             return False
         if self.regime_confidence_threshold <= 0 or self.regime_confidence_threshold > 1:
             return False
-        
+
         return True

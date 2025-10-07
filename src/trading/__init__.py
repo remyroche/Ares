@@ -69,6 +69,9 @@ from .monitoring.comprehensive_trade_monitor import (
     comprehensive_trade_monitor, initialize_comprehensive_monitoring,
     record_detailed_trade, update_trade_outcome
 )
+from .monitoring.unified_trailing_manager import (
+    UnifiedTrailingManager, TrailingAction, TrailingDecision
+)
 
 from .reporting.performance_reporter import (
     PerformanceReporter, performance_reporter, generate_trading_report

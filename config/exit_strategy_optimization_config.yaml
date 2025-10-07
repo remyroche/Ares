@@ -56,6 +56,45 @@ exit_strategy_optimization:
           type: "float"
           low: 0.6
           high: 0.8
+      profit_buffer:
+        type: "float"
+        low: 0.0015
+        high: 0.004
+      trail_activation_thresholds:
+        activate_at_0_5_atr:
+          type: "float"
+          low: 0.45
+          high: 0.65
+        trail_tighten_at_0_8_atr:
+          type: "float"
+          low: 0.85
+          high: 1.05
+        hard_stop_at_1_2_atr:
+          type: "float"
+          low: 1.2
+          high: 1.6
+      regime_bands:
+        bull_trend:
+          type: "float"
+          low: 1.0
+          high: 1.2
+        bear_trend:
+          type: "float"
+          low: 0.8
+          high: 1.0
+        sideways_range:
+          type: "float"
+          low: 0.9
+          high: 1.1
+      time_decay_modifiers:
+        enabled:
+          type: "categorical"
+          choices: [true, false]
+        time_decay_schedule:
+          type: "categorical"
+          choices:
+            - [[0, 1.0], [90, 0.9], [180, 0.85]]
+            - [[0, 1.0], [120, 0.92], [240, 0.88]]
     
     # Stop-loss parameters optimization ranges
     stop_loss:
@@ -71,6 +110,45 @@ exit_strategy_optimization:
         type: "float"
         low: 0.5
         high: 2.0
+      profit_buffer:
+        type: "float"
+        low: 0.0005
+        high: 0.0025
+      trail_activation_thresholds:
+        activate_at_0_5_atr:
+          type: "float"
+          low: 0.4
+          high: 0.6
+        trail_tighten_at_0_8_atr:
+          type: "float"
+          low: 0.7
+          high: 0.9
+        hard_stop_at_1_2_atr:
+          type: "float"
+          low: 1.0
+          high: 1.4
+      regime_bands:
+        bull_trend:
+          type: "float"
+          low: 0.8
+          high: 1.0
+        bear_trend:
+          type: "float"
+          low: 1.0
+          high: 1.3
+        sideways_range:
+          type: "float"
+          low: 0.9
+          high: 1.1
+      time_decay_modifiers:
+        enabled:
+          type: "categorical"
+          choices: [true, false]
+        time_decay_schedule:
+          type: "categorical"
+          choices:
+            - [[0, 1.0], [45, 0.95], [90, 0.9]]
+            - [[0, 1.0], [60, 0.94], [120, 0.88]]
     
     # Time-based parameters optimization ranges
     time_based:
@@ -101,7 +179,138 @@ exit_strategy_optimization:
         type: "float"
         low: 0.6
         high: 0.9
-    
+
+    # Unified trailing framework parameters
+    unified_trailing:
+      profit_buffer_atr_multiplier:
+        type: "float"
+        low: 0.3
+        high: 0.9
+      profit_buffer_min_fraction:
+        type: "float"
+        low: 0.0005
+        high: 0.002
+      trail_base_atr_multiplier:
+        type: "float"
+        low: 0.6
+        high: 1.2
+      breakeven_activation_atr:
+        type: "float"
+        low: 0.8
+        high: 1.5
+      trail_activation_atr:
+        type: "float"
+        low: 0.8
+        high: 1.5
+      tp_trail_activation_atr:
+        type: "float"
+        low: 1.8
+        high: 2.5
+      tp_trail_trigger_atr:
+        type: "float"
+        low: 2.0
+        high: 3.5
+      partial_take_fraction:
+        type: "float"
+        low: 0.3
+        high: 0.7
+      drawdown_tighten_atr:
+        type: "float"
+        low: 0.6
+        high: 1.0
+      tighten_trail_atr:
+        type: "float"
+        low: 0.3
+        high: 0.8
+      drawdown_exit_atr:
+        type: "float"
+        low: 1.0
+        high: 1.6
+      volatility_tighten_threshold:
+        type: "float"
+        low: 0.6
+        high: 0.9
+      volatility_tighten_adjustment:
+        type: "float"
+        low: 0.1
+        high: 0.5
+      volatility_loosen_threshold:
+        type: "float"
+        low: 1.1
+        high: 1.6
+      volatility_loosen_adjustment:
+        type: "float"
+        low: 0.1
+        high: 0.4
+      time_decay_bars:
+        type: "int"
+        low: 6
+        high: 12
+      time_decay_threshold_atr:
+        type: "float"
+        low: 0.2
+        high: 0.6
+      ml_confidence_tighten_threshold:
+        type: "float"
+        low: 0.2
+        high: 0.5
+      ml_confidence_tighten_atr:
+        type: "float"
+        low: 0.2
+        high: 0.6
+      ml_regime_partial_fraction:
+        type: "float"
+        low: 0.3
+        high: 0.7
+      low_vol_sl_atr:
+        type: "float"
+        low: 1.0
+        high: 1.6
+      low_vol_tp_atr:
+        type: "float"
+        low: 1.8
+        high: 2.6
+      low_vol_trail_atr:
+        type: "float"
+        low: 0.6
+        high: 1.0
+      low_vol_tp_trail:
+        type: "float"
+        low: 2.0
+        high: 2.6
+      normal_vol_sl_atr:
+        type: "float"
+        low: 1.3
+        high: 1.9
+      normal_vol_tp_atr:
+        type: "float"
+        low: 2.2
+        high: 3.0
+      normal_vol_trail_atr:
+        type: "float"
+        low: 0.8
+        high: 1.2
+      normal_vol_tp_trail:
+        type: "float"
+        low: 2.2
+        high: 3.0
+      high_vol_sl_atr:
+        type: "float"
+        low: 1.5
+        high: 2.2
+      high_vol_tp_atr:
+        type: "float"
+        low: 2.6
+        high: 3.6
+      high_vol_trail_atr:
+        type: "float"
+        low: 1.0
+        high: 1.5
+      high_vol_tp_trail:
+        type: "float"
+        low: 2.6
+        high: 3.6
+
     # Regime-aware parameters optimization ranges
     regime_aware:
       transition_penalty:

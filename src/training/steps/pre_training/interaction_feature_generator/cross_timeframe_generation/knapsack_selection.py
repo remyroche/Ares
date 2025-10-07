@@ -60,8 +60,8 @@ class FeatureCandidate:
 
 
 @dataclass
-class SelectionResult:
-    """Result of knapsack selection."""
+class KnapsackSelectionResult:
+    """Result of the knapsack-based resource allocation stage."""
     selected_features: List[FeatureCandidate]
     total_utility: float
     total_cost: float
@@ -438,7 +438,7 @@ class KnapsackSelection:
     def select_features(self,
                        phase2_results: Dict[str, Any],
                        ehu_rih_assignments: List[Any],
-                       sessionized_data: Optional[Dict[str, Any]] = None) -> SelectionResult:
+                       sessionized_data: Optional[Dict[str, Any]] = None) -> KnapsackSelectionResult:
         """
         Select features using knapsack optimization.
         
@@ -456,7 +456,7 @@ class KnapsackSelection:
         
         if not candidates:
             self.logger.warning("No feature candidates available")
-            return SelectionResult(
+            return KnapsackSelectionResult(
                 selected_features=[],
                 total_utility=0.0,
                 total_cost=0.0,
@@ -487,7 +487,7 @@ class KnapsackSelection:
             family_coverage[family] = family_coverage.get(family, 0) + 1
         
         # Create selection result
-        result = SelectionResult(
+        result = KnapsackSelectionResult(
             selected_features=selected_features,
             total_utility=total_utility,
             total_cost=total_cost,
@@ -691,7 +691,7 @@ class KnapsackSelection:
 
         return None
     
-    def get_selection_summary(self, result: SelectionResult) -> Dict[str, Any]:
+    def get_selection_summary(self, result: KnapsackSelectionResult) -> Dict[str, Any]:
         """Get summary of selection results."""
         return {
             'total_selected': len(result.selected_features),

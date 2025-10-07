@@ -96,10 +96,10 @@ class CrossTimeframePipeline:
     2. Phase-1 HTF probes (coarse grids)
     3. Phase-2 optimization (local grids)
     4. EHU/RIH assignment
-    5. Knapsack selection
+    5. Knapsack selection (produces ``KnapsackSelectionResult``)
     6. Materialize HTFs
     7. Generate interactions
-    8. Statistical selection
+    8. Statistical selection (produces ``StatisticalSelectionResult``)
     9. Walk-forward evaluation
     10. Monitoring & automation
     """
@@ -127,9 +127,12 @@ class CrossTimeframePipeline:
         self.regime_segments = None
         self.phase1_results = None
         self.phase2_results = None
+        # Holds the resource allocation output (KnapsackSelectionResult)
+        # before statistical pruning narrows the candidate set.
         self.selected_htfs = None
         self.materialized_htfs = None
         self.interactions = None
+        # Holds the final statistical pruning output (StatisticalSelectionResult)
         self.final_features = None
         self.evaluation_results = None
         
@@ -146,7 +149,11 @@ class CrossTimeframePipeline:
             targets: Target variables (log-returns or signs)
             
         Returns:
-            Dictionary containing all pipeline results
+            Dictionary containing all pipeline results. The knapsack stage
+            returns a ``KnapsackSelectionResult`` under ``selected_htfs`` while
+            the statistical pruning stage returns a
+            ``StatisticalSelectionResult`` under ``final_features`` so callers
+            can differentiate between the two selection phases.
         """
         self.logger.info("Starting cross-timeframe pipeline")
         
@@ -179,7 +186,7 @@ class CrossTimeframePipeline:
                 self.phase2_results, self.sessionized_data
             )
             
-            # Step 5: Knapsack selection
+            # Step 5: Knapsack selection (stage-one resource allocation)
             self.logger.info("Step 5: Knapsack selection")
             self.selected_htfs = self.knapsack_selection.select_features(
                 self.phase2_results, ehu_rih_assignments, self.sessionized_data
@@ -205,22 +212,25 @@ class CrossTimeframePipeline:
             self.logger.info("Step 7: Generating HTF-aware interactions")
 
             base_feature_series: Dict[str, pd.Series] = {}
-            aligned_base_features = None
+            base_feature_structure: Optional[Union[pd.DataFrame, Dict[str, pd.Series]]] = None
 
             if isinstance(self.sessionized_data, dict):
                 aligned_base_features = self.sessionized_data.get('aligned_data')
 
-            if isinstance(aligned_base_features, pd.DataFrame):
-                base_feature_series = {
-                    column: aligned_base_features[column]
-                    for column in aligned_base_features.columns
-                }
-            elif isinstance(aligned_base_features, dict):
-                base_feature_series = {
-                    name: series
-                    for name, series in aligned_base_features.items()
-                    if isinstance(series, pd.Series)
-                }
+                if isinstance(aligned_base_features, pd.DataFrame):
+                    base_feature_structure = aligned_base_features
+                    base_feature_series = {
+                        column: aligned_base_features[column]
+                        for column in aligned_base_features.columns
+                    }
+                elif isinstance(aligned_base_features, dict):
+                    filtered_series = {
+                        name: series
+                        for name, series in aligned_base_features.items()
+                        if isinstance(series, pd.Series)
+                    }
+                    base_feature_structure = filtered_series
+                    base_feature_series = filtered_series
 
             if not base_feature_series:
                 self.logger.warning(
@@ -229,11 +239,11 @@ class CrossTimeframePipeline:
 
             self.interactions = self.interaction_templates.generate_interactions(
                 self.materialized_htfs,
-                base_feature_series,
+                base_feature_structure if base_feature_structure is not None else base_feature_series,
                 targets,
             )
             
-            # Step 8: Statistical selection
+            # Step 8: Statistical selection (stage-two statistical pruning)
             self.logger.info("Step 8: Statistical selection")
             self.final_features = self.statistical_selection.select_final_features(
                 self.materialized_htfs, self.interactions, targets
@@ -286,7 +296,7 @@ class CrossTimeframePipeline:
                         updated_penalties,
                     )
 
-            # Compile results
+            # Compile results keeping both selection stages visible to callers
             results = {
                 'sessionized_data': self.sessionized_data,
                 'regime_segments': self.regime_segments,

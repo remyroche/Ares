@@ -11,6 +11,7 @@ Implements HTF-aware interaction generation with:
 
 from typing import Dict, List, Optional, Any, Tuple, Union
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 import pandas as pd
 import numpy as np
@@ -375,9 +376,9 @@ class InteractionGenerator:
         self.htf_aware_templates = HTFAwareTemplates()
         self.cross_asset_templates = CrossAssetTemplates()
     
-    def generate_interactions(self, 
+    def generate_interactions(self,
                             materialized_htfs: Dict[str, Any],
-                            base_features: Dict[str, pd.Series],
+                            base_features: Union[pd.DataFrame, Mapping[str, pd.Series], None],
                             targets: Optional[pd.Series] = None) -> List[GeneratedInteraction]:
         """
         Generate interactions from templates.
@@ -392,17 +393,19 @@ class InteractionGenerator:
         """
         self.logger.info("Starting interaction generation")
         
+        normalized_base_features = self._normalize_base_features(base_features)
+
         # Determine budget allocation
         budget_allocation = self._determine_budget_allocation(materialized_htfs)
-        
+
         # Generate core interactions
         core_interactions = self._generate_core_interactions(
-            base_features, targets, budget_allocation['core']
+            normalized_base_features, targets, budget_allocation['core']
         )
-        
+
         # Generate HTF-aware interactions
         htf_interactions = self._generate_htf_aware_interactions(
-            materialized_htfs, base_features, targets, budget_allocation['htf_aware']
+            materialized_htfs, normalized_base_features, targets, budget_allocation['htf_aware']
         )
         
         # Generate cross-asset interactions (if enabled)
@@ -452,7 +455,7 @@ class InteractionGenerator:
             'cross_asset': cross_asset_budget
         }
     
-    def _generate_core_interactions(self, 
+    def _generate_core_interactions(self,
                                   base_features: Dict[str, pd.Series],
                                   targets: Optional[pd.Series],
                                   budget: int) -> List[GeneratedInteraction]:
@@ -477,7 +480,7 @@ class InteractionGenerator:
         
         return interactions[:budget]
     
-    def _generate_htf_aware_interactions(self, 
+    def _generate_htf_aware_interactions(self,
                                        materialized_htfs: Dict[str, Any],
                                        base_features: Dict[str, pd.Series],
                                        targets: Optional[pd.Series],
@@ -541,27 +544,90 @@ class InteractionGenerator:
             'tod_indicator': [],
             'regime_indicator': []
         }
-        
+
         for name, series in features.items():
             # Categorize based on feature name
-            if any(x in name.lower() for x in ['price', 'close', 'open', 'high', 'low']):
+            name_lower = name.lower()
+            if any(x in name_lower for x in ['price', 'close', 'open', 'high', 'low']):
                 groups['price_feature'].append(name)
-            elif any(x in name.lower() for x in ['vol', 'sigma', 'rv', 'gk']):
+            elif any(x in name_lower for x in ['vol', 'sigma', 'rv', 'gk']):
                 groups['volatility_feature'].append(name)
-            elif any(x in name.lower() for x in ['mom', 'momentum']):
+            elif any(x in name_lower for x in ['mom', 'momentum', 'signal', 'alpha']):
                 groups['momentum_feature'].append(name)
-            elif any(x in name.lower() for x in ['rsi', 'stoch', 'mean_rev']):
+            elif any(x in name_lower for x in ['rsi', 'stoch', 'mean_rev', 'osc']):
                 groups['mean_reversion_feature'].append(name)
-            elif any(x in name.lower() for x in ['volume', 'liquidity']):
+            elif any(x in name_lower for x in ['liquidity', 'depth', 'book']):
                 groups['liquidity_feature'].append(name)
-            elif 'volume' in name.lower():
+            elif 'volume' in name_lower:
                 groups['volume_feature'].append(name)
-            elif any(x in name.lower() for x in ['tod', 'time']):
+            elif any(x in name_lower for x in ['tod', 'time_of_day', 'session']):
                 groups['tod_indicator'].append(name)
-            elif any(x in name.lower() for x in ['regime', 'vol_regime']):
+            elif any(x in name_lower for x in ['regime', 'vol_regime']):
                 groups['regime_indicator'].append(name)
-        
+
+        # Provide aliases expected by interaction templates
+        def _copy_list(values: List[str]) -> List[str]:
+            return list(dict.fromkeys(values))
+
+        liquidity_alias = _copy_list(groups['liquidity_feature'])
+        signal_alias = _copy_list(groups['momentum_feature'] + groups['mean_reversion_feature'])
+        momentum_alias = _copy_list(groups['momentum_feature'])
+
+        deviation_candidates = []
+        for name in features.keys():
+            name_lower = name.lower()
+            if any(x in name_lower for x in ['dev', 'dist', 'zscore', 'boll', 'spread']):
+                deviation_candidates.append(name)
+
+        base_feature_pool = _copy_list([
+            name
+            for key, names in groups.items()
+            if key in {
+                'price_feature',
+                'volatility_feature',
+                'momentum_feature',
+                'mean_reversion_feature',
+                'liquidity_feature',
+                'volume_feature'
+            }
+            for name in names
+        ])
+
+        groups.update({
+            'base_liquidity_feature': liquidity_alias,
+            'base_signal_feature': signal_alias,
+            'base_momentum_feature': momentum_alias,
+            'base_deviation_feature': _copy_list(deviation_candidates),
+            'base_feature': base_feature_pool
+        })
+
         return groups
+
+    def _normalize_base_features(self,
+                                 base_features: Union[pd.DataFrame, Mapping[str, pd.Series], None]
+                                 ) -> Dict[str, pd.Series]:
+        """Convert supported base feature structures into a column-keyed mapping."""
+        normalized: Dict[str, pd.Series] = {}
+
+        if base_features is None:
+            return normalized
+
+        if isinstance(base_features, pd.DataFrame):
+            for column in base_features.columns:
+                series = base_features[column]
+                if isinstance(series, pd.Series):
+                    normalized[column] = series
+        elif isinstance(base_features, Mapping):
+            for name, series in base_features.items():
+                if isinstance(series, pd.Series):
+                    normalized[name] = series
+        else:
+            self.logger.warning(
+                "Unsupported base feature structure %s; expected DataFrame or mapping of Series.",
+                type(base_features)
+            )
+
+        return normalized
     
     def _group_htf_features_by_type(self, materialized_htfs: Dict[str, Any]) -> Dict[str, List[str]]:
         """Group HTF features by type."""
@@ -572,20 +638,63 @@ class InteractionGenerator:
             'htf_anchor_feature': [],
             'htf_regime_feature': []
         }
-        
+
         for name, feature in materialized_htfs.items():
-            family = feature.family if hasattr(feature, 'family') else 'unknown'
-            
-            if family in ['trend_level_vol']:
-                if 'trend' in name.lower() or 'ema' in name.lower():
+            family = getattr(feature, 'family', 'unknown') or 'unknown'
+            metadata = getattr(feature, 'metadata', {}) or {}
+            base_feature = str(metadata.get('base_feature', '')).lower()
+            name_lower = name.lower()
+
+            if (
+                family in ['trend_level_vol']
+                or any(key in base_feature for key in ['ema', 'trend'])
+                or any(key in name_lower for key in ['trend', 'ema'])
+            ):
+                if name not in groups['htf_trend_feature']:
                     groups['htf_trend_feature'].append(name)
-                elif 'vol' in name.lower() or 'sigma' in name.lower():
+
+            if (
+                (family in ['trend_level_vol'] and any(
+                    key in name_lower for key in ['vol', 'sigma', 'rv', 'var']
+                ))
+                or any(key in base_feature for key in ['vol', 'sigma', 'rv', 'var'])
+            ):
+                if name not in groups['htf_volatility_feature']:
                     groups['htf_volatility_feature'].append(name)
-            elif family == 'oscillators':
-                groups['htf_momentum_feature'].append(name)
-            elif family == 'anchors':
-                groups['htf_anchor_feature'].append(name)
-        
+
+            if (
+                family == 'oscillators'
+                or any(key in base_feature for key in ['rsi', 'stoch', 'momentum', 'mom', 'osc'])
+                or any(key in name_lower for key in ['rsi', 'stoch', 'momentum', 'osc'])
+            ):
+                if name not in groups['htf_momentum_feature']:
+                    groups['htf_momentum_feature'].append(name)
+
+            if (
+                family == 'anchors'
+                or any(key in base_feature for key in ['vwap', 'anchor'])
+                or any(key in name_lower for key in ['vwap', 'anchor'])
+            ):
+                if name not in groups['htf_anchor_feature']:
+                    groups['htf_anchor_feature'].append(name)
+
+            regime_hint = None
+            for key in ['regime', 'regime_type', 'dominant_regime', 'regime_label']:
+                if key in metadata and metadata[key]:
+                    regime_hint = metadata[key]
+                    break
+
+            if regime_hint is None:
+                state_metadata = getattr(getattr(feature, 'state', None), 'metadata', {}) or {}
+                for key in ['regime', 'regime_type', 'dominant_regime', 'regime_label']:
+                    if key in state_metadata and state_metadata[key]:
+                        regime_hint = state_metadata[key]
+                        break
+
+            if regime_hint is not None or metadata.get('is_regime_feature'):
+                if name not in groups['htf_regime_feature']:
+                    groups['htf_regime_feature'].append(name)
+
         return groups
     
     def _group_htf_features_by_asset(self, materialized_htfs: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -974,16 +1083,16 @@ class HTFInteractionTemplates:
         
         self.interaction_generator = InteractionGenerator(config)
     
-    def generate_interactions(self, 
+    def generate_interactions(self,
                             materialized_htfs: Dict[str, Any],
-                            base_features: Dict[str, pd.Series],
+                            base_features: Union[pd.DataFrame, Mapping[str, pd.Series], None],
                             targets: Optional[pd.Series] = None) -> List[GeneratedInteraction]:
         """
         Generate HTF-aware interactions.
         
         Args:
             materialized_htfs: Materialized HTF features
-            base_features: Base features
+            base_features: Base features as a DataFrame or mapping
             targets: Target variables
             
         Returns:

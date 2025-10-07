@@ -142,7 +142,7 @@ def run_complete_pipeline_example():
         
         # Knapsack selection
         selected_htfs = results['selected_htfs']
-        print(f"\nKnapsack Selection:")
+        print(f"\nKnapsack Selection (Stage 1):")
         print(f"  - Selected features: {len(selected_htfs.selected_features)}")
         print(f"  - Total utility: {selected_htfs.total_utility:.4f}")
         print(f"  - Total cost: {selected_htfs.total_cost:.2f} ms")
@@ -160,7 +160,7 @@ def run_complete_pipeline_example():
         
         # Final features
         final_features = results['final_features']
-        print(f"\nStatistical Selection:")
+        print(f"\nStatistical Selection (Stage 2):")
         print(f"  - Final selected features: {len(final_features.selected_features)}")
         print(f"  - Selection method: {final_features.selection_method}")
         

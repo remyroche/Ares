@@ -40,8 +40,8 @@ from src.training.steps.pre_training.interaction_feature_generator.cross_timefra
     CrossTimeframePipeline,
     PipelineConfig,
 )
-from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.statistical_selection import (
-    SelectionResult,
+from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation import (
+    statistical_selection as statistical_selection_module,
 )
 from src.training.steps.pre_training.interaction_feature_generator.cross_timeframe_generation.evaluation import (
     EvaluationResult,
@@ -177,7 +177,7 @@ def test_pipeline_passes_feature_list_to_evaluation_and_monitoring():
 
     pipeline.interaction_templates.generate_interactions = _generate_interactions
 
-    selection_result = SelectionResult(
+    selection_result = statistical_selection_module.StatisticalSelectionResult(
         selected_features=["feature_a", "interaction_feature"],
         selection_frequencies={"feature_a": 1.0, "interaction_feature": 0.8},
         p_values={"feature_a": 0.01, "interaction_feature": 0.02},
@@ -249,7 +249,7 @@ def test_monitoring_penalties_propagate_to_scoring():
         lambda materialized, base_features, targets: []
     )
 
-    selection_result = SelectionResult(
+    selection_result = statistical_selection_module.StatisticalSelectionResult(
         selected_features=["feature_b"],
         selection_frequencies={"feature_b": 1.0},
         p_values={"feature_b": 0.05},

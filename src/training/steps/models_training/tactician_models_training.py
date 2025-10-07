@@ -315,57 +315,54 @@ class TacticianModelsTrainingStep:
                 enhanced_feature_columns, **kwargs
             )
 
-            # Filter training data using Analyst Ensemble outputs
+            # Apply Analyst OOF integration (whole dataset + features + weights)
             try:
-                filtered_data, analyst_filter_info = await self._apply_analyst_filtering(
+                enhanced_data, analyst_filter_info = await self._apply_analyst_filtering(
                     training_data, model_specific_features, target_columns, **kwargs
                 )
 
-                if filtered_data.empty:
-                    warning_msg = "No training samples remain after Analyst filtering"
-                    tprint_warning(f"⚠️ {warning_msg}")
+                # Use whole dataset - no filtering
+                if enhanced_data.empty:
+                    raise ValueError("Enhanced data is empty after Analyst OOF integration")
 
-                    # Try with relaxed confidence threshold
-                    if 'min_analyst_confidence' in kwargs:
-                        relaxed_threshold = max(0.1, kwargs['min_analyst_confidence'] - 0.2)
-                        tprint_info(f"🔄 Retrying with relaxed confidence threshold: {relaxed_threshold}")
+                tprint_success(f"✅ Using whole dataset: {len(enhanced_data)} samples")
 
-                        kwargs['min_analyst_confidence'] = relaxed_threshold
-                        filtered_data, analyst_filter_info = await self._apply_analyst_filtering(
-                            training_data, model_specific_features, target_columns, **kwargs
-                        )
-
-                        if filtered_data.empty:
-                            raise ValueError(f"No training samples remain even with relaxed threshold {relaxed_threshold}")
-
-                        tprint_success(f"✅ Recovered {len(filtered_data)} samples with relaxed threshold")
-                    else:
-                        raise ValueError(warning_msg)
             except Exception as filter_error:
-                tprint_warning(f"⚠️ Analyst filtering failed: {filter_error}")
+                tprint_warning(f"⚠️ Analyst OOF integration failed: {filter_error}")
                 tprint_info("🔄 Continuing with original training data")
-                filtered_data = training_data
+                enhanced_data = training_data
                 analyst_filter_info = {
                     'filtered': False,
-                    'reason': f'filter_error: {str(filter_error)}',
+                    'reason': f'integration_error: {str(filter_error)}',
                     'original_samples': len(training_data),
-                    'filtered_samples': len(training_data)
+                    'enhanced_samples': len(training_data)
                 }
 
+            # Add Analyst OOF features to the feature set
+            analyst_features = await self._add_analyst_oof_features(enhanced_data, **kwargs)
+            if analyst_features:
+                # Add analyst features to the feature set
+                model_specific_features.extend(analyst_features)
+                tprint_success(f"✅ Added {len(analyst_features)} Analyst OOF features to training")
+
+            # Calculate sample weights based on Analyst confidence
+            analyst_weights = await self._calculate_analyst_weights(enhanced_data, **kwargs)
+            if analyst_weights is not None:
+                sample_weight = analyst_weights
+                tprint_success(f"✅ Using Analyst-based sample weights")
+            elif sample_weight is None:
+                sample_weight = np.ones(len(enhanced_data))
+
             # Prepare training data with validated features
-            X = filtered_data[model_specific_features].values
-            y = filtered_data[target_columns].values
+            X = enhanced_data[model_specific_features].values
+            y = enhanced_data[target_columns].values
 
             if len(y.shape) == 1:
                 y = y.reshape(-1, 1)
 
-            if sample_weight is None:
-                sample_weight = np.ones(len(filtered_data))
-
             # Add analyst confidence as additional feature if available
-            analyst_features = await self._extract_analyst_features(filtered_data, **kwargs)
             if analyst_features:
-                X = np.column_stack([X] + [filtered_data[feat].values for feat in analyst_features])
+                X = np.column_stack([X] + [enhanced_data[feat].values for feat in analyst_features])
 
             # Train models
             all_models = {}
@@ -1564,7 +1561,7 @@ class TacticianModelsTrainingStep:
         **kwargs
     ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """
-        Apply Analyst Ensemble filtering to training data.
+        Apply Analyst OOF outputs as features and weights for whole dataset training.
 
         Args:
             training_data: Training DataFrame
@@ -1573,63 +1570,232 @@ class TacticianModelsTrainingStep:
             **kwargs: Additional parameters including symbol, exchange, timeframe
 
         Returns:
-            Tuple of (filtered_data, filter_info)
+            Tuple of (enhanced_data, filter_info)
         """
         try:
             symbol = kwargs.get('symbol', 'BTCUSDT')
             exchange = kwargs.get('exchange', 'binance')
             timeframe = kwargs.get('timeframe', '5m')
 
-            tprint_debug(f"🔍 Applying Analyst filtering for {symbol} {exchange} {timeframe}")
+            tprint_debug(f"🔍 Applying Analyst OOF integration for {symbol} {exchange} {timeframe}")
 
-            # Analyst confidence threshold as per requirements
-            min_confidence = kwargs.get('min_analyst_confidence', 0.4)
-
-            # Look for analyst signal and confidence columns
-            analyst_signal_col = None
-            analyst_confidence_col = None
-
-            for col in training_data.columns:
-                if 'analyst_signal' in col.lower():
-                    analyst_signal_col = col
-                elif 'analyst_confidence' in col.lower():
-                    analyst_confidence_col = col
-
-            if analyst_confidence_col is None:
-                tprint_warning("⚠️ No analyst confidence column found - using all data")
-                return training_data, {
-                    'filtered': False,
-                    'reason': 'no_confidence_column',
-                    'original_samples': len(training_data),
-                    'filtered_samples': len(training_data)
-                }
-
-            # Filter data based on analyst confidence
+            # Use whole dataset - no filtering
+            enhanced_data = training_data.copy()
             original_samples = len(training_data)
-            filtered_data = training_data[training_data[analyst_confidence_col] >= min_confidence].copy()
+
+            # Add Analyst OOF outputs as features
+            analyst_features = await self._add_analyst_oof_features(enhanced_data, **kwargs)
+            
+            # Calculate sample weights based on Analyst confidence
+            sample_weights = await self._calculate_analyst_weights(enhanced_data, **kwargs)
 
             filter_info = {
-                'filtered': True,
-                'min_confidence_threshold': min_confidence,
-                'confidence_column': analyst_confidence_col,
+                'filtered': False,  # No filtering - using whole dataset
+                'reason': 'whole_dataset_training',
                 'original_samples': original_samples,
-                'filtered_samples': len(filtered_data),
-                'filter_ratio': len(filtered_data) / original_samples if original_samples > 0 else 0
+                'enhanced_samples': len(enhanced_data),
+                'analyst_features_added': len(analyst_features),
+                'sample_weights_calculated': sample_weights is not None
             }
 
-            tprint_success(f"✅ Analyst filtering: {original_samples} → {len(filtered_data)} samples "
-                          f"({filter_info['filter_ratio']:.2%} retained)")
+            tprint_success(f"✅ Analyst OOF integration: {original_samples} samples with {len(analyst_features)} analyst features")
 
-            return filtered_data, filter_info
+            return enhanced_data, filter_info
 
         except Exception as e:
-            tprint_error(f"❌ Failed to apply Analyst filtering: {e}")
+            tprint_error(f"❌ Failed to apply Analyst OOF integration: {e}")
             return training_data, {
                 'filtered': False,
                 'reason': f'error: {str(e)}',
                 'original_samples': len(training_data),
-                'filtered_samples': len(training_data)
+                'enhanced_samples': len(training_data)
             }
+
+    async def _add_analyst_oof_features(
+        self,
+        training_data: pd.DataFrame,
+        **kwargs
+    ) -> List[str]:
+        """
+        Add Analyst OOF outputs as features: p_trade, u_trade, q_trade.
+
+        Args:
+            training_data: Training DataFrame
+            **kwargs: Additional parameters
+
+        Returns:
+            List of added analyst feature column names
+        """
+        try:
+            symbol = kwargs.get('symbol', 'BTCUSDT')
+            exchange = kwargs.get('exchange', 'binance')
+            timeframe = kwargs.get('timeframe', '5m')
+            
+            tprint_debug(f"🔧 Adding Analyst OOF features for {symbol} {exchange} {timeframe}")
+
+            analyst_features = []
+            
+            # Look for existing Analyst OOF outputs in the data
+            p_trade_col = None
+            u_trade_col = None
+            q_trade_col = None
+            
+            for col in training_data.columns:
+                col_lower = col.lower()
+                if 'p_trade' in col_lower or 'analyst_probability' in col_lower:
+                    p_trade_col = col
+                elif 'u_trade' in col_lower or 'analyst_expected_edge' in col_lower:
+                    u_trade_col = col
+                elif 'q_trade' in col_lower or 'analyst_confidence' in col_lower:
+                    q_trade_col = col
+
+            # If OOF outputs not found, try to load from Analyst ensemble results
+            if not all([p_trade_col, u_trade_col, q_trade_col]):
+                analyst_oof_data = await self._load_analyst_oof_outputs(symbol, exchange, timeframe, **kwargs)
+                if analyst_oof_data is not None:
+                    # Add OOF outputs as new columns
+                    if 'p_trade' in analyst_oof_data.columns:
+                        training_data['analyst_p_trade'] = analyst_oof_data['p_trade']
+                        analyst_features.append('analyst_p_trade')
+                    if 'u_trade' in analyst_oof_data.columns:
+                        training_data['analyst_u_trade'] = analyst_oof_data['u_trade']
+                        analyst_features.append('analyst_u_trade')
+                    if 'q_trade' in analyst_oof_data.columns:
+                        training_data['analyst_q_trade'] = analyst_oof_data['q_trade']
+                        analyst_features.append('analyst_q_trade')
+            else:
+                # Use existing columns
+                if p_trade_col:
+                    analyst_features.append(p_trade_col)
+                if u_trade_col:
+                    analyst_features.append(u_trade_col)
+                if q_trade_col:
+                    analyst_features.append(q_trade_col)
+
+            # Add derived features from Analyst outputs
+            if analyst_features:
+                # Add interaction features
+                if len(analyst_features) >= 2:
+                    p_col = analyst_features[0] if 'p_trade' in analyst_features[0].lower() else None
+                    u_col = analyst_features[1] if 'u_trade' in analyst_features[1].lower() else None
+                    q_col = analyst_features[2] if len(analyst_features) > 2 and 'q_trade' in analyst_features[2].lower() else None
+                    
+                    if p_col and u_col:
+                        # Expected value feature
+                        training_data['analyst_expected_value'] = training_data[p_col] * training_data[u_col]
+                        analyst_features.append('analyst_expected_value')
+                    
+                    if p_col and q_col:
+                        # Confidence-weighted probability
+                        training_data['analyst_weighted_prob'] = training_data[p_col] * training_data[q_col]
+                        analyst_features.append('analyst_weighted_prob')
+
+            tprint_success(f"✅ Added {len(analyst_features)} Analyst OOF features")
+            return analyst_features
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to add Analyst OOF features: {e}")
+            return []
+
+    async def _calculate_analyst_weights(
+        self,
+        training_data: pd.DataFrame,
+        **kwargs
+    ) -> Optional[np.ndarray]:
+        """
+        Calculate sample weights based on Analyst confidence: w = w_min + (1-w_min)*p_trade.
+
+        Args:
+            training_data: Training DataFrame
+            **kwargs: Additional parameters
+
+        Returns:
+            Sample weights array or None
+        """
+        try:
+            w_min = kwargs.get('w_min', 0.2)  # Minimum weight parameter
+            
+            # Find p_trade column
+            p_trade_col = None
+            for col in training_data.columns:
+                if 'p_trade' in col.lower() or 'analyst_probability' in col.lower():
+                    p_trade_col = col
+                    break
+            
+            if p_trade_col is None:
+                tprint_warning("⚠️ No p_trade column found for weight calculation")
+                return None
+            
+            # Calculate weights: w = w_min + (1-w_min)*p_trade
+            p_trade_values = training_data[p_trade_col].fillna(0.0)
+            sample_weights = w_min + (1 - w_min) * p_trade_values
+            
+            # Ensure weights are positive and finite
+            sample_weights = np.clip(sample_weights, 0.01, 1.0)
+            sample_weights = np.where(np.isfinite(sample_weights), sample_weights, w_min)
+            
+            tprint_success(f"✅ Calculated sample weights: min={sample_weights.min():.3f}, max={sample_weights.max():.3f}, mean={sample_weights.mean():.3f}")
+            return sample_weights.values
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to calculate Analyst weights: {e}")
+            return None
+
+    async def _load_analyst_oof_outputs(
+        self,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        **kwargs
+    ) -> Optional[pd.DataFrame]:
+        """
+        Load Analyst OOF outputs from saved results.
+
+        Args:
+            symbol: Trading symbol
+            exchange: Exchange name
+            timeframe: Timeframe
+            **kwargs: Additional parameters
+
+        Returns:
+            DataFrame with OOF outputs or None
+        """
+        try:
+            # Look for Analyst ensemble results
+            results_dir = Path("outcomes/model_training")
+            pattern = f"analyst_ensemble_training_report_{symbol}_{exchange}_{timeframe}_*.json"
+            
+            matching_files = list(results_dir.glob(pattern))
+            if not matching_files:
+                tprint_warning(f"⚠️ No Analyst ensemble results found for {symbol} {exchange} {timeframe}")
+                return None
+            
+            # Use the most recent file
+            latest_file = max(matching_files, key=lambda x: x.stat().st_mtime)
+            
+            with open(latest_file, 'r') as f:
+                results = json.load(f)
+            
+            # Extract OOF outputs from results
+            oof_data = {}
+            if 'oof_predictions' in results:
+                oof_preds = results['oof_predictions']
+                if 'p_trade' in oof_preds:
+                    oof_data['p_trade'] = oof_preds['p_trade']
+                if 'u_trade' in oof_preds:
+                    oof_data['u_trade'] = oof_preds['u_trade']
+                if 'q_trade' in oof_preds:
+                    oof_data['q_trade'] = oof_preds['q_trade']
+            
+            if oof_data:
+                return pd.DataFrame(oof_data)
+            else:
+                tprint_warning("⚠️ No OOF outputs found in Analyst results")
+                return None
+
+        except Exception as e:
+            tprint_error(f"❌ Failed to load Analyst OOF outputs: {e}")
+            return None
 
     async def _extract_analyst_features(
         self,
@@ -1746,7 +1912,7 @@ class TacticianModelsTrainingStep:
                 'model_type': 'T1_PatchTST_LightGBM'
             }
 
-            tprint_success(f"✅ T1: PatchTST-LightGBM trained with accuracy: {metrics['accuracy']".4f"}")
+            tprint_success(f"✅ T1: PatchTST-LightGBM trained with accuracy: {metrics['accuracy']:.4f}")
             return {'models': {'t1_patchtst_lightgbm': model}, 'metrics': metrics}
 
         except Exception as e:
@@ -1833,7 +1999,7 @@ class TacticianModelsTrainingStep:
                 'model_type': 'T2_PatchTST_XGBoost_LambdaMART'
             }
 
-            tprint_success(f"✅ T2: PatchTST-XGBoost-LambdaMART trained with MSE: {metrics['mse']".4f"}")
+            tprint_success(f"✅ T2: PatchTST-XGBoost-LambdaMART trained with MSE: {metrics['mse']:.4f}")
             return {'models': {'t2_patchtst_xgboost_lambdamart': model}, 'metrics': metrics}
 
         except Exception as e:
@@ -1924,7 +2090,7 @@ class TacticianModelsTrainingStep:
                 except:
                     pass
 
-            tprint_success(f"✅ T3: PatchTST-CatBoost trained with accuracy: {metrics['accuracy']".4f"}")
+            tprint_success(f"✅ T3: PatchTST-CatBoost trained with accuracy: {metrics['accuracy']:.4f}")
             return {'models': {'t3_patchtst_catboost': model}, 'metrics': metrics}
 
         except Exception as e:
@@ -2007,7 +2173,7 @@ class TacticianModelsTrainingStep:
                 'model_type': 'T4_Causal_Dilated_TCN'
             }
 
-            tprint_success(f"✅ T4: Causal Dilated TCN trained with MSE: {metrics['mse']".4f"}")
+            tprint_success(f"✅ T4: Causal Dilated TCN trained with MSE: {metrics['mse']:.4f}")
             return {'models': {'t4_causal_dilated_tcn': model}, 'metrics': metrics}
 
         except Exception as e:
@@ -2089,7 +2255,7 @@ class TacticianModelsTrainingStep:
                 'model_type': 'T4_TFT_Small'
             }
 
-            tprint_success(f"✅ T4: TFT-Small trained with MSE: {metrics['mse']".4f"}")
+            tprint_success(f"✅ T4: TFT-Small trained with MSE: {metrics['mse']:.4f}")
             return {'models': {'t4_tft_small': model}, 'metrics': metrics}
 
         except Exception as e:

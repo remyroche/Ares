@@ -59,7 +59,9 @@ class FinalParametersOptimizer:
             'confidence_aware_ensemble', 'model_specific_parameters',
             # New directional categories
             'long_specific_parameters', 'short_specific_parameters', 
-            'directional_thresholds', 'asymmetric_risk_management'
+            'directional_thresholds', 'asymmetric_risk_management',
+            # Merged Tactician & Analyst integration
+            'tactician_analyst_integration', 'analyst_oof_weights', 'merged_feature_importance'
         ]
         
         # Default search spaces for each category
@@ -146,6 +148,33 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
                 'long_volatility_tolerance': {'type': 'float', 'low': 0.8, 'high': 1.1},
                 'short_volatility_tolerance': {'type': 'float', 'low': 1.0, 'high': 1.3},
                 'asymmetric_leverage_adjustment': {'type': 'float', 'low': 0.9, 'high': 1.1},
+            },
+            # Merged Tactician & Analyst integration parameters
+            'tactician_analyst_integration': {
+                'w_min': {'type': 'float', 'min': 0.1, 'max': 0.5},  # Minimum weight for sample weighting
+                'analyst_feature_weight': {'type': 'float', 'min': 0.1, 'max': 1.0},  # Weight for Analyst OOF features
+                'p_trade_weight': {'type': 'float', 'min': 0.2, 'max': 0.8},  # Weight for p_trade feature
+                'u_trade_weight': {'type': 'float', 'min': 0.2, 'max': 0.8},  # Weight for u_trade feature
+                'q_trade_weight': {'type': 'float', 'min': 0.2, 'max': 0.8},  # Weight for q_trade feature
+                'analyst_expected_value_weight': {'type': 'float', 'min': 0.1, 'max': 0.6},  # Weight for expected value feature
+                'analyst_weighted_prob_weight': {'type': 'float', 'min': 0.1, 'max': 0.6},  # Weight for weighted prob feature
+                'integration_method': {'type': 'categorical', 'choices': ['additive', 'multiplicative', 'ensemble']},
+                'feature_interaction_strength': {'type': 'float', 'min': 0.1, 'max': 1.0},  # Strength of feature interactions
+            },
+            'analyst_oof_weights': {
+                'p_trade_threshold': {'type': 'float', 'min': 0.3, 'max': 0.8},  # Threshold for p_trade filtering
+                'u_trade_threshold': {'type': 'float', 'min': -0.5, 'max': 0.5},  # Threshold for u_trade filtering
+                'q_trade_threshold': {'type': 'float', 'min': 0.4, 'max': 0.9},  # Threshold for q_trade filtering
+                'weight_scaling_factor': {'type': 'float', 'min': 0.5, 'max': 2.0},  # Scaling factor for weights
+                'weight_smoothing': {'type': 'float', 'min': 0.0, 'max': 0.5},  # Smoothing factor for weights
+                'adaptive_weighting': {'type': 'categorical', 'choices': ['static', 'dynamic', 'regime_based']},
+            },
+            'merged_feature_importance': {
+                'analyst_feature_importance_boost': {'type': 'float', 'min': 1.0, 'max': 3.0},  # Boost for Analyst features
+                'interaction_feature_importance': {'type': 'float', 'min': 0.5, 'max': 2.0},  # Importance of interaction features
+                'feature_selection_threshold': {'type': 'float', 'min': 0.01, 'max': 0.1},  # Threshold for feature selection
+                'analyst_feature_regularization': {'type': 'float', 'min': 0.0, 'max': 0.1},  # Regularization for Analyst features
+                'feature_interaction_depth': {'type': 'int', 'min': 1, 'max': 3},  # Depth of feature interactions
             }
         }
     

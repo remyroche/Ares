@@ -240,6 +240,11 @@ class AnalystModelsTrainingStep:
             if sample_weight is None:
                 sample_weight = np.ones(len(training_data))
 
+            # Generate OOF predictions for Tactician integration
+            oof_predictions = await self._generate_oof_predictions(
+                training_data, feature_columns, target_columns, sample_weight, **kwargs
+            )
+
             # Train models
             all_models = {}
             all_metrics = {}
@@ -305,6 +310,7 @@ class AnalystModelsTrainingStep:
             return {
                 'models': all_models,
                 'metrics': all_metrics,
+                'oof_predictions': oof_predictions,
                 'training_time': execution_time,
                 'features_used': feature_columns,
                 'samples_used': len(training_data),
@@ -410,6 +416,114 @@ class AnalystModelsTrainingStep:
         except Exception as e:
             tprint_error(f"❌ Failed to train {model_type.value} directly: {e}")
             return {'models': {}, 'metrics': {}}
+
+    async def _generate_oof_predictions(
+        self,
+        training_data: pd.DataFrame,
+        feature_columns: List[str],
+        target_columns: List[str],
+        sample_weight: np.ndarray,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Generate Out-of-Fold predictions for Tactician integration.
+        
+        Args:
+            training_data: Training DataFrame
+            feature_columns: Feature columns
+            target_columns: Target columns
+            sample_weight: Sample weights
+            **kwargs: Additional parameters
+            
+        Returns:
+            Dict with OOF predictions: p_trade, u_trade, q_trade
+        """
+        try:
+            from sklearn.model_selection import KFold
+            from sklearn.metrics import log_loss
+            import lightgbm as lgb
+            
+            tprint_info("🔧 Generating OOF predictions for Tactician integration...")
+            
+            X = training_data[feature_columns].values
+            y = training_data[target_columns].values.ravel()
+            
+            # Use 5-fold CV for OOF predictions
+            kf = KFold(n_splits=5, shuffle=True, random_state=42)
+            
+            # Initialize OOF prediction arrays
+            n_samples = len(training_data)
+            p_trade_oof = np.zeros(n_samples)  # Probability of trade
+            u_trade_oof = np.zeros(n_samples)  # Expected net edge
+            q_trade_oof = np.zeros(n_samples)  # Confidence/quality
+            
+            # Generate OOF predictions using LightGBM
+            for fold, (train_idx, val_idx) in enumerate(kf.split(X)):
+                tprint_debug(f"🔧 Generating OOF predictions for fold {fold + 1}/5")
+                
+                X_train, X_val = X[train_idx], X[val_idx]
+                y_train, y_val = y[train_idx], y[val_idx]
+                w_train = sample_weight[train_idx]
+                
+                # Train LightGBM model for this fold
+                lgb_model = lgb.LGBMRegressor(
+                    n_estimators=100,
+                    learning_rate=0.1,
+                    max_depth=6,
+                    random_state=42,
+                    verbosity=-1
+                )
+                
+                lgb_model.fit(X_train, y_train, sample_weight=w_train)
+                
+                # Get predictions for validation set
+                y_pred = lgb_model.predict(X_val)
+                
+                # Calculate p_trade (probability of positive return)
+                p_trade_fold = np.where(y_pred > 0, 1.0, 0.0)
+                
+                # Calculate u_trade (expected net edge)
+                u_trade_fold = y_pred
+                
+                # Calculate q_trade (confidence based on prediction magnitude)
+                q_trade_fold = np.abs(y_pred) / (np.abs(y_pred).max() + 1e-8)
+                
+                # Store OOF predictions
+                p_trade_oof[val_idx] = p_trade_fold
+                u_trade_oof[val_idx] = u_trade_fold
+                q_trade_oof[val_idx] = q_trade_fold
+            
+            # Ensure values are in valid ranges
+            p_trade_oof = np.clip(p_trade_oof, 0.0, 1.0)
+            u_trade_oof = np.clip(u_trade_oof, -1.0, 1.0)
+            q_trade_oof = np.clip(q_trade_oof, 0.0, 1.0)
+            
+            oof_predictions = {
+                'p_trade': p_trade_oof.tolist(),
+                'u_trade': u_trade_oof.tolist(),
+                'q_trade': q_trade_oof.tolist(),
+                'n_samples': n_samples,
+                'cv_folds': 5,
+                'generation_method': 'lightgbm_oof'
+            }
+            
+            tprint_success(f"✅ Generated OOF predictions: p_trade mean={p_trade_oof.mean():.3f}, "
+                          f"u_trade mean={u_trade_oof.mean():.3f}, q_trade mean={q_trade_oof.mean():.3f}")
+            
+            return oof_predictions
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate OOF predictions: {e}")
+            # Return default OOF predictions
+            n_samples = len(training_data)
+            return {
+                'p_trade': [0.5] * n_samples,
+                'u_trade': [0.0] * n_samples,
+                'q_trade': [0.5] * n_samples,
+                'n_samples': n_samples,
+                'cv_folds': 0,
+                'generation_method': 'default_fallback'
+            }
 
     async def _train_lgbm(
         self,

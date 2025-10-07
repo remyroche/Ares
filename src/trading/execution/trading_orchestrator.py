@@ -30,9 +30,15 @@ from ..signal_generation.signal_combiner import SignalCombiner
 from ..data.live_data_collector import LiveDataCollector, LiveDataConfig
 from .live_trading_scheduler import LiveTradingScheduler, ModelType
 from ..monitoring.comprehensive_trade_monitor import comprehensive_trade_monitor, record_detailed_trade, update_trade_outcome
+from ..monitoring.unified_trailing_manager import (
+    UnifiedTrailingManager,
+    TrailingAction,
+    TrailingDecision,
+)
 from ..reporting.performance_reporter import performance_reporter, generate_trading_report
 from ..reporting.dashboard_generator import dashboard_generator, create_trading_dashboard
 from ..reporting.daily_recorder import daily_recorder, record_daily_trading_summary
+from ..utils.helpers import prepare_trailing_feature_bundle, TrailingFeatureBundle
 
 logger = system_logger.getChild('TradingOrchestrator')
 
@@ -144,6 +150,12 @@ class TradingOrchestrator:
             'max_drawdown': 0.0,
             'avg_session_duration': 0.0
         }
+
+        # Unified trailing management
+        self.trailing_manager = UnifiedTrailingManager(config.get('exit_strategy', {}))
+        self.active_positions: Dict[str, Dict[str, Any]] = {}
+        self._latest_signals: Dict[str, Any] = {}
+        self._latest_market_snapshot: Optional[Dict[str, Any]] = None
 
     async def initialize(self) -> bool:
         """
@@ -425,32 +437,38 @@ class TradingOrchestrator:
 
     async def _trading_loop(self):
         """Main trading loop."""
+        polling_interval = self.config.get('trading_interval', 30)
         while self.status == OrchestratorStatus.RUNNING:
             try:
-                # Wait for sufficient data
-                await asyncio.sleep(30)  # Check every 30 seconds
-                
-                # Generate trading decision
-                decision = await self._generate_trading_decision()
-                
-                if decision:
-                    await self._execute_trading_decision(decision)
-                
+                market_snapshot = await self._get_market_snapshot()
+                if market_snapshot:
+                    await self._evaluate_trailing_positions(market_snapshot)
+
+                decision = await self._generate_trading_decision(market_snapshot)
+                if decision and market_snapshot:
+                    await self._execute_trading_decision(decision, market_snapshot)
+
+                await asyncio.sleep(polling_interval)
             except Exception as e:
                 self.logger.error(f"❌ Trading loop error: {e}")
-                await asyncio.sleep(5)  # Brief pause on error
+                await asyncio.sleep(5)
 
-    async def _generate_trading_decision(self) -> Optional[TradingDecision]:
+    async def _generate_trading_decision(
+        self, market_snapshot: Optional[Dict[str, Any]] = None
+    ) -> Optional[TradingDecision]:
         """Generate trading decision based on all components."""
         try:
-            # Get recent market data
-            market_data = self.data_collector.get_processed_data_df(n=100)
-            if market_data.empty:
+            if market_snapshot is None:
+                market_snapshot = await self._get_market_snapshot()
+            if not market_snapshot:
                 return None
-            
+
+            market_data: pd.DataFrame = market_snapshot['market_data']
+            self._latest_market_snapshot = market_snapshot
+
             # Get regime data from HMM
             regime_data = self.trading_scheduler.hmm_data
-            
+
             # Generate Analyst signal
             analyst_signal = await self.analyst_signal_generator.generate_signal(
                 symbol=self.symbol,
@@ -468,10 +486,15 @@ class TradingOrchestrator:
                 market_data=market_data,
                 account_balance=self.account_balance
             )
-            
+
             if not tactician_signal:
                 return None
-            
+
+            self._latest_signals = {
+                'analyst': analyst_signal,
+                'tactician': tactician_signal,
+            }
+
             # Combine signals
             combined_signal = await self.signal_combiner.combine_signals(
                 analyst_signal=analyst_signal,
@@ -497,12 +520,16 @@ class TradingOrchestrator:
             )
             
             return decision
-            
+
         except Exception as e:
             self.logger.error(f"❌ Trading decision generation failed: {e}")
             return None
 
-    async def _execute_trading_decision(self, decision: TradingDecision):
+    async def _execute_trading_decision(
+        self,
+        decision: TradingDecision,
+        market_snapshot: Dict[str, Any],
+    ):
         """Execute trading decision with comprehensive monitoring."""
         try:
             tprint_info(f"🔄 Executing {decision.action} order for {decision.symbol}")
@@ -516,6 +543,8 @@ class TradingOrchestrator:
                     tprint_warning("⚠️ Trade skipped due to global gate or risk checks")
                     return
             
+            feature_bundle: TrailingFeatureBundle = market_snapshot['feature_bundle']
+
             # Prepare comprehensive trade data
             trade_data = {
                 'symbol': decision.symbol,
@@ -556,7 +585,7 @@ class TradingOrchestrator:
             }
             
             # Get recent market data for context
-            market_data = self.data_collector.get_processed_data_df(n=100) if self.data_collector else None
+            market_data = market_snapshot['market_data'] if market_snapshot else None
             
             # Record comprehensive trade decision
             trade_id = await record_detailed_trade(trade_data, models_used, market_data)
@@ -592,13 +621,15 @@ class TradingOrchestrator:
                 }
                 
                 await update_trade_outcome(trade_id, outcome_data)
-                
+
                 if self.current_session:
                     self.current_session.total_trades += 1
-                
+
                 self.performance_metrics['total_trades'] += 1
-                
+
                 tprint_success(f"✅ {decision.action} order executed for {decision.symbol} (ID: {trade_id})")
+
+                self._update_active_positions(decision, trade_id, feature_bundle)
             else:
                 tprint_error(f"❌ Failed to execute {decision.action} order for {decision.symbol}")
                 if self.current_session:
@@ -620,7 +651,239 @@ class TradingOrchestrator:
                     await self.trade_gate.release(decision.metadata.get('trade_id'))
                 except Exception:
                     pass
-    
+
+    async def _get_market_snapshot(self) -> Optional[Dict[str, Any]]:
+        """Collect latest market data and derived trailing features."""
+
+        try:
+            if not self.data_collector:
+                return None
+
+            market_data = self.data_collector.get_processed_data_df(n=200)
+            if market_data is None or market_data.empty:
+                return None
+
+            feature_bundle = prepare_trailing_feature_bundle(market_data)
+            if feature_bundle is None:
+                return None
+
+            return {
+                'market_data': market_data,
+                'feature_bundle': feature_bundle,
+            }
+        except Exception as exc:
+            self.logger.error(f"❌ Failed to collect market snapshot: {exc}")
+            return None
+
+    async def _evaluate_trailing_positions(self, market_snapshot: Dict[str, Any]) -> None:
+        """Evaluate trailing actions for all active positions."""
+
+        if not self.active_positions:
+            return
+
+        feature_bundle: TrailingFeatureBundle = market_snapshot.get('feature_bundle')
+        if feature_bundle is None:
+            return
+
+        tact_metrics = feature_bundle.tactician
+        price = feature_bundle.current_price
+        atr = tact_metrics.get('atr', 0.0)
+        sigma = tact_metrics.get('sigma', 0.0)
+        momentum = tact_metrics.get('momentum', 0.0)
+        rsi = tact_metrics.get('rsi', 50.0)
+        vol_slope = tact_metrics.get('vol_slope', 0.0)
+
+        for position_id, position in list(self.active_positions.items()):
+            ml_context = self._build_ml_context(position)
+            decision = self.trailing_manager.evaluate_position(
+                position_id,
+                price=price,
+                atr=atr,
+                sigma=sigma,
+                momentum=momentum,
+                rsi=rsi,
+                vol_slope=vol_slope,
+                timestamp=feature_bundle.timestamp,
+                ml_context=ml_context,
+            )
+            self._apply_trailing_decision(position_id, position, decision)
+
+    def _update_active_positions(
+        self,
+        decision: TradingDecision,
+        trade_id: str,
+        feature_bundle: TrailingFeatureBundle,
+    ) -> None:
+        action = decision.action.lower()
+
+        if action in {"close", "exit"}:
+            self._close_position_by_symbol(decision.symbol, reason=action)
+            return
+
+        if action not in {"buy", "sell"}:
+            return
+
+        side = "long" if action == "buy" else "short"
+        existing = self._find_position_for_symbol(decision.symbol)
+        if existing:
+            position_id, position = existing
+            if position["side"] != side:
+                self._close_position(position_id, reason="opposite_signal")
+            else:
+                # Treat as scaling into existing position
+                position["quantity"] += decision.quantity
+                state = self.trailing_manager.positions.get(position_id)
+                if state:
+                    state.quantity = position["quantity"]
+                return
+
+        self._open_position(decision, trade_id, feature_bundle, side)
+
+    def _open_position(
+        self,
+        decision: TradingDecision,
+        trade_id: str,
+        feature_bundle: TrailingFeatureBundle,
+        side: str,
+    ) -> None:
+        tact_metrics = feature_bundle.tactician
+        entry_atr = tact_metrics.get('atr', 0.0)
+        entry_sigma = tact_metrics.get('sigma', 0.0)
+        if entry_atr <= 0:
+            self.logger.warning("⚠️ Skipping trailing registration due to invalid ATR")
+            return
+
+        ml_entry = {
+            'analyst_confidence': getattr(decision.analyst_signal, 'confidence_score', None)
+            if decision.analyst_signal
+            else None,
+            'tactician_confidence': getattr(decision.tactician_signal, 'confidence_score', None)
+            if decision.tactician_signal
+            else None,
+            'tactician_momentum': (decision.tactician_signal.risk_metrics.get('momentum')
+                                   if decision.tactician_signal and decision.tactician_signal.risk_metrics
+                                   else None),
+            'regime': getattr(decision.analyst_signal, 'regime_id', None)
+            if decision.analyst_signal
+            else None,
+        }
+
+        state = self.trailing_manager.register_position(
+            trade_id,
+            side=side,
+            entry_price=decision.price,
+            entry_time=decision.timestamp,
+            quantity=decision.quantity,
+            entry_atr=entry_atr,
+            entry_sigma=entry_sigma,
+            bar_duration=feature_bundle.bar_seconds,
+            metadata={'symbol': decision.symbol, 'ml_entry': ml_entry},
+        )
+
+        self.active_positions[trade_id] = {
+            'symbol': decision.symbol,
+            'side': side,
+            'quantity': decision.quantity,
+            'entry_price': decision.price,
+            'entry_time': decision.timestamp,
+            'ml_entry': ml_entry,
+            'trailing_state': state,
+        }
+
+    def _close_position(self, position_id: str, reason: str) -> None:
+        position = self.active_positions.pop(position_id, None)
+        if not position:
+            return
+
+        self.trailing_manager.remove_position(position_id)
+        self.logger.info(
+            "🚪 Closed position %s (%s) due to %s",
+            position_id,
+            position['symbol'],
+            reason,
+        )
+
+    def _close_position_by_symbol(self, symbol: str, reason: str) -> None:
+        existing = self._find_position_for_symbol(symbol)
+        if existing:
+            self._close_position(existing[0], reason)
+
+    def _find_position_for_symbol(
+        self, symbol: str
+    ) -> Optional[Tuple[str, Dict[str, Any]]]:
+        for position_id, position in self.active_positions.items():
+            if position.get('symbol') == symbol:
+                return position_id, position
+        return None
+
+    def _build_ml_context(self, position: Dict[str, Any]) -> Dict[str, Any]:
+        context: Dict[str, Any] = {
+            'entry': position.get('ml_entry', {}),
+        }
+
+        analyst_signal = self._latest_signals.get('analyst')
+        if analyst_signal:
+            context['analyst_confidence'] = getattr(
+                analyst_signal, 'confidence_score', None
+            )
+            entry_regime = position.get('ml_entry', {}).get('regime')
+            current_regime = getattr(analyst_signal, 'regime_id', None)
+            if entry_regime is not None and current_regime is not None:
+                context['regime_changed'] = entry_regime != current_regime
+
+        tactician_signal = self._latest_signals.get('tactician')
+        if tactician_signal:
+            context['tactician_confidence'] = getattr(
+                tactician_signal, 'confidence_score', None
+            )
+            if tactician_signal.risk_metrics:
+                context['tactician_momentum'] = tactician_signal.risk_metrics.get('momentum')
+
+        return context
+
+    def _apply_trailing_decision(
+        self,
+        position_id: str,
+        position: Dict[str, Any],
+        decision: TrailingDecision,
+    ) -> None:
+        if decision.action == TrailingAction.NONE:
+            return
+
+        if decision.action == TrailingAction.MOVE_STOP and decision.stop_price is not None:
+            position['trailing_stop'] = decision.stop_price
+            self.logger.info(
+                "📉 Updated trailing stop for %s to %.4f (%s)",
+                position_id,
+                decision.stop_price,
+                decision.reason,
+            )
+            return
+
+        if decision.action == TrailingAction.PARTIAL_EXIT:
+            fraction = decision.exit_fraction or self.trailing_manager.config['partial_take_fraction']
+            position['quantity'] = max(0.0, position['quantity'] * (1.0 - fraction))
+            state = self.trailing_manager.positions.get(position_id)
+            if state:
+                state.quantity = position['quantity']
+            self.logger.info(
+                "💰 Partial exit %.2f%% for %s (%s)",
+                fraction * 100,
+                position_id,
+                decision.reason,
+            )
+            if position['quantity'] <= 1e-6:
+                self._close_position(position_id, reason=decision.reason or 'partial_exit_complete')
+            return
+
+        if decision.action == TrailingAction.FULL_EXIT:
+            self.logger.info(
+                "🛑 Trailing exit triggered for %s (%s)",
+                position_id,
+                decision.reason,
+            )
+            self._close_position(position_id, reason=decision.reason or 'trailing_exit')
+
     async def _simulate_order_execution(self, decision: TradingDecision) -> bool:
         """Simulate order execution (replace with real execution in live trading)."""
         try:

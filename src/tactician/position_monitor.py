@@ -579,16 +579,17 @@ class PositionMonitor:
 
             activated_this_cycle = False
             activation_reason = None
+            direction = 1.0 if side == "LONG" else -1.0
             if not trailing_state.get("is_active"):
-                momentum_triggered = (
+                adverse_momentum = (
                     momentum_score is not None
-                    and momentum_score < momentum_threshold
-                    and unrealized_pnl > 0
+                    and direction * momentum_score < direction * momentum_threshold
                 )
+                momentum_triggered = adverse_momentum and unrealized_pnl > 0
                 confidence_triggered = unrealized_pnl > 0 and combined_confidence >= activation_threshold
 
                 if momentum_triggered:
-                    activation_reason = "negative_momentum"
+                    activation_reason = "adverse_momentum"
                 elif confidence_triggered:
                     activation_reason = "confidence_activation"
 
@@ -604,7 +605,12 @@ class PositionMonitor:
 
             if not trailing_state.get("is_active"):
                 reason = "Trailing stop inactive: insufficient profit or confidence"
-                if momentum_score is not None and momentum_score >= momentum_threshold:
+                if (
+                    momentum_score is not None
+                    and not (
+                        direction * momentum_score < direction * momentum_threshold
+                    )
+                ):
                     reason += f" (momentum={momentum_score:.3f})"
                 return PositionAction.STAY, reason
 

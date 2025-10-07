@@ -14,7 +14,7 @@ from src.utils.tprint import tprint, tprint_debug, tprint_success, tprint_warnin
 class BaseConfig:
     """Base configuration class with common validation methods."""
     symbol: str = "ETHUSDT"
-    timeframe: str = "15m"
+    timeframe: str = "4h"  # Updated to 4h for regime detection
     n_regimes: int = 8
     
     def __post_init__(self):
@@ -288,7 +288,7 @@ def validate_algorithm_type(algorithm_name: str, valid_algorithms: List[str]) ->
 def create_default_config(
     config_type: str = "hybrid",
     symbol: str = "ETHUSDT",
-    timeframe: str = "15m",
+    timeframe: str = "4h",  # Updated to 4h for regime detection
     n_regimes: int = 8,
     **kwargs
 ) -> Union[NASConfig, TASConfig, HybridConfig]:

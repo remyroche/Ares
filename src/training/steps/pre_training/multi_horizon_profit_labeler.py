@@ -58,8 +58,8 @@ class MultiHorizonConfig:
     """Configuration for multi-horizon profit labeling."""
 
     # Timeframe settings
-    timeframe: str = "15m"
-    base_period_minutes: float = 15.0
+    timeframe: str = "1h"  # Updated to 1h for analyst
+    base_period_minutes: float = 60.0  # Updated to 60 minutes for 1h timeframe
 
     # Volatility-aware labeling settings
     enable_volatility_normalization: bool = True
@@ -1373,7 +1373,7 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
             # Extract parameters from pipeline state
             symbol = pipeline_state.get('symbol', 'ETHUSDT')
             exchange = pipeline_state.get('exchange', 'binance')
-            timeframe = pipeline_state.get('timeframe', '15m')
+            timeframe = pipeline_state.get('timeframe', '1h')  # Updated to 1h for analyst
             data_dir = pipeline_state.get('data_dir', 'historical_data')
 
             # Extract regime data from pipeline state if available

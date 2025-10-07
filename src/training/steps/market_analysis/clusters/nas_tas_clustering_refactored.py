@@ -437,7 +437,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
             try:
                 saved_files = await self.save_artifacts(artifacts, {
                     'symbol': getattr(self.config, 'symbol', 'ETHUSDT'),
-                    'timeframe': getattr(self.config, 'timeframe', '15m'),
+                    'timeframe': getattr(self.config, 'timeframe', '4h'),  # Updated to 4h for regime detection
                     'data_points_processed': len(market_data),
                     'n_clusters': clustering_result['n_clusters'],
                     'algorithm_type': 'nas_tas_clustering',
@@ -453,7 +453,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 artifacts=artifacts,
                 metadata={
                     'symbol': getattr(self.config, 'symbol', 'ETHUSDT'),
-                    'timeframe': getattr(self.config, 'timeframe', '15m'),
+                    'timeframe': getattr(self.config, 'timeframe', '4h'),  # Updated to 4h for regime detection
                     'data_points_processed': len(market_data),
                     'n_clusters': clustering_result['n_clusters'],
                     'algorithm_type': 'nas_tas_clustering',
@@ -494,7 +494,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                 error_message=f"NAS-TAS clustering failed: {str(e)}",
                 metadata={
                     'symbol': getattr(self.config, 'symbol', 'ETHUSDT'),
-                    'timeframe': getattr(self.config, 'timeframe', '15m'),
+                    'timeframe': getattr(self.config, 'timeframe', '4h'),  # Updated to 4h for regime detection
                     'execution_successful': False,
                     'error_type': type(e).__name__
                 }

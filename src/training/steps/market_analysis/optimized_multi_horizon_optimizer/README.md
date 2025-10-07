@@ -150,8 +150,8 @@ results = optimizer.optimize_for_model(
 ## 📊 **Configuration Options**
 
 ### **Model Types**
-- `ModelType.ANALYST`: 15m base timeframe, 1-16 periods (15m-240m)
-- `ModelType.TACTICIAN`: 5m base timeframe, 1-16 periods (5m-80m)
+- `ModelType.ANALYST`: 1h base timeframe, 1-16 periods (1h-16h)
+- `ModelType.TACTICIAN`: 15m base timeframe, 1-16 periods (15m-240m)
 - `ModelType.BOTH`: Optimize for both models
 
 ### **Optimization Methods**

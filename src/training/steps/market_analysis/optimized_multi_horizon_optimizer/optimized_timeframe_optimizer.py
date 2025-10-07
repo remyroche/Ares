@@ -320,10 +320,10 @@ class OptimizedTimeframeOptimizer:
     def _create_fallback_result(self, model_type: ModelType) -> OptimizationResult:
         """Create fallback result when optimization fails."""
         if model_type == ModelType.ANALYST:
-            horizons = {'immediate': 2, 'short': 8}  # 30m, 120m (15m base)
+            horizons = {'immediate': 2, 'short': 8}  # 2h, 8h (1h base)
             targets = {'micro': 0.003, 'small': 0.005, 'medium': 0.007, 'good': 0.010}
         elif model_type == ModelType.TACTICIAN:
-            horizons = {'immediate': 4, 'short': 8}  # 20m, 40m (5m base)
+            horizons = {'immediate': 4, 'short': 8}  # 1h, 2h (15m base)
             targets = {'micro': 0.005, 'small': 0.007, 'medium': 0.010, 'good': 0.015}
         else:  # BOTH
             horizons = {'immediate': 2, 'short': 8}  # Balanced

@@ -99,8 +99,8 @@ class OptimizedFeatureLookbackConfig:
     """Configuration for optimized feature lookback optimization."""
 
     # Timeframe settings
-    default_timeframe: str = "5m"
-    base_period_minutes: float = 5.0
+    default_timeframe: str = "15m"  # Updated to 15m for tactician
+    base_period_minutes: float = 15.0  # Updated to 15 minutes for 15m timeframe
 
     # Lookback optimization settings
     min_lookback: int = 5
@@ -1925,7 +1925,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 tprint('🔍 No labeling data in pipeline state, loading from recent outcomes...')
                 symbol = pipeline_state.get('symbol', 'ETHUSDT')
                 exchange = pipeline_state.get('exchange', 'binance')
-                timeframe = pipeline_state.get('timeframe', '15m')
+                timeframe = pipeline_state.get('timeframe', '15m')  # 15m for tactician
                 labeling_data = self._load_recent_labeling_results(symbol=symbol, exchange=exchange, timeframe=timeframe)
                 if labeling_data:
                     pipeline_state['multi_horizon_labeling_result'] = labeling_data

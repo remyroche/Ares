@@ -8,9 +8,9 @@ This module handles training of individual Tactician base models:
 - NAS (Neural Architecture Search) model
 - TAS (Tree-based Architecture Search) model
 
-The Tactician operates on the 5m timeframe and decides WHEN to trade using only
+The Tactician operates on the 15m timeframe and decides WHEN to trade using only
 Analyst-provided green-signal filtered windows (>0.4% confidence threshold), refining entries after the
-15m Analyst approval. Integrates with Analyst ensemble outputs and regime features for enhanced 5m timeframe tactical decisions.
+1h Analyst approval. Integrates with Analyst ensemble outputs and regime features for enhanced 15m timeframe tactical decisions.
 
 ENHANCED FEATURES:
 - Comprehensive error handling with detailed failure reporting
@@ -663,11 +663,11 @@ class TacticianModelsTrainingStep:
                 try:
                     unified_config = config.get_unified_config()
                     if hasattr(unified_config, 'timeframe'):
-                        unified_config.timeframe = '5m'
-                        tprint_debug(f"✅ Set NAS/TAS timeframe to 5m")
+                        unified_config.timeframe = '15m'  # Updated to 15m timeframe
+                        tprint_debug(f"✅ Set NAS/TAS timeframe to 15m")
                     if hasattr(unified_config, 'data') and hasattr(unified_config.data, 'timeframe'):
-                        unified_config.data.timeframe = '5m'
-                        tprint_debug(f"✅ Set NAS/TAS data timeframe to 5m")
+                        unified_config.data.timeframe = '15m'  # Updated to 15m timeframe
+                        tprint_debug(f"✅ Set NAS/TAS data timeframe to 15m")
                     if hasattr(unified_config, 'enable_feature_engineering'):
                         unified_config.enable_feature_engineering = False
                     if hasattr(unified_config, 'enable_data_preprocessing'):
@@ -1292,7 +1292,7 @@ class TacticianModelsTrainingStep:
                 # Extract metadata from kwargs or use defaults
                 symbol = kwargs.get('symbol', 'BTCUSDT')
                 exchange = kwargs.get('exchange', 'binance')
-                timeframe = kwargs.get('timeframe', '5m')
+                timeframe = kwargs.get('timeframe', '15m')  # Updated to 15m timeframe
 
                 tprint_info(f"🔍 Loading features from final feature selection for {symbol} {exchange} {timeframe}")
 

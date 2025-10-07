@@ -57,7 +57,7 @@ class SubPipelineConfig:
     mode: ExecutionMode = ExecutionMode.FULL
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
-    timeframe: str = "15m"  # Default timeframe for pre-training steps
+    timeframe: str = "1h"  # Default timeframe for pre-training steps (analyst)
     data_dir: str = "historical_data"
     start_date: Optional[str] = None
     end_date: Optional[str] = None
@@ -223,7 +223,7 @@ class PreTrainingSubPipeline:
         config = SubPipelineConfig(
             symbol=pipeline_state.get('symbol', 'ETHUSDT'),
             exchange=pipeline_state.get('exchange', 'binance'),
-            timeframe=pipeline_state.get('timeframe', '15m'),  # Default 15m for pre-training
+            timeframe=pipeline_state.get('timeframe', '1h'),  # Default 1h for pre-training (analyst)
             data_dir=pipeline_state.get('data_dir', 'historical_data'),
             mode=ExecutionMode.FULL,  # Default to full mode
             custom_params=pipeline_state.get('custom_params', {})

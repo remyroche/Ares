@@ -362,11 +362,11 @@ class GridBayesianOptimizer:
         
         # Adjust ranges based on model type
         if model_type == ModelType.ANALYST:
-            # Analyst: 15m base timeframe, 1-16 periods (15m-240m)
+            # Analyst: 1h base timeframe, 1-16 periods (1h-16h)
             search_space.horizon_immediate = {'type': 'int', 'low': 1, 'high': 16}
             search_space.horizon_short = {'type': 'int', 'low': 1, 'high': 16}
         elif model_type == ModelType.TACTICIAN:
-            # Tactician: 5m base timeframe, 1-16 periods (5m-80m)
+            # Tactician: 15m base timeframe, 1-16 periods (15m-240m)
             search_space.horizon_immediate = {'type': 'int', 'low': 1, 'high': 16}
             search_space.horizon_short = {'type': 'int', 'low': 1, 'high': 16}
         else:  # BOTH

@@ -55,6 +55,7 @@ from ..end_to_end_roadmap import (
 
 # Import utilities
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error
+from src.training.steps.pre_training.standardized_labeling_interface import assert_labels_sigma_scaled
 
 # Import logger
 try:
@@ -472,6 +473,7 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
             if standardized_output and 'labels' in standardized_output:
                 tprint_success("✅ Using standardized output format from multi_horizon_profit_labeler")
                 labeled_data = standardized_output['labels']
+                assert_labels_sigma_scaled(labeled_data)
                 
                 # Extract target columns and weights for enhanced integration
                 target_columns = standardized_output.get('target_columns', [])
@@ -517,8 +519,9 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
                 if artifacts and 'multi_horizon_labeling_result' in artifacts:
                     multi_horizon_result = artifacts['multi_horizon_labeling_result']
                 
-                if multi_horizon_result and 'labeled_data' in multi_horizon_result:
-                    labeled_data = multi_horizon_result['labeled_data']
+            if multi_horizon_result and 'labeled_data' in multi_horizon_result:
+                labeled_data = multi_horizon_result['labeled_data']
+                assert_labels_sigma_scaled(labeled_data)
                     
                     # Extract additional outputs from multi_horizon_profit_labeler
                     confidence_scores = multi_horizon_result.get('confidence_scores', None)

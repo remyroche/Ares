@@ -1150,11 +1150,11 @@ class MarketAnalysisSubPipeline:
             
             # Convert config to component config
             component_config = self._convert_to_component_config(config)
-            # Enforce 15m timeframe for Regime components only (log warning if overriding)
+            # Enforce 4h timeframe for Regime components only (log warning if overriding)
             if sub_pipeline_name in ('nas_tas_models_training', 'nas_tas_ensemble_training', 'regime_models_training'):
-                if component_config.timeframe != '15m':
-                    self.logger.warning(f"⚠️ {sub_pipeline_name}: timeframe {component_config.timeframe} supplied; overriding to 15m")
-                component_config.timeframe = '15m'
+                if component_config.timeframe != '4h':
+                    self.logger.warning(f"⚠️ {sub_pipeline_name}: timeframe {component_config.timeframe} supplied; overriding to 4h")
+                component_config.timeframe = '4h'
 
             # Enforce 1m timeframe for regime_data_splitting
             if sub_pipeline_name == 'regime_data_splitting':
@@ -1420,13 +1420,13 @@ class MarketAnalysisSubPipeline:
             try:
                 progress_info = f"({i+1-start_index}/{len(execution_sequence)-start_index})"
                 self.logger.info(f'🔄 Executing {pipeline_name} {progress_info} [Group: {current_group}]')
-                # Ensure 15m timeframe at dispatch time for Regime components only (log warning if overriding)
+                # Ensure 4h timeframe at dispatch time for Regime components only (log warning if overriding)
                 if pipeline_name in ('nas_tas_models_training', 'nas_tas_ensemble_training'):
                     # Avoid mutating the shared config; create a scoped copy for this call
                     from dataclasses import replace as _dc_replace
-                    scoped_config = _dc_replace(config, timeframe='15m')
-                    if getattr(config, 'timeframe', None) != '15m':
-                        self.logger.warning(f"⚠️ {pipeline_name}: timeframe {config.timeframe} supplied; overriding to 15m for this step only")
+                    scoped_config = _dc_replace(config, timeframe='4h')
+                    if getattr(config, 'timeframe', None) != '4h':
+                        self.logger.warning(f"⚠️ {pipeline_name}: timeframe {config.timeframe} supplied; overriding to 4h for this step only")
                     result = await self.execute_sub_pipeline(pipeline_name, scoped_config)
                 else:
                     result = await self.execute_sub_pipeline(pipeline_name, config)

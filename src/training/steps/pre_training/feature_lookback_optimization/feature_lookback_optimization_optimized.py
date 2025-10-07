@@ -58,9 +58,9 @@ from ...market_analysis.components.base_component import (
 class OptimizedFeatureLookbackConfig:
     """Optimized configuration for feature lookback optimization."""
 
-    # Timeframe settings - 5m by default as requested
-    default_timeframe: str = "5m"
-    base_period_minutes: float = 5.0
+    # Timeframe settings - 15m by default for tactician
+    default_timeframe: str = "15m"  # Updated to 15m for tactician
+    base_period_minutes: float = 15.0  # Updated to 15 minutes for 15m timeframe
 
     # Lookback optimization settings
     min_lookback: int = 5

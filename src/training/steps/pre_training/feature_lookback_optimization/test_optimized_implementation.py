@@ -219,9 +219,9 @@ async def test_optimized_implementation():
         tprint_info(f"   → Excluded categories: {[cat.value for cat in config.excluded_categories]}")
         tprint_info(f"   → Excluded features: {config.excluded_features}")
         
-        # Verify 5m timeframe is default
-        assert config.default_timeframe == "5m", f"Expected 5m timeframe, got {config.default_timeframe}"
-        assert config.base_period_minutes == 5.0, f"Expected 5.0 minutes, got {config.base_period_minutes}"
+        # Verify 15m timeframe is default
+        assert config.default_timeframe == "15m", f"Expected 15m timeframe, got {config.default_timeframe}"
+        assert config.base_period_minutes == 15.0, f"Expected 15.0 minutes, got {config.base_period_minutes}"
         tprint_success("✅ Configuration validation passed")
         
         # Step 5: Test eligible features

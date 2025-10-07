@@ -663,11 +663,11 @@ class TacticianModelsTrainingStep:
                 try:
                     unified_config = config.get_unified_config()
                     if hasattr(unified_config, 'timeframe'):
-                        unified_config.timeframe = '5m'
-                        tprint_debug(f"✅ Set NAS/TAS timeframe to 5m")
+                        unified_config.timeframe = '15m'  # Updated to 15m timeframe
+                        tprint_debug(f"✅ Set NAS/TAS timeframe to 15m")
                     if hasattr(unified_config, 'data') and hasattr(unified_config.data, 'timeframe'):
-                        unified_config.data.timeframe = '5m'
-                        tprint_debug(f"✅ Set NAS/TAS data timeframe to 5m")
+                        unified_config.data.timeframe = '15m'  # Updated to 15m timeframe
+                        tprint_debug(f"✅ Set NAS/TAS data timeframe to 15m")
                     if hasattr(unified_config, 'enable_feature_engineering'):
                         unified_config.enable_feature_engineering = False
                     if hasattr(unified_config, 'enable_data_preprocessing'):
@@ -1292,7 +1292,7 @@ class TacticianModelsTrainingStep:
                 # Extract metadata from kwargs or use defaults
                 symbol = kwargs.get('symbol', 'BTCUSDT')
                 exchange = kwargs.get('exchange', 'binance')
-                timeframe = kwargs.get('timeframe', '5m')
+                timeframe = kwargs.get('timeframe', '15m')  # Updated to 15m timeframe
 
                 tprint_info(f"🔍 Loading features from final feature selection for {symbol} {exchange} {timeframe}")
 

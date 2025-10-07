@@ -625,7 +625,7 @@ class FinalFeatureSelectionStep:
 # Convenience function for pipeline integration
 async def run_final_feature_selection_step(symbol: str,
                                          exchange: str,
-                                         timeframe: str = '15m',
+                                         timeframe: str = '1h',  # Updated to 1h for analyst
                                          data_dir: str = 'historical_data',
                                          config: Optional[Dict[str, Any]] = None) -> bool:
     """Run the final feature selection step."""

@@ -31,12 +31,21 @@ from src.utils.logger import get_logger, log_error, log_warning, log_info
 from src.feature_generation.core.feature_bank import get_global_feature_bank, FeatureCategory
 from src.feature_generation.core.feature_generator import FeatureGenerator
 
-# Import profit labeling components for alignment
+# Import profit labeling components for comprehensive alignment
 from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler import (
-    VolatilityAwareMultiHorizonLabeler, VolatilityAwareConfig
+    VolatilityAwareMultiHorizonLabeler, VolatilityAwareConfig, LabelQualityScore, LabelingResult
 )
 from src.training.steps.pre_training.profit_labeling.multi_target_scheme import (
-    MultiTargetScheme, MultiTargetConfig, TargetBand
+    MultiTargetScheme, MultiTargetConfig, TargetBand, TargetSelectionResult
+)
+from src.training.steps.pre_training.profit_labeling.quality_scoring import (
+    LabelQualityScorer, QualityScoringConfig, QualityMetrics, QualityMetric
+)
+from src.training.steps.pre_training.profit_labeling.noise_gating import (
+    NoiseGatingFilter, NoiseGatingConfig, EligibilityResult
+)
+from src.training.steps.pre_training.profit_labeling.volatility_modeling import (
+    VolatilityModeler, VolatilityConfig, VolatilityResult
 )
 
 # Import hardware optimization decorator
@@ -119,9 +128,27 @@ class OptimizedFeatureLookbackConfig:
     high_band: Tuple[float, float] = (1.3, 2.0)   # k_h range
 
     # Optimization settings
-    optimization_metric: str = "information_coefficient"
+    optimization_metric: str = "lqs_combined"  # Use LQS instead of just IC
     cv_folds: int = 5
     max_optimization_time: int = 300  # seconds
+    
+    # Profit labeling quality integration
+    enable_quality_scoring: bool = True
+    quality_scoring_config: Optional[QualityScoringConfig] = None
+    min_lqs_threshold: float = 0.3
+    min_auc_threshold: float = 0.55
+    max_auc_std_threshold: float = 0.03
+    min_psi_threshold: float = 0.1
+    max_flip_rate_threshold: float = 0.15
+    min_balance_threshold: float = 0.35
+    max_balance_threshold: float = 0.65
+    max_correlation_threshold: float = 0.4
+    
+    # Multi-objective optimization
+    enable_multi_objective: bool = True
+    ic_weight: float = 0.4
+    lqs_weight: float = 0.4
+    stability_weight: float = 0.2
 
     # Output settings
     save_results: bool = True
@@ -609,6 +636,31 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
         except Exception as e:
             tprint(f"⚠️ Failed to initialize multi-target scheme: {e}")
             self.multi_target_scheme = None
+
+        # Initialize quality scorer for profit labeling framework integration
+        try:
+            quality_config = self.config.quality_scoring_config or self._create_quality_scoring_config()
+            self.quality_scorer = LabelQualityScorer(quality_config)
+            tprint("✅ Quality scorer initialized for profit labeling framework integration")
+        except Exception as e:
+            tprint(f"⚠️ Failed to initialize quality scorer: {e}")
+            self.quality_scorer = None
+
+        # Initialize noise gating filter for data quality
+        try:
+            self.noise_gating_filter = NoiseGatingFilter(self._create_noise_gating_config())
+            tprint("✅ Noise gating filter initialized for data quality")
+        except Exception as e:
+            tprint(f"⚠️ Failed to initialize noise gating filter: {e}")
+            self.noise_gating_filter = None
+
+        # Initialize volatility modeler for enhanced volatility modeling
+        try:
+            self.volatility_modeler = VolatilityModeler(self._create_volatility_modeling_config())
+            tprint("✅ Volatility modeler initialized for enhanced volatility modeling")
+        except Exception as e:
+            tprint(f"⚠️ Failed to initialize volatility modeler: {e}")
+            self.volatility_modeler = None
 
         # Cache for target results to avoid recomputation
         self._last_target_result = None
@@ -1193,6 +1245,43 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             optimization_metric='lqs'
         )
 
+    def _create_quality_scoring_config(self) -> QualityScoringConfig:
+        """Create quality scoring configuration for profit labeling framework integration."""
+        return QualityScoringConfig(
+            baseline_models=['logistic', 'random_forest'],
+            test_size=0.2,
+            n_splits=self.config.cv_folds,
+            random_state=42,
+            min_lqs_score=self.config.min_lqs_threshold,
+            min_auc_threshold=self.config.min_auc_threshold,
+            max_auc_std_threshold=self.config.max_auc_std_threshold,
+            min_psi_threshold=self.config.min_psi_threshold,
+            max_flip_rate_threshold=self.config.max_flip_rate_threshold,
+            min_balance_threshold=self.config.min_balance_threshold,
+            max_balance_threshold=self.config.max_balance_threshold,
+            max_correlation_threshold=self.config.max_correlation_threshold
+        )
+
+    def _create_noise_gating_config(self) -> NoiseGatingConfig:
+        """Create noise gating configuration for data quality filtering."""
+        return NoiseGatingConfig(
+            min_volume_threshold=1000,
+            max_spread_ratio=0.01,
+            min_tick_count=10,
+            enable_volatility_filtering=True,
+            volatility_threshold_percentile=5.0
+        )
+
+    def _create_volatility_modeling_config(self) -> VolatilityConfig:
+        """Create volatility modeling configuration for enhanced volatility estimation."""
+        return VolatilityConfig(
+            method='garch',
+            window_size=252,
+            min_periods=50,
+            enable_regime_detection=True,
+            regime_threshold=0.1
+        )
+
     def _should_exclude_feature(self, feature_name: str, category: FeatureCategory) -> bool:
         """Check if feature should be excluded from optimization."""
         # Check category exclusions (hardcoded for now since config doesn't have these fields)
@@ -1531,7 +1620,7 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                                               confidence_scores: Optional[np.ndarray] = None,
                                               eligibility_mask: Optional[np.ndarray] = None,
                                               quality_scores: Optional[Dict[str, Any]] = None) -> float:
-        """Calculate score for feature-target alignment using actual FPT labels with confidence weighting and quality assessment."""
+        """Calculate score for feature-target alignment using LQS from profit labeling framework."""
         try:
             # Apply eligibility mask first to filter out unreliable data points
             if eligibility_mask is not None:
@@ -1545,8 +1634,6 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 # Apply confidence weighting if available
                 if confidence_scores is not None:
                     confidence_filtered = confidence_scores[valid_mask]
-                    # Weight the correlation by confidence scores
-                    # Higher confidence points get more weight in the correlation calculation
                     weights = confidence_filtered / np.sum(confidence_filtered)
                 else:
                     weights = None
@@ -1558,11 +1645,32 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             if len(feature_filtered) < 10:
                 return 0.0
 
-            # For ternary labels (-1, 0, 1), use weighted rank correlation
+            # Use LQS scoring if quality scorer is available and enabled
+            if self.config.enable_quality_scoring and self.quality_scorer is not None:
+                try:
+                    # Convert to pandas Series for quality scorer
+                    feature_series = pd.Series(feature_filtered, name='feature')
+                    target_series = pd.Series(target_filtered, name='target')
+                    
+                    # Calculate LQS score using profit labeling framework
+                    lqs_result = self.quality_scorer.calculate_lqs_score(
+                        feature_series, target_series, 
+                        confidence_scores=pd.Series(weights) if weights is not None else None
+                    )
+                    
+                    if lqs_result and hasattr(lqs_result, 'overall_quality'):
+                        score = lqs_result.overall_quality
+                        tprint_info(f"   → LQS score: {score:.4f} (predictability: {lqs_result.predictability:.4f}, stability: {lqs_result.stability:.4f})")
+                        return score
+                    else:
+                        tprint_warning("   → LQS calculation failed, falling back to correlation")
+                except Exception as e:
+                    tprint_warning(f"   → LQS calculation error: {e}, falling back to correlation")
+
+            # Fallback to correlation-based scoring if LQS is not available
             if weights is not None:
-                # Calculate weighted Spearman correlation
                 correlation = self._weighted_spearmanr(feature_filtered, target_filtered, weights)
-                p_value = 0.01  # Simplified - in practice would need proper weighted p-value calculation
+                p_value = 0.01
             else:
                 correlation, p_value = self._safe_spearmanr(feature_filtered, target_filtered)
 
@@ -1570,7 +1678,6 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 return 0.0
 
             # Convert to positive score (higher absolute correlation is better)
-            # Weight by confidence if available, otherwise use standard weighting
             if confidence_scores is not None:
                 avg_confidence = np.mean(confidence_scores[valid_mask]) if eligibility_mask is not None else np.mean(confidence_scores)
                 score = abs(correlation) * (1 - p_value) * avg_confidence
@@ -1580,7 +1687,6 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
             # Apply quality score adjustment if available
             quality_adjustment = 1.0
             if quality_scores:
-                # Extract overall quality from the first available target
                 for target_name, quality_data in quality_scores.items():
                     if hasattr(quality_data, 'overall_quality'):
                         quality_adjustment = quality_data.overall_quality
@@ -1589,15 +1695,96 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                         quality_adjustment = quality_data['overall_quality']
                         break
                 
-                # Apply quality adjustment (higher quality = higher score)
                 score = score * quality_adjustment
                 tprint_info(f"   → Quality adjustment applied: {quality_adjustment:.4f}")
 
-            tprint_info(f"   → Aligned score: correlation={correlation:.4f}, p-value={p_value:.4f}, confidence={np.mean(confidence_scores) if confidence_scores is not None else 'N/A':.4f}, quality={quality_adjustment:.4f}, score={score:.4f}")
+            tprint_info(f"   → Correlation score: {correlation:.4f}, p-value: {p_value:.4f}, confidence: {np.mean(confidence_scores) if confidence_scores is not None else 'N/A':.4f}, quality: {quality_adjustment:.4f}, final: {score:.4f}")
             return score
 
         except Exception as e:
             tprint_warning(f"   → Error calculating aligned score: {e}")
+            return 0.0
+
+    def _calculate_multi_objective_score(self, feature_values: np.ndarray,
+                                       target_values: np.ndarray, lookback: int,
+                                       confidence_scores: Optional[np.ndarray] = None,
+                                       eligibility_mask: Optional[np.ndarray] = None,
+                                       quality_scores: Optional[Dict[str, Any]] = None) -> float:
+        """Calculate multi-objective score combining IC, LQS, and stability."""
+        try:
+            # Apply eligibility mask first
+            if eligibility_mask is not None:
+                valid_mask = eligibility_mask.astype(bool)
+                if np.sum(valid_mask) < 10:
+                    return 0.0
+                feature_filtered = feature_values[valid_mask]
+                target_filtered = target_values[valid_mask]
+                if confidence_scores is not None:
+                    confidence_filtered = confidence_scores[valid_mask]
+                else:
+                    confidence_filtered = None
+            else:
+                feature_filtered = feature_values
+                target_filtered = target_values
+                confidence_filtered = confidence_scores
+
+            if len(feature_filtered) < 10:
+                return 0.0
+
+            # Calculate IC score (correlation-based)
+            ic_score = 0.0
+            if confidence_filtered is not None:
+                weights = confidence_filtered / np.sum(confidence_filtered)
+                ic_score = abs(self._weighted_spearmanr(feature_filtered, target_filtered, weights))
+            else:
+                correlation, _ = self._safe_spearmanr(feature_filtered, target_filtered)
+                ic_score = abs(correlation) if not np.isnan(correlation) else 0.0
+
+            # Calculate LQS score if quality scorer is available
+            lqs_score = 0.0
+            if self.config.enable_quality_scoring and self.quality_scorer is not None:
+                try:
+                    feature_series = pd.Series(feature_filtered, name='feature')
+                    target_series = pd.Series(target_filtered, name='target')
+                    lqs_result = self.quality_scorer.calculate_lqs_score(
+                        feature_series, target_series,
+                        confidence_scores=pd.Series(weights) if confidence_filtered is not None else None
+                    )
+                    if lqs_result and hasattr(lqs_result, 'overall_quality'):
+                        lqs_score = lqs_result.overall_quality
+                except Exception as e:
+                    tprint_warning(f"   → LQS calculation error: {e}")
+
+            # Calculate stability score (simplified - could be enhanced with walk-forward analysis)
+            stability_score = 1.0  # Default stability
+            if len(feature_filtered) > 50:  # Need sufficient data for stability calculation
+                # Calculate rolling correlation stability
+                window_size = min(20, len(feature_filtered) // 3)
+                rolling_corrs = []
+                for i in range(window_size, len(feature_filtered)):
+                    window_feature = feature_filtered[i-window_size:i]
+                    window_target = target_filtered[i-window_size:i]
+                    if len(window_feature) > 5:
+                        corr, _ = self._safe_spearmanr(window_feature, window_target)
+                        if not np.isnan(corr):
+                            rolling_corrs.append(abs(corr))
+                
+                if len(rolling_corrs) > 1:
+                    # Stability is inverse of correlation variance
+                    stability_score = 1.0 / (1.0 + np.var(rolling_corrs))
+
+            # Combine scores using weighted sum
+            combined_score = (
+                self.config.ic_weight * ic_score +
+                self.config.lqs_weight * lqs_score +
+                self.config.stability_weight * stability_score
+            )
+
+            tprint_info(f"   → Multi-objective: IC={ic_score:.4f}, LQS={lqs_score:.4f}, Stability={stability_score:.4f}, Combined={combined_score:.4f}")
+            return combined_score
+
+        except Exception as e:
+            tprint_warning(f"   → Error calculating multi-objective score: {e}")
             return 0.0
 
     def _weighted_spearmanr(self, x: np.ndarray, y: np.ndarray, weights: np.ndarray) -> float:
@@ -1705,15 +1892,26 @@ class FeatureLookbackOptimizationComponent(BaseMarketAnalysisComponent):
                 if pipeline_state:
                     quality_scores_data = self._get_precomputed_quality_scores(pipeline_state)
 
-                # Calculate score using the actual FPT-based labels with confidence weighting and quality assessment
-                score = self._calculate_feature_target_score_aligned(
-                    feature_aligned.values,
-                    returns_aligned.values,
-                    lookback,
-                    confidence_scores=confidence_aligned.values if confidence_aligned is not None else None,
-                    eligibility_mask=eligibility_aligned.values if eligibility_aligned is not None else None,
-                    quality_scores=quality_scores_data
-                )
+                # Calculate score using multi-objective optimization if enabled
+                if self.config.enable_multi_objective:
+                    score = self._calculate_multi_objective_score(
+                        feature_aligned.values,
+                        returns_aligned.values,
+                        lookback,
+                        confidence_scores=confidence_aligned.values if confidence_aligned is not None else None,
+                        eligibility_mask=eligibility_aligned.values if eligibility_aligned is not None else None,
+                        quality_scores=quality_scores_data
+                    )
+                else:
+                    # Use single objective (LQS or IC)
+                    score = self._calculate_feature_target_score_aligned(
+                        feature_aligned.values,
+                        returns_aligned.values,
+                        lookback,
+                        confidence_scores=confidence_aligned.values if confidence_aligned is not None else None,
+                        eligibility_mask=eligibility_aligned.values if eligibility_aligned is not None else None,
+                        quality_scores=quality_scores_data
+                    )
 
                 # Log additional information about confidence, eligibility, and quality
                 if confidence_aligned is not None:

@@ -52,6 +52,8 @@ class ModelSelectionResult:
     selection_metadata: Dict[str, Any] = field(default_factory=dict)
     execution_time: float = 0.0
     error_message: Optional[str] = None
+    confirmation_status: str = "single_timeframe"
+    confirmation_details: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -285,7 +287,8 @@ class ModelSelectorService:
                     'model_types': requested_model_types,
                     'timestamp': datetime.now().isoformat()
                 },
-                execution_time=execution_time
+                execution_time=execution_time,
+                confirmation_status="single_timeframe"
             )
             
             # Step 4: Track performance
@@ -305,7 +308,9 @@ class ModelSelectorService:
                 regime_id=0,
                 confidence_score=0.0,
                 execution_time=execution_time,
-                error_message=str(e)
+                error_message=str(e),
+                confirmation_status="failed",
+                confirmation_details={'exception': str(e)}
             )
     
     def _detect_current_regime(self, market_data: pd.DataFrame) -> HybridRegimeResult:

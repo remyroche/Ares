@@ -516,9 +516,15 @@ class SignalGenerationPipeline:
                     ensemble_weights={'analyst': {'default': 1.0}, 'tactician': {'default': 1.0}},
                     regime_id=0,
                     confidence_score=0.5,
-                    selection_metadata={'fallback': True}
+                    selection_metadata={
+                        'fallback': True,
+                        'fallback_reason': 'model_selector_unavailable',
+                        'combined_timestamp': timestamp.isoformat()
+                    },
+                    confirmation_status='unavailable',
+                    confirmation_details={'reason': 'model_selector_service_missing'}
                 )
-            
+
             # Select models for both timeframes
             analyst_models = self.model_selector_service.select_models_for_trading(
                 market_data=market_data,
@@ -533,8 +539,64 @@ class SignalGenerationPipeline:
                 symbol=symbol,
                 timeframe='5m'
             )
-            
+
+            cross_config: Dict[str, Any] = {}
+            raw_cross_config = getattr(self.config, 'cross_timeframe_confirmation', None)
+            if isinstance(raw_cross_config, dict):
+                cross_config = raw_cross_config.copy()
+            elif hasattr(self.config, 'custom_params') and isinstance(self.config.custom_params, dict):
+                candidate = self.config.custom_params.get('cross_timeframe_confirmation', {})
+                if isinstance(candidate, dict):
+                    cross_config = candidate.copy()
+
+            analyst_selected_models = {
+                k: v for k, v in (analyst_models.selected_models or {}).items() if v
+            }
+            tactician_selected_models = {
+                k: v for k, v in (tactician_models.selected_models or {}).items() if v
+            }
+
+            analyst_values = set(analyst_selected_models.values())
+            tactician_values = set(tactician_selected_models.values())
+            shared_models = sorted(analyst_values.intersection(tactician_values))
+
+            analyst_regime = analyst_models.regime_id if analyst_models.regime_id is not None else 0
+            tactician_regime = tactician_models.regime_id if tactician_models.regime_id is not None else 0
+
+            regime_difference = abs(analyst_regime - tactician_regime)
+            confidence_delta = abs(analyst_models.confidence_score - tactician_models.confidence_score)
+
+            max_regime_difference = cross_config.get('max_regime_difference', 0)
+            max_confidence_delta = cross_config.get('max_confidence_delta', 0.2)
+
+            confirmation_details: Dict[str, Any] = {
+                'enabled': bool(cross_config.get('enabled', False)),
+                'analyst': {
+                    'regime_id': analyst_regime,
+                    'confidence_score': analyst_models.confidence_score,
+                    'selected_models': analyst_selected_models,
+                    'error': analyst_models.error_message,
+                },
+                'tactician': {
+                    'regime_id': tactician_regime,
+                    'confidence_score': tactician_models.confidence_score,
+                    'selected_models': tactician_selected_models,
+                    'error': tactician_models.error_message,
+                },
+                'shared_models': shared_models,
+                'regime_difference': regime_difference,
+                'regime_match': analyst_regime == tactician_regime,
+                'confidence_delta': confidence_delta,
+                'thresholds': {
+                    'max_regime_difference': max_regime_difference,
+                    'max_confidence_delta': max_confidence_delta,
+                },
+                'disagreement_reasons': [],
+                'confirmation_passed': True,
+            }
+
             # Combine results
+            base_confidence = (analyst_models.confidence_score + tactician_models.confidence_score) / 2
             combined_result = ModelSelectionResult(
                 selected_models={
                     'analyst': analyst_models.selected_models.get('random_forest', 'default'),
@@ -545,17 +607,89 @@ class SignalGenerationPipeline:
                     'tactician': tactician_models.ensemble_weights.get('random_forest', {'default': 1.0})
                 },
                 regime_id=analyst_models.regime_id,
-                confidence_score=(analyst_models.confidence_score + tactician_models.confidence_score) / 2,
+                confidence_score=base_confidence,
                 selection_metadata={
                     'analyst_selection': analyst_models.selection_metadata,
                     'tactician_selection': tactician_models.selection_metadata,
                     'combined_timestamp': timestamp.isoformat()
-                }
+                },
+                confirmation_status='disabled' if not confirmation_details['enabled'] else 'confirmed',
+                confirmation_details={}
             )
-            
-            self.logger.info(f"✅ Model selection completed: {combined_result.selected_models}")
+
+            if confirmation_details['enabled']:
+                disagreement_reasons: List[str] = []
+                if regime_difference > max_regime_difference:
+                    disagreement_reasons.append('regime_mismatch')
+                if confidence_delta > max_confidence_delta:
+                    disagreement_reasons.append('confidence_delta_exceeded')
+
+                confirmation_details['disagreement_reasons'] = disagreement_reasons
+                confirmation_details['confirmation_passed'] = len(disagreement_reasons) == 0
+
+                if disagreement_reasons:
+                    confirmation_details['action'] = 'reject' if cross_config.get('reject_on_disagreement', False) else 'downgrade'
+                    if cross_config.get('reject_on_disagreement', False):
+                        rejection_confidence = cross_config.get('rejection_confidence', 0.0)
+                        confirmation_details['rejection_confidence'] = rejection_confidence
+                        confirmation_details['confirmation_passed'] = False
+                        combined_metadata = {
+                            'fallback': True,
+                            'fallback_reason': 'cross_timeframe_disagreement',
+                            'analyst_selection': analyst_models.selection_metadata,
+                            'tactician_selection': tactician_models.selection_metadata,
+                            'combined_timestamp': timestamp.isoformat(),
+                            'original_models': {
+                                'analyst': analyst_models.selected_models,
+                                'tactician': tactician_models.selected_models
+                            },
+                            'cross_timeframe_confirmation': confirmation_details
+                        }
+                        self.logger.warning(
+                            "⚠️ Cross-timeframe confirmation rejected due to %s",
+                            ', '.join(disagreement_reasons)
+                        )
+                        return ModelSelectionResult(
+                            selected_models={'analyst': 'default', 'tactician': 'default'},
+                            ensemble_weights={'analyst': {'default': 1.0}, 'tactician': {'default': 1.0}},
+                            regime_id=analyst_models.regime_id,
+                            confidence_score=rejection_confidence,
+                            selection_metadata=combined_metadata,
+                            confirmation_status='rejected',
+                            confirmation_details=confirmation_details
+                        )
+
+                    downgrade_factor = max(0.0, float(cross_config.get('downgrade_confidence_factor', 0.5)))
+                    original_confidence = combined_result.confidence_score
+                    downgraded_confidence = max(0.0, original_confidence * downgrade_factor)
+                    confirmation_details['applied_downgrade_factor'] = downgrade_factor
+                    confirmation_details['original_confidence'] = original_confidence
+                    combined_result.selection_metadata['original_confidence'] = original_confidence
+                    combined_result.confidence_score = downgraded_confidence
+                    combined_result.confirmation_status = 'downgraded'
+                    confirmation_details['confirmation_passed'] = False
+                    self.logger.warning(
+                        "⚠️ Cross-timeframe disagreement (%s). Confidence downgraded by factor %.2f",
+                        ', '.join(disagreement_reasons),
+                        downgrade_factor
+                    )
+                else:
+                    confirmation_details['action'] = 'confirmed'
+                    combined_result.confirmation_status = 'confirmed'
+            else:
+                confirmation_details['action'] = 'disabled'
+                confirmation_details['confirmation_passed'] = True
+
+            combined_result.confirmation_details = confirmation_details
+            combined_result.selection_metadata['cross_timeframe_confirmation'] = confirmation_details
+
+            self.logger.info(
+                "✅ Model selection completed (%s): %s",
+                combined_result.confirmation_status,
+                combined_result.selected_models
+            )
             return combined_result
-            
+
         except Exception as e:
             self.logger.error(f"❌ Model selection failed: {e}")
             # Return fallback result
@@ -564,7 +698,13 @@ class SignalGenerationPipeline:
                 ensemble_weights={'analyst': {'default': 1.0}, 'tactician': {'default': 1.0}},
                 regime_id=0,
                 confidence_score=0.5,
-                selection_metadata={'error': str(e), 'fallback': True}
+                selection_metadata={
+                    'error': str(e),
+                    'fallback': True,
+                    'fallback_reason': 'model_selection_exception'
+                },
+                confirmation_status='failed',
+                confirmation_details={'exception': str(e)}
             )
     
     async def _run_analyst_base_models(

@@ -762,9 +762,30 @@ class MultiHorizonProfitLabeler:
             target_columns = self._extract_target_columns_for_optimization(mapped_labels)
             tprint_info(f"🎯 Identified target columns for feature optimization: {target_columns}")
 
+            multi_target_result = getattr(balanced_labeling_result, 'multi_target_result', None)
+            target_parameters = getattr(multi_target_result, 'target_parameters', {}) if multi_target_result else {}
+            target_shifts = getattr(balanced_labeling_result, 'target_shifts', {}) or (
+                getattr(multi_target_result, 'target_shifts', {}) if multi_target_result else {}
+            )
+
+            feature_frames: Dict[str, pd.DataFrame] = {}
+            feature_metadata: Dict[str, Dict[str, int]] = {}
+
             # Validate that we have the required data for downstream components
             tprint_info("🔍 Validating data structure for downstream compatibility...")
-            validation_results = self._validate_downstream_compatibility(mapped_labels, horizon_weights, target_columns)
+            if isinstance(confidence_scores_df, pd.DataFrame) and not confidence_scores_df.empty:
+                feature_frames['confidence_scores'] = confidence_scores_df.shift(1)
+                feature_metadata['confidence_scores'] = {'max_lag': 1}
+
+            validation_results = self._validate_downstream_compatibility(
+                mapped_labels,
+                horizon_weights,
+                target_columns,
+                target_parameters=target_parameters,
+                target_shifts=target_shifts,
+                feature_frames=feature_frames if feature_frames else None,
+                feature_metadata=feature_metadata if feature_metadata else None,
+            )
             if not validation_results['is_valid']:
                 tprint_warning(f"⚠️ Downstream compatibility issues detected: {validation_results['issues']}")
             else:
@@ -793,6 +814,8 @@ class MultiHorizonProfitLabeler:
                     'quality_scores': balanced_labeling_result.quality_scores,
                     'horizon_weights': horizon_weights,  # New: weights for different horizons
                     'target_columns': target_columns,    # New: target columns for optimization
+                    'target_parameters': target_parameters,
+                    'target_shifts': target_shifts,
                     'normalization_factors': normalization_factors,
                     'method': 'multi_horizon_profit_labeling',
                     'balancing_applied': self.config.enable_label_balancing or self.config.enable_sample_weighting,
@@ -811,7 +834,9 @@ class MultiHorizonProfitLabeler:
                         'target_distribution': self._calculate_target_distribution(mapped_labels),
                         'quality_summary': self._summarize_quality_scores(balanced_labeling_result.quality_scores),
                         'downstream_ready': validation_results['is_valid'],
-                        'forward_return_smoothing': smoothing_metadata
+                        'forward_return_smoothing': smoothing_metadata,
+                        'target_shifts': target_shifts,
+                        'min_target_shift': min(target_shifts.values()) if target_shifts else None,
                     },
                     'market_data': market_data,
                     'market_data_batches': tuple(market_data_batches),
@@ -958,7 +983,17 @@ class MultiHorizonProfitLabeler:
             tprint_error("❌ Error artifacts created for downstream components")
             return error_artifacts
 
-    def _validate_downstream_compatibility(self, labels_df: pd.DataFrame, horizon_weights: Dict[str, float], target_columns: List[str]) -> Dict[str, Any]:
+    def _validate_downstream_compatibility(
+        self,
+        labels_df: pd.DataFrame,
+        horizon_weights: Dict[str, float],
+        target_columns: List[str],
+        *,
+        target_parameters: Optional[Dict[str, Dict[str, Any]]] = None,
+        target_shifts: Optional[Dict[str, int]] = None,
+        feature_frames: Optional[Dict[str, pd.DataFrame]] = None,
+        feature_metadata: Optional[Dict[str, Dict[str, int]]] = None,
+    ) -> Dict[str, Any]:
         """
         Validate that the labeling results are compatible with downstream components.
         
@@ -1011,7 +1046,59 @@ class MultiHorizonProfitLabeler:
                 is_valid = False
             else:
                 tprint_info(f"✅ Horizon weights available: {horizon_weights}")
-            
+
+            min_required_shift = 1
+            recorded_shifts: List[int] = []
+            if target_shifts:
+                recorded_shifts = [int(shift) for shift in target_shifts.values() if shift is not None]
+            elif target_parameters:
+                recorded_shifts = [
+                    int(params.get('target_shift', 1))
+                    for params in target_parameters.values()
+                    if isinstance(params, dict)
+                ]
+
+            if recorded_shifts:
+                min_required_shift = max(1, min(recorded_shifts))
+                if min_required_shift < 1:
+                    issues.append("Target metadata reports non-positive target_shift")
+                    is_valid = False
+                else:
+                    tprint_info(f"✅ Minimum target shift recorded: {min_required_shift}")
+            else:
+                tprint_warning("⚠️ Target shift metadata unavailable; assuming minimum shift of 1")
+
+            if feature_metadata:
+                for name, metadata in feature_metadata.items():
+                    reported_lag = int(metadata.get('max_lag', 0)) if metadata else 0
+                    if reported_lag < 1:
+                        issues.append(f"Feature '{name}' reports max_lag < 1")
+                        is_valid = False
+                    elif reported_lag < min_required_shift:
+                        issues.append(
+                            f"Feature '{name}' reports max_lag {reported_lag} < required shift {min_required_shift}"
+                        )
+                        is_valid = False
+                    else:
+                        tprint_info(
+                            f"✅ Feature '{name}' metadata passes lag check (max_lag={reported_lag})"
+                        )
+
+            if feature_frames:
+                for name, frame in feature_frames.items():
+                    if not isinstance(frame, pd.DataFrame) or frame.empty:
+                        continue
+                    leading_window = frame.iloc[:min_required_shift]
+                    if not leading_window.isna().all().all():
+                        issues.append(
+                            f"Feature frame '{name}' contains non-null values within the first {min_required_shift} rows"
+                        )
+                        is_valid = False
+                    else:
+                        tprint_info(
+                            f"✅ Feature frame '{name}' contains no contemporaneous values in the first {min_required_shift} rows"
+                        )
+
             # Check data quality
             if not labels_df.empty:
                 # Check for sufficient non-null values
@@ -1033,7 +1120,8 @@ class MultiHorizonProfitLabeler:
                 'labels_shape': labels_df.shape if not labels_df.empty else (0, 0),
                 'target_columns_count': len(target_columns),
                 'horizon_weights_count': len(horizon_weights),
-                'data_quality_score': 1.0 - (len(issues) / 10.0)  # Simple quality score
+                'data_quality_score': 1.0 - (len(issues) / 10.0),  # Simple quality score
+                'min_target_shift': min_required_shift,
             }
             
             if is_valid:
@@ -1155,6 +1243,10 @@ class MultiHorizonProfitLabeler:
             balanced_result.smoothing_settings = getattr(labeling_result, 'smoothing_settings', {})
             if not labeling_result.sigma_payoffs.empty:
                 balanced_result.sigma_payoffs = labeling_result.sigma_payoffs.reindex(y_balanced.index)
+
+            balanced_result.multi_target_result = getattr(labeling_result, 'multi_target_result', None)
+            balanced_result.target_shifts = getattr(labeling_result, 'target_shifts', {})
+            balanced_result.target_parameters = getattr(labeling_result, 'target_parameters', {})
 
             if balanced_result.normalization_factors:
                 normalization_factors = copy.deepcopy(balanced_result.normalization_factors)
@@ -2357,8 +2449,8 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                 artifact_base_name = 'market_analysis_multi_horizon_profit_labeler_outcome'
                 artifact_path, version = self.artifact_locator.resolve_artifact_path(
                     artifact_base_name,
-                    outcomes_dir = Path("outcomes")
-                outcomes_dir.mkdir(parents=True, exist_ok=True)
+                    outcomes_dir=outcomes_dir
+                )
 
                 save_report, artifact_save_skipped = _persist_labeling_outcome(
                     base_dir=Path(outcomes_dir),
@@ -2384,6 +2476,7 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                     logical_name=logical_name,
                     path=artifact_path,
                     version=version,
+                )
                 logical_name = (
                     f"market_analysis_multi_horizon_profit_labeler_outcome/"
                     f"{symbol.upper()}/{exchange.lower()}/{timeframe}"

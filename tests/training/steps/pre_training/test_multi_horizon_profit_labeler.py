@@ -373,3 +373,82 @@ def test_calculate_target_distribution_includes_numeric_columns():
     assert "non_numeric" not in distribution
     for metrics in (distribution["numeric_float"], distribution["numeric_int"]):
         assert set(metrics) >= {"mean", "std", "min", "max", "non_null_count", "class_balance"}
+
+def test_validate_downstream_compatibility_enforces_feature_lag() -> None:
+    labeler = MultiHorizonProfitLabeler(MultiHorizonConfig(min_data_points=10))
+    index = pd.date_range("2021-01-01", periods=5, freq="1h")
+    labels_df = pd.DataFrame(
+        {"y_target": np.array([-1.2, -0.6, 0.0, 0.6, 1.2], dtype=float)},
+        index=index,
+    )
+
+    horizon_weights = {"micro": 1.0}
+    target_columns = ["y_target"]
+    target_parameters = {"y_target": {"target_shift": 1}}
+    feature_frames = {
+        "features": pd.DataFrame({"feat": [np.nan, 0.1, 0.2, 0.3, 0.4]}, index=index)
+    }
+    feature_metadata = {"features": {"max_lag": 1}}
+
+    result = labeler._validate_downstream_compatibility(
+        labels_df,
+        horizon_weights,
+        target_columns,
+        target_parameters=target_parameters,
+        target_shifts={"y_target": 1},
+        feature_frames=feature_frames,
+        feature_metadata=feature_metadata,
+    )
+
+    assert result["is_valid"] is True
+    assert result["issues"] == []
+    assert result["min_target_shift"] == 1
+
+
+def test_validate_downstream_compatibility_flags_invalid_feature_lag() -> None:
+    labeler = MultiHorizonProfitLabeler(MultiHorizonConfig(min_data_points=10))
+    index = pd.date_range("2021-01-01", periods=4, freq="1h")
+    labels_df = pd.DataFrame(
+        {"y_target": np.array([-0.9, -0.3, 0.3, 0.9], dtype=float)},
+        index=index,
+    )
+
+    horizon_weights = {"micro": 1.0}
+    target_columns = ["y_target"]
+    target_parameters = {"y_target": {"target_shift": 1}}
+
+    bad_metadata = {"features": {"max_lag": 0}}
+    feature_frames = {
+        "features": pd.DataFrame({"feat": [np.nan, 0.1, 0.2, 0.3]}, index=index)
+    }
+
+    result = labeler._validate_downstream_compatibility(
+        labels_df,
+        horizon_weights,
+        target_columns,
+        target_parameters=target_parameters,
+        target_shifts={"y_target": 1},
+        feature_frames=feature_frames,
+        feature_metadata=bad_metadata,
+    )
+
+    assert result["is_valid"] is False
+    assert any("max_lag" in issue for issue in result["issues"])
+
+    non_lagged_frames = {
+        "features": pd.DataFrame({"feat": [0.0, 0.1, 0.2, 0.3]}, index=index)
+    }
+    valid_metadata = {"features": {"max_lag": 1}}
+
+    result_no_lag = labeler._validate_downstream_compatibility(
+        labels_df,
+        horizon_weights,
+        target_columns,
+        target_parameters=target_parameters,
+        target_shifts={"y_target": 1},
+        feature_frames=non_lagged_frames,
+        feature_metadata=valid_metadata,
+    )
+
+    assert result_no_lag["is_valid"] is False
+    assert any("non-null values" in issue for issue in result_no_lag["issues"])

@@ -1198,6 +1198,9 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             tprint(f"🔍 Optimizing {len(feature_columns)} features across long/short pipelines")
             feature_results = {}
 
+            # Reset lag metadata before running optimization
+            self.core_optimizer.feature_lag_metadata.clear()
+
             # Use differentiated long/short pipelines with separate optimization
             long_target_column = self._select_optimal_target_column(data, direction='long')
             short_target_column = self._select_optimal_target_column(data, direction='short')
@@ -1281,7 +1284,8 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             return {
                 'feature_results': feature_results,
                 'total_features': total_features,
-                'optimization_method': 'coarse_to_refine_directional'
+                'optimization_method': 'coarse_to_refine_directional',
+                'feature_lag_metadata': convert_int64_to_int(self.core_optimizer.feature_lag_metadata)
             }
 
         except Exception as e:

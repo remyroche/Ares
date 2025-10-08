@@ -42,7 +42,9 @@ class ComponentResult:
     success: bool
     artifacts: dict | None = None
     metadata: dict | None = None
-    error_message: str | None = None
+    metrics: dict | None = None
+    warnings: list | None = None
+    error: Exception | None = None
     execution_time: float = 0.0
 
     def __post_init__(self) -> None:
@@ -50,6 +52,12 @@ class ComponentResult:
             self.artifacts = {}
         if self.metadata is None:
             self.metadata = {}
+        if self.metrics is None:
+            self.metrics = {}
+        if self.warnings is None:
+            self.warnings = []
+        if (self.success and self.error is not None) or (not self.success and self.error is None):
+            raise ValueError("Invalid ComponentResult state for stub")
 
 
 base_component_module = types.ModuleType("base_component_stub")

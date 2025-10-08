@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: temporal-leakage-lint
+        name: Temporal leakage guard
+        entry: python -m src.training.steps.pre_training.validation.temporal_lint
+        language: system
+        types: [python]
+        pass_filenames: true

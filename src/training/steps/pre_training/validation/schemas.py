@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, Union
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -24,6 +24,25 @@ except Exception:  # pragma: no cover - guard against circular imports or absenc
 # ---------------------------------------------------------------------------
 # Schema definitions
 # ---------------------------------------------------------------------------
+try:
+    from statsmodels.stats.multitest import multipletests
+except ModuleNotFoundError:  # pragma: no cover - optional dependency for multiple testing adjustments
+    multipletests = None  # type: ignore[assignment]
+
+
+__all__ = [
+    "RAW_OHLCV_SCHEMA",
+    "LABELED_DATASET_SCHEMA",
+    "ENGINEERED_FEATURE_SCHEMA",
+    "SCHEMA_REGISTRY",
+    "SchemaValidationException",
+    "validate_raw_ohlcv",
+    "validate_labeled_dataset",
+    "validate_engineered_features",
+    "schema_metadata",
+    "HypothesisTracker",
+]
+
 
 RAW_OHLCV_SCHEMA = pa.DataFrameSchema(
     columns={
@@ -93,6 +112,95 @@ class SchemaValidationException(RuntimeError):
 
     def __post_init__(self) -> None:
         super().__init__(format_schema_error(self.schema_key, self.context, self.original_error))
+
+
+@dataclass
+class HypothesisTracker:
+    """Track outcomes for multiple hypothesis tests performed during validation.
+
+    Downstream selection and diagnostics steps should instantiate this helper at the
+    beginning of a batch of statistical tests and call :meth:`record` for each
+    hypothesis. The tracker aggregates counters, stores raw p-values, and exposes
+    helpers for common multiple-testing adjustments so diagnostics can be reported
+    alongside schema validation artifacts.
+    """
+
+    accepted: int = 0
+    rejected: int = 0
+    inconclusive: int = 0
+    pvalues: List[float] = field(default_factory=list)
+    metadata: List[Dict[str, Any]] = field(default_factory=list)
+
+    def record(
+        self,
+        *,
+        p_value: Optional[float],
+        rejected: bool,
+        metadata: Optional[Dict[str, Any]] = None,
+        inconclusive: bool = False,
+    ) -> None:
+        """Register a single hypothesis evaluation.
+
+        Args:
+            p_value: Raw p-value for the hypothesis; ``None`` when unavailable.
+            rejected: Whether the null hypothesis was rejected under the nominal
+                significance level before multiple-testing correction.
+            metadata: Optional contextual diagnostics (e.g., hypothesis labels or
+                summary statistics) that will be attached to exported artifacts.
+            inconclusive: Flag the test as inconclusive rather than accepted when
+                the null hypothesis cannot be resolved decisively.
+        """
+
+        if rejected:
+            self.rejected += 1
+        elif inconclusive:
+            self.inconclusive += 1
+        else:
+            self.accepted += 1
+
+        if p_value is not None:
+            self.pvalues.append(p_value)
+
+        if metadata is not None:
+            enriched_metadata = dict(metadata)
+        else:
+            enriched_metadata = {}
+        enriched_metadata.update({"rejected": rejected, "p_value": p_value, "inconclusive": inconclusive})
+        self.metadata.append(enriched_metadata)
+
+    @property
+    def total_hypotheses(self) -> int:
+        """Total number of hypotheses that have been logged."""
+
+        return self.accepted + self.rejected + self.inconclusive
+
+    def bonferroni_threshold(self, alpha: float) -> float:
+        """Return the Bonferroni-adjusted per-test significance threshold."""
+
+        total = max(self.total_hypotheses, 1)
+        return alpha / total
+
+    def bonferroni_reject(self, p_value: float, alpha: float) -> bool:
+        """Determine rejection under a Bonferroni-adjusted threshold."""
+
+        return p_value <= self.bonferroni_threshold(alpha)
+
+    def fdr_adjusted_pvalues(self, *, alpha: float = 0.05, method: str = "fdr_bh") -> List[float]:
+        """Compute FDR-adjusted p-values for recorded hypotheses.
+
+        Returns an empty list if no p-values have been recorded. Requires
+        ``statsmodels`` for the underlying multiple testing procedure.
+        """
+
+        if not self.pvalues:
+            return []
+        if multipletests is None:  # pragma: no cover - exercised only when dependency missing
+            raise RuntimeError(
+                "statsmodels is required to compute FDR-adjusted p-values but is not installed."
+            )
+
+        _, corrected_pvalues, _, _ = multipletests(self.pvalues, alpha=alpha, method=method)
+        return list(corrected_pvalues)
 
 
 def _serialize_failure_cases(error: pa_errors.SchemaError, limit: int = 3) -> str:

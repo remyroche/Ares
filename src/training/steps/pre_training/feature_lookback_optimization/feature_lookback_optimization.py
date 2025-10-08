@@ -407,10 +407,39 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
     def _align_data_with_regime_assignments(self, market_data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> pd.DataFrame:
         """Align market data with regime assignments to ensure consistency with clustering step."""
         try:
+            # Resolve the regime cache directory from pipeline state or configuration
+            configured_path = pipeline_state.get('regime_cache_path')
+            if not configured_path:
+                configured_path = self.config.custom_params.get('regime_cache_path') if self.config and getattr(self.config, 'custom_params', None) else None
+
+            if configured_path:
+                regime_cache_dir = Path(configured_path).expanduser()
+                if not regime_cache_dir.is_absolute():
+                    base_data_dir = Path(self.config.data_dir).expanduser()
+                    if not base_data_dir.is_absolute():
+                        base_data_dir = Path.cwd() / base_data_dir
+                    regime_cache_dir = base_data_dir / regime_cache_dir
+            else:
+                base_data_dir = Path(self.config.data_dir).expanduser()
+                if not base_data_dir.is_absolute():
+                    base_data_dir = Path.cwd() / base_data_dir
+                regime_cache_dir = base_data_dir / 'nas_tas_clustering'
+
+            try:
+                resolved_regime_cache_dir = regime_cache_dir.resolve(strict=False)
+            except Exception:
+                resolved_regime_cache_dir = regime_cache_dir
+
+            self.logger.info(f"🔎 Searching for regime assignments in {resolved_regime_cache_dir}")
+
+            if not regime_cache_dir.exists():
+                self.logger.warning(f"⚠️ Regime cache directory not found at {resolved_regime_cache_dir}; using full dataset")
+                return market_data
+
             # Try to load regime assignment file to get the correct data size
             symbol = pipeline_state.get('symbol', 'ETHUSDT').lower()
-            regime_files = list(Path('/Users/remyroche/Documents/Ares/data_cache/nas_tas_clustering').glob(f'**/{symbol}/nas_tas_regime_assignments_*.parquet'))
-            
+            regime_files = list(regime_cache_dir.glob(f'**/{symbol}/nas_tas_regime_assignments_*.parquet'))
+
             if regime_files:
                 # Load the most recent regime assignment file
                 latest_file = max(regime_files, key=lambda x: x.stat().st_mtime)
@@ -424,10 +453,10 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 else:
                     self.logger.info(f"📊 Using full market data: {len(market_data)} records")
             else:
-                self.logger.warning("⚠️ No regime assignment files found, using full dataset")
-                
+                self.logger.warning(f"⚠️ No regime assignment files found in {resolved_regime_cache_dir}, using full dataset")
+
             return market_data
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to align data with regime assignments: {e}")
             return market_data

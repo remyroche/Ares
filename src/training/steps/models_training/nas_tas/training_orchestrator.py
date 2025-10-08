@@ -69,6 +69,7 @@ from .regime_aware_trainer import RegimeAwareTrainer, RegimeAwareTrainingConfig,
 from .model_selector import ModelSelector, ModelSelectionConfig, ModelSelectionResult
 from .model_manager import ModelManager, ModelManagerConfig
 from .performance_tracker import PerformanceTracker, PerformanceConfig
+from src.training.steps.pre_training.sub_pipeline import PipelineState
 
 # Import market analysis modules for enhanced compatibility
 try:
@@ -255,7 +256,7 @@ class TrainingOrchestrator:
         
         # Orchestration state
         tprint("📊 Initializing orchestration state", color="yellow")
-        self.current_pipeline_state = {}
+        self.current_pipeline_state: PipelineState = PipelineState()
         self.execution_history = []
         self.performance_cache = {}
         

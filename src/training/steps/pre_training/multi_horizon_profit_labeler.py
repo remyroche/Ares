@@ -1375,43 +1375,89 @@ class MultiHorizonProfitLabeler:
             if len(y_balanced) < 100:  # Minimum threshold for reliable analysis
                 tprint_warning(f"⚠️ Balancing resulted in very small dataset ({len(y_balanced)} samples), proceeding with caution")
 
+            balanced_index = y_balanced.index
+
+            def _reindex_frame(frame: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
+                if isinstance(frame, pd.DataFrame):
+                    return frame.reindex(balanced_index)
+                return frame
+
+            balanced_labels = None
+            if isinstance(labeling_result.labels, pd.DataFrame) and not labeling_result.labels.empty:
+                balanced_labels = labeling_result.labels.reindex(balanced_index)
+            elif target_cols:
+                balanced_labels = pd.DataFrame({target_cols[0]: y_balanced}, index=balanced_index)
+            else:
+                balanced_labels = pd.DataFrame(index=balanced_index)
+
+            balanced_training_labels: pd.DataFrame
+            if isinstance(labeling_result.training_labels, pd.DataFrame) and not labeling_result.training_labels.empty:
+                balanced_training_labels = labeling_result.training_labels.reindex(balanced_index)
+            else:
+                balanced_training_labels = balanced_labels.copy()
+
+            balanced_confidence = _reindex_frame(labeling_result.confidence_scores)
+            if balanced_confidence is None:
+                balanced_confidence = pd.DataFrame(index=balanced_index)
+
+            balanced_eligibility = _reindex_frame(labeling_result.eligibility_masks)
+            if balanced_eligibility is None:
+                balanced_eligibility = pd.DataFrame(index=balanced_index)
+
+            balanced_sigma = _reindex_frame(labeling_result.sigma_payoffs)
+            if balanced_sigma is None:
+                balanced_sigma = pd.DataFrame(index=balanced_index)
+
+            def _reindex_normalization(value: Any) -> Any:
+                if isinstance(value, pd.DataFrame):
+                    return value.reindex(balanced_index)
+                if isinstance(value, pd.Series):
+                    return value.reindex(balanced_index)
+                if isinstance(value, dict):
+                    return {k: _reindex_normalization(v) for k, v in value.items()}
+                if isinstance(value, list):
+                    return [_reindex_normalization(v) for v in value]
+                if isinstance(value, tuple):
+                    return tuple(_reindex_normalization(v) for v in value)
+                return value
+
+            normalization_factors = copy.deepcopy(labeling_result.normalization_factors) if labeling_result.normalization_factors else {}
+            if normalization_factors:
+                normalization_factors = _reindex_normalization(normalization_factors)
+
+            if final_weights is None:
+                final_weights = pd.Series(1.0, index=balanced_index)
+            elif isinstance(final_weights, pd.Series):
+                final_weights = final_weights.reindex(balanced_index)
+            else:
+                final_weights = pd.Series(final_weights, index=balanced_index)
+
             # Create new labeling result with balanced data
             balanced_result = LabelingResult(
-                labels=pd.DataFrame({target_cols[0]: y_balanced}, index=y_balanced.index),
-                confidence_scores=labeling_result.confidence_scores,
-                eligibility_masks=labeling_result.eligibility_masks,
-                sigma_payoffs=pd.DataFrame(),
-                training_labels=pd.DataFrame({target_cols[0]: y_balanced}, index=y_balanced.index),
-                normalization_factors=labeling_result.normalization_factors.copy(),
+                labels=balanced_labels,
+                confidence_scores=balanced_confidence,
+                eligibility_masks=balanced_eligibility,
+                sigma_payoffs=balanced_sigma,
+                training_labels=balanced_training_labels,
+                normalization_factors=normalization_factors,
                 quality_scores=labeling_result.quality_scores,
-                n_samples=len(y_balanced),
-                n_targets=labeling_result.n_targets,
+                n_samples=len(balanced_index),
+                n_targets=balanced_labels.shape[1],
                 processing_time=labeling_result.processing_time
             )
 
             balanced_result.smoothing_settings = getattr(labeling_result, 'smoothing_settings', {})
             if hasattr(labeling_result, 'execution_timing'):
                 balanced_result.execution_timing = copy.deepcopy(getattr(labeling_result, 'execution_timing'))
-            if not labeling_result.sigma_payoffs.empty:
-                balanced_result.sigma_payoffs = labeling_result.sigma_payoffs.reindex(y_balanced.index)
 
             balanced_result.multi_target_result = getattr(labeling_result, 'multi_target_result', None)
             balanced_result.target_shifts = getattr(labeling_result, 'target_shifts', {})
             balanced_result.target_parameters = getattr(labeling_result, 'target_parameters', {})
 
-            if balanced_result.normalization_factors:
-                normalization_factors = copy.deepcopy(balanced_result.normalization_factors)
-                if 'sigma_payoffs' in normalization_factors and isinstance(normalization_factors['sigma_payoffs'], pd.DataFrame):
-                    normalization_factors['sigma_payoffs'] = normalization_factors['sigma_payoffs'].reindex(y_balanced.index)
-                raw_payoffs = normalization_factors.get('raw_payoffs')
-                if isinstance(raw_payoffs, pd.DataFrame):
-                    normalization_factors['raw_payoffs'] = raw_payoffs.reindex(y_balanced.index)
-                balanced_result.normalization_factors = normalization_factors
-
             # Add balancing metadata
             balanced_result.balancing_applied = True
             balanced_result.original_samples = labeling_result.n_samples
-            balanced_result.balanced_samples = len(y_balanced)
+            balanced_result.balanced_samples = len(balanced_index)
             balanced_result.sample_weights = final_weights
 
             # Calculate balancing statistics

@@ -285,8 +285,8 @@ class VolatilityModeler:
     def _calculate_realized_volatility(self, bars: pd.DataFrame) -> pd.Series:
         """Calculate realized volatility from high-frequency returns."""
         try:
-            # Calculate returns
-            returns = bars['close'].pct_change().dropna()
+            # Calculate returns (retain index alignment)
+            returns = bars['close'].pct_change()
             
             if len(returns) < self.config.rv_min_periods:
                 return pd.Series(dtype=float, index=bars.index)
@@ -296,10 +296,13 @@ class VolatilityModeler:
                 window=self.config.rv_window,
                 min_periods=self.config.rv_min_periods
             ).std()
-            
+
             # Annualize if needed (assuming daily data)
             rv = rv * np.sqrt(252)
-            
+
+            # Use past-only window (exclude current bar)
+            rv = rv.shift(1)
+
             return rv
             
         except Exception as e:
@@ -355,6 +358,8 @@ class VolatilityModeler:
                 ).mean()
 
             # Normalize by price level (vectorized)
+            atr = atr.shift(1)
+
             atr_volatility = atr / bars['close']
 
             return atr_volatility
@@ -387,14 +392,14 @@ class VolatilityModeler:
                 ewma_var = returns_series.ewm(
                     alpha=alpha,
                     min_periods=min_periods
-                ).var()
+                ).var().shift(1)
 
                 # Convert to volatility
                 ewma_volatility = np.sqrt(ewma_var)
             else:
                 # Fallback implementation using vectorized operations
                 returns_series = pd.Series(returns, index=bars.index)
-                ewma_var = returns_series.ewm(alpha=alpha, min_periods=min_periods).var()
+                ewma_var = returns_series.ewm(alpha=alpha, min_periods=min_periods).var().shift(1)
                 ewma_volatility = np.sqrt(ewma_var)
 
             # Annualize if needed (vectorized)

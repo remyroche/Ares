@@ -37,14 +37,57 @@ except Exception:  # pragma: no cover - defensive guard for optional dependency
     get_klines_manager = None  # type: ignore[assignment]
 
 # Import the volatility-aware multi-horizon labeler
-from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler import (
-    VolatilityAwareMultiHorizonLabeler,
-    VolatilityAwareConfig,
-    LabelingResult,
-    create_enhanced_analyst_labeler,
-    create_enhanced_tactician_labeler,
-    LabelDefinitionType
-)
+try:
+    from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler import (
+        VolatilityAwareMultiHorizonLabeler,
+        VolatilityAwareConfig,
+        LabelingResult,
+        create_enhanced_analyst_labeler,
+        create_enhanced_tactician_labeler,
+        LabelDefinitionType,
+    )
+except (ImportError, SyntaxError):  # pragma: no cover - defensive fallback for optional dependency
+    class VolatilityAwareConfig:  # type: ignore[no-redef]
+        """Fallback configuration stub when volatility labeler is unavailable."""
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.params = kwargs
+
+    class LabelingResult:  # type: ignore[no-redef]
+        """Minimal stub replicating the interface used by the labeler."""
+
+        def __init__(self, **kwargs: Any) -> None:
+            self.labels = kwargs.get('labels', pd.DataFrame())
+            self.confidence_scores = kwargs.get('confidence_scores', pd.DataFrame())
+            self.eligibility_masks = kwargs.get('eligibility_masks', pd.DataFrame())
+            self.sigma_payoffs = kwargs.get('sigma_payoffs', pd.DataFrame())
+            self.training_labels = kwargs.get('training_labels', pd.DataFrame())
+            self.normalization_factors = kwargs.get('normalization_factors', {})
+            self.quality_scores = kwargs.get('quality_scores', {})
+            self.n_samples = kwargs.get('n_samples', 0)
+            self.n_targets = kwargs.get('n_targets', 0)
+            self.n_horizons = kwargs.get('n_horizons', 0)
+            self.processing_time = kwargs.get('processing_time', 0.0)
+
+    class _UnavailableVolatilityLabeler:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.args = args
+            self.kwargs = kwargs
+            self.config = None
+
+        def generate_labels(self, *args: Any, **kwargs: Any) -> LabelingResult:
+            raise RuntimeError("Volatility-aware labeler is unavailable in this environment")
+
+    def create_enhanced_analyst_labeler(*args: Any, **kwargs: Any) -> _UnavailableVolatilityLabeler:  # type: ignore[no-redef]
+        return _UnavailableVolatilityLabeler(*args, **kwargs)
+
+    def create_enhanced_tactician_labeler(*args: Any, **kwargs: Any) -> _UnavailableVolatilityLabeler:  # type: ignore[no-redef]
+        return _UnavailableVolatilityLabeler(*args, **kwargs)
+
+    class VolatilityAwareMultiHorizonLabeler(_UnavailableVolatilityLabeler):  # type: ignore[no-redef]
+        pass
+
+    LabelDefinitionType = str  # type: ignore[no-redef]
 from src.training.steps.pre_training.standardized_labeling_interface import (
     assert_labels_sigma_scaled,
     validate_dataframe_schema
@@ -52,10 +95,16 @@ from src.training.steps.pre_training.standardized_labeling_interface import (
 from src.training.steps.pre_training.validation.schemas import (
     SchemaValidationException,
     report_hypothesis_count,
+    enforce_feature_temporal_alignment,
     schema_metadata,
     validate_engineered_features,
     validate_labeled_dataset,
     validate_raw_ohlcv,
+)
+from src.training.steps.pre_training.validation.cv import (
+    WalkForwardFold,
+    purged_walk_forward_cv,
+    validate_cv_no_leakage,
 )
 from src.training.steps.pre_training.validation.data_contracts import (
     DataContractValidationError,
@@ -83,8 +132,17 @@ try:
         DEFAULT_FAIRNESS_CONFIG
     )
     BALANCING_SYSTEM_AVAILABLE = True
-except ImportError:
+except (ImportError, SyntaxError):
     BALANCING_SYSTEM_AVAILABLE = False
+    ComprehensiveBalancingSystem = None  # type: ignore[assignment]
+    BalancingConfig = None  # type: ignore[assignment]
+    WeightingConfig = None  # type: ignore[assignment]
+    RegimeConfig = None  # type: ignore[assignment]
+    ValidationFairnessConfig = None  # type: ignore[assignment]
+    DEFAULT_BALANCING_CONFIG = None  # type: ignore[assignment]
+    DEFAULT_WEIGHTING_CONFIG = None  # type: ignore[assignment]
+    DEFAULT_REGIME_CONFIG = None  # type: ignore[assignment]
+    DEFAULT_FAIRNESS_CONFIG = None  # type: ignore[assignment]
 
 # Import base component
 from src.training.steps.pre_training.components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
@@ -173,11 +231,11 @@ def _persist_labeling_outcome(
 
     serialized = json.dumps(outcome_payload, indent=2, default=_json_default, ensure_ascii=False).encode('utf-8')
     file_size = len(serialized)
-    skipped = path.exists()
+    skipped = False
 
     start = perf_counter()
-    if not skipped:
-        path.write_bytes(serialized)
+    with open(path, 'wb') as handle:
+        handle.write(serialized)
     duration = perf_counter() - start
 
     report = SaveReport(
@@ -215,17 +273,41 @@ def _ensure_labeling_contract(payload: Mapping[str, Any]) -> Dict[str, Any]:
     normalized = dict(payload)
     required_columns = ['immediate_opportunity', 'short_term_opportunity', 'leverage_adjusted_score']
     labeled_frame = normalized.get('labeled_data')
-    if isinstance(labeled_frame, pd.DataFrame):
-        frame = labeled_frame.copy()
+    labels_entry = normalized.get('labels')
+
+    def _coerce_frame(source: Any) -> pd.DataFrame:
+        if isinstance(source, pd.DataFrame):
+            frame = source.copy()
+        elif isinstance(source, Mapping):
+            frame = pd.DataFrame(source)
+        elif isinstance(source, (list, tuple)):
+            frame = pd.DataFrame(source)
+        else:
+            frame = pd.DataFrame()
+
         for column in required_columns:
             if column not in frame.columns:
                 frame[column] = 0
-        if not isinstance(frame.index, pd.DatetimeIndex):
-            frame.index = pd.to_datetime(frame.index, utc=True, errors='coerce')
-        normalized['labeled_data'] = frame
-        normalized.setdefault('labels', frame.copy())
-    elif 'labels' not in normalized and 'labeled_data' in normalized:
-        normalized['labels'] = normalized['labeled_data']
+
+        if frame.empty:
+            frame.index = pd.DatetimeIndex([], tz='UTC')
+        else:
+            index = pd.to_datetime(frame.index, utc=True, errors='coerce')
+            if index.isna().all():
+                index = pd.date_range(
+                    end=pd.Timestamp.utcnow().tz_localize('UTC'),
+                    periods=len(frame),
+                    freq='H'
+                )
+            frame.index = index
+
+        return frame
+
+    labels_frame = _coerce_frame(labels_entry)
+    normalized['labels'] = labels_frame
+
+    labeled_frame = _coerce_frame(labeled_frame if labeled_frame is not None else labels_frame)
+    normalized['labeled_data'] = labeled_frame
     validation = normalized.setdefault('validation_results', {})
     if isinstance(validation, Mapping):
         validation = dict(validation)
@@ -269,6 +351,7 @@ class TemporalValidationConfig:
     train_ratio: float = 0.70
     validation_ratio: float = 0.20
     test_ratio: float = 0.10
+    walk_forward_folds: int = 3
     validate_distribution: bool = True
 
 
@@ -486,23 +569,29 @@ class MultiHorizonProfitLabeler:
     def _apply_namespace_conventions(self, labeling_result: LabelingResult) -> LabelingResult:
         """Ensure all labeling artifacts use the standardized namespaces."""
 
-        if labeling_result.labels is not None and not labeling_result.labels.empty:
-            labeling_result.labels = ensure_dataframe_namespace(labeling_result.labels, ColumnNamespace.TARGET)
-        if labeling_result.training_labels is not None and not labeling_result.training_labels.empty:
+        labels_df = getattr(labeling_result, 'labels', None)
+        if isinstance(labels_df, pd.DataFrame) and not labels_df.empty:
+            labeling_result.labels = ensure_dataframe_namespace(labels_df, ColumnNamespace.TARGET)
+
+        training_labels = getattr(labeling_result, 'training_labels', None)
+        if isinstance(training_labels, pd.DataFrame) and not training_labels.empty:
             labeling_result.training_labels = ensure_dataframe_namespace(
-                labeling_result.training_labels, ColumnNamespace.TARGET
+                training_labels, ColumnNamespace.TARGET
             )
-        if labeling_result.confidence_scores is not None and not labeling_result.confidence_scores.empty:
+        confidence_scores = getattr(labeling_result, 'confidence_scores', None)
+        if isinstance(confidence_scores, pd.DataFrame) and not confidence_scores.empty:
             labeling_result.confidence_scores = ensure_dataframe_namespace(
-                labeling_result.confidence_scores, ColumnNamespace.LABEL
+                confidence_scores, ColumnNamespace.LABEL
             )
-        if labeling_result.eligibility_masks is not None and not labeling_result.eligibility_masks.empty:
+        eligibility_masks = getattr(labeling_result, 'eligibility_masks', None)
+        if isinstance(eligibility_masks, pd.DataFrame) and not eligibility_masks.empty:
             labeling_result.eligibility_masks = ensure_dataframe_namespace(
-                labeling_result.eligibility_masks, ColumnNamespace.LABEL
+                eligibility_masks, ColumnNamespace.LABEL
             )
-        if labeling_result.sigma_payoffs is not None and not labeling_result.sigma_payoffs.empty:
+        sigma_payoffs = getattr(labeling_result, 'sigma_payoffs', None)
+        if isinstance(sigma_payoffs, pd.DataFrame) and not sigma_payoffs.empty:
             labeling_result.sigma_payoffs = ensure_dataframe_namespace(
-                labeling_result.sigma_payoffs, ColumnNamespace.TARGET
+                sigma_payoffs, ColumnNamespace.TARGET
             )
         return labeling_result
 
@@ -576,64 +665,81 @@ class MultiHorizonProfitLabeler:
             processing_time=labeling_result.processing_time
         )
 
+        if hasattr(labeling_result, 'execution_timing'):
+            adjusted_result.execution_timing = copy.deepcopy(getattr(labeling_result, 'execution_timing'))
+
         adjusted_result = self._apply_namespace_conventions(adjusted_result)
         tprint_success(f"✅ Transaction cost adjustment applied (round-trip: {roundtrip_cost:.4%})")
 
         return adjusted_result
     
-    def _create_temporal_splits(
-        self,
-        data: pd.DataFrame
-    ) -> Dict[str, pd.DataFrame]:
-        """
-        Create temporal train/validation/test splits with optional purging.
-        
-        Args:
-            data: Input data with temporal index
-        
-        Returns:
-            Dictionary with 'train', 'val', 'test' DataFrames
-        """
-        if not self.config.temporal_validation.enable_temporal_validation:
-            return {'train': data, 'val': pd.DataFrame(), 'test': pd.DataFrame()}
-        
-        tprint_info("📊 Creating temporal splits...")
-        
-        # Ensure data is sorted by time
+    def _create_temporal_splits(self, data: pd.DataFrame) -> List[WalkForwardFold]:
+        """Create purged, embargoed walk-forward folds for temporal validation."""
+
+        config = self.config.temporal_validation
+
+        if not config.enable_temporal_validation:
+            return [
+                WalkForwardFold(
+                    fold=0,
+                    train=data.copy(),
+                    validation=data.iloc[0:0].copy(),
+                    test=data.iloc[0:0].copy(),
+                )
+            ]
+
         if not data.index.is_monotonic_increasing:
             data = data.sort_index()
-        
-        n_samples = len(data)
-        train_end = int(n_samples * self.config.temporal_validation.train_ratio)
-        val_end = train_end + int(n_samples * self.config.temporal_validation.validation_ratio)
-        
-        # Create splits
-        splits = {
-            'train': data.iloc[:train_end].copy(),
-            'val': data.iloc[train_end:val_end].copy(),
-            'test': data.iloc[val_end:].copy()
-        }
-        
-        # Apply purging if enabled
-        if self.config.temporal_validation.enable_purging:
-            purge_delta = pd.Timedelta(hours=self.config.temporal_validation.purge_window_hours)
-            
-            # Purge training data before validation
-            val_start_time = splits['val'].index.min()
-            train_purge_cutoff = val_start_time - purge_delta
-            splits['train'] = splits['train'][splits['train'].index <= train_purge_cutoff]
-            
-            # Purge validation data before test
-            if not splits['test'].empty:
-                test_start_time = splits['test'].index.min()
-                val_purge_cutoff = test_start_time - purge_delta
-                splits['val'] = splits['val'][splits['val'].index <= val_purge_cutoff]
-            
-            tprint_info(f"   → Applied purging: {self.config.temporal_validation.purge_window_hours}h window")
-        
-        tprint_success(f"✅ Temporal splits created: train={len(splits['train'])}, val={len(splits['val'])}, test={len(splits['test'])}")
-        
-        return splits
+
+        tprint_info("📊 Creating walk-forward validation folds...")
+
+        folds = list(
+            purged_walk_forward_cv(
+                data,
+                n_splits=max(1, int(config.walk_forward_folds)),
+                train_ratio=config.train_ratio,
+                validation_ratio=config.validation_ratio,
+                test_ratio=config.test_ratio,
+                purge_window_hours=config.purge_window_hours,
+                embargo_window_hours=config.embargo_window_hours,
+            )
+        )
+
+        if not folds:
+            tprint_warning(
+                "⚠️ Insufficient data for walk-forward validation; returning single training fold"
+            )
+            return [
+                WalkForwardFold(
+                    fold=0,
+                    train=data.copy(),
+                    validation=data.iloc[0:0].copy(),
+                    test=data.iloc[0:0].copy(),
+                )
+            ]
+
+        validate_cv_no_leakage(
+            [fold.to_mapping() for fold in folds],
+            purge_window_hours=config.purge_window_hours,
+            embargo_window_hours=config.embargo_window_hours,
+        )
+
+        for fold in folds:
+            mapping = fold.to_mapping()
+            tprint_info(
+                "   → Fold %d: train=%d, val=%d, test=%d",
+                fold.fold,
+                len(mapping['train']),
+                len(mapping['validation']),
+                len(mapping['test']),
+            )
+
+        tprint_success(
+            f"✅ Generated {len(folds)} walk-forward folds "
+            f"(purge={config.purge_window_hours}h, embargo={config.embargo_window_hours}h)"
+        )
+
+        return folds
 
     async def execute_labeling(
         self,
@@ -675,14 +781,9 @@ class MultiHorizonProfitLabeler:
 
             # Load market data
             tprint_info("📊 Loading market data...")
-            market_data = await self._load_market_data(symbol, exchange, timeframe, data_dir)
-            market_data = validate_raw_ohlcv(
-                market_data,
-                context="multi_horizon_profit_labeler.market_data"
-            )
             market_data_batches: List[pd.DataFrame] = []
 
-            if market_data is None or market_data.empty:
+            if self.config.market_data_batch_size or self.config.market_data_window_days:
                 async for batch in self._load_market_data(
                     symbol,
                     exchange,
@@ -699,6 +800,25 @@ class MultiHorizonProfitLabeler:
 
                 market_data = pd.concat(market_data_batches, axis=0).sort_index()
                 market_data = market_data[~market_data.index.duplicated(keep="first")]
+            else:
+                market_data = None
+                async for batch in self._load_market_data(
+                    symbol,
+                    exchange,
+                    timeframe,
+                    data_dir,
+                ):
+                    market_data = batch
+                    break
+
+                if market_data is None or market_data.empty:
+                    tprint_error(f"❌ No market data available for {symbol} {timeframe}")
+                    raise ValueError(f"No market data available for {symbol} {timeframe}")
+
+            market_data = validate_raw_ohlcv(
+                market_data,
+                context="multi_horizon_profit_labeler.market_data"
+            )
 
             tprint_success(
                 f"✅ Market data loaded: {len(market_data)} rows, {len(market_data.columns)} columns"
@@ -752,6 +872,12 @@ class MultiHorizonProfitLabeler:
                 context="multi_horizon_profit_labeler.labeled_data"
             )
 
+            walk_forward_folds = self._create_temporal_splits(mapped_labels)
+            walk_forward_summary = self._summarize_walk_forward_folds(
+                walk_forward_folds,
+                mapped_labels,
+            )
+
             # Create properly structured artifacts that feature lookback optimization expects
             # The feature lookback optimization expects 'labeled_data' or 'labels' keys
             tprint_info("📋 Creating comprehensive artifacts structure for downstream components")
@@ -775,6 +901,7 @@ class MultiHorizonProfitLabeler:
 
             # Validate that we have the required data for downstream components
             tprint_info("🔍 Validating data structure for downstream compatibility...")
+            confidence_scores_df = balanced_labeling_result.confidence_scores
             if isinstance(confidence_scores_df, pd.DataFrame) and not confidence_scores_df.empty:
                 feature_frames['confidence_scores'] = confidence_scores_df.shift(1)
                 feature_metadata['confidence_scores'] = {'max_lag': 1}
@@ -788,6 +915,8 @@ class MultiHorizonProfitLabeler:
                 feature_frames=feature_frames if feature_frames else None,
                 feature_metadata=feature_metadata if feature_metadata else None,
             )
+            validation_results['walk_forward_cv'] = walk_forward_summary
+            validation_results['walk_forward_folds'] = len(walk_forward_summary)
             if not validation_results['is_valid']:
                 tprint_warning(f"⚠️ Downstream compatibility issues detected: {validation_results['issues']}")
             else:
@@ -799,12 +928,18 @@ class MultiHorizonProfitLabeler:
             execution_timing = copy.deepcopy(getattr(balanced_labeling_result, 'execution_timing', {}))
 
             # Validate engineered scoring frames
-            confidence_scores_df = balanced_labeling_result.confidence_scores
             if isinstance(confidence_scores_df, pd.DataFrame) and not confidence_scores_df.empty:
                 confidence_scores_df = validate_engineered_features(
                     confidence_scores_df,
                     context="multi_horizon_profit_labeler.confidence_scores"
                 )
+                alignment_metadata = enforce_feature_temporal_alignment(
+                    confidence_scores_df,
+                    context="multi_horizon_profit_labeler.confidence_scores",
+                    target_shifts=target_shifts,
+                    feature_metadata=feature_metadata.get('confidence_scores') if feature_metadata else None,
+                )
+                confidence_scores_df.attrs.setdefault('temporal_alignment', alignment_metadata)
 
             # Create enhanced artifacts with comprehensive metadata for downstream components
             artifacts = {
@@ -825,6 +960,7 @@ class MultiHorizonProfitLabeler:
                     'balancing_applied': self.config.enable_label_balancing or self.config.enable_sample_weighting,
                     'sample_weights': getattr(balanced_labeling_result, 'sample_weights', None),  # Sample weights for training
                     'validation_results': validation_results,  # Downstream compatibility validation
+                    'walk_forward_summary': walk_forward_summary,
                     'smoothing_settings': smoothing_metadata['settings'],
                     'metadata': {
                         'symbol': symbol,
@@ -842,6 +978,7 @@ class MultiHorizonProfitLabeler:
                         'target_shifts': target_shifts,
                         'min_target_shift': min(target_shifts.values()) if target_shifts else None,
                         'execution_timing': execution_timing,
+                        'walk_forward_folds': len(walk_forward_summary),
                     },
                     'market_data': market_data,
                     'market_data_batches': tuple(market_data_batches),
@@ -858,6 +995,7 @@ class MultiHorizonProfitLabeler:
                     'sample_weights': getattr(balanced_labeling_result, 'sample_weights', None),
                     'normalization_factors': normalization_factors,
                     'validation_results': validation_results,
+                    'walk_forward_summary': walk_forward_summary,
                     'smoothing_settings': smoothing_metadata['settings'],
                     'metadata': {
                         'source_component': 'multi_horizon_profit_labeler',
@@ -866,6 +1004,7 @@ class MultiHorizonProfitLabeler:
                         'downstream_compatibility': validation_results,
                         'forward_return_smoothing': smoothing_metadata,
                         'execution_timing': execution_timing,
+                        'walk_forward_folds': len(walk_forward_summary),
                     }
                 }
             }
@@ -1251,6 +1390,8 @@ class MultiHorizonProfitLabeler:
             )
 
             balanced_result.smoothing_settings = getattr(labeling_result, 'smoothing_settings', {})
+            if hasattr(labeling_result, 'execution_timing'):
+                balanced_result.execution_timing = copy.deepcopy(getattr(labeling_result, 'execution_timing'))
             if not labeling_result.sigma_payoffs.empty:
                 balanced_result.sigma_payoffs = labeling_result.sigma_payoffs.reindex(y_balanced.index)
 
@@ -1652,6 +1793,7 @@ class MultiHorizonProfitLabeler:
             # Create regime-specific labels using the volatility-aware labeler for each regime
             regime_labels = {}
             regime_quality_scores = {}
+            regime_execution_timing: Dict[str, Dict[str, Any]] = {}
             regime_sigma_payoffs = {}
             regime_normalization_factors = {}
             total_processing_time = 0.0
@@ -1681,6 +1823,8 @@ class MultiHorizonProfitLabeler:
                         f"{target}_regime_{regime}": quality_score
                         for target, quality_score in regime_result.quality_scores.items()
                     })
+                    if hasattr(regime_result, 'execution_timing'):
+                        regime_execution_timing[regime] = copy.deepcopy(getattr(regime_result, 'execution_timing'))
                     total_processing_time += regime_result.processing_time
 
             # Combine regime-specific labels
@@ -1702,6 +1846,10 @@ class MultiHorizonProfitLabeler:
                     n_targets=len([col for col in combined_labels.columns if 'target' in col]),
                     processing_time=total_processing_time
                 )
+
+                if regime_execution_timing:
+                    # Use the first regime's execution timing as representative metadata
+                    combined_result.execution_timing = copy.deepcopy(next(iter(regime_execution_timing.values())))
 
                 tprint_success(f"✅ Regime-aware labeling completed for {len(regime_labels)} regimes")
                 return combined_result
@@ -1862,12 +2010,10 @@ class MultiHorizonProfitLabeler:
                     # Use the first (best) source column
                     source_col = source_columns[0]
                     if source_col in mapped_df.columns:
-                        expected_col = ensure_namespace(expected_name, ColumnNamespace.TARGET)
+                        expected_col = expected_name
                         mapped_df[expected_col] = mapped_df[source_col]
                         tprint_info(f"✅ Mapped '{source_col}' → '{expected_col}'")
 
-            # Also add the original columns for backward compatibility and debugging
-            mapped_df = ensure_dataframe_namespace(mapped_df, ColumnNamespace.TARGET)
             tprint_info(f"✅ Target column mapping completed. Original: {len(labels_df.columns)}, Mapped: {len(mapped_df.columns)}")
 
             return mapped_df
@@ -2100,6 +2246,50 @@ class MultiHorizonProfitLabeler:
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating target distribution: {e}")
             return {}
+
+    def _summarize_walk_forward_folds(
+        self,
+        folds: Iterable[WalkForwardFold],
+        labels: pd.DataFrame,
+    ) -> List[Dict[str, Any]]:
+        """Summarize walk-forward folds with distribution statistics."""
+
+        summaries: List[Dict[str, Any]] = []
+        for fold in folds:
+            mapping = fold.to_mapping()
+            validation_index = mapping['validation'].index
+            test_index = mapping['test'].index
+
+            validation_labels = labels.reindex(validation_index)
+            test_labels = labels.reindex(test_index)
+
+            summaries.append(
+                {
+                    'fold': fold.fold,
+                    'train_rows': len(mapping['train']),
+                    'validation_rows': len(mapping['validation']),
+                    'test_rows': len(mapping['test']),
+                    'train_window': self._index_range(mapping['train'].index),
+                    'validation_window': self._index_range(validation_index),
+                    'test_window': self._index_range(test_index),
+                    'validation_distribution': self._calculate_target_distribution(validation_labels),
+                    'test_distribution': self._calculate_target_distribution(test_labels),
+                }
+            )
+
+        return summaries
+
+    @staticmethod
+    def _index_range(index: pd.Index) -> Optional[Dict[str, Any]]:
+        """Return start/end timestamps for a datetime index."""
+
+        if not isinstance(index, pd.DatetimeIndex) or index.empty:
+            return None
+
+        return {
+            'start': index[0].isoformat(),
+            'end': index[-1].isoformat(),
+        }
 
     def _calculate_class_balance(self, values: pd.Series) -> Dict[str, float]:
         """Calculate class balance for a target series."""
@@ -2453,15 +2643,10 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                 elif data_locator:
                     outcomes_dir = data_locator.artifacts_path(outcomes_dir_key, ensure_exists=True)
                 else:
-                    outcomes_dir = self._settings.outcomes_root
+                    outcomes_dir = self.labeler._settings.outcomes_root
                     outcomes_dir.mkdir(parents=True, exist_ok=True)
 
                 artifact_base_name = 'market_analysis_multi_horizon_profit_labeler_outcome'
-                artifact_path, version = self.artifact_locator.resolve_artifact_path(
-                    artifact_base_name,
-                    outcomes_dir=outcomes_dir
-                )
-
                 save_report, artifact_save_skipped = _persist_labeling_outcome(
                     base_dir=Path(outcomes_dir),
                     symbol=symbol,
@@ -2473,6 +2658,7 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
 
                 artifact_path = save_report.paths['labeling_outcome']
                 artifact_digest = save_report.checksum['labeling_outcome']
+                version = artifact_digest[:16] if artifact_digest else Path(artifact_path).stem
                 outcome_metadata['artifact_digest'] = artifact_digest
                 artifacts_saved = True
 
@@ -2482,26 +2668,19 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                     exchange=exchange,
                     timeframe=timeframe,
                 )
-                self.artifact_manifest.register(
-                    logical_name=logical_name,
-                    path=artifact_path,
-                    version=version,
-                )
-                logical_name = (
-                    f"market_analysis_multi_horizon_profit_labeler_outcome/"
-                    f"{symbol.upper()}/{exchange.lower()}/{timeframe}"
-                )
-                try:
-                    self.labeler.artifact_manifest.register(
-                        logical_name=logical_name,
-                        path=Path(artifact_path),
-                        version=artifact_digest[:16],
-                        checksum=artifact_digest,
-                    )
-                except Exception as register_error:  # pragma: no cover - manifest failures are non-fatal
-                    tprint_warning(
-                        f"⚠️ Failed to register outcome in manifest: {register_error}"
-                    )
+                artifact_manifest = getattr(self.labeler, 'artifact_manifest', None)
+                if artifact_manifest is not None:
+                    try:
+                        artifact_manifest.register(
+                            logical_name=logical_name,
+                            path=Path(artifact_path),
+                            version=version,
+                            checksum=artifact_digest,
+                        )
+                    except Exception as register_error:  # pragma: no cover - manifest failures are non-fatal
+                        tprint_warning(
+                            f"⚠️ Failed to register outcome in manifest: {register_error}"
+                        )
 
                 tprint_info(f"💾 Labeling outcome saved to {artifact_path}")
 

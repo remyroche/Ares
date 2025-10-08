@@ -7,7 +7,7 @@ modules for validation, error handling, performance monitoring, and optimization
 
 import json
 import logging
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from ..settings import get_pre_training_settings
@@ -119,6 +119,7 @@ from ..components.base_component import BasePreTrainingComponent, ComponentConfi
 from ..components.contracts import FeatureLookbackArtifacts, PipelineState
 from ..validation.schemas import (
     SchemaValidationException,
+    enforce_feature_temporal_alignment,
     schema_metadata,
     validate_engineered_features,
     validate_labeled_dataset,
@@ -355,6 +356,27 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             'derived': {},
         }
 
+        target_shifts: Dict[str, int] = {}
+
+        def _update_target_shifts(source: Any) -> None:
+            if isinstance(source, Mapping):
+                raw_shifts = source.get('target_shifts')
+                if isinstance(raw_shifts, Mapping):
+                    for key, value in raw_shifts.items():
+                        try:
+                            target_shifts[str(key)] = int(value)
+                        except (TypeError, ValueError):
+                            continue
+                metadata_candidate = source.get('metadata')
+                if isinstance(metadata_candidate, Mapping):
+                    _update_target_shifts(metadata_candidate)
+                for nested_key in ('multi_horizon_labeling_result', 'standardized_output'):
+                    nested = source.get(nested_key)
+                    if isinstance(nested, Mapping):
+                        _update_target_shifts(nested)
+
+        _update_target_shifts(pipeline_state)
+
         try:
             log_info("🚀 Starting feature lookback optimization with multi-horizon profit targets...")
             tprint("📊 Performance monitoring started for execute operation")
@@ -428,6 +450,8 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 pipeline_state=pipeline_state
             )
 
+            _update_target_shifts(labeling_data)
+
             if labeling_data:
                 labels_df: Optional[pd.DataFrame] = None
                 if isinstance(labeling_data, dict):
@@ -474,6 +498,19 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             optimization_data = validate_engineered_features(
                 optimization_data,
                 context="feature_lookback_optimization.optimization_frame"
+            )
+            feature_metadata = None
+            if isinstance(labeling_data, Mapping):
+                feature_metadata = labeling_data.get('feature_lag_metadata')
+                if feature_metadata is None:
+                    nested = labeling_data.get('multi_horizon_labeling_result')
+                    if isinstance(nested, Mapping):
+                        feature_metadata = nested.get('feature_lag_metadata')
+            enforce_feature_temporal_alignment(
+                optimization_data,
+                context="feature_lookback_optimization.optimization_frame",
+                target_shifts=target_shifts,
+                feature_metadata=feature_metadata,
             )
             validation_metadata['outputs']['optimization_frame'] = schema_metadata('engineered_features').get('engineered_features')
 

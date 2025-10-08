@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 
 import pandas as pd
+import pandas.testing as pdt
 import pytest
 
 MODULE_PATH = Path(__file__).resolve().parents[4] / "src" / "training" / "steps" / "pre_training" / "profit_labeling" / "enhanced_label_definitions.py"
@@ -30,6 +31,7 @@ def _make_market_data():
 
 def test_expected_returns_use_next_bar_open():
     labeler = EnhancedLabelDefinitions()
+    labeler.analyst_config.horizon_minutes = 15
     market_data = _make_market_data()
     context = labeler._build_execution_context(market_data, labeler.analyst_config.horizon_minutes)
 
@@ -40,16 +42,49 @@ def test_expected_returns_use_next_bar_open():
         exit_prices=context["exit_prices"],
     )
 
-    first_entry = context["entry_prices"].iloc[0]
-    first_exit = context["exit_prices"].iloc[0]
-    manual_return = (first_exit - first_entry) / first_entry
+    manual_returns = (
+        (market_data["close"].shift(-2) - market_data["open"].shift(-1))
+        / market_data["open"].shift(-1)
+    ).fillna(0)
 
-    assert expected_returns.iloc[0] == pytest.approx(manual_return)
+    pdt.assert_series_equal(
+        expected_returns,
+        manual_returns,
+        check_dtype=False,
+        check_names=False,
+    )
     assert expected_returns.iloc[-1] == 0.0
+
+
+def test_execution_context_metadata_reflects_delayed_exit():
+    labeler = EnhancedLabelDefinitions()
+    labeler.analyst_config.horizon_minutes = 15
+    market_data = _make_market_data()
+    context = labeler._build_execution_context(market_data, labeler.analyst_config.horizon_minutes)
+
+    entry_prices = context["entry_prices"]
+    exit_prices = context["exit_prices"]
+
+    assert entry_prices.iloc[0] == pytest.approx(market_data["open"].iloc[1])
+    assert entry_prices.iloc[1] == pytest.approx(market_data["open"].iloc[2])
+    assert exit_prices.iloc[0] == pytest.approx(market_data["close"].iloc[2])
+    assert exit_prices.iloc[1] == pytest.approx(market_data["close"].iloc[3])
+    assert pd.isna(entry_prices.iloc[-1])
+    assert pd.isna(exit_prices.iloc[-2])
+
+    metadata = labeler.get_execution_latency_metadata()
+    assert metadata["signal_to_execution_delay_bars"] == 1
+    assert metadata["signal_to_exit_delay_bars"] == 2
+    assert metadata["holding_period_bars"] == 1
+    assert metadata["entry_price_source"] == "next_open"
+    assert metadata["exit_price_source"] == "close_plus_2_bars"
+    assert metadata["holding_period_minutes"] == pytest.approx(15.0)
+    assert metadata["signal_to_exit_delay_minutes"] == pytest.approx(30.0)
 
 
 def test_trading_costs_apply_entry_and_exit_slippage():
     labeler = EnhancedLabelDefinitions()
+    labeler.analyst_config.horizon_minutes = 15
     market_data = _make_market_data()
     context = labeler._build_execution_context(market_data, labeler.analyst_config.horizon_minutes)
 

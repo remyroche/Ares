@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from src.training.steps.pre_training.validation.temporal_lint import (
+from src.training.steps.pre_training.validation import (
     TemporalLintError,
     lint_for_temporal_leakage,
     run_temporal_linting,
@@ -169,4 +169,12 @@ def test_run_temporal_linting_skips_irrelevant_files(tmp_path: Path) -> None:
     )
 
     results = run_temporal_linting([irrelevant])
+    assert results == {}
+
+
+def test_ci_temporal_lint_runs_on_validation_package() -> None:
+    results = run_temporal_linting(
+        [Path("src/training/steps/pre_training/validation")],
+        raise_on_violation=False,
+    )
     assert results == {}

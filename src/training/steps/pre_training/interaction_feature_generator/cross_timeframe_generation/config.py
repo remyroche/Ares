@@ -95,6 +95,11 @@ class SelectionConfig:
     fdr_q: float = 0.1
     min_conditional_ic: float = 0.25
     min_samples_for_correlation: int = 30
+    label_horizon: int = 1
+    permutation_block_size: Optional[int] = None
+    permutation_n_permutations: int = 500
+    permutation_cv_folds: int = 5
+    permutation_random_state: Optional[int] = None
 
 
 @dataclass
@@ -104,6 +109,11 @@ class EvaluationConfig:
     embargo_minutes: int = 60
     walk_forward_folds: int = 5
     spa_test: bool = True
+    bootstrap_block_size: Optional[int] = None
+    bootstrap_resamples: int = 1000
+    bootstrap_confidence_level: float = 0.95
+    bootstrap_random_seed: Optional[int] = None
+    hac_max_lag: Optional[int] = None
 
 
 @dataclass

@@ -8,7 +8,7 @@ import logging
 import time
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 from dataclasses import dataclass
 from enum import Enum
 import itertools
@@ -18,11 +18,20 @@ from functools import lru_cache
 import hashlib
 import gc
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import defaultdict
 
 # Import utility modules
 from src.utils.common_operations import safe_dataframe_operation, validate_dataframe_columns
 from src.utils.common_utilities import CommonUtilities
 from src.utils.math_validation import safe_divide, safe_correlation
+
+try:
+    from statsmodels.tsa.stattools import adfuller, kpss
+    STATIONARITY_TESTS_AVAILABLE = True
+except ImportError:
+    adfuller = None  # type: ignore
+    kpss = None  # type: ignore
+    STATIONARITY_TESTS_AVAILABLE = False
 
 # Import matrix operations for vectorized processing
 try:
@@ -304,6 +313,7 @@ class CoreOptimizer:
             best_score = -float('inf')
             best_lookback = min_lookback
             trials = 0
+            stationarity_audit: Dict[int, Dict[str, Any]] = {}
 
             # Use time series cross-validation to avoid data leakage
             # Split data: use first 70% for training, last 30% for testing
@@ -331,9 +341,31 @@ class CoreOptimizer:
                     train_features = self._calculate_feature_for_lookback(train_data, feature_name, lookback)
                     test_features = self._calculate_feature_for_lookback(test_data, feature_name, lookback)
 
+                    train_features, train_stationarity = self._ensure_stationary_series(
+                        train_features, lookback, context='train'
+                    )
+                    test_features, test_stationarity = self._ensure_stationary_series(
+                        test_features, lookback, context='test'
+                    )
+
+                    stationarity_audit[lookback] = {
+                        'train': train_stationarity,
+                        'test': test_stationarity,
+                    }
+
+                    if train_stationarity.get('transformed') or test_stationarity.get('transformed'):
+                        self.logger.debug(
+                            f"   → Applied stationarity transform for {feature_name} (lookback={lookback})"
+                        )
+
                     # Align data lengths (features might be shorter due to rolling windows)
                     min_length = min(len(train_features), len(test_features), len(train_data[target_column]), len(test_data[target_column]))
                     if min_length <= 1:
+                        stationarity_audit[lookback]['skipped'] = 'insufficient_length'
+                        continue
+
+                    if np.nanstd(test_features[:min_length]) == 0:
+                        stationarity_audit[lookback]['skipped'] = 'no_variance'
                         continue
 
                     # Calculate correlation on test data to avoid overfitting
@@ -371,13 +403,97 @@ class CoreOptimizer:
                     'correlation_method': 'pearson',
                     'cross_validation': True,
                     'train_size': len(train_data),
-                    'test_size': len(test_data)
+                    'test_size': len(test_data),
+                    'stationarity_audit': stationarity_audit,
+                    'stationarity_tests_available': STATIONARITY_TESTS_AVAILABLE,
+                    'non_stationary_lookbacks': sum(
+                        1
+                        for audit in stationarity_audit.values()
+                        if audit['train'].get('transformed') or audit['test'].get('transformed')
+                    )
                 }
             )
 
         except Exception as e:
             self.logger.error(f"MRMR optimization failed: {e}")
             return self._create_failed_result("mrmr", 0.0)
+
+    def _ensure_stationary_series(
+        self,
+        values: Union[np.ndarray, pd.Series],
+        lookback: int,
+        context: str,
+        significance: float = 0.05
+    ) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """Ensure a feature series is stationary, returning transformed values and metadata."""
+        series = pd.Series(values).astype(float)
+        series = series.replace([np.inf, -np.inf], np.nan)
+
+        info: Dict[str, Any] = {
+            'context': context,
+            'tests_available': STATIONARITY_TESTS_AVAILABLE,
+            'adf_pvalue': None,
+            'kpss_pvalue': None,
+            'transformed': False,
+            'lookback': lookback,
+        }
+
+        clean_series = series.dropna()
+        if clean_series.empty or len(clean_series) < 5:
+            info['insufficient_samples'] = len(clean_series)
+            return series.fillna(0.0).values, info
+
+        is_stationary = False
+
+        if STATIONARITY_TESTS_AVAILABLE and len(clean_series) >= 8:
+            try:
+                info['adf_pvalue'] = float(adfuller(clean_series, autolag='AIC')[1])
+            except Exception as exc:  # pragma: no cover - defensive
+                info['adf_error'] = str(exc)
+
+            try:
+                info['kpss_pvalue'] = float(kpss(clean_series, regression='c', nlags='auto')[1])
+            except Exception as exc:  # pragma: no cover - defensive
+                info['kpss_error'] = str(exc)
+
+            adf_pass = info['adf_pvalue'] is not None and info['adf_pvalue'] < significance
+            kpss_pass = info['kpss_pvalue'] is None or info['kpss_pvalue'] > significance
+            is_stationary = adf_pass and kpss_pass
+        else:
+            diff_values = np.diff(clean_series.values)
+            base_std = float(np.nanstd(clean_series.values))
+            diff_std = float(np.nanstd(diff_values)) if len(diff_values) else 0.0
+            ratio = diff_std / (base_std + 1e-12)
+            info['heuristic_ratio'] = ratio
+            is_stationary = base_std > 0 and diff_std > 0 and 0.1 <= ratio <= 10
+
+        if not is_stationary:
+            transformed = self._stationary_transform(series, lookback)
+            info['transformed'] = True
+            return transformed.values, info
+
+        return series.fillna(0.0).values, info
+
+    def _stationary_transform(self, series: pd.Series, lookback: int) -> pd.Series:
+        """Apply a stationary transform using log returns/percent changes and demeaning."""
+        safe_series = series.astype(float).replace([np.inf, -np.inf], np.nan)
+        if safe_series.dropna().empty:
+            return pd.Series(np.zeros(len(series)), index=series.index)
+
+        if (safe_series > 0).all():
+            diff_series = np.log(safe_series).diff()
+        else:
+            diff_series = safe_series.pct_change()
+
+        diff_series = diff_series.replace([np.inf, -np.inf], np.nan)
+
+        if diff_series.dropna().empty:
+            diff_series = safe_series.diff()
+
+        window = max(2, min(max(lookback, 2), len(diff_series)))
+        demeaned = diff_series - diff_series.rolling(window=window, min_periods=1).mean()
+
+        return demeaned.fillna(0.0)
 
     def _optimize_grid_search(
         self,
@@ -788,12 +904,12 @@ class CoreOptimizer:
             feature_generator = self._create_feature_generator(feature_name, lookback)
 
             if feature_generator is None:
-                # Fallback to rolling mean for unknown features
+                # Fallback to stationary transform for unknown features
                 if feature_name in data.columns:
                     tprint_warning(
-                        f"⚠️ No generator found for '{feature_name}', using rolling mean fallback"
+                        f"⚠️ No generator found for '{feature_name}', using stationary fallback"
                     )
-                    return data[feature_name].rolling(window=lookback, min_periods=1).mean().values
+                    return self._stationary_transform(data[feature_name], lookback).values
                 else:
                     tprint_warning(
                         f"⚠️ Feature '{feature_name}' not in dataframe, returning zeros"
@@ -855,12 +971,12 @@ class CoreOptimizer:
 
         except ImportError as e:
             self.logger.warning(f"Feature engineering modules not available: {e}, using fallback")
-            # Fallback to rolling mean
+            # Fallback to stationary transform
             if feature_name in data.columns:
                 tprint_warning(
-                    f"⚠️ Feature modules missing ({e}), using rolling mean for '{feature_name}'"
+                    f"⚠️ Feature modules missing ({e}), using stationary fallback for '{feature_name}'"
                 )
-                return data[feature_name].rolling(window=lookback, min_periods=1).mean().values
+                return self._stationary_transform(data[feature_name], lookback).values
             else:
                 tprint_error(
                     f"❌ Feature modules missing and '{feature_name}' not in data, returning zeros"
@@ -3469,22 +3585,36 @@ class CoreOptimizer:
                 mi = self._calculate_mutual_information_robust(bootstrap_features, bootstrap_returns)
                 mi_samples.append(mi)
             
-            mean_mi = np.mean(mi_samples)
-            std_mi = np.std(mi_samples)
-            
+            mi_array = np.asarray(mi_samples)
+            mean_mi = float(np.mean(mi_array))
+            std_mi = float(np.std(mi_array))
+            median_mi = float(np.median(mi_array))
+            mad_mi = float(np.median(np.abs(mi_array - median_mi)))
+            mad_over_median = float(safe_divide(mad_mi, np.abs(median_mi))) if median_mi != 0 else 0.0
+
             # Objective function: mean_MI - 0.5 × std_MI (variance penalty)
             objective = mean_mi - 0.5 * std_mi
-            
+
             return {
                 'mean_mi': mean_mi,
                 'std_mi': std_mi,
+                'median_mi': median_mi,
+                'mad_mi': mad_mi,
+                'mad_over_median': mad_over_median,
                 'objective': objective,
                 'samples': mi_samples
             }
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Bootstrap validation failed: {e}")
-            return {'mean_mi': 0.0, 'std_mi': 0.0, 'objective': 0.0}
+            return {
+                'mean_mi': 0.0,
+                'std_mi': 0.0,
+                'median_mi': 0.0,
+                'mad_mi': 0.0,
+                'mad_over_median': 0.0,
+                'objective': 0.0
+            }
 
     def _parallel_refinement(self, top_horizons: List[Tuple[int, float]], data: pd.DataFrame, 
                            feature_name: str, forward_returns: Dict[int, np.ndarray], 
@@ -3667,6 +3797,40 @@ class CoreOptimizer:
         feature_name: str,
         target_column: str,
         lookback_range: Tuple[int, int],
+        outer_split_iterator: Optional[Iterable[Tuple[slice, slice]]] = None,
+        **kwargs
+    ) -> OptimizationResult:
+        """Optimize using coarse-to-refine search with optional nested CV."""
+        provided_iterator = kwargs.pop('outer_split_iterator', None)
+        if provided_iterator is not None:
+            outer_split_iterator = provided_iterator
+
+        if outer_split_iterator:
+            outer_splits = list(outer_split_iterator)
+            if outer_splits:
+                return self._optimize_coarse_to_refine_with_outer(
+                    data,
+                    feature_name,
+                    target_column,
+                    lookback_range,
+                    outer_splits,
+                    **kwargs,
+                )
+
+        return self._coarse_to_refine_single_pass(
+            data,
+            feature_name,
+            target_column,
+            lookback_range,
+            **kwargs,
+        )
+
+    def _coarse_to_refine_single_pass(
+        self,
+        data: pd.DataFrame,
+        feature_name: str,
+        target_column: str,
+        lookback_range: Tuple[int, int],
         **kwargs
     ) -> OptimizationResult:
         """
@@ -3698,6 +3862,8 @@ class CoreOptimizer:
             
             # Step 4: Vectorized coarse search with early termination
             coarse_results = []
+            horizon_bootstrap_cache: Dict[int, Dict[str, float]] = {}
+            unstable_horizons: Dict[int, float] = {}
             
             # Use vectorized feature generation for all coarse horizons
             vectorized_features = self._vectorized_feature_generation(data, feature_name, coarse_horizons)
@@ -3771,6 +3937,53 @@ class CoreOptimizer:
             # Step 5: Pick top 3 horizons
             coarse_results.sort(key=lambda x: x[1], reverse=True)
             top_3_horizons = [(horizon, mi) for horizon, mi in coarse_results[:3]]
+            original_top_3 = list(top_3_horizons)
+            stability_threshold = 0.15
+            screened_top_horizons: List[Tuple[int, float]] = []
+
+            for horizon, mi in coarse_results:
+                if len(screened_top_horizons) >= 3:
+                    break
+
+                try:
+                    horizon_key = int(horizon)
+
+                    feature_values = vectorized_features.get(horizon_key)
+                    if feature_values is None or len(feature_values) == 0:
+                        feature_values = self._cached_feature_calculation(data, feature_name, horizon_key)
+                        if feature_values is None or len(feature_values) == 0:
+                            continue
+
+                    train_feature = feature_values[:train_end_idx] if len(feature_values) >= train_end_idx else feature_values
+                    train_returns = forward_returns.get(horizon_key, np.array([]))
+
+                    if len(train_returns) == 0:
+                        continue
+
+                    min_length = min(len(train_feature), len(train_returns))
+                    if min_length < 20:
+                        continue
+
+                    stats = self._bootstrap_mi_validation(
+                        np.asarray(train_feature[:min_length]),
+                        np.asarray(train_returns[:min_length]),
+                        n_resamples=10
+                    )
+
+                    horizon_bootstrap_cache[horizon_key] = stats
+                    mad_ratio = stats.get('mad_over_median', 0.0)
+
+                    if mad_ratio > stability_threshold:
+                        unstable_horizons[horizon_key] = mad_ratio
+                        continue
+
+                    screened_top_horizons.append((horizon_key, mi))
+
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Stability screening failed for horizon {horizon_key}: {e}")
+                    continue
+
+            refinement_candidates = screened_top_horizons
             
             # Early stopping check
             best_coarse_mi = coarse_results[0][1]
@@ -3795,57 +4008,90 @@ class CoreOptimizer:
                 )
             
             # Step 6: Parallel refinement around top horizons
-            refined_results = self._parallel_refinement(
-                top_3_horizons, data, feature_name, forward_returns, 
-                train_end_idx, min_lookback, max_lookback
-            )
+            refined_results: List[Tuple[int, float]] = []
+            if refinement_candidates:
+                refined_results = self._parallel_refinement(
+                    refinement_candidates, data, feature_name, forward_returns,
+                    train_end_idx, min_lookback, max_lookback
+                )
             
             # Combine coarse and refined results
             all_candidates = coarse_results + refined_results
             
             # Step 7: Memory-efficient batch bootstrap validation
-            bootstrap_results = []
+            bootstrap_results: List[Dict[str, Any]] = []
             batch_size = 3  # Process in small batches to manage memory
-            
+
             for i in range(0, min(10, len(all_candidates)), batch_size):
                 batch = all_candidates[i:i+batch_size]
-                
+
                 for horizon, mi in batch:
                     try:
+                        horizon_key = int(horizon)
+
                         # Use cached feature calculation
-                        feature_values = self._cached_feature_calculation(data, feature_name, horizon)
-                        
+                        feature_values = self._cached_feature_calculation(data, feature_name, horizon_key)
+
                         if feature_values is None or len(feature_values) == 0:
                             continue
-                        
+
                         train_feature = feature_values[:train_end_idx] if len(feature_values) >= train_end_idx else feature_values
-                        train_returns = forward_returns.get(horizon, np.array([]))
-                        
+                        train_returns = forward_returns.get(horizon_key, np.array([]))
+
                         if len(train_returns) == 0:
                             continue
-                        
+
                         min_length = min(len(train_feature), len(train_returns))
                         if min_length < 20:  # Need sufficient data for bootstrap
-                            bootstrap_results.append((horizon, mi, 0.0, 0.0, mi))  # Use raw MI
+                            stability_penalty = 1.0 if horizon_key in unstable_horizons else 0.0
+                            bootstrap_results.append({
+                                'horizon': horizon_key,
+                                'mean_mi': mi,
+                                'std_mi': 0.0,
+                                'median_mi': 0.0,
+                                'mad_mi': 0.0,
+                                'mad_over_median': 0.0,
+                                'objective': mi - stability_penalty,
+                                'original_mi': mi,
+                                'adjusted_mi': mi * (0.1 if horizon_key in unstable_horizons else 1.0),
+                                'is_unstable': horizon_key in unstable_horizons,
+                                'stability_guardrail_penalty': stability_penalty
+                            })
                             continue
-                        
-                        # Bootstrap validation (with reduced samples: 10 instead of 20)
-                        bootstrap_stats = self._bootstrap_mi_validation(
-                            train_feature[:min_length], 
-                            train_returns[:min_length],
-                            n_resamples=10  # 50% reduction from 20 to 10
-                        )
-                        
-                        bootstrap_results.append((
-                            horizon, 
-                            bootstrap_stats['mean_mi'], 
-                            bootstrap_stats['std_mi'], 
-                            bootstrap_stats['objective'],
-                            mi  # Keep original MI for comparison
-                        ))
-                        
+
+                        stats = horizon_bootstrap_cache.get(horizon_key)
+                        if stats is None:
+                            stats = self._bootstrap_mi_validation(
+                                train_feature[:min_length],
+                                train_returns[:min_length],
+                                n_resamples=10  # 50% reduction from 20 to 10
+                            )
+                            horizon_bootstrap_cache[horizon_key] = stats
+
+                        mad_ratio = stats.get('mad_over_median', 0.0)
+                        if mad_ratio > stability_threshold:
+                            unstable_horizons[horizon_key] = mad_ratio
+
+                        stability_penalty = 1.0 if horizon_key in unstable_horizons else 0.0
+                        adjusted_mi = mi * (0.1 if horizon_key in unstable_horizons else 1.0)
+                        objective = stats['objective'] - stability_penalty
+
+                        bootstrap_results.append({
+                            'horizon': horizon_key,
+                            'mean_mi': stats['mean_mi'],
+                            'std_mi': stats['std_mi'],
+                            'median_mi': stats.get('median_mi', 0.0),
+                            'mad_mi': stats.get('mad_mi', 0.0),
+                            'mad_over_median': mad_ratio,
+                            'objective': objective,
+                            'original_mi': mi,
+                            'adjusted_mi': adjusted_mi,
+                            'is_unstable': horizon_key in unstable_horizons,
+                            'stability_guardrail_penalty': stability_penalty
+                        })
+
                     except Exception as e:
-                        self.logger.warning(f"⚠️ Bootstrap failed for horizon {horizon}: {e}")
+                        self.logger.warning(f"⚠️ Bootstrap failed for horizon {horizon_key}: {e}")
                         continue
                 
                 # Memory cleanup after each batch
@@ -3853,61 +4099,72 @@ class CoreOptimizer:
             
             # Step 8: Time stability check (validation split)
             if bootstrap_results:
-                best_candidates = sorted(bootstrap_results, key=lambda x: x[3], reverse=True)[:3]  # Top 3 by objective
-                
-                stability_results = []
-                for horizon, mean_mi, std_mi, objective, original_mi in best_candidates:
+                best_candidates = sorted(bootstrap_results, key=lambda x: x['objective'], reverse=True)[:3]  # Top 3 by objective
+
+                stability_results: List[Dict[str, Any]] = []
+                for candidate in best_candidates:
+                    horizon = candidate['horizon']
                     try:
                         # Use cached feature calculation
                         feature_values = self._cached_feature_calculation(data, feature_name, horizon)
-                        
+
                         if feature_values is None or len(feature_values) == 0:
                             continue
-                        
+
                         # Test on validation split
                         val_feature = feature_values[val_start_idx:] if len(feature_values) > val_start_idx else np.array([])
                         val_returns = forward_returns.get(horizon, np.array([]))
-                        
+
+                        candidate_with_val = candidate.copy()
+
                         if len(val_feature) == 0 or len(val_returns) == 0:
-                            stability_results.append((horizon, mean_mi, std_mi, objective, original_mi, 0.0))
+                            candidate_with_val['val_mi'] = 0.0
+                            stability_results.append(candidate_with_val)
                             continue
-                        
+
                         min_length = min(len(val_feature), len(val_returns))
                         if min_length < 10:
-                            stability_results.append((horizon, mean_mi, std_mi, objective, original_mi, 0.0))
+                            candidate_with_val['val_mi'] = 0.0
+                            stability_results.append(candidate_with_val)
                             continue
-                        
+
                         # Calculate MI on validation split
                         val_mi = self._calculate_mutual_information_robust(
-                            val_feature[:min_length], 
+                            val_feature[:min_length],
                             val_returns[:min_length]
                         )
-                        
-                        stability_results.append((horizon, mean_mi, std_mi, objective, original_mi, val_mi))
-                        
+
+                        candidate_with_val['val_mi'] = val_mi
+                        stability_results.append(candidate_with_val)
+
                     except Exception as e:
                         self.logger.warning(f"⚠️ Stability check failed for horizon {horizon}: {e}")
                         continue
-                
+
                 # Prefer horizons that don't collapse OOS (validation MI > 0.5 * train MI)
-                final_results = []
-                for horizon, mean_mi, std_mi, objective, original_mi, val_mi in stability_results:
+                final_results: List[Dict[str, Any]] = []
+                for candidate in stability_results:
                     stability_penalty = 0.0
-                    if mean_mi > 0 and val_mi < 0.5 * mean_mi:
+                    if candidate['mean_mi'] > 0 and candidate['val_mi'] < 0.5 * candidate['mean_mi']:
                         stability_penalty = 0.1  # Penalize poor OOS performance
-                    
-                    final_score = objective - stability_penalty
-                    final_results.append((horizon, final_score, mean_mi, std_mi, val_mi, original_mi))
-                
+
+                    final_score = candidate['objective'] - stability_penalty
+                    enriched_candidate = candidate.copy()
+                    enriched_candidate['final_score'] = final_score
+                    enriched_candidate['validation_penalty'] = stability_penalty
+                    final_results.append(enriched_candidate)
+
                 # Select best horizon
                 if final_results:
-                    final_results.sort(key=lambda x: x[1], reverse=True)
-                    best_horizon, best_score, best_mean_mi, best_std_mi, best_val_mi, best_original_mi = final_results[0]
-                    
+                    final_results.sort(key=lambda x: x['final_score'], reverse=True)
+                    best_candidate = final_results[0]
+                    best_horizon = best_candidate['horizon']
+                    best_score = best_candidate['final_score']
+
                     # Log cache performance
                     cache_hit_rate = self.cache_hits / (self.cache_hits + self.cache_misses) if (self.cache_hits + self.cache_misses) > 0 else 0
                     self.logger.info(f'✅ {feature_name}: best_lookback={best_horizon}, score={best_score:.6f} (cache_hit_rate={cache_hit_rate:.2%})')
-                    
+
                     return OptimizationResult(
                         best_lookback_period=best_horizon,
                         best_score=best_score,
@@ -3921,11 +4178,23 @@ class CoreOptimizer:
                             'coarse_horizons': len(coarse_results),
                             'refined_horizons': len(refined_results),
                             'bootstrap_samples': 10,  # Updated to reflect 50% reduction
-                            'mean_mi': best_mean_mi,
-                            'std_mi': best_std_mi,
-                            'val_mi': best_val_mi,
-                            'original_mi': best_original_mi,
-                            'top_3_coarse': top_3_horizons,
+                            'mean_mi': best_candidate['mean_mi'],
+                            'std_mi': best_candidate['std_mi'],
+                            'median_mi': best_candidate.get('median_mi', 0.0),
+                            'mad_mi': best_candidate.get('mad_mi', 0.0),
+                            'mad_over_median': best_candidate.get('mad_over_median', 0.0),
+                            'stability_ratio': best_candidate.get('mad_over_median', 0.0),
+                            'stability_guardrail_penalty': best_candidate.get('stability_guardrail_penalty', 0.0),
+                            'is_unstable_candidate': best_candidate.get('is_unstable', False),
+                            'stability_guardrail_triggered': bool(best_candidate.get('is_unstable', False)),
+                            'validation_penalty': best_candidate.get('validation_penalty', 0.0),
+                            'val_mi': best_candidate.get('val_mi', 0.0),
+                            'original_mi': best_candidate.get('original_mi', 0.0),
+                            'adjusted_mi': best_candidate.get('adjusted_mi', 0.0),
+                            'top_3_coarse': original_top_3,
+                            'screened_top_horizons': list(refinement_candidates),
+                            'unstable_horizons': dict(unstable_horizons),
+                            'stability_threshold': stability_threshold,
                             'stability_check': True,
                             'cache_hit_rate': cache_hit_rate,
                             'vectorized_ops': MATRIX_OPS_AVAILABLE
@@ -3934,8 +4203,11 @@ class CoreOptimizer:
             
             # Fallback to best coarse result
             best_horizon, best_mi = coarse_results[0]
+            best_stats = horizon_bootstrap_cache.get(best_horizon, {})
+            best_ratio = best_stats.get('mad_over_median', unstable_horizons.get(best_horizon, 0.0))
+            guardrail_penalty = 1.0 if best_horizon in unstable_horizons else 0.0
             self.logger.info(f'✅ {feature_name}: best_lookback={best_horizon}, score={best_mi:.6f}')
-            
+
             return OptimizationResult(
                 best_lookback_period=best_horizon,
                 best_score=best_mi,
@@ -3948,10 +4220,223 @@ class CoreOptimizer:
                     'target_column': target_column,
                     'coarse_horizons': len(coarse_results),
                     'refined_horizons': 0,
-                    'fallback': True
+                    'fallback': True,
+                    'median_mi': best_stats.get('median_mi', 0.0),
+                    'mad_mi': best_stats.get('mad_mi', 0.0),
+                    'mad_over_median': best_ratio,
+                    'stability_ratio': best_ratio,
+                    'stability_guardrail_penalty': guardrail_penalty,
+                    'stability_guardrail_triggered': best_horizon in unstable_horizons,
+                    'stability_threshold': stability_threshold,
+                    'unstable_horizons': dict(unstable_horizons),
+                    'screened_top_horizons': list(refinement_candidates),
+                    'top_3_coarse': original_top_3
                 }
             )
             
         except Exception as e:
             self.logger.error(f"❌ Coarse-to-refine optimization failed: {e}")
             return self._create_failed_result("coarse_to_refine", 0.0)
+
+    def _optimize_coarse_to_refine_with_outer(
+        self,
+        data: pd.DataFrame,
+        feature_name: str,
+        target_column: str,
+        lookback_range: Tuple[int, int],
+        outer_splits: List[Tuple[slice, slice]],
+        **kwargs
+    ) -> OptimizationResult:
+        """Run coarse-to-refine optimization inside nested outer splits."""
+        tprint_debug("🧠 Entering _optimize_coarse_to_refine_with_outer")
+
+        try:
+            min_lookback, max_lookback = lookback_range
+            forward_returns_full = self._get_shared_forward_returns_matrix(
+                data,
+                target_column,
+                max_horizon=max_lookback,
+            )
+            if not forward_returns_full:
+                return self._create_failed_result("coarse_to_refine", 0.0)
+
+            lookback_scores: Dict[int, List[float]] = defaultdict(list)
+            fold_records: List[Dict[str, Any]] = []
+            total_trials = 0
+            stability_scores: List[float] = []
+            sensitivity_scores: List[float] = []
+            convergence_flags: List[bool] = []
+
+            for fold_index, (train_split, val_split) in enumerate(outer_splits):
+                train_bounds = self._normalize_split_bounds(train_split, len(data))
+                val_bounds = self._normalize_split_bounds(val_split, len(data))
+
+                if not train_bounds or not val_bounds:
+                    continue
+
+                train_start, train_end = train_bounds
+                val_start, val_end = val_bounds
+
+                if train_end - train_start < min_lookback:
+                    continue
+
+                train_frame = data.iloc[train_start:train_end]
+                if train_frame.empty:
+                    continue
+
+                inner_result = self._coarse_to_refine_single_pass(
+                    train_frame,
+                    feature_name,
+                    target_column,
+                    lookback_range,
+                    **kwargs,
+                )
+
+                total_trials += inner_result.total_trials
+                convergence_flags.append(inner_result.convergence_achieved)
+
+                if inner_result.stability_score:
+                    stability_scores.append(float(inner_result.stability_score))
+                if inner_result.lookback_sensitivity:
+                    sensitivity_scores.append(float(inner_result.lookback_sensitivity))
+
+                lookback = int(inner_result.best_lookback_period)
+                if lookback <= 0:
+                    continue
+
+                validation_score = self._score_frozen_lookback(
+                    data,
+                    feature_name,
+                    lookback,
+                    (val_start, val_end),
+                    forward_returns_full,
+                )
+
+                lookback_scores[lookback].append(validation_score)
+
+                fold_records.append({
+                    'fold_index': fold_index,
+                    'train_start': train_start,
+                    'train_end': train_end,
+                    'validation_start': val_start,
+                    'validation_end': val_end,
+                    'inner_best_lookback': lookback,
+                    'inner_score': inner_result.best_score,
+                    'validation_score': validation_score,
+                })
+
+            if not fold_records or not lookback_scores:
+                return self._coarse_to_refine_single_pass(
+                    data,
+                    feature_name,
+                    target_column,
+                    lookback_range,
+                    **kwargs,
+                )
+
+            def aggregate_mean(values: List[float]) -> float:
+                cleaned = [float(v) for v in values if v is not None and not np.isnan(v)]
+                if not cleaned:
+                    return 0.0
+                return float(np.mean(cleaned))
+
+            aggregate_scores = {lb: aggregate_mean(scores) for lb, scores in lookback_scores.items()}
+            best_lookback, best_score = max(aggregate_scores.items(), key=lambda item: item[1])
+
+            metadata = {
+                'feature_name': feature_name,
+                'target_column': target_column,
+                'outer_folds': fold_records,
+                'lookback_aggregates': {
+                    int(lb): {
+                        'mean_validation_score': aggregate_scores[lb],
+                        'folds': len(scores),
+                    }
+                    for lb, scores in lookback_scores.items()
+                },
+                'frozen_from_inner': True,
+                'outer_split_count': len(fold_records),
+            }
+
+            stability_value = aggregate_mean(stability_scores)
+            sensitivity_value = aggregate_mean(sensitivity_scores)
+
+            return OptimizationResult(
+                best_lookback_period=int(best_lookback),
+                best_score=float(best_score),
+                optimization_method="coarse_to_refine",
+                total_trials=total_trials,
+                optimization_time=0.0,
+                convergence_achieved=all(convergence_flags) if convergence_flags else True,
+                metadata=metadata,
+                stability_score=stability_value,
+                lookback_sensitivity=sensitivity_value,
+            )
+
+        except Exception as exc:
+            self.logger.error(f"❌ Nested coarse-to-refine optimization failed: {exc}")
+            return self._create_failed_result("coarse_to_refine", 0.0)
+
+    def _normalize_split_bounds(
+        self,
+        split: Union[slice, Iterable[int]],
+        data_length: int,
+    ) -> Optional[Tuple[int, int]]:
+        """Normalize split definitions to concrete integer bounds."""
+        if isinstance(split, slice):
+            start = 0 if split.start is None else max(0, int(split.start))
+            stop = data_length if split.stop is None else min(data_length, int(split.stop))
+            if start >= stop:
+                return None
+            return start, stop
+
+        if isinstance(split, Iterable):
+            indices = [int(idx) for idx in split if isinstance(idx, (int, np.integer))]
+            if not indices:
+                return None
+            indices.sort()
+            start = max(0, indices[0])
+            stop = min(data_length, indices[-1] + 1)
+            if start >= stop:
+                return None
+            return start, stop
+
+        return None
+
+    def _score_frozen_lookback(
+        self,
+        data: pd.DataFrame,
+        feature_name: str,
+        lookback: int,
+        bounds: Tuple[int, int],
+        forward_returns: Dict[int, np.ndarray],
+    ) -> float:
+        """Evaluate a frozen lookback on the specified outer validation window."""
+        start, end = bounds
+        if start >= end or lookback <= 0:
+            return 0.0
+
+        feature_values = self._cached_feature_calculation(data, feature_name, lookback)
+        if feature_values is None or len(feature_values) == 0:
+            return 0.0
+
+        returns_array = forward_returns.get(lookback, np.array([]))
+        if len(returns_array) == 0:
+            return 0.0
+
+        feature_segment = feature_values[start:end]
+        returns_segment = returns_array[start:end]
+
+        min_length = min(len(feature_segment), len(returns_segment))
+        if min_length < 10:
+            return 0.0
+
+        score = self._calculate_mutual_information_robust(
+            feature_segment[:min_length],
+            returns_segment[:min_length],
+        )
+
+        if score is None or np.isnan(score):
+            return 0.0
+
+        return float(score)

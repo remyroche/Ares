@@ -160,6 +160,7 @@ class EnhancedDataLabelsConfig:
     min_data_quality_score: float = 0.7
     min_label_stability_score: float = 0.6
     max_label_imbalance: float = 0.8
+    min_capacity_score: float = 0.6
     
     # Performance settings
     enable_caching: bool = True
@@ -296,18 +297,23 @@ class EnhancedDataLabelsSystem:
             # Step 5: Final Quality Check
             tprint_info("✅ Step 5: Final quality check")
             final_quality = self._perform_final_quality_check(
-                balanced_result, stability_result, data_quality_result
+                balanced_result,
+                stability_result,
+                data_quality_result,
+                label_result.get('capacity_diagnostics', {})
             )
-            
+
             # Compile results
             result = {
                 'processed_data': balanced_result['X'],
                 'labels': balanced_result['y'],
                 'sample_weights': balanced_result['sample_weights'],
                 'confidence_scores': label_result['confidence_scores'],
+                'capacity_diagnostics': label_result.get('capacity_diagnostics', {}),
                 'data_quality': data_quality_result,
                 'label_stability': stability_result,
                 'final_quality': final_quality,
+                'label_metadata': label_result,
                 'processing_time': time.time() - start_time,
                 'timestamp': datetime.now(),
                 'cache_key': cache_key
@@ -452,7 +458,8 @@ class EnhancedDataLabelsSystem:
             analyst_labels, analyst_confidence = self.label_definitions.generate_analyst_labels(
                 market_data, volatility, regime_data, portfolio_state
             )
-            
+            capacity_diagnostics = self.label_definitions.get_latest_analyst_diagnostics()
+
             # Generate tactician labels (Direction/magnitude)
             tactician_labels, tactician_magnitude = self.label_definitions.generate_tactician_labels(
                 market_data, volatility, regime_data, portfolio_state
@@ -491,9 +498,13 @@ class EnhancedDataLabelsSystem:
                 'tactician_positive_ratio': tactician_labels.mean(),
                 'analyst_confidence_mean': analyst_confidence.mean(),
                 'tactician_magnitude_mean': tactician_magnitude.mean(),
-                'total_samples': len(labels_df)
+                'total_samples': len(labels_df),
+                'realized_turnover': capacity_diagnostics.get('realized_turnover', 0.0),
+                'capacity_score': capacity_diagnostics.get('capacity_score', 1.0),
+                'capacity_utilization': capacity_diagnostics.get('capacity_utilization', 0.0),
+                'capacity_violations': capacity_diagnostics.get('violations_flagged', False)
             }
-            
+
             result = {
                 'labels': labels_df,
                 'confidence_scores': pd.DataFrame({
@@ -501,14 +512,19 @@ class EnhancedDataLabelsSystem:
                     'tactician_magnitude': tactician_magnitude
                 }, index=market_data.index),
                 'label_stats': label_stats,
-                'volatility_series': volatility
+                'volatility_series': volatility,
+                'capacity_diagnostics': capacity_diagnostics
             }
-            
+
             tprint_success(f"✅ Trading-aware labels generated")
             tprint_info(f"   → Analyst positive: {label_stats['analyst_positive_ratio']:.3f}")
             tprint_info(f"   → Tactician positive: {label_stats['tactician_positive_ratio']:.3f}")
+            tprint_info(
+                "   → Capacity score: "
+                f"{label_stats['capacity_score']:.2f} | Turnover: {label_stats['realized_turnover']:.2f}"
+            )
             tprint_info(f"   → Total samples: {label_stats['total_samples']}")
-            
+
             return result
             
         except Exception as e:
@@ -801,7 +817,8 @@ class EnhancedDataLabelsSystem:
         self,
         balanced_result: Dict[str, Any],
         stability_result: Dict[str, Any],
-        data_quality_result: Dict[str, Any]
+        data_quality_result: Dict[str, Any],
+        capacity_result: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Perform final quality check on all components."""
         try:
@@ -810,7 +827,8 @@ class EnhancedDataLabelsSystem:
             # Calculate component scores
             data_quality_score = data_quality_result.get('quality_score', 0.0)
             label_stability_score = stability_result.get('overall_stability', 0.0)
-            
+            capacity_score = capacity_result.get('capacity_score', 1.0)
+
             # Check class balance
             class_dist = balanced_result.get('class_distribution', {})
             if class_dist:
@@ -823,7 +841,8 @@ class EnhancedDataLabelsSystem:
             component_scores = [
                 data_quality_score,
                 label_stability_score,
-                balance_score
+                balance_score,
+                capacity_score
             ]
             overall_score = np.mean(component_scores)
             
@@ -847,17 +866,23 @@ class EnhancedDataLabelsSystem:
                 recommendations.append("Address label stability issues - check for leakage and drift")
             if balance_score < 0.7:
                 recommendations.append("Improve class balance - consider different balancing strategies")
-            
+            if capacity_score < self.config.min_capacity_score:
+                recommendations.append("Capacity violations detected - revisit turnover and holding limits")
+
             result = {
                 'overall_score': overall_score,
                 'quality_grade': quality_grade,
                 'component_scores': {
                     'data_quality': data_quality_score,
                     'label_stability': label_stability_score,
-                    'class_balance': balance_score
+                    'class_balance': balance_score,
+                    'capacity': capacity_score
                 },
                 'recommendations': recommendations,
-                'is_acceptable': overall_score >= self.config.min_data_quality_score
+                'is_acceptable': (
+                    overall_score >= self.config.min_data_quality_score and
+                    capacity_score >= self.config.min_capacity_score
+                )
             }
             
             tprint_success(f"✅ Final quality check completed: {quality_grade} ({overall_score:.3f})")
@@ -941,7 +966,8 @@ class EnhancedDataLabelsSystem:
             # Update label history
             self.label_history.append({
                 'timestamp': result['timestamp'],
-                'label_stats': result.get('labels', {}).get('label_stats', {}),
+                'label_stats': result.get('label_metadata', {}).get('label_stats', {}),
+                'capacity_diagnostics': result.get('capacity_diagnostics', {}),
                 'processing_time': result['processing_time']
             })
             

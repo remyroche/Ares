@@ -9,9 +9,11 @@ import numpy as np
 import pandas as pd
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 import logging
+
+from src.training.steps.pre_training.profit_labeling.enhanced_label_definitions import TradingCosts
 
 try:
     import torch
@@ -49,6 +51,9 @@ class VectorizedBacktestConfig:
     rebalance_frequency: str = 'daily'
     risk_free_rate: float = 0.02
     benchmark_symbol: Optional[str] = None
+    trading_costs: TradingCosts = field(default_factory=TradingCosts)
+    asset_classes: Optional[List[str]] = None
+    stress_scenario: Optional[str] = None
 
     # Vectorization settings
     use_gpu: bool = True
@@ -359,6 +364,75 @@ class VectorizedBacktestingEngine:
 
         return returns
 
+    def _compute_additional_trading_costs(
+        self,
+        position_sizes: np.ndarray,
+        scenario: Optional[str] = None
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Compute borrow/funding costs and stress multipliers for positions."""
+        trading_costs = self.config.trading_costs
+        if trading_costs is None:
+            zeros = np.zeros_like(position_sizes, dtype=float)
+            ones = np.ones_like(position_sizes, dtype=float)
+            return zeros, ones
+
+        if position_sizes.ndim == 1:
+            asset_classes = [trading_costs.default_asset_class]
+        else:
+            if self.config.asset_classes is not None:
+                if len(self.config.asset_classes) != position_sizes.shape[1]:
+                    raise ValueError(
+                        "asset_classes length must match number of assets in position_sizes"
+                    )
+                asset_classes = list(self.config.asset_classes)
+            else:
+                asset_classes = [trading_costs.default_asset_class] * position_sizes.shape[1]
+
+        trading_costs.validate_asset_assumptions(asset_classes)
+
+        scenario_key = scenario or self.config.stress_scenario or trading_costs.active_stress_scenario
+
+        if position_sizes.ndim == 1:
+            positions = position_sizes.astype(float)
+            directions = np.where(positions >= 0, 'long', 'short')
+            borrow_rates = np.array([
+                trading_costs.get_borrow_rate(asset_classes[0], direction)
+                for direction in directions
+            ])
+            funding_rates = np.array([
+                trading_costs.get_funding_rate(asset_classes[0], direction)
+                for direction in directions
+            ])
+            stress_factors = np.array([
+                trading_costs.get_stress_multiplier(asset_classes[0], direction, scenario_key)
+                for direction in directions
+            ])
+
+            additional_costs = np.abs(positions) * (borrow_rates + funding_rates)
+            return additional_costs, stress_factors
+
+        additional_costs = np.zeros_like(position_sizes, dtype=float)
+        stress_factors = np.ones_like(position_sizes, dtype=float)
+
+        for col, asset_class in enumerate(asset_classes):
+            positions = position_sizes[:, col].astype(float)
+            directions = np.where(positions >= 0, 'long', 'short')
+            borrow_rates = np.array([
+                trading_costs.get_borrow_rate(asset_class, direction)
+                for direction in directions
+            ])
+            funding_rates = np.array([
+                trading_costs.get_funding_rate(asset_class, direction)
+                for direction in directions
+            ])
+            stress_factors[:, col] = np.array([
+                trading_costs.get_stress_multiplier(asset_class, direction, scenario_key)
+                for direction in directions
+            ])
+            additional_costs[:, col] = np.abs(positions) * (borrow_rates + funding_rates)
+
+        return additional_costs, stress_factors
+
     def _calculate_trading_costs_vectorized(self, signals: np.ndarray, prices: np.ndarray,
                                           position_sizes: np.ndarray) -> np.ndarray:
         """Calculate trading costs using vectorized operations."""
@@ -374,8 +448,14 @@ class VectorizedBacktestingEngine:
         # Calculate slippage costs (simplified)
         slippage_costs = self.config.slippage_rate * np.abs(position_changes)
 
-        # Total trading costs
-        total_costs = commission_costs + slippage_costs
+        base_costs = commission_costs + slippage_costs
+
+        additional_costs, stress_factors = self._compute_additional_trading_costs(
+            position_sizes,
+            scenario=self.config.stress_scenario
+        )
+
+        total_costs = (base_costs + additional_costs) * stress_factors
 
         return total_costs
 
@@ -442,8 +522,17 @@ class VectorizedBacktestingEngine:
 
         commission_costs = self.config.commission_rate * torch.abs(position_changes)
         slippage_costs = self.config.slippage_rate * torch.abs(position_changes)
+        base_costs = commission_costs + slippage_costs
 
-        return commission_costs + slippage_costs
+        additional_costs_np, stress_np = self._compute_additional_trading_costs(
+            position_sizes.detach().cpu().numpy(),
+            scenario=self.config.stress_scenario
+        )
+
+        additional_costs = torch.tensor(additional_costs_np, device=self.device, dtype=position_sizes.dtype)
+        stress_factors = torch.tensor(stress_np, device=self.device, dtype=position_sizes.dtype)
+
+        return (base_costs + additional_costs) * stress_factors
 
     def _calculate_portfolio_returns_gpu(self, position_sizes: torch.Tensor,
                                        price_returns: torch.Tensor,

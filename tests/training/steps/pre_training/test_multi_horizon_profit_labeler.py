@@ -222,6 +222,10 @@ class _DummyLabelingResult:
         self.n_samples = len(index)
         self.n_targets = self.labels.shape[1]
         self.n_horizons = 3
+        self.execution_timing = {
+            "signal_to_execution_delay_bars": 1,
+            "entry_price_source": "next_open",
+        }
 
 
 @pytest.mark.anyio("asyncio")
@@ -264,6 +268,11 @@ async def test_execute_labeling_produces_feature_lookback_artifacts(monkeypatch)
     mh_result = artifacts["multi_horizon_labeling_result"]
     assert "labeled_data" in mh_result and not mh_result["labeled_data"].empty
     assert "labels" in mh_result and mh_result["labels"].equals(mh_result["labeled_data"])
+    assert "execution_timing" in mh_result
+    assert mh_result["execution_timing"]["signal_to_execution_delay_bars"] == 1
+    assert mh_result["metadata"]["execution_timing"]["signal_to_execution_delay_bars"] == 1
+    std_metadata = artifacts["standardized_output"]["metadata"]
+    assert std_metadata["execution_timing"]["signal_to_execution_delay_bars"] == 1
     expected_targets = {
         "immediate_opportunity",
         "short_term_opportunity",

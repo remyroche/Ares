@@ -263,10 +263,11 @@ class EnhancedLabelsValidator:
             enhanced_system = EnhancedDataLabelsSystem(enhanced_config)
             
             result = enhanced_system.process_market_data(test_data)
-            
+
             # Check if labels were generated
             labels = result.get('labels', pd.DataFrame())
             confidence_scores = result.get('confidence_scores', pd.DataFrame())
+            capacity_diag = result.get('capacity_diagnostics', {})
             
             # Validate label structure
             required_columns = ['analyst_label', 'tactician_label']
@@ -286,16 +287,19 @@ class EnhancedLabelsValidator:
             # Labels should not be all 0 or all 1
             analyst_balanced = 0.1 <= analyst_positive_ratio <= 0.9
             tactician_balanced = 0.1 <= tactician_positive_ratio <= 0.9
-            
+
+            capacity_ok = capacity_diag.get('capacity_score', 1.0) >= 0.5 and not capacity_diag.get('violations_flagged', False)
+
             # Overall validation
             generation_passed = (
-                has_required_columns and 
-                analyst_valid and 
-                tactician_valid and 
-                analyst_balanced and 
-                tactician_balanced
+                has_required_columns and
+                analyst_valid and
+                tactician_valid and
+                analyst_balanced and
+                tactician_balanced and
+                capacity_ok
             )
-            
+
             validation_result = {
                 'passed': generation_passed,
                 'has_required_columns': has_required_columns,
@@ -306,6 +310,9 @@ class EnhancedLabelsValidator:
                 'analyst_positive_ratio': analyst_positive_ratio,
                 'tactician_positive_ratio': tactician_positive_ratio,
                 'total_labels': len(labels),
+                'capacity_ok': capacity_ok,
+                'capacity_score': capacity_diag.get('capacity_score', 1.0),
+                'capacity_violations': capacity_diag.get('violations_flagged', False),
                 'details': f"Generated {len(labels)} labels with analyst ratio {analyst_positive_ratio:.3f}"
             }
             
@@ -338,6 +345,7 @@ class EnhancedLabelsValidator:
             # Extract labels and quality metrics
             labels = result.get('labels', pd.DataFrame())
             final_quality = result.get('final_quality', {})
+            capacity_diag = result.get('capacity_diagnostics', {})
             
             # Check final quality score
             overall_quality = final_quality.get('overall_score', 0.0)
@@ -349,24 +357,27 @@ class EnhancedLabelsValidator:
             data_quality_score = component_scores.get('data_quality', 0.0)
             label_stability_score = component_scores.get('label_stability', 0.0)
             class_balance_score = component_scores.get('class_balance', 0.0)
-            
+            capacity_score = component_scores.get('capacity', 1.0)
+
             # Validate quality thresholds
             min_overall_quality = 0.6
             min_component_quality = 0.5
-            
+
             quality_passed = (
                 overall_quality >= min_overall_quality and
                 data_quality_score >= min_component_quality and
                 label_stability_score >= min_component_quality and
-                class_balance_score >= min_component_quality
+                class_balance_score >= min_component_quality and
+                capacity_score >= min_component_quality
             )
-            
+
             validation_result = {
                 'passed': quality_passed,
                 'overall_quality': overall_quality,
                 'quality_grade': quality_grade,
                 'is_acceptable': is_acceptable,
                 'component_scores': component_scores,
+                'capacity_diagnostics': capacity_diag,
                 'thresholds': {
                     'min_overall': min_overall_quality,
                     'min_component': min_component_quality

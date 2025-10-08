@@ -7,7 +7,7 @@ modules for validation, error handling, performance monitoring, and optimization
 
 import json
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 from dataclasses import dataclass
 from pathlib import Path
 from ..settings import get_pre_training_settings
@@ -1194,6 +1194,24 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 tprint("❌ No features available after fallback path")
                 return {'feature_results': {}, 'error': 'No features available for optimization'}
 
+            # Determine outer walk-forward splits once so all features share the same frozen plan
+            outer_splits: List[Tuple[slice, slice]] = []
+            if isinstance(data, pd.DataFrame):
+                outer_splits = self._build_walk_forward_splits(len(data))
+            use_nested_cv = bool(outer_splits)
+
+            if use_nested_cv:
+                self.logger.info(f"🧭 Using nested walk-forward CV with {len(outer_splits)} outer folds")
+                if pipeline_state is not None:
+                    flags = pipeline_state.setdefault('feature_lookback_flags', {})
+                    flags['nested_cv_applied'] = True
+                    flags['outer_fold_count'] = len(outer_splits)
+                    pipeline_state['feature_lookback_outer_splits'] = self._serialize_outer_splits(outer_splits, len(data))
+            else:
+                self.logger.info("🧭 Nested walk-forward CV unavailable, falling back to single-pass optimization")
+                if pipeline_state is not None:
+                    pipeline_state.setdefault('feature_lookback_flags', {})['nested_cv_applied'] = False
+
             # Optimize each feature
             tprint(f"🔍 Optimizing {len(feature_columns)} features across long/short pipelines")
             feature_results = {}
@@ -1205,13 +1223,16 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             log_info(f"🎯 Using differentiated targets - Long: {long_target_column}, Short: {short_target_column}")
 
             # Separate optimization for long and short directions
-            long_feature_results = {}
-            short_feature_results = {}
+            long_feature_results: Dict[Any, Dict[str, Any]] = {}
+            short_feature_results: Dict[Any, Dict[str, Any]] = {}
 
             for feature in feature_columns:
                 try:
                     # Use consistent lookback range for all execution modes
                     lookback_range = (5, 300)  # Keep same range for all modes
+                    optimizer_kwargs: Dict[str, Any] = {}
+                    if use_nested_cv:
+                        optimizer_kwargs['outer_split_iterator'] = outer_splits
 
                     # Optimize for LONG direction
                     if long_target_column != 'close':  # Only if we have a proper long target
@@ -1220,21 +1241,34 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                             feature,
                             long_target_column,
                             method=OptimizationMethod.COARSE_TO_REFINE,
-                            lookback_range=lookback_range
+                            lookback_range=lookback_range,
+                            **optimizer_kwargs,
                         )
 
                         feature_key = feature
                         if isinstance(feature, np.int64):
                             feature_key = int(feature)
-                        elif hasattr(feature, 'dtype') and feature.dtype == 'int64':
+                        elif hasattr(feature, 'dtype') and getattr(feature, 'dtype', None) == 'int64':
                             feature_key = int(feature)
 
-                        long_feature_results[feature_key] = {
+                        long_entry: Dict[str, Any] = {
                             'best_lookback_period': long_result.best_lookback_period,
                             'best_score': long_result.best_score,
                             'target_column': long_target_column,
                             'direction': 'long'
                         }
+
+                        if use_nested_cv:
+                            metadata = long_result.metadata or {}
+                            outer_records = metadata.get('outer_folds')
+                            if outer_records:
+                                long_entry['outer_validation'] = outer_records
+                                long_entry['frozen_from_inner'] = metadata.get('frozen_from_inner', True)
+                                if metadata.get('lookback_aggregates'):
+                                    long_entry['lookback_aggregates'] = metadata['lookback_aggregates']
+                                self._persist_frozen_decision(pipeline_state, 'long', feature_key, long_result)
+
+                        long_feature_results[feature_key] = long_entry
 
                     # Optimize for SHORT direction
                     if short_target_column != 'close':  # Only if we have a proper short target
@@ -1243,21 +1277,34 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                             feature,
                             short_target_column,
                             method=OptimizationMethod.COARSE_TO_REFINE,
-                            lookback_range=lookback_range
+                            lookback_range=lookback_range,
+                            **optimizer_kwargs,
                         )
 
                         feature_key = feature
                         if isinstance(feature, np.int64):
                             feature_key = int(feature)
-                        elif hasattr(feature, 'dtype') and feature.dtype == 'int64':
+                        elif hasattr(feature, 'dtype') and getattr(feature, 'dtype', None) == 'int64':
                             feature_key = int(feature)
 
-                        short_feature_results[feature_key] = {
+                        short_entry: Dict[str, Any] = {
                             'best_lookback_period': short_result.best_lookback_period,
                             'best_score': short_result.best_score,
                             'target_column': short_target_column,
                             'direction': 'short'
                         }
+
+                        if use_nested_cv:
+                            metadata = short_result.metadata or {}
+                            outer_records = metadata.get('outer_folds')
+                            if outer_records:
+                                short_entry['outer_validation'] = outer_records
+                                short_entry['frozen_from_inner'] = metadata.get('frozen_from_inner', True)
+                                if metadata.get('lookback_aggregates'):
+                                    short_entry['lookback_aggregates'] = metadata['lookback_aggregates']
+                                self._persist_frozen_decision(pipeline_state, 'short', feature_key, short_result)
+
+                        short_feature_results[feature_key] = short_entry
 
                 except Exception as e:
                     self.error_handler.handle_error(
@@ -1292,6 +1339,110 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             )
             tprint("❌ Feature optimization orchestration encountered an error")
             return {'feature_results': {}, 'error': str(e)}
+
+    def _build_walk_forward_splits(self, data_length: int, n_splits: int = 3) -> List[Tuple[slice, slice]]:
+        """Create walk-forward outer CV splits when enough history is available."""
+        if data_length <= 0 or n_splits <= 0:
+            return []
+
+        max_splits = max(1, n_splits)
+        window = data_length // (max_splits + 1)
+
+        # Reduce split count until validation windows are large enough for stable MI estimates
+        while max_splits > 1 and window < 25:
+            max_splits -= 1
+            window = data_length // (max_splits + 1)
+
+        if window < 20:
+            return []
+
+        splits: List[Tuple[slice, slice]] = []
+        min_train_size = max(60, int(data_length * 0.4))
+        min_val_size = max(20, window // 2)
+
+        for fold_idx in range(1, max_splits + 1):
+            train_end = window * fold_idx
+            val_start = train_end
+            val_end = min(data_length, val_start + window)
+
+            if train_end < min_train_size:
+                continue
+
+            if val_end - val_start < min_val_size:
+                break
+
+            splits.append((slice(0, train_end), slice(val_start, val_end)))
+
+        return splits
+
+    def _slice_to_bounds(self, split: Any, data_length: int) -> Tuple[int, int]:
+        """Normalize split objects (slice or index collections) to integer bounds."""
+        if isinstance(split, slice):
+            start = 0 if split.start is None else max(0, int(split.start))
+            stop = data_length if split.stop is None else min(data_length, int(split.stop))
+            return start, max(start, stop)
+
+        if isinstance(split, (list, tuple)):
+            if not split:
+                return (0, 0)
+            indices = [int(idx) for idx in split if isinstance(idx, (int, np.integer))]
+            if not indices:
+                return (0, 0)
+            indices.sort()
+            start = max(0, indices[0])
+            stop = min(data_length, indices[-1] + 1)
+            return start, max(start, stop)
+
+        return (0, 0)
+
+    def _serialize_outer_splits(
+        self,
+        splits: Iterable[Tuple[slice, slice]],
+        data_length: int
+    ) -> List[Dict[str, int]]:
+        """Convert outer splits to a serializable manifest for downstream consumers."""
+        manifest: List[Dict[str, int]] = []
+        for train_slice, val_slice in splits:
+            train_start, train_end = self._slice_to_bounds(train_slice, data_length)
+            val_start, val_end = self._slice_to_bounds(val_slice, data_length)
+            manifest.append({
+                'train_start': train_start,
+                'train_end': train_end,
+                'validation_start': val_start,
+                'validation_end': val_end
+            })
+        return manifest
+
+    def _persist_frozen_decision(
+        self,
+        pipeline_state: Optional[Dict[str, Any]],
+        direction: str,
+        feature_key: Any,
+        result: OptimizationResult
+    ) -> None:
+        """Persist frozen lookback decisions to the pipeline state for later evaluation."""
+        if pipeline_state is None:
+            return
+
+        metadata = result.metadata or {}
+        outer_records = metadata.get('outer_folds')
+        if not outer_records:
+            return
+
+        frozen_container = pipeline_state.setdefault('frozen_feature_lookbacks', {})
+        direction_container = frozen_container.setdefault(direction, {})
+
+        record: Dict[str, Any] = {
+            'best_lookback': convert_int64_to_int(result.best_lookback_period),
+            'validation_score': result.best_score,
+            'outer_folds': outer_records,
+            'frozen_from_inner': metadata.get('frozen_from_inner', True)
+        }
+
+        if metadata.get('lookback_aggregates'):
+            record['lookback_aggregates'] = metadata['lookback_aggregates']
+
+        direction_container[feature_key] = record
 
     def _prepare_data_for_optimization(self, data: Any, labeling_data: Optional[Dict[str, Any]]) -> pd.DataFrame:
         """Prepare and enrich market data with multi-horizon labeling targets."""

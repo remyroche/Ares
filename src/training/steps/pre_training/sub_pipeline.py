@@ -19,6 +19,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import pandas as pd
 import numpy as np
+import json
+
+try:  # pragma: no cover - platform specific import
+    import resource
+except ImportError:  # pragma: no cover
+    resource = None
 
 
 class PipelineResultDict(TypedDict, total=False):
@@ -33,10 +39,11 @@ class PipelineResultDict(TypedDict, total=False):
 from src.utils.logger import system_logger
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.version_manager import get_version_manager
-from src.utils.tprint import tprint, tprint_error
+from src.utils.tprint import tprint, tprint_error, tprint_warning
 
 # Import component system
 from .components import ComponentFactory, ComponentConfig
+from .metrics_sink import MetricsSink, MetricsSinkConfig
 
 logger = system_logger.getChild('PreTrainingSubPipeline')
 
@@ -80,6 +87,17 @@ class SubPipelineConfig:
     fast_mode: bool = False
     skip_next_pipeline: bool = False
     custom_params: Dict[str, Any] = field(default_factory=dict)
+    metrics_output_path: Optional[str] = None
+    metrics_output_format: str = "csv"
+    metrics_prometheus_enabled: bool = False
+    """
+    Metrics capture configuration.
+
+    Defaults:
+        metrics_output_path: ``artifacts/pre_training_metrics.<format>``
+        metrics_output_format: ``csv``
+        metrics_prometheus_enabled: ``False``
+    """
 
 @dataclass
 class SubPipelineResult:
@@ -111,6 +129,7 @@ class PreTrainingSubPipeline:
         self.logger = logger.getChild('PreTrainingSubPipeline')
         self.results: List[SubPipelineResult] = []
         self._current_pipeline_state: Dict[str, Any] = {}
+        self._metrics_sink: Optional[MetricsSink] = None
 
     async def execute_pipeline(self, config: SubPipelineConfig) -> PipelineResultDict:
         """
@@ -131,12 +150,17 @@ class PreTrainingSubPipeline:
         tprint(f"⏰ Timeframe: {config.timeframe}, Mode: {config.mode.value}")
         tprint(f"📊 Configuration: force_rerun={config.force_rerun}, parallel={config.parallel_processing}")
 
+        metrics_sink = self._create_metrics_sink(config)
+        self._metrics_sink = metrics_sink
+        step_metric_records: List[Dict[str, Any]] = []
+
         results = {
             'success': False,
             'execution_time': 0.0,
             'total_steps': 4,
             'completed_steps': 0,
-            'results': {}
+            'results': {},
+            'error_message': None,
         }
 
         try:
@@ -144,13 +168,17 @@ class PreTrainingSubPipeline:
             tprint("🎯 Step 1: Multi-Horizon Profit Labeler")
             self.logger.info('🎯 Step 1: Multi-Horizon Profit Labeler')
             mh_result = await self._execute_multi_horizon_profit_labeler(config)
+            if mh_result.success:
+                results['completed_steps'] += 1
+            self._record_step_metrics('multi_horizon_profit_labeler', mh_result, results, metrics_sink, step_metric_records)
             if not mh_result.success:
                 tprint(f"❌ Multi-horizon profit labeling failed: {mh_result.error_message}")
                 self.logger.error(f'❌ Multi-horizon profit labeling failed: {mh_result.error_message}')
-                return results
+                results['error_message'] = mh_result.error_message
+                return self._finalize_results(results, start_time, metrics_sink, step_metric_records)
 
             tprint(f"✅ Multi-horizon profit labeling completed for {config.symbol}")
-            
+
             # Validate artifacts before updating state
             if 'multi_horizon_labeling_result' in mh_result.artifacts:
                 labeled_data = mh_result.artifacts.get('multi_horizon_labeling_result', {}).get('labeled_data', pd.DataFrame())
@@ -160,22 +188,28 @@ class PreTrainingSubPipeline:
                     self._current_pipeline_state.update(mh_result.artifacts)
                 else:
                     tprint_error("❌ Multi-horizon labeling artifact validation failed: labeled_data is empty or invalid")
-                    return results
+                    results['error_message'] = "Multi-horizon labeling artifact validation failed"
+                    return self._finalize_results(results, start_time, metrics_sink, step_metric_records)
             else:
                 tprint_error("❌ Multi-horizon labeling artifact validation failed: missing 'multi_horizon_labeling_result'")
-                return results
+                results['error_message'] = "Missing multi_horizon_labeling_result artifact"
+                return self._finalize_results(results, start_time, metrics_sink, step_metric_records)
 
             # Step 2: Feature Lookback Optimization
             tprint("⚙️ Step 2: Feature Lookback Optimization")
             self.logger.info('⚙️ Step 2: Feature Lookback Optimization')
             flo_result = await self._execute_feature_lookback_optimization(config)
+            if flo_result.success:
+                results['completed_steps'] += 1
+            self._record_step_metrics('feature_lookback_optimization', flo_result, results, metrics_sink, step_metric_records)
             if not flo_result.success:
                 tprint(f"❌ Feature lookback optimization failed: {flo_result.error_message}")
                 self.logger.error(f'❌ Feature lookback optimization failed: {flo_result.error_message}')
-                return results
+                results['error_message'] = flo_result.error_message
+                return self._finalize_results(results, start_time, metrics_sink, step_metric_records)
 
             tprint(f"✅ Feature lookback optimization completed for {config.symbol}")
-            
+
             # Validate artifacts before updating state
             if 'feature_lookback_optimization_result' in flo_result.artifacts:
                 optimized_features = flo_result.artifacts.get('feature_lookback_optimization_result', {}).get('optimized_features', {})
@@ -191,13 +225,17 @@ class PreTrainingSubPipeline:
             tprint("🔧 Step 3: Interactive Feature Generation")
             self.logger.info('🔧 Step 3: Interactive Feature Generation')
             interactive_result = await self._execute_interactive_feature_generation(config)
+            if interactive_result.success:
+                results['completed_steps'] += 1
+            self._record_step_metrics('interactive_feature_generation', interactive_result, results, metrics_sink, step_metric_records)
             if not interactive_result.success:
                 tprint(f"❌ Interactive feature generation failed: {interactive_result.error_message}")
                 self.logger.error(f'❌ Interactive feature generation failed: {interactive_result.error_message}')
-                return results
+                results['error_message'] = interactive_result.error_message
+                return self._finalize_results(results, start_time, metrics_sink, step_metric_records)
 
             tprint(f"✅ Interactive feature generation completed for {config.symbol}")
-            
+
             # Validate artifacts before updating state
             if 'interactive_feature_generation_result' in interactive_result.artifacts:
                 features = interactive_result.artifacts.get('interactive_feature_generation_result', {}).get('features', {})
@@ -213,13 +251,17 @@ class PreTrainingSubPipeline:
             tprint("🎯 Step 4: Final Feature Selection")
             self.logger.info('🎯 Step 4: Final Feature Selection')
             ffs_result = await self._execute_final_feature_selection(config)
+            if ffs_result.success:
+                results['completed_steps'] += 1
+            self._record_step_metrics('final_feature_selection', ffs_result, results, metrics_sink, step_metric_records)
             if not ffs_result.success:
                 tprint(f"❌ Final feature selection failed: {ffs_result.error_message}")
                 self.logger.error(f'❌ Final feature selection failed: {ffs_result.error_message}')
-                return results
+                results['error_message'] = ffs_result.error_message
+                return self._finalize_results(results, start_time, metrics_sink, step_metric_records)
 
             tprint(f"✅ Final feature selection completed for {config.symbol}")
-            
+
             # Validate artifacts before updating state
             if 'final_feature_selection_result' in ffs_result.artifacts:
                 selected_features = ffs_result.artifacts.get('final_feature_selection_result', {}).get('selected_features', [])
@@ -267,7 +309,232 @@ class PreTrainingSubPipeline:
             tprint_error(f"🔍 Error details: {traceback.format_exc()}")
             results['error_message'] = f"Unexpected error: {str(e)}"
 
+        return self._finalize_results(results, start_time, metrics_sink, step_metric_records, end_time if results.get('success') else None)
+
+    # ------------------------------------------------------------------
+    # Metrics helpers
+    # ------------------------------------------------------------------
+    def _create_metrics_sink(self, config: SubPipelineConfig) -> Optional[MetricsSink]:
+        output_path: Optional[Path] = None
+        if config.metrics_output_path:
+            output_path = Path(config.metrics_output_path)
+        elif config.metrics_output_path is None:
+            extension = 'jsonl' if config.metrics_output_format.lower() == 'jsonl' else 'csv'
+            output_path = Path('artifacts') / f'pre_training_metrics.{extension}'
+
+        if output_path is None and not config.metrics_prometheus_enabled:
+            return None
+
+        if output_path is None:
+            output_path = Path('artifacts') / f'pre_training_metrics.{config.metrics_output_format.lower()}'
+
+        sink_config = MetricsSinkConfig(
+            output_path=output_path,
+            output_format=config.metrics_output_format,
+            enable_prometheus=config.metrics_prometheus_enabled,
+        )
+        return MetricsSink(sink_config)
+
+    def _record_step_metrics(
+        self,
+        step_name: str,
+        result: SubPipelineResult,
+        pipeline_results: Dict[str, Any],
+        metrics_sink: Optional[MetricsSink],
+        step_metric_records: List[Dict[str, Any]],
+    ) -> None:
+        if metrics_sink is None:
+            return
+
+        record = self._base_metrics_record()
+        row_counts = self._extract_row_counts(result.artifacts)
+        row_count_total = sum(row_counts.values()) if row_counts else 0
+        label_skew = self._compute_label_distribution_skew(result.metadata)
+        memory_peak_mb = self._get_memory_usage_mb()
+
+        record.update({
+            'record_type': 'step',
+            'step_name': step_name,
+            'status': result.status.value,
+            'success': result.success,
+            'duration_seconds': result.duration_seconds,
+            'row_count_total': row_count_total,
+            'row_count_details': json.dumps(row_counts, sort_keys=True),
+            'memory_peak_mb': memory_peak_mb,
+            'label_distribution_skew': label_skew,
+            'timestamp': datetime.utcnow().isoformat(),
+            'artifact_count': len(result.artifacts),
+            'metadata_keys': ','.join(sorted(result.metadata.keys())) if result.metadata else '',
+            'total_steps': pipeline_results.get('total_steps'),
+            'completed_steps': pipeline_results.get('completed_steps'),
+            'total_row_count': row_count_total,
+            'max_memory_peak_mb': memory_peak_mb,
+            'average_label_distribution_skew': label_skew,
+            'error_message': result.error_message or '',
+        })
+
+        step_metric_records.append(record)
+        metrics_sink.write(record)
+
+    def _emit_pipeline_metrics(
+        self,
+        metrics_sink: MetricsSink,
+        step_metric_records: List[Dict[str, Any]],
+        results: Dict[str, Any],
+    ) -> None:
+        total_row_count = sum(record.get('row_count_total') or 0 for record in step_metric_records)
+        max_memory_peak = max(
+            (record.get('memory_peak_mb') for record in step_metric_records if record.get('memory_peak_mb') is not None),
+            default=None,
+        )
+        label_skew_values = [
+            record.get('label_distribution_skew')
+            for record in step_metric_records
+            if record.get('label_distribution_skew') is not None
+        ]
+        average_label_skew = (sum(label_skew_values) / len(label_skew_values)) if label_skew_values else None
+        artifact_count = sum(record.get('artifact_count') or 0 for record in step_metric_records)
+        row_detail_map = {
+            record['step_name']: record.get('row_count_total', 0)
+            for record in step_metric_records
+            if record.get('step_name')
+        }
+        metadata_keys = sorted({
+            key
+            for record in step_metric_records
+            for key in (record.get('metadata_keys', '') or '').split(',')
+            if key
+        })
+
+        pipeline_record = self._base_metrics_record()
+        pipeline_record.update({
+            'record_type': 'pipeline',
+            'step_name': 'pipeline_total',
+            'status': 'completed' if results.get('success') else 'failed',
+            'success': results.get('success', False),
+            'duration_seconds': results.get('execution_time'),
+            'row_count_total': total_row_count,
+            'row_count_details': json.dumps(row_detail_map, sort_keys=True),
+            'memory_peak_mb': max_memory_peak,
+            'label_distribution_skew': average_label_skew,
+            'timestamp': datetime.utcnow().isoformat(),
+            'artifact_count': artifact_count,
+            'metadata_keys': ','.join(metadata_keys),
+            'total_steps': results.get('total_steps'),
+            'completed_steps': results.get('completed_steps'),
+            'total_row_count': total_row_count,
+            'max_memory_peak_mb': max_memory_peak,
+            'average_label_distribution_skew': average_label_skew,
+            'error_message': results.get('error_message') or '',
+        })
+
+        metrics_sink.write(pipeline_record)
+
+    def _finalize_results(
+        self,
+        results: Dict[str, Any],
+        start_time: datetime,
+        metrics_sink: Optional[MetricsSink],
+        step_metric_records: List[Dict[str, Any]],
+        end_time: Optional[datetime] = None,
+    ) -> PipelineResultDict:
+        end_time = end_time or datetime.now()
+        results['execution_time'] = (end_time - start_time).total_seconds()
+        if metrics_sink is not None:
+            self._emit_pipeline_metrics(metrics_sink, step_metric_records, results)
         return results
+
+    @staticmethod
+    def _base_metrics_record() -> Dict[str, Any]:
+        fields = [
+            'record_type',
+            'step_name',
+            'status',
+            'success',
+            'duration_seconds',
+            'row_count_total',
+            'row_count_details',
+            'memory_peak_mb',
+            'label_distribution_skew',
+            'timestamp',
+            'artifact_count',
+            'metadata_keys',
+            'total_steps',
+            'completed_steps',
+            'total_row_count',
+            'max_memory_peak_mb',
+            'average_label_distribution_skew',
+            'error_message',
+        ]
+        return {field: None for field in fields}
+
+    @staticmethod
+    def _extract_row_counts(artifacts: Dict[str, Any]) -> Dict[str, int]:
+        row_counts: Dict[str, int] = {}
+
+        def _walk(prefix: str, value: Any) -> None:
+            key_name = prefix or 'root'
+            if isinstance(value, pd.DataFrame):
+                row_counts[key_name] = int(value.shape[0])
+            elif isinstance(value, pd.Series):
+                row_counts[key_name] = int(value.shape[0])
+            elif isinstance(value, np.ndarray):
+                row_counts[key_name] = int(value.shape[0])
+            elif isinstance(value, dict):
+                for key, nested_value in value.items():
+                    next_prefix = f"{key_name}.{key}" if prefix else str(key)
+                    _walk(next_prefix, nested_value)
+            elif isinstance(value, (list, tuple)):
+                for index, nested_value in enumerate(value):
+                    next_prefix = f"{key_name}[{index}]"
+                    _walk(next_prefix, nested_value)
+
+        for key, value in artifacts.items():
+            _walk(key, value)
+
+        return row_counts
+
+    @staticmethod
+    def _compute_label_distribution_skew(metadata: Dict[str, Any]) -> Optional[float]:
+        if not metadata:
+            return None
+
+        label_distribution = metadata.get('label_distribution')
+        if not isinstance(label_distribution, dict):
+            return None
+
+        values: List[float] = []
+
+        def _collect_values(data: Any) -> None:
+            if isinstance(data, dict):
+                for nested in data.values():
+                    _collect_values(nested)
+            elif isinstance(data, (int, float)):
+                values.append(float(data))
+
+        _collect_values(label_distribution)
+
+        if not values:
+            return None
+
+        total = sum(values)
+        if total > 0:
+            normalized = [value / total for value in values]
+        else:
+            normalized = values
+
+        return max(normalized) - min(normalized) if normalized else None
+
+    @staticmethod
+    def _get_memory_usage_mb() -> Optional[float]:
+        if resource is None:
+            return None
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        max_rss = getattr(usage, 'ru_maxrss', None)
+        if max_rss is None:
+            return None
+        # On Linux ru_maxrss is reported in kilobytes.
+        return max_rss / 1024.0
 
     async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """

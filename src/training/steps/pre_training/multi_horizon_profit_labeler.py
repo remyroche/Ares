@@ -478,7 +478,8 @@ class MultiHorizonProfitLabeler:
             generate_reports=self.config.generate_reports,
             save_intermediate_results=self.config.save_intermediate_results,
             min_auc_threshold=self.config.min_auc_threshold,
-            max_auc_std_threshold=self.config.max_auc_std_threshold
+            max_auc_std_threshold=self.config.max_auc_std_threshold,
+            temporal_validation=self.config.temporal_validation
         )
 
     def _apply_namespace_conventions(self, labeling_result: LabelingResult) -> LabelingResult:

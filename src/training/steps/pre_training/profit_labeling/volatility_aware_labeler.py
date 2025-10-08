@@ -19,6 +19,7 @@ from typing import Dict, List, Optional, Any, Tuple, Union
 from dataclasses import dataclass, field
 from enum import Enum
 from copy import deepcopy
+from types import SimpleNamespace
 import logging
 from datetime import datetime
 import warnings
@@ -108,6 +109,9 @@ class VolatilityAwareConfig:
     save_intermediate_results: bool = True
     output_directory: str = "volatility_aware_labeling_results"
     generate_reports: bool = True
+
+    # Temporal validation settings (optional wiring from multi-horizon labeler)
+    temporal_validation: Optional[Any] = None
     
     # Label quality thresholds
     min_auc_threshold: float = 0.55
@@ -121,6 +125,7 @@ class VolatilityAwareConfig:
 
     def __post_init__(self):
         """Validate configuration parameters after initialization."""
+        self._ensure_temporal_validation_config()
         self._validate_config()
 
     def _validate_config(self):
@@ -156,6 +161,33 @@ class VolatilityAwareConfig:
             self.quality_scoring._validate_config()
         if self.multi_target and hasattr(self.multi_target, '_validate_config'):
             self.multi_target._validate_config()
+
+        temporal_config = getattr(self, 'temporal_validation', None)
+        if temporal_config is not None:
+            required_attrs = ['enable_temporal_validation', 'enable_purging',
+                              'purge_window_hours', 'embargo_window_hours']
+            missing_attrs = [attr for attr in required_attrs if not hasattr(temporal_config, attr)]
+            if missing_attrs:
+                raise ValueError(
+                    f"temporal_validation config is missing required attributes: {missing_attrs}"
+                )
+
+    def _ensure_temporal_validation_config(self) -> None:
+        """Ensure a temporal validation configuration is always available."""
+        if self.temporal_validation is not None:
+            return
+
+        try:
+            from src.training.steps.pre_training.multi_horizon_profit_labeler import TemporalValidationConfig
+
+            self.temporal_validation = TemporalValidationConfig()
+        except Exception:
+            self.temporal_validation = SimpleNamespace(
+                enable_temporal_validation=False,
+                enable_purging=False,
+                purge_window_hours=0,
+                embargo_window_hours=0,
+            )
 
 
 @dataclass
@@ -1017,22 +1049,134 @@ class VolatilityAwareMultiHorizonLabeler:
                 tprint_warning("⚠️ Volatility series unavailable for payoff normalization")
                 return
 
-            aligned_volatility = volatility_series.reindex(raw_payoffs.index)
+            target_params = getattr(target_result, 'target_parameters', {}) or {}
+            aligned_volatility = self._align_volatility_with_targets(
+                volatility_series,
+                raw_payoffs.index,
+                list(raw_payoffs.columns),
+                target_params,
+            )
+
             if aligned_volatility.empty:
                 tprint_warning("⚠️ Failed to align volatility series with raw payoffs")
                 return
 
-            safe_volatility = aligned_volatility.replace({0.0: np.nan})
-            normalized_payoffs = raw_payoffs.divide(safe_volatility, axis=0)
+            temporal_index = self._compute_temporal_window(raw_payoffs.index, target_params)
+            raw_payoffs_filtered = raw_payoffs.loc[temporal_index]
+            aligned_filtered = aligned_volatility.loc[temporal_index]
+
+            safe_volatility = aligned_filtered.replace({0.0: np.nan})
+            normalized_payoffs = raw_payoffs_filtered.divide(safe_volatility, axis=0)
             normalized_payoffs = normalized_payoffs.replace([np.inf, -np.inf], np.nan)
+            normalized_payoffs = normalized_payoffs.reindex(raw_payoffs.index)
 
             target_result.sigma_payoffs = normalized_payoffs
+
+            dropped_index = raw_payoffs.index.difference(temporal_index)
+            if len(dropped_index) > 0:
+                updated_raw = raw_payoffs.copy()
+                updated_raw.loc[dropped_index] = np.nan
+                target_result.raw_payoffs = updated_raw
 
             if getattr(self.config, 'prefer_sigma_payoffs', False):
                 target_result.training_labels = normalized_payoffs.copy()
 
         except Exception as e:
             tprint_warning(f"⚠️ Failed to normalize raw payoffs by volatility: {e}")
+
+    def _align_volatility_with_targets(
+        self,
+        volatility_series: pd.Series,
+        payoff_index: pd.Index,
+        payoff_columns: List[str],
+        target_params: Dict[str, Any],
+    ) -> pd.DataFrame:
+        """Align volatility series with raw payoff columns using horizon-based shifts."""
+        if volatility_series is None or volatility_series.empty:
+            return pd.DataFrame(index=payoff_index, columns=payoff_columns)
+
+        aligned_frames: Dict[str, pd.Series] = {}
+        for column in payoff_columns:
+            shift_value = self._resolve_target_shift(column, target_params)
+            shifted_series = volatility_series.shift(shift_value) if shift_value else volatility_series
+            aligned_frames[column] = shifted_series.reindex(payoff_index)
+
+        if not aligned_frames:
+            return pd.DataFrame(index=payoff_index, columns=payoff_columns)
+
+        return pd.DataFrame(aligned_frames, index=payoff_index)
+
+    def _resolve_target_shift(self, column: str, target_params: Dict[str, Any]) -> int:
+        """Resolve the shift value for a target column based on metadata."""
+        params = target_params.get(column, {}) if isinstance(target_params, dict) else {}
+        candidate = params.get('target_shift', params.get('horizon'))
+        if candidate is None:
+            return 0
+
+        try:
+            shift_value = int(np.ceil(float(candidate)))
+        except (TypeError, ValueError):
+            return 0
+
+        return max(0, shift_value)
+
+    def _compute_temporal_window(
+        self,
+        index: pd.Index,
+        target_params: Dict[str, Any],
+    ) -> pd.Index:
+        """Apply purge/embargo windows to determine valid indices for normalization."""
+        temporal_config = getattr(self.config, 'temporal_validation', None)
+        if not temporal_config or not getattr(temporal_config, 'enable_temporal_validation', False):
+            return index
+
+        purge_periods = self._hours_to_periods(
+            getattr(temporal_config, 'purge_window_hours', 0), index, target_params
+        ) if getattr(temporal_config, 'enable_purging', False) else 0
+        embargo_periods = self._hours_to_periods(
+            getattr(temporal_config, 'embargo_window_hours', 0), index, target_params
+        )
+
+        start = min(len(index), max(purge_periods, 0))
+        end = len(index) - max(embargo_periods, 0) if embargo_periods else len(index)
+
+        if end <= start:
+            return index[0:0]
+
+        return index[start:end]
+
+    def _hours_to_periods(
+        self,
+        hours: Union[int, float],
+        index: pd.Index,
+        target_params: Dict[str, Any],
+    ) -> int:
+        """Convert an hour-based window to periods using index frequency or target metadata."""
+        if not hours or hours <= 0:
+            return 0
+
+        if isinstance(index, pd.DatetimeIndex) and len(index) > 1:
+            diffs = index.to_series().diff().dropna()
+            median_delta = diffs.median()
+            if isinstance(median_delta, pd.Timedelta) and median_delta > pd.Timedelta(0):
+                periods = int(np.ceil(pd.Timedelta(hours=float(hours)) / median_delta))
+                return max(periods, 0)
+
+        max_shift = 0
+        if isinstance(target_params, dict):
+            for params in target_params.values():
+                if not isinstance(params, dict):
+                    continue
+                candidate = params.get('target_shift', params.get('horizon'))
+                if candidate is None:
+                    continue
+                try:
+                    shift_value = int(np.ceil(abs(float(candidate))))
+                except (TypeError, ValueError):
+                    continue
+                max_shift = max(max_shift, shift_value)
+
+        return max_shift
     
     def _generate_cache_key(self, market_data: pd.DataFrame) -> str:
         """Generate cache key for market data."""
@@ -1403,7 +1547,21 @@ def create_enhanced_analyst_labeler() -> VolatilityAwareMultiHorizonLabeler:
                 trading_costs=TradingCosts(
                     maker_fee=0.001,
                     taker_fee=0.002,
-                    slippage_pct=0.001
+                    slippage_pct=0.001,
+                    default_asset_class="crypto",
+                    borrow_fees={
+                        "crypto": {"long": 0.00005, "short": 0.0006}
+                    },
+                    funding_rates={
+                        "crypto": {"long": 0.0002, "short": -0.0002}
+                    },
+                    stress_scenarios={
+                        "crypto": {
+                            "base": {"long": 1.0, "short": 1.0},
+                            "liquidity_crunch": {"long": 1.15, "short": 1.3}
+                        }
+                    },
+                    active_stress_scenario="base"
                 ),
                 enable_regime_conditioning=True,
                 volatility_scaling_factor=1.0

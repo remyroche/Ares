@@ -7,8 +7,9 @@ in the market analysis pipeline.
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional
+import os
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from .base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
 from src.utils.logger import system_logger
@@ -25,6 +26,18 @@ from ...market_analysis.optimized_process_engines import OptimizedFeatureSelecti
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
 from src.utils.hardware.adaptive_optimization_engine import AdaptiveOptimizationEngine
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
+
+
+CONFIG_ROOT_ENV = "ARES_CONFIG_ROOT"
+"""Environment variable that can override the repo-relative config root."""
+
+DEFAULT_CONFIG_ROOT = Path(__file__).resolve().parents[4] / "config"
+"""Default location of repository configuration files relative to this module."""
+
+FEATURE_SELECTION_CONFIG_PATH = Path(
+    os.environ.get(CONFIG_ROOT_ENV, DEFAULT_CONFIG_ROOT)
+) / "feature_selection_config.yaml"
+"""Resolved path to the feature selection YAML profile."""
 
 
 class FinalFeatureSelectionComponent(BasePreTrainingComponent):
@@ -64,7 +77,10 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             import yaml
 
             # Try to load from the feature selection config file
-            config_path = Path("/workspace/src/config/feature_selection_config.yaml")
+            config_path = FEATURE_SELECTION_CONFIG_PATH
+            log_debug(
+                f"Resolving feature selection config for '{model_type}' via {config_path}"
+            )
             if config_path.exists():
                 with open(config_path, 'r') as f:
                     config_data = yaml.safe_load(f)
@@ -75,6 +91,10 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     # Check if model has a specific profile
                     if 'model_profiles' in fs_config and model_type in fs_config['model_profiles']:
                         model_config = fs_config['model_profiles'][model_type]
+
+                        log_success(
+                            f"Loaded feature selection profile '{model_type}' from {config_path}"
+                        )
 
                         # Map YAML config to expected format
                         stage_targets = [
@@ -102,7 +122,10 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                         }
 
             # Fallback to hardcoded defaults if YAML loading fails
-            log_warning(f"Could not load model-specific config for {model_type}, using defaults")
+            log_warning(
+                f"Could not load model-specific config for {model_type}, using defaults. "
+                f"Searched path: {config_path}"
+            )
             return {
                 'target_features': 80,
                 'min_features': 60,
@@ -112,7 +135,10 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             }
 
         except Exception as e:
-            log_error(f"Error loading model-specific config for {model_type}: {e}")
+            log_error(
+                f"Error loading model-specific config for {model_type}: {e}. "
+                f"Searched path: {FEATURE_SELECTION_CONFIG_PATH}"
+            )
             return {
                 'target_features': 80,
                 'min_features': 60,
@@ -183,8 +209,24 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             if data_dir is None:
                 data_dir = 'historical_data'  # Default data directory
 
+            # Resolve the model profile for feature selection from config or pipeline state
+            model_type = None
+            if self.config.custom_params:
+                model_type = self.config.custom_params.get('model_type')
+            if model_type is None:
+                model_type = pipeline_state.get('model_type') if pipeline_state else None
+            if not model_type:
+                model_type = 'default'
+
             # Load model-specific configuration with hardware optimizations
-            final_feature_selection_config = self._load_model_specific_config('default')
+            final_feature_selection_config = self._load_model_specific_config(model_type)
+
+            if model_type != 'default':
+                log_success(
+                    f"Feature selection will use model-specific profile '{model_type}'"
+                )
+            else:
+                log_info("Feature selection will use the default profile")
 
             # Apply adaptive optimizations to config
             if adaptive_strategy:

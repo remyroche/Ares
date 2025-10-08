@@ -4,14 +4,14 @@ Model Training Sub-Pipeline - Orchestration of Analyst and Tactician Training
 This module orchestrates the complete model training pipeline with distinct
 workflows for Analyst and Tactician models:
 
-ANALYST PIPELINE (15m timeframe - IF we trade):
-1. analyst_pre_ml_orchestration - Feature engineering on 15m data
+ANALYST PIPELINE (60m timeframe - IF we trade):
+1. analyst_pre_ml_orchestration - Feature engineering on 60m data
 2. analyst_models_training - Train base models (per-regime)
 3. analyst_ensemble_training - Train ensemble models
 
 TACTICIAN PIPELINE (15m timeframe - WHEN we trade):
-4. tactician_pre_ml_orchestration - Feature engineering on 15m data (filtered on Analyst signals)
-5. tactician_models_training - Train base models
+4. tactician_pre_ml_orchestration - Feature engineering on 15m data (includes Analyst outputs as features)
+5. tactician_models_training - Train base models (includes Analyst predictions as features)
 6. tactician_ensemble_training - Train ensemble models
 
 Each model type (short/long) is trained separately.
@@ -151,8 +151,8 @@ class SubPipelineConfig:
     mode: ExecutionMode = ExecutionMode.FULL
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
-    analyst_timeframe: str = "15m"  # Analyst uses 15m
-    tactician_timeframe: str = "15m"  # Tactician pre-ML uses 15m
+    analyst_timeframe: str = "60m"  # Analyst uses 60m
+    tactician_timeframe: str = "15m"  # Tactician uses 15m
     data_dir: str = "historical_data"
     
     # Training configuration
@@ -160,9 +160,6 @@ class SubPipelineConfig:
     train_tactician: bool = True
     train_short_models: bool = True
     train_long_models: bool = True
-    
-    # Analyst configuration
-    analyst_confidence_threshold: float = 0.004  # 0.4% threshold for Tactician filtering
     
     # Execution parameters
     force_rerun: bool = False
@@ -608,10 +605,10 @@ class ModelTrainingSubPipeline:
         results['total_steps'] = total_steps
         
         try:
-            # ==================== ANALYST PIPELINE (15m) ====================
+            # ==================== ANALYST PIPELINE (60m) ====================
             if config.train_analyst:
                 self.logger.info('=' * 80)
-                self.logger.info('🎯 ANALYST PIPELINE (15m timeframe - IF we trade)')
+                self.logger.info('🎯 ANALYST PIPELINE (60m timeframe - IF we trade)')
                 self.logger.info('=' * 80)
                 
                 # Step 1: Analyst Pre-ML Orchestration
@@ -708,7 +705,7 @@ class ModelTrainingSubPipeline:
         return results
     
     async def _execute_analyst_pre_ml_orchestration(self, config: SubPipelineConfig) -> SubPipelineResult:
-        """Execute Analyst pre-ML orchestration (15m timeframe)."""
+        """Execute Analyst pre-ML orchestration (60m timeframe)."""
         result = SubPipelineResult(
             sub_pipeline_name='analyst_pre_ml_orchestration',
             status=SubPipelineStatus.RUNNING,
@@ -719,7 +716,7 @@ class ModelTrainingSubPipeline:
             if not self.analyst_pre_ml:
                 raise RuntimeError("Analyst pre-ML orchestrator not available")
 
-            self.logger.info('🔧 Executing Analyst Pre-ML Orchestration (15m)...')
+            self.logger.info('🔧 Executing Analyst Pre-ML Orchestration (60m)...')
 
             training_data = self._load_market_data(config, config.analyst_timeframe)
             regime_assignments = self._load_regime_assignments(config, config.analyst_timeframe)
@@ -1026,7 +1023,7 @@ class ModelTrainingSubPipeline:
     async def _execute_tactician_pre_ml_orchestration(
         self, config: SubPipelineConfig, analyst_predictions: Optional[pd.DataFrame]
     ) -> SubPipelineResult:
-        """Execute Tactician pre-ML orchestration (15m timeframe, filtered on Analyst signals)."""
+        """Execute Tactician pre-ML orchestration (15m timeframe, includes Analyst outputs as features)."""
         result = SubPipelineResult(
             sub_pipeline_name='tactician_pre_ml_orchestration',
             status=SubPipelineStatus.RUNNING,
@@ -1037,7 +1034,7 @@ class ModelTrainingSubPipeline:
             if not self.tactician_pre_ml:
                 raise RuntimeError("Tactician pre-ML orchestrator not available")
 
-            self.logger.info('🔧 Executing Tactician Pre-ML Orchestration (15m, filtered)...')
+            self.logger.info('🔧 Executing Tactician Pre-ML Orchestration (15m, with Analyst features)...')
 
             training_data = self._load_market_data(config, config.tactician_timeframe)
             regime_assignments = self._load_regime_assignments(config, config.tactician_timeframe)
@@ -1052,15 +1049,10 @@ class ModelTrainingSubPipeline:
             if regime_data_splitting_result is not None:
                 self._current_pipeline_state['regime_data_splitting_result'] = regime_data_splitting_result
 
-            filtered_predictions = self._filter_analyst_predictions(
-                analyst_predictions,
-                config.analyst_confidence_threshold
-            )
-
-            # Execute orchestration with Analyst filtering
+            # Execute orchestration with Analyst predictions as features (no filtering)
             orchestration_result = await self.tactician_pre_ml.orchestrate(
                 training_data=training_data,
-                analyst_predictions=filtered_predictions,
+                analyst_predictions=analyst_predictions,
                 regime_assignments=regime_assignments,
                 regime_data_splitting_result=regime_data_splitting_result,
             )
@@ -1071,7 +1063,6 @@ class ModelTrainingSubPipeline:
             artifacts: Dict[str, Any] = {
                 'selected_features': orchestration_result.selected_feature_names or [],
                 'feature_count': orchestration_result.final_feature_count,
-                'filter_ratio': orchestration_result.filter_ratio,
                 'regime_feature_columns': regime_feature_columns,
             }
 
@@ -1103,8 +1094,7 @@ class ModelTrainingSubPipeline:
 
             result.artifacts = artifacts
             result.metadata = {
-                'total_samples': getattr(orchestration_result, 'total_samples', None),
-                'filter_ratio': getattr(orchestration_result, 'filter_ratio', None)
+                'total_samples': getattr(orchestration_result, 'total_samples', None)
             }
 
             if result.success:
@@ -1176,17 +1166,11 @@ class ModelTrainingSubPipeline:
             analyst_predictions_df = None
             predictions_path = artifacts.get('analyst_predictions_path')
             if analyst_predictions is not None:
-                analyst_predictions_df = self._filter_analyst_predictions(
-                    analyst_predictions,
-                    config.analyst_confidence_threshold
-                )
+                analyst_predictions_df = analyst_predictions
             elif predictions_path:
                 analyst_predictions_df = self._load_dataframe(Path(predictions_path))
             elif self._current_pipeline_state.get('analyst_ensemble_predictions') is not None:
-                analyst_predictions_df = self._filter_analyst_predictions(
-                    self._current_pipeline_state.get('analyst_ensemble_predictions'),
-                    config.analyst_confidence_threshold
-                )
+                analyst_predictions_df = self._current_pipeline_state.get('analyst_ensemble_predictions')
 
             analyst_feature_columns: List[str] = []
             if analyst_predictions_df is not None and not analyst_predictions_df.empty:

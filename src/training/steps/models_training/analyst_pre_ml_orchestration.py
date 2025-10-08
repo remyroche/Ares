@@ -1,5 +1,5 @@
 """
-Analyst Pre-ML Orchestration - 15m Timeframe Feature Engineering
+Analyst Pre-ML Orchestration - 60m Timeframe Feature Engineering
 
 This orchestrator applies the complete pre-training pipeline for Analyst models:
 1. Multi-horizon profit labeling with differentiated horizons
@@ -8,7 +8,7 @@ This orchestrator applies the complete pre-training pipeline for Analyst models:
 4. Final feature selection (multi-stage: 120→100→80→60)
 
 ANALYST CONFIGURATION:
-- Timeframe: 15m (higher timeframe for strategic IF-to-trade decisions)
+- Timeframe: 60m (higher timeframe for strategic IF-to-trade decisions)
 - Training Data: ALL market data (not filtered)
 - Output: Features optimized for Analyst model training
 - Per-regime optimization: Yes, using regime assignments from market_analysis
@@ -61,7 +61,7 @@ class AnalystPreMLConfig:
     # Data configuration
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
-    timeframe: str = "15m"  # ANALYST USES 15m TIMEFRAME
+    timeframe: str = "60m"  # ANALYST USES 60m TIMEFRAME
     data_dir: str = "historical_data"
     
     # Execution parameters
@@ -109,7 +109,7 @@ class AnalystPreMLOrchestrator:
     """
     Analyst Pre-ML Orchestration.
     
-    Orchestrates the complete pre-training pipeline for Analyst models on 15m timeframe.
+    Orchestrates the complete pre-training pipeline for Analyst models on 60m timeframe.
     Applies per-regime/cluster optimization for all feature engineering steps.
     """
     
@@ -150,7 +150,7 @@ class AnalystPreMLOrchestrator:
         Execute the complete pre-ML orchestration for Analyst models.
         
         Args:
-            training_data: Input DataFrame with market data (15m timeframe)
+            training_data: Input DataFrame with market data (60m timeframe)
             regime_assignments: Optional regime assignments for per-regime optimization
             **kwargs: Additional parameters
             
@@ -158,7 +158,7 @@ class AnalystPreMLOrchestrator:
             AnalystPreMLResult with orchestrated features and metadata
         """
         start_time = tprint_timer()
-        tprint_info("🚀 Starting Analyst Pre-ML Orchestration (15m timeframe)...")
+        tprint_info("🚀 Starting Analyst Pre-ML Orchestration (60m timeframe)...")
         tprint_info(f"📊 Input data shape: {training_data.shape}")
         
         result = AnalystPreMLResult()
@@ -173,7 +173,7 @@ class AnalystPreMLOrchestrator:
             sub_config = SubPipelineConfig(
                 symbol=self.config.symbol,
                 exchange=self.config.exchange,
-                timeframe=self.config.timeframe,  # 15m for Analyst
+                timeframe=self.config.timeframe,  # 60m for Analyst
                 data_dir=self.config.data_dir,
                 parallel_processing=self.config.enable_parallel_processing,
                 custom_params={
@@ -315,7 +315,7 @@ async def execute_analyst_pre_ml_orchestration(
     Execute Analyst pre-ML orchestration.
     
     Args:
-        training_data: Input DataFrame with market data (15m timeframe)
+        training_data: Input DataFrame with market data (60m timeframe)
         regime_assignments: Optional regime assignments for per-regime optimization
         config: Optional configuration
         **kwargs: Additional parameters

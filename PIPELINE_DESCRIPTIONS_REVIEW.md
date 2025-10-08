@@ -1,7 +1,14 @@
-# Pipeline Descriptions Review
+# Pipeline Descriptions Review - CORRECTED
 
 ## Summary
-Most of your descriptions are **correct**, but there are some important corrections and clarifications needed, particularly around timeframes and the scope of feature engineering steps.
+**ALL DESCRIPTIONS HAVE BEEN UPDATED TO MATCH YOUR SPECIFICATIONS**
+
+The codebase has been modified to implement:
+- ✅ Analyst uses **60m timeframe** (changed from 15m)
+- ✅ Tactician uses **15m timeframe** (unchanged)
+- ✅ Tactician uses **interactive_feature_generation** (not PID features)
+- ✅ Tactician trains on **whole dataset** with Analyst outputs as features (no filtering)
+- ✅ Both use the **PRE_TRAINING pipeline** with same components
 
 ---
 
@@ -205,24 +212,27 @@ The component generates:
 
 ---
 
-## Key Corrections Summary
+## Changes Implemented
 
-### 🔴 Critical Errors Found:
-1. **Analyst timeframe:** You said 60m, but it's actually **15m**
-2. **PID Features:** You placed this in Analyst, but it's actually in **Tactician only**
-3. **Tactician filtering:** You didn't mention the Analyst-based filtering and 45-minute extraction
+### ✅ **Analyst Pipeline (60m timeframe):**
+1. Changed timeframe from 15m to **60m**
+2. Uses PRE_TRAINING pipeline:
+   - multi_horizon_profit_labeler
+   - feature_lookback_optimization
+   - **interactive_feature_generation** (interaction + cross-timeframe features)
+   - final_feature_selection
+3. Trains on ALL market data (unfiltered)
 
-### 🟡 Minor Clarifications Needed:
-1. **feature_lookback_optimization timeframe:** Clarify it's configurable (default 15m)
-2. **interactive_feature_generation:** Could be more descriptive about what it generates
-
-### ✅ Correct Descriptions:
-- multi_horizon_profit_labeler ✅
-- final_feature_selection ✅
-- analyst_models_training ✅
-- analyst_ensemble_training ✅
-- tactician_models_training ✅
-- tactician_ensemble_training ✅
+### ✅ **Tactician Pipeline (15m timeframe):**
+1. Kept timeframe at **15m**
+2. Uses same PRE_TRAINING pipeline as Analyst:
+   - multi_horizon_profit_labeler
+   - feature_lookback_optimization
+   - **interactive_feature_generation** (NOT PID features)
+   - final_feature_selection
+3. Trains on **whole dataset** (no filtering)
+4. **Includes Analyst predictions as additional features**
+5. **Removed confidence threshold filtering**
 
 ---
 
@@ -232,7 +242,7 @@ The component generates:
 ```
 multi_horizon_profit_labeler - Apply triple barrier method-inspired, per-regime, volatility and noise-aware multi-horizon profit labeling
 
-feature_lookback_optimization - Optimize feature lookback periods for base features (excludes interaction, cross-timeframe, wavelets, autoencoders, and regime features). Timeframe: 15m (default, configurable)
+feature_lookback_optimization - Optimize feature lookback periods for base features (excludes interaction, cross-timeframe, wavelets, autoencoders, and regime features). Timeframe configured per pipeline (60m for Analyst, 15m for Tactician)
 
 interactive_feature_generation - Generate interaction features (polynomial, multiplicative) and cross-timeframe features with hardware acceleration
 
@@ -241,13 +251,13 @@ final_feature_selection - Multi-stage feature selection: Initial→120→100→8
 
 ### MODEL_TRAINING/
 ```
-analyst_pre_ml_orchestration - Applies multi-horizon profit labeling + Optimizes feature lookback periods + Generates interaction/cross-timeframe features + Selects final features. All on 15m timeframe with per-regime/cluster optimization. Training data: ALL market data (unfiltered). Uses the PRE_TRAINING pipeline.
+analyst_pre_ml_orchestration - Applies multi-horizon profit labeling + Optimizes feature lookback periods + Generates interaction/cross-timeframe features + Selects final features. All on **60m timeframe** with per-regime/cluster optimization. Training data: ALL market data (unfiltered). Uses the PRE_TRAINING pipeline.
 
 analyst_models_training - Per-regime individual model training with HPO, saving, and metrics. Trained on all features selected by PRE_TRAINING/final_feature_selection + regime features (from Ensemble ML model in market_analysis/)
 
 analyst_ensemble_training - Per-regime ensemble training with HPO, saving, and metrics. Trained on same features as above + outputs from base Analyst models
 
-tactician_pre_ml_orchestration - Filters on Analyst signals (confidence >= 0.4%) + Extracts subsequent 45 minutes + Optimizes feature lookback periods + Generates PID-based features + Applies differentiated horizon labeling (separate for longs/shorts) + Generates interaction/cross-timeframe features + Selects final features. All on 15m timeframe (filtered). Uses PRE_TRAINING pipeline + PID generation.
+tactician_pre_ml_orchestration - Applies multi-horizon profit labeling + Optimizes feature lookback periods + Generates interaction/cross-timeframe features (uses interactive_feature_generation, NOT PID) + Selects final features. All on **15m timeframe**. Training data: **WHOLE dataset** (no filtering) with Analyst outputs included as features. Uses the PRE_TRAINING pipeline (same as Analyst).
 
 tactician_models_training - Individual model training with HPO, saving, and metrics. Trained on all features selected by PRE_TRAINING/final_feature_selection + regime features (from Ensemble ML model in market_analysis/) + outputs from Analyst Ensemble model
 
@@ -259,19 +269,27 @@ tactician_ensemble_training - Ensemble training with HPO, saving, and metrics. T
 ## Pipeline Flow Visualization
 
 ```
-ANALYST PIPELINE (15m timeframe - "IF we trade"):
-1. analyst_pre_ml_orchestration (15m, unfiltered data)
-   └─> PRE_TRAINING: labeling → lookback → interaction → selection
+ANALYST PIPELINE (60m timeframe - "IF we trade"):
+1. analyst_pre_ml_orchestration (60m, ALL market data - unfiltered)
+   └─> PRE_TRAINING: labeling → lookback → interactive_features → selection
 2. analyst_models_training (per-regime base models)
 3. analyst_ensemble_training (ensemble models)
    └─> Outputs predictions for Tactician
 
 TACTICIAN PIPELINE (15m timeframe - "WHEN we trade"):
-4. tactician_pre_ml_orchestration (15m, filtered on Analyst >= 0.4%)
-   └─> Filter Analyst signals → Extract 45min → PRE_TRAINING + PID
+4. tactician_pre_ml_orchestration (15m, WHOLE dataset - no filtering)
+   └─> PRE_TRAINING: labeling → lookback → interactive_features → selection
+   └─> Includes Analyst predictions as additional features
 5. tactician_models_training (with Analyst predictions as features)
 6. tactician_ensemble_training (final ensemble)
 ```
+
+### Key Points:
+- **Both pipelines use the same PRE_TRAINING components**
+- **Analyst: 60m timeframe, Tactician: 15m timeframe**
+- **No filtering or confidence thresholds**
+- **Both use interactive_feature_generation (NOT PID)**
+- **Tactician includes Analyst predictions as features**
 
 ---
 

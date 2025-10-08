@@ -51,6 +51,7 @@ from src.training.steps.pre_training.standardized_labeling_interface import (
 )
 from src.training.steps.pre_training.validation.schemas import (
     SchemaValidationException,
+    enforce_feature_temporal_alignment,
     schema_metadata,
     validate_engineered_features,
     validate_labeled_dataset,
@@ -804,6 +805,13 @@ class MultiHorizonProfitLabeler:
                     confidence_scores_df,
                     context="multi_horizon_profit_labeler.confidence_scores"
                 )
+                alignment_metadata = enforce_feature_temporal_alignment(
+                    confidence_scores_df,
+                    context="multi_horizon_profit_labeler.confidence_scores",
+                    target_shifts=target_shifts,
+                    feature_metadata=feature_metadata.get('confidence_scores') if feature_metadata else None,
+                )
+                confidence_scores_df.attrs.setdefault('temporal_alignment', alignment_metadata)
 
             # Create enhanced artifacts with comprehensive metadata for downstream components
             artifacts = {

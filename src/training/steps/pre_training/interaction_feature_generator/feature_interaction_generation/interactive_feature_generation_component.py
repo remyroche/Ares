@@ -32,6 +32,7 @@ from src.utils.tprint import (
 )
 from src.training.steps.pre_training.validation.schemas import (
     SchemaValidationException,
+    enforce_feature_temporal_alignment,
     schema_metadata,
     validate_engineered_features,
 )
@@ -406,9 +407,26 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
             if data is None:
                 raise ValueError("No data provided in training input")
 
+            target_shifts: Dict[str, int] = {}
+            for source in (training_input, pipeline_state):
+                if isinstance(source, Mapping):
+                    raw_shifts = source.get('target_shifts')
+                    if isinstance(raw_shifts, Mapping):
+                        for key, value in raw_shifts.items():
+                            try:
+                                target_shifts[str(key)] = int(value)
+                            except (TypeError, ValueError):
+                                continue
+
             data = validate_engineered_features(
                 data,
                 context="interactive_feature_generation.input_features"
+            )
+            enforce_feature_temporal_alignment(
+                data,
+                context="interactive_feature_generation.input_features",
+                target_shifts=target_shifts,
+                feature_metadata=training_input.get('feature_metadata'),
             )
             validation_metadata['inputs']['feature_matrix'] = schema_metadata('engineered_features').get('engineered_features')
 
@@ -444,6 +462,12 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
                     result.features,
                     context="interactive_feature_generation.generated_features"
                 )
+                enforce_feature_temporal_alignment(
+                    result.features,
+                    context="interactive_feature_generation.generated_features",
+                    target_shifts=target_shifts,
+                    feature_metadata=getattr(result, 'feature_metadata', None),
+                )
                 validation_metadata['outputs']['features'] = schema_metadata('engineered_features').get('engineered_features')
 
             if isinstance(result.interaction_features, pd.DataFrame) and not result.interaction_features.empty:
@@ -451,12 +475,24 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
                     result.interaction_features,
                     context="interactive_feature_generation.interaction_features"
                 )
+                enforce_feature_temporal_alignment(
+                    result.interaction_features,
+                    context="interactive_feature_generation.interaction_features",
+                    target_shifts=target_shifts,
+                    feature_metadata=getattr(result, 'interaction_feature_metadata', None),
+                )
                 validation_metadata['outputs']['interaction_features'] = schema_metadata('engineered_features').get('engineered_features')
 
             if isinstance(result.cross_timeframe_features, pd.DataFrame) and not result.cross_timeframe_features.empty:
                 result.cross_timeframe_features = validate_engineered_features(
                     result.cross_timeframe_features,
                     context="interactive_feature_generation.cross_timeframe_features"
+                )
+                enforce_feature_temporal_alignment(
+                    result.cross_timeframe_features,
+                    context="interactive_feature_generation.cross_timeframe_features",
+                    target_shifts=target_shifts,
+                    feature_metadata=getattr(result, 'cross_timeframe_feature_metadata', None),
                 )
                 validation_metadata['outputs']['cross_timeframe_features'] = schema_metadata('engineered_features').get('engineered_features')
 

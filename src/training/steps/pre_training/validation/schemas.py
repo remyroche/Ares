@@ -45,6 +45,7 @@ __all__ = [
     "validate_raw_ohlcv",
     "validate_labeled_dataset",
     "validate_engineered_features",
+    "enforce_feature_temporal_alignment",
     "schema_metadata",
     "HypothesisTracker",
     "SplitAwareScaler",
@@ -378,6 +379,177 @@ def validate_engineered_features(df: pd.DataFrame, *, context: str, lazy: bool =
     """Validate engineered feature frames."""
 
     return _validate(ENGINEERED_FEATURE_SCHEMA, "engineered_features", df, context=context, lazy=lazy)
+
+
+_Numeric = (int, float, np.integer, np.floating)
+
+
+def _normalize_target_shifts(target_shifts: Optional[Mapping[str, Any]]) -> Tuple[Dict[str, int], int]:
+    normalized: Dict[str, int] = {}
+    if not target_shifts:
+        return normalized, 1
+
+    min_shift = None
+    for raw_name, raw_value in target_shifts.items():
+        name = str(raw_name)
+        try:
+            shift = int(raw_value)
+        except (TypeError, ValueError):
+            raise ValueError(f"Target '{name}' has non-integer shift {raw_value!r}") from None
+        if shift < 1:
+            raise ValueError(f"Target '{name}' has shift {shift} < 1; labels must be shifted forward at least one period")
+        normalized[name] = shift
+        if min_shift is None or shift < min_shift:
+            min_shift = shift
+
+    return normalized, (min_shift or 1)
+
+
+def _count_leading_nulls(series: pd.Series) -> int:
+    values = series.to_numpy()
+    if values.size == 0:
+        return 0
+    is_null = pd.isna(values)
+    if not is_null.any():
+        return 0
+    non_null_idx = np.flatnonzero(~is_null)
+    if non_null_idx.size == 0:
+        return int(values.size)
+    return int(non_null_idx[0])
+
+
+def _collect_reported_lags(metadata: Any) -> Tuple[Dict[str, int], Optional[int]]:
+    if not metadata:
+        return {}, None
+
+    column_candidates: Dict[str, List[int]] = {}
+    frame_level: List[int] = []
+
+    def _walk(node: Any, path: List[str]) -> None:
+        if isinstance(node, Mapping):
+            raw_lag = node.get("max_lag")
+            if isinstance(raw_lag, _Numeric) and not math.isnan(float(raw_lag)):
+                lag = int(raw_lag)
+                key = path[-1] if path else "__frame__"
+                column_candidates.setdefault(key, []).append(lag)
+            for key, value in node.items():
+                if key == "max_lag":
+                    continue
+                _walk(value, path + [str(key)])
+        elif isinstance(node, Sequence) and not isinstance(node, (str, bytes)):
+            for idx, item in enumerate(node):
+                _walk(item, path + [f"[{idx}]"])
+
+    _walk(metadata, [])
+
+    resolved: Dict[str, int] = {}
+    for key, lags in column_candidates.items():
+        if key == "__frame__":
+            frame_level.append(int(max(lags)))
+        else:
+            resolved[key] = int(max(lags))
+
+    return resolved, (max(frame_level) if frame_level else None)
+
+
+def _candidate_column_keys(column: str) -> List[str]:
+    candidates = {column}
+    if "." in column:
+        candidates.add(column.split(".")[-1])
+    if "/" in column:
+        candidates.add(column.split("/")[-1])
+    if ":" in column:
+        candidates.add(column.split(":")[-1])
+    if "__" in column:
+        candidates.add(column.split("__")[-1])
+    if "_" in column:
+        candidates.add(column.split("_", 1)[-1])
+    return list(candidates)
+
+
+def enforce_feature_temporal_alignment(
+    features: pd.DataFrame,
+    *,
+    context: str = "",
+    target_shifts: Optional[Mapping[str, Any]] = None,
+    feature_metadata: Optional[Any] = None,
+) -> Dict[str, Dict[str, int]]:
+    """Ensure engineered features honour minimum lag requirements.
+
+    Args:
+        features: Feature dataframe to validate.
+        context: Human readable context for error messages.
+        target_shifts: Mapping of target names to their forward shifts.
+        feature_metadata: Optional metadata describing feature lags.
+
+    Returns:
+        Mapping of column name to observed temporal alignment metadata.
+
+    Raises:
+        ValueError: When features expose contemporaneous data.
+    """
+
+    if features is None or features.empty:
+        return {}
+
+    _, min_shift = _normalize_target_shifts(target_shifts)
+    reported_map, global_reported = _collect_reported_lags(feature_metadata)
+
+    resolved_reported: Dict[str, int] = {}
+    unmatched_global: List[int] = []
+    for key, lag in reported_map.items():
+        matched = False
+        for candidate in _candidate_column_keys(key):
+            if candidate in features.columns:
+                resolved_reported[candidate] = max(resolved_reported.get(candidate, lag), lag)
+                matched = True
+        if not matched:
+            unmatched_global.append(lag)
+
+    if global_reported is not None:
+        unmatched_global.append(global_reported)
+
+    if unmatched_global:
+        global_max = max(unmatched_global)
+        if global_max < 1:
+            location = f" ({context})" if context else ""
+            raise ValueError(
+                f"Feature metadata{location} reports max_lag {global_max} < 1; "
+                "all features must be lagged by at least one period"
+            )
+    else:
+        global_max = None
+
+    metadata: Dict[str, Dict[str, int]] = {}
+    location = f" in {context}" if context else ""
+    required_msg = f"minimum lag >= 1 (target min shift {min_shift})"
+
+    for column in features.columns:
+        observed_lag = _count_leading_nulls(features[column])
+        reported_lag = resolved_reported.get(column)
+        if reported_lag is None and global_max is not None:
+            reported_lag = global_max
+
+        column_meta: Dict[str, int] = {"observed_lag": observed_lag}
+        if reported_lag is not None:
+            column_meta["reported_lag"] = reported_lag
+        metadata[column] = column_meta
+
+        effective_lag = max(observed_lag, reported_lag) if reported_lag is not None else observed_lag
+
+        if reported_lag is not None and reported_lag < 1:
+            raise ValueError(
+                f"Feature '{column}'{location} metadata reports max_lag {reported_lag} < 1; "
+                f"expected {required_msg}"
+            )
+
+        if effective_lag < 1:
+            raise ValueError(
+                f"Feature '{column}'{location} exposes contemporaneous values (lag={effective_lag}); "
+                f"expected {required_msg}"
+            )
+
+    return metadata
 
 
 def schema_metadata(*schema_keys: str) -> Dict[str, Dict[str, str]]:

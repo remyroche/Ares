@@ -102,11 +102,9 @@ except ImportError:  # pragma: no cover
 
 
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_error, tprint_warning
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.version_manager import get_version_manager
 from src.utils.random_seeding import SeededRNGs, seed_rngs
-from src.utils.tprint import tprint, tprint_error, tprint_warning
 from .logging_utils import (
     PreTrainingEventLogger,
     StepLogContext,
@@ -558,6 +556,31 @@ class PreTrainingSubPipeline:
                 return bool(pipeline_params.get('continue_on_error'))
         return False
 
+    def _build_event_context(
+        self,
+        step: str,
+        *,
+        config: Optional[SubPipelineConfig] = None,
+        rows_in: Optional[int] = None,
+        rows_out: Optional[int] = None,
+        duration_ms: Optional[float] = None,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Construct structured logging context with standard fields."""
+
+        context: Dict[str, Any] = {
+            'run_id': self._run_metadata.get('run_id', 'unknown'),
+            'step': step,
+            'symbol': (config.symbol if config else self._run_metadata.get('symbol')) or 'unknown',
+            'timeframe': (config.timeframe if config else self._run_metadata.get('timeframe')) or 'unknown',
+            'rows_in': rows_in,
+            'rows_out': rows_out,
+            'duration_ms': duration_ms,
+        }
+        if extra:
+            context.update(extra)
+        return context
+
     def _create_failure(
         self,
         step_name: str,
@@ -681,12 +704,55 @@ class PreTrainingSubPipeline:
         errors = pipeline_results.setdefault('errors', [])
         summary = self._compose_error_summary(failure, errors)
         pipeline_results['error_summary'] = summary
+        rows_in: Optional[int] = None
+        rows_out: Optional[int] = None
+        duration_ms: Optional[float] = None
+        if failure.context:
+            rows_in = self._search_numeric_fields(
+                failure.context,
+                ('rows_in', 'input_rows', 'rows_before', 'n_rows_in', 'samples_in'),
+                depth=1,
+            )
+            rows_out = self._search_numeric_fields(
+                failure.context,
+                ('rows_out', 'output_rows', 'rows_after', 'n_rows_out', 'samples_out'),
+                depth=1,
+            )
+            if isinstance(failure.context.get('duration_ms'), (int, float)):
+                duration_ms = float(failure.context['duration_ms'])
+            else:
+                duration_seconds = self._search_numeric_fields(
+                    failure.context,
+                    ('duration_seconds',),
+                    depth=1,
+                )
+                if duration_seconds is not None:
+                    duration_ms = float(duration_seconds) * 1000.0
+
+        message = summary or failure.message
+        event_extra: Dict[str, Any] = {
+            'error_code': failure.error_code,
+            'failure_context': failure.context,
+        }
         if summary:
-            tprint_error(f"❌ {summary}")
             self.logger.error(summary)
+            event_extra['error_summary'] = summary
         else:
-            tprint_error(f"❌ {failure.message}")
             self.logger.error(failure.message)
+        if failure.traceback:
+            event_extra['traceback'] = failure.traceback
+
+        self.event_logger.error(
+            message,
+            context=self._build_event_context(
+                failure.step,
+                config=config,
+                rows_in=rows_in,
+                rows_out=rows_out,
+                duration_ms=duration_ms,
+                extra=event_extra,
+            ),
+        )
 
         self._log_step_timing_summary(pipeline_results)
 
@@ -939,8 +1005,19 @@ class PreTrainingSubPipeline:
                         step_metric_records,
                         config,
                     )
-                tprint_warning(
-                    "⚠️ Continue-on-error enabled; proceeding after multi_horizon_profit_labeler failure"
+                self.event_logger.warning(
+                    "Continue-on-error enabled; proceeding after multi_horizon_profit_labeler failure",
+                    context=self._build_event_context(
+                        'multi_horizon_profit_labeler',
+                        config=config,
+                        rows_in=mh_context.rows_in,
+                        rows_out=mh_context.rows_out,
+                        duration_ms=mh_duration_ms,
+                        extra={
+                            'error_code': failure.error_code,
+                            'continue_on_error': True,
+                        },
+                    ),
                 )
                 self.logger.warning(
                     "Continue-on-error enabled; proceeding after multi_horizon_profit_labeler failure",
@@ -1120,8 +1197,19 @@ class PreTrainingSubPipeline:
                         step_metric_records,
                         config,
                     )
-                tprint_warning(
-                    "⚠️ Continue-on-error enabled; proceeding after feature_lookback_optimization failure"
+                self.event_logger.warning(
+                    "Continue-on-error enabled; proceeding after feature_lookback_optimization failure",
+                    context=self._build_event_context(
+                        'feature_lookback_optimization',
+                        config=config,
+                        rows_in=flo_context.rows_in,
+                        rows_out=flo_context.rows_out,
+                        duration_ms=flo_duration_ms,
+                        extra={
+                            'error_code': failure.error_code,
+                            'continue_on_error': True,
+                        },
+                    ),
                 )
                 self.logger.warning(
                     "Continue-on-error enabled; proceeding after feature_lookback_optimization failure",
@@ -1265,8 +1353,19 @@ class PreTrainingSubPipeline:
                         step_metric_records,
                         config,
                     )
-                tprint_warning(
-                    "⚠️ Continue-on-error enabled; proceeding after interactive_feature_generation failure"
+                self.event_logger.warning(
+                    "Continue-on-error enabled; proceeding after interactive_feature_generation failure",
+                    context=self._build_event_context(
+                        'interactive_feature_generation',
+                        config=config,
+                        rows_in=interactive_context.rows_in,
+                        rows_out=interactive_context.rows_out,
+                        duration_ms=interactive_duration_ms,
+                        extra={
+                            'error_code': failure.error_code,
+                            'continue_on_error': True,
+                        },
+                    ),
                 )
                 self.logger.warning(
                     "Continue-on-error enabled; proceeding after interactive_feature_generation failure",
@@ -1374,8 +1473,19 @@ class PreTrainingSubPipeline:
                         step_metric_records,
                         config,
                     )
-                tprint_warning(
-                    "⚠️ Continue-on-error enabled; proceeding after final_feature_selection failure"
+                self.event_logger.warning(
+                    "Continue-on-error enabled; proceeding after final_feature_selection failure",
+                    context=self._build_event_context(
+                        'final_feature_selection',
+                        config=config,
+                        rows_in=ffs_context.rows_in,
+                        rows_out=ffs_context.rows_out,
+                        duration_ms=ffs_duration_ms,
+                        extra={
+                            'error_code': failure.error_code,
+                            'continue_on_error': True,
+                        },
+                    ),
                 )
                 self.logger.warning(
                     "Continue-on-error enabled; proceeding after final_feature_selection failure",
@@ -1753,7 +1863,14 @@ class PreTrainingSubPipeline:
         ):
             pass
 
-        tprint("📈 Step duration summary:")
+        self.logger.info("📈 Step duration summary:")
+        self.event_logger.info(
+            "Step duration summary emitted",
+            context=self._build_event_context(
+                'pipeline.summary',
+                extra={'steps': sorted(step_metrics.keys())},
+            ),
+        )
         for spec in self._get_ordered_step_specs(sequence_only=True):
             step_name = spec.name
             metrics = step_metrics.get(step_name)
@@ -1775,16 +1892,16 @@ class PreTrainingSubPipeline:
             self.logger.info(message)
             self.event_logger.info(
                 "Step duration summary",
-                context={
-                    'run_id': self._run_metadata.get('run_id'),
-                    'step': f'pipeline.summary.{step_name}',
-                    'symbol': self._run_metadata.get('symbol'),
-                    'timeframe': self._run_metadata.get('timeframe'),
-                    'duration_seconds': duration,
-                    'budget_seconds': budget,
-                    'over_budget': over_budget,
-                    'over_budget_seconds': over_budget_seconds,
-                },
+                context=self._build_event_context(
+                    f'pipeline.summary.{step_name}',
+                    duration_ms=duration * 1000.0,
+                    extra={
+                        'duration_seconds': duration,
+                        'budget_seconds': budget,
+                        'over_budget': over_budget,
+                        'over_budget_seconds': over_budget_seconds,
+                    },
+                ),
             )
 
     @staticmethod

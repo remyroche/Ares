@@ -21,6 +21,8 @@ from .statistical_selection import StatisticalSelection, CrossTimeframeStatistic
 from .evaluation import WalkForwardEvaluation
 from .monitoring import MonitoringSystem
 
+from src.utils.tprint import tprint
+
 from ..feature_interaction_generation.feature_engineering import (
     FeatureRegistry,
     FeatureFamily,
@@ -45,11 +47,12 @@ class CrossTimeframePipeline:
     9. Walk-forward evaluation
     10. Monitoring & automation
     """
-    
+
     def __init__(self, config: PipelineConfig):
+        tprint("Initializing CrossTimeframePipeline components", "INFO")
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
+
         # Initialize components
         self.feature_registry = FeatureRegistry()
         self.regime_segmentation = RegimeSegmentation(config.regime)
@@ -88,6 +91,8 @@ class CrossTimeframePipeline:
         # Holds the final statistical pruning output (CrossTimeframeStatisticalSelectionResult)
         self.final_features = None
         self.evaluation_results = None
+
+        tprint("CrossTimeframePipeline initialized successfully", "SUCCESS")
         
     def run_pipeline(self,
                     ohlcv_data: pd.DataFrame,
@@ -108,44 +113,52 @@ class CrossTimeframePipeline:
             ``CrossTimeframeStatisticalSelectionResult`` under ``final_features`` so callers
             can differentiate between the two selection phases.
         """
+        tprint("🚀 Starting cross-timeframe pipeline orchestration", "INFO")
         self.logger.info("Starting cross-timeframe pipeline")
-        
+
         try:
             # Step 0: Sessionize & align data
+            tprint("Step 0: Sessionizing and aligning data", "INFO")
             self.logger.info("Step 0: Sessionizing and aligning data")
             self.sessionized_data = self._sessionize_and_align(ohlcv_data, optional_data)
-            
+
             # Step 1: Regime segmentation
+            tprint("Step 1: Performing regime segmentation", "INFO")
             self.logger.info("Step 1: Performing regime segmentation")
             self.regime_segments = self.regime_segmentation.segment_regimes(
                 self.sessionized_data, targets
             )
-            
+
             # Step 2: Phase-1 HTF probe stage
+            tprint("Step 2: Running Phase-1 HTF probe stage", "INFO")
             self.logger.info("Step 2: Phase-1 HTF probe stage")
             self.phase1_results = self.phase1_probe.run_probe_stage(
                 self.sessionized_data, self.regime_segments, targets
             )
-            
+
             # Step 3: Phase-2 optimization
+            tprint("Step 3: Executing Phase-2 optimization", "INFO")
             self.logger.info("Step 3: Phase-2 optimization")
             self.phase2_results = self.phase2_optimization.optimize_lookbacks(
                 self.sessionized_data, self.phase1_results, self.regime_segments, targets
             )
-            
+
             # Step 4: EHU/RIH assignment
+            tprint("Step 4: Performing EHU/RIH assignment", "INFO")
             self.logger.info("Step 4: EHU/RIH assignment")
             ehu_rih_assignments = self.ehu_rih_assignment.assign_htf_features(
                 self.phase2_results, self.sessionized_data
             )
-            
+
             # Step 5: Knapsack selection (stage-one resource allocation)
+            tprint("Step 5: Running knapsack selection", "INFO")
             self.logger.info("Step 5: Knapsack selection")
             self.selected_htfs = self.knapsack_selection.select_features(
                 self.phase2_results, ehu_rih_assignments, self.sessionized_data
             )
-            
+
             # Step 6: Materialize HTFs
+            tprint("Step 6: Materializing HTFs", "INFO")
             self.logger.info("Step 6: Materializing HTFs")
             selected_feature_candidates: List[Any]
             if self.selected_htfs is None:
@@ -166,6 +179,7 @@ class CrossTimeframePipeline:
             )
             
             # Step 7: Generate interactions
+            tprint("Step 7: Generating HTF-aware interactions", "INFO")
             self.logger.info("Step 7: Generating HTF-aware interactions")
 
             aligned_features: Optional[Union[pd.DataFrame, Dict[str, pd.Series]]] = None
@@ -184,6 +198,10 @@ class CrossTimeframePipeline:
                     aligned_features = aligned_series if aligned_series else None
 
             if aligned_features is None:
+                tprint(
+                    "No aligned base features available; interaction generation will only rely on HTFs.",
+                    "WARNING",
+                )
                 self.logger.warning(
                     "No aligned base features available; interaction generation will only rely on HTFs."
                 )
@@ -193,14 +211,16 @@ class CrossTimeframePipeline:
                 aligned_features,
                 targets,
             )
-            
+
             # Step 8: Statistical selection (stage-two statistical pruning)
+            tprint("Step 8: Performing statistical selection", "INFO")
             self.logger.info("Step 8: Statistical selection")
             self.final_features = self.statistical_selection.select_final_features(
                 self.materialized_htfs, self.interactions, targets
             )
-            
+
             # Step 9: Walk-forward evaluation
+            tprint("Step 9: Running walk-forward evaluation", "INFO")
             self.logger.info("Step 9: Walk-forward evaluation")
             final_feature_list = (
                 self.final_features.selected_features
@@ -217,6 +237,7 @@ class CrossTimeframePipeline:
                     interactions=self.interactions,
                 )
             else:
+                tprint("Targets not provided – skipping evaluation stage", "WARNING")
                 self.logger.warning("Targets not provided – skipping evaluation stage")
                 self.evaluation_results = None
 
@@ -248,16 +269,25 @@ class CrossTimeframePipeline:
                             recent_performance,
                             market_state,
                         )
+                        tprint(
+                            "Updated adaptive scoring meta-learner with recent performance context",
+                            "SUCCESS",
+                        )
                         self.logger.info(
                             "Updated adaptive scoring meta-learner with recent performance context",
                         )
                 except Exception as meta_learning_error:
+                    tprint(
+                        f"Failed to update scoring meta-learner: {meta_learning_error}",
+                        "WARNING",
+                    )
                     self.logger.warning(
                         "Failed to update scoring meta-learner: %s",
                         meta_learning_error,
                     )
 
             # Step 10: Monitoring & automation
+            tprint("Step 10: Configuring monitoring and automation", "INFO")
             self.logger.info("Step 10: Setting up monitoring")
             self.monitoring.setup_monitoring(
                 final_feature_list,
@@ -268,6 +298,7 @@ class CrossTimeframePipeline:
             if self.config.adaptive_penalties:
                 updated_penalties = self.monitoring.get_penalty_parameters()
                 if updated_penalties:
+                    tprint("Applied refreshed adaptive penalties to scoring system", "SUCCESS")
                     self.scoring_system.apply_penalty_parameters(updated_penalties)
                     self.logger.info(
                         "Applied refreshed adaptive penalties to scoring system: %s",
@@ -290,10 +321,12 @@ class CrossTimeframePipeline:
                 'pipeline_config': self.config
             }
             
+            tprint("✅ Cross-timeframe pipeline completed successfully", "SUCCESS")
             self.logger.info("Cross-timeframe pipeline completed successfully")
             return results
-            
+
         except Exception as e:
+            tprint(f"Pipeline failed: {str(e)}", "ERROR")
             self.logger.error(f"Pipeline failed: {str(e)}")
             raise
 
@@ -608,6 +641,7 @@ class CrossTimeframePipeline:
     def _handle_dst_transitions(self, sessions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Handle DST transitions in session data."""
         if not sessions:
+            tprint("No sessions available for DST adjustment", "WARNING")
             return sessions
 
         tz_candidates = []
@@ -641,6 +675,11 @@ class CrossTimeframePipeline:
         end_ts = ensure_timezone(sessions[-1]['close_dt'])
 
         dst_transition_dates = self._compute_dst_transition_dates(timezone, start_ts, end_ts)
+        if dst_transition_dates:
+            tprint(
+                f"Identified DST transition dates: {sorted(dst_transition_dates)}",
+                "INFO",
+            )
 
         adjusted_sessions: List[Dict[str, Any]] = []
         for session in sessions:
@@ -670,6 +709,7 @@ class CrossTimeframePipeline:
             adjusted_session['close_dt'] = close_ts
             adjusted_sessions.append(adjusted_session)
 
+        tprint(f"Adjusted {len(adjusted_sessions)} sessions for DST", "SUCCESS")
         return adjusted_sessions
 
     def _compute_dst_transition_dates(self, timezone: ZoneInfo, start: pd.Timestamp, end: pd.Timestamp) -> set:
@@ -686,6 +726,10 @@ class CrossTimeframePipeline:
                 transition_dates.add(ts.date())
             previous_offset = offset
 
+        tprint(
+            f"Computed {len(transition_dates)} DST transition date(s) between {start} and {end}",
+            "INFO",
+        )
         return transition_dates
 
     def _align_to_sessions(self, data: pd.DataFrame, sessions: List[Dict[str, Any]]) -> pd.DataFrame:
@@ -737,7 +781,7 @@ class CrossTimeframePipeline:
     
     def get_pipeline_status(self) -> Dict[str, Any]:
         """Get current pipeline status and progress."""
-        return {
+        status = {
             'sessionized_data': self.sessionized_data is not None,
             'regime_segments': self.regime_segments is not None,
             'phase1_results': self.phase1_results is not None,
@@ -748,9 +792,12 @@ class CrossTimeframePipeline:
             'final_features': self.final_features is not None,
             'evaluation_results': self.evaluation_results is not None
         }
-    
+        tprint(f"Pipeline status requested: {status}", "INFO")
+        return status
+
     def save_pipeline_state(self, filepath: str):
         """Save pipeline state to disk."""
+        tprint(f"Saving pipeline state to {filepath}", "INFO")
         state = {
             'config': self.config,
             'sessionized_data': self.sessionized_data,
@@ -763,17 +810,19 @@ class CrossTimeframePipeline:
             'final_features': self.final_features,
             'evaluation_results': self.evaluation_results
         }
-        
+
         import pickle
         with open(filepath, 'wb') as f:
             pickle.dump(state, f)
-    
+        tprint("Pipeline state saved successfully", "SUCCESS")
+
     def load_pipeline_state(self, filepath: str):
         """Load pipeline state from disk."""
+        tprint(f"Loading pipeline state from {filepath}", "INFO")
         import pickle
         with open(filepath, 'rb') as f:
             state = pickle.load(f)
-        
+
         self.config = state['config']
         self.sessionized_data = state['sessionized_data']
         self.regime_segments = state['regime_segments']
@@ -784,3 +833,4 @@ class CrossTimeframePipeline:
         self.interactions = state['interactions']
         self.final_features = state['final_features']
         self.evaluation_results = state['evaluation_results']
+        tprint("Pipeline state loaded successfully", "SUCCESS")

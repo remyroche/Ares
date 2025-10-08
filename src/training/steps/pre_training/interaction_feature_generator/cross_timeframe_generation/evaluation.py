@@ -3,7 +3,7 @@ Walk-Forward Evaluation System
 
 Implements comprehensive evaluation with:
 - Walk-forward validation with purging and embargo
-- Wild bootstrap confidence intervals
+- Block bootstrap confidence intervals
 - SPA (Superior Predictive Ability) test
 - Regime-aware evaluation
 - Ablation studies
@@ -11,7 +11,7 @@ Implements comprehensive evaluation with:
 """
 
 from typing import Dict, List, Optional, Any, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -20,7 +20,6 @@ from sklearn.model_selection import TimeSeriesSplit
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from sklearn.linear_model import LinearRegression
 from scipy import stats
-from scipy.stats import bootstrap
 import warnings
 
 from src.utils.tprint import tprint
@@ -43,11 +42,16 @@ class EvaluationResult:
     overall_ic: float
     overall_ic_std: float
     overall_ic_ci: Tuple[float, float]
-    regime_results: Dict[str, Dict[str, float]]
-    ablation_results: Dict[str, Dict[str, float]]
-    spa_test_result: Dict[str, Any]
-    walk_forward_results: List[Dict[str, Any]]
-    metadata: Dict[str, Any]
+    regime_results: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    ablation_results: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    spa_test_result: Dict[str, Any] = field(default_factory=dict)
+    walk_forward_results: List[Dict[str, Any]] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    overall_pnl: float = 0.0
+    overall_pnl_std: float = 0.0
+    overall_pnl_ci: Tuple[float, float] = (0.0, 0.0)
+    robust_statistics: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    block_bootstrap_cis: Dict[str, Tuple[float, float]] = field(default_factory=dict)
 
 
 @dataclass
@@ -58,12 +62,88 @@ class WalkForwardFold:
     test_start: datetime
     test_end: datetime
     ic: float
+    pnl: float
     mse: float
     mae: float
     r2: float
     sharpe: float
     max_drawdown: float
     metadata: Dict[str, Any]
+
+
+def _newey_west_statistics(
+    series: List[float],
+    *,
+    max_lag: Optional[int] = None,
+) -> Dict[str, float]:
+    """Compute Newey-West/HAC standard error, t-statistic, and p-value for a series.
+
+    Args:
+        series: Sequence of fold-level statistics (IC or PnL).
+        max_lag: Optional manual lag length. If ``None`` a Bartlett kernel
+            with the Newey-West rule-of-thumb lag (⌊1.1447 * n^(1/3)⌋) is used.
+
+    Returns:
+        Dictionary with ``mean``, ``std_error``, ``t_stat`` and ``p_value``.
+    """
+
+    values = np.asarray(series, dtype=float)
+    values = values[~np.isnan(values)]
+
+    if values.size == 0:
+        return {
+            'mean': 0.0,
+            'std_error': 0.0,
+            't_stat': 0.0,
+            'p_value': 1.0,
+        }
+
+    n_obs = values.size
+    mean_value = float(np.mean(values))
+
+    if n_obs == 1:
+        # With a single observation we cannot estimate autocovariances.
+        std_error = 0.0
+        t_stat = np.inf if mean_value > 0 else (-np.inf if mean_value < 0 else 0.0)
+        p_value = 0.0 if np.isinf(t_stat) else 1.0
+        return {
+            'mean': mean_value,
+            'std_error': std_error,
+            't_stat': t_stat,
+            'p_value': p_value,
+        }
+
+    if max_lag is None:
+        max_lag = int(np.floor(1.1447 * n_obs ** (1 / 3)))
+        max_lag = max(1, min(max_lag, n_obs - 1))
+    else:
+        max_lag = max(1, min(int(max_lag), n_obs - 1))
+
+    demeaned = values - mean_value
+    gamma_zero = float(np.dot(demeaned, demeaned) / n_obs)
+    hac_variance = gamma_zero
+
+    for lag in range(1, max_lag + 1):
+        weight = 1.0 - lag / (max_lag + 1)
+        cov = float(np.dot(demeaned[lag:], demeaned[:-lag]) / n_obs)
+        hac_variance += 2.0 * weight * cov
+
+    std_error = float(np.sqrt(max(hac_variance / n_obs, 0.0)))
+
+    if std_error == 0.0:
+        t_stat = np.inf if mean_value > 0 else (-np.inf if mean_value < 0 else 0.0)
+        p_value = 0.0 if np.isinf(t_stat) else 1.0
+    else:
+        t_stat = mean_value / std_error
+        degrees_of_freedom = max(n_obs - 1, 1)
+        p_value = float(2 * stats.t.sf(np.abs(t_stat), df=degrees_of_freedom))
+
+    return {
+        'mean': mean_value,
+        'std_error': std_error,
+        't_stat': t_stat,
+        'p_value': p_value,
+    }
 
 
 class WalkForwardValidator:
@@ -224,6 +304,7 @@ class WalkForwardValidator:
                 test_start=datetime.now(),
                 test_end=datetime.now(),
                 ic=0.0,
+                pnl=0.0,
                 mse=0.0,
                 mae=0.0,
                 r2=0.0,
@@ -248,6 +329,9 @@ class WalkForwardValidator:
         # Calculate Sharpe ratio (simplified)
         returns = np.diff(target_vals)
         sharpe = np.mean(returns) / np.std(returns) if np.std(returns) > 0 else 0.0
+
+        # Aggregate fold-level PnL as cumulative returns
+        pnl = float(np.sum(returns)) if len(returns) > 0 else 0.0
         
         # Calculate maximum drawdown (simplified)
         cumulative_returns = np.cumprod(1 + returns)
@@ -261,6 +345,7 @@ class WalkForwardValidator:
             test_start=datetime.now(),
             test_end=datetime.now(),
             ic=ic,
+            pnl=pnl,
             mse=mse,
             mae=mae,
             r2=r2,
@@ -278,28 +363,28 @@ class WalkForwardValidator:
 
 
 class BootstrapEvaluator:
-    """Implements wild bootstrap evaluation."""
+    """Implements block bootstrap evaluation."""
 
     def __init__(self, config: EvaluationConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
-    
-    def calculate_confidence_intervals(self, 
+
+    def calculate_confidence_intervals(self,
                                      fold_results: List[WalkForwardFold],
-                                     metric: str = 'ic') -> Tuple[float, float, float]:
+                                     metric: str = 'ic') -> Tuple[float, float, Tuple[float, float]]:
         """
-        Calculate confidence intervals using wild bootstrap.
-        
+        Calculate confidence intervals using a moving block bootstrap.
+
         Args:
             fold_results: List of walk-forward fold results
             metric: Metric to calculate CI for
-            
+
         Returns:
-            Tuple of (mean, lower_ci, upper_ci)
+            Tuple of (mean, std_error, (lower_ci, upper_ci))
         """
         if not fold_results:
-            return 0.0, 0.0, 0.0
-        
+            return 0.0, 0.0, (0.0, 0.0)
+
         # Extract metric values
         metric_values = []
         for fold in fold_results:
@@ -307,35 +392,37 @@ class BootstrapEvaluator:
                 value = getattr(fold, metric)
                 if not pd.isna(value):
                     metric_values.append(value)
-        
+
         if not metric_values:
-            return 0.0, 0.0, 0.0
+            return 0.0, 0.0, (0.0, 0.0)
 
         metric_array = np.array(metric_values)
 
         # Calculate mean
         mean_value = np.mean(metric_array)
 
-        # Calculate confidence interval using bootstrap
-        try:
-            # Use scipy bootstrap
-            bootstrap_result = bootstrap(
-                (metric_array,),
-                np.mean,
-                n_resamples=1000,
-                confidence_level=0.95,
-                method='percentile'
-            )
-            
-            ci_lower = bootstrap_result.confidence_interval.low
-            ci_upper = bootstrap_result.confidence_interval.high
-            
-        except Exception as e:
-            self.logger.warning(f"Bootstrap failed: {e}, using normal approximation")
-            # Fallback to normal approximation
-            std_error = np.std(metric_array) / np.sqrt(len(metric_array))
-            ci_lower = mean_value - 1.96 * std_error
-            ci_upper = mean_value + 1.96 * std_error
+        n_obs = len(metric_array)
+        if n_obs == 0:
+            return 0.0, 0.0, (0.0, 0.0)
+
+        if n_obs == 1:
+            std_error = 0.0
+            ci = (mean_value, mean_value)
+            return mean_value, std_error, ci
+
+        std_error = np.std(metric_array, ddof=1) / np.sqrt(n_obs)
+
+        block_length = self._resolve_block_length(n_obs)
+        n_resamples = int(getattr(self.config, 'bootstrap_resamples', 1000))
+        confidence_level = float(getattr(self.config, 'bootstrap_confidence_level', 0.95))
+
+        bootstrap_means = self._moving_block_bootstrap(metric_array, block_length, n_resamples)
+
+        alpha = 1.0 - confidence_level
+        lower_quantile = alpha / 2.0
+        upper_quantile = 1.0 - alpha / 2.0
+        ci_lower = float(np.quantile(bootstrap_means, lower_quantile))
+        ci_upper = float(np.quantile(bootstrap_means, upper_quantile))
 
         tprint(
             f"🎯 Bootstrap CI for {metric}: mean={mean_value:.4f}, "
@@ -343,7 +430,52 @@ class BootstrapEvaluator:
             "INFO"
         )
 
-        return mean_value, ci_lower, ci_upper
+        return mean_value, std_error, (ci_lower, ci_upper)
+
+    def _resolve_block_length(self, n_obs: int) -> int:
+        """Determine the block length for the bootstrap procedure."""
+        configured_block = getattr(self.config, 'bootstrap_block_size', None)
+        if configured_block is not None:
+            block_length = int(configured_block)
+        else:
+            block_length = int(np.sqrt(n_obs))
+
+        block_length = max(1, min(block_length, n_obs))
+        return block_length
+
+    def _moving_block_bootstrap(
+        self,
+        data: np.ndarray,
+        block_length: int,
+        n_resamples: int,
+    ) -> np.ndarray:
+        """Generate bootstrap resamples using the moving block bootstrap."""
+        n_obs = len(data)
+        if n_obs == 0:
+            return np.zeros(n_resamples)
+
+        if block_length >= n_obs:
+            mean_value = float(np.mean(data))
+            return np.full(n_resamples, mean_value)
+
+        block_starts = np.arange(0, n_obs - block_length + 1)
+        rng_seed = getattr(self.config, 'bootstrap_random_seed', None)
+        rng = np.random.default_rng(rng_seed)
+
+        bootstrap_means = np.empty(n_resamples, dtype=float)
+
+        for i in range(n_resamples):
+            sampled_indices: List[int] = []
+            while len(sampled_indices) < n_obs:
+                start = int(rng.choice(block_starts))
+                block_indices = list(range(start, start + block_length))
+                sampled_indices.extend(block_indices)
+
+            sampled_indices = sampled_indices[:n_obs]
+            resampled = data[sampled_indices]
+            bootstrap_means[i] = float(np.mean(resampled))
+
+        return bootstrap_means
 
 
 class SPATester:
@@ -709,6 +841,11 @@ class WalkForwardEvaluation:
             overall_ic=0.0,
             overall_ic_std=0.0,
             overall_ic_ci=(0.0, 0.0),
+            overall_pnl=0.0,
+            overall_pnl_std=0.0,
+            overall_pnl_ci=(0.0, 0.0),
+            robust_statistics={},
+            block_bootstrap_cis={},
             regime_results={},
             ablation_results={},
             spa_test_result={},
@@ -820,6 +957,40 @@ class WalkForwardEvaluation:
             "INFO"
         )
 
+        overall_pnl, overall_pnl_std, overall_pnl_ci = self.bootstrap_evaluator.calculate_confidence_intervals(
+            fold_results, 'pnl'
+        )
+        tprint(
+            f"💰 Overall PnL={overall_pnl:.4f} (std={overall_pnl_std:.4f}, CI=({overall_pnl_ci[0]:.4f}, {overall_pnl_ci[1]:.4f}))",
+            "INFO"
+        )
+
+        hac_lag = getattr(self.config, 'hac_max_lag', None)
+        ic_series = [getattr(fold, 'ic', np.nan) for fold in fold_results]
+        ic_series = [value for value in ic_series if not pd.isna(value)]
+        pnl_series = [getattr(fold, 'pnl', np.nan) for fold in fold_results]
+        pnl_series = [value for value in pnl_series if not pd.isna(value)]
+
+        ic_hac_stats = _newey_west_statistics(ic_series, max_lag=hac_lag)
+        pnl_hac_stats = _newey_west_statistics(pnl_series, max_lag=hac_lag)
+
+        robust_statistics = {
+            'ic': ic_hac_stats,
+            'pnl': pnl_hac_stats,
+        }
+
+        block_bootstrap_cis = {
+            'ic': overall_ic_ci,
+            'pnl': overall_pnl_ci,
+        }
+
+        tprint(
+            "🛡️ Robust stats: "
+            f"IC t={ic_hac_stats['t_stat']:.2f} (p={ic_hac_stats['p_value']:.4f}), "
+            f"PnL t={pnl_hac_stats['t_stat']:.2f} (p={pnl_hac_stats['p_value']:.4f})",
+            "INFO"
+        )
+
         # Regime-aware evaluation
         regime_results = {}
         if regime_segments:
@@ -859,6 +1030,11 @@ class WalkForwardEvaluation:
             overall_ic=overall_ic,
             overall_ic_std=overall_ic_std,
             overall_ic_ci=overall_ic_ci,
+            overall_pnl=overall_pnl,
+            overall_pnl_std=overall_pnl_std,
+            overall_pnl_ci=overall_pnl_ci,
+            robust_statistics=robust_statistics,
+            block_bootstrap_cis=block_bootstrap_cis,
             regime_results=regime_results,
             ablation_results=ablation_results,
             spa_test_result=spa_test_result,
@@ -867,7 +1043,13 @@ class WalkForwardEvaluation:
                 'n_folds': len(fold_results),
                 'n_features': len(available_features),
                 'evaluation_method': 'walk_forward',
-                'embargo_minutes': self.config.embargo_minutes
+                'embargo_minutes': self.config.embargo_minutes,
+                'bootstrap_block_size': getattr(
+                    self.config,
+                    'bootstrap_block_size',
+                    self.bootstrap_evaluator._resolve_block_length(max(len(ic_series), 1))
+                ),
+                'hac_max_lag': hac_lag,
             }
         )
 
@@ -917,6 +1099,7 @@ class WalkForwardEvaluation:
             'test_start': fold.test_start.isoformat(),
             'test_end': fold.test_end.isoformat(),
             'ic': fold.ic,
+            'pnl': getattr(fold, 'pnl', 0.0),
             'mse': fold.mse,
             'mae': fold.mae,
             'r2': fold.r2,
@@ -933,7 +1116,13 @@ class WalkForwardEvaluation:
         )
         return {
             'overall_ic': result.overall_ic,
+            'overall_ic_std': result.overall_ic_std,
             'overall_ic_ci': result.overall_ic_ci,
+            'overall_pnl': result.overall_pnl,
+            'overall_pnl_std': result.overall_pnl_std,
+            'overall_pnl_ci': result.overall_pnl_ci,
+            'robust_statistics': result.robust_statistics,
+            'block_bootstrap_cis': result.block_bootstrap_cis,
             'regime_results': result.regime_results,
             'ablation_results': result.ablation_results,
             'spa_test': result.spa_test_result,

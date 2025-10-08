@@ -179,6 +179,126 @@ class CoreOptimizer:
         self._data_locator = locator
         self._cached_multi_horizon_limits = None
 
+    def _normalize_regularization_settings(
+        self, settings: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Normalize regularization configuration for horizon penalties."""
+
+        normalized: Dict[str, Any] = {}
+        if settings:
+            normalized.update(settings)
+
+        # Ensure defaults
+        normalized.setdefault('penalty_strength', 0.0)
+        normalized.setdefault('penalty_exponent', 2.0)
+
+        preferred_band = normalized.get('preferred_band')
+        if preferred_band is None and 'preferred_window' in normalized:
+            preferred_band = normalized['preferred_window']
+
+        if preferred_band is None and 'preferred_window_center' in normalized:
+            center = float(normalized['preferred_window_center'])
+            width = float(normalized.get('preferred_window_width', 0))
+            half_width = max(0.0, width) / 2.0
+            preferred_band = (center - half_width, center + half_width)
+
+        if preferred_band is None:
+            preferred_band = (40, 80)
+
+        if isinstance(preferred_band, (int, float)):
+            center = float(preferred_band)
+            width = float(normalized.get('preferred_window_width', 0))
+            if width <= 0:
+                width = 20.0
+            half_width = width / 2.0
+            preferred_band = (center - half_width, center + half_width)
+
+        if isinstance(preferred_band, (list, tuple)) and len(preferred_band) == 2:
+            lower = int(min(preferred_band[0], preferred_band[1]))
+            upper = int(max(preferred_band[0], preferred_band[1]))
+            normalized['preferred_band'] = (lower, upper)
+        else:
+            normalized['preferred_band'] = (40, 80)
+
+        if 'max_penalty' in normalized:
+            try:
+                normalized['max_penalty'] = float(normalized['max_penalty'])
+            except (TypeError, ValueError):
+                normalized['max_penalty'] = None
+
+        try:
+            normalized['penalty_strength'] = float(normalized['penalty_strength'])
+        except (TypeError, ValueError):
+            normalized['penalty_strength'] = 0.0
+
+        try:
+            normalized['penalty_exponent'] = max(
+                1.0, float(normalized['penalty_exponent'])
+            )
+        except (TypeError, ValueError):
+            normalized['penalty_exponent'] = 2.0
+
+        return normalized
+
+    def _calculate_horizon_penalty(
+        self, horizon: int, regularization_settings: Optional[Dict[str, Any]]
+    ) -> float:
+        """Calculate penalty for a given horizon based on preferred band."""
+
+        if not regularization_settings:
+            return 0.0
+
+        band = regularization_settings.get('preferred_band')
+        if not band:
+            return 0.0
+
+        penalty_strength = float(regularization_settings.get('penalty_strength', 0.0))
+        if penalty_strength <= 0:
+            return 0.0
+
+        penalty_exponent = float(regularization_settings.get('penalty_exponent', 2.0))
+        try:
+            lower, upper = int(band[0]), int(band[1])
+        except (TypeError, ValueError, IndexError):
+            return 0.0
+
+        if lower > upper:
+            lower, upper = upper, lower
+
+        distance = 0.0
+        if horizon < lower:
+            distance = float(lower - horizon)
+        elif horizon > upper:
+            distance = float(horizon - upper)
+
+        if distance <= 0:
+            return 0.0
+
+        penalty = penalty_strength * (distance ** max(1.0, penalty_exponent))
+
+        max_penalty = regularization_settings.get('max_penalty')
+        if isinstance(max_penalty, (int, float)) and max_penalty >= 0:
+            penalty = min(penalty, float(max_penalty))
+
+        return penalty
+
+    def _build_candidate_entry(
+        self,
+        horizon: int,
+        raw_score: float,
+        regularization_settings: Optional[Dict[str, Any]],
+    ) -> Dict[str, float]:
+        """Create a structured candidate entry with penalty-adjusted score."""
+
+        penalty = self._calculate_horizon_penalty(int(horizon), regularization_settings)
+        adjusted_score = float(raw_score) - penalty
+        return {
+            'horizon': int(horizon),
+            'raw_score': float(raw_score),
+            'penalty': float(penalty),
+            'score': float(adjusted_score),
+        }
+
     def optimize_single_feature(
         self,
         data: pd.DataFrame,
@@ -186,6 +306,7 @@ class CoreOptimizer:
         target_column: str,
         method: OptimizationMethod = OptimizationMethod.MRMR,
         lookback_range: Tuple[int, int] = (5, 300),
+        regularization_settings: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> OptimizationResult:
         """
@@ -197,6 +318,7 @@ class CoreOptimizer:
             target_column: Target column for optimization
             method: Optimization method to use
             lookback_range: Min and max lookback periods to test
+            regularization_settings: Optional horizon regularization parameters
             **kwargs: Additional parameters for optimization method
 
         Returns:
@@ -224,7 +346,14 @@ class CoreOptimizer:
             elif method == OptimizationMethod.MULTI_TARGET:
                 result = self._optimize_multi_target(data, feature_name, target_column, lookback_range, **kwargs)
             elif method == OptimizationMethod.COARSE_TO_REFINE:
-                result = self._optimize_coarse_to_refine(data, feature_name, target_column, lookback_range, **kwargs)
+                result = self._optimize_coarse_to_refine(
+                    data,
+                    feature_name,
+                    target_column,
+                    lookback_range,
+                    regularization_settings=regularization_settings,
+                    **kwargs,
+                )
             else:
                 # Fallback to MRMR
                 self.logger.warning(f'⚠️ Unknown method {method.value}, falling back to MRMR')
@@ -3486,9 +3615,18 @@ class CoreOptimizer:
             self.logger.warning(f"⚠️ Bootstrap validation failed: {e}")
             return {'mean_mi': 0.0, 'std_mi': 0.0, 'objective': 0.0}
 
-    def _parallel_refinement(self, top_horizons: List[Tuple[int, float]], data: pd.DataFrame, 
-                           feature_name: str, forward_returns: Dict[int, np.ndarray], 
-                           train_end_idx: int, min_lookback: int, max_lookback: int) -> List[Tuple[int, float]]:
+    def _parallel_refinement(
+        self,
+        top_horizons: List[Tuple[int, float]],
+        data: pd.DataFrame,
+        feature_name: str,
+        forward_returns: Dict[int, np.ndarray],
+        train_end_idx: int,
+        min_lookback: int,
+        max_lookback: int,
+        *,
+        regularization_settings: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, float]]:
         """
         Parallel refinement of top horizons using ThreadPoolExecutor.
         
@@ -3502,17 +3640,19 @@ class CoreOptimizer:
             max_lookback: Maximum lookback period
             
         Returns:
-            List of refined (horizon, mi_score) tuples
+            List of candidate dictionaries with raw and penalized scores
         """
         tprint_debug("🧠 Entering _parallel_refinement")
+        normalized_settings = self._normalize_regularization_settings(regularization_settings)
+
         def refine_single_horizon(horizon_mi_tuple):
             horizon, coarse_mi = horizon_mi_tuple
             refinement_horizons = range(
-                max(min_lookback, horizon - 10), 
-                min(max_lookback, horizon + 11), 
+                max(min_lookback, horizon - 10),
+                min(max_lookback, horizon + 11),
                 2  # Check every 2 periods
             )
-            
+
             best_mi = coarse_mi
             best_refined_horizon = horizon
             
@@ -3557,14 +3697,18 @@ class CoreOptimizer:
                     self.logger.warning(f"⚠️ Failed to refine horizon {refined_horizon}: {e}")
                     continue
             
-            return (best_refined_horizon, best_mi)
-        
+            return self._build_candidate_entry(
+                best_refined_horizon,
+                best_mi,
+                normalized_settings,
+            )
+
         # Use ThreadPoolExecutor for parallel processing
         final_results = []
         with ThreadPoolExecutor(max_workers=min(4, len(top_horizons))) as executor:
-            future_to_horizon = {executor.submit(refine_single_horizon, horizon_mi): horizon_mi 
+            future_to_horizon = {executor.submit(refine_single_horizon, horizon_mi): horizon_mi
                                for horizon_mi in top_horizons}
-            
+
             for future in as_completed(future_to_horizon):
                 try:
                     result = future.result()
@@ -3572,8 +3716,14 @@ class CoreOptimizer:
                 except Exception as e:
                     horizon_mi = future_to_horizon[future]
                     self.logger.warning(f"⚠️ Failed to refine horizon {horizon_mi[0]}: {e}")
-                    final_results.append(horizon_mi)  # Fallback to original
-        
+                    final_results.append(
+                        self._build_candidate_entry(
+                            horizon_mi[0],
+                            horizon_mi[1],
+                            normalized_settings,
+                        )
+                    )  # Fallback to original
+
         return final_results
 
     def _vectorized_feature_generation(self, data: pd.DataFrame, feature_name: str, 
@@ -3667,6 +3817,7 @@ class CoreOptimizer:
         feature_name: str,
         target_column: str,
         lookback_range: Tuple[int, int],
+        regularization_settings: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> OptimizationResult:
         """
@@ -3677,6 +3828,7 @@ class CoreOptimizer:
             feature_name: Name of the feature to optimize
             target_column: Target column for optimization
             lookback_range: Min and max lookback periods to test
+            regularization_settings: Optional configuration for horizon penalty
             **kwargs: Additional parameters
             
         Returns:
@@ -3684,6 +3836,9 @@ class CoreOptimizer:
         """
         tprint_debug("🧠 Entering _optimize_coarse_to_refine")
         try:
+            normalized_regularization = self._normalize_regularization_settings(
+                kwargs.pop('regularization_settings', regularization_settings)
+            )
             min_lookback, max_lookback = lookback_range
             # Step 1: Get shared forward returns matrix (reused across all features)
             forward_returns = self._get_shared_forward_returns_matrix(data, target_column, max_horizon=max_lookback)
@@ -3697,8 +3852,8 @@ class CoreOptimizer:
             coarse_horizons = self._generate_coarse_horizons(min_lookback, max_lookback)
             
             # Step 4: Vectorized coarse search with early termination
-            coarse_results = []
-            
+            coarse_results: List[Dict[str, float]] = []
+
             # Use vectorized feature generation for all coarse horizons
             vectorized_features = self._vectorized_feature_generation(data, feature_name, coarse_horizons)
             
@@ -3735,22 +3890,29 @@ class CoreOptimizer:
             # Vectorized MI calculation for all valid horizons
             if features_list and returns_list:
                 mi_scores = self._vectorized_mi_calculation(features_list, returns_list)
-                coarse_results = [(horizon, mi) for horizon, mi in zip(valid_horizons, mi_scores) if mi > 0]
-                
-                # Smart early termination: check if MI improvements are minimal
+                coarse_results = [
+                    self._build_candidate_entry(horizon, mi, normalized_regularization)
+                    for horizon, mi in zip(valid_horizons, mi_scores)
+                    if mi > 0
+                ]
+
+                # Smart early termination: check if score improvements are minimal
                 if len(coarse_results) >= 3:
-                    coarse_results.sort(key=lambda x: x[1], reverse=True)
-                    best_mi = coarse_results[0][1]
-                    second_best_mi = coarse_results[1][1]
-                    third_best_mi = coarse_results[2][1]
-                    
+                    coarse_results.sort(key=lambda x: x['score'], reverse=True)
+                    best_score = coarse_results[0]['score']
+                    second_score = coarse_results[1]['score']
+                    third_score = coarse_results[2]['score']
+
                     # If top 3 results are very close, skip refinement
-                    mi_range = best_mi - third_best_mi
-                    if mi_range < 0.001:  # Less than 0.1% difference
-                        self.logger.info(f'✅ {feature_name}: best_lookback={coarse_results[0][0]}, score={best_mi:.6f} (early termination: minimal improvement)')
+                    score_range = best_score - third_score
+                    if score_range < 0.001:  # Less than 0.1% difference
+                        best_entry = coarse_results[0]
+                        self.logger.info(
+                            f"✅ {feature_name}: best_lookback={best_entry['horizon']}, score={best_entry['score']:.6f} (early termination: minimal improvement)"
+                        )
                         return OptimizationResult(
-                            best_lookback_period=coarse_results[0][0],
-                            best_score=best_mi,
+                            best_lookback_period=best_entry['horizon'],
+                            best_score=best_entry['score'],
                             optimization_method="coarse_to_refine",
                             total_trials=len(coarse_results),
                             optimization_time=0.0,
@@ -3761,26 +3923,41 @@ class CoreOptimizer:
                                 'coarse_horizons': len(coarse_results),
                                 'early_termination': True,
                                 'reason': 'minimal_improvement',
-                                'mi_range': mi_range
+                                'score_range': score_range,
+                                'penalty_config': dict(normalized_regularization),
+                                'penalty': best_entry['penalty'],
                             }
                         )
             
             if not coarse_results:
                 return self._create_failed_result("coarse_to_refine", 0.0)
-            
-            # Step 5: Pick top 3 horizons
-            coarse_results.sort(key=lambda x: x[1], reverse=True)
-            top_3_horizons = [(horizon, mi) for horizon, mi in coarse_results[:3]]
-            
+
+            # Step 5: Pick top horizons
+            coarse_results.sort(key=lambda x: x['score'], reverse=True)
+            top_3_for_refinement = [
+                (entry['horizon'], entry['raw_score']) for entry in coarse_results[:3]
+            ]
+            top_3_horizons = [
+                {
+                    'horizon': entry['horizon'],
+                    'score': entry['score'],
+                    'raw_score': entry['raw_score'],
+                    'penalty': entry['penalty'],
+                }
+                for entry in coarse_results[:3]
+            ]
+
             # Early stopping check
-            best_coarse_mi = coarse_results[0][1]
-            if best_coarse_mi < 1e-3:
+            best_coarse_score = coarse_results[0]['score']
+            if best_coarse_score < 1e-3:
                 # Early stopping - return best result
-                best_horizon = coarse_results[0][0]
-                self.logger.info(f'✅ {feature_name}: best_lookback={best_horizon}, score={best_coarse_mi:.6f}')
+                best_entry = coarse_results[0]
+                self.logger.info(
+                    f"✅ {feature_name}: best_lookback={best_entry['horizon']}, score={best_entry['score']:.6f}"
+                )
                 return OptimizationResult(
-                    best_lookback_period=top_3_horizons[0],
-                    best_score=best_coarse_mi,
+                    best_lookback_period=best_entry['horizon'],
+                    best_score=best_entry['score'],
                     optimization_method="coarse_to_refine",
                     total_trials=len(coarse_results),
                     optimization_time=0.0,
@@ -3790,56 +3967,82 @@ class CoreOptimizer:
                         'target_column': target_column,
                         'coarse_horizons': len(coarse_results),
                         'early_stopping': True,
-                        'reason': 'low_mi'
+                        'reason': 'low_mi',
+                        'penalty': best_entry['penalty'],
+                        'penalty_config': dict(normalized_regularization),
                     }
                 )
-            
+
             # Step 6: Parallel refinement around top horizons
             refined_results = self._parallel_refinement(
-                top_3_horizons, data, feature_name, forward_returns, 
-                train_end_idx, min_lookback, max_lookback
+                top_3_for_refinement,
+                data,
+                feature_name,
+                forward_returns,
+                train_end_idx,
+                min_lookback,
+                max_lookback,
+                regularization_settings=normalized_regularization,
             )
-            
-            # Combine coarse and refined results
-            all_candidates = coarse_results + refined_results
+
+            # Combine coarse and refined results (keep best per horizon)
+            candidate_map: Dict[int, Dict[str, float]] = {}
+            for entry in coarse_results + refined_results:
+                horizon = entry['horizon']
+                existing = candidate_map.get(horizon)
+                if existing is None or entry['score'] > existing['score']:
+                    candidate_map[horizon] = entry
+
+            all_candidates = list(candidate_map.values())
             
             # Step 7: Memory-efficient batch bootstrap validation
             bootstrap_results = []
             batch_size = 3  # Process in small batches to manage memory
-            
+            candidate_penalties = {
+                entry['horizon']: entry['penalty'] for entry in all_candidates
+            }
+            candidate_scores = {
+                entry['horizon']: entry['score'] for entry in all_candidates
+            }
+            candidate_raw_scores = {
+                entry['horizon']: entry['raw_score'] for entry in all_candidates
+            }
+
             for i in range(0, min(10, len(all_candidates)), batch_size):
                 batch = all_candidates[i:i+batch_size]
-                
-                for horizon, mi in batch:
+
+                for candidate in batch:
+                    horizon = candidate['horizon']
+                    mi = candidate_raw_scores.get(horizon, candidate['raw_score'])
                     try:
                         # Use cached feature calculation
                         feature_values = self._cached_feature_calculation(data, feature_name, horizon)
-                        
+
                         if feature_values is None or len(feature_values) == 0:
                             continue
-                        
+
                         train_feature = feature_values[:train_end_idx] if len(feature_values) >= train_end_idx else feature_values
                         train_returns = forward_returns.get(horizon, np.array([]))
-                        
+
                         if len(train_returns) == 0:
                             continue
-                        
+
                         min_length = min(len(train_feature), len(train_returns))
                         if min_length < 20:  # Need sufficient data for bootstrap
                             bootstrap_results.append((horizon, mi, 0.0, 0.0, mi))  # Use raw MI
                             continue
-                        
+
                         # Bootstrap validation (with reduced samples: 10 instead of 20)
                         bootstrap_stats = self._bootstrap_mi_validation(
-                            train_feature[:min_length], 
+                            train_feature[:min_length],
                             train_returns[:min_length],
                             n_resamples=10  # 50% reduction from 20 to 10
                         )
                         
                         bootstrap_results.append((
-                            horizon, 
-                            bootstrap_stats['mean_mi'], 
-                            bootstrap_stats['std_mi'], 
+                            horizon,
+                            bootstrap_stats['mean_mi'],
+                            bootstrap_stats['std_mi'],
                             bootstrap_stats['objective'],
                             mi  # Keep original MI for comparison
                         ))
@@ -3895,19 +4098,44 @@ class CoreOptimizer:
                     stability_penalty = 0.0
                     if mean_mi > 0 and val_mi < 0.5 * mean_mi:
                         stability_penalty = 0.1  # Penalize poor OOS performance
-                    
-                    final_score = objective - stability_penalty
-                    final_results.append((horizon, final_score, mean_mi, std_mi, val_mi, original_mi))
-                
+
+                    horizon_penalty = candidate_penalties.get(
+                        horizon,
+                        self._calculate_horizon_penalty(horizon, normalized_regularization),
+                    )
+
+                    final_score = objective - stability_penalty - horizon_penalty
+                    final_results.append(
+                        (
+                            horizon,
+                            final_score,
+                            mean_mi,
+                            std_mi,
+                            val_mi,
+                            original_mi,
+                            horizon_penalty,
+                            candidate_scores.get(horizon, final_score + horizon_penalty),
+                        )
+                    )
+
                 # Select best horizon
                 if final_results:
                     final_results.sort(key=lambda x: x[1], reverse=True)
-                    best_horizon, best_score, best_mean_mi, best_std_mi, best_val_mi, best_original_mi = final_results[0]
-                    
+                    (
+                        best_horizon,
+                        best_score,
+                        best_mean_mi,
+                        best_std_mi,
+                        best_val_mi,
+                        best_original_mi,
+                        best_penalty,
+                        best_candidate_score,
+                    ) = final_results[0]
+
                     # Log cache performance
                     cache_hit_rate = self.cache_hits / (self.cache_hits + self.cache_misses) if (self.cache_hits + self.cache_misses) > 0 else 0
                     self.logger.info(f'✅ {feature_name}: best_lookback={best_horizon}, score={best_score:.6f} (cache_hit_rate={cache_hit_rate:.2%})')
-                    
+
                     return OptimizationResult(
                         best_lookback_period=best_horizon,
                         best_score=best_score,
@@ -3928,27 +4156,34 @@ class CoreOptimizer:
                             'top_3_coarse': top_3_horizons,
                             'stability_check': True,
                             'cache_hit_rate': cache_hit_rate,
-                            'vectorized_ops': MATRIX_OPS_AVAILABLE
+                            'vectorized_ops': MATRIX_OPS_AVAILABLE,
+                            'penalty': best_penalty,
+                            'candidate_score': best_candidate_score,
+                            'penalty_config': dict(normalized_regularization),
                         }
                     )
-            
+
             # Fallback to best coarse result
-            best_horizon, best_mi = coarse_results[0]
-            self.logger.info(f'✅ {feature_name}: best_lookback={best_horizon}, score={best_mi:.6f}')
-            
+            best_entry = coarse_results[0]
+            best_horizon = best_entry['horizon']
+            best_score = best_entry['score']
+            self.logger.info(f'✅ {feature_name}: best_lookback={best_horizon}, score={best_score:.6f}')
+
             return OptimizationResult(
                 best_lookback_period=best_horizon,
-                best_score=best_mi,
+                best_score=best_score,
                 optimization_method="coarse_to_refine",
-                total_trials=len(coarse_results),
+                total_trials=len(all_candidates),
                 optimization_time=0.0,
                 convergence_achieved=True,
                 metadata={
                     'feature_name': feature_name,
                     'target_column': target_column,
                     'coarse_horizons': len(coarse_results),
-                    'refined_horizons': 0,
-                    'fallback': True
+                    'refined_horizons': len(refined_results),
+                    'fallback': True,
+                    'penalty': best_entry['penalty'],
+                    'penalty_config': dict(normalized_regularization),
                 }
             )
             

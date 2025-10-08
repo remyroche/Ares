@@ -1156,6 +1156,70 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             )
             raise
 
+    def _build_regularization_settings(self, pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+        """Assemble horizon regularization settings for the optimizer."""
+
+        defaults: Dict[str, Any] = {
+            'preferred_band': (40, 80),
+            'penalty_strength': 0.0,
+            'penalty_exponent': 2.0,
+        }
+
+        custom_params = getattr(self.config, 'custom_params', {}) or {}
+        component_settings = custom_params.get('feature_lookback_regularization', {}) or {}
+        pipeline_settings = pipeline_state.get('feature_lookback_regularization', {}) or {}
+
+        regularization_settings: Dict[str, Any] = dict(defaults)
+        regularization_settings.update(component_settings)
+        regularization_settings.update(pipeline_settings)
+
+        preferred_band = regularization_settings.get('preferred_band')
+        if preferred_band is None:
+            preferred_band = regularization_settings.get('preferred_window')
+
+        if preferred_band is None and 'preferred_window_center' in regularization_settings:
+            center = float(regularization_settings['preferred_window_center'])
+            width = float(regularization_settings.get('preferred_window_width', 20))
+            half_width = max(0.0, width) / 2.0
+            preferred_band = (center - half_width, center + half_width)
+
+        if isinstance(preferred_band, (list, tuple)) and len(preferred_band) == 2:
+            lower = int(min(preferred_band[0], preferred_band[1]))
+            upper = int(max(preferred_band[0], preferred_band[1]))
+            regularization_settings['preferred_band'] = (lower, upper)
+        elif isinstance(preferred_band, (int, float)):
+            center = float(preferred_band)
+            width = float(regularization_settings.get('preferred_window_width', 20))
+            half_width = max(0.0, width) / 2.0
+            regularization_settings['preferred_band'] = (
+                int(center - half_width),
+                int(center + half_width),
+            )
+        else:
+            regularization_settings['preferred_band'] = defaults['preferred_band']
+
+        try:
+            regularization_settings['penalty_strength'] = float(
+                regularization_settings.get('penalty_strength', defaults['penalty_strength'])
+            )
+        except (TypeError, ValueError):
+            regularization_settings['penalty_strength'] = defaults['penalty_strength']
+
+        try:
+            regularization_settings['penalty_exponent'] = float(
+                regularization_settings.get('penalty_exponent', defaults['penalty_exponent'])
+            )
+        except (TypeError, ValueError):
+            regularization_settings['penalty_exponent'] = defaults['penalty_exponent']
+
+        if 'max_penalty' in regularization_settings:
+            try:
+                regularization_settings['max_penalty'] = float(regularization_settings['max_penalty'])
+            except (TypeError, ValueError):
+                regularization_settings['max_penalty'] = None
+
+        return regularization_settings
+
     async def _perform_feature_optimization(
         self,
         data: pd.DataFrame,
@@ -1208,6 +1272,9 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             long_feature_results = {}
             short_feature_results = {}
 
+            regularization_settings = self._build_regularization_settings(pipeline_state)
+            pipeline_state['feature_lookback_regularization'] = dict(regularization_settings)
+
             for feature in feature_columns:
                 try:
                     # Use consistent lookback range for all execution modes
@@ -1220,7 +1287,8 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                             feature,
                             long_target_column,
                             method=OptimizationMethod.COARSE_TO_REFINE,
-                            lookback_range=lookback_range
+                            lookback_range=lookback_range,
+                            regularization_settings=regularization_settings,
                         )
 
                         feature_key = feature
@@ -1233,7 +1301,8 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                             'best_lookback_period': long_result.best_lookback_period,
                             'best_score': long_result.best_score,
                             'target_column': long_target_column,
-                            'direction': 'long'
+                            'direction': 'long',
+                            'regularization_settings': dict(regularization_settings)
                         }
 
                     # Optimize for SHORT direction
@@ -1243,7 +1312,8 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                             feature,
                             short_target_column,
                             method=OptimizationMethod.COARSE_TO_REFINE,
-                            lookback_range=lookback_range
+                            lookback_range=lookback_range,
+                            regularization_settings=regularization_settings,
                         )
 
                         feature_key = feature
@@ -1256,7 +1326,8 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                             'best_lookback_period': short_result.best_lookback_period,
                             'best_score': short_result.best_score,
                             'target_column': short_target_column,
-                            'direction': 'short'
+                            'direction': 'short',
+                            'regularization_settings': dict(regularization_settings)
                         }
 
                 except Exception as e:

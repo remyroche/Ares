@@ -18,6 +18,9 @@ import pandas as pd
 from typing import Dict, Any
 import sys
 import os
+import pytest
+import importlib.util
+from pathlib import Path
 
 # Add the src directory to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
@@ -31,7 +34,7 @@ try:
         OptimizationSystem, OptimizationObjective
     )
     UNIFIED_FRAMEWORK_AVAILABLE = True
-except ImportError as e:
+except Exception as e:
     tprint_warning(f"⚠️ Unified framework not available: {e}")
     UNIFIED_FRAMEWORK_AVAILABLE = False
 
@@ -41,7 +44,7 @@ try:
         OptimizedFeatureLookbackConfig, OptimizedFeatureLookbackOptimizer
     )
     FEATURE_LOOKBACK_AVAILABLE = True
-except ImportError as e:
+except Exception as e:
     tprint_warning(f"⚠️ Feature lookback optimization not available: {e}")
     FEATURE_LOOKBACK_AVAILABLE = False
 
@@ -53,7 +56,7 @@ try:
         LookbackOptimizationConfig as InteractionConfig
     )
     INTERACTION_GENERATOR_AVAILABLE = True
-except ImportError as e:
+except Exception as e:
     tprint_warning(f"⚠️ Interaction feature generator not available: {e}")
     INTERACTION_GENERATOR_AVAILABLE = False
 
@@ -63,13 +66,14 @@ try:
         LabelQualityScorer, QualityScoringConfig, QualityMetrics, QualityMetric
     )
     from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler import (
-        VolatilityAwareMultiHorizonLabeler, VolatilityAwareConfig
+        VolatilityAwareMultiHorizonLabeler, VolatilityAwareConfig,
+        EnhancedLabelDefinitions, AnalystLabelConfig, TradingCosts
     )
     from src.training.steps.pre_training.profit_labeling.multi_target_scheme import (
         MultiTargetScheme, MultiTargetConfig
     )
     PROFIT_LABELING_AVAILABLE = True
-except ImportError as e:
+except Exception as e:
     tprint_warning(f"⚠️ Profit labeling framework not available: {e}")
     PROFIT_LABELING_AVAILABLE = False
 
@@ -100,7 +104,8 @@ def create_test_data(n_samples: int = 1000) -> pd.DataFrame:
         'close': prices,
         'volume': np.random.uniform(1000, 10000, n_samples),
         'bid': prices * (1 - np.random.uniform(0.0001, 0.001, n_samples)),
-        'ask': prices * (1 + np.random.uniform(0.0001, 0.001, n_samples))
+        'ask': prices * (1 + np.random.uniform(0.0001, 0.001, n_samples)),
+        'asset_class': np.random.choice(['crypto'], n_samples)
     })
     
     # Generate synthetic targets using profit labeling framework approach
@@ -127,11 +132,11 @@ def create_test_data(n_samples: int = 1000) -> pd.DataFrame:
 def test_profit_labeling_framework():
     """Test profit labeling framework components."""
     tprint_info("🧪 Testing profit labeling framework...")
-    
+
     if not PROFIT_LABELING_AVAILABLE:
         tprint_error("❌ Profit labeling framework not available")
         return False
-    
+
     try:
         # Test quality scorer
         quality_config = QualityScoringConfig(
@@ -186,10 +191,86 @@ def test_profit_labeling_framework():
         return False
 
 
+def test_trading_costs_with_borrow_and_funding():
+    """Ensure trading costs apply borrow/funding assumptions per asset class."""
+    module_path = Path(__file__).resolve().parent / 'src' / 'training' / 'steps' / 'pre_training' / 'profit_labeling' / 'enhanced_label_definitions.py'
+    spec = importlib.util.spec_from_file_location('enhanced_label_definitions_test', module_path)
+    if spec is None or spec.loader is None:
+        pytest.skip("Unable to load enhanced label definitions module")
+
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)  # type: ignore[union-attr]
+    except Exception as exc:
+        pytest.skip(f"Enhanced label definitions unavailable: {exc}")
+
+    EnhancedLabelDefinitions = module.EnhancedLabelDefinitions
+    AnalystLabelConfig = module.AnalystLabelConfig
+    TradingCosts = module.TradingCosts
+
+    data = create_test_data(50)
+    data['asset_class'] = 'crypto'
+
+    trading_costs = TradingCosts(
+        maker_fee=0.0,
+        taker_fee=0.0,
+        slippage_pct=0.0,
+        min_trade_size=0.0,
+        default_asset_class='crypto',
+        borrow_fees={'crypto': {'long': 0.0001, 'short': 0.0005}},
+        funding_rates={'crypto': {'long': 0.0002, 'short': -0.0001}},
+        stress_scenarios={
+            'crypto': {
+                'base': {'long': 1.0, 'short': 1.0},
+                'stress_test': {'long': 1.05, 'short': 1.25}
+            }
+        },
+        active_stress_scenario='base'
+    )
+
+    analyst_config = AnalystLabelConfig(trading_costs=trading_costs)
+    labeler = EnhancedLabelDefinitions(analyst_config=analyst_config)
+
+    expected_returns = pd.Series(
+        np.linspace(-0.01, 0.01, len(data)), index=data.index
+    )
+
+    costs_series = labeler._calculate_trading_costs(
+        data,
+        trading_costs,
+        expected_returns=expected_returns,
+        stress_scenario='stress_test'
+    )
+
+    assert not costs_series.empty
+    assert (costs_series >= 0).all()
+
+    first_idx = data.index[0]
+    first_trade_size = data.loc[first_idx, 'volume'] * data.loc[first_idx, 'close'] * 0.01
+    first_expected = expected_returns.loc[first_idx]
+    first_direction = 'long' if first_expected >= 0 else 'short'
+    first_expected_cost = first_trade_size * (
+        trading_costs.get_borrow_rate('crypto', first_direction) +
+        trading_costs.get_funding_rate('crypto', first_direction)
+    ) * trading_costs.get_stress_multiplier('crypto', first_direction, scenario='stress_test')
+
+    assert np.isclose(costs_series.loc[first_idx], first_expected_cost)
+
+    last_idx = data.index[-1]
+    last_trade_size = data.loc[last_idx, 'volume'] * data.loc[last_idx, 'close'] * 0.01
+    last_expected = expected_returns.loc[last_idx]
+    last_direction = 'long' if last_expected >= 0 else 'short'
+    last_expected_cost = last_trade_size * (
+        trading_costs.get_borrow_rate('crypto', last_direction) +
+        trading_costs.get_funding_rate('crypto', last_direction)
+    ) * trading_costs.get_stress_multiplier('crypto', last_direction, scenario='stress_test')
+
+    assert np.isclose(costs_series.loc[last_idx], last_expected_cost)
+
 def test_feature_lookback_optimization():
     """Test feature lookback optimization with profit labeling integration."""
     tprint_info("🧪 Testing feature lookback optimization...")
-    
+
     if not FEATURE_LOOKBACK_AVAILABLE:
         tprint_error("❌ Feature lookback optimization not available")
         return False

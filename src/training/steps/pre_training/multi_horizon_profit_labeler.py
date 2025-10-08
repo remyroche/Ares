@@ -478,7 +478,8 @@ class MultiHorizonProfitLabeler:
             generate_reports=self.config.generate_reports,
             save_intermediate_results=self.config.save_intermediate_results,
             min_auc_threshold=self.config.min_auc_threshold,
-            max_auc_std_threshold=self.config.max_auc_std_threshold
+            max_auc_std_threshold=self.config.max_auc_std_threshold,
+            temporal_validation=self.config.temporal_validation
         )
 
     def _apply_namespace_conventions(self, labeling_result: LabelingResult) -> LabelingResult:
@@ -794,6 +795,7 @@ class MultiHorizonProfitLabeler:
             # Build smoothing metadata for downstream consumers
             smoothing_metadata = self._build_smoothing_metadata(balanced_labeling_result)
             normalization_factors = copy.deepcopy(balanced_labeling_result.normalization_factors or {})
+            execution_timing = copy.deepcopy(getattr(balanced_labeling_result, 'execution_timing', {}))
 
             # Validate engineered scoring frames
             confidence_scores_df = balanced_labeling_result.confidence_scores
@@ -817,6 +819,7 @@ class MultiHorizonProfitLabeler:
                     'target_parameters': target_parameters,
                     'target_shifts': target_shifts,
                     'normalization_factors': normalization_factors,
+                    'execution_timing': execution_timing,
                     'method': 'multi_horizon_profit_labeling',
                     'balancing_applied': self.config.enable_label_balancing or self.config.enable_sample_weighting,
                     'sample_weights': getattr(balanced_labeling_result, 'sample_weights', None),  # Sample weights for training
@@ -837,6 +840,7 @@ class MultiHorizonProfitLabeler:
                         'forward_return_smoothing': smoothing_metadata,
                         'target_shifts': target_shifts,
                         'min_target_shift': min(target_shifts.values()) if target_shifts else None,
+                        'execution_timing': execution_timing,
                     },
                     'market_data': market_data,
                     'market_data_batches': tuple(market_data_batches),
@@ -859,7 +863,8 @@ class MultiHorizonProfitLabeler:
                         'creation_time': datetime.now().isoformat(),
                         'pipeline_ready': validation_results['is_valid'],
                         'downstream_compatibility': validation_results,
-                        'forward_return_smoothing': smoothing_metadata
+                        'forward_return_smoothing': smoothing_metadata,
+                        'execution_timing': execution_timing,
                     }
                 }
             }

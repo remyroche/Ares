@@ -189,16 +189,17 @@ class TargetSelectionResult:
     target_quality_scores: Dict[str, float] = field(default_factory=dict)
     target_correlations: pd.DataFrame = field(default_factory=pd.DataFrame)
     diversity_score: float = 0.0
-    
+
     # Statistics
     n_targets: int = 0
     n_samples: int = 0
     target_coverage: Dict[str, float] = field(default_factory=dict)
-    
+
     # Metadata
     config_used: MultiTargetConfig = None
     processing_time: float = 0.0
     timestamp: datetime = field(default_factory=datetime.now)
+    selection_metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 class MultiTargetScheme:
@@ -263,7 +264,7 @@ class MultiTargetScheme:
             training_labels=pd.DataFrame(),
             config_used=self.config
         )
-        
+
         try:
             # Validate input data
             if not self._validate_input_data(bars, volatility_series, eligibility_mask):
@@ -318,8 +319,11 @@ class MultiTargetScheme:
             
             # Step 4: Assess quality and select targets
             tprint_info("📊 Step 4: Assessing quality and selecting targets")
-            selected_targets = self._select_optimal_targets(candidate_labels, candidate_targets)
-            
+            selected_targets, selection_metadata = self._select_optimal_targets(
+                candidate_labels, candidate_targets
+            )
+            result.selection_metadata = selection_metadata
+
             if not selected_targets:
                 tprint_warning("⚠️ No targets passed quality selection")
                 return result
@@ -1590,53 +1594,127 @@ class MultiTargetScheme:
             return labels_df
     
     def _select_optimal_targets(self, candidate_labels: Dict[str, pd.DataFrame],
-                              candidate_targets: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-        """Select optimal targets based on quality and diversity."""
+                              candidate_targets: List[Dict[str, Any]]) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
+        """Select optimal targets based on quality and diversity with multiple-testing correction."""
+        selection_metadata: Dict[str, Any] = {
+            'total_candidates_evaluated': 0,
+            'quality_scores': {},
+            'quality_thresholds': {
+                'base': self.config.min_lqs_score,
+                'bonferroni': self.config.min_lqs_score,
+                'benjamini_hochberg': {
+                    'alpha': max(0.0, min(1.0, 1.0 - self.config.min_lqs_score)),
+                    'critical_thresholds': {},
+                    'accepted_count': 0,
+                    'final_threshold': self.config.min_lqs_score,
+                    'adjustment_applied': False,
+                    'fallback_to_base_threshold': False,
+                },
+            },
+            'correction_method': 'benjamini_hochberg',
+            'qualified_targets_after_correction': 0,
+        }
+
         try:
             if not candidate_labels:
-                return {}
-            
+                return {}, selection_metadata
+
             # Calculate quality scores for all candidates
-            quality_scores = {}
+            quality_scores: Dict[str, float] = {}
+            total_candidates_evaluated = 0
             for target_name, labels_df in candidate_labels.items():
-                if not labels_df.empty and 'labels' in labels_df.columns:
-                    labels = labels_df['labels']
-                    quality_score = self._calculate_target_quality_score(labels, pd.DataFrame(), pd.Series())
-                    quality_scores[target_name] = quality_score
-            
-            # Filter by minimum quality threshold
-            qualified_targets = {
-                name: score for name, score in quality_scores.items()
-                if score >= self.config.min_lqs_score
-            }
-            
+                if labels_df is None or labels_df.empty or 'labels' not in labels_df.columns:
+                    continue
+
+                labels = labels_df['labels']
+                quality_score = self._calculate_target_quality_score(labels, pd.DataFrame(), pd.Series())
+                quality_scores[target_name] = quality_score
+                total_candidates_evaluated += 1
+
+            selection_metadata['total_candidates_evaluated'] = total_candidates_evaluated
+            selection_metadata['quality_scores'] = quality_scores
+
+            if total_candidates_evaluated == 0:
+                tprint_warning("⚠️ No candidate targets contained evaluable labels")
+                return {}, selection_metadata
+
+            base_threshold = self.config.min_lqs_score
+            alpha = selection_metadata['quality_thresholds']['benjamini_hochberg']['alpha']
+            bonferroni_threshold = self._calculate_bonferroni_threshold(base_threshold, total_candidates_evaluated)
+            selection_metadata['quality_thresholds']['bonferroni'] = bonferroni_threshold
+
+            # Sort by quality score (descending)
+            sorted_scores = sorted(quality_scores.items(), key=lambda x: x[1], reverse=True)
+
+            # Apply Benjamini-Hochberg correction on (1 - quality_score)
+            bh_info = selection_metadata['quality_thresholds']['benjamini_hochberg']
+            bh_info['critical_thresholds'] = {}
+            accepted_count = 0
+
+            if alpha > 0:
+                for idx, (name, score) in enumerate(sorted_scores, start=1):
+                    p_value = max(0.0, 1.0 - score)
+                    critical_p = (idx / total_candidates_evaluated) * alpha
+                    quality_cutoff = 1.0 - critical_p
+                    bh_info['critical_thresholds'][name] = quality_cutoff
+                    if p_value <= critical_p:
+                        accepted_count = idx
+
+            if accepted_count > 0:
+                bh_info['accepted_count'] = accepted_count
+                bh_info['adjustment_applied'] = True
+                accepted_names = {
+                    name for idx, (name, _score) in enumerate(sorted_scores, start=1)
+                    if idx <= accepted_count
+                }
+                qualified_targets = {
+                    name: score for name, score in sorted_scores
+                    if name in accepted_names and score >= base_threshold
+                }
+                if qualified_targets:
+                    min_selected_score = min(qualified_targets.values())
+                else:
+                    min_selected_score = base_threshold
+                final_threshold = max(base_threshold, min_selected_score)
+            else:
+                qualified_targets = {
+                    name: score for name, score in sorted_scores
+                    if score >= base_threshold
+                }
+                final_threshold = base_threshold
+                bh_info['fallback_to_base_threshold'] = True
+
+            bh_info['final_threshold'] = final_threshold
+            selection_metadata['quality_thresholds']['final'] = final_threshold
+            selection_metadata['qualified_targets_after_correction'] = len(qualified_targets)
+
             if not qualified_targets:
-                tprint_warning("⚠️ No targets passed quality threshold")
-                return {}
-            
+                tprint_warning("⚠️ No targets passed quality threshold after correction")
+                return {}, selection_metadata
+
             # Select targets by band
-            selected_targets = {}
+            selected_targets: Dict[str, Dict[str, Any]] = {}
             band_counts = {band: 0 for band in TargetBand}
-            
-            # Sort by quality score
+
+            # Sort by quality score for selection ordering
             sorted_targets = sorted(qualified_targets.items(), key=lambda x: x[1], reverse=True)
-            
+
             for target_name, quality_score in sorted_targets:
                 # Find the candidate info
                 candidate_info = next((c for c in candidate_targets if c['target_name'] == target_name), None)
                 if not candidate_info:
                     continue
-                
+
                 band = candidate_info['band']
-                
+
                 # Check band limits
                 if band_counts[band] >= self.config.max_targets_per_band:
                     continue
-                
+
                 # Check total limits
                 if len(selected_targets) >= self.config.max_targets_total:
                     break
-                
+
                 # Check correlation with already selected targets
                 if self._check_correlation_constraints(target_name, selected_targets, candidate_labels):
                     selected_targets[target_name] = {
@@ -1644,16 +1722,29 @@ class MultiTargetScheme:
                         'quality_score': quality_score
                     }
                     band_counts[band] += 1
-            
+
+            selection_metadata['selected_targets_after_constraints'] = len(selected_targets)
+
             # Ensure minimum targets
             if len(selected_targets) < self.config.min_targets_total:
-                tprint_warning(f"⚠️ Only {len(selected_targets)} targets selected, minimum is {self.config.min_targets_total}")
-            
-            return selected_targets
-            
+                tprint_warning(
+                    f"⚠️ Only {len(selected_targets)} targets selected, minimum is {self.config.min_targets_total}"
+                )
+
+            return selected_targets, selection_metadata
+
         except Exception as e:
             tprint_error(f"❌ Error selecting optimal targets: {e}")
-            return {}
+            return {}, selection_metadata
+
+    def _calculate_bonferroni_threshold(self, base_threshold: float, n_hypotheses: int) -> float:
+        """Calculate Bonferroni-corrected threshold for quality scores."""
+        if n_hypotheses <= 1:
+            return base_threshold
+
+        deficiency = max(0.0, 1.0 - base_threshold)
+        adjusted_threshold = 1.0 - (deficiency / float(n_hypotheses))
+        return float(np.clip(adjusted_threshold, 0.0, 1.0))
     
     def _check_correlation_constraints(self, target_name: str, selected_targets: Dict[str, Any],
                                      candidate_labels: Dict[str, pd.DataFrame]) -> bool:

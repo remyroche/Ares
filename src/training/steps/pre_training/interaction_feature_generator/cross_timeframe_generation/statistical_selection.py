@@ -21,7 +21,6 @@ from sklearn.linear_model import LassoCV, Ridge
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.feature_selection import SelectFromModel
 from scipy import stats
-from scipy.stats import permutation_test
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -234,15 +233,30 @@ class PermutationTester:
     def calculate_p_values(self,
                           features: pd.DataFrame,
                           targets: pd.Series,
-                          base_features: Optional[List[str]] = None) -> Dict[str, float]:
+                          base_features: Optional[List[str]] = None,
+                          cv_splitter: Optional[Any] = None,
+                          block_size: Optional[int] = None,
+                          n_permutations: Optional[int] = None,
+                          random_state: Optional[int] = None) -> Dict[str, float]:
         """
-        Calculate p-values using permutation testing.
-        
+        Calculate feature p-values using fold-aware permutation testing.
+
+        The provided ``cv_splitter`` must yield validation windows that already
+        respect any desired purge or embargo rules.  Permutations are performed
+        within each validation fold only so that permuted samples never
+        precede their evaluation window.  Temporal dependency is preserved by
+        shuffling contiguous blocks (with length at least the label horizon)
+        rather than individual observations.
+
         Args:
             features: Feature matrix
             targets: Target series
             base_features: Base features for conditional testing
-            
+            cv_splitter: Time-series aware splitter defining validation folds
+            block_size: Optional override for permutation block size
+            n_permutations: Optional override for number of permutations
+            random_state: Optional RNG seed for reproducibility
+
         Returns:
             Dictionary of p-values
         """
@@ -258,10 +272,17 @@ class PermutationTester:
         for feature_name in features.columns:
             try:
                 p_value = self._calculate_permutation_p_value(
-                    features, targets, feature_name, base_features
+                    features,
+                    targets,
+                    feature_name,
+                    base_features,
+                    cv_splitter=cv_splitter,
+                    block_size=block_size,
+                    n_permutations=n_permutations,
+                    random_state=random_state,
                 )
                 p_values[feature_name] = p_value
-                
+
             except Exception as e:
                 self.logger.warning(f"Failed to calculate p-value for {feature_name}: {e}")
                 tprint_warning(f"⚠️ Permutation test failed for {feature_name}: {e}")
@@ -274,44 +295,137 @@ class PermutationTester:
         )
         return p_values
     
-    def _calculate_permutation_p_value(self, 
+    def _calculate_permutation_p_value(self,
                                      features: pd.DataFrame,
                                      targets: pd.Series,
                                      feature_name: str,
-                                     base_features: Optional[List[str]] = None) -> float:
+                                     base_features: Optional[List[str]] = None,
+                                     cv_splitter: Optional[Any] = None,
+                                     block_size: Optional[int] = None,
+                                     n_permutations: Optional[int] = None,
+                                     random_state: Optional[int] = None) -> float:
         """Calculate permutation p-value for a single feature."""
         try:
-            # Calculate original correlation
-            original_corr = features[feature_name].corr(targets)
-            
-            if pd.isna(original_corr):
+            if len(features) < 3:
                 return 1.0
-            
-            # Perform permutation test
-            n_permutations = 1000
-            permuted_corrs = []
-            
-            for _ in range(n_permutations):
-                # Permute the feature
-                permuted_feature = features[feature_name].sample(frac=1).reset_index(drop=True)
-                
-                # Calculate permuted correlation
-                permuted_corr = permuted_feature.corr(targets)
-                
-                if not pd.isna(permuted_corr):
-                    permuted_corrs.append(abs(permuted_corr))
-            
-            if not permuted_corrs:
+
+            effective_block_size = self._resolve_block_size(len(features), block_size)
+            effective_n_permutations = self._resolve_n_permutations(n_permutations)
+            rng = np.random.default_rng(self._resolve_random_state(random_state))
+
+            splitter = self._resolve_splitter(features, targets, cv_splitter)
+            if splitter is None:
                 return 1.0
-            
-            # Calculate p-value
-            p_value = np.mean(np.array(permuted_corrs) >= abs(original_corr))
-            
-            return p_value
-            
+
+            fold_p_values = []
+            fold_weights = []
+
+            for train_idx, val_idx in splitter:
+                if len(val_idx) == 0:
+                    continue
+
+                feature_slice = features.iloc[val_idx][feature_name]
+                target_slice = targets.iloc[val_idx]
+
+                original_corr = feature_slice.corr(target_slice)
+
+                if pd.isna(original_corr):
+                    continue
+
+                permuted_corrs = []
+                for _ in range(effective_n_permutations):
+                    permuted_values = self._block_permute(
+                        feature_slice.to_numpy(), effective_block_size, rng
+                    )
+                    permuted_series = pd.Series(permuted_values, index=feature_slice.index)
+                    permuted_corr = permuted_series.corr(target_slice)
+                    if not pd.isna(permuted_corr):
+                        permuted_corrs.append(abs(permuted_corr))
+
+                if not permuted_corrs:
+                    continue
+
+                permuted_corrs = np.asarray(permuted_corrs)
+                greater_equal = np.sum(permuted_corrs >= abs(original_corr))
+                fold_p = (greater_equal + 1) / (len(permuted_corrs) + 1)
+                fold_p_values.append(fold_p)
+                fold_weights.append(len(val_idx))
+
+            if not fold_p_values:
+                return 1.0
+
+            weighted_p = np.average(fold_p_values, weights=fold_weights)
+            return float(weighted_p)
+
         except Exception as e:
             self.logger.warning(f"Permutation test failed for {feature_name}: {e}")
             return 1.0
+
+    def _resolve_block_size(self, n_samples: int, override: Optional[int]) -> int:
+        label_horizon = max(1, getattr(self.config, "label_horizon", 1))
+        config_block = getattr(self.config, "permutation_block_size", None)
+        block_size = override if override is not None else config_block
+
+        if block_size is None:
+            block_size = max(label_horizon, int(np.ceil(np.sqrt(n_samples))))
+
+        block_size = max(int(block_size), label_horizon, 1)
+        return block_size
+
+    def _resolve_n_permutations(self, override: Optional[int]) -> int:
+        config_n_perm = getattr(self.config, "permutation_n_permutations", 500)
+        n_permutations = override if override is not None else config_n_perm
+        return max(int(n_permutations), 1)
+
+    def _resolve_random_state(self, override: Optional[int]) -> Optional[int]:
+        if override is not None:
+            return override
+        return getattr(self.config, "permutation_random_state", None)
+
+    def _resolve_splitter(self,
+                          features: pd.DataFrame,
+                          targets: pd.Series,
+                          splitter: Optional[Any]) -> Optional[List[Tuple[np.ndarray, np.ndarray]]]:
+        if splitter is None:
+            requested_splits = getattr(self.config, "permutation_cv_folds", 5)
+            max_splits = min(requested_splits, max(len(features) - 1, 1))
+            if max_splits < 2 or max_splits >= len(features):
+                return None
+            splitter = TimeSeriesSplit(n_splits=max_splits)
+
+        try:
+            indices = np.arange(len(features))
+            splits = list(splitter.split(indices, targets.to_numpy() if targets is not None else None))
+            if not splits:
+                return None
+            return [(np.asarray(train), np.asarray(test)) for train, test in splits]
+        except Exception as exc:
+            self.logger.warning(f"Failed to generate CV splits for permutation testing: {exc}")
+            return None
+
+    def _block_permute(self,
+                       values: np.ndarray,
+                       block_size: int,
+                       rng: np.random.Generator) -> np.ndarray:
+        if len(values) == 0:
+            return values.copy()
+
+        block_size = max(1, min(block_size, len(values)))
+        n_blocks = int(np.ceil(len(values) / block_size))
+
+        if n_blocks <= 1:
+            if len(values) <= 1:
+                return values.copy()
+            min_shift = min(block_size, len(values) - 1)
+            if min_shift <= 0:
+                min_shift = 1
+            shift = int(rng.integers(min_shift, len(values)))
+            return np.roll(values, shift)
+
+        blocks = [values[i * block_size: (i + 1) * block_size] for i in range(n_blocks)]
+        block_order = rng.permutation(n_blocks)
+        permuted = np.concatenate([blocks[idx] for idx in block_order])
+        return permuted[:len(values)]
 
 
 class FDRController:
@@ -494,23 +608,29 @@ class ConditionalICTester:
 
 class GroupLASSOSelector:
     """Implements Group LASSO for feature selection."""
-    
+
     def __init__(self, config: SelectionConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
-    
+        self._last_scaler: Optional[StandardScaler] = None
+        self._last_group_scores: Dict[str, float] = {}
+
     def select_features(self,
                       features: pd.DataFrame,
                       targets: pd.Series,
-                      feature_groups: Dict[str, List[str]]) -> Dict[str, List[str]]:
+                      feature_groups: Dict[str, List[str]],
+                      split: Optional[Any] = None) -> Dict[str, List[str]]:
         """
         Select features using Group LASSO.
-        
+
         Args:
             features: Feature matrix
             targets: Target series
             feature_groups: Dictionary of group_name -> feature_list
-            
+            split: Optional pre-split datasets or indices. Supported formats:
+                - (X_train, y_train, X_val, y_val)
+                - (train_indices, val_indices)
+
         Returns:
             Dictionary of selected groups
         """
@@ -521,28 +641,50 @@ class GroupLASSOSelector:
             f"features={len(features.columns)}",
         )
 
+        (train_features,
+         train_targets,
+         val_features,
+         _) = self._resolve_split(features, targets, split)
+
+        scaler = StandardScaler()
+        scaler.fit(train_features)
+        self._last_scaler = scaler
+
+        train_features_scaled = self._scale_features(scaler, train_features)
+        val_features_scaled = self._scale_features(scaler, val_features)
+
+        feature_columns = list(train_features_scaled.columns)
+        group_matrix = self._create_group_matrix(train_features_scaled, feature_groups)
+
         if not GROUP_LASSO_AVAILABLE:
             self.logger.warning("Group LASSO not available, using standard LASSO")
             tprint_warning("⚠️ Group LASSO package unavailable - falling back to standard LASSO")
-            return self._fallback_lasso_selection(features, targets, feature_groups)
+            return self._fallback_lasso_selection(
+                train_features_scaled,
+                train_targets,
+                feature_groups,
+                val_features_scaled,
+            )
 
         try:
-            # Standardize features
-            scaler = StandardScaler()
-            features_scaled = scaler.fit_transform(features)
-            
-            # Create group matrix
-            group_matrix = self._create_group_matrix(features, feature_groups)
-            
             # Apply Group LASSO (simplified implementation)
-            selected_groups = self._apply_group_lasso(
-                features_scaled, targets, group_matrix
+            selected_group_indices, feature_scores = self._apply_group_lasso(
+                train_features_scaled,
+                train_targets,
+                group_matrix,
             )
-            
+
+            self._last_group_scores = self._compute_group_scores(
+                feature_scores,
+                feature_groups,
+                feature_columns,
+                val_features_scaled,
+            )
+
             # Map back to feature groups
             selected_feature_groups = {}
-            for group_name, group_features in feature_groups.items():
-                if group_name in selected_groups:
+            for group_idx, (group_name, group_features) in enumerate(feature_groups.items()):
+                if group_idx in selected_group_indices:
                     selected_feature_groups[group_name] = group_features
 
             self.logger.info(f"Group LASSO selection completed: {len(selected_feature_groups)} groups selected")
@@ -555,7 +697,76 @@ class GroupLASSOSelector:
         except Exception as e:
             self.logger.warning(f"Group LASSO failed: {e}, using fallback")
             tprint_warning(f"⚠️ Group LASSO failed ({e}), using fallback LASSO")
-            return self._fallback_lasso_selection(features, targets, feature_groups)
+            return self._fallback_lasso_selection(
+                train_features_scaled,
+                train_targets,
+                feature_groups,
+                val_features_scaled,
+            )
+
+    def _resolve_split(self,
+                       features: pd.DataFrame,
+                       targets: pd.Series,
+                       split: Optional[Any]) -> Tuple[pd.DataFrame, pd.Series, Optional[pd.DataFrame], Optional[pd.Series]]:
+        """Resolve the training/validation split definition."""
+        features_df = features if isinstance(features, pd.DataFrame) else pd.DataFrame(features)
+        targets_series = targets if isinstance(targets, pd.Series) else pd.Series(targets)
+
+        if split is None:
+            return features_df, targets_series, None, None
+
+        if isinstance(split, tuple):
+            if len(split) == 4:
+                train_features, train_targets, val_features, val_targets = split
+                train_features_df = self._ensure_dataframe(train_features, features_df.columns)
+                val_features_df = self._ensure_dataframe(val_features, features_df.columns)
+                train_targets_series = self._ensure_series(train_targets)
+                val_targets_series = self._ensure_series(val_targets)
+                if val_features_df is not None and len(val_features_df) == 0:
+                    val_features_df = None
+                    val_targets_series = None
+                return train_features_df, train_targets_series, val_features_df, val_targets_series
+
+            if len(split) == 2:
+                train_indices, val_indices = split
+                train_indices = np.array(train_indices)
+                val_indices = np.array(val_indices)
+
+                train_features_df = features_df.iloc[train_indices]
+                train_targets_series = targets_series.iloc[train_indices]
+
+                if len(val_indices) == 0:
+                    return train_features_df, train_targets_series, None, None
+
+                val_features_df = features_df.iloc[val_indices]
+                val_targets_series = targets_series.iloc[val_indices]
+
+                return train_features_df, train_targets_series, val_features_df, val_targets_series
+
+        raise ValueError("Unsupported split format for GroupLASSOSelector")
+
+    def _ensure_dataframe(self, data: Any, columns: pd.Index) -> Optional[pd.DataFrame]:
+        if data is None:
+            return None
+        if isinstance(data, pd.DataFrame):
+            # Align column order with the reference columns
+            return data.reindex(columns=list(columns))
+        return pd.DataFrame(data, columns=list(columns))
+
+    def _ensure_series(self, data: Any) -> Optional[pd.Series]:
+        if data is None:
+            return None
+        if isinstance(data, pd.Series):
+            return data
+        return pd.Series(data)
+
+    def _scale_features(self,
+                        scaler: StandardScaler,
+                        features: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
+        if features is None:
+            return None
+        scaled = scaler.transform(features)
+        return pd.DataFrame(scaled, index=features.index, columns=features.columns)
     
     def _create_group_matrix(self, 
                            features: pd.DataFrame,
@@ -574,58 +785,91 @@ class GroupLASSOSelector:
         
         return group_matrix
     
-    def _apply_group_lasso(self, 
-                          features_scaled: np.ndarray,
+    def _apply_group_lasso(self,
+                          features_scaled: pd.DataFrame,
                           targets: pd.Series,
-                          group_matrix: np.ndarray) -> List[str]:
+                          group_matrix: np.ndarray) -> Tuple[List[int], np.ndarray]:
         """Apply Group LASSO (simplified implementation)."""
         # This is a simplified implementation
         # In practice, you'd use a proper Group LASSO solver
-        
+
         # Use standard LASSO as fallback
         lasso = Lasso(alpha=0.01, max_iter=1000)
-        lasso.fit(features_scaled, targets)
-        
+        lasso.fit(features_scaled.values, targets)
+
         # Find non-zero coefficients
-        selected_indices = np.where(abs(lasso.coef_) > 1e-6)[0]
-        
+        feature_scores = np.abs(lasso.coef_)
+        selected_indices = np.where(feature_scores > 1e-6)[0].tolist()
+
         # Map back to groups
         selected_groups = []
         for idx in selected_indices:
             group_idx = np.where(group_matrix[idx, :] == 1)[0]
             if len(group_idx) > 0:
                 selected_groups.append(group_idx[0])
-        
-        return selected_groups
-    
-    def _fallback_lasso_selection(self, 
+
+        return selected_groups, feature_scores
+
+    def _fallback_lasso_selection(self,
                                 features: pd.DataFrame,
                                 targets: pd.Series,
-                                feature_groups: Dict[str, List[str]]) -> Dict[str, List[str]]:
+                                feature_groups: Dict[str, List[str]],
+                                val_features: Optional[pd.DataFrame]) -> Dict[str, List[str]]:
         """Fallback to standard LASSO selection."""
         try:
             # Use LASSO with cross-validation
             lasso = LassoCV(cv=3, random_state=42, max_iter=1000)
-            lasso.fit(features, targets)
-            
+            lasso.fit(features.values, targets)
+
             # Get selected features
             selected_features = []
-            for i, coef in enumerate(lasso.coef_):
-                if abs(coef) > 1e-6:
+            feature_scores = np.abs(lasso.coef_)
+            for i, coef in enumerate(feature_scores):
+                if coef > 1e-6:
                     selected_features.append(features.columns[i])
-            
+
+            self._last_group_scores = self._compute_group_scores(
+                feature_scores,
+                feature_groups,
+                list(features.columns),
+                val_features,
+            )
+
             # Map back to groups
             selected_groups = {}
             for group_name, group_features in feature_groups.items():
                 group_selected = [f for f in group_features if f in selected_features]
                 if group_selected:
                     selected_groups[group_name] = group_selected
-            
+
             return selected_groups
-            
+
         except Exception as e:
             self.logger.warning(f"Fallback LASSO selection failed: {e}")
             return {}
+
+    def _compute_group_scores(self,
+                              feature_scores: np.ndarray,
+                              feature_groups: Dict[str, List[str]],
+                              feature_columns: List[str],
+                              val_features: Optional[pd.DataFrame]) -> Dict[str, float]:
+        if val_features is not None and len(val_features) > 0:
+            validation_activity = np.mean(np.abs(val_features.values), axis=0)
+        else:
+            validation_activity = np.ones(len(feature_columns))
+
+        column_to_index = {name: idx for idx, name in enumerate(feature_columns)}
+        group_scores: Dict[str, float] = {}
+
+        for group_name, group_features in feature_groups.items():
+            score = 0.0
+            for feature_name in group_features:
+                if feature_name in column_to_index:
+                    idx = column_to_index[feature_name]
+                    score += feature_scores[idx] * validation_activity[idx]
+            group_scores[group_name] = score
+
+        return group_scores
 
 
 class StatisticalSelection:
@@ -698,8 +942,19 @@ class StatisticalSelection:
         tprint_info("   → Stability selection computed", f"features={len(selection_frequencies)}")
 
         # Permutation testing
+        cv_folds = max(2, min(getattr(self.config, "permutation_cv_folds", 5), len(feature_matrix) - 1))
+        cv_splitter = None
+        if len(feature_matrix) > cv_folds:
+            cv_splitter = TimeSeriesSplit(n_splits=cv_folds)
+
         p_values = self.permutation_tester.calculate_p_values(
-            feature_matrix, targets, base_features
+            feature_matrix,
+            targets,
+            base_features,
+            cv_splitter=cv_splitter,
+            block_size=getattr(self.config, "permutation_block_size", None),
+            n_permutations=getattr(self.config, "permutation_n_permutations", None),
+            random_state=getattr(self.config, "permutation_random_state", None),
         )
         tprint_info("   → Permutation testing complete", f"features={len(p_values)}")
 
@@ -723,8 +978,12 @@ class StatisticalSelection:
         group_lasso_groups = {}
         if self.config.get('enable_group_lasso', False):
             feature_groups = self._create_feature_groups(materialized_htfs, interactions)
+            group_lasso_split = self._build_group_lasso_split(feature_matrix, targets)
             group_lasso_groups = self.group_lasso_selector.select_features(
-                feature_matrix, targets, feature_groups
+                feature_matrix,
+                targets,
+                feature_groups,
+                split=group_lasso_split,
             )
             tprint_info(
                 "   → Group LASSO processed",
@@ -768,7 +1027,7 @@ class StatisticalSelection:
         )
         return result
     
-    def _prepare_feature_matrix(self, 
+    def _prepare_feature_matrix(self,
                               materialized_htfs: Dict[str, Any],
                               interactions: List[Any]) -> Tuple[pd.DataFrame, List[str]]:
         """Prepare feature matrix from materialized HTFs and interactions."""
@@ -797,6 +1056,46 @@ class StatisticalSelection:
         feature_matrix = feature_matrix.dropna()
         
         return feature_matrix, feature_names
+
+    def _build_group_lasso_split(self,
+                                 features: pd.DataFrame,
+                                 targets: pd.Series) -> Optional[Tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]]:
+        """Construct a train/validation split for group LASSO selection."""
+        if features is None or targets is None or len(features) < 3:
+            return None
+
+        try:
+            n_splits = min(5, len(features) - 1)
+            if n_splits >= 2:
+                tscv = TimeSeriesSplit(n_splits=n_splits)
+                splits = list(tscv.split(features))
+                if splits:
+                    train_indices, val_indices = splits[-1]
+                    if len(val_indices) > 0:
+                        return (
+                            features.iloc[train_indices],
+                            targets.iloc[train_indices],
+                            features.iloc[val_indices],
+                            targets.iloc[val_indices],
+                        )
+        except ValueError:
+            pass
+
+        split_idx = int(len(features) * 0.8)
+        if split_idx <= 0 or split_idx >= len(features):
+            return None
+
+        train_features = features.iloc[:split_idx]
+        val_features = features.iloc[split_idx:]
+        if len(val_features) == 0:
+            return None
+
+        return (
+            train_features,
+            targets.iloc[:split_idx],
+            val_features,
+            targets.iloc[split_idx:],
+        )
     
     def _identify_base_features(self, materialized_htfs: Dict[str, Any]) -> List[str]:
         """Identify base features for conditional testing."""

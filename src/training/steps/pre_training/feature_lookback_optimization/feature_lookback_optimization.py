@@ -16,6 +16,10 @@ from src.utils.common_operations import safe_dataframe_operation
 from src.utils.common_utilities import CommonUtilities
 from src.utils.math_validation import safe_divide
 from src.utils.serialization_utils import UniversalSerializer
+from src.training.steps.pre_training.artifacts.manifest import (
+    ArtifactManifest,
+    DataLocator,
+)
 
 # Import numpy for type checking
 from .dependency_manager import get_dependency
@@ -739,6 +743,69 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         timeframe: str
     ) -> Optional[Dict[str, Any]]:
         """Fallback loader that inspects saved outcomes for labeling results."""
+        manifest = ArtifactManifest()
+        artifact_base_name = 'market_analysis_multi_horizon_profit_labeler_outcome'
+        logical_name = DataLocator.build_logical_name(
+            artifact_base_name,
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+        )
+        entry = manifest.get_latest(logical_name)
+        fallback_allowed = False
+
+        if entry:
+            outcome_file = entry.resolved_path
+            if outcome_file.exists():
+                try:
+                    with open(outcome_file, 'r', encoding='utf-8') as handle:
+                        outcome_data = json.load(handle)
+                except json.JSONDecodeError as exc:
+                    self.logger.warning(
+                        f"⚠️ Failed to parse manifest outcome {outcome_file.name}: {exc}"
+                    )
+                    fallback_allowed = True
+                except OSError as exc:
+                    self.logger.warning(
+                        f"⚠️ Unable to read manifest outcome {outcome_file.name}: {exc}"
+                    )
+                    fallback_allowed = True
+                else:
+                    config_data = outcome_data.get('config', {})
+                    if (
+                        config_data and (
+                            (config_data.get('symbol') and config_data.get('symbol') != symbol)
+                            or (config_data.get('exchange') and config_data.get('exchange') != exchange)
+                            or (config_data.get('timeframe') and config_data.get('timeframe') != timeframe)
+                        )
+                    ):
+                        self.logger.warning(
+                            f"⚠️ Manifest outcome {outcome_file.name} metadata mismatch; ignoring entry"
+                        )
+                        fallback_allowed = True
+                    else:
+                        artifacts = outcome_data.get('artifacts', {}) if isinstance(outcome_data, dict) else {}
+                        mh_result = None
+                        if isinstance(artifacts, dict):
+                            mh_result = artifacts.get('multi_horizon_labeling_result')
+                        normalized = self._normalize_labeling_result(mh_result)
+                        if normalized:
+                            self.logger.info(
+                                f"📂 Loaded multi-horizon labeling result from manifest entry {outcome_file.name}"
+                            )
+                            return normalized
+                        fallback_allowed = True
+            else:
+                self.logger.warning(
+                    f"⚠️ Manifest referenced outcome file missing: {outcome_file}"
+                )
+                fallback_allowed = True
+        else:
+            fallback_allowed = True
+
+        if not fallback_allowed:
+            return None
+
         outcomes_dir = Path("outcomes")
         if not outcomes_dir.exists():
             return None
@@ -750,17 +817,17 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 return None
 
             latest_file = max(outcome_files, key=lambda f: f.stat().st_mtime)
-            with open(latest_file, 'r') as f:
-                outcome_data = json.load(f)
+            with open(latest_file, 'r', encoding='utf-8') as handle:
+                outcome_data = json.load(handle)
 
-            config_data = outcome_data.get('config', {})
+            config_data = outcome_data.get('config', {}) if isinstance(outcome_data, dict) else {}
             if (
                 config_data.get('symbol') == symbol and
                 config_data.get('exchange') == exchange and
                 config_data.get('timeframe') == timeframe
             ):
-                artifacts = outcome_data.get('artifacts', {})
-                mh_result = artifacts.get('multi_horizon_labeling_result')
+                artifacts = outcome_data.get('artifacts', {}) if isinstance(outcome_data, dict) else {}
+                mh_result = artifacts.get('multi_horizon_labeling_result') if isinstance(artifacts, dict) else None
                 normalized = self._normalize_labeling_result(mh_result)
                 if normalized:
                     self.logger.info(

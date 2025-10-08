@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+from .component_factory import register_component
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 from ...market_analysis.logging_standards import (
@@ -40,6 +41,7 @@ FEATURE_SELECTION_CONFIG_PATH = Path(
 """Resolved path to the feature selection YAML profile."""
 
 
+@register_component('final_feature_selection')
 class FinalFeatureSelectionComponent(BasePreTrainingComponent):
     """
     Final Feature Selection Component.

@@ -1015,9 +1015,18 @@ class AresLauncher:
             'nas_tas_ensemble_training': "Train ensemble regime detection models using NAS-TAS regime labels",
             'nas': "Combined NAS regime discovery + clustering (DEPRECATED - use nas_tas_regime_discovery instead)",
             'multi_horizon_profit_labeler': "Multi-horizon profit probability labeling (replacement for triple barrier)",
+            'analyst_profit_labeler': "Analyst-specific multi-horizon profit labeling (60m timeframe, strategic decision-making)",
+            'tactician_entry_labeler': "Tactician-specific entry timing labels (15m timeframe, local maxima/minima detection)",
             'triple_barrier_labeling': "Apply triple barrier method",
             'feature_lookback_optimization': "Optimize feature lookback periods",
+            'analyst_feature_lookback_optimization': "Optimize feature lookback periods for Analyst (60m timeframe, strategic)",
+            'tactician_feature_lookback_optimization': "Optimize feature lookback periods for Tactician (15m timeframe, tactical)",
             'interactive_feature_generation': "Interactive feature generation with optimized lookbacks, cross-timeframe coverage, and matrix acceleration",
+            'analyst_interactive_feature_generation': "Generate interactive features for Analyst models (60m timeframe)",
+            'tactician_interactive_feature_generation': "Generate interactive features for Tactician models (15m timeframe)",
+            'final_feature_selection': "Perform staged final feature selection (120→100→80→60)",
+            'analyst_final_feature_selection': "Final feature selection for Analyst models",
+            'tactician_final_feature_selection': "Final feature selection for Tactician models",
             'sr_feature_integration': "Integrate SR-specific features into feature set",
             
             # Model Training (6 sub-pipelines - Analyst & Tactician orchestration)
@@ -1081,6 +1090,8 @@ class AresLauncher:
 
             # Pre-Training dependencies
             'multi_horizon_profit_labeler': ['regime_data_splitting'],
+            'analyst_profit_labeler': ['regime_data_splitting'],
+            'tactician_entry_labeler': ['regime_data_splitting'],
             'feature_lookback_optimization': ['multi_horizon_profit_labeler'],
             'interactive_feature_generation': ['feature_lookback_optimization'],
             'final_feature_selection': ['interactive_feature_generation'],
@@ -1146,6 +1157,8 @@ class AresLauncher:
 
             # Pre-Training outputs
             'multi_horizon_profit_labeler': ['multi_horizon_labels.parquet'],
+            'analyst_profit_labeler': ['analyst_multi_horizon_labels.parquet', 'analyst_labeling_report.json'],
+            'tactician_entry_labeler': ['tactician_entry_labels.parquet', 'tactician_labeling_report.json'],
             'feature_lookback_optimization': ['optimized_features.parquet'],
             'interactive_feature_generation': [
                 'features_<symbol>_<timeframe>.parquet',
@@ -1283,6 +1296,12 @@ Examples:
   # Shortcut: Execute Analyst pre-ML orchestration
   python ares_launcher.py --analyst-pre-ml --symbol ETHUSDT
 
+  # Shortcut: Execute Analyst profit labeler
+  python ares_launcher.py --analyst-labeler --symbol ETHUSDT --timeframe 60m
+
+  # Shortcut: Execute Tactician entry labeler
+  python ares_launcher.py --tactician-labeler --symbol ETHUSDT --timeframe 15m
+
   # Shortcut: Execute Tactician ensemble training in light mode
   python ares_launcher.py --tactician-ensemble --execution-mode light --symbol ETHUSDT
 
@@ -1380,10 +1399,24 @@ Examples:
         const='tactician_ensemble_training',
         help='Shortcut for Tactician ensemble training sub-pipeline.'
     )
+    shortcut_group.add_argument(
+        '--analyst-labeler',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='analyst_profit_labeler',
+        help='Shortcut for Analyst profit labeler sub-pipeline.'
+    )
+    shortcut_group.add_argument(
+        '--tactician-labeler',
+        dest='shortcut_sub_pipeline',
+        action='store_const',
+        const='tactician_entry_labeler',
+        help='Shortcut for Tactician entry labeler sub-pipeline.'
+    )
 
     parser.add_argument(
         '--sub-pipeline', '--sub_pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: analyst_pre_ml_orchestration, analyst_models_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_models_training, tactician_ensemble_training, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, feature_lookback_optimization, interactive_feature_generation, final_feature_selection, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc. You can also use shortcut flags like --analyst-pre-ml or --tactician-ensemble.'
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: analyst_pre_ml_orchestration, analyst_models_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_models_training, tactician_ensemble_training, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, analyst_profit_labeler, tactician_entry_labeler, feature_lookback_optimization, interactive_feature_generation, final_feature_selection, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc. You can also use shortcut flags like --analyst-pre-ml, --analyst-labeler, --tactician-labeler, or --tactician-ensemble.'
     )
     
     parser.add_argument(

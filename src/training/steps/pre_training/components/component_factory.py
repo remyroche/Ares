@@ -291,6 +291,8 @@ class ComponentFactory:
         "src.training.steps.pre_training.interaction_feature_generator.feature_interaction_generation.interactive_feature_generation_component",
         "src.training.steps.pre_training.components.multi_horizon_component",
         "src.training.steps.pre_training.components.pid_based_feature_generation_registration",
+        "src.training.steps.pre_training.analyst_profit_labeler",
+        "src.training.steps.pre_training.tactician_entry_labeler",
     )
     DEFAULT_ALIASES = {
         # Tactician orchestrator specific aliases to provide clearer diagnostics
@@ -298,6 +300,13 @@ class ComponentFactory:
         "tactician_pid_generation": "pid_based_feature_generation",
         "tactician_horizon_labeling": "multi_horizon_profit_labeler",
         "tactician_feature_selection": "final_feature_selection",
+        # Role-specific aliases for feature engineering
+        "analyst_feature_lookback_optimization": "feature_lookback_optimization",
+        "analyst_interactive_feature_generation": "interactive_feature_generation",
+        "analyst_final_feature_selection": "final_feature_selection",
+        "tactician_feature_lookback_optimization": "feature_lookback_optimization",
+        "tactician_interactive_feature_generation": "interactive_feature_generation",
+        "tactician_final_feature_selection": "final_feature_selection",
     }
 
     @classmethod

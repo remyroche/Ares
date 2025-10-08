@@ -12,8 +12,17 @@ import logging
 import sys
 from pathlib import Path
 
-# Add the current directory to Python path
-sys.path.append(str(Path(__file__).parent))
+
+CURRENT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = next(parent for parent in CURRENT_DIR.parents if (parent / "src").exists())
+
+if str(CURRENT_DIR) not in sys.path:
+    sys.path.append(str(CURRENT_DIR))
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.append(str(PROJECT_ROOT))
+
+from src.utils.tprint import tprint
 
 from pipeline import CrossTimeframePipeline, PipelineConfig
 from phase1_probe import Phase1HTFProbe
@@ -31,6 +40,7 @@ from monitoring import MonitoringSystem
 
 def create_sample_data(n_samples: int = 10000) -> pd.DataFrame:
     """Create sample OHLCV data for demonstration."""
+    tprint(f"🧪 Generating sample OHLCV data with {n_samples} rows...")
     np.random.seed(42)
     
     # Generate timestamps (5-minute intervals)
@@ -63,26 +73,50 @@ def create_sample_data(n_samples: int = 10000) -> pd.DataFrame:
     
     df = pd.DataFrame(data)
     df.set_index('timestamp', inplace=True)
-    
+
+    tprint(
+        "✅ Sample data generation complete",
+        extra={
+            "rows": len(df),
+            "columns": list(df.columns),
+            "start": df.index.min(),
+            "end": df.index.max(),
+        },
+    )
+
     return df
 
 
 def create_sample_targets(data: pd.DataFrame, horizon: int = 1) -> pd.Series:
     """Create sample target variables (log returns)."""
+    tprint(
+        "🧪 Creating sample targets",
+        extra={"horizon": horizon, "rows": len(data)},
+    )
+
     # Calculate log returns
     log_returns = np.log(data['close'] / data['close'].shift(1))
-    
+
     # Forward-looking returns for prediction
     targets = log_returns.shift(-horizon)
-    
+
+    tprint(
+        "✅ Sample targets created",
+        extra={
+            "min": float(targets.min()),
+            "max": float(targets.max()),
+            "non_null": int(targets.notna().sum()),
+        },
+    )
+
     return targets
 
 
 def run_complete_pipeline_example():
     """Run the complete cross-timeframe pipeline example."""
-    print("=" * 80)
-    print("Cross-Timeframe Feature Generation Pipeline Example")
-    print("=" * 80)
+    tprint("=" * 80)
+    tprint("Cross-Timeframe Feature Generation Pipeline Example")
+    tprint("=" * 80)
     
     # Setup logging
     logging.basicConfig(level=logging.INFO)
@@ -93,9 +127,15 @@ def run_complete_pipeline_example():
     ohlcv_data = create_sample_data(5000)
     targets = create_sample_targets(ohlcv_data, horizon=1)
     
-    print(f"Created sample data: {len(ohlcv_data)} samples")
-    print(f"Data range: {ohlcv_data.index[0]} to {ohlcv_data.index[-1]}")
-    print(f"Target range: {targets.min():.4f} to {targets.max():.4f}")
+    tprint(
+        "📊 Sample dataset created",
+        extra={
+            "rows": len(ohlcv_data),
+            "data_range": f"{ohlcv_data.index[0]} to {ohlcv_data.index[-1]}",
+            "target_min": float(targets.min()),
+            "target_max": float(targets.max()),
+        },
+    )
     
     # Configure pipeline
     config = PipelineConfig(
@@ -123,81 +163,81 @@ def run_complete_pipeline_example():
     try:
         results = pipeline.run_pipeline(ohlcv_data, targets=targets)
         
-        print("\n" + "=" * 60)
-        print("PIPELINE RESULTS SUMMARY")
-        print("=" * 60)
+        tprint("\n" + "=" * 60)
+        tprint("PIPELINE RESULTS SUMMARY")
+        tprint("=" * 60)
         
         # Phase-1 results
         phase1_results = results['phase1_results']
-        print(f"\nPhase-1 HTF Probe:")
-        print(f"  - Candidates evaluated: {len(phase1_results.get('candidates', []))}")
-        print(f"  - Shortlisted candidates: {len(phase1_results.get('shortlisted_candidates', []))}")
-        print(f"  - Early stopped families: {len(phase1_results.get('early_stopped_families', []))}")
+        tprint("\nPhase-1 HTF Probe:")
+        tprint(f"  - Candidates evaluated: {len(phase1_results.get('candidates', []))}")
+        tprint(f"  - Shortlisted candidates: {len(phase1_results.get('shortlisted_candidates', []))}")
+        tprint(f"  - Early stopped families: {len(phase1_results.get('early_stopped_families', []))}")
         
         # Phase-2 results
         phase2_results = results['phase2_results']
-        print(f"\nPhase-2 Optimization:")
-        print(f"  - Optimized features: {len(phase2_results.get('optimized_features', []))}")
-        print(f"  - Hierarchical results: {len(phase2_results.get('hierarchical_results', {}))}")
+        tprint("\nPhase-2 Optimization:")
+        tprint(f"  - Optimized features: {len(phase2_results.get('optimized_features', []))}")
+        tprint(f"  - Hierarchical results: {len(phase2_results.get('hierarchical_results', {}))}")
         
         # Knapsack selection
         selected_htfs = results['selected_htfs']
-        print(f"\nKnapsack Selection (Stage 1):")
-        print(f"  - Selected features: {len(selected_htfs.selected_features)}")
-        print(f"  - Total utility: {selected_htfs.total_utility:.4f}")
-        print(f"  - Total cost: {selected_htfs.total_cost:.2f} ms")
-        print(f"  - Family coverage: {selected_htfs.family_coverage}")
+        tprint("\nKnapsack Selection (Stage 1):")
+        tprint(f"  - Selected features: {len(selected_htfs.selected_features)}")
+        tprint(f"  - Total utility: {selected_htfs.total_utility:.4f}")
+        tprint(f"  - Total cost: {selected_htfs.total_cost:.2f} ms")
+        tprint(f"  - Family coverage: {selected_htfs.family_coverage}")
         
         # Materialized HTFs
         materialized_htfs = results['materialized_htfs']
-        print(f"\nHTF Materialization:")
-        print(f"  - Materialized features: {len(materialized_htfs)}")
+        tprint("\nHTF Materialization:")
+        tprint(f"  - Materialized features: {len(materialized_htfs)}")
         
         # Interactions
         interactions = results['interactions']
-        print(f"\nInteraction Generation:")
-        print(f"  - Generated interactions: {len(interactions)}")
+        tprint("\nInteraction Generation:")
+        tprint(f"  - Generated interactions: {len(interactions)}")
         
         # Final features
         final_features = results['final_features']
-        print(f"\nStatistical Selection (Stage 2):")
-        print(f"  - Final selected features: {len(final_features.selected_features)}")
-        print(f"  - Selection method: {final_features.selection_method}")
+        tprint("\nStatistical Selection (Stage 2):")
+        tprint(f"  - Final selected features: {len(final_features.selected_features)}")
+        tprint(f"  - Selection method: {final_features.selection_method}")
         
         # Evaluation results
         evaluation_results = results['evaluation_results']
-        print(f"\nWalk-Forward Evaluation:")
-        print(f"  - Overall IC: {evaluation_results.overall_ic:.4f}")
-        print(f"  - IC confidence interval: {evaluation_results.overall_ic_ci}")
-        print(f"  - Number of folds: {len(evaluation_results.walk_forward_results)}")
+        tprint("\nWalk-Forward Evaluation:")
+        tprint(f"  - Overall IC: {evaluation_results.overall_ic:.4f}")
+        tprint(f"  - IC confidence interval: {evaluation_results.overall_ic_ci}")
+        tprint(f"  - Number of folds: {len(evaluation_results.walk_forward_results)}")
         
         # Regime results
         if evaluation_results.regime_results:
-            print(f"\nRegime-Specific Results:")
+            tprint("\nRegime-Specific Results:")
             for regime, metrics in evaluation_results.regime_results.items():
                 ic_mean = metrics.get('ic_mean', 0.0)
                 ic_count = metrics.get('ic_count', 0)
-                print(f"  - {regime}: IC={ic_mean:.4f} (n={ic_count})")
+                tprint(f"  - {regime}: IC={ic_mean:.4f} (n={ic_count})")
         
         # Ablation results
         if evaluation_results.ablation_results:
-            print(f"\nAblation Study Results:")
+            tprint("\nAblation Study Results:")
             for config_name, metrics in evaluation_results.ablation_results.items():
                 ic = metrics.get('ic', 0.0)
                 n_features = metrics.get('n_features', 0)
-                print(f"  - {config_name}: IC={ic:.4f}, Features={n_features}")
+                tprint(f"  - {config_name}: IC={ic:.4f}, Features={n_features}")
         
         # SPA test
         if evaluation_results.spa_test_result:
             spa_result = evaluation_results.spa_test_result
-            print(f"\nSPA Test:")
-            print(f"  - Statistic: {spa_result.get('spa_statistic', 0.0):.4f}")
-            print(f"  - P-value: {spa_result.get('p_value', 1.0):.4f}")
-            print(f"  - Reject null: {spa_result.get('reject_null', False)}")
-        
-        print("\n" + "=" * 60)
-        print("PIPELINE COMPLETED SUCCESSFULLY")
-        print("=" * 60)
+            tprint("\nSPA Test:")
+            tprint(f"  - Statistic: {spa_result.get('spa_statistic', 0.0):.4f}")
+            tprint(f"  - P-value: {spa_result.get('p_value', 1.0):.4f}")
+            tprint(f"  - Reject null: {spa_result.get('reject_null', False)}")
+
+        tprint("\n" + "=" * 60)
+        tprint("PIPELINE COMPLETED SUCCESSFULLY")
+        tprint("=" * 60)
         
         return results
         
@@ -208,17 +248,17 @@ def run_complete_pipeline_example():
 
 def run_individual_component_examples():
     """Run examples of individual components."""
-    print("\n" + "=" * 80)
-    print("Individual Component Examples")
-    print("=" * 80)
+    tprint("\n" + "=" * 80)
+    tprint("Individual Component Examples")
+    tprint("=" * 80)
     
     # Create sample data
     ohlcv_data = create_sample_data(1000)
     targets = create_sample_targets(ohlcv_data)
     
     # Example 1: Regime Segmentation
-    print("\n1. Regime Segmentation Example")
-    print("-" * 40)
+    tprint("\n1. Regime Segmentation Example")
+    tprint("-" * 40)
     
     config = PipelineConfig()
     regime_segmentation = RegimeSegmentation(config)
@@ -230,22 +270,22 @@ def run_individual_component_examples():
     }
     
     regime_results = regime_segmentation.segment_regimes(sessionized_data, targets)
-    print(f"  - Segments created: {len(regime_results['segments'])}")
-    print(f"  - Change points detected: {len(regime_results['change_points'])}")
+    tprint(f"  - Segments created: {len(regime_results['segments'])}")
+    tprint(f"  - Change points detected: {len(regime_results['change_points'])}")
     
     # Example 2: Phase-1 HTF Probe
-    print("\n2. Phase-1 HTF Probe Example")
-    print("-" * 40)
+    tprint("\n2. Phase-1 HTF Probe Example")
+    tprint("-" * 40)
     
     scoring_system = AdaptiveScoringSystem(config)
     phase1_probe = Phase1HTFProbe(config, scoring_system=scoring_system)
     phase1_results = phase1_probe.run_probe_stage(sessionized_data, regime_results, targets)
-    print(f"  - Candidates evaluated: {len(phase1_results['candidates'])}")
-    print(f"  - Shortlisted: {len(phase1_results['shortlisted_candidates'])}")
+    tprint(f"  - Candidates evaluated: {len(phase1_results['candidates'])}")
+    tprint(f"  - Shortlisted: {len(phase1_results['shortlisted_candidates'])}")
     
     # Example 3: EHU/RIH Assignment
-    print("\n3. EHU/RIH Assignment Example")
-    print("-" * 40)
+    tprint("\n3. EHU/RIH Assignment Example")
+    tprint("-" * 40)
     
     ehu_rih_assignment = EHU_RIH_Assignment(config)
     
@@ -263,14 +303,14 @@ def run_individual_component_examples():
     }
     
     assignments = ehu_rih_assignment.assign_htf_features(mock_phase2_results, sessionized_data)
-    print(f"  - Features assigned: {len(assignments)}")
+    tprint(f"  - Features assigned: {len(assignments)}")
     if assignments:
-        print(f"  - EHU features: {sum(1 for a in assignments if a.update_style.value == 'ehu')}")
-        print(f"  - RIH features: {sum(1 for a in assignments if a.update_style.value == 'rih')}")
+        tprint(f"  - EHU features: {sum(1 for a in assignments if a.update_style.value == 'ehu')}")
+        tprint(f"  - RIH features: {sum(1 for a in assignments if a.update_style.value == 'rih')}")
     
     # Example 4: Monitoring System
-    print("\n4. Monitoring System Example")
-    print("-" * 40)
+    tprint("\n4. Monitoring System Example")
+    tprint("-" * 40)
     
     monitoring = MonitoringSystem(config)
     
@@ -310,25 +350,25 @@ def run_individual_component_examples():
     }
     
     update_result = monitoring.update_monitoring(mock_metrics, market_conditions)
-    print(f"  - Monitoring update: {update_result['status']}")
-    print(f"  - Alerts generated: {update_result['alerts_generated']}")
+    tprint(f"  - Monitoring update: {update_result['status']}")
+    tprint(f"  - Alerts generated: {update_result['alerts_generated']}")
     
     # Get system status
     status = monitoring.get_system_status()
-    print(f"  - System status: {status['status']}")
-    print(f"  - Total metrics: {status['total_metrics']}")
-    print(f"  - Total alerts: {status['total_alerts']}")
+    tprint(f"  - System status: {status['status']}")
+    tprint(f"  - Total metrics: {status['total_metrics']}")
+    tprint(f"  - Total alerts: {status['total_alerts']}")
 
 
 def demonstrate_configuration_options():
     """Demonstrate different configuration options."""
-    print("\n" + "=" * 80)
-    print("Configuration Options Examples")
-    print("=" * 80)
+    tprint("\n" + "=" * 80)
+    tprint("Configuration Options Examples")
+    tprint("=" * 80)
     
     # Conservative configuration
-    print("\n1. Conservative Configuration")
-    print("-" * 40)
+    tprint("\n1. Conservative Configuration")
+    tprint("-" * 40)
     
     conservative_config = PipelineConfig(
         base_timeframe_minutes=5,
@@ -343,15 +383,15 @@ def demonstrate_configuration_options():
         adaptive_penalties=True
     )
     
-    print("Conservative settings:")
-    print(f"  - Max cost: {conservative_config.max_cost_ms} ms")
-    print(f"  - Max features: {conservative_config.max_features}")
-    print(f"  - Max correlation: {conservative_config.max_correlation}")
-    print(f"  - FDR threshold: {conservative_config.fdr_q}")
+    tprint("Conservative settings:")
+    tprint(f"  - Max cost: {conservative_config.max_cost_ms} ms")
+    tprint(f"  - Max features: {conservative_config.max_features}")
+    tprint(f"  - Max correlation: {conservative_config.max_correlation}")
+    tprint(f"  - FDR threshold: {conservative_config.fdr_q}")
     
     # Aggressive configuration
-    print("\n2. Aggressive Configuration")
-    print("-" * 40)
+    tprint("\n2. Aggressive Configuration")
+    tprint("-" * 40)
     
     aggressive_config = PipelineConfig(
         base_timeframe_minutes=5,
@@ -366,15 +406,15 @@ def demonstrate_configuration_options():
         adaptive_penalties=True
     )
     
-    print("Aggressive settings:")
-    print(f"  - Max cost: {aggressive_config.max_cost_ms} ms")
-    print(f"  - Max features: {aggressive_config.max_features}")
-    print(f"  - Max correlation: {aggressive_config.max_correlation}")
-    print(f"  - FDR threshold: {aggressive_config.fdr_q}")
+    tprint("Aggressive settings:")
+    tprint(f"  - Max cost: {aggressive_config.max_cost_ms} ms")
+    tprint(f"  - Max features: {aggressive_config.max_features}")
+    tprint(f"  - Max correlation: {aggressive_config.max_correlation}")
+    tprint(f"  - FDR threshold: {aggressive_config.fdr_q}")
     
     # High-frequency configuration
-    print("\n3. High-Frequency Configuration")
-    print("-" * 40)
+    tprint("\n3. High-Frequency Configuration")
+    tprint("-" * 40)
     
     hf_config = PipelineConfig(
         base_timeframe_minutes=1,  # 1-minute base
@@ -390,18 +430,18 @@ def demonstrate_configuration_options():
         hybrid_mode=True
     )
     
-    print("High-frequency settings:")
-    print(f"  - Base timeframe: {hf_config.base_timeframe_minutes} minutes")
-    print(f"  - Max cost: {hf_config.max_cost_ms} ms")
-    print(f"  - Max features: {hf_config.max_features}")
-    print(f"  - Hybrid mode: {hf_config.hybrid_mode}")
+    tprint("High-frequency settings:")
+    tprint(f"  - Base timeframe: {hf_config.base_timeframe_minutes} minutes")
+    tprint(f"  - Max cost: {hf_config.max_cost_ms} ms")
+    tprint(f"  - Max features: {hf_config.max_features}")
+    tprint(f"  - Hybrid mode: {hf_config.hybrid_mode}")
 
 
 def main():
     """Main function to run all examples."""
-    print("Cross-Timeframe Feature Generation System")
-    print("Comprehensive Example Usage")
-    print("=" * 80)
+    tprint("Cross-Timeframe Feature Generation System")
+    tprint("Comprehensive Example Usage")
+    tprint("=" * 80)
     
     try:
         # Run complete pipeline example
@@ -413,14 +453,14 @@ def main():
         # Demonstrate configuration options
         demonstrate_configuration_options()
         
-        print("\n" + "=" * 80)
-        print("ALL EXAMPLES COMPLETED SUCCESSFULLY")
-        print("=" * 80)
+        tprint("\n" + "=" * 80)
+        tprint("ALL EXAMPLES COMPLETED SUCCESSFULLY")
+        tprint("=" * 80)
         
         return results
         
     except Exception as e:
-        print(f"\nError running examples: {str(e)}")
+        tprint(f"\nError running examples: {str(e)}")
         import traceback
         traceback.print_exc()
         return None

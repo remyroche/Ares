@@ -5,18 +5,25 @@ This module provides the base classes for all pre-training pipeline components.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass
+from typing import Any, Dict, List, Mapping, Optional, Union
 import pandas as pd
 import numpy as np
 from pathlib import Path
 
-from src.training.common.component_result import ComponentError, ComponentResult as _BaseComponentResult
 from src.training.common.artifact_persistence import SaveReport, persist_artifacts
-from src.utils.logger import system_logger
+from src.training.common.component_result import ComponentError, ComponentResult as _BaseComponentResult
 from src.utils.enhanced_artifact_manager import get_artifact_manager
+from src.utils.logger import system_logger
 from src.utils.version_manager import get_version_manager
+from src.utils.tprint import tprint_success
 from ..logging_utils import PreTrainingEventLogger, configure_pre_training_logging
+from .contracts import (
+    ArtifactBundle,
+    GenericArtifacts,
+    PipelineState,
+    validate_artifact_bundle,
+)
 
 logger = system_logger.getChild('PreTrainingComponent')
 component_event_logger = PreTrainingEventLogger(configure_pre_training_logging())
@@ -63,7 +70,7 @@ class ComponentResult(_BaseComponentResult):
     def __init__(
         self,
         success: bool,
-        artifacts: Optional[Dict[str, Any]] = None,
+        artifacts: Optional[ArtifactBundle] = None,
         *,
         metadata: Optional[Dict[str, Any]] = None,
         execution_time: float = 0.0,
@@ -73,9 +80,11 @@ class ComponentResult(_BaseComponentResult):
         error: Optional[Union[Exception, ComponentError]] = None,
         error_message: Optional[str] = None,
     ) -> None:
+        bundle = artifacts or GenericArtifacts()
+        validated_bundle = validate_artifact_bundle(bundle)
         super().__init__(
             success,
-            artifacts,
+            validated_bundle.as_payload(),
             metadata=metadata,
             execution_time=execution_time,
             metrics=metrics,
@@ -84,6 +93,7 @@ class ComponentResult(_BaseComponentResult):
             error=error,
             error_message=error_message,
         )
+        self.artifacts = validated_bundle
         details = {
             'success': self.success,
             'artifacts_keys': list(self.artifacts.keys()),
@@ -173,7 +183,7 @@ class BasePreTrainingComponent(ABC):
         raise NotImplementedError("Subclasses must implement get_required_artifacts")
 
     @abstractmethod
-    async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
+    async def execute(self, data: Any, pipeline_state: PipelineState) -> ComponentResult:
         """Execute the component."""
         self._log_debug(
             f"⚙️ execute called on base class {self.__class__.__name__}",
@@ -182,22 +192,21 @@ class BasePreTrainingComponent(ABC):
         )
         raise NotImplementedError("Subclasses must implement execute")
 
-    async def save_artifacts(self, artifacts: Dict[str, Any], metadata: Dict[str, Any]) -> SaveReport:
-        """
-        Save artifacts persistently.
-        
-        Args:
-            artifacts: Artifacts to save
-            metadata: Metadata for the artifacts
-            
-        Returns:
-            SaveReport describing the persisted artifacts
-        """
+    async def save_artifacts(
+        self,
+        artifacts: Union[ArtifactBundle, Mapping[str, Any]],
+        metadata: Mapping[str, Any],
+    ) -> SaveReport:
+        """Save artifacts persistently."""
+
+        artifact_payload = (
+            artifacts.as_payload() if isinstance(artifacts, ArtifactBundle) else dict(artifacts)
+        )
         metadata = dict(metadata or {})
         metadata['run_metadata'] = dict(self._run_metadata)
 
         self._log_info(
-            f"💾 Saving {len(artifacts)} artifacts for {self.__class__.__name__}",
+            f"💾 Saving {len(artifact_payload)} artifacts for {self.__class__.__name__}",
             event='component_save_artifacts',
             metadata_keys=list(metadata.keys()),
         )
@@ -206,15 +215,19 @@ class BasePreTrainingComponent(ABC):
 
         report = persist_artifacts(
             component_name=component_name,
-            artifacts=artifacts,
+            artifacts=artifact_payload,
             metadata=metadata,
             base_dir=base_artifact_dir,
             logger=self.logger,
         )
 
-        tprint_success(
+        self._log_success(
             f"✅ Artifacts persisted for {component_name}",
-            {'correlation_id': report.correlation_id, 'artifact_count': len(artifacts)}
+            {'correlation_id': report.correlation_id, 'artifact_count': len(artifact_payload)}
+            correlation_id=report.correlation_id,
+            artifact_count=len(artifacts),
+            event='component_artifacts_persisted',
+            duration=report.duration,
         )
 
         return report

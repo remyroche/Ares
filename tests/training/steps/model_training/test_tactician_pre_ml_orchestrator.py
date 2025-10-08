@@ -36,6 +36,9 @@ def orchestrator_module(monkeypatch):
     original_feature_opt = sys.modules.get(
         "src.training.steps.pre_training.feature_lookback_optimization"
     )
+    original_components = sys.modules.get(
+        "src.training.steps.pre_training.components"
+    )
 
     stub_labeler_module = types.ModuleType(
         "src.training.steps.pre_training.multi_horizon_profit_labeler"
@@ -67,6 +70,20 @@ def orchestrator_module(monkeypatch):
     sys.modules[
         "src.training.steps.pre_training.feature_lookback_optimization"
     ] = stub_feature_module
+
+    stub_components_module = types.ModuleType(
+        "src.training.steps.pre_training.components"
+    )
+
+    class _StubComponentConfig:
+        def __init__(self, custom_params: Dict[str, Any] | None = None):
+            self.custom_params = custom_params or {}
+
+    stub_components_module.ComponentFactory = _StubComponentFactory
+    stub_components_module.ComponentConfig = _StubComponentConfig
+    sys.modules[
+        "src.training.steps.pre_training.components"
+    ] = stub_components_module
 
     module_name = "tests.tactician_pre_ml_orchestrator_under_test"
     source_path = Path(__file__).resolve().parents[4] / "src" / "training" / "steps" / "model_training" / "tactician_pre_ml_orchestrator.py"
@@ -103,6 +120,14 @@ def orchestrator_module(monkeypatch):
         sys.modules.pop(
             "src.training.steps.pre_training.feature_lookback_optimization", None
         )
+    if original_components is not None:
+        sys.modules[
+            "src.training.steps.pre_training.components"
+        ] = original_components
+    else:
+        sys.modules.pop(
+            "src.training.steps.pre_training.components", None
+        )
 
 
 def test_feature_optimizer_initialized_via_component_factory(orchestrator_module, monkeypatch):
@@ -128,6 +153,10 @@ def test_feature_optimizer_initialized_via_component_factory(orchestrator_module
     created_name, created_config = _StubComponentFactory.created[0]
     assert created_name == feature_key
     assert created_config.custom_params['component_alias'] == 'feature_optimization'
+    assert (
+        created_config.custom_params['factory_component_key']
+        == feature_key
+    )
     assert (
         created_config.custom_params['max_lookback_periods']
         == config.max_lookback_periods
@@ -161,4 +190,7 @@ def test_factory_unavailable_logs_hint(orchestrator_module, monkeypatch):
     )
     assert any(feature_key in message for message in warnings), (
         "Expected factory availability warning to reference the missing component"
+    )
+    assert any("Hint:" in message for message in warnings), (
+        "Expected factory availability warning to provide remediation hint"
     )

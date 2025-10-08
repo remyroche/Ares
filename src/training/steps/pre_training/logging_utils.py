@@ -32,7 +32,12 @@ class _JSONFormatter(logging.Formatter):
         if isinstance(extra_fields, dict):
             payload.update(extra_fields)
 
-        return json.dumps(payload, sort_keys=True, ensure_ascii=False)
+        return json.dumps(
+            payload,
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ": "),
+        )
 
 
 _CONFIGURED = False
@@ -141,7 +146,7 @@ class PreTrainingEventLogger:
 
     def step_begin(self, context: StepLogContext) -> None:
         payload = asdict(context)
-        payload.update({"duration_ms": None, "event": "begin"})
+        payload.update({"duration_ms": None, "phase": "begin"})
         self._emit(
             event="step_begin",
             message=f"Begin step: {context.step}",
@@ -162,6 +167,7 @@ class PreTrainingEventLogger:
             {
                 "duration_ms": duration_ms,
                 "success": success,
+                "phase": "end",
             }
         )
         if error:

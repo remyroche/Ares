@@ -16,7 +16,28 @@ from src.utils.common_operations import safe_dataframe_operation
 from src.utils.common_utilities import CommonUtilities
 from src.utils.math_validation import safe_divide
 from src.utils.serialization_utils import UniversalSerializer
-from src.feature_generation.core.feature_cache import FeatureCacheService
+try:
+    from src.feature_generation.core.feature_cache import FeatureCacheService
+except (ImportError, SyntaxError):  # pragma: no cover - optional dependency guard
+    class FeatureCacheService:  # type: ignore[override]
+        """Fallback feature cache service used when core implementation is unavailable."""
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self._store: Dict[str, Any] = {}
+
+        def load(self, key: str) -> Any:
+            return self._store.get(key)
+
+        def save(self, key: str, value: Any) -> None:
+            self._store[key] = value
+
+        @staticmethod
+        def compute_config_hash(config: Any) -> str:
+            return "fallback"
+
+        @staticmethod
+        def build_key(symbol: str, timeframe: str, version: str, lookback_hash: str) -> str:
+            return f"{symbol}-{timeframe}-{version}-{lookback_hash}"
 from src.training.steps.pre_training.column_naming import (
     ColumnNamespace,
     ensure_namespace,
@@ -94,6 +115,7 @@ from .error_handling.error_handler import StandardizedErrorHandler, ErrorSeverit
 from .performance.monitor import PerformanceMonitor, MetricType, MetricLevel
 
 from ..components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+from ..components.contracts import FeatureLookbackArtifacts, PipelineState
 from ..validation.schemas import (
     SchemaValidationException,
     schema_metadata,
@@ -234,7 +256,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         tprint(f"✅ Required artifacts: {artifacts}")
         return artifacts
 
-    async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
+    async def execute(self, data: Any, pipeline_state: PipelineState) -> ComponentResult:
         """
         Execute the feature lookback optimization.
 
@@ -245,7 +267,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         Returns:
             ComponentResult with optimization results
         """
-        pipeline_state = dict(pipeline_state or {})
+        pipeline_state = PipelineState.ensure(pipeline_state)
 
         locator = pipeline_state.get('data_locator')
         if isinstance(locator, DataLocator):
@@ -485,7 +507,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         """Create a failed component result."""
         return ComponentResult(
             success=False,
-            artifacts={},
+            artifacts=FeatureLookbackArtifacts(),
             metadata={'optimization_status': 'failed'}
         )
 
@@ -496,7 +518,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         tprint(f"❌ Schema validation failure: {message}")
         return ComponentResult(
             success=False,
-            artifacts={},
+            artifacts=FeatureLookbackArtifacts(),
             error_message=message,
             metadata={
                 'optimization_status': 'failed',
@@ -628,7 +650,28 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 if primary.name.lower() != 'nas_tas_clustering':
                     candidate_dirs.insert(1, primary / 'nas_tas_clustering')
             else:
-                _register_candidate(Path('data_cache'))
+                default_locator = PipelineDataLocator()
+                cache_key = (
+                    pipeline_state.get('cache_dir_key')
+                    or getattr(self.config, 'cache_dir_key', None)
+                    or 'default'
+                )
+                try:
+                    primary = default_locator.cache_path(cache_key, ensure_exists=True)
+                except Exception:
+                    primary = default_locator.cache_path(ensure_exists=True)
+
+                primary = primary.expanduser()
+                if not primary.is_absolute():
+                    primary = Path.cwd() / primary
+
+                self.logger.warning(
+                    "⚠️ Using default locator cache directory: %s",
+                    primary,
+                )
+                candidate_dirs.insert(0, primary)
+                if primary.name.lower() != 'nas_tas_clustering':
+                    candidate_dirs.insert(1, primary / 'nas_tas_clustering')
 
             # Remove duplicates while preserving order
             seen_paths = set()
@@ -702,7 +745,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
     ) -> List[str]:
         """Generate features using the feature bank system with caching support."""
 
-        pipeline_state = dict(pipeline_state or {})
+        pipeline_state = PipelineState.ensure(pipeline_state)
         cache_key = pipeline_state.get('feature_cache_key') or self._current_cache_key
 
         try:
@@ -1376,12 +1419,14 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 error_rate=1.0
             )
 
-    def _create_artifacts(self, optimization_results: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+    def _create_artifacts(
+        self,
+        optimization_results: Dict[str, Any],
+        pipeline_state: PipelineState,
+    ) -> FeatureLookbackArtifacts:
         """Create artifacts from optimization results."""
         tprint("🗄️ Creating feature lookback optimization artifacts")
         try:
-            artifacts = {}
-
             # Create optimization summary artifact
             summary = {
                 'timestamp': pd.Timestamp.now().isoformat(),
@@ -1391,27 +1436,27 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 'optimization_results': convert_int64_to_int(optimization_results)
             }
 
-            # Store the summary as an artifact
-            artifacts['feature_lookback_optimization_summary'] = summary
-            # Also create the expected artifact for downstream components
-            artifacts['feature_lookback_optimization_result'] = {
-                'optimization_results': convert_int64_to_int(optimization_results),
-                'summary': summary,
-                'component_type': 'feature_lookback_optimization',
-                'timestamp': pd.Timestamp.now().isoformat()
-            }
+            artifacts_bundle = FeatureLookbackArtifacts(
+                feature_lookback_optimization_summary=summary,
+                feature_lookback_optimization_result={
+                    'optimization_results': convert_int64_to_int(optimization_results),
+                    'summary': summary,
+                    'component_type': 'feature_lookback_optimization',
+                    'timestamp': pd.Timestamp.now().isoformat(),
+                },
+            )
 
             tprint("✅ Artifact creation complete")
-            return artifacts
+            return artifacts_bundle
 
         except Exception as e:
             self.error_handler.handle_error(
                 e,
                 "_create_artifacts",
-                return_value={}
+                return_value=FeatureLookbackArtifacts()
             )
             tprint("❌ Artifact creation failed due to an error")
-            return {}
+            return FeatureLookbackArtifacts()
 
     def _select_optimal_target_column(self, data: pd.DataFrame, direction: str = None) -> str:
         """

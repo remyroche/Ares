@@ -54,6 +54,7 @@ class ComponentResult:
     metadata: dict | None = None
     metrics: dict | None = None
     warnings: list | None = None
+    errors: list | None = None
     error: Exception | None = None
     execution_time: float = 0.0
 
@@ -66,6 +67,8 @@ class ComponentResult:
             self.metrics = {}
         if self.warnings is None:
             self.warnings = []
+        if self.errors is None:
+            self.errors = []
         if (self.success and self.error is not None) or (not self.success and self.error is None):
             raise ValueError("Invalid ComponentResult state for stub")
 

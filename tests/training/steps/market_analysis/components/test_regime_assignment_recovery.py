@@ -95,6 +95,7 @@ def _install_base_component_stub() -> None:
             self.error = error
             self.metrics = metrics or {}
             self.warnings = warnings or []
+            self.errors = []
             self.execution_time = execution_time
             self.metadata = metadata or {}
 

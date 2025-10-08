@@ -59,6 +59,7 @@ class _ComponentResult:
         self.error = error
         self.metrics = metrics or {}
         self.warnings = warnings or []
+        self.errors = []
         self.metadata = metadata or {}
 
         if (self.success and self.error is not None) or (not self.success and self.error is None):

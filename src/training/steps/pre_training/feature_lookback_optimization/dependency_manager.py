@@ -205,27 +205,35 @@ class DependencyManager:
     
     def _get_version(self, package_name: str) -> Optional[str]:
         """Get version of a package."""
+        tprint(f"ℹ️ Retrieving version for {package_name}")
         try:
             import importlib.metadata
-            return importlib.metadata.version(package_name)
+            version = importlib.metadata.version(package_name)
+            tprint(f"✅ Retrieved version for {package_name}: {version}")
+            return version
         except:
             try:
                 import pkg_resources
-                return pkg_resources.get_distribution(package_name).version
+                version = pkg_resources.get_distribution(package_name).version
+                tprint(f"✅ Retrieved version for {package_name} via pkg_resources: {version}")
+                return version
             except:
+                tprint(f"⚠️ Could not determine version for {package_name}")
                 return None
-    
+
     def _create_fallback(self, dep_name: str) -> None:
         """Create fallback for unavailable dependency."""
+        tprint(f"🛠️ Creating fallback for {dep_name}")
         if dep_name == 'psutil':
             self.fallback_modules['psutil'] = self._create_psutil_fallback()
         elif dep_name == 'scipy':
             self.fallback_modules['scipy'] = self._create_scipy_fallback()
         elif dep_name == 'sklearn':
             self.fallback_modules['sklearn'] = self._create_sklearn_fallback()
-    
+
     def _create_psutil_fallback(self) -> Any:
         """Create fallback for psutil."""
+        tprint("🧪 Building psutil fallback implementation")
         class PsutilFallback:
             class Process:
                 def memory_info(self):
@@ -239,9 +247,10 @@ class DependencyManager:
                     return 50.0
 
         return PsutilFallback()
-    
+
     def _create_scipy_fallback(self) -> Any:
         """Create fallback for scipy."""
+        tprint("🧪 Building scipy fallback implementation")
         class ScipyFallback:
             class stats:
                 @staticmethod
@@ -254,9 +263,10 @@ class DependencyManager:
                     return type('Result', (), {'x': 20, 'fun': 0.5})()
         
         return ScipyFallback()
-    
+
     def _create_sklearn_fallback(self) -> Any:
         """Create fallback for sklearn."""
+        tprint("🧪 Building sklearn fallback implementation")
         class SklearnFallback:
             class model_selection:
                 class TimeSeriesSplit:
@@ -299,75 +309,86 @@ class DependencyManager:
                         return X  # No scaling fallback
         
         return SklearnFallback()
-    
+
     def _create_ml_fallback(self, module_name: str, class_name: str) -> None:
         """Create fallback for ML dependency."""
+        tprint(f"🛠️ Creating ML fallback for {module_name}.{class_name}")
         if 'sklearn' in module_name:
             if 'sklearn' not in self.fallback_modules:
                 self.fallback_modules['sklearn'] = self._create_sklearn_fallback()
-    
+
     def _create_viz_fallback(self, dep_name: str) -> None:
         """Create fallback for visualization dependency."""
+        tprint(f"🛠️ Creating visualization fallback for {dep_name}")
         class VizFallback:
             def __init__(self, name):
                 self.name = name
-            
+
             def __getattr__(self, name):
                 def fallback_func(*args, **kwargs):
                     tprint(f"Visualization function {name} not available (fallback)")
                     return None
                 return fallback_func
-        
+
         self.fallback_modules[dep_name] = VizFallback(dep_name)
-    
+
     def get_dependency(self, name: str) -> Tuple[Any, bool]:
         """
         Get dependency with fallback support.
-        
+
         Args:
             name: Name of the dependency
-            
+
         Returns:
             Tuple of (dependency_object, is_fallback)
         """
+        tprint(f"🔎 Resolving dependency: {name}")
         if name in self.dependencies:
             dep_info = self.dependencies[name]
-            
+
             if dep_info.status == DependencyStatus.AVAILABLE:
                 try:
                     # Try to import the actual dependency
                     if '.' in name:
                         module_name, class_name = name.rsplit('.', 1)
                         module = importlib.import_module(module_name)
+                        tprint(f"✅ Successfully imported {name}")
                         return getattr(module, class_name), False
                     else:
                         module = importlib.import_module(name)
+                        tprint(f"✅ Successfully imported {name}")
                         return module, False
                 except ImportError:
+                    tprint(f"⚠️ Import error for {name}, checking fallbacks")
                     pass
-            
+
             # Use fallback if available
             if name in self.fallback_modules:
+                tprint(f"♻️ Using direct fallback for {name}")
                 return self.fallback_modules[name], True
-            
+
             # Check for partial fallbacks (e.g., sklearn components)
             for fallback_name, fallback_obj in self.fallback_modules.items():
                 if fallback_name in name:
+                    tprint(f"♻️ Using partial fallback {fallback_name} for {name}")
                     return fallback_obj, True
-        
+
         tprint(f"❌ Dependency {name} not available and no fallback found")
         return None, False
-    
+
     def is_available(self, name: str) -> bool:
         """Check if dependency is available."""
-        return (name in self.dependencies and 
-                self.dependencies[name].status == DependencyStatus.AVAILABLE)
-    
+        available = (name in self.dependencies and
+                     self.dependencies[name].status == DependencyStatus.AVAILABLE)
+        tprint(f"ℹ️ Availability check for {name}: {'available' if available else 'unavailable'}")
+        return available
+
     def get_status_report(self) -> Dict[str, Any]:
         """Get comprehensive status report of all dependencies."""
+        tprint("📝 Generating dependency status report")
         report = {
             'total_dependencies': len(self.dependencies),
-            'available': len([d for d in self.dependencies.values() 
+            'available': len([d for d in self.dependencies.values()
                             if d.status == DependencyStatus.AVAILABLE]),
             'unavailable': len([d for d in self.dependencies.values() 
                               if d.status == DependencyStatus.UNAVAILABLE]),
@@ -375,7 +396,7 @@ class DependencyManager:
                                  if d.fallback_available]),
             'dependencies': {}
         }
-        
+
         for name, dep_info in self.dependencies.items():
             report['dependencies'][name] = {
                 'status': dep_info.status.value,
@@ -383,20 +404,24 @@ class DependencyManager:
                 'fallback_available': dep_info.fallback_available,
                 'error_message': dep_info.error_message
             }
-        
+
+        tprint("✅ Dependency status report generated")
         return report
-    
+
     def get_import_statement(self, name: str) -> str:
         """Get appropriate import statement for dependency."""
+        tprint(f"🧾 Generating import statement for {name}")
         if self.is_available(name):
             if '.' in name:
                 module_name, class_name = name.rsplit('.', 1)
-                return f"from {module_name} import {class_name}"
+                statement = f"from {module_name} import {class_name}"
             else:
-                return f"import {name}"
+                statement = f"import {name}"
         else:
-            return f"# {name} not available - using fallback"
-    
+            statement = f"# {name} not available - using fallback"
+        tprint(f"📄 Import statement for {name}: {statement}")
+        return statement
+
     def log_dependency_status(self) -> None:
         """Log comprehensive dependency status."""
         report = self.get_status_report()
@@ -425,12 +450,15 @@ dependency_manager = DependencyManager()
 
 def get_dependency(name: str) -> Tuple[Any, bool]:
     """Convenience function to get dependency."""
+    tprint(f"🔁 Global helper retrieving dependency: {name}")
     return dependency_manager.get_dependency(name)
 
 def is_dependency_available(name: str) -> bool:
     """Convenience function to check dependency availability."""
+    tprint(f"🔁 Global helper checking availability for: {name}")
     return dependency_manager.is_available(name)
 
 def get_dependency_status_report() -> Dict[str, Any]:
     """Convenience function to get dependency status report."""
+    tprint("🔁 Global helper generating dependency status report")
     return dependency_manager.get_status_report()

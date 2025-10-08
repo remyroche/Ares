@@ -2,7 +2,7 @@
 
 from .data_contracts import *  # noqa: F401,F403 - re-export for backward compatibility
 from .schemas import *  # noqa: F401,F403 - re-export for backward compatibility
-from .temporal_lint import (
+from .temporal_leakage import (
     TemporalLintError,
     TemporalLintViolation,
     lint_for_temporal_leakage,

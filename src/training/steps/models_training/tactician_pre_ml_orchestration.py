@@ -2,7 +2,7 @@
 Tactician Pre-ML Orchestration - 15m Timeframe Feature Engineering
 
 This orchestrator applies the complete pre-training pipeline for Tactician models:
-1. Applies differentiated horizon labeling + Optimizes feature lookback periods + Generates PID features + Selects final features
+1. Applies differentiated horizon labeling + Optimizes feature lookback periods + Generates interactive features + Selects final features
 2. Uses 15m timeframe as the feature engineering cadence
 3. Uses the pipeline present in src/training/steps/MODELS_TRAINING/
 
@@ -57,7 +57,7 @@ class OrchestrationPhase(Enum):
     ENTRY_LABELING = "entry_labeling"
     HORIZON_LABELING = "horizon_labeling"
     LOOKBACK_OPTIMIZATION = "lookback_optimization"
-    PID_GENERATION = "pid_generation"
+    INTERACTIVE_FEATURE_GENERATION = "interactive_feature_generation"
     FEATURE_SELECTION = "feature_selection"
     TACTICIAN_5M_OPTIMIZATION = "tactician_5m_optimization"
     COMPLETED = "completed"
@@ -187,7 +187,7 @@ class TacticianPreMLResult:
     entry_label_quality_metrics: Optional[Dict[str, Any]] = None
     horizon_labeling_result: Optional[Dict[str, Any]] = None
     lookback_optimization_result: Optional[Dict[str, Any]] = None
-    pid_generation_result: Optional[Dict[str, Any]] = None
+    interactive_feature_generation_result: Optional[Dict[str, Any]] = None
     feature_selection_result: Optional[Dict[str, Any]] = None
     tactician_5m_result: Optional[Dict[str, Any]] = None
 
@@ -837,7 +837,7 @@ class TacticianPreMLOrchestrator:
     Tactician Pre-ML Orchestration.
 
     Orchestrates the complete pre-training pipeline for Tactician models on 15m timeframe.
-    Applies differentiated horizon labeling + Optimizes feature lookback periods + Generates PID features + Selects final features.
+    Applies differentiated horizon labeling + Optimizes feature lookback periods + Generates interactive features + Selects final features.
     Uses 15m timeframe with per-regime/cluster optimisation using the pipeline in src/training/steps/MODELS_TRAINING/.
     """
     
@@ -1244,13 +1244,15 @@ class TacticianPreMLOrchestrator:
                     tprint_warning(f"⚠️ Lookback optimization failed for {regime_name}: {lookback_result.error_message}")
                     continue
 
-                # Step 3: PID-Based Feature Generation for this regime
-                tprint_info(f"🔧 Step 3/5: Regime-specific PID generation for {regime_name}...")
-                result.phase = OrchestrationPhase.PID_GENERATION
-                pid_result = await self.pre_training_pipeline._execute_pid_based_feature_generation(regime_config)
+                # Step 3: Interactive Feature Generation for this regime
+                tprint_info(f"🔧 Step 3/5: Regime-specific interactive feature generation for {regime_name}...")
+                result.phase = OrchestrationPhase.INTERACTIVE_FEATURE_GENERATION
+                interactive_result = await self.pre_training_pipeline._execute_interactive_feature_generation(regime_config)
 
-                if not pid_result.success:
-                    tprint_warning(f"⚠️ PID generation failed for {regime_name}: {pid_result.error_message}")
+                if not interactive_result.success:
+                    tprint_warning(
+                        f"⚠️ Interactive feature generation failed for {regime_name}: {interactive_result.error_message}"
+                    )
                     continue
 
                 # Step 4: Final Feature Selection for this regime
@@ -1266,7 +1268,7 @@ class TacticianPreMLOrchestrator:
                 regime_results[regime_name] = {
                     'horizon_result': horizon_result,
                     'lookback_result': lookback_result,
-                    'pid_result': pid_result,
+                    'interactive_result': interactive_result,
                     'selection_result': selection_result,
                     'final_features': selection_result.artifacts.get('final_features'),
                     'selected_features': selection_result.artifacts.get('selected_features', [])
@@ -1310,8 +1312,10 @@ class TacticianPreMLOrchestrator:
                 'regime_results': {k: v['lookback_result'].artifacts for k, v in regime_results.items()},
                 'combined_features': len(all_selected_features)
             }
-            result.pid_generation_result = {
-                'regime_results': {k: v['pid_result'].artifacts for k, v in regime_results.items()},
+            result.interactive_feature_generation_result = {
+                'regime_results': {
+                    k: v['interactive_result'].artifacts for k, v in regime_results.items()
+                },
                 'total_regimes_processed': len(regime_results)
             }
             result.feature_selection_result = {
@@ -1493,17 +1497,29 @@ class TacticianPreMLOrchestrator:
             result.lookback_optimization_result = lookback_result.artifacts
             tprint_success("✅ Lookback optimization completed")
             
-            # Step 3: PID-Based Feature Generation
-            tprint_info("🔧 Step 3/5: PID-Based Feature Generation...")
-            result.phase = OrchestrationPhase.PID_GENERATION
-            pid_result = await self.pre_training_pipeline._execute_pid_based_feature_generation(sub_config)
+            # Step 3: Interactive Feature Generation
+            tprint_info("🔧 Step 3/5: Interactive Feature Generation...")
+            result.phase = OrchestrationPhase.INTERACTIVE_FEATURE_GENERATION
+            interactive_result = await self.pre_training_pipeline._execute_interactive_feature_generation(sub_config)
 
-            if not pid_result.success:
-                raise RuntimeError(f"PID generation failed: {pid_result.error_message}")
-            
-            result.pid_generation_result = pid_result.artifacts
-            result.total_features_generated = pid_result.artifacts.get('total_features', 0)
-            tprint_success(f"✅ PID generation completed ({result.total_features_generated} features)")
+            if not interactive_result.success:
+                raise RuntimeError(
+                    f"Interactive feature generation failed: {interactive_result.error_message}"
+                )
+
+            result.interactive_feature_generation_result = interactive_result.artifacts
+            interactive_artifacts = interactive_result.artifacts.get('interactive_feature_generation_result', {})
+            feature_names = interactive_artifacts.get('feature_names', [])
+            features_df = interactive_artifacts.get('features')
+            if feature_names:
+                result.total_features_generated = len(feature_names)
+            elif hasattr(features_df, 'columns'):
+                result.total_features_generated = len(features_df.columns)
+            else:
+                result.total_features_generated = int(interactive_artifacts.get('total_features', 0))
+            tprint_success(
+                f"✅ Interactive feature generation completed ({result.total_features_generated} features)"
+            )
             
             # Step 4: Final Feature Selection
             tprint_info("🎯 Step 4/5: Final Feature Selection (multi-stage)...")

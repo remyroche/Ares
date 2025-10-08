@@ -150,15 +150,24 @@ async def test_tactician_orchestrator_passes_regime_split(monkeypatch):
                 artifacts={"lookback_windows": []},
             )
 
-        async def _execute_pid_based_feature_generation(self, config):
-            captured_configs["pid"] = config
+        async def _execute_interactive_feature_generation(self, config):
+            captured_configs["interactive"] = config
             return SubPipelineResult(
-                sub_pipeline_name="pid_based_feature_generation",
+                sub_pipeline_name="interactive_feature_generation",
                 status=SubPipelineStatus.COMPLETED,
                 start_time=datetime.now(),
                 end_time=datetime.now(),
                 success=True,
-                artifacts={"total_features": 12},
+                artifacts={
+                    "interactive_feature_generation_result": {
+                        "feature_names": ["feat_1", "feat_2", "feat_3"],
+                        "features": pd.DataFrame({
+                            "feat_1": [],
+                            "feat_2": [],
+                            "feat_3": [],
+                        }),
+                    }
+                },
             )
 
         async def _execute_final_feature_selection(self, config):
@@ -206,9 +215,12 @@ async def test_tactician_orchestrator_passes_regime_split(monkeypatch):
     assert orchestrator.pre_training_pipeline._current_pipeline_state["regime_data_splitting_result"] is payload
     assert captured_configs["multi"].custom_params["regime_data_splitting_result"] is payload
     assert captured_configs["lookback"].custom_params["regime_data_splitting_result"] is payload
-    assert captured_configs["pid"].custom_params["regime_data_splitting_result"] is payload
+    assert captured_configs["interactive"].custom_params["regime_data_splitting_result"] is payload
     assert captured_configs["selection"].custom_params["regime_data_splitting_result"] is payload
     assert (
         captured_configs["multi"].custom_params["precomputed_labeling_result"]
         == entry_bundle["artifacts"]
     )
+    assert result.interactive_feature_generation_result is not None
+    assert "interactive_feature_generation_result" in result.interactive_feature_generation_result
+    assert result.total_features_generated == 3

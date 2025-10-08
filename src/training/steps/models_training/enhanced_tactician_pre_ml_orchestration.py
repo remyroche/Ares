@@ -6,7 +6,7 @@ differentiated horizon labeling focused on optimal entry timing:
 
 1. **Differentiated Horizon Labeling** - Tactician-specific labeling for optimal entry points
 2. **Feature Lookback Period Optimization** - Per-regime/cluster optimization
-3. **PID Feature Generation** - Control theory-based features for entry timing
+3. **Interactive Feature Generation** - Interactive and control-inspired features for entry timing
 4. **Final Feature Selection** - Per-regime feature selection
 
 TACTICIAN-SPECIFIC CONFIGURATION:
@@ -73,7 +73,7 @@ class OrchestrationPhase(Enum):
     ANALYST_SIGNAL_INTEGRATION = "analyst_signal_integration"
     DIFFERENTIATED_LABELING = "differentiated_labeling"
     LOOKBACK_OPTIMIZATION = "lookback_optimization"
-    PID_GENERATION = "pid_generation"
+    INTERACTIVE_FEATURE_GENERATION = "interactive_feature_generation"
     FEATURE_SELECTION = "feature_selection"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -155,7 +155,7 @@ class EnhancedTacticianPreMLResult:
     analyst_signal_integration_result: Optional[Dict[str, Any]] = None
     differentiated_labeling_result: Optional[Dict[str, Any]] = None
     lookback_optimization_result: Optional[Dict[str, Any]] = None
-    pid_generation_result: Optional[Dict[str, Any]] = None
+    interactive_feature_generation_result: Optional[Dict[str, Any]] = None
     feature_selection_result: Optional[Dict[str, Any]] = None
     
     # Output data
@@ -804,42 +804,57 @@ class EnhancedTacticianPreMLOrchestrator:
             result.lookback_optimization_result = lookback_result.artifacts
             tprint_success("✅ Lookback optimization completed")
             
-            # Step 3: Enhanced PID-Based Feature Generation
-            tprint_info("🔧 Step 3/5: Enhanced PID-Based Feature Generation...")
-            result.phase = OrchestrationPhase.PID_GENERATION
-            
-            # Generate PID features using our custom generator
+            # Step 3: Enhanced Interactive Feature Generation
+            tprint_info("🔧 Step 3/5: Enhanced Interactive Feature Generation...")
+            result.phase = OrchestrationPhase.INTERACTIVE_FEATURE_GENERATION
+
+            # Generate PID-style features using our custom generator for backward compatibility
             pid_features = self.pid_generator.generate_pid_features(
                 filtered_data, entry_labels, regime_series
             )
-            
-            # Also run the standard PID generation for additional features
-            pid_result = await self.pre_training_pipeline._execute_pid_based_feature_generation(sub_config)
-            
-            if not pid_result.success:
-                raise RuntimeError(f"PID generation failed: {pid_result.error_message}")
-            
-            # Combine custom and standard PID features
-            standard_pid_features = pid_result.artifacts.get('pid_features')
-            if standard_pid_features is not None:
-                combined_pid_features = pd.concat([pid_features, standard_pid_features], axis=1)
+
+            # Also run the interactive feature generation pipeline for additional features
+            interactive_result = await self.pre_training_pipeline._execute_interactive_feature_generation(sub_config)
+
+            if not interactive_result.success:
+                raise RuntimeError(
+                    f"Interactive feature generation failed: {interactive_result.error_message}"
+                )
+
+            interactive_artifacts = interactive_result.artifacts.get('interactive_feature_generation_result', {})
+            standard_interactive_features = interactive_artifacts.get('features')
+
+            if isinstance(standard_interactive_features, pd.DataFrame):
+                combined_features = pd.concat([pid_features, standard_interactive_features], axis=1)
             else:
-                combined_pid_features = pid_features
-            
-            result.pid_generation_result = {
-                **pid_result.artifacts,
-                'custom_pid_features': pid_features,
-                'combined_pid_features': combined_pid_features
+                combined_features = pid_features.copy()
+
+            result.interactive_feature_generation_result = {
+                **interactive_result.artifacts,
+                'custom_interactive_features': pid_features,
+                'combined_features': combined_features
             }
-            result.total_features_generated = len(combined_pid_features.columns)
-            tprint_success(f"✅ Enhanced PID generation completed ({result.total_features_generated} features)")
+
+            feature_names = interactive_artifacts.get('feature_names', [])
+            if feature_names:
+                generated_count = len(feature_names)
+            elif isinstance(standard_interactive_features, pd.DataFrame):
+                generated_count = len(standard_interactive_features.columns)
+            else:
+                generated_count = int(interactive_artifacts.get('total_features', 0))
+
+            result.total_features_generated = len(combined_features.columns)
+            tprint_success(
+                "✅ Enhanced interactive feature generation completed "
+                f"({result.total_features_generated} combined features; {generated_count} interactive)"
+            )
             
             # Step 4: Final Feature Selection (global, not per-regime)
             tprint_info("🎯 Step 4/5: Final Feature Selection (global)...")
             result.phase = OrchestrationPhase.FEATURE_SELECTION
             
             # Update sub-config with combined features
-            sub_config.custom_params['combined_features'] = combined_pid_features
+            sub_config.custom_params['combined_features'] = combined_features
             sub_config.custom_params['entry_labels'] = entry_labels
             sub_config.custom_params['enable_per_regime_optimization'] = False  # Tactician is NOT per-regime
             sub_config.custom_params['enable_per_cluster_optimization'] = False  # Tactician is NOT per-cluster

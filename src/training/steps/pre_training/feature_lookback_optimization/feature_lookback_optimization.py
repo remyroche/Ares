@@ -193,6 +193,12 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         self.core_optimizer = CoreOptimizer(logger=self.logger)
         tprint("✅ Modular components initialized")
 
+        # Regularization preferences used to guide lookback selection toward
+        # realistic horizons.  Tests can override these via component
+        # configuration which allows deterministic assertions around the
+        # penalty behaviour applied by the optimizer.
+        self.lookback_regularization_settings = self._resolve_regularization_settings()
+
         # Initialize execution mode configuration
         tprint("🔧 Initializing execution mode lookback configuration...")
         try:
@@ -245,6 +251,69 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         self.memory_critical_threshold_mb = 2000.0  # 2GB
 
         tprint("✅ Modular FeatureLookbackOptimizationComponent initialized")
+
+    def _resolve_regularization_settings(self) -> Dict[str, float]:
+        """Resolve lookback regularization preferences from configuration."""
+        defaults: Dict[str, float] = {
+            'preferred_min': 40.0,
+            'preferred_max': 80.0,
+            'penalty_strength': 1e-5,
+            'penalty_exponent': 2.0,
+        }
+
+        if not isinstance(getattr(self.config, 'custom_params', None), dict):
+            resolved = defaults
+        else:
+            raw_settings = self.config.custom_params.get('lookback_regularization', {})
+            resolved = defaults.copy()
+
+            if isinstance(raw_settings, dict):
+                preferred_window = raw_settings.get('preferred_window')
+                if isinstance(preferred_window, (list, tuple)) and len(preferred_window) == 2:
+                    try:
+                        resolved['preferred_min'] = float(preferred_window[0])
+                        resolved['preferred_max'] = float(preferred_window[1])
+                    except (TypeError, ValueError):
+                        pass
+
+                for key in ('preferred_min', 'preferred_max', 'penalty_strength', 'penalty_exponent'):
+                    if key in raw_settings and raw_settings[key] is not None:
+                        try:
+                            resolved[key] = float(raw_settings[key])
+                        except (TypeError, ValueError):
+                            continue
+
+                center = raw_settings.get('preferred_center')
+                width = raw_settings.get('preferred_width')
+                if center is not None:
+                    try:
+                        center_val = float(center)
+                        if width is None:
+                            width = resolved['preferred_max'] - resolved['preferred_min']
+                        width_val = float(width)
+                        resolved['preferred_min'] = center_val - (width_val / 2.0)
+                        resolved['preferred_max'] = center_val + (width_val / 2.0)
+                    except (TypeError, ValueError):
+                        pass
+
+        if resolved['preferred_min'] > resolved['preferred_max']:
+            resolved['preferred_min'], resolved['preferred_max'] = resolved['preferred_max'], resolved['preferred_min']
+
+        # Provide derived attributes for downstream metadata consumers.
+        resolved['preferred_center'] = (resolved['preferred_min'] + resolved['preferred_max']) / 2.0
+        resolved['preferred_width'] = resolved['preferred_max'] - resolved['preferred_min']
+
+        self.logger.debug(
+            "Lookback regularization settings resolved",
+            extra={'extra_fields': {
+                'preferred_min': resolved['preferred_min'],
+                'preferred_max': resolved['preferred_max'],
+                'penalty_strength': resolved['penalty_strength'],
+                'penalty_exponent': resolved['penalty_exponent'],
+            }}
+        )
+
+        return resolved
 
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts for this component."""
@@ -1175,6 +1244,11 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             pipeline_state['feature_cache_force_refresh'] = force_refresh
             self._force_cache_refresh = force_refresh
 
+            pipeline_state.setdefault(
+                'feature_lookback_regularization',
+                dict(self.lookback_regularization_settings),
+            )
+
             feature_columns = await self._generate_features_for_optimization(
                 data,
                 pipeline_state,
@@ -1236,6 +1310,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                     optimizer_kwargs: Dict[str, Any] = {}
                     if use_nested_cv:
                         optimizer_kwargs['outer_split_iterator'] = outer_splits
+                    optimizer_kwargs['regularization_settings'] = self.lookback_regularization_settings
 
                     # Optimize for LONG direction
                     if long_target_column != 'close':  # Only if we have a proper long target

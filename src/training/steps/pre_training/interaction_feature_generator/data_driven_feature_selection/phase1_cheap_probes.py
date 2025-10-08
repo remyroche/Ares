@@ -75,7 +75,7 @@ class Phase1Result:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
-        return {
+        result = {
             'selected_wrappers': [w.to_dict() for w in self.selected_wrappers],
             'rejected_wrappers': [w.to_dict() for w in self.rejected_wrappers],
             'context_baselines': self.context_baselines,
@@ -87,6 +87,13 @@ class Phase1Result:
             'vectorized_ops': self.vectorized_ops,
             'memory_efficient_ops': self.memory_efficient_ops
         }
+
+        tprint_performance(
+            f"📦 Phase 1 serialized -> selected: {len(self.selected_wrappers)}, "
+            f"rejected: {len(self.rejected_wrappers)}, execution: {self.execution_time:.3f}s"
+        )
+
+        return result
 
 
 class Phase1CheapProbes:
@@ -100,7 +107,7 @@ class Phase1CheapProbes:
         # Initialize estimators
         self.utility_estimator = UtilityEstimator(matrix_ops)
         self.cost_estimator = CostEstimator(matrix_ops)
-        
+
         # Performance tracking
         self.performance_metrics = {
             'matrix_ops_used': 0,
@@ -109,6 +116,39 @@ class Phase1CheapProbes:
             'probes_generated': 0,
             'families_evaluated': 0
         }
+
+    # ------------------------------------------------------------------
+    # Logging helpers
+    # ------------------------------------------------------------------
+    def _log_info(self, message: str) -> None:
+        """Log informational message to both logger and tprint."""
+        if message:
+            self.logger.info(message)
+            tprint_info(message)
+
+    def _log_warning(self, message: str) -> None:
+        """Log warning message to both logger and tprint."""
+        if message:
+            self.logger.warning(message)
+            tprint_warning(message)
+
+    def _log_error(self, message: str) -> None:
+        """Log error message to both logger and tprint."""
+        if message:
+            self.logger.error(message)
+            tprint_error(message)
+
+    def _log_success(self, message: str) -> None:
+        """Log success message (treated as info) to both logger and tprint."""
+        if message:
+            self.logger.info(message)
+            tprint_success(message)
+
+    def _log_performance(self, message: str) -> None:
+        """Log performance metrics to both logger and tprint."""
+        if message:
+            self.logger.info(message)
+            tprint_performance(message)
     
     def run_phase1(self, wrappers: List[FeatureGeneratorWrapper], 
                   data: pd.DataFrame, target: np.ndarray) -> Phase1Result:
@@ -116,8 +156,8 @@ class Phase1CheapProbes:
         start_time = time.time()
         
         try:
-            tprint_info("🚀 Starting Phase 1: Cheap Probes")
-            tprint_info(f"📊 Evaluating {len(wrappers)} feature generators")
+            self._log_info("🚀 Starting Phase 1: Cheap Probes")
+            self._log_info(f"📊 Evaluating {len(wrappers)} feature generators")
             
             # Prepare data for cheap probes
             probe_data, probe_target = self._prepare_probe_data(data, target)
@@ -126,21 +166,21 @@ class Phase1CheapProbes:
             context_baselines = self._generate_context_baselines(probe_data, probe_target)
             
             # Estimate costs for all wrappers
-            tprint_info("💰 Estimating costs for all generators...")
+            self._log_info("💰 Estimating costs for all generators...")
             wrappers = self._estimate_costs(wrappers, probe_data.shape)
             
             # Generate cheap proxies and evaluate
-            tprint_info("🔍 Generating cheap proxies and evaluating utilities...")
+            self._log_info("🔍 Generating cheap proxies and evaluating utilities...")
             wrappers = self._evaluate_cheap_proxies(wrappers, probe_data, probe_target)
             
             # Apply gating decisions
-            tprint_info("🚪 Applying Phase 1 gating decisions...")
+            self._log_info("🚪 Applying Phase 1 gating decisions...")
             selected_wrappers, rejected_wrappers = self._apply_gating_decisions(
                 wrappers, context_baselines
             )
             
             # Remove redundancy within families
-            tprint_info("🔄 Removing redundant features within families...")
+            self._log_info("🔄 Removing redundant features within families...")
             selected_wrappers = self._remove_redundancy(selected_wrappers, probe_data, probe_target)
             
             execution_time = time.time() - start_time
@@ -158,17 +198,21 @@ class Phase1CheapProbes:
                 vectorized_ops=self.performance_metrics['vectorized_ops'],
                 memory_efficient_ops=self.performance_metrics['memory_efficient_ops']
             )
-            
-            tprint_success(f"✅ Phase 1 completed in {execution_time:.3f}s")
-            tprint_success(f"📊 Selected {len(selected_wrappers)} generators from {len(wrappers)} total")
-            tprint_success(f"🏷️ Kept {result.n_families_kept} families, rejected {result.n_families_rejected}")
-            
+
+            self._log_success(f"✅ Phase 1 completed in {execution_time:.3f}s")
+            self._log_success(f"📊 Selected {len(selected_wrappers)} generators from {len(wrappers)} total")
+            self._log_success(f"🏷️ Kept {result.n_families_kept} families, rejected {result.n_families_rejected}")
+            self._log_performance(
+                f"📈 Metrics -> probes: {result.n_probes_generated}, matrix_ops: {result.matrix_ops_used}, "
+                f"vectorized_ops: {result.vectorized_ops}, memory_efficient_ops: {result.memory_efficient_ops}"
+            )
+
             return result
             
         except Exception as e:
             execution_time = time.time() - start_time
-            self.logger.error(f"Phase 1 failed: {e}")
-            self.logger.error(f"Error details: {traceback.format_exc()}")
+            self._log_error(f"Phase 1 failed: {e}")
+            self._log_error(f"Error details: {traceback.format_exc()}")
             
             # Return empty result
             return Phase1Result(
@@ -184,6 +228,11 @@ class Phase1CheapProbes:
     def _prepare_probe_data(self, data: pd.DataFrame, target: np.ndarray) -> Tuple[pd.DataFrame, np.ndarray]:
         """Prepare data for cheap probes with downsampling and subsetting."""
         try:
+            self._log_info(
+                f"🧪 Preparing probe data (subset_ratio={self.config.subset_ratio}, "
+                f"coarser_bar={self.config.coarser_bar_multiplier}x)"
+            )
+
             # Use subset of data
             subset_size = int(len(data) * self.config.subset_ratio)
             if subset_size < 100:
@@ -205,14 +254,16 @@ class Phase1CheapProbes:
             probe_data = probe_data.iloc[:min_length]
             probe_target = probe_target[:min_length]
             
-            tprint_info(f"📊 Prepared probe data: {len(probe_data)} rows, {len(probe_data.columns)} columns")
-            
+            self._log_info(
+                f"📊 Prepared probe data: {len(probe_data)} rows, {len(probe_data.columns)} columns"
+            )
+
             return probe_data, probe_target
-            
+
         except Exception as e:
-            self.logger.warning(f"Failed to prepare probe data: {e}, using original data")
+            self._log_warning(f"Failed to prepare probe data: {e}, using original data")
             return data, target
-    
+
     def _apply_coarser_bars(self, data: pd.DataFrame, multiplier: int) -> pd.DataFrame:
         """Apply coarser bar aggregation."""
         try:
@@ -225,16 +276,18 @@ class Phase1CheapProbes:
                 pass
             
             return downsampled
-            
+
         except Exception as e:
-            self.logger.warning(f"Failed to apply coarser bars: {e}")
+            self._log_warning(f"Failed to apply coarser bars: {e}")
             return data
-    
+
     def _generate_context_baselines(self, data: pd.DataFrame, target: np.ndarray) -> Dict[str, float]:
         """Generate contextual baselines for comparison."""
         baselines = {}
-        
+
         try:
+            self._log_info("🎯 Generating contextual baselines for Phase 1 comparison")
+
             if self.config.include_context_baselines:
                 # Index return baseline (if available)
                 if 'close' in data.columns:
@@ -257,33 +310,44 @@ class Phase1CheapProbes:
                         ic, _ = self._compute_ic_with_bootstrap(open_close, target)
                         baselines['open_close'] = ic
             
-            tprint_info(f"📊 Generated {len(baselines)} context baselines")
-            
+            self._log_info(f"📊 Generated {len(baselines)} context baselines")
+
         except Exception as e:
-            self.logger.warning(f"Failed to generate context baselines: {e}")
-        
+            self._log_warning(f"Failed to generate context baselines: {e}")
+
         return baselines
-    
-    def _estimate_costs(self, wrappers: List[FeatureGeneratorWrapper], 
+
+    def _estimate_costs(self, wrappers: List[FeatureGeneratorWrapper],
                        data_shape: Tuple[int, int]) -> List[FeatureGeneratorWrapper]:
         """Estimate costs for all wrappers."""
+        self._log_info(
+            f"💰 Running cost estimation for {len(wrappers)} wrappers (data_shape={data_shape})"
+        )
+
         for wrapper in wrappers:
             try:
                 self.cost_estimator.estimate_generator_cost(wrapper, data_shape)
             except Exception as e:
-                self.logger.warning(f"Failed to estimate cost for {wrapper.name}: {e}")
-        
+                self._log_warning(f"Failed to estimate cost for {wrapper.name}: {e}")
+
+        self._log_info("💰 Cost estimation complete")
+
         return wrappers
-    
-    def _evaluate_cheap_proxies(self, wrappers: List[FeatureGeneratorWrapper], 
+
+    def _evaluate_cheap_proxies(self, wrappers: List[FeatureGeneratorWrapper],
                               data: pd.DataFrame, target: np.ndarray) -> List[FeatureGeneratorWrapper]:
         """Generate cheap proxies and evaluate utilities."""
+        self._log_info(f"🔍 Evaluating cheap proxies for {len(wrappers)} wrappers")
+
         for wrapper in wrappers:
             try:
                 # Generate cheap proxy with coarse lookbacks
                 proxy_features = self._generate_cheap_proxies(wrapper, data)
-                
+
                 if not proxy_features:
+                    self._log_warning(
+                        f"⚠️ No proxy features generated for {wrapper.name}; defaulting metrics"
+                    )
                     wrapper.phase1_utility = 0.0
                     wrapper.phase1_uncertainty = 1.0
                     wrapper.phase1_stability = 0.0
@@ -314,30 +378,40 @@ class Phase1CheapProbes:
                     wrapper.phase1_utility = utilities[best_idx]
                     wrapper.phase1_uncertainty = uncertainties[best_idx]
                     wrapper.phase1_stability = stabilities[best_idx]
+                    self._log_info(
+                        f"✅ {wrapper.name}: utility={wrapper.phase1_utility:.3f}, "
+                        f"uncertainty={wrapper.phase1_uncertainty:.3f}, "
+                        f"stability={wrapper.phase1_stability:.3f}"
+                    )
                 else:
                     wrapper.phase1_utility = 0.0
                     wrapper.phase1_uncertainty = 1.0
                     wrapper.phase1_stability = 0.0
-                
+
                 self.performance_metrics['probes_generated'] += 1
-                
+
             except Exception as e:
-                self.logger.warning(f"Failed to evaluate cheap proxy for {wrapper.name}: {e}")
+                self._log_warning(f"Failed to evaluate cheap proxy for {wrapper.name}: {e}")
                 wrapper.phase1_utility = 0.0
                 wrapper.phase1_uncertainty = 1.0
                 wrapper.phase1_stability = 0.0
-        
+
+        self._log_info("🔍 Cheap proxy evaluation complete")
+
         return wrappers
-    
-    def _generate_cheap_proxies(self, wrapper: FeatureGeneratorWrapper, 
+
+    def _generate_cheap_proxies(self, wrapper: FeatureGeneratorWrapper,
                               data: pd.DataFrame) -> List[np.ndarray]:
         """Generate cheap proxy features for a wrapper."""
         proxies = []
-        
+
         try:
+            self._log_info(f"🛠️ Generating cheap proxies for {wrapper.name} ({wrapper.family})")
+
             # Get appropriate lookbacks for the family
             lookbacks = self._get_family_lookbacks(wrapper.family)
-            
+            short_proxy_warning_logged = False
+
             for lookback in lookbacks:
                 try:
                     # Generate feature with this lookback
@@ -352,17 +426,29 @@ class Phase1CheapProbes:
                             proxy = result
                         else:
                             continue
-                        
+
                         if len(proxy) > 10:
                             proxies.append(proxy)
-                            
+                        elif not short_proxy_warning_logged:
+                            self._log_warning(
+                                f"⚠️ Proxy too short for {wrapper.name} with lookback {lookback}"
+                            )
+                            short_proxy_warning_logged = True
+
                 except Exception as e:
-                    self.logger.debug(f"Failed to generate proxy for {wrapper.name} with lookback {lookback}: {e}")
+                    self.logger.debug(
+                        f"Failed to generate proxy for {wrapper.name} with lookback {lookback}: {e}"
+                    )
                     continue
-            
+
         except Exception as e:
-            self.logger.debug(f"Failed to generate cheap proxies for {wrapper.name}: {e}")
-        
+            self._log_warning(f"Failed to generate cheap proxies for {wrapper.name}: {e}")
+
+        if proxies:
+            self._log_info(f"🧪 Generated {len(proxies)} proxies for {wrapper.name}")
+        else:
+            self._log_warning(f"⚠️ No valid proxies generated for {wrapper.name}")
+
         return proxies
     
     def _get_family_lookbacks(self, family: str) -> List[int]:
@@ -499,15 +585,20 @@ class Phase1CheapProbes:
             self.logger.debug(f"Failed to compute stability score: {e}")
             return 0.0
     
-    def _apply_gating_decisions(self, wrappers: List[FeatureGeneratorWrapper], 
+    def _apply_gating_decisions(self, wrappers: List[FeatureGeneratorWrapper],
                               context_baselines: Dict[str, float]) -> Tuple[List[FeatureGeneratorWrapper], List[FeatureGeneratorWrapper]]:
         """Apply Phase 1 gating decisions."""
         selected = []
         rejected = []
-        
+
         # Get baseline utility (best context baseline)
         baseline_utility = max(context_baselines.values()) if context_baselines else 0.0
-        
+
+        self._log_info(
+            f"🚦 Applying gating with baseline utility {baseline_utility:.3f} "
+            f"across {len(wrappers)} wrappers"
+        )
+
         for wrapper in wrappers:
             # Check utility threshold
             if wrapper.phase1_utility is None or wrapper.phase1_utility <= self.config.min_utility_threshold:
@@ -528,17 +619,24 @@ class Phase1CheapProbes:
             if wrapper.phase1_uncertainty is None or wrapper.phase1_uncertainty > 0.8:
                 rejected.append(wrapper)
                 continue
-            
+
             selected.append(wrapper)
-        
+
+        self._log_info(
+            f"📊 Gating results -> selected: {len(selected)}, rejected: {len(rejected)}"
+        )
+
         return selected, rejected
-    
-    def _remove_redundancy(self, wrappers: List[FeatureGeneratorWrapper], 
+
+    def _remove_redundancy(self, wrappers: List[FeatureGeneratorWrapper],
                           data: pd.DataFrame, target: np.ndarray) -> List[FeatureGeneratorWrapper]:
         """Remove redundant features within families."""
+        self._log_info(f"🔄 Running redundancy removal on {len(wrappers)} wrappers")
+
         if len(wrappers) < 2:
+            self._log_info("ℹ️ Skipping redundancy removal (insufficient wrappers)")
             return wrappers
-        
+
         # Group by family
         families = {}
         for wrapper in wrappers:
@@ -552,7 +650,7 @@ class Phase1CheapProbes:
             if len(family_wrappers) <= 1:
                 selected.extend(family_wrappers)
                 continue
-            
+
             # Generate proxy features for correlation analysis
             proxy_features = {}
             for wrapper in family_wrappers:
@@ -565,18 +663,25 @@ class Phase1CheapProbes:
                 except Exception as e:
                     self.logger.debug(f"Failed to generate proxy for redundancy check: {e}")
                     continue
-            
+
             if len(proxy_features) < 2:
                 selected.extend(family_wrappers)
                 continue
-            
+
             # Compute correlations
             correlations = self._compute_correlations(proxy_features)
-            
+
             # Select non-redundant features
             family_selected = self._select_non_redundant(family_wrappers, correlations)
             selected.extend(family_selected)
-        
+
+            self._log_info(
+                f"🔁 Redundancy check for {family}: kept {len(family_selected)} "
+                f"of {len(family_wrappers)} wrappers"
+            )
+
+        self._log_info(f"✅ Redundancy removal complete -> retained {len(selected)} wrappers")
+
         return selected
     
     def _compute_correlations(self, proxy_features: Dict[str, np.ndarray]) -> Dict[str, List[str]]:

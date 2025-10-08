@@ -94,6 +94,7 @@ class BasePreTrainingComponent(ABC):
         self.logger = logger.getChild(self.__class__.__name__)
         self.artifact_manager = get_artifact_manager()
         self.version_manager = get_version_manager()
+        self._current_run_metadata: Dict[str, Any] = {}
         tprint_success(
             f"🚀 Initialized {self.__class__.__name__}",
             {
@@ -102,6 +103,14 @@ class BasePreTrainingComponent(ABC):
                 'timeframe': self.config.timeframe
             }
         )
+
+    def set_run_metadata(self, metadata: Optional[Dict[str, Any]]) -> None:
+        """Attach run-level reproducibility metadata to the component."""
+        self._current_run_metadata = metadata or {}
+
+    def get_run_metadata(self) -> Dict[str, Any]:
+        """Return a copy of the currently attached run metadata."""
+        return dict(self._current_run_metadata)
 
     @abstractmethod
     def get_required_artifacts(self) -> List[str]:
@@ -131,9 +140,17 @@ class BasePreTrainingComponent(ABC):
         Returns:
             Dictionary mapping artifact names to file paths
         """
+        run_metadata = dict(self._current_run_metadata)
+        metadata_with_run = dict(metadata)
+        existing_run_metadata = metadata_with_run.get('run_metadata') if isinstance(metadata_with_run.get('run_metadata'), dict) else {}
+        metadata_with_run['run_metadata'] = {**run_metadata, **existing_run_metadata}
+
         tprint_info(
             f"💾 Saving {len(artifacts)} artifacts for {self.__class__.__name__}",
-            {'metadata_keys': list(metadata.keys())}
+            {
+                'metadata_keys': list(metadata_with_run.keys()),
+                'run_metadata': metadata_with_run['run_metadata']
+            }
         )
         saved_files = {}
 
@@ -145,12 +162,17 @@ class BasePreTrainingComponent(ABC):
                 'symbol': self.config.symbol,
                 'exchange': self.config.exchange,
                 'timeframe': self.config.timeframe,
-                **metadata
+                **metadata_with_run
             }
+
+            artifact_payload = self._attach_run_metadata_to_artifact(
+                artifact_data,
+                metadata_with_run['run_metadata']
+            )
 
             # Save artifact
             file_path = self.artifact_manager.save_artifact(
-                data=artifact_data,
+                data=artifact_payload,
                 base_name=artifact_name,
                 extension=".json"
             )
@@ -163,6 +185,19 @@ class BasePreTrainingComponent(ABC):
             )
 
         return saved_files
+
+    def _attach_run_metadata_to_artifact(self, artifact_data: Any, run_metadata: Dict[str, Any]) -> Any:
+        """Embed run metadata within the artifact payload for persistence."""
+        if isinstance(artifact_data, dict):
+            artifact_copy = dict(artifact_data)
+            existing_run_metadata = artifact_copy.get('run_metadata') if isinstance(artifact_copy.get('run_metadata'), dict) else {}
+            artifact_copy['run_metadata'] = {**run_metadata, **existing_run_metadata}
+            return artifact_copy
+
+        return {
+            'data': artifact_data,
+            'run_metadata': dict(run_metadata)
+        }
 
     def validate_config(self) -> bool:
         """Validate the component configuration."""

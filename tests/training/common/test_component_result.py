@@ -8,6 +8,7 @@ def test_component_result_success_has_no_error():
     assert result.error is None
     assert result.metrics == {}
     assert result.warnings == []
+    assert result.errors == []
 
 
 def test_component_result_failure_requires_error():
@@ -20,6 +21,7 @@ def test_component_result_accepts_error_message():
     assert isinstance(result.error, ComponentError)
     assert str(result.error) == "boom"
     assert not result.success
+    assert [str(err) for err in result.errors] == ["boom"]
 
 
 def test_component_result_rejects_success_with_error():

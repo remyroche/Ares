@@ -76,6 +76,7 @@ class ComponentResult(_BaseComponentResult):
         execution_time: float = 0.0,
         metrics: Optional[Dict[str, float]] = None,
         warnings: Optional[List[str]] = None,
+        errors: Optional[List[ComponentError]] = None,
         error: Optional[Union[Exception, ComponentError]] = None,
         error_message: Optional[str] = None,
     ) -> None:
@@ -88,6 +89,7 @@ class ComponentResult(_BaseComponentResult):
             execution_time=execution_time,
             metrics=metrics,
             warnings=warnings,
+            errors=errors,
             error=error,
             error_message=error_message,
         )
@@ -98,6 +100,7 @@ class ComponentResult(_BaseComponentResult):
             'metadata_keys': list(self.metadata.keys()),
             'metrics_keys': list(self.metrics.keys()),
             'warnings': list(self.warnings),
+            'errors': [str(err) for err in self.errors],
             'error': self.error_message,
             'execution_time': self.execution_time,
         }

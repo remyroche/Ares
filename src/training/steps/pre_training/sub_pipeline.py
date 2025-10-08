@@ -106,6 +106,7 @@ from src.utils.tprint import tprint, tprint_error, tprint_warning
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.version_manager import get_version_manager
 from src.utils.random_seeding import SeededRNGs, seed_rngs
+from src.utils.tprint import tprint, tprint_error, tprint_warning
 from .logging_utils import (
     PreTrainingEventLogger,
     StepLogContext,
@@ -293,6 +294,7 @@ class SubPipelineConfig:
     fast_mode: bool = False
     skip_next_pipeline: bool = False
     custom_params: Dict[str, Any] = field(default_factory=dict)
+    pipeline: Dict[str, Any] = field(default_factory=dict)
     label_imbalance_warning_threshold: float = 0.75
     nan_rate_warning_threshold: float = 0.05
     duplicate_index_warning_threshold: float = 0.02
@@ -412,6 +414,8 @@ class SubPipelineResult:
     output_files: List[str] = field(default_factory=list)
     artifacts: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    warnings: List[str] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
     error_message: Optional[str] = None
     error_code: Optional[str] = None
     failure: Optional[SubPipelineFailure] = None
@@ -425,9 +429,12 @@ class PipelineResultDict(TypedDict, total=False):
     total_steps: int
     completed_steps: int
     results: Dict[str, Any]
+    warnings: List[str]
+    errors: List[str]
     error_message: Optional[str]
     error_code: Optional[str]
     failure: Optional[SubPipelineFailure]
+    error_summary: Optional[str]
 
 class PreTrainingSubPipeline:
     """
@@ -454,7 +461,7 @@ class PreTrainingSubPipeline:
         self.logger = logger.getChild('PreTrainingSubPipeline')
         self.event_logger = PreTrainingEventLogger(configure_pre_training_logging())
         self.results: List[SubPipelineResult] = []
-        self._current_pipeline_state = PipelineState()
+        self._current_pipeline_state: Dict[str, Any] = {}
         self._metrics_sink: Optional[MetricsSink] = None
         self._run_metadata: Dict[str, Any] = {}
         self._data_locator: Optional[DataLocator] = None
@@ -509,6 +516,48 @@ class PreTrainingSubPipeline:
                     return str(value)
         return default_code
 
+    @staticmethod
+    def _extend_messages(target: List[str], messages: Iterable[Any]) -> None:
+        seen = set(target)
+        for message in messages:
+            if message is None:
+                continue
+            text = str(message).strip()
+            if not text or text in seen:
+                continue
+            target.append(text)
+            seen.add(text)
+
+    def _collect_component_warnings(self, component_result: Any) -> List[str]:
+        warnings: List[str] = []
+        self._extend_messages(warnings, getattr(component_result, 'warnings', []) or [])
+        return warnings
+
+    def _collect_component_errors(self, component_result: Any) -> List[str]:
+        errors: List[str] = []
+        component_errors = getattr(component_result, 'errors', []) or []
+        self._extend_messages(errors, component_errors)
+        error_message = getattr(component_result, 'error_message', None)
+        if error_message:
+            self._extend_messages(errors, [error_message])
+        return errors
+
+    def _extend_pipeline_collections(self, pipeline_results: Dict[str, Any], result: SubPipelineResult) -> None:
+        self._extend_messages(pipeline_results.setdefault('warnings', []), result.warnings)
+        self._extend_messages(pipeline_results.setdefault('errors', []), result.errors)
+
+    @staticmethod
+    def _should_continue_on_error(config: SubPipelineConfig) -> bool:
+        pipeline_cfg = getattr(config, 'pipeline', {}) or {}
+        if isinstance(pipeline_cfg, dict) and pipeline_cfg.get('continue_on_error') is not None:
+            return bool(pipeline_cfg.get('continue_on_error'))
+        custom_params = getattr(config, 'custom_params', {}) or {}
+        if isinstance(custom_params, dict):
+            pipeline_params = custom_params.get('pipeline')
+            if isinstance(pipeline_params, dict) and pipeline_params.get('continue_on_error') is not None:
+                return bool(pipeline_params.get('continue_on_error'))
+        return False
+
     def _create_failure(
         self,
         step_name: str,
@@ -533,6 +582,28 @@ class PreTrainingSubPipeline:
         )
         return failure
 
+    def _compose_error_summary(
+        self,
+        failure: SubPipelineFailure,
+        errors: Iterable[str],
+    ) -> str:
+        summary_parts: List[str] = []
+        step_label = self._get_step_display_name(failure.step)
+        summary_parts.append(f"{step_label}: {failure.message}")
+
+        unique_errors: List[str] = []
+        self._extend_messages(unique_errors, errors)
+        # Avoid repeating the primary failure message if it's already captured.
+        unique_errors = [msg for msg in unique_errors if msg != failure.message]
+
+        if unique_errors:
+            preview = '; '.join(unique_errors[:3])
+            if len(unique_errors) > 3:
+                preview += f" (+{len(unique_errors) - 3} more)"
+            summary_parts.append(f"Details: {preview}")
+
+        return ' | '.join(summary_parts)
+
     def _handle_contract_error(
         self,
         result: SubPipelineResult,
@@ -554,6 +625,11 @@ class PreTrainingSubPipeline:
                 'contract_issues': error.errors,
             },
         )
+        self._extend_messages(result.errors, [str(error)])
+        contract_issues = getattr(error, 'errors', None)
+        if contract_issues:
+            issue_messages = [str(issue) for issue in contract_issues if issue]
+            self._extend_messages(result.errors, issue_messages)
         return result
 
     def _resolve_failure_from_result(
@@ -602,6 +678,15 @@ class PreTrainingSubPipeline:
         pipeline_results['failure'] = failure
         pipeline_results['error_code'] = failure.error_code
         pipeline_results['error_message'] = failure.message
+        errors = pipeline_results.setdefault('errors', [])
+        summary = self._compose_error_summary(failure, errors)
+        pipeline_results['error_summary'] = summary
+        if summary:
+            tprint_error(f"❌ {summary}")
+            self.logger.error(summary)
+        else:
+            tprint_error(f"❌ {failure.message}")
+            self.logger.error(failure.message)
 
         self._log_step_timing_summary(pipeline_results)
 
@@ -620,7 +705,7 @@ class PreTrainingSubPipeline:
             completed_steps=pipeline_results.get('completed_steps', 0),
             total_steps=pipeline_results.get('total_steps', 0),
             metadata=dict(self._run_metadata),
-            error=failure.message,
+            error=summary or failure.message,
         )
 
         finalized = self._finalize_results(
@@ -783,6 +868,8 @@ class PreTrainingSubPipeline:
 
         sequence_specs = self._get_ordered_step_specs(sequence_only=True)
         sequence_step_count = len(sequence_specs)
+        continue_on_error = self._should_continue_on_error(config)
+        step_failures: List[Tuple[str, SubPipelineFailure, SubPipelineResult]] = []
 
         results = {
             'success': False,
@@ -790,9 +877,12 @@ class PreTrainingSubPipeline:
             'total_steps': sequence_step_count,
             'completed_steps': 0,
             'results': {},
+            'warnings': [],
+            'errors': [],
             'error_message': None,
             'error_code': None,
             'failure': None,
+            'error_summary': None,
             'metrics': {
                 'steps': {},
             },
@@ -818,6 +908,7 @@ class PreTrainingSubPipeline:
                 results['completed_steps'] += 1
             self._record_step_metrics('multi_horizon_profit_labeler', mh_result, results, metrics_sink, step_metric_records)
             mh_duration_ms = self._result_duration_ms(mh_result)
+            self._extend_pipeline_collections(results, mh_result)
             if not mh_result.success:
                 failure = self._resolve_failure_from_result(
                     'multi_horizon_profit_labeler',
@@ -835,14 +926,43 @@ class PreTrainingSubPipeline:
                     error=failure.message,
                     extra={'error_code': failure.error_code},
                 )
-                return self._apply_failure_to_results(
-                    results,
-                    failure,
-                    start_time,
-                    metrics_sink,
-                    step_metric_records,
-                    config,
+                results['results']['multi_horizon_profit_labeler'] = mh_result.artifacts
+                results['error_message'] = failure.message
+                results['error_code'] = failure.error_code
+                step_failures.append(('multi_horizon_profit_labeler', failure, mh_result))
+                if not continue_on_error:
+                    return self._apply_failure_to_results(
+                        results,
+                        failure,
+                        start_time,
+                        metrics_sink,
+                        step_metric_records,
+                        config,
+                    )
+                tprint_warning(
+                    "⚠️ Continue-on-error enabled; proceeding after multi_horizon_profit_labeler failure"
                 )
+                self.logger.warning(
+                    "Continue-on-error enabled; proceeding after multi_horizon_profit_labeler failure",
+                )
+            if mh_result.success:
+                # Validate artifacts before updating state
+                if 'multi_horizon_labeling_result' in mh_result.artifacts:
+                    labeled_data = mh_result.artifacts.get('multi_horizon_labeling_result', {}).get('labeled_data', pd.DataFrame())
+                    if isinstance(labeled_data, pd.DataFrame) and not labeled_data.empty:
+                        self.logger.info(f"✅ Multi-horizon profit labeling completed for {config.symbol}")
+                        self.logger.info(f"   → Labels generated: {len(labeled_data.columns)} columns")
+                        results['results']['multi_horizon_profit_labeler'] = mh_result.artifacts
+                        self._current_pipeline_state.update(mh_result.artifacts)
+                    else:
+                        message = "Multi-horizon labeling artifact validation failed"
+                        failure = self._create_failure(
+                            'multi_horizon_profit_labeler',
+                            mh_result.error_code or self._default_step_error_code('multi_horizon_profit_labeler'),
+                            message,
+                            context={'reason': 'empty_or_invalid_labeled_data'},
+                        )
+                        self.logger.error(f"❌ {message}")
 
             # Validate artifacts before updating state
             artifacts = mh_result.artifacts or {}
@@ -883,12 +1003,12 @@ class PreTrainingSubPipeline:
 
                     results['results']['multi_horizon_profit_labeler'] = merged_artifacts
                 else:
-                    message = "Multi-horizon labeling artifact validation failed"
+                    message = "Missing multi_horizon_labeling_result artifact"
                     failure = self._create_failure(
                         'multi_horizon_profit_labeler',
                         mh_result.error_code or self._default_step_error_code('multi_horizon_profit_labeler'),
                         message,
-                        context={'reason': 'empty_or_invalid_labeled_data'},
+                        context={'reason': 'missing_artifact'},
                     )
                     self.logger.error(f"❌ {message}")
                     self.event_logger.step_end(
@@ -906,37 +1026,14 @@ class PreTrainingSubPipeline:
                         step_metric_records,
                         config,
                     )
-            else:
-                message = "Missing multi_horizon_labeling_result artifact"
-                failure = self._create_failure(
-                    'multi_horizon_profit_labeler',
-                    mh_result.error_code or self._default_step_error_code('multi_horizon_profit_labeler'),
-                    message,
-                    context={'reason': 'missing_artifact'},
-                )
-                self.logger.error(f"❌ {message}")
+
+            if mh_result.success:
                 self.event_logger.step_end(
                     mh_context,
                     duration_ms=mh_duration_ms,
-                    success=False,
-                    error=message,
-                    extra={'error_code': failure.error_code},
+                    success=True,
+                    extra={'artifact_keys': sorted(mh_result.artifacts.keys())},
                 )
-                return self._apply_failure_to_results(
-                    results,
-                    failure,
-                    start_time,
-                    metrics_sink,
-                    step_metric_records,
-                    config,
-                )
-
-            self.event_logger.step_end(
-                mh_context,
-                duration_ms=mh_duration_ms,
-                success=True,
-                extra={'artifact_keys': sorted(mh_result.artifacts.keys())},
-            )
 
             # Step 2: Feature Lookback Optimization
             flo_context = StepLogContext(
@@ -956,6 +1053,7 @@ class PreTrainingSubPipeline:
                 results['completed_steps'] += 1
             self._record_step_metrics('feature_lookback_optimization', flo_result, results, metrics_sink, step_metric_records)
             flo_duration_ms = self._result_duration_ms(flo_result)
+            self._extend_pipeline_collections(results, flo_result)
             if not flo_result.success:
                 failure = self._resolve_failure_from_result(
                     'feature_lookback_optimization',
@@ -973,6 +1071,11 @@ class PreTrainingSubPipeline:
                     error=failure.message,
                     extra={'error_code': failure.error_code},
                 )
+                results['results']['feature_lookback_optimization'] = flo_result.artifacts
+                results['error_message'] = failure.message
+                results['error_code'] = failure.error_code
+                step_failures.append(('feature_lookback_optimization', failure, flo_result))
+                if not continue_on_error:
                 return self._apply_failure_to_results(
                     results,
                     failure,
@@ -1017,6 +1120,24 @@ class PreTrainingSubPipeline:
                         step_metric_records,
                         config,
                     )
+                tprint_warning(
+                    "⚠️ Continue-on-error enabled; proceeding after feature_lookback_optimization failure"
+                )
+                self.logger.warning(
+                    "Continue-on-error enabled; proceeding after feature_lookback_optimization failure",
+                )
+            if flo_result.success:
+                # Validate artifacts before updating state
+                if 'feature_lookback_optimization_result' in flo_result.artifacts:
+                    optimized_features = flo_result.artifacts.get('feature_lookback_optimization_result', {}).get('optimized_features', {})
+                    self.logger.info(f"✅ Feature lookback optimization completed for {config.symbol}")
+                    self.logger.info(f"   → Features optimized: {len(optimized_features)}")
+                    results['results']['feature_lookback_optimization'] = flo_result.artifacts
+                    self._current_pipeline_state.update(flo_result.artifacts)
+                else:
+                    self.logger.warning("⚠️ Feature lookback optimization completed but artifact structure unexpected")
+                    results['results']['feature_lookback_optimization'] = flo_result.artifacts
+                    self._current_pipeline_state.update(flo_result.artifacts)
 
                 results['results']['feature_lookback_optimization'] = merged_flo_artifacts
             elif flo_artifacts:
@@ -1052,12 +1173,12 @@ class PreTrainingSubPipeline:
 
                 results['results']['feature_lookback_optimization'] = merged_flo_artifacts
 
-            self.event_logger.step_end(
-                flo_context,
-                duration_ms=flo_duration_ms,
-                success=True,
-                extra={'artifact_keys': sorted(flo_result.artifacts.keys())},
-            )
+                self.event_logger.step_end(
+                    flo_context,
+                    duration_ms=flo_duration_ms,
+                    success=True,
+                    extra={'artifact_keys': sorted(flo_result.artifacts.keys())},
+                )
 
             # Step 3: Interactive Feature Generation
             interactive_context = StepLogContext(
@@ -1077,6 +1198,7 @@ class PreTrainingSubPipeline:
                 results['completed_steps'] += 1
             self._record_step_metrics('interactive_feature_generation', interactive_result, results, metrics_sink, step_metric_records)
             interactive_duration_ms = self._result_duration_ms(interactive_result)
+            self._extend_pipeline_collections(results, interactive_result)
             if not interactive_result.success:
                 failure = self._resolve_failure_from_result(
                     'interactive_feature_generation',
@@ -1094,6 +1216,11 @@ class PreTrainingSubPipeline:
                     error=failure.message,
                     extra={'error_code': failure.error_code},
                 )
+                results['results']['interactive_feature_generation'] = interactive_result.artifacts
+                results['error_message'] = failure.message
+                results['error_code'] = failure.error_code
+                step_failures.append(('interactive_feature_generation', failure, interactive_result))
+                if not continue_on_error:
                 return self._apply_failure_to_results(
                     results,
                     failure,
@@ -1138,6 +1265,24 @@ class PreTrainingSubPipeline:
                         step_metric_records,
                         config,
                     )
+                tprint_warning(
+                    "⚠️ Continue-on-error enabled; proceeding after interactive_feature_generation failure"
+                )
+                self.logger.warning(
+                    "Continue-on-error enabled; proceeding after interactive_feature_generation failure",
+                )
+            if interactive_result.success:
+                # Validate artifacts before updating state
+                if 'interactive_feature_generation_result' in interactive_result.artifacts:
+                    features = interactive_result.artifacts.get('interactive_feature_generation_result', {}).get('features', {})
+                    self.logger.info(f"✅ Interactive feature generation completed for {config.symbol}")
+                    self.logger.info(f"   → Features generated: {len(features)}")
+                    results['results']['interactive_feature_generation'] = interactive_result.artifacts
+                    self._current_pipeline_state.update(interactive_result.artifacts)
+                else:
+                    self.logger.warning("⚠️ Interactive feature generation completed but artifact structure unexpected")
+                    results['results']['interactive_feature_generation'] = interactive_result.artifacts
+                    self._current_pipeline_state.update(interactive_result.artifacts)
 
                 results['results']['interactive_feature_generation'] = merged_interactive_artifacts
             elif interactive_artifacts:
@@ -1173,12 +1318,12 @@ class PreTrainingSubPipeline:
 
                 results['results']['interactive_feature_generation'] = merged_interactive_artifacts
 
-            self.event_logger.step_end(
-                interactive_context,
-                duration_ms=interactive_duration_ms,
-                success=True,
-                extra={'artifact_keys': sorted(interactive_result.artifacts.keys())},
-            )
+                self.event_logger.step_end(
+                    interactive_context,
+                    duration_ms=interactive_duration_ms,
+                    success=True,
+                    extra={'artifact_keys': sorted(interactive_result.artifacts.keys())},
+                )
 
             # Step 4: Final Feature Selection
             ffs_context = StepLogContext(
@@ -1198,6 +1343,7 @@ class PreTrainingSubPipeline:
                 results['completed_steps'] += 1
             self._record_step_metrics('final_feature_selection', ffs_result, results, metrics_sink, step_metric_records)
             ffs_duration_ms = self._result_duration_ms(ffs_result)
+            self._extend_pipeline_collections(results, ffs_result)
             if not ffs_result.success:
                 failure = self._resolve_failure_from_result(
                     'final_feature_selection',
@@ -1215,9 +1361,50 @@ class PreTrainingSubPipeline:
                     error=failure.message,
                     extra={'error_code': failure.error_code},
                 )
+                results['results']['final_feature_selection'] = ffs_result.artifacts
+                results['error_message'] = failure.message
+                results['error_code'] = failure.error_code
+                step_failures.append(('final_feature_selection', failure, ffs_result))
+                if not continue_on_error:
+                    return self._apply_failure_to_results(
+                        results,
+                        failure,
+                        start_time,
+                        metrics_sink,
+                        step_metric_records,
+                        config,
+                    )
+                tprint_warning(
+                    "⚠️ Continue-on-error enabled; proceeding after final_feature_selection failure"
+                )
+                self.logger.warning(
+                    "Continue-on-error enabled; proceeding after final_feature_selection failure",
+                )
+            if ffs_result.success:
+                # Validate artifacts before updating state
+                if 'final_feature_selection_result' in ffs_result.artifacts:
+                    selected_features = ffs_result.artifacts.get('final_feature_selection_result', {}).get('selected_features', [])
+                    self.logger.info(f"✅ Final feature selection completed for {config.symbol}")
+                    self.logger.info(f"   → Final features: {len(selected_features)}")
+                    results['results']['final_feature_selection'] = ffs_result.artifacts
+                    self._current_pipeline_state.update(ffs_result.artifacts)
+                else:
+                    self.logger.warning("⚠️ Final feature selection completed but artifact structure unexpected")
+                    results['results']['final_feature_selection'] = ffs_result.artifacts
+                    self._current_pipeline_state.update(ffs_result.artifacts)
+
+                self.event_logger.step_end(
+                    ffs_context,
+                    duration_ms=ffs_duration_ms,
+                    success=True,
+                    extra={'artifact_keys': sorted(ffs_result.artifacts.keys())},
+                )
+
+            if step_failures:
+                primary_failure = step_failures[0][1]
                 return self._apply_failure_to_results(
                     results,
-                    failure,
+                    primary_failure,
                     start_time,
                     metrics_sink,
                     step_metric_records,
@@ -2160,6 +2347,8 @@ class PreTrainingSubPipeline:
             training_input = self._prepare_interactive_training_input(pipeline_state)
             component_result = await component.execute(training_input, pipeline_state)
             component_result.metadata = self._merge_run_metadata(component_result.metadata)
+            result.warnings = self._collect_component_warnings(component_result)
+            result.errors = self._collect_component_errors(component_result)
 
             result.status = SubPipelineStatus.COMPLETED if component_result.success else SubPipelineStatus.FAILED
             result.success = component_result.success
@@ -2205,6 +2394,9 @@ class PreTrainingSubPipeline:
                     quality_alerts,
                     config,
                 )
+                if result.warnings:
+                    warnings_meta = result.metadata.setdefault('warnings', [])
+                    self._extend_messages(warnings_meta, result.warnings)
             else:
                 result.metadata = self._merge_run_metadata(component_result.metadata or {
                     'component_type': 'multi_horizon_profit_labeler'
@@ -2219,6 +2411,8 @@ class PreTrainingSubPipeline:
                     result.error_message or 'Multi-horizon profit labeler failed',
                     context=failure_context,
                 )
+                if result.error_message:
+                    self._extend_messages(result.errors, [result.error_message])
 
         except ImportError as e:
             result.status = SubPipelineStatus.FAILED
@@ -2234,6 +2428,7 @@ class PreTrainingSubPipeline:
                 result.error_message,
                 exception=e,
             )
+            self._extend_messages(result.errors, [result.error_message])
         except FileNotFoundError as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = f"Missing files: {str(e)}"
@@ -2248,6 +2443,7 @@ class PreTrainingSubPipeline:
                 result.error_message,
                 exception=e,
             )
+            self._extend_messages(result.errors, [result.error_message])
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
@@ -2265,6 +2461,7 @@ class PreTrainingSubPipeline:
                 exception=e,
                 traceback_str=trace,
             )
+            self._extend_messages(result.errors, [result.error_message or str(e)])
 
         return result
 
@@ -2300,6 +2497,14 @@ class PreTrainingSubPipeline:
             pipeline_state = self._prepare_component_pipeline_state(config)
             component_result = await component.execute(None, pipeline_state)
             component_result.metadata = self._merge_run_metadata(component_result.metadata)
+            result.warnings = self._collect_component_warnings(component_result)
+            result.errors = self._collect_component_errors(component_result)
+            result.warnings = self._collect_component_warnings(component_result)
+            result.errors = self._collect_component_errors(component_result)
+            result.warnings = self._collect_component_warnings(component_result)
+            result.errors = self._collect_component_errors(component_result)
+            result.warnings = self._collect_component_warnings(component_result)
+            result.errors = self._collect_component_errors(component_result)
 
             result.status = SubPipelineStatus.COMPLETED if component_result.success else SubPipelineStatus.FAILED
             result.success = component_result.success
@@ -2323,6 +2528,9 @@ class PreTrainingSubPipeline:
                     quality_alerts,
                     config,
                 )
+                if result.warnings:
+                    warnings_meta = result.metadata.setdefault('warnings', [])
+                    self._extend_messages(warnings_meta, result.warnings)
             else:
                 result.metadata = self._merge_run_metadata(component_result.metadata or {})
                 failure_context = {
@@ -2335,6 +2543,8 @@ class PreTrainingSubPipeline:
                     result.error_message or 'Feature lookback optimization failed',
                     context=failure_context,
                 )
+                if result.error_message:
+                    self._extend_messages(result.errors, [result.error_message])
 
         except ImportError as e:
             result.status = SubPipelineStatus.FAILED
@@ -2350,6 +2560,7 @@ class PreTrainingSubPipeline:
                 result.error_message,
                 exception=e,
             )
+            self._extend_messages(result.errors, [result.error_message])
         except FileNotFoundError as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = f"Missing files: {str(e)}"
@@ -2364,6 +2575,7 @@ class PreTrainingSubPipeline:
                 result.error_message,
                 exception=e,
             )
+            self._extend_messages(result.errors, [result.error_message])
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
@@ -2381,6 +2593,7 @@ class PreTrainingSubPipeline:
                 exception=e,
                 traceback_str=trace,
             )
+            self._extend_messages(result.errors, [result.error_message or str(e)])
 
         return result
 
@@ -2491,6 +2704,9 @@ class PreTrainingSubPipeline:
                     quality_alerts,
                     config,
                 )
+                if result.warnings:
+                    warnings_meta = result.metadata.setdefault('warnings', [])
+                    self._extend_messages(warnings_meta, result.warnings)
             else:
                 result.metadata = self._merge_run_metadata(component_result.metadata or {})
                 failure_context = {
@@ -2503,6 +2719,8 @@ class PreTrainingSubPipeline:
                     result.error_message or 'Interactive feature generation failed',
                     context=failure_context,
                 )
+                if result.error_message:
+                    self._extend_messages(result.errors, [result.error_message])
 
         except ImportError as e:
             result.status = SubPipelineStatus.FAILED
@@ -2518,6 +2736,7 @@ class PreTrainingSubPipeline:
                 result.error_message,
                 exception=e,
             )
+            self._extend_messages(result.errors, [result.error_message])
         except FileNotFoundError as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = f"Missing files: {str(e)}"
@@ -2532,6 +2751,7 @@ class PreTrainingSubPipeline:
                 result.error_message,
                 exception=e,
             )
+            self._extend_messages(result.errors, [result.error_message])
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
@@ -2549,6 +2769,7 @@ class PreTrainingSubPipeline:
                 exception=e,
                 traceback_str=trace,
             )
+            self._extend_messages(result.errors, [result.error_message or str(e)])
 
         return result
 
@@ -2607,6 +2828,9 @@ class PreTrainingSubPipeline:
                     quality_alerts,
                     config,
                 )
+                if result.warnings:
+                    warnings_meta = result.metadata.setdefault('warnings', [])
+                    self._extend_messages(warnings_meta, result.warnings)
             else:
                 result.metadata = self._merge_run_metadata(component_result.metadata or {})
                 failure_context = {
@@ -2619,6 +2843,8 @@ class PreTrainingSubPipeline:
                     result.error_message or 'Optimized lookback generation failed',
                     context=failure_context,
                 )
+                if result.error_message:
+                    self._extend_messages(result.errors, [result.error_message])
 
         except ImportError as e:
             result.status = SubPipelineStatus.FAILED
@@ -2634,6 +2860,7 @@ class PreTrainingSubPipeline:
                 result.error_message,
                 exception=e,
             )
+            self._extend_messages(result.errors, [result.error_message])
         except FileNotFoundError as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = f"Missing files: {str(e)}"
@@ -2648,6 +2875,7 @@ class PreTrainingSubPipeline:
                 result.error_message,
                 exception=e,
             )
+            self._extend_messages(result.errors, [result.error_message])
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
@@ -2665,6 +2893,7 @@ class PreTrainingSubPipeline:
                 exception=e,
                 traceback_str=trace,
             )
+            self._extend_messages(result.errors, [result.error_message or str(e)])
 
         return result
 
@@ -2746,6 +2975,9 @@ class PreTrainingSubPipeline:
                     quality_alerts,
                     config,
                 )
+                if result.warnings:
+                    warnings_meta = result.metadata.setdefault('warnings', [])
+                    self._extend_messages(warnings_meta, result.warnings)
             else:
                 result.metadata = self._merge_run_metadata(component_result.metadata)
                 failure_context = {
@@ -2758,6 +2990,8 @@ class PreTrainingSubPipeline:
                     result.error_message or 'Final feature selection failed',
                     context=failure_context,
                 )
+                if result.error_message:
+                    self._extend_messages(result.errors, [result.error_message])
 
         except ImportError as e:
             result.status = SubPipelineStatus.FAILED
@@ -2773,6 +3007,7 @@ class PreTrainingSubPipeline:
                 result.error_message,
                 exception=e,
             )
+            self._extend_messages(result.errors, [result.error_message])
         except FileNotFoundError as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = f"Missing files: {str(e)}"
@@ -2787,6 +3022,7 @@ class PreTrainingSubPipeline:
                 result.error_message,
                 exception=e,
             )
+            self._extend_messages(result.errors, [result.error_message])
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
@@ -2804,6 +3040,7 @@ class PreTrainingSubPipeline:
                 exception=e,
                 traceback_str=trace,
             )
+            self._extend_messages(result.errors, [result.error_message or str(e)])
 
         return result
 

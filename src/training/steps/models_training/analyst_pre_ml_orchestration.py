@@ -4,7 +4,7 @@ Analyst Pre-ML Orchestration - 15m Timeframe Feature Engineering
 This orchestrator applies the complete pre-training pipeline for Analyst models:
 1. Multi-horizon profit labeling with differentiated horizons
 2. Feature lookback period optimization per regime/cluster
-3. PID-based feature generation (interaction, polynomial, cross-timeframe)
+3. Interactive feature generation (interaction, polynomial, cross-timeframe)
 4. Final feature selection (multi-stage: 120→100→80→60)
 
 ANALYST CONFIGURATION:
@@ -49,7 +49,7 @@ class OrchestrationPhase(Enum):
     """Orchestration execution phases."""
     HORIZON_LABELING = "horizon_labeling"
     LOOKBACK_OPTIMIZATION = "lookback_optimization"
-    PID_GENERATION = "pid_generation"
+    INTERACTIVE_FEATURE_GENERATION = "interactive_feature_generation"
     FEATURE_SELECTION = "feature_selection"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -91,7 +91,7 @@ class AnalystPreMLResult:
     # Step results
     horizon_labeling_result: Optional[Dict[str, Any]] = None
     lookback_optimization_result: Optional[Dict[str, Any]] = None
-    pid_generation_result: Optional[Dict[str, Any]] = None
+    interactive_feature_generation_result: Optional[Dict[str, Any]] = None
     feature_selection_result: Optional[Dict[str, Any]] = None
     
     # Output data
@@ -206,17 +206,27 @@ class AnalystPreMLOrchestrator:
             result.lookback_optimization_result = lookback_result.artifacts
             tprint_success("✅ Lookback optimization completed")
             
-            # Step 3: PID-Based Feature Generation
-            tprint_info("🔧 Step 3/4: PID-Based Feature Generation...")
-            result.phase = OrchestrationPhase.PID_GENERATION
-            pid_result = await self.pre_training_pipeline._execute_pid_based_feature_generation(sub_config)
-            
-            if not pid_result.success:
-                raise RuntimeError(f"PID generation failed: {pid_result.error_message}")
-            
-            result.pid_generation_result = pid_result.artifacts
-            result.total_features_generated = pid_result.artifacts.get('total_features', 0)
-            tprint_success(f"✅ PID generation completed ({result.total_features_generated} features)")
+            # Step 3: Interactive Feature Generation
+            tprint_info("🔧 Step 3/4: Interactive Feature Generation...")
+            result.phase = OrchestrationPhase.INTERACTIVE_FEATURE_GENERATION
+            interactive_result = await self.pre_training_pipeline._execute_interactive_feature_generation(sub_config)
+
+            if not interactive_result.success:
+                raise RuntimeError(f"Interactive feature generation failed: {interactive_result.error_message}")
+
+            result.interactive_feature_generation_result = interactive_result.artifacts
+            interactive_artifacts = interactive_result.artifacts.get('interactive_feature_generation_result', {})
+            feature_names = interactive_artifacts.get('feature_names', [])
+            features_df = interactive_artifacts.get('features')
+            if feature_names:
+                result.total_features_generated = len(feature_names)
+            elif hasattr(features_df, 'columns'):
+                result.total_features_generated = len(features_df.columns)
+            else:
+                result.total_features_generated = int(interactive_artifacts.get('total_features', 0))
+            tprint_success(
+                f"✅ Interactive feature generation completed ({result.total_features_generated} features)"
+            )
             
             # Step 4: Final Feature Selection
             tprint_info("🎯 Step 4/4: Final Feature Selection (multi-stage)...")

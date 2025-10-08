@@ -10,12 +10,13 @@ import copy
 import hashlib
 import json
 import logging
+import re
 import uuid
 from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
 from time import perf_counter
-from typing import Any, AsyncIterator, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, Iterable, List, Mapping, MutableMapping, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -358,8 +359,8 @@ class MultiHorizonConfig:
     """Configuration for multi-horizon profit labeling."""
 
     # Timeframe settings
-    timeframe: str = "1h"  # Updated to 1h for analyst
-    base_period_minutes: float = 60.0  # Updated to 60 minutes for 1h timeframe
+    timeframe: str = "15m"
+    base_period_minutes: Optional[float] = None
     
     # Horizon weights configuration
     horizon_weights: HorizonWeightsConfig = None
@@ -372,12 +373,76 @@ class MultiHorizonConfig:
     
     def __post_init__(self):
         """Initialize default configurations if not provided."""
+        if not self.timeframe:
+            self.timeframe = "15m"
+        if self.base_period_minutes is None:
+            self.update_timeframe(self.timeframe)
+        else:
+            self.timeframe = self.timeframe.strip()
         if self.horizon_weights is None:
             self.horizon_weights = HorizonWeightsConfig()
         if self.transaction_costs is None:
             self.transaction_costs = TransactionCostConfig()
         if self.temporal_validation is None:
             self.temporal_validation = TemporalValidationConfig()
+
+    @staticmethod
+    def _timeframe_to_minutes(timeframe: str) -> float:
+        """Convert a timeframe string (e.g. ``15m`` or ``1h``) to minutes."""
+        if not timeframe:
+            return 15.0
+
+        normalized = timeframe.strip().lower()
+        match = re.fullmatch(r"(?P<value>\d+(?:\.\d+)?)(?P<unit>[a-z]+)", normalized)
+        if not match:
+            # Fallback to integer minutes if the string is numeric
+            try:
+                return float(normalized)
+            except ValueError:
+                return 15.0
+
+        value = float(match.group("value"))
+        unit = match.group("unit")
+
+        unit_to_minutes = {
+            'm': 1.0,
+            'min': 1.0,
+            'mins': 1.0,
+            'minute': 1.0,
+            'minutes': 1.0,
+            'h': 60.0,
+            'hr': 60.0,
+            'hrs': 60.0,
+            'hour': 60.0,
+            'hours': 60.0,
+            'd': 1440.0,
+            'day': 1440.0,
+            'days': 1440.0,
+            'w': 10080.0,
+            'wk': 10080.0,
+            'wks': 10080.0,
+            'week': 10080.0,
+            'weeks': 10080.0,
+        }
+
+        minutes = unit_to_minutes.get(unit)
+        if minutes is None:
+            return 15.0
+        return value * minutes
+
+    @staticmethod
+    def _normalize_timeframe(timeframe: str) -> str:
+        """Normalize timeframe strings when a minutes representation is required."""
+        minutes = MultiHorizonConfig._timeframe_to_minutes(timeframe)
+        if minutes == 60.0:
+            return "60m"
+        return timeframe
+
+    def update_timeframe(self, timeframe: Optional[str]) -> None:
+        """Update the configuration timeframe and derive its base period."""
+        resolved = timeframe.strip() if timeframe else "15m"
+        self.timeframe = resolved
+        self.base_period_minutes = self._timeframe_to_minutes(resolved)
 
     # Volatility-aware labeling settings
     enable_volatility_normalization: bool = True
@@ -2533,12 +2598,21 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
         # Create configuration from component config
         mh_config = MultiHorizonConfig()
 
+        component_timeframe = self.config.timeframe if self.config and getattr(self.config, 'timeframe', None) else None
+        custom_params = config.custom_params if config and config.custom_params else {}
+        self._base_period_overridden = isinstance(custom_params, Mapping) and 'base_period_minutes' in custom_params
+        timeframe_override = custom_params.get('timeframe') if isinstance(custom_params, Mapping) else None
+        resolved_timeframe = timeframe_override or component_timeframe or mh_config.timeframe
+        mh_config.update_timeframe(resolved_timeframe)
+
         # Override with custom parameters if provided
-        if config and config.custom_params:
-            for key, value in config.custom_params.items():
+        if custom_params:
+            for key, value in custom_params.items():
+                if key == 'timeframe':
+                    continue
                 if hasattr(mh_config, key):
                     setattr(mh_config, key, value)
-            thresholds = config.custom_params.get('quality_thresholds')
+            thresholds = custom_params.get('quality_thresholds')
             if isinstance(thresholds, dict):
                 self.quality_thresholds = thresholds
 
@@ -2566,7 +2640,33 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
             # Extract parameters from pipeline state
             symbol = pipeline_state.get('symbol', 'ETHUSDT')
             exchange = pipeline_state.get('exchange', 'binance')
-            timeframe = pipeline_state.get('timeframe', '1h')  # Updated to 1h for analyst
+
+            pipeline_timeframe = pipeline_state.get('timeframe')
+            config_timeframe = self.config.timeframe if getattr(self.config, 'timeframe', None) else None
+            timeframe = pipeline_timeframe or config_timeframe or self.labeler.config.timeframe or '15m'
+
+            pipeline_custom_params = pipeline_state.get('custom_params') if isinstance(pipeline_state, Mapping) else {}
+            role = None
+            if isinstance(pipeline_custom_params, Mapping):
+                role = pipeline_custom_params.get('role') or pipeline_custom_params.get('labeling_role')
+            if role is None and isinstance(self.config.custom_params, Mapping):
+                role = self.config.custom_params.get('role') or self.config.custom_params.get('labeling_role')
+
+            if isinstance(role, str) and role.lower().startswith('analyst'):
+                timeframe = MultiHorizonConfig._normalize_timeframe(timeframe)
+
+            if isinstance(pipeline_state, MutableMapping):
+                pipeline_state['timeframe'] = timeframe
+
+            base_period_override = self._base_period_overridden
+            if isinstance(pipeline_custom_params, Mapping) and 'base_period_minutes' in pipeline_custom_params:
+                base_period_override = True
+
+            if timeframe != self.labeler.config.timeframe:
+                if base_period_override:
+                    self.labeler.config.timeframe = timeframe
+                else:
+                    self.labeler.config.update_timeframe(timeframe)
 
             data_locator: Optional[PipelineDataLocator] = pipeline_state.get('data_locator')
             if data_locator:

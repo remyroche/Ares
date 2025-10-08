@@ -889,8 +889,25 @@ class FinalFeatureSelectionStep:
                 score = selection_result.stage_3_scores.get('combined_importance_score', 'N/A')
                 tprint(f"   🎯 Stage 3 Score: {score:.4f}" if isinstance(score, (int, float)) else f"   🎯 Stage 3 Score: {score}")
             if selection_result.final_scores:
-                score = selection_result.final_scores.get('cv_mean', 'N/A')
-                tprint(f"   🎯 Final CV Score: {score:.4f}" if isinstance(score, (int, float)) else f"   🎯 Final CV Score: {score}")
+                final_scores = selection_result.final_scores
+                ic_score = final_scores.get('information_coefficient')
+                sharpe_score = final_scores.get('long_short_sharpe')
+                turnover = final_scores.get('turnover')
+
+                if isinstance(ic_score, (int, float)):
+                    tprint(f"   📈 OOS Information Coefficient: {ic_score:.4f}")
+                else:
+                    tprint(f"   📈 OOS Information Coefficient: {ic_score}")
+
+                if isinstance(sharpe_score, (int, float)):
+                    tprint(f"   ⚖️ Cost-adjusted Sharpe: {sharpe_score:.4f}")
+                else:
+                    tprint(f"   ⚖️ Cost-adjusted Sharpe: {sharpe_score}")
+
+                if isinstance(turnover, (int, float)):
+                    tprint(f"   🔄 Average Turnover: {turnover:.4f}")
+                else:
+                    tprint(f"   🔄 Average Turnover: {turnover}")
             tprint("")
             
             # Show top 10 final features

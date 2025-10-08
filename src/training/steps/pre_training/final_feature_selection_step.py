@@ -9,7 +9,7 @@ that runs at the end of the market analysis pipeline.
 import json
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Optional, Any, Tuple, TYPE_CHECKING
+from typing import Dict, List, Optional, Any, Tuple, TYPE_CHECKING, Mapping
 import logging
 from pathlib import Path
 import asyncio
@@ -1124,12 +1124,81 @@ def detect_feature_drift_simple(train_features: pd.DataFrame, val_features: pd.D
 
 async def run_final_feature_selection_step(symbol: str,
                                          exchange: str,
-                                         timeframe: str = '1h',  # Updated to 1h for analyst
+                                         timeframe: Optional[str] = None,
                                          data_dir: Optional[str] = None,
                                          config: Optional[Dict[str, Any]] = None) -> bool:
-    """Run the final feature selection step."""
+    """Run the final feature selection step with adaptive timeframe defaults.
+
+    The timeframe resolution mirrors the pre-training sub-pipeline: an explicit
+    ``timeframe`` argument takes precedence, then ``config['timeframe']`` or
+    ``config['custom_params']`` are considered. When no explicit configuration
+    is provided the helper falls back to ``15m`` by default, or ``60m`` when the
+    supplied config indicates the Analyst pipeline.
+    """
 
     runtime_config: Dict[str, Any] = dict(config or {})
+
+    def _extract_timeframe_from_config(cfg: Mapping[str, Any]) -> Optional[str]:
+        candidate = cfg.get('timeframe')
+        if isinstance(candidate, str) and candidate:
+            return candidate
+
+        custom_params = cfg.get('custom_params')
+        if isinstance(custom_params, Mapping):
+            for key in ('timeframe', 'default_timeframe'):
+                candidate = custom_params.get(key)
+                if isinstance(candidate, str) and candidate:
+                    return candidate
+        return None
+
+    def _config_indicates_analyst(cfg: Mapping[str, Any]) -> bool:
+        analyst_truthy_strings = {'analyst', 'true', 'yes', 'enabled'}
+
+        def _walk(value: Any, key_hint: Optional[str] = None) -> bool:
+            if isinstance(value, Mapping):
+                for nested_key, nested_value in value.items():
+                    nested_key_str = str(nested_key)
+                    nested_key_lower = nested_key_str.lower()
+                    if nested_key_lower in {'profile', 'mode', 'pipeline_profile', 'pipeline_mode', 'model_type'}:
+                        if isinstance(nested_value, str) and nested_value.strip().lower() == 'analyst':
+                            return True
+                    if 'analyst' in nested_key_lower:
+                        if isinstance(nested_value, bool) and nested_value:
+                            return True
+                        if isinstance(nested_value, str) and nested_value.strip().lower() in analyst_truthy_strings:
+                            return True
+                        if isinstance(nested_value, (int, float)) and nested_value == 1:
+                            return True
+                    if _walk(nested_value, nested_key_str):
+                        return True
+                return False
+            if isinstance(value, (list, tuple, set)):
+                return any(_walk(item, key_hint) for item in value)
+            if isinstance(value, str):
+                return value.strip().lower() == 'analyst'
+            if isinstance(value, bool) and key_hint and 'analyst' in key_hint.lower():
+                return value
+            if isinstance(value, (int, float)) and key_hint and 'analyst' in key_hint.lower():
+                return value == 1
+            return False
+
+        return _walk(cfg)
+
+    resolved_timeframe: str
+    timeframe_source: str
+    if timeframe:
+        resolved_timeframe = timeframe
+        timeframe_source = 'explicit argument'
+    else:
+        extracted = _extract_timeframe_from_config(runtime_config)
+        if extracted:
+            resolved_timeframe = extracted
+            timeframe_source = 'config override'
+        else:
+            default_timeframe = '60m' if _config_indicates_analyst(runtime_config) else '15m'
+            resolved_timeframe = default_timeframe
+            timeframe_source = 'analyst default' if default_timeframe == '60m' else 'global default'
+
     locator = runtime_config.get('data_locator')
     if data_dir is None and isinstance(locator, PipelineDataLocator):
         data_dir_key = runtime_config.get('data_dir_key', 'market_data')
@@ -1139,8 +1208,9 @@ async def run_final_feature_selection_step(symbol: str,
         raise ValueError("data_dir must be provided or resolvable via DataLocator")
 
     tprint("🚀 Invoking run_final_feature_selection_step helper")
-    tprint(f"   📊 Parameters: symbol={symbol}, exchange={exchange}, timeframe={timeframe}, data_dir={data_dir}")
+    tprint("   📊 Parameters: symbol=%s, exchange=%s, timeframe=%s (%s), data_dir=%s"
+          % (symbol, exchange, resolved_timeframe, timeframe_source, data_dir))
     step = FinalFeatureSelectionStep(runtime_config)
     tprint("🔄 Delegating execution to FinalFeatureSelectionStep instance")
-    return await step.execute_final_feature_selection(symbol, exchange, timeframe, data_dir)
+    return await step.execute_final_feature_selection(symbol, exchange, resolved_timeframe, data_dir)
 

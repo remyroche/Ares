@@ -46,6 +46,10 @@ from src.training.steps.pre_training.validation.data_contracts import (
     DataContractValidationError,
     validate_selection_artifact,
 )
+from src.training.steps.pre_training.validation.schemas import (
+    extract_p_value_mapping,
+    track_and_control_hypotheses,
+)
 from src.training.config.data_locator import DataLocator as PipelineDataLocator
 from .settings import get_pre_training_settings
 from .column_naming import (
@@ -718,7 +722,7 @@ class FinalFeatureSelectionStep:
     async def _run_feature_selection(self, X: pd.DataFrame, y: Optional[pd.Series],
                                    symbol: str, exchange: str, timeframe: str) -> Any:
         """Run the multi-stage feature selection with comprehensive logging."""
-        
+
         tprint("🔍 Running Multi-Stage Feature Selection")
         tprint(f"   📊 Input: {len(X)} samples, {len(X.columns)} features")
         tprint(f"   🎯 Target: xx→120→100→80→60 features")
@@ -752,6 +756,20 @@ class FinalFeatureSelectionStep:
             for key, value in final_scores.items()
             if isinstance(value, (int, float)) and not isinstance(value, bool)
         }
+        horizon_p_values, feature_p_values, lookback_p_values = self._collect_hypothesis_p_values(selection_result)
+        hypothesis_report = track_and_control_hypotheses(
+            horizon_results=horizon_p_values,
+            feature_results=feature_p_values,
+            lookback_results=lookback_p_values,
+        )
+        if hypothesis_report.get("warning"):
+            tprint_warning(hypothesis_report["warning"])
+
+        selection_result.horizon_p_values = horizon_p_values
+        selection_result.feature_p_values = feature_p_values
+        selection_result.lookback_p_values = lookback_p_values
+        selection_result.adjusted_p_values = hypothesis_report.get("adjusted_p_values", {})
+        selection_result.hypothesis_report = hypothesis_report
 
         selection_payload = {
             'final_features': list(getattr(selection_result, 'final_features', []) or []),
@@ -769,6 +787,11 @@ class FinalFeatureSelectionStep:
             'is_unsupervised': getattr(selection_result, 'is_unsupervised', None),
             'eligible_for_selection': selection_result.eligible_for_selection,
             'turnover_rejection_reason': selection_result.turnover_rejection_reason,
+            'hypothesis_report': selection_result.hypothesis_report,
+            'horizon_p_values': selection_result.horizon_p_values,
+            'feature_p_values': selection_result.feature_p_values,
+            'lookback_p_values': selection_result.lookback_p_values,
+            'adjusted_p_values': selection_result.adjusted_p_values,
         }
 
         try:
@@ -785,7 +808,7 @@ class FinalFeatureSelectionStep:
         tprint(f"   ⏱️ Selection time: {selection_result.selection_time:.3f} seconds")
 
         return selection_result
-    
+
     def _run_selection_sync(self, X: pd.DataFrame, y: Optional[pd.Series]) -> Any:
         """Synchronous feature selection (to be run in thread pool)."""
 
@@ -813,6 +836,28 @@ class FinalFeatureSelectionStep:
 
         tprint("   ✅ Synchronous selection complete")
         return result
+
+    def _collect_hypothesis_p_values(self, selection_result: Any) -> Tuple[Dict[str, float], Dict[str, float], Dict[str, float]]:
+        """Extract horizon, feature, and lookback p-values from the selection result."""
+
+        try:
+            flattened = extract_p_value_mapping(vars(selection_result))
+        except Exception:
+            flattened = {}
+
+        horizon_p_values = {
+            key: value for key, value in flattened.items() if "horizon" in key.lower()
+        }
+        lookback_p_values = {
+            key: value for key, value in flattened.items() if "lookback" in key.lower()
+        }
+        feature_p_values = {
+            key: value
+            for key, value in flattened.items()
+            if key not in horizon_p_values and key not in lookback_p_values
+        }
+
+        return horizon_p_values, feature_p_values, lookback_p_values
     
     async def _save_selection_results(self, selection_result: Any, symbol: str, exchange: str,
                                     timeframe: str, data_dir: str) -> None:
@@ -877,6 +922,11 @@ class FinalFeatureSelectionStep:
             'is_unsupervised': getattr(selection_result, 'is_unsupervised', False),
             'eligible_for_selection': getattr(selection_result, 'eligible_for_selection', True),
             'turnover_rejection_reason': getattr(selection_result, 'turnover_rejection_reason', None),
+            'hypothesis_report': getattr(selection_result, 'hypothesis_report', {}),
+            'horizon_p_values': getattr(selection_result, 'horizon_p_values', {}),
+            'feature_p_values': getattr(selection_result, 'feature_p_values', {}),
+            'lookback_p_values': getattr(selection_result, 'lookback_p_values', {}),
+            'adjusted_p_values': getattr(selection_result, 'adjusted_p_values', {}),
         }
 
         with open(detailed_results_file, 'w') as f:

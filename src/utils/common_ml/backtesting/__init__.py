@@ -47,6 +47,12 @@ from .analytics_reporter import (
     RiskMetrics
 )
 
+from .turnover import (
+    calculate_turnover_metrics,
+    apply_market_impact_model,
+    reject_high_turnover_configs,
+)
+
 __all__ = [
     # Backtesting
     'BacktestingEngine',
@@ -76,7 +82,12 @@ __all__ = [
     'AnalyticsReporter',
     'AnalyticsConfig',
     'PerformanceMetrics',
-    'RiskMetrics'
+    'RiskMetrics',
+
+    # Turnover utilities
+    'calculate_turnover_metrics',
+    'apply_market_impact_model',
+    'reject_high_turnover_configs',
 ]
 
 __version__ = "1.0.0"

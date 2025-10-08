@@ -289,6 +289,11 @@ class FeatureSelectionResult:
     feature_counts: Dict[str, int] = field(default_factory=dict)
     selection_time: float = 0.0
     model_performance: Dict[str, Any] = field(default_factory=dict)
+    hypothesis_report: Dict[str, Any] = field(default_factory=dict)
+    horizon_p_values: Dict[str, float] = field(default_factory=dict)
+    feature_p_values: Dict[str, float] = field(default_factory=dict)
+    lookback_p_values: Dict[str, float] = field(default_factory=dict)
+    adjusted_p_values: Dict[str, Dict[str, float]] = field(default_factory=dict)
     
     # Quality metrics
     correlation_analysis: Dict[str, Any] = field(default_factory=dict)

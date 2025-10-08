@@ -83,6 +83,13 @@ from .error_handling.error_handler import StandardizedErrorHandler, ErrorSeverit
 from .performance.monitor import PerformanceMonitor, MetricType, MetricLevel
 
 from ..components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+from ..validation.schemas import (
+    SchemaValidationException,
+    schema_metadata,
+    validate_engineered_features,
+    validate_labeled_dataset,
+    validate_raw_ohlcv,
+)
 
 # Import optimized process engine
 from ...market_analysis.optimized_process_engines import OptimizedFeatureLookbackEngine, ProcessType
@@ -216,6 +223,12 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         tprint("🚀 Starting modular feature lookback optimization execution...")
         start_time = self.performance_monitor.start_operation("execute")
 
+        validation_metadata: Dict[str, Dict[str, Optional[Dict[str, str]]]] = {
+            'inputs': {},
+            'outputs': {},
+            'derived': {},
+        }
+
         try:
             log_info("🚀 Starting feature lookback optimization with multi-horizon profit targets...")
             tprint("📊 Performance monitoring started for execute operation")
@@ -262,12 +275,32 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             # Load required data
             tprint("📥 Loading market data for optimization")
             market_data = await self._load_market_data(cleaned_data)
+            market_data = validate_raw_ohlcv(
+                market_data,
+                context="feature_lookback_optimization.market_data"
+            )
+            validation_metadata['inputs']['market_data'] = schema_metadata('raw_ohlcv').get('raw_ohlcv')
             labeling_data = self._load_recent_labeling_results(
                 pipeline_state.get('symbol', 'UNKNOWN'),
                 pipeline_state.get('exchange', 'UNKNOWN'),
                 pipeline_state.get('timeframe', 'UNKNOWN'),
                 pipeline_state=pipeline_state
             )
+
+            if labeling_data:
+                labels_df: Optional[pd.DataFrame] = None
+                if isinstance(labeling_data, dict):
+                    labels_df = labeling_data.get('labeled_data')
+                    if labels_df is None:
+                        nested = labeling_data.get('multi_horizon_labeling_result')
+                        if isinstance(nested, dict):
+                            labels_df = nested.get('labeled_data')
+                if isinstance(labels_df, pd.DataFrame) and not labels_df.empty:
+                    validate_labeled_dataset(
+                        labels_df,
+                        context="feature_lookback_optimization.labels"
+                    )
+                    validation_metadata['inputs']['labeled_targets'] = schema_metadata('labeled_dataset').get('labeled_dataset')
 
             # Apply execution mode data windowing
             if execution_mode_params and market_data is not None:
@@ -297,6 +330,12 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 tprint("❌ Prepared optimization data is empty or None")
                 return self._create_failed_result()
 
+            optimization_data = validate_engineered_features(
+                optimization_data,
+                context="feature_lookback_optimization.optimization_frame"
+            )
+            validation_metadata['outputs']['optimization_frame'] = schema_metadata('engineered_features').get('engineered_features')
+
             # Perform feature optimization
             tprint("⚙️ Performing feature optimization workflow")
             optimization_results = await self._perform_feature_optimization(optimization_data, pipeline_state)
@@ -312,6 +351,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             # Create artifacts
             tprint("📦 Creating artifacts from optimization results")
             artifacts = self._create_artifacts(optimization_results, pipeline_state)
+            artifacts.setdefault('validated_schemas', validation_metadata)
 
             # Record final metrics
             tprint("🏁 Ending performance monitoring for execute operation")
@@ -329,7 +369,8 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                         'total_features_optimized': len(optimization_results.get('feature_results', {})),
                         'validation_summary': validation_summary.__dict__ if validation_summary else None,
                         'performance_metrics': self.performance_monitor.get_performance_summary(),
-                        'optimization_results': optimization_results
+                        'optimization_results': optimization_results,
+                        'validated_schemas': validation_metadata
                     }))
                     saved_files = await task
                     log_success(f"💾 [FEATURE_LOOKBACK] Artifacts saved persistently: {list(saved_files.keys())}")
@@ -341,7 +382,8 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                         'total_features_optimized': len(optimization_results.get('feature_results', {})),
                         'validation_summary': validation_summary.__dict__ if validation_summary else None,
                         'performance_metrics': self.performance_monitor.get_performance_summary(),
-                        'optimization_results': optimization_results
+                        'optimization_results': optimization_results,
+                        'validated_schemas': validation_metadata
                     }))
                     log_success(f"💾 [FEATURE_LOOKBACK] Artifacts saved persistently: {list(saved_files.keys())}")
             except Exception as e:
@@ -357,7 +399,8 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                     'performance_metrics': self.performance_monitor.get_performance_summary(),
                     'optimization_results': optimization_results,
                     'artifacts_saved_persistently': True,
-                    'pipeline_type': 'differentiated_long_short'
+                    'pipeline_type': 'differentiated_long_short',
+                    'validated_schemas': validation_metadata
                 }
             )
 
@@ -366,6 +409,10 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             log_success(f"🎯 Multi-horizon feature lookback optimization completed successfully - Long: {long_count} features, Short: {short_count} features")
             tprint("✅ Feature lookback optimization execution completed successfully")
             return result
+
+        except SchemaValidationException as schema_error:
+            self.performance_monitor.end_operation("execute", start_time, success=False)
+            return self._schema_failure_result(schema_error)
 
         except Exception as e:
             self.error_handler.handle_error(
@@ -383,6 +430,25 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             success=False,
             artifacts={},
             metadata={'optimization_status': 'failed'}
+        )
+
+    def _schema_failure_result(self, error: SchemaValidationException) -> ComponentResult:
+        """Create a failed result for schema validation errors."""
+        message = str(error)
+        log_error(message)
+        tprint(f"❌ Schema validation failure: {message}")
+        return ComponentResult(
+            success=False,
+            artifacts={},
+            error_message=message,
+            metadata={
+                'optimization_status': 'failed',
+                'schema_error': {
+                    'schema_key': error.schema_key,
+                    'context': error.context,
+                    'schema_metadata': schema_metadata(error.schema_key).get(error.schema_key)
+                }
+            }
         )
 
     async def _load_market_data(self, data: Any) -> Optional[pd.DataFrame]:

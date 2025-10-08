@@ -27,8 +27,13 @@ from pathlib import Path
 
 # Import tprint utilities
 from src.utils.tprint import (
-    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
     tprint_debug, tprint_performance, tprint_progress
+)
+from src.training.steps.pre_training.validation.schemas import (
+    SchemaValidationException,
+    schema_metadata,
+    validate_engineered_features,
 )
 
 # Import common operations and utilities
@@ -279,8 +284,8 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
         self.orchestrator = OptimizedInteractionOrchestrator(orchestrator_config)
         tprint_debug("✅ Optimized interaction orchestrator initialized")
     
-    async def execute(self, 
-                     training_input: Dict[str, Any], 
+    async def execute(self,
+                     training_input: Dict[str, Any],
                      pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
         Execute the interactive feature generation component.
@@ -294,31 +299,63 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
         """
         start_time = time.time()
         tprint_success("🚀 Starting interactive feature generation")
-        
+        validation_metadata: Dict[str, Dict[str, Optional[Dict[str, str]]]] = {
+            'inputs': {},
+            'outputs': {},
+            'derived': {},
+        }
+
         try:
             # Validate inputs
             self._validate_inputs(training_input, pipeline_state)
-            
+
             # Extract data
             data = training_input.get('data')
             if data is None:
                 raise ValueError("No data provided in training input")
-            
+
+            data = validate_engineered_features(
+                data,
+                context="interactive_feature_generation.input_features"
+            )
+            validation_metadata['inputs']['feature_matrix'] = schema_metadata('engineered_features').get('engineered_features')
+
             tprint_info(f"📊 Processing data: {data.shape[0]} rows, {data.shape[1]} columns")
-            
+
             # Update orchestrator config with pipeline state
             self._update_orchestrator_config(pipeline_state)
-            
+
             # Execute feature generation
             tprint_info("🔧 Executing optimized interaction feature generation...")
             result = await self.orchestrator.generate_features(training_input, pipeline_state)
-            
+
             if not result.success:
                 raise RuntimeError(f"Feature generation failed: {result.error_message}")
-            
+
+            if isinstance(result.features, pd.DataFrame) and not result.features.empty:
+                result.features = validate_engineered_features(
+                    result.features,
+                    context="interactive_feature_generation.generated_features"
+                )
+                validation_metadata['outputs']['features'] = schema_metadata('engineered_features').get('engineered_features')
+
+            if isinstance(result.interaction_features, pd.DataFrame) and not result.interaction_features.empty:
+                result.interaction_features = validate_engineered_features(
+                    result.interaction_features,
+                    context="interactive_feature_generation.interaction_features"
+                )
+                validation_metadata['outputs']['interaction_features'] = schema_metadata('engineered_features').get('engineered_features')
+
+            if isinstance(result.cross_timeframe_features, pd.DataFrame) and not result.cross_timeframe_features.empty:
+                result.cross_timeframe_features = validate_engineered_features(
+                    result.cross_timeframe_features,
+                    context="interactive_feature_generation.cross_timeframe_features"
+                )
+                validation_metadata['outputs']['cross_timeframe_features'] = schema_metadata('engineered_features').get('engineered_features')
+
             # Convert result to component result format
-            component_result = self._convert_to_component_result(result, start_time)
-            
+            component_result = self._convert_to_component_result(result, start_time, validation_metadata)
+
             # Log success
             tprint_success("✅ Interactive feature generation completed successfully")
             tprint_info(f"📊 Generated {len(result.feature_names)} total features")
@@ -330,13 +367,32 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
             
             return component_result
             
+        except SchemaValidationException as schema_error:
+            execution_time = time.time() - start_time
+            error_message = str(schema_error)
+            tprint_error(f"❌ {error_message}")
+            self.logger.error(f"Interactive feature generation schema error: {error_message}")
+            return ComponentResult(
+                success=False,
+                error_message=error_message,
+                artifacts={},
+                execution_time=execution_time,
+                metadata={
+                    'schema_error': {
+                        'schema_key': schema_error.schema_key,
+                        'context': schema_error.context,
+                        'schema_metadata': schema_metadata(schema_error.schema_key).get(schema_error.schema_key)
+                    }
+                }
+            )
+
         except Exception as e:
             execution_time = time.time() - start_time
             error_message = f"Interactive feature generation failed: {str(e)}"
-            
+
             tprint_error(f"❌ {error_message}")
             self.logger.error(f"Interactive feature generation failed: {error_message}", exc_info=True)
-            
+
             return ComponentResult(
                 success=False,
                 error_message=error_message,
@@ -397,15 +453,16 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
         
         tprint_debug("✅ Orchestrator configuration updated")
     
-    def _convert_to_component_result(self, 
-                                   result: OptimizedInteractionResult, 
-                                   start_time: float) -> ComponentResult:
+    def _convert_to_component_result(self,
+                                   result: OptimizedInteractionResult,
+                                   start_time: float,
+                                   validation_metadata: Dict[str, Dict[str, Optional[Dict[str, str]]]]) -> ComponentResult:
         """Convert orchestrator result to component result format."""
         tprint_debug("🔄 Converting result to component format...")
-        
+
         # Calculate execution time
         execution_time = time.time() - start_time
-        
+
         # Create artifacts
         artifacts = {
             'interactive_feature_generation_result': {
@@ -417,13 +474,15 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
                 'execution_time': result.execution_time,
                 'memory_usage_mb': result.memory_usage_mb,
                 'success': result.success,
-                'error_message': result.error_message
+                'error_message': result.error_message,
+                'validated_schemas': validation_metadata
             },
             'stage_results': result.stage_results,
             'performance_metrics': result.performance_metrics,
             'artifacts': result.artifacts
         }
-        
+        artifacts.setdefault('validated_schemas', validation_metadata)
+
         # Create output files list (for backward compatibility)
         output_files = []
         if result.success:
@@ -446,11 +505,12 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
             'memory_usage_mb': result.memory_usage_mb,
             'matrix_ops_available': MATRIX_OPS_AVAILABLE,
             'ml_common_available': ML_COMMON_AVAILABLE,
-            'data_utils_available': DATA_UTILS_AVAILABLE
+            'data_utils_available': DATA_UTILS_AVAILABLE,
+            'validated_schemas': validation_metadata
         }
-        
+
         tprint_debug("✅ Result conversion completed")
-        
+
         return ComponentResult(
             success=result.success,
             error_message=result.error_message,

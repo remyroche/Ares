@@ -1,4 +1,4 @@
-THIS SHOULD BE A LINTER ERROR"""
+"""
 Tactician Pre-ML Orchestration - 15m Timeframe Feature Engineering
 
 This orchestrator applies the complete pre-training pipeline for Tactician models:
@@ -245,11 +245,11 @@ class TacticianDifferentiatedLabeler:
                 ScoringMethod.ADAPTIVE_MULTI_FACTOR
             )
             
-            # Create scorer configuration
+            # Create scorer configuration (converting percent to decimal)
             scorer_config = EnhancedScoringConfig(
                 scoring_method=method,
-                max_adverse_movement_pct=self.config.max_adverse_movement_pct,
-                min_favorable_movement_pct=self.config.min_favorable_movement_pct,
+                max_adverse_movement_decimal=self.config.max_adverse_movement_pct / 100.0,  # Convert % to decimal
+                min_favorable_movement_decimal=self.config.min_favorable_movement_pct / 100.0,  # Convert % to decimal
                 min_quality_threshold=self.config.entry_quality_threshold,
                 use_regime_adaptation=self.config.enable_regime_adaptive_labeling,
                 enable_interaction_terms=self.config.enable_interaction_terms,

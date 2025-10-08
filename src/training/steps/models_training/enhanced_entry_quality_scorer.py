@@ -44,19 +44,22 @@ class EnhancedScoringConfig:
     # Scoring method selection
     scoring_method: ScoringMethod = ScoringMethod.ADAPTIVE_MULTI_FACTOR
     
-    # Risk parameters
-    max_adverse_movement_pct: float = 0.5
-    min_favorable_movement_pct: float = 0.2
+    # Risk parameters (in decimal form: 0.005 = 0.5%)
+    max_adverse_movement_decimal: float = 0.005  # Maximum adverse movement (0.5%)
+    min_favorable_movement_decimal: float = 0.002  # Minimum favorable movement (0.2%)
+    
+    # Timing parameters
+    timing_target_return_decimal: float = 0.003  # Target return for timing score (0.3%)
     
     # Scoring thresholds
     min_quality_threshold: float = 0.25
     high_quality_threshold: float = 0.70
     
-    # Risk aversion (for expected utility)
+    # Risk aversion (for expected utility - CARA approximation)
     risk_aversion: float = 2.0  # 2.0 = moderate risk aversion
     
-    # Benchmark return (for information ratio)
-    benchmark_return: float = 0.0
+    # Benchmark return per period (for information ratio)
+    benchmark_return_per_period: float = 0.0  # Per-period risk-free rate
     
     # Regime-adaptive weights
     use_regime_adaptation: bool = True
@@ -72,13 +75,13 @@ class EnhancedScoringConfig:
         'price_action': 0.05
     })
     
-    # Interaction bonuses
+    # Interaction bonuses (capped to avoid saturation)
     enable_interaction_terms: bool = True
-    interaction_bonus_cap: float = 0.20
+    interaction_bonus_cap: float = 0.15  # Reduced from 0.20 to avoid saturation
     
     # Penalty system
     enable_penalty_system: bool = True
-    max_penalty: float = 0.20
+    max_penalty: float = 0.15  # Reduced from 0.20 to avoid saturation
 
 
 class EnhancedEntryQualityScorer:
@@ -89,9 +92,15 @@ class EnhancedEntryQualityScorer:
     - Adapts to market regimes
     - Includes multiple relevant factors (volume, momentum, microstructure)
     - Captures non-linear interactions
-    - Applies financial theory (Information Ratio, Expected Utility)
+    - Applies financial theory (Information Ratio, Expected Utility with CARA approximation)
     - Optionally learns from historical data (ML-based)
+    
+    Note: All calculations use future candles for ex-post evaluation.
+    For live trading, use a separate "live-safe" mode that avoids lookahead.
     """
+    
+    # Required OHLCV columns
+    _REQUIRED_COLS = {"open", "high", "low", "close", "volume"}
     
     def __init__(self, config: Optional[EnhancedScoringConfig] = None):
         """Initialize the enhanced entry quality scorer."""
@@ -100,10 +109,15 @@ class EnhancedEntryQualityScorer:
         
         # ML model (if ML-based scoring is used)
         self.ml_model = None
-        self.ml_scaler = None
         
         if UTILS_AVAILABLE:
             tprint_info(f"✅ Enhanced Entry Quality Scorer initialized (method: {self.config.scoring_method.value})")
+    
+    def _validate_future_data(self, df: pd.DataFrame):
+        """Validate that future_data has required columns."""
+        missing = self._REQUIRED_COLS - set(df.columns)
+        if missing:
+            raise ValueError(f"future_data missing required columns: {sorted(missing)}")
     
     def calculate_entry_quality(
         self,
@@ -117,7 +131,7 @@ class EnhancedEntryQualityScorer:
         
         Args:
             entry_point: Current candle/entry point (Series with OHLCV)
-            future_data: Future candles for forward-looking analysis
+            future_data: Future candles for forward-looking analysis (ex-post evaluation)
             regime: Market regime identifier (for adaptive methods)
             market_context: Additional market context (volatility, trend, liquidity)
         
@@ -126,6 +140,9 @@ class EnhancedEntryQualityScorer:
         """
         if future_data.empty:
             return 0.0
+        
+        # Validate required columns
+        self._validate_future_data(future_data)
         
         if market_context is None:
             market_context = {}
@@ -269,35 +286,38 @@ class EnhancedEntryQualityScorer:
         future_data: pd.DataFrame
     ) -> float:
         """
-        Information Ratio scoring: (Expected Return - Benchmark) / Tracking Error
-        Based on financial theory for risk-adjusted returns.
+        Information Ratio scoring: mean(active_return) / std(active_return)
+        
+        Computes active returns (strategy vs benchmark) and their Sharpe-like ratio.
+        Benchmark is per-period constant rate from config.
         """
-        if future_data.empty or len(future_data) < 2:
+        if len(future_data) < 2:
             return 0.0
         
-        entry_price = entry_point['close']
+        # Calculate period returns
+        returns = future_data['close'].pct_change().dropna()
         
-        # Calculate return path
-        future_returns = future_data['close'].pct_change().dropna()
-        
-        if len(future_returns) == 0:
+        if returns.empty:
             return 0.0
         
-        # Expected return (use max favorable move as proxy)
-        max_favorable = (future_data['high'].max() - entry_price) / entry_price
+        # Benchmark return per period (e.g., risk-free rate or 0)
+        benchmark_per_period = self.config.benchmark_return_per_period
         
-        # Tracking error (volatility of returns)
-        tracking_error = future_returns.std()
+        # Active returns (strategy - benchmark)
+        active_returns = returns - benchmark_per_period
+        
+        # Information Ratio = mean(active) / std(active)
+        mean_active = active_returns.mean()
+        tracking_error = active_returns.std()
         
         if tracking_error < 1e-8:
-            return 0.5  # Neutral score if no volatility
+            return 0.5  # Neutral score if no tracking error
         
-        # Information ratio
-        information_ratio = (max_favorable - self.config.benchmark_return) / tracking_error
+        information_ratio = mean_active / tracking_error
         
         # Normalize to [0, 1] using sigmoid
-        # IR=0 → score=0.5, IR=2 → score≈0.98, IR=-2 → score≈0.02
-        score = 1.0 / (1.0 + np.exp(-information_ratio * 2.0))
+        # IR=0 → score=0.5, IR=2 → score≈0.88, IR=-2 → score≈0.12
+        score = 1.0 / (1.0 + np.exp(-2.0 * information_ratio))
         
         return float(np.clip(score, 0.0, 1.0))
     
@@ -339,20 +359,16 @@ class EnhancedEntryQualityScorer:
         market_context: Dict[str, float]
     ) -> float:
         """
-        ML-based quality prediction using trained model.
+        ML-based quality prediction using trained model (Pipeline with GBM).
         Requires prior training with historical entry performance data.
+        
+        Features: 10 standardized features (7 components + 3 context).
         """
-        # Extract features
+        # Extract features (10 features)
         features = self._extract_ml_features(entry_point, future_data, market_context)
         
-        # Scale features
-        if self.ml_scaler is not None:
-            features_scaled = self.ml_scaler.transform(features.reshape(1, -1))
-        else:
-            features_scaled = features.reshape(1, -1)
-        
-        # Predict
-        quality = self.ml_model.predict(features_scaled)[0]
+        # Predict using pipeline (handles any internal transformations)
+        quality = self.ml_model.predict(features.reshape(1, -1))[0]
         return float(np.clip(quality, 0.0, 1.0))
     
     # ==================== COMPONENT SCORES ====================
@@ -365,6 +381,7 @@ class EnhancedEntryQualityScorer:
         """
         Enhanced risk-reward score with bounded calculation.
         Uses percentile-based movements for robustness.
+        All calculations in decimal form (0.005 = 0.5%).
         """
         if future_data.empty:
             return 0.0
@@ -372,21 +389,22 @@ class EnhancedEntryQualityScorer:
         entry_price = entry_point['close']
         
         # Use percentile-based movements (more robust than max/min)
-        favorable_moves = (future_data['high'] - entry_price) / entry_price * 100
-        adverse_moves = (entry_price - future_data['low']) / entry_price * 100
+        # Calculate as decimals (not percent)
+        favorable_moves = (future_data['high'] - entry_price) / entry_price
+        adverse_moves = (entry_price - future_data['low']) / entry_price
         
         favorable_move = np.percentile(favorable_moves, 75)  # 75th percentile
         adverse_move = np.percentile(adverse_moves, 75)
         
-        # Check thresholds
-        if adverse_move > self.config.max_adverse_movement_pct:
+        # Check thresholds (in decimal form)
+        if adverse_move > self.config.max_adverse_movement_decimal:
             return 0.0
         
-        if favorable_move < self.config.min_favorable_movement_pct:
+        if favorable_move < self.config.min_favorable_movement_decimal:
             return 0.0
         
-        # Bounded risk-reward ratio (minimum adverse movement)
-        adverse_move = max(adverse_move, 0.01)
+        # Bounded risk-reward ratio (minimum adverse movement to avoid division by zero)
+        adverse_move = max(adverse_move, 0.0001)  # 0.01% minimum
         risk_reward = favorable_move / adverse_move
         
         # Normalize using sigmoid
@@ -401,17 +419,30 @@ class EnhancedEntryQualityScorer:
         future_data: pd.DataFrame
     ) -> float:
         """
-        Timing score: earlier entries within period are better.
+        Timing score: measures how quickly price moves favorably after entry.
+        Faster favorable movement = better timing.
         """
         if future_data.empty:
             return 0.0
         
-        # Time to peak (in number of candles)
-        time_to_peak = len(future_data)
+        entry_price = float(entry_point['close'])
+        target_return = self.config.timing_target_return_decimal  # e.g., 0.003 = 0.3%
+        target_price = entry_price * (1.0 + target_return)
         
-        # Normalize: shorter time = higher score
-        # 1 candle → 1.0, 10 candles → 0.5, 30 candles → 0.25
-        score = 1.0 / (1.0 + 0.1 * time_to_peak)
+        # Find first candle where high >= target
+        hits = (future_data['high'] >= target_price).to_numpy().nonzero()[0]
+        
+        if hits.size == 0:
+            # Fallback: time to max high within horizon
+            idx = int(np.argmax(future_data['high'].to_numpy()))
+        else:
+            # Time to first hit target
+            idx = int(hits[0])
+        
+        # Normalize: earlier is better; idx=0 → 1.0, idx=horizon-1 → ~0.05
+        horizon = max(1, len(future_data))
+        x = idx / horizon
+        score = 1.0 / (1.0 + 3.0 * x)  # Earlier hits get exponentially better scores
         
         return float(np.clip(score, 0.0, 1.0))
     
@@ -422,11 +453,16 @@ class EnhancedEntryQualityScorer:
     ) -> float:
         """
         Volatility score: lower volatility = more stable entry = higher score.
+        
+        Score mapping (with multiplier=35):
+        - vol=0.005 (0.5%) → score≈0.84
+        - vol=0.020 (2.0%) → score≈0.50
+        - vol=0.100 (10%) → score≈0.03
         """
         if future_data.empty or len(future_data) < 2:
             return 0.5
         
-        # Calculate realized volatility
+        # Calculate realized volatility (as decimal)
         returns = future_data['close'].pct_change().dropna()
         
         if len(returns) == 0:
@@ -435,8 +471,8 @@ class EnhancedEntryQualityScorer:
         volatility = returns.std()
         
         # Normalize: low volatility = high score
-        # vol=0.5% → 0.95, vol=2% → 0.5, vol=10% → 0.08
-        score = np.exp(-volatility * 20)
+        # Multiplier=35 gives: 0.5%→0.84, 2%→0.50, 10%→0.03
+        score = np.exp(-volatility * 35)
         
         return float(np.clip(score, 0.0, 1.0))
     
@@ -446,7 +482,8 @@ class EnhancedEntryQualityScorer:
         future_data: pd.DataFrame
     ) -> float:
         """
-        Volume quality: moderate volume with increasing trend is optimal.
+        Volume quality: moderate volume (1-1.5x average) with increasing trend is optimal.
+        Uses softer slope to avoid saturation at extremes.
         """
         if future_data.empty:
             return 0.5
@@ -457,9 +494,13 @@ class EnhancedEntryQualityScorer:
         if avg_volume == 0:
             return 0.5
         
-        # Volume ratio (prefer moderate, not extreme)
+        # Volume ratio with bell-curve preference for 1-1.5x average
         volume_ratio = entry_volume / avg_volume
-        volume_score = 1.0 / (1.0 + np.exp(-2.0 * (volume_ratio - 1.0)))
+        
+        # Gaussian-like curve centered at 1.25x with soft falloff
+        optimal_ratio = 1.25
+        deviation = abs(volume_ratio - optimal_ratio)
+        volume_score = np.exp(-deviation**2 / 0.5)  # Softer than logistic
         
         # Volume trend (increasing = better confirmation)
         if len(future_data) >= 2:
@@ -511,7 +552,7 @@ class EnhancedEntryQualityScorer:
         future_data: pd.DataFrame
     ) -> float:
         """
-        Market microstructure quality: tight spreads, low gaps, consistent volume.
+        Market microstructure quality: tight spreads, low gaps (from prior close), consistent volume.
         """
         if future_data.empty:
             return 0.5
@@ -521,10 +562,11 @@ class EnhancedEntryQualityScorer:
         avg_spread = hl_spreads.mean()
         spread_score = np.exp(-avg_spread * 20)
         
-        # 2. Price continuity (no large gaps)
+        # 2. Price continuity: gaps from prior close (not open-to-open)
         if len(future_data) >= 2:
-            price_gaps = future_data['open'].diff().abs() / future_data['close']
-            gap_score = np.exp(-price_gaps.mean() * 50)
+            prev_close = future_data['close'].shift(1)
+            price_gaps = (future_data['open'] - prev_close).abs() / future_data['close']
+            gap_score = np.exp(-price_gaps.mean() * 50) if price_gaps.notna().any() else 1.0
         else:
             gap_score = 1.0
         
@@ -548,6 +590,9 @@ class EnhancedEntryQualityScorer:
     ) -> float:
         """
         Price action strength: strong candle patterns = higher score.
+        
+        Note: This prefers large body + tight range, which may penalize
+        strong breakouts with long wicks. Consider use case when interpreting.
         """
         # Current candle characteristics
         body_size = abs(entry_point['close'] - entry_point['open']) / entry_point['close']
@@ -625,16 +670,50 @@ class EnhancedEntryQualityScorer:
     
     # ==================== ML SUPPORT ====================
     
+    def build_training_matrix(
+        self,
+        entries: List[pd.Series],
+        futures: List[pd.DataFrame],
+        contexts: List[Dict[str, float]]
+    ) -> pd.DataFrame:
+        """
+        Build standardized feature matrix for ML training.
+        
+        Args:
+            entries: List of entry point Series
+            futures: List of future_data DataFrames  
+            contexts: List of market context dicts
+            
+        Returns:
+            DataFrame with 10 standardized features matching inference
+        """
+        feature_matrix = []
+        
+        for entry, future, context in zip(entries, futures, contexts):
+            features = self._extract_ml_features(entry, future, context)
+            feature_matrix.append(features)
+        
+        feature_names = [
+            'risk_reward', 'timing', 'volatility', 'volume',
+            'momentum', 'microstructure', 'price_action',
+            'regime_volatility', 'trend_strength', 'liquidity_score'
+        ]
+        
+        return pd.DataFrame(feature_matrix, columns=feature_names)
+    
     def _extract_ml_features(
         self,
         entry_point: pd.Series,
         future_data: pd.DataFrame,
         market_context: Dict[str, float]
     ) -> np.ndarray:
-        """Extract features for ML model prediction."""
+        """
+        Extract standardized features for ML model prediction.
+        Returns 10 features: 7 component scores + 3 market context.
+        """
         features = []
         
-        # Component scores
+        # Component scores (7 features)
         features.append(self._calculate_risk_reward_score(entry_point, future_data))
         features.append(self._calculate_timing_score(entry_point, future_data))
         features.append(self._calculate_volatility_score(entry_point, future_data))
@@ -643,7 +722,7 @@ class EnhancedEntryQualityScorer:
         features.append(self._calculate_microstructure_quality(entry_point, future_data))
         features.append(self._calculate_price_action_strength(entry_point, future_data))
         
-        # Market context
+        # Market context (3 features)
         features.append(market_context.get('regime_volatility', 0.0))
         features.append(market_context.get('trend_strength', 0.0))
         features.append(market_context.get('liquidity_score', 0.0))
@@ -658,29 +737,38 @@ class EnhancedEntryQualityScorer:
         """
         Train ML model on historical entry performance.
         
+        Uses build_training_matrix() output format: 10 features
+        (7 component scores + 3 context features).
+        
         Args:
-            historical_entries: DataFrame with entry features
+            historical_entries: DataFrame with 10 features from build_training_matrix()
             actual_outcomes: Series with actual quality scores (0-1)
                            based on realized PnL, drawdown, time to target
         """
         try:
+            from sklearn.pipeline import Pipeline
             from sklearn.ensemble import GradientBoostingRegressor
-            from sklearn.preprocessing import StandardScaler
             from sklearn.model_selection import cross_val_score
             
-            # Scale features
-            self.ml_scaler = StandardScaler()
-            X = self.ml_scaler.fit_transform(historical_entries)
+            if historical_entries.shape[1] != 10:
+                raise ValueError(
+                    f"Expected 10 features, got {historical_entries.shape[1]}. "
+                    "Use build_training_matrix() to generate features."
+                )
+            
+            X = historical_entries.values
             y = actual_outcomes.values
             
-            # Train model
-            self.ml_model = GradientBoostingRegressor(
-                n_estimators=200,
-                max_depth=5,
-                learning_rate=0.05,
-                subsample=0.8,
-                random_state=42
-            )
+            # Use Pipeline with GBM (no scaling needed for tree-based models)
+            self.ml_model = Pipeline(steps=[
+                ("gbm", GradientBoostingRegressor(
+                    n_estimators=300,
+                    max_depth=3,
+                    learning_rate=0.05,
+                    subsample=0.8,
+                    random_state=42
+                ))
+            ])
             
             # Cross-validation
             cv_scores = cross_val_score(

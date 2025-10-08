@@ -12,6 +12,9 @@ try:
 except ImportError:  # pragma: no cover - fallback for environments without src package
     def tprint(*args, **kwargs):  # type: ignore
         """Fallback printer if the standard tprint utility is unavailable."""
+        # Pop tprint-specific kwargs to avoid crashing the built-in print function.
+        kwargs.pop("color", None)
+        kwargs.pop("bold", None)
         print(*args, **kwargs)
 
 

@@ -16,7 +16,10 @@ import time
 import json
 from pathlib import Path
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-from sklearn.model_selection import StratifiedKFold, KFold
+from sklearn.metrics import average_precision_score, balanced_accuracy_score
+from sklearn.base import clone
+from sklearn.model_selection import cross_val_score, StratifiedKFold, KFold
+from sklearn.metrics import mean_squared_error, accuracy_score
 import joblib
 from functools import lru_cache
 import hashlib
@@ -89,6 +92,7 @@ from src.utils.logger import get_logger
 from src.utils.matrix_operations import get_unified_matrix_operations
 from src.utils.tprint import tprint
 from src.feature_selection import EntropyBalancerConfig, EntropyFilterResult, EntropyStabilityFilter
+from .calibration_utils import compute_classification_calibration, evaluate_conformal_interval
 
 @dataclass
 class FeatureSelectionConfig:
@@ -156,6 +160,11 @@ class FeatureSelectionConfig:
     trading_horizon: int = 252  # Periods used to annualize Sharpe
     turnover_penalty: float = 0.0
     ic_method: str = 'spearman'
+
+    # Uncertainty & calibration reporting
+    enable_uncertainty_reporting: bool = True
+    reliability_bins: int = 10
+    confidence_coverage_target: float = 0.9
 
     # Enhanced quality thresholds for regime detection
     min_feature_importance: float = 0.002  # Increased for better regime separation
@@ -246,10 +255,10 @@ class FeatureSelectionResult:
     final_features: List[str] = field(default_factory=list)
     
     # Scores and metrics
-    stage_1_scores: Dict[str, float] = field(default_factory=dict)
-    stage_2_scores: Dict[str, float] = field(default_factory=dict)
-    stage_3_scores: Dict[str, float] = field(default_factory=dict)
-    final_scores: Dict[str, float] = field(default_factory=dict)
+    stage_1_scores: Dict[str, Any] = field(default_factory=dict)
+    stage_2_scores: Dict[str, Any] = field(default_factory=dict)
+    stage_3_scores: Dict[str, Any] = field(default_factory=dict)
+    final_scores: Dict[str, Any] = field(default_factory=dict)
     
     # Feature importance
     rf_importance: Dict[str, float] = field(default_factory=dict)
@@ -268,6 +277,9 @@ class FeatureSelectionResult:
     entropy_variance: Dict[str, float] = field(default_factory=dict)
     entropy_stability: Dict[str, float] = field(default_factory=dict)
     entropy_removed_features: Dict[str, float] = field(default_factory=dict)
+    calibration_metrics: Dict[str, Any] = field(default_factory=dict)
+    reliability_diagram: Dict[str, Any] = field(default_factory=dict)
+    uncertainty_metrics: Dict[str, Any] = field(default_factory=dict)
 
 class MultiStageFeatureSelector:
     """Multi-stage feature selection using RandomForest and SHAP with vectorization and caching."""
@@ -361,7 +373,8 @@ class MultiStageFeatureSelector:
                 'model_correlation_threshold': 0.95,  # Tighter correlation for regime classification
                 'model_importance_threshold': 0.002,  # Lower threshold for comprehensive input
                 'min_correlation_threshold': 0.96,   # Very tight correlation filtering
-                'min_variance_threshold': 0.01      # Standard variance requirement
+                'min_variance_threshold': 0.01,      # Standard variance requirement
+                'cv_scoring': 'average_precision'  # For regime classification with imbalanced labels
             },
             'DeepScaler': {
                 'model_correlation_threshold': 0.85,  # Looser correlation for precision focus
@@ -2209,31 +2222,100 @@ class MultiStageFeatureSelector:
         common_features = set(scores1.keys()) & set(scores2.keys())
         if not common_features:
             return 0.0
-        
+
         # Calculate correlation between scores
         scores1_values = [scores1[f] for f in common_features]
         scores2_values = [scores2[f] for f in common_features]
-        
+
         correlation = np.corrcoef(scores1_values, scores2_values)[0, 1]
         return correlation if not np.isnan(correlation) else 0.0
+
+    def _collect_validation_predictions(
+        self,
+        model: Any,
+        X: pd.DataFrame,
+        y: pd.Series,
+        features: List[str],
+        is_classification: bool,
+    ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray], Optional[np.ndarray]]:
+        """Collect cross-validated predictions and probabilities for calibration analysis."""
+
+        if not self.config.enable_uncertainty_reporting:
+            return None, None, None
+
+        try:
+            selected_features = X[features] if features else X
+            X_values = selected_features.values
+            y_array = y.values if hasattr(y, 'values') else np.asarray(y)
+
+            if is_classification:
+                cv = StratifiedKFold(n_splits=self.config.cv_folds, shuffle=False)
+                classes = getattr(model, 'classes_', None)
+                if classes is None:
+                    classes = np.unique(y_array)
+                classes = np.asarray(classes)
+                predictions: np.ndarray = np.empty(len(y_array), dtype=object)
+                probabilities: Optional[np.ndarray] = np.zeros((len(y_array), len(classes)), dtype=float)
+            else:
+                cv = KFold(n_splits=self.config.cv_folds, shuffle=False)
+                predictions = np.zeros(len(y_array), dtype=float)
+                probabilities = None
+                classes = None
+
+            for train_idx, val_idx in cv.split(X_values, y_array):
+                model_clone = clone(model)
+                model_clone.fit(X_values[train_idx], y_array[train_idx])
+                fold_predictions = model_clone.predict(X_values[val_idx])
+                predictions[val_idx] = fold_predictions
+
+                if is_classification and probabilities is not None:
+                    if hasattr(model_clone, 'predict_proba'):
+                        fold_probabilities = model_clone.predict_proba(X_values[val_idx])
+                        if fold_probabilities.ndim == 1:
+                            fold_probabilities = np.column_stack([1 - fold_probabilities, fold_probabilities])
+                        fold_classes = getattr(model_clone, 'classes_', None)
+                        if fold_classes is None:
+                            fold_classes = classes
+                        fold_classes = np.asarray(fold_classes)
+                        aligned = np.zeros((len(val_idx), len(classes)), dtype=float)
+                        class_index_map = {cls: idx for idx, cls in enumerate(fold_classes)}
+                        for target_idx, cls in enumerate(classes):
+                            if cls in class_index_map:
+                                aligned[:, target_idx] = fold_probabilities[:, class_index_map[cls]]
+                        probabilities[val_idx] = aligned
+                    else:
+                        fallback = np.zeros((len(val_idx), len(classes)), dtype=float)
+                        class_index_map = {cls: idx for idx, cls in enumerate(classes)}
+                        for row_idx, label in enumerate(fold_predictions):
+                            cls_idx = class_index_map.get(label)
+                            if cls_idx is not None:
+                                fallback[row_idx, cls_idx] = 1.0
+                        probabilities[val_idx] = fallback
+
+            return predictions, probabilities, classes
+        except Exception as exc:
+            self.logger.warning(f"⚠️ Failed to collect CV predictions for calibration: {exc}")
+            return None, None, None
     
-    def _compile_results(self, 
-                        X: pd.DataFrame, 
+    def _compile_results(self,
+                        X: pd.DataFrame,
                         y: pd.Series,
                         stage_1_features: List[str],
-                        stage_2_features: List[str], 
+                        stage_2_features: List[str],
                         stage_3_features: List[str],
-                        stage_1_scores: Dict[str, float],
-                        stage_2_scores: Dict[str, float],
-                        stage_3_scores: Dict[str, float]):
+                        stage_1_scores: Dict[str, Any],
+                        stage_2_scores: Dict[str, Any],
+                        stage_3_scores: Dict[str, Any]):
         """Compile final results."""
         
+        is_classification = self._is_classification(y)
+
         # Store feature lists
         self.results.stage_1_features = stage_1_features
         self.results.stage_2_features = stage_2_features
         self.results.stage_3_features = stage_3_features
         self.results.final_features = stage_3_features
-        
+
         # Store scores
         self.results.stage_1_scores = stage_1_scores
         self.results.stage_2_scores = stage_2_scores
@@ -2252,6 +2334,96 @@ class MultiStageFeatureSelector:
 
         self.results.final_scores = trading_metrics
         
+        try:
+            from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
+            cv_res = unified_perform_cv(final_model, X[stage_3_features].values, y.values if hasattr(y, 'values') else y, cv_folds=self.config.cv_folds, scoring=self.config.cv_scoring)
+            cv_scores = np.array(cv_res.get('scores', []) or [])
+        except Exception:
+            cv_scores = np.array([])
+
+        cv_mean = float(np.nanmean(cv_scores)) if cv_scores.size else float('nan')
+        cv_std = float(np.nanstd(cv_scores)) if cv_scores.size else float('nan')
+        metric_name, metric_value = self._calculate_model_metric(final_model, X[stage_3_features], y)
+
+        final_scores: Dict[str, Any] = {
+            'cv_mean': cv_mean,
+            'cv_std': cv_std,
+            'cv_metric': self.config.cv_scoring
+        }
+
+        if metric_value is not None:
+            final_scores[metric_name] = metric_value
+
+        self.results.final_scores = final_scores
+
+        validation_predictions: Optional[np.ndarray]
+        validation_probabilities: Optional[np.ndarray]
+        validation_classes: Optional[np.ndarray]
+        validation_predictions = None
+        validation_probabilities = None
+        validation_classes = None
+        calibration_metrics: Dict[str, Any] = {}
+        reliability_diagram: Dict[str, Any] = {}
+        uncertainty_metrics: Dict[str, Any] = {}
+        classes_list: Optional[List[Any]] = None
+
+        if self.config.enable_uncertainty_reporting:
+            validation_predictions, validation_probabilities, validation_classes = self._collect_validation_predictions(
+                final_model,
+                X,
+                y,
+                stage_3_features,
+                is_classification,
+            )
+
+            if is_classification and validation_probabilities is not None and validation_classes is not None:
+                try:
+                    y_array = y.values if hasattr(y, 'values') else np.asarray(y)
+                    classes_list = validation_classes.tolist() if hasattr(validation_classes, 'tolist') else list(validation_classes)
+                    calibration_report = compute_classification_calibration(
+                        y_array,
+                        validation_probabilities,
+                        classes=classes_list,
+                        n_bins=max(2, int(self.config.reliability_bins)),
+                    )
+                    reliability_diagram = calibration_report.pop('reliability_diagram', {})
+                    calibration_metrics = calibration_report
+                    calibration_metrics['classes'] = classes_list
+                except Exception as exc:
+                    self.logger.warning(f"⚠️ Failed to compute classification calibration metrics: {exc}")
+            elif not is_classification and validation_predictions is not None:
+                try:
+                    y_array = y.values if hasattr(y, 'values') else np.asarray(y)
+                    y_float = np.asarray(y_array, dtype=float)
+                    prediction_float = np.asarray(validation_predictions, dtype=float)
+                    coverage_target = getattr(self.config, 'confidence_coverage_target', 0.9)
+                    if not (0.0 < coverage_target < 1.0):
+                        self.logger.warning(
+                            "⚠️ Invalid coverage target %.3f provided; defaulting to 0.9",
+                            coverage_target,
+                        )
+                        coverage_target = 0.9
+                    regression_report = evaluate_conformal_interval(
+                        y_float,
+                        prediction_float,
+                        coverage_target,
+                    )
+                    uncertainty_metrics = regression_report
+                    if not regression_report.get('coverage_met', True):
+                        self.logger.warning(
+                            "⚠️ Conformal interval coverage %.3f below target %.3f",
+                            regression_report.get('coverage', 0.0),
+                            regression_report.get('coverage_target', coverage_target),
+                        )
+                except Exception as exc:
+                    self.logger.warning(f"⚠️ Failed to compute regression uncertainty metrics: {exc}")
+
+        self.results.final_scores = {
+            'cv_mean': cv_scores.mean(),
+            'cv_std': cv_scores.std(),
+            'model_score': final_model.score(X[stage_3_features], y)
+        }
+
         # Store feature counts
         self.results.feature_counts = {
             'initial': len(X.columns),
@@ -2260,22 +2432,79 @@ class MultiStageFeatureSelector:
             'stage_3': len(stage_3_features),
             'final': len(stage_3_features)
         }
-        
+
         # Store model performance
         fold_sharpes = [float(m.get('long_short_sharpe', 0.0)) for m in fold_metrics]
         self.results.model_performance = {
             'final_model': final_model,
             'model_score': model_score,
-            'cv_scores': fold_sharpes,
             'fold_metrics': fold_metrics,
             'validation_predictions': validation_predictions.to_dict(),
             'validation_index': validation_predictions.index.tolist(),
-            'feature_importance': dict(zip(stage_3_features, final_model.feature_importances_))
+            'cv_scores': cv_scores.tolist(),
+            'feature_importance': dict(zip(stage_3_features, final_model.feature_importances_)),
+            'evaluation_metric': metric_name,
+            'evaluation_score': metric_value
         }
+        if validation_predictions is not None:
+            self.results.model_performance['cv_predictions'] = (
+                validation_predictions.tolist() if hasattr(validation_predictions, 'tolist') else list(validation_predictions)
+            )
+        if validation_probabilities is not None:
+            self.results.model_performance['cv_probabilities'] = (
+                validation_probabilities.tolist() if hasattr(validation_probabilities, 'tolist') else list(validation_probabilities)
+            )
+        if classes_list is not None:
+            self.results.model_performance['cv_classes'] = classes_list
+
+        self.results.calibration_metrics = calibration_metrics
+        self.results.reliability_diagram = reliability_diagram
+        self.results.uncertainty_metrics = uncertainty_metrics
 
         self.results.polarity_adjustments = getattr(self, 'feature_polarity_adjustments', {})
         self.results.sign_stability = getattr(self, 'feature_sign_stability', {})
-    
+
+    def _calculate_model_metric(self, model: Any, X: pd.DataFrame, y: pd.Series) -> Tuple[str, Optional[float]]:
+        """Calculate the final evaluation metric for the trained model."""
+
+        if self._is_classification(y):
+            return self._calculate_classification_metric(model, X, y)
+
+        try:
+            return 'r2', float(model.score(X, y))
+        except Exception:
+            return 'r2', None
+
+    def _calculate_classification_metric(self, model: Any, X: pd.DataFrame, y: pd.Series) -> Tuple[str, Optional[float]]:
+        """Calculate imbalance-aware classification metrics."""
+
+        y_array = y.values if hasattr(y, 'values') else np.asarray(y)
+        unique_classes = np.unique(y_array)
+
+        if unique_classes.size <= 1:
+            return 'average_precision', None
+
+        if unique_classes.size <= 2:
+            try:
+                if hasattr(model, 'predict_proba'):
+                    proba = model.predict_proba(X)
+                    if proba.ndim == 2 and proba.shape[1] > 1:
+                        positive_scores = proba[:, 1]
+                    else:
+                        positive_scores = proba.ravel()
+                    return 'average_precision', float(average_precision_score(y_array, positive_scores))
+                if hasattr(model, 'decision_function'):
+                    scores = model.decision_function(X)
+                    return 'average_precision', float(average_precision_score(y_array, scores))
+            except Exception:
+                pass
+
+        try:
+            predictions = model.predict(X)
+            return 'balanced_accuracy', float(balanced_accuracy_score(y_array, predictions))
+        except Exception:
+            return 'balanced_accuracy', None
+
     def _handle_insufficient_features(self, X: pd.DataFrame, y: pd.Series) -> FeatureSelectionResult:
         """Handle case where we don't have enough features."""
         
@@ -2304,6 +2533,18 @@ class MultiStageFeatureSelector:
 
         self.results.final_scores = trading_metrics
         
+
+        metric_name, metric_value = self._calculate_model_metric(final_model, X, y)
+        final_scores: Dict[str, Any] = {
+            'cv_mean': 0.0,
+            'cv_std': 0.0,
+            'cv_metric': self.config.cv_scoring
+        }
+        if metric_value is not None:
+            final_scores[metric_name] = metric_value
+
+        self.results.final_scores = final_scores
+
         self.results.feature_counts = {
             'initial': len(X.columns),
             'stage_1': len(X.columns),
@@ -2349,6 +2590,9 @@ class MultiStageFeatureSelector:
                     'stage_3': self.results.stage_3_scores,
                     'final': self.results.final_scores
                 },
+                'calibration': self.results.calibration_metrics,
+                'uncertainty': self.results.uncertainty_metrics,
+                'reliability_diagram': self.results.reliability_diagram,
                 'entropy_filter': {
                     'removed_features': self.results.entropy_removed_features,
                     'stability_scores': self.results.entropy_stability,
@@ -2370,7 +2614,10 @@ class MultiStageFeatureSelector:
                     'stage_2_target': self.config.stage_2_target,
                     'stage_3_target': self.config.stage_3_target,
                     'rf_n_estimators': self.config.rf_n_estimators,
-                    'cv_folds': self.config.cv_folds
+                    'cv_folds': self.config.cv_folds,
+                    'enable_uncertainty_reporting': self.config.enable_uncertainty_reporting,
+                    'reliability_bins': self.config.reliability_bins,
+                    'confidence_coverage_target': self.config.confidence_coverage_target,
                 }
             }
             

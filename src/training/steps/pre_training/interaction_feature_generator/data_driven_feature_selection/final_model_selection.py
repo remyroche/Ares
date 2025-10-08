@@ -20,6 +20,16 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 from scipy import stats
+
+# Robust variance estimation utilities
+try:
+    import statsmodels.api as sm
+    from statsmodels.stats.sandwich_covariance import cov_hac
+    STATS_MODELS_AVAILABLE = True
+except ImportError:
+    STATS_MODELS_AVAILABLE = False
+    sm = None
+    cov_hac = None
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import SelectKBest, f_regression
@@ -1019,38 +1029,122 @@ class FinalModelSelection:
             self.logger.debug(f"Univariate feature selection failed: {e}")
             tprint_warning("⚠️ Univariate selection failed; returning default indices")
             return list(range(min(len(feature_names), self.config.target_feature_count)))
-    
-    def _apply_fdr_control(self, feature_matrix: np.ndarray, target: np.ndarray, 
+
+    def _compute_feature_p_value_hac(self, feature: np.ndarray, target: np.ndarray) -> float:
+        """Compute a robust HAC-based p-value for a single feature."""
+        if not STATS_MODELS_AVAILABLE:
+            raise RuntimeError("statsmodels is not available for HAC estimation")
+
+        mask = np.isfinite(feature) & np.isfinite(target)
+        if mask.sum() <= 2:
+            raise ValueError("Insufficient observations for HAC estimation")
+
+        y = target[mask]
+        x = feature[mask]
+
+        if np.allclose(x, x[0]):
+            raise ValueError("Feature has no variation")
+
+        X = sm.add_constant(x, has_constant='add')
+        model = sm.OLS(y, X)
+        results = model.fit()
+
+        # Newey-West lag selection following common sqrt(n) heuristic
+        n_obs = len(y)
+        max_lags = int(np.floor(np.sqrt(n_obs)))
+        max_lags = max(1, min(max_lags, n_obs - 1))
+
+        hac_cov = cov_hac(results, nlags=max_lags)
+
+        # Coefficient for the feature is at index 1 (after the intercept)
+        coef = results.params[1]
+        variance = hac_cov[1, 1]
+        if variance <= 0:
+            raise ValueError("Non-positive HAC variance estimate")
+
+        robust_se = np.sqrt(variance)
+        t_stat = coef / robust_se
+        df_resid = results.df_resid
+        return 2 * (1 - stats.t.cdf(abs(t_stat), df_resid))
+
+    @staticmethod
+    def _compute_feature_p_value_iid(feature: np.ndarray, target: np.ndarray) -> float:
+        """Compute an IID-based p-value using correlation."""
+        mask = np.isfinite(feature) & np.isfinite(target)
+        if mask.sum() <= 2:
+            return 1.0
+
+        x = feature[mask]
+        y = target[mask]
+
+        if np.allclose(x, x[0]):
+            return 1.0
+
+        correlation_matrix = np.corrcoef(x, y)
+        if correlation_matrix.shape != (2, 2):
+            return 1.0
+
+        correlation = correlation_matrix[0, 1]
+        if np.isnan(correlation):
+            return 1.0
+
+        n = len(y)
+        t_stat = correlation * np.sqrt((n - 2) / (1 - correlation ** 2))
+        return 2 * (1 - stats.t.cdf(abs(t_stat), n - 2))
+
+    def _apply_fdr_control(self, feature_matrix: np.ndarray, target: np.ndarray,
                          feature_names: List[str]) -> List[str]:
         """Apply FDR control for multiple testing."""
         try:
-            # Compute p-values for all features
-            p_values = []
-            tprint_info("🧪 Computing p-values for FDR control")
+            # Compute p-values for all features using HAC when possible
+            p_values: List[float] = []
+            hac_failures = 0
+            tprint_info("🧪 Computing HAC-robust p-values for FDR control")
             for i in range(feature_matrix.shape[1]):
+                column = feature_matrix[:, i]
                 try:
-                    # Compute correlation and p-value
-                    correlation = np.corrcoef(feature_matrix[:, i], target)[0, 1]
-                    if not np.isnan(correlation):
-                        # Approximate p-value from correlation
-                        n = len(target)
-                        t_stat = correlation * np.sqrt((n - 2) / (1 - correlation**2))
-                        p_value = 2 * (1 - stats.t.cdf(abs(t_stat), n - 2))
-                        p_values.append(p_value)
-                    else:
-                        p_values.append(1.0)
-                except Exception as e:
-                    self.logger.debug(f"Failed to compute p-value for feature {i}: {e}")
-                    p_values.append(1.0)
-            
+                    p_value = self._compute_feature_p_value_hac(column, target)
+                except Exception as exc:
+                    hac_failures += 1
+                    self.logger.debug(
+                        "Falling back to IID p-value for feature %s due to HAC failure: %s",
+                        feature_names[i],
+                        exc
+                    )
+                    p_value = self._compute_feature_p_value_iid(column, target)
+
+                if not np.isfinite(p_value) or np.isnan(p_value):
+                    p_value = 1.0
+
+                p_values.append(float(p_value))
+
+            if hac_failures:
+                tprint_warning(
+                    "⚠️ HAC estimation fallback",
+                    f"features_with_fallback={hac_failures}"
+                )
+
+            if not p_values:
+                tprint_warning("⚠️ No p-values computed; retaining all features")
+                return feature_names
+
+            # Log summary statistics for downstream reporting
+            p_values_array = np.array(p_values)
+            tprint_info(
+                "🧮 HAC-based p-values summary",
+                f"min={np.nanmin(p_values_array):.4g}",
+                f"median={np.nanmedian(p_values_array):.4g}",
+                f"max={np.nanmax(p_values_array):.4g}"
+            )
+
             # Apply Benjamini-Hochberg procedure
-            sorted_indices = np.argsort(p_values)
-            sorted_p_values = np.array(p_values)[sorted_indices]
-            
+            sorted_indices = np.argsort(p_values_array)
+            sorted_p_values = p_values_array[sorted_indices]
+
             # Compute critical values
-            m = len(p_values)
+            m = len(sorted_p_values)
             critical_values = np.arange(1, m + 1) * self.config.fdr_q_value / m
-            
+
             # Find largest k such that p(k) <= critical_value(k)
             significant_indices = []
             for i in range(m):
@@ -1058,7 +1152,17 @@ class FinalModelSelection:
                     significant_indices.append(sorted_indices[i])
                 else:
                     break
-            
+
+            # Log adjusted p-values for reporting
+            adjusted_p_values = {
+                feature_names[idx]: float(sorted_p_values[i])
+                for i, idx in enumerate(sorted_indices)
+            }
+            self.logger.info(
+                "Computed HAC-based p-values for FDR control",
+                extra={"hac_p_values": adjusted_p_values}
+            )
+
             # Return significant feature names
             fdr_controlled_features = [feature_names[i] for i in significant_indices]
 

@@ -908,6 +908,19 @@ class FinalFeatureSelectionStep:
                     tprint(f"   🔄 Average Turnover: {turnover:.4f}")
                 else:
                     tprint(f"   🔄 Average Turnover: {turnover}")
+                score = selection_result.final_scores.get('cv_mean', 'N/A')
+                tprint(f"   🎯 Final CV Score ({selection_result.final_scores.get('cv_metric', 'unknown')}): {score:.4f}" if isinstance(score, (int, float)) else f"   🎯 Final CV Score: {score}")
+                for metric_key, label in (
+                    ('average_precision', 'PR-AUC'),
+                    ('balanced_accuracy', 'Balanced Accuracy'),
+                    ('r2', 'R²')
+                ):
+                    if metric_key in selection_result.final_scores:
+                        metric_value = selection_result.final_scores[metric_key]
+                        if isinstance(metric_value, (int, float)):
+                            tprint(f"   🎯 Final {label}: {metric_value:.4f}")
+                        else:
+                            tprint(f"   🎯 Final {label}: {metric_value}")
             tprint("")
             
             # Show top 10 final features

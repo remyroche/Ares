@@ -32,7 +32,9 @@ class OptimizationReporter:
         self.logger = logger.getChild('OptimizationReporter')
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
-        
+
+        tprint(f"🛠️ Initializing OptimizationReporter with output directory: {self.output_dir}")
+
         # Create subdirectories for different report types
         self.metrics_dir = self.output_dir / "metrics"
         self.visualizations_dir = self.output_dir / "visualizations"
@@ -112,6 +114,7 @@ class OptimizationReporter:
     
     def _generate_executive_summary(self, optimization_result: Dict[str, Any], metrics: Any) -> Dict[str, Any]:
         """Generate executive summary of optimization results."""
+        tprint("📝 Generating executive summary...")
         try:
             optimization_results = optimization_result.get('optimization_results', {})
             optimized_features = optimization_result.get('optimized_features', {})
@@ -158,6 +161,7 @@ class OptimizationReporter:
     
     def _format_optimization_results(self, optimization_result: Dict[str, Any]) -> Dict[str, Any]:
         """Format optimization results for reporting."""
+        tprint("🧮 Formatting optimization results...")
         try:
             optimization_results = optimization_result.get('optimization_results', {})
             optimized_features = optimization_result.get('optimized_features', {})
@@ -198,6 +202,7 @@ class OptimizationReporter:
     
     def _analyze_performance(self, metrics: Any, performance_metrics: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze performance metrics and resource usage."""
+        tprint("⚙️ Analyzing performance metrics...")
         try:
             analysis = {
                 'resource_usage': {
@@ -234,6 +239,7 @@ class OptimizationReporter:
     
     def _assess_data_quality(self, validation_results: Dict[str, Any]) -> Dict[str, Any]:
         """Assess data quality based on validation results."""
+        tprint("🧪 Assessing data quality...")
         try:
             data_validation = validation_results.get('data_validation', {})
             pipeline_validation = validation_results.get('pipeline_validation', {})
@@ -284,6 +290,7 @@ class OptimizationReporter:
     
     def _analyze_features(self, optimization_result: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze optimized features for patterns and insights."""
+        tprint("🔍 Analyzing optimized features...")
         try:
             optimized_features = optimization_result.get('optimized_features', {})
             
@@ -317,7 +324,9 @@ class OptimizationReporter:
     def _generate_recommendations(self, optimization_result: Dict[str, Any], metrics: Any, validation_results: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate actionable recommendations based on optimization results."""
         recommendations = []
-        
+
+        tprint("🧭 Generating recommendations...")
+
         try:
             # Performance-based recommendations
             if getattr(metrics, 'validation_score', 0) < 0.7:
@@ -379,6 +388,7 @@ class OptimizationReporter:
     
     def _assess_risks(self, optimization_result: Dict[str, Any], metrics: Any) -> Dict[str, Any]:
         """Assess risks associated with optimization results."""
+        tprint("⚠️ Assessing optimization risks...")
         try:
             risks = {
                 'overfitting_risk': self._assess_overfitting_risk(optimization_result, metrics),
@@ -412,7 +422,9 @@ class OptimizationReporter:
     def _suggest_next_steps(self, optimization_result: Dict[str, Any], metrics: Any) -> List[Dict[str, Any]]:
         """Suggest next steps based on optimization results."""
         next_steps = []
-        
+
+        tprint("➡️ Suggesting next steps...")
+
         try:
             # Always suggest validation
             next_steps.append({
@@ -456,6 +468,7 @@ class OptimizationReporter:
     
     def _generate_technical_details(self, optimization_result: Dict[str, Any], metrics: Any, performance_metrics: Dict[str, Any]) -> Dict[str, Any]:
         """Generate technical details for advanced users."""
+        tprint("🧾 Compiling technical details...")
         try:
             return {
                 'optimization_parameters': optimization_result.get('optimization_metrics', {}),
@@ -480,6 +493,7 @@ class OptimizationReporter:
     
     def _save_report(self, report: Dict[str, Any], report_id: str) -> None:
         """Save report to file."""
+        tprint("💾 Saving comprehensive report...")
         try:
             report_file = self.metrics_dir / f"{report_id}_report.json"
             with open(report_file, 'w') as f:
@@ -492,6 +506,7 @@ class OptimizationReporter:
     
     def _generate_visualizations(self, optimization_result: Dict[str, Any], metrics: Any, report_id: str) -> None:
         """Generate visualizations for the report."""
+        tprint("📈 Generating visualization data...")
         try:
             # This would generate charts and plots
             # For now, we'll create a placeholder
@@ -517,6 +532,7 @@ class OptimizationReporter:
     
     def _generate_insights(self, report: Dict[str, Any], report_id: str) -> None:
         """Generate actionable insights from the report."""
+        tprint("💡 Generating insights...")
         try:
             insights = {
                 'report_id': report_id,
@@ -544,6 +560,7 @@ class OptimizationReporter:
     # Helper methods
     def _calculate_confidence_level(self, feature_data: Dict[str, Any]) -> str:
         """Calculate confidence level for a feature."""
+        tprint("📐 Calculating feature confidence level...")
         score = feature_data.get('score', 0.0)
         if score >= 0.8:
             return 'HIGH'
@@ -554,6 +571,7 @@ class OptimizationReporter:
     
     def _calculate_quality_rating(self, data_validation: Dict[str, Any]) -> str:
         """Calculate overall data quality rating."""
+        tprint("🧮 Calculating quality rating...")
         quality_score = data_validation.get('data_quality_score', 0.0)
         if quality_score >= 0.9:
             return 'EXCELLENT'
@@ -566,6 +584,7 @@ class OptimizationReporter:
     
     def _analyze_performance_trends(self, performance_metrics: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze performance trends over time."""
+        tprint("📊 Analyzing performance trends...")
         # Placeholder for performance trend analysis
         return {
             'memory_trend': 'STABLE',
@@ -575,6 +594,7 @@ class OptimizationReporter:
     
     def _identify_bottlenecks(self, performance_metrics: Dict[str, Any]) -> List[str]:
         """Identify performance bottlenecks."""
+        tprint("🔧 Identifying bottlenecks...")
         bottlenecks = []
         
         # Check for high memory usage
@@ -591,6 +611,7 @@ class OptimizationReporter:
     
     def _categorize_features(self, optimized_features: Dict[str, Any]) -> Dict[str, List[str]]:
         """Categorize features by type."""
+        tprint("🗂️ Categorizing features...")
         categories = {
             'technical_indicators': [],
             'price_features': [],
@@ -612,6 +633,7 @@ class OptimizationReporter:
     
     def _analyze_performance_distribution(self, scores: List[float]) -> Dict[str, Any]:
         """Analyze performance score distribution."""
+        tprint("📈 Analyzing performance distribution...")
         if not scores:
             return {'error': 'No scores to analyze'}
         
@@ -629,6 +651,7 @@ class OptimizationReporter:
     
     def _analyze_lookback_patterns(self, lookback_periods: List[int]) -> Dict[str, Any]:
         """Analyze patterns in lookback periods."""
+        tprint("🕒 Analyzing lookback patterns...")
         if not lookback_periods:
             return {'error': 'No lookback periods to analyze'}
         
@@ -644,6 +667,7 @@ class OptimizationReporter:
     
     def _assess_overfitting_risk(self, optimization_result: Dict[str, Any], metrics: Any) -> Dict[str, Any]:
         """Assess overfitting risk."""
+        tprint("📉 Assessing overfitting risk...")
         # Simple overfitting assessment based on validation score
         validation_score = getattr(metrics, 'validation_score', 0.0)
         
@@ -665,6 +689,7 @@ class OptimizationReporter:
     
     def _assess_data_quality_risk(self, metrics: Any) -> Dict[str, Any]:
         """Assess data quality risk."""
+        tprint("🧪 Assessing data quality risk...")
         # This would be based on data validation results
         return {
             'risk_level': 'LOW',
@@ -674,6 +699,7 @@ class OptimizationReporter:
     
     def _assess_performance_risk(self, metrics: Any) -> Dict[str, Any]:
         """Assess performance risk."""
+        tprint("⚙️ Assessing performance risk...")
         memory_usage = getattr(metrics, 'memory_usage_mb', 0.0)
         
         if memory_usage > 2000:
@@ -694,6 +720,7 @@ class OptimizationReporter:
     
     def _assess_stability_risk(self, metrics: Any) -> Dict[str, Any]:
         """Assess stability risk."""
+        tprint("🧷 Assessing stability risk...")
         stability_score = getattr(metrics, 'stability_score', 0.0)
         
         if stability_score < 0.4:

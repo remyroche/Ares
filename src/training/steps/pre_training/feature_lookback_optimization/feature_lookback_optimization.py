@@ -10,6 +10,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from pathlib import Path
+from ..settings import get_pre_training_settings
 
 # Import utility modules
 from src.utils.common_operations import safe_dataframe_operation
@@ -1056,7 +1057,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         if not fallback_allowed:
             return None
 
-        outcomes_dir = Path("outcomes")
+        outcomes_dir = get_pre_training_settings().outcomes_root
         if not outcomes_dir.exists():
             return None
 

@@ -19,11 +19,12 @@ import logging
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.logger import system_logger
-from src.training.config.data_locator import DataLocator
+from src.training.config.data_locator import DataLocator as PipelineDataLocator
 from src.training.steps.pre_training.artifacts.manifest import (
     ArtifactManifest,
-    DataLocator,
+    DataLocator as ArtifactDataLocator,
 )
+from .settings import get_pre_training_settings
 
 try:
     from src.utils.data.klines_parquet import get_klines_manager
@@ -242,7 +243,7 @@ class MultiHorizonConfig:
     weighting_config: WeightingConfig = None
     regime_config: RegimeConfig = None
     fairness_config: ValidationFairnessConfig = None
-    data_locator: Optional[DataLocator] = None
+    data_locator: Optional[PipelineDataLocator] = None
     data_dir_key: str = "market_data"
     outcomes_dir_key: str = "multi_horizon_outcomes"
 
@@ -318,7 +319,8 @@ class MultiHorizonProfitLabeler:
         self.config = config or MultiHorizonConfig()
         self.logger = logging.getLogger('MultiHorizonProfitLabeler')
         self.quality_thresholds: Dict[str, float] = {}
-        self.data_locator: Optional[DataLocator] = self.config.data_locator
+        self._settings = get_pre_training_settings()
+        self.pipeline_data_locator: Optional[PipelineDataLocator] = self.config.data_locator
 
         # Initialize the volatility-aware labeler
         if self.config.enable_enhanced_labels:
@@ -364,7 +366,7 @@ class MultiHorizonProfitLabeler:
             tprint_info("ℹ️ Label balancing system disabled or not available")
 
         # Initialize artifact helpers
-        self.data_locator = DataLocator()
+        self.artifact_locator = ArtifactDataLocator(self._settings.artifacts_root)
         self.artifact_manifest = ArtifactManifest()
 
         tprint_success("🚀 Multi-Horizon Profit Labeler initialized")
@@ -566,9 +568,10 @@ class MultiHorizonProfitLabeler:
             if quality_thresholds is not None:
                 self.quality_thresholds = thresholds
 
-            locator = self.data_locator or self.config.data_locator
+            locator = self.pipeline_data_locator or self.config.data_locator
             if data_dir is None and locator:
                 data_dir = str(locator.data_path(self.config.data_dir_key))
+                self.pipeline_data_locator = locator
 
             if data_dir is None:
                 raise ValueError("data_dir must be provided or resolvable via DataLocator")
@@ -2191,10 +2194,10 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
             exchange = pipeline_state.get('exchange', 'binance')
             timeframe = pipeline_state.get('timeframe', '1h')  # Updated to 1h for analyst
 
-            data_locator: Optional[DataLocator] = pipeline_state.get('data_locator')
+            data_locator: Optional[PipelineDataLocator] = pipeline_state.get('data_locator')
             if data_locator:
                 self.labeler.config.data_locator = data_locator
-                self.labeler.data_locator = data_locator
+                self.labeler.pipeline_data_locator = data_locator
             data_dir_key = pipeline_state.get('data_dir_key', self.labeler.config.data_dir_key)
             outcomes_dir_key = pipeline_state.get('outcomes_dir_key', self.labeler.config.outcomes_dir_key)
             if data_locator:
@@ -2252,11 +2255,11 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                 elif data_locator:
                     outcomes_dir = data_locator.artifacts_path(outcomes_dir_key, ensure_exists=True)
                 else:
-                    outcomes_dir = Path("outcomes")
+                    outcomes_dir = self._settings.outcomes_root
                     outcomes_dir.mkdir(parents=True, exist_ok=True)
 
                 artifact_base_name = 'market_analysis_multi_horizon_profit_labeler_outcome'
-                artifact_path, version = self.data_locator.resolve_artifact_path(
+                artifact_path, version = self.artifact_locator.resolve_artifact_path(
                     artifact_base_name,
                     symbol=symbol,
                     exchange=exchange,
@@ -2267,7 +2270,7 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                 with open(artifact_path, 'w', encoding='utf-8') as f:
                     json.dump(outcome_data, f, indent=2, default=str)
 
-                logical_name = DataLocator.build_logical_name(
+                logical_name = ArtifactDataLocator.build_logical_name(
                     artifact_base_name,
                     symbol=symbol,
                     exchange=exchange,

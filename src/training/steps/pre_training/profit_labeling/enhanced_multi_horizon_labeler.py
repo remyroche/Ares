@@ -33,6 +33,7 @@ from .enhanced_data_labels_system import (
 
 # Import existing utilities
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+from ..settings import get_pre_training_settings
 
 
 class EnhancedMultiHorizonConfig(MultiHorizonConfig):
@@ -104,7 +105,7 @@ class EnhancedMultiHorizonProfitLabeler(MultiHorizonProfitLabeler):
         symbol: str,
         exchange: str,
         timeframe: str,
-        data_dir: str = "historical_data",
+        data_dir: Optional[str] = None,
         regime_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
@@ -116,8 +117,10 @@ class EnhancedMultiHorizonProfitLabeler(MultiHorizonProfitLabeler):
             tprint_info(f"🏷️ Starting enhanced multi-horizon profit labeling for {symbol} on {exchange}")
             tprint_info(f"⏰ Timeframe: {timeframe}")
             
+            resolved_data_dir = data_dir or str(self._settings.data_root)
+
             # Load market data using existing method
-            market_data = await self._load_market_data(symbol, exchange, timeframe, data_dir)
+            market_data = await self._load_market_data(symbol, exchange, timeframe, resolved_data_dir)
             if market_data is None or market_data.empty:
                 raise ValueError(f"No market data available for {symbol} {timeframe}")
             

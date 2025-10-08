@@ -5,7 +5,7 @@ This module provides the base classes for all pre-training pipeline components.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Union
 import pandas as pd
 import numpy as np
@@ -18,6 +18,7 @@ from src.utils.logger import system_logger
 from src.utils.version_manager import get_version_manager
 from src.utils.tprint import tprint_success
 from ..logging_utils import PreTrainingEventLogger, configure_pre_training_logging
+from ..settings import get_pre_training_settings
 from .contracts import (
     ArtifactBundle,
     GenericArtifacts,
@@ -28,13 +29,17 @@ from .contracts import (
 logger = system_logger.getChild('PreTrainingComponent')
 component_event_logger = PreTrainingEventLogger(configure_pre_training_logging())
 
+def _default_data_directory() -> str:
+    return str(get_pre_training_settings().data_root)
+
+
 @dataclass
 class ComponentConfig:
     """Configuration for pre-training components."""
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
     timeframe: str = "15m"  # Default timeframe for pre-training
-    data_dir: str = "historical_data"
+    data_dir: str = field(default_factory=_default_data_directory)
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     force_rerun: bool = False

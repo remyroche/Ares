@@ -10,12 +10,18 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
+from ..settings import get_pre_training_settings
+
 ARTIFACTS_ENV_VAR = "ARES_ARTIFACTS_DIR"
 
 
 def _default_artifacts_dir() -> Path:
     """Return the base directory for artifacts, creating it if necessary."""
-    base = Path(os.getenv(ARTIFACTS_ENV_VAR, "artifacts"))
+    override = os.getenv(ARTIFACTS_ENV_VAR)
+    if override:
+        base = Path(override).expanduser()
+    else:
+        base = get_pre_training_settings().artifacts_root
     base.mkdir(parents=True, exist_ok=True)
     return base
 

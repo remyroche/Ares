@@ -35,6 +35,7 @@ from src.utils.tprint import (
 
 from src.feature_generation.core.feature_cache import FeatureCacheService
 from src.feature_generation.core.feature_bank import FeatureBank
+from ...settings import get_pre_training_settings
 
 # Import common operations and utilities
 try:
@@ -235,6 +236,10 @@ class PipelineStage(Enum):
     COMPLETION = "completion"
 
 
+def _default_data_directory() -> str:
+    return str(get_pre_training_settings().data_root)
+
+
 @dataclass
 class OptimizedInteractionConfig:
     """Configuration for optimized interaction feature generation."""
@@ -242,7 +247,7 @@ class OptimizedInteractionConfig:
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
     timeframe: str = "15m"
-    data_dir: str = "historical_data"
+    data_dir: str = field(default_factory=_default_data_directory)
     
     # Feature engineering configuration
     feature_budget_pre: int = 120

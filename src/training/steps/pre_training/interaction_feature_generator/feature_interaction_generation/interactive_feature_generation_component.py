@@ -138,6 +138,7 @@ from .optimized_interaction_orchestrator import (
     OptimizedInteractionResult,
     PipelineStage,
 )
+from ...settings import get_pre_training_settings
 
 # Import sub_pipeline components for compatibility
 try:
@@ -188,6 +189,10 @@ class InteractiveFeatureGenerationStatus(Enum):
     SKIPPED = "skipped"
 
 
+def _default_data_directory() -> str:
+    return str(get_pre_training_settings().data_root)
+
+
 @dataclass
 class InteractiveFeatureGenerationConfig:
     """Configuration for interactive feature generation component."""
@@ -195,7 +200,7 @@ class InteractiveFeatureGenerationConfig:
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
     timeframe: str = "15m"
-    data_dir: str = "historical_data"
+    data_dir: str = field(default_factory=_default_data_directory)
     
     # Feature generation configuration
     feature_budget_pre: int = 120

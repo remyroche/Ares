@@ -199,6 +199,7 @@ class LabelingResult:
     sigma_payoffs: pd.DataFrame = field(default_factory=pd.DataFrame)
     training_labels: pd.DataFrame = field(default_factory=pd.DataFrame)
     normalization_factors: Dict[str, Any] = field(default_factory=dict)
+    execution_timing: Dict[str, Any] = field(default_factory=dict)
 
     # Quality scores
     quality_scores: Dict[str, LabelQualityScore] = field(default_factory=dict)
@@ -506,6 +507,13 @@ class VolatilityAwareMultiHorizonLabeler:
             result.normalization_factors = self._build_normalization_factors(
                 vol_result, filtered_result
             )
+            result.execution_timing = deepcopy(
+                getattr(
+                    filtered_result,
+                    'execution_timing',
+                    getattr(target_result, 'execution_timing', {})
+                )
+            )
 
             # Calculate statistics
             base_df = result.training_labels if not result.training_labels.empty else result.labels
@@ -591,6 +599,9 @@ class VolatilityAwareMultiHorizonLabeler:
                     'analyst_eligible': pd.Series(True, index=analyst_labels.index)
                 })
 
+                if hasattr(self.enhanced_labeler, 'get_execution_latency_metadata'):
+                    target_result.execution_timing = self.enhanced_labeler.get_execution_latency_metadata()
+
             elif self.config.label_definition_type == LabelDefinitionType.TACTICIAN:
                 tactician_labels, magnitude_scores = self.enhanced_labeler.generate_tactician_labels(
                     eligible_data, eligible_volatility, regime_data
@@ -607,6 +618,9 @@ class VolatilityAwareMultiHorizonLabeler:
                 target_result.eligibility_masks = pd.DataFrame({
                     'tactician_eligible': pd.Series(True, index=tactician_labels.index)
                 })
+
+                if hasattr(self.enhanced_labeler, 'get_execution_latency_metadata'):
+                    target_result.execution_timing = self.enhanced_labeler.get_execution_latency_metadata()
 
             else:
                 # Fall back to standard multi-target scheme
@@ -728,7 +742,8 @@ class VolatilityAwareMultiHorizonLabeler:
                 'config_used',
                 'processing_time',
                 'timestamp',
-                'smoothing_settings'
+                'smoothing_settings',
+                'execution_timing'
             ]:
                 if hasattr(target_result, attr_name):
                     setattr(
@@ -1080,6 +1095,7 @@ class VolatilityAwareMultiHorizonLabeler:
             sigma_payoffs=pd.DataFrame(),
             training_labels=pd.DataFrame(),
             normalization_factors={},
+            execution_timing={},
             quality_scores={},
             config_used=self.config,
             processing_time=0.0

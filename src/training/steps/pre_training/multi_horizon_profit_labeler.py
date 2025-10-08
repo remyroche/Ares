@@ -773,6 +773,7 @@ class MultiHorizonProfitLabeler:
             # Build smoothing metadata for downstream consumers
             smoothing_metadata = self._build_smoothing_metadata(balanced_labeling_result)
             normalization_factors = copy.deepcopy(balanced_labeling_result.normalization_factors or {})
+            execution_timing = copy.deepcopy(getattr(balanced_labeling_result, 'execution_timing', {}))
 
             # Validate engineered scoring frames
             confidence_scores_df = balanced_labeling_result.confidence_scores
@@ -794,6 +795,7 @@ class MultiHorizonProfitLabeler:
                     'horizon_weights': horizon_weights,  # New: weights for different horizons
                     'target_columns': target_columns,    # New: target columns for optimization
                     'normalization_factors': normalization_factors,
+                    'execution_timing': execution_timing,
                     'method': 'multi_horizon_profit_labeling',
                     'balancing_applied': self.config.enable_label_balancing or self.config.enable_sample_weighting,
                     'sample_weights': getattr(balanced_labeling_result, 'sample_weights', None),  # Sample weights for training
@@ -811,7 +813,8 @@ class MultiHorizonProfitLabeler:
                         'target_distribution': self._calculate_target_distribution(mapped_labels),
                         'quality_summary': self._summarize_quality_scores(balanced_labeling_result.quality_scores),
                         'downstream_ready': validation_results['is_valid'],
-                        'forward_return_smoothing': smoothing_metadata
+                        'forward_return_smoothing': smoothing_metadata,
+                        'execution_timing': execution_timing,
                     },
                     'market_data': market_data,
                     'market_data_batches': tuple(market_data_batches),
@@ -834,7 +837,8 @@ class MultiHorizonProfitLabeler:
                         'creation_time': datetime.now().isoformat(),
                         'pipeline_ready': validation_results['is_valid'],
                         'downstream_compatibility': validation_results,
-                        'forward_return_smoothing': smoothing_metadata
+                        'forward_return_smoothing': smoothing_metadata,
+                        'execution_timing': execution_timing,
                     }
                 }
             }

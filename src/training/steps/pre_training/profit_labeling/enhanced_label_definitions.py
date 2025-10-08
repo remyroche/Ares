@@ -256,6 +256,7 @@ class EnhancedLabelDefinitions:
         self.stability_config = stability_config or StabilityCheckConfig()
 
         self.logger = logging.getLogger('EnhancedLabelDefinitions')
+        self._last_execution_metadata: Dict[str, Any] = {}
 
         tprint_success("🚀 Enhanced Label Definitions initialized")
         tprint_info("   → Analyst labels: Should we trade?")
@@ -288,14 +289,23 @@ class EnhancedLabelDefinitions:
             # Clean data first
             cleaned_data = self._apply_data_cleaning(market_data)
 
-            # Calculate expected returns over horizon
-            expected_returns = self._calculate_expected_returns(
+            # Calculate execution-aware expected returns over horizon
+            execution_context = self._build_execution_context(
                 cleaned_data, self.analyst_config.horizon_minutes
             )
+            expected_returns = self._calculate_expected_returns(
+                cleaned_data,
+                self.analyst_config.horizon_minutes,
+                entry_prices=execution_context['entry_prices'],
+                exit_prices=execution_context['exit_prices']
+            )
 
-            # Calculate trading costs
+            # Calculate trading costs using delayed execution assumptions
             trading_costs = self._calculate_trading_costs(
-                cleaned_data, self.analyst_config.trading_costs
+                cleaned_data,
+                self.analyst_config.trading_costs,
+                entry_prices=execution_context['entry_prices'],
+                exit_prices=execution_context['exit_prices']
             )
 
             # Apply regime conditioning if enabled
@@ -313,6 +323,11 @@ class EnhancedLabelDefinitions:
             # Generate analyst labels (1 if net profit > 0)
             net_profits = risk_adjusted_returns - trading_costs
             analyst_labels = (net_profits > 0).astype(int)
+
+            invalid_entries = execution_context['entry_prices'].isna() | execution_context['exit_prices'].isna()
+            if invalid_entries.any():
+                analyst_labels[invalid_entries] = 0
+                net_profits[invalid_entries] = 0.0
 
             # Calculate confidence scores based on signal strength
             confidence_scores = self._calculate_analyst_confidence(
@@ -495,35 +510,33 @@ class EnhancedLabelDefinitions:
         try:
             risk_aware_labels = base_labels.copy()
 
-            # Calculate stop-loss and take-profit levels
-            stop_loss_levels = market_data['close'] * (1 - self.risk_config.stop_loss_pct)
-            take_profit_levels = market_data['close'] * (1 + self.risk_config.take_profit_pct)
+            # Calculate stop-loss and take-profit levels using delayed execution prices
+            execution_context = self._build_execution_context(
+                market_data, self.analyst_config.horizon_minutes
+            )
+            entry_prices = execution_context['entry_prices']
+            stop_loss_levels = entry_prices * (1 - self.risk_config.stop_loss_pct)
+            take_profit_levels = entry_prices * (1 + self.risk_config.take_profit_pct)
 
-            # Simulate trade outcomes over horizon
-            horizon_returns = self._simulate_trade_outcomes(
-                market_data, stop_loss_levels, take_profit_levels
+            # Simulate trade outcomes with delayed execution assumptions
+            trade_outcomes = self._simulate_trade_outcomes(
+                market_data,
+                stop_loss_levels,
+                take_profit_levels,
+                entry_prices=entry_prices,
+                horizon_bars=execution_context['horizon_bars']
             )
 
-            # Check if stop-loss would be hit before take-profit
+            # Remove trades that cannot be executed due to missing forward data
+            missing_execution = entry_prices.isna() | execution_context['exit_prices'].isna()
+            if missing_execution.any():
+                risk_aware_labels.loc[missing_execution] = 0
+
+            # Disable trades where simulated stop-loss triggers before target
             for idx in market_data.index:
-                if base_labels.loc[idx] == 1:  # Only check positive labels
-                    # Check if stop-loss is hit within horizon
-                    future_prices = market_data.loc[idx:, 'high']
-                    stop_hit = (future_prices <= stop_loss_levels.loc[idx]).any()
-
-                    take_profit_prices = market_data.loc[idx:, 'low']
-                    take_profit_hit = (take_profit_prices >= take_profit_levels.loc[idx]).any()
-
-                    if stop_hit and not take_profit_hit:
-                        # Stop-loss hit before take-profit - don't trade
+                if base_labels.loc[idx] == 1:
+                    if trade_outcomes.loc[idx] == -1:
                         risk_aware_labels.loc[idx] = 0
-                    elif stop_hit and take_profit_hit:
-                        # Both hit - check which first
-                        stop_idx = (future_prices <= stop_loss_levels.loc[idx]).idxmax()
-                        tp_idx = (take_profit_prices >= take_profit_levels.loc[idx]).idxmax()
-
-                        if stop_idx < tp_idx:
-                            risk_aware_labels.loc[idx] = 0  # Stop-loss first
 
             # Apply portfolio risk limits
             if portfolio_state:
@@ -588,14 +601,86 @@ class EnhancedLabelDefinitions:
 
         return cleaned
 
-    def _calculate_expected_returns(self, market_data: pd.DataFrame, horizon_minutes: int) -> pd.Series:
-        """Calculate expected returns over horizon with optional asymmetric scaling."""
-        close_prices = market_data['close']
+    def _get_bar_duration_minutes(self, market_data: pd.DataFrame) -> Optional[float]:
+        """Estimate the bar duration in minutes based on timestamp spacing."""
+        if len(market_data.index) < 2:
+            return None
 
-        # Forward returns over the horizon (shifted to align with current bar)
-        horizon_bars = max(1, horizon_minutes // 15)  # Assuming 15m bars
-        forward_returns = close_prices.pct_change(periods=horizon_bars).shift(-horizon_bars)
-        forward_returns = forward_returns.fillna(0)
+        diffs = market_data.index.to_series().diff().dropna()
+        if diffs.empty:
+            return None
+
+        median_diff = diffs.median()
+        if pd.isna(median_diff):
+            return None
+
+        return median_diff.total_seconds() / 60.0
+
+    def _build_execution_context(
+        self,
+        market_data: pd.DataFrame,
+        horizon_minutes: int
+    ) -> Dict[str, Any]:
+        """Construct execution-aware context for pricing and metadata."""
+        horizon_bars = max(1, horizon_minutes // 15)
+
+        entry_column = 'open' if 'open' in market_data.columns else 'close'
+        exit_column = 'close' if 'close' in market_data.columns else entry_column
+
+        entry_prices = market_data[entry_column].shift(-1)
+        exit_prices = market_data[exit_column].shift(-horizon_bars)
+        execution_mask = entry_prices.notna() & exit_prices.notna()
+
+        bar_duration_minutes = self._get_bar_duration_minutes(market_data)
+
+        self._last_execution_metadata = {
+            'signal_to_execution_delay_bars': 1,
+            'signal_to_execution_delay_minutes': None if bar_duration_minutes is None else float(bar_duration_minutes),
+            'entry_price_source': f'next_{entry_column}',
+            'exit_price_source': f'{exit_column}_plus_{horizon_bars}_bars',
+            'horizon_bars': horizon_bars,
+            'slippage_pct': self.analyst_config.trading_costs.slippage_pct,
+            'fees': {
+                'maker_fee': self.analyst_config.trading_costs.maker_fee,
+                'taker_fee': self.analyst_config.trading_costs.taker_fee,
+            },
+            'slippage_applied_on': ['entry', 'exit'],
+            'min_trade_size_usd': self.analyst_config.trading_costs.min_trade_size,
+            'valid_execution_samples': int(execution_mask.sum()),
+            'total_samples': int(len(market_data))
+        }
+
+        if bar_duration_minutes is not None:
+            self._last_execution_metadata['execution_horizon_minutes'] = float(bar_duration_minutes * horizon_bars)
+
+        return {
+            'entry_prices': entry_prices,
+            'exit_prices': exit_prices,
+            'execution_mask': execution_mask,
+            'horizon_bars': horizon_bars,
+        }
+
+    def get_execution_latency_metadata(self) -> Dict[str, Any]:
+        """Return the most recently computed execution latency metadata."""
+        return dict(self._last_execution_metadata)
+
+    def _calculate_expected_returns(
+        self,
+        market_data: pd.DataFrame,
+        horizon_minutes: int,
+        entry_prices: Optional[pd.Series] = None,
+        exit_prices: Optional[pd.Series] = None
+    ) -> pd.Series:
+        """Calculate expected returns over horizon with optional asymmetric scaling."""
+        horizon_bars = max(1, horizon_minutes // 15)
+
+        if entry_prices is None or exit_prices is None:
+            context = self._build_execution_context(market_data, horizon_minutes)
+            entry_prices = context['entry_prices']
+            exit_prices = context['exit_prices']
+
+        forward_returns = (exit_prices - entry_prices) / entry_prices
+        forward_returns = forward_returns.replace([np.inf, -np.inf], np.nan).fillna(0)
 
         baseline_expectation = forward_returns.rolling(horizon_bars, min_periods=1).mean()
 
@@ -650,14 +735,37 @@ class EnhancedLabelDefinitions:
 
         return expected_returns.fillna(0)
 
-    def _calculate_trading_costs(self, market_data: pd.DataFrame, costs: TradingCosts) -> pd.Series:
-        """Calculate trading costs for each bar."""
-        # Estimate costs based on volume and price
-        avg_trade_size = market_data['volume'] * market_data['close'] * 0.01  # 1% of volume
+    def _calculate_trading_costs(
+        self,
+        market_data: pd.DataFrame,
+        costs: TradingCosts,
+        entry_prices: Optional[pd.Series] = None,
+        exit_prices: Optional[pd.Series] = None
+    ) -> pd.Series:
+        """Calculate trading costs for each bar with explicit entry/exit slippage."""
 
-        total_costs = costs.total_costs(avg_trade_size)
+        if entry_prices is None or exit_prices is None:
+            context = self._build_execution_context(market_data, self.analyst_config.horizon_minutes)
+            entry_prices = context['entry_prices']
+            exit_prices = context['exit_prices']
 
-        return total_costs
+        price_reference = entry_prices.fillna(market_data.get('close', entry_prices))
+        trade_notional = market_data.get('volume', pd.Series(0, index=market_data.index)) * price_reference * 0.01
+        trade_notional = trade_notional.fillna(0.0)
+
+        positive_mask = trade_notional > 0
+        trade_notional = trade_notional.where(~positive_mask, trade_notional.clip(lower=costs.min_trade_size))
+
+        entry_fee = trade_notional * costs.taker_fee
+        exit_fee = trade_notional * costs.taker_fee
+        entry_slippage = trade_notional * costs.slippage_pct
+        exit_slippage = trade_notional * costs.slippage_pct
+
+        total_costs = entry_fee + exit_fee + entry_slippage + exit_slippage
+        valid_mask = entry_prices.notna() & exit_prices.notna()
+        total_costs = total_costs.where(valid_mask, 0.0)
+
+        return total_costs.fillna(0.0)
 
     def _calculate_regime_multipliers(self, volatility_series: pd.Series, regime_data: pd.Series) -> pd.Series:
         """Calculate regime-specific multipliers for thresholds."""
@@ -782,30 +890,66 @@ class EnhancedLabelDefinitions:
 
         return thresholds
 
-    def _simulate_trade_outcomes(self, market_data: pd.DataFrame,
-                               stop_loss_levels: pd.Series,
-                               take_profit_levels: pd.Series) -> pd.Series:
-        """Simulate trade outcomes to check if stops are hit."""
-        # This is a simplified simulation - in practice would be more sophisticated
-        horizon_bars = 4  # 1 hour for 15m bars
+    def _simulate_trade_outcomes(
+        self,
+        market_data: pd.DataFrame,
+        stop_loss_levels: pd.Series,
+        take_profit_levels: pd.Series,
+        entry_prices: Optional[pd.Series] = None,
+        horizon_bars: Optional[int] = None
+    ) -> pd.Series:
+        """Simulate trade outcomes assuming next-bar execution."""
+        if entry_prices is None:
+            context = self._build_execution_context(market_data, self.analyst_config.horizon_minutes)
+            entry_prices = context['entry_prices']
+            if horizon_bars is None:
+                horizon_bars = context['horizon_bars']
 
-        outcomes = pd.Series(0, index=market_data.index)
+        if horizon_bars is None:
+            horizon_bars = max(1, self.analyst_config.horizon_minutes // 15)
 
-        for idx in market_data.index[:-horizon_bars]:
-            entry_price = market_data.loc[idx, 'close']
-            stop_price = stop_loss_levels.loc[idx]
-            target_price = take_profit_levels.loc[idx]
+        highs = market_data.get('high', market_data.get('close'))
+        lows = market_data.get('low', market_data.get('close'))
 
-            # Look forward in horizon
-            future_high = market_data.loc[idx:idx+horizon_bars, 'high'].max()
-            future_low = market_data.loc[idx:idx+horizon_bars, 'low'].min()
+        outcomes = pd.Series(0, index=market_data.index, dtype=int)
+        index_list = list(market_data.index)
 
-            if future_low <= stop_price:
-                outcomes.loc[idx] = -1  # Stop loss hit
-            elif future_high >= target_price:
-                outcomes.loc[idx] = 1   # Take profit hit
-            else:
-                outcomes.loc[idx] = 0   # Neither hit
+        for position, idx in enumerate(index_list):
+            if position >= len(index_list) - 1:
+                break
+
+            entry_price = entry_prices.iloc[position] if entry_prices is not None else np.nan
+            if pd.isna(entry_price):
+                continue
+
+            stop_price = stop_loss_levels.iloc[position]
+            target_price = take_profit_levels.iloc[position]
+
+            if pd.isna(stop_price) or pd.isna(target_price):
+                continue
+
+            start = position + 1
+            end = min(len(index_list), start + horizon_bars)
+            outcome = 0
+
+            for future_pos in range(start, end):
+                bar_high = highs.iloc[future_pos] if highs is not None else np.nan
+                bar_low = lows.iloc[future_pos] if lows is not None else np.nan
+
+                stop_hit = pd.notna(bar_low) and bar_low <= stop_price
+                target_hit = pd.notna(bar_high) and bar_high >= target_price
+
+                if stop_hit and target_hit:
+                    outcome = -1  # assume worst-case: stop triggers first
+                    break
+                if stop_hit:
+                    outcome = -1
+                    break
+                if target_hit:
+                    outcome = 1
+                    break
+
+            outcomes.iloc[position] = outcome
 
         return outcomes
 

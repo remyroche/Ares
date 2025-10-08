@@ -15,7 +15,7 @@ Key Features:
 import logging
 import time
 import traceback
-from typing import Dict, List, Optional, Tuple, Union, Any, Set
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple, Union
 from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
@@ -41,6 +41,7 @@ from .utils import FeatureGeneratorWrapper
 from feature_engineering.feature_registry import FeatureRegistry
 from .interaction_generator import InteractionFeature
 from .config import FinalSelectionConfig
+from src.training.steps.pre_training.validation.schemas import SplitAwareScaler
 
 # Import matrix operations for efficient computation
 try:
@@ -90,7 +91,8 @@ class FinalSelectionResult:
     family_contributions: Dict[str, float] = field(default_factory=dict)
     dropped_families: List[str] = field(default_factory=list)
     retained_families: List[str] = field(default_factory=list)
-    
+    split_metadata: Optional[Dict[str, np.ndarray]] = None
+
     # Performance metrics
     matrix_ops_used: int = 0
     vectorized_ops: int = 0
@@ -115,7 +117,11 @@ class FinalSelectionResult:
             'matrix_ops_used': self.matrix_ops_used,
             'vectorized_ops': self.vectorized_ops,
             'stability_selections': self.stability_selections,
-            'fdr_controls': self.fdr_controls
+            'fdr_controls': self.fdr_controls,
+            'split_metadata': {
+                key: indices.tolist()
+                for key, indices in (self.split_metadata or {}).items()
+            }
         }
         tprint_info(
             "🧾 Final selection summary prepared",
@@ -148,30 +154,39 @@ class FinalModelSelection:
             'fdr_controls': 0,
             'bootstrap_samples': 0
         }
+        self._active_split_metadata: Optional[Dict[str, np.ndarray]] = None
         tprint_info(
             "⚙️ FinalModelSelection configured",
             f"target={self.config.target_feature_count}",
             f"model={self.config.model_type}"
         )
     
-    def select_final_features(self, selected_wrappers: List[FeatureGeneratorWrapper],
-                            selected_interactions: List[InteractionFeature],
-                            data: pd.DataFrame, target: np.ndarray) -> FinalSelectionResult:
+    def select_final_features(
+        self,
+        selected_wrappers: List[FeatureGeneratorWrapper],
+        selected_interactions: List[InteractionFeature],
+        data: pd.DataFrame,
+        target: np.ndarray,
+        split_metadata: Optional[Mapping[str, Sequence[int]]] = None,
+    ) -> FinalSelectionResult:
         """Select final features using stability selection and FDR control."""
         start_time = time.time()
         
         try:
             tprint_info("🚀 Starting Final Model Selection")
             tprint_info(f"📊 Selecting from {len(selected_wrappers)} base features and {len(selected_interactions)} interactions")
-            
+
+            resolved_split_metadata = self._resolve_split_metadata(split_metadata, len(data))
+            self._active_split_metadata = resolved_split_metadata
+
             # Generate feature matrix
             feature_matrix, feature_names, feature_metadata = self._generate_feature_matrix(
                 selected_wrappers, selected_interactions, data
             )
-            
+
             if feature_matrix is None or feature_matrix.shape[1] == 0:
                 tprint_warning("⚠️ No features available for final selection")
-                return self._create_empty_result(time.time() - start_time)
+                return self._create_empty_result(time.time() - start_time, resolved_split_metadata)
             
             # Stability selection
             if self.config.enable_stability_selection:
@@ -210,7 +225,8 @@ class FinalModelSelection:
                     target,
                     feature_names,
                     group_regularized_features,
-                    feature_metadata
+                    feature_metadata,
+                    resolved_split_metadata,
                 )
 
                 if not group_regularized_features and group_heredity_features:
@@ -288,7 +304,8 @@ class FinalModelSelection:
                 matrix_ops_used=self.performance_metrics['matrix_ops_used'],
                 vectorized_ops=self.performance_metrics['vectorized_ops'],
                 stability_selections=self.performance_metrics['stability_selections'],
-                fdr_controls=self.performance_metrics['fdr_controls']
+                fdr_controls=self.performance_metrics['fdr_controls'],
+                split_metadata=resolved_split_metadata,
             )
 
             self._log_group_regularization_summary(
@@ -309,7 +326,7 @@ class FinalModelSelection:
             self.logger.error(f"Error details: {traceback.format_exc()}")
             tprint_error(f"❌ Final selection failed after {execution_time:.3f}s: {e}")
 
-            return self._create_empty_result(execution_time)
+            return self._create_empty_result(execution_time, self._active_split_metadata)
 
     def _lookup_feature_family(self, feature_name: str, fallback: Optional[str] = None) -> Optional[str]:
         """Resolve the canonical feature family for a given feature name."""
@@ -530,12 +547,15 @@ class FinalModelSelection:
         # Mixed parents – default to engineered to avoid double counting specialised quotas
         return 'engineered'
 
-    def _apply_group_regularization(self,
-                                    feature_matrix: np.ndarray,
-                                    target: np.ndarray,
-                                    feature_names: List[str],
-                                    candidate_features: List[str],
-                                    feature_metadata: Dict[str, Dict[str, Any]]) -> Tuple[List[str], Dict[str, float], List[str]]:
+    def _apply_group_regularization(
+        self,
+        feature_matrix: np.ndarray,
+        target: np.ndarray,
+        feature_names: List[str],
+        candidate_features: List[str],
+        feature_metadata: Dict[str, Dict[str, Any]],
+        split_metadata: Mapping[str, Sequence[int]],
+    ) -> Tuple[List[str], Dict[str, float], List[str]]:
         """Evaluate family-level contributions and drop low-signal families."""
         try:
             if not candidate_features:
@@ -564,7 +584,8 @@ class FinalModelSelection:
                 X_candidate,
                 target,
                 candidate_names,
-                feature_groups
+                feature_groups,
+                split_metadata,
             )
 
             if not contributions:
@@ -626,11 +647,14 @@ class FinalModelSelection:
 
         return families
 
-    def _estimate_group_contributions(self,
-                                       X_candidate: np.ndarray,
-                                       target: np.ndarray,
-                                       candidate_names: List[str],
-                                       feature_groups: Dict[str, List[str]]) -> Dict[str, float]:
+    def _estimate_group_contributions(
+        self,
+        X_candidate: np.ndarray,
+        target: np.ndarray,
+        candidate_names: List[str],
+        feature_groups: Dict[str, List[str]],
+        split_metadata: Mapping[str, Sequence[int]],
+    ) -> Dict[str, float]:
         """Estimate contribution of each family using configured method."""
         method = str(getattr(self.config, 'group_regularization_method', 'shap') or 'shap').lower()
 
@@ -647,7 +671,8 @@ class FinalModelSelection:
                 feature_scores = self._estimate_contributions_with_lasso(
                     X_candidate,
                     target,
-                    candidate_names
+                    candidate_names,
+                    split_metadata,
                 )
             elif method == 'shap':
                 raise RuntimeError('LightGBM not available for SHAP contributions')
@@ -656,7 +681,8 @@ class FinalModelSelection:
                 feature_scores = self._estimate_contributions_with_lasso(
                     X_candidate,
                     target,
-                    candidate_names
+                    candidate_names,
+                    split_metadata,
                 )
         except Exception as exc:
             self.logger.warning(
@@ -668,10 +694,72 @@ class FinalModelSelection:
             feature_scores = self._estimate_contributions_with_lasso(
                 X_candidate,
                 target,
-                candidate_names
+                candidate_names,
+                split_metadata,
             )
 
         return self._aggregate_group_scores(feature_scores, feature_groups)
+
+    @staticmethod
+    def build_default_split_metadata(n_samples: int) -> Dict[str, np.ndarray]:
+        """Create a simple chronological train/val/test split."""
+
+        if n_samples < 3:
+            raise ValueError("At least three samples are required to create default splits")
+
+        indices = np.arange(n_samples, dtype=int)
+        train_end = max(int(n_samples * 0.6), 1)
+        val_end = max(train_end + max(int(n_samples * 0.2), 1), train_end + 1)
+        if val_end >= n_samples:
+            val_end = n_samples - 1
+
+        train_indices = indices[:train_end]
+        val_indices = indices[train_end:val_end]
+        test_indices = indices[val_end:]
+
+        if val_indices.size == 0:
+            val_indices = indices[train_end:train_end + 1]
+        if test_indices.size == 0:
+            test_indices = indices[-1:]
+            if val_indices.size == 0 and train_indices.size > 1:
+                val_indices = indices[train_end - 1:train_end]
+
+        return {
+            'train': np.array(train_indices, dtype=int, copy=True),
+            'val': np.array(val_indices, dtype=int, copy=True),
+            'test': np.array(test_indices, dtype=int, copy=True),
+        }
+
+    def _resolve_split_metadata(
+        self,
+        split_metadata: Optional[Mapping[str, Sequence[int]]],
+        n_samples: int,
+    ) -> Dict[str, np.ndarray]:
+        """Validate provided split metadata or build default splits."""
+
+        if split_metadata is None:
+            default_splits = self.build_default_split_metadata(n_samples)
+            self.logger.info("No split metadata provided; generated default splits")
+            return default_splits
+
+        normalized = SplitAwareScaler.normalize_split_indices(split_metadata)
+        required = {'train', 'val', 'test'}
+        missing = required.difference(normalized.keys())
+        if missing:
+            missing_list = ", ".join(sorted(missing))
+            raise ValueError(f"Split metadata missing required keys: {missing_list}")
+
+        validated: Dict[str, np.ndarray] = {}
+        for split_name, indices in normalized.items():
+            if indices.size == 0:
+                raise ValueError(f"Split '{split_name}' must contain at least one index")
+            if np.any(indices < 0) or np.any(indices >= n_samples):
+                raise ValueError(
+                    f"Split '{split_name}' indices must be within the range [0, {n_samples})"
+                )
+            validated[split_name] = np.array(indices, dtype=int, copy=True)
+
+        return validated
 
     def _estimate_contributions_with_shap(self,
                                           X_candidate: np.ndarray,
@@ -706,29 +794,57 @@ class FinalModelSelection:
             for name, value in zip(candidate_names, mean_abs.tolist())
         }
 
-    def _estimate_contributions_with_lasso(self,
-                                           X_candidate: np.ndarray,
-                                           target: np.ndarray,
-                                           candidate_names: List[str]) -> Dict[str, float]:
+    def _estimate_contributions_with_lasso(
+        self,
+        X_candidate: np.ndarray,
+        target: np.ndarray,
+        candidate_names: List[str],
+        split_metadata: Mapping[str, Sequence[int]],
+    ) -> Dict[str, float]:
         """Estimate contributions using Lasso coefficients as proxy."""
+
+        normalized_splits = SplitAwareScaler.normalize_split_indices(split_metadata)
+        if 'train' not in normalized_splits:
+            raise ValueError("Split metadata must include a 'train' split")
+
+        train_indices = normalized_splits['train']
+        if train_indices.size < 2:
+            raise ValueError("At least two training samples are required for LassoCV")
+
         try:
-            scaler = StandardScaler()
-            X_scaled = scaler.fit_transform(X_candidate)
-            n_samples = X_candidate.shape[0]
-            cv_folds = min(5, max(2, min(3, n_samples - 1)))
-            if cv_folds < 2 or cv_folds >= n_samples:
-                raise ValueError("Insufficient samples for LassoCV")
+            scaler = SplitAwareScaler(StandardScaler(), normalized_splits)
+            scaler.fit(X_candidate, split='train')
+            scaled_views = {
+                split: scaler.transform(X_candidate, split=split)
+                for split in normalized_splits.keys()
+            }
+            X_train_scaled = scaled_views['train']
+            y_array = np.asarray(target)
+            if y_array.ndim > 1:
+                y_array = y_array.reshape(-1)
+            y_train = y_array[train_indices]
+
+            n_train = train_indices.size
+            cv_folds = min(5, max(2, n_train - 1))
+            if cv_folds < 2 or cv_folds >= n_train:
+                raise ValueError("Insufficient training samples for LassoCV")
+
             lasso = LassoCV(cv=cv_folds, random_state=42)
             tprint_info("🧷 Fitting Lasso model for contribution estimates")
-            lasso.fit(X_scaled, target)
+            lasso.fit(X_train_scaled, y_train)
             coefs = np.abs(lasso.coef_)
         except Exception as exc:
             self.logger.debug(f"Lasso contribution estimation failed: {exc}")
             tprint_warning("⚠️ Lasso contribution estimation failed; using correlations")
             coefs = []
-            for i in range(X_candidate.shape[1]):
+            X_train_raw = X_candidate[train_indices, :]
+            y_array = np.asarray(target)
+            if y_array.ndim > 1:
+                y_array = y_array.reshape(-1)
+            y_train = y_array[train_indices]
+            for i in range(X_train_raw.shape[1]):
                 try:
-                    corr = np.corrcoef(X_candidate[:, i], target)[0, 1]
+                    corr = np.corrcoef(X_train_raw[:, i], y_train)[0, 1]
                     coefs.append(abs(corr) if not np.isnan(corr) else 0.0)
                 except Exception:
                     coefs.append(0.0)
@@ -1528,7 +1644,11 @@ class FinalModelSelection:
         )
         return achieved
 
-    def _create_empty_result(self, execution_time: float) -> FinalSelectionResult:
+    def _create_empty_result(
+        self,
+        execution_time: float,
+        split_metadata: Optional[Dict[str, np.ndarray]] = None,
+    ) -> FinalSelectionResult:
         """Create empty result for error cases."""
         tprint_warning(
             "⚠️ Returning empty FinalSelectionResult",
@@ -1546,5 +1666,6 @@ class FinalModelSelection:
             target_achieved=False,
             family_contributions={},
             dropped_families=[],
-            retained_families=[]
+            retained_families=[],
+            split_metadata=split_metadata,
         )

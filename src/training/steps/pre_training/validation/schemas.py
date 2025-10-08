@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import math
 from typing import Any, Callable, Dict, Optional, Union
@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 from pandas import Series
+from sklearn.base import BaseEstimator, TransformerMixin
 
 try:
     import pandera as pa
@@ -46,6 +47,7 @@ __all__ = [
     "validate_engineered_features",
     "schema_metadata",
     "HypothesisTracker",
+    "SplitAwareScaler",
 ]
 
 
@@ -207,6 +209,112 @@ class HypothesisTracker:
         _, corrected_pvalues, _, _ = multipletests(self.pvalues, alpha=alpha, method=method)
         return list(corrected_pvalues)
 
+
+class SplitAwareScaler(TransformerMixin, BaseEstimator):
+    """Wrap a scaler to enforce split-aware fitting and transformations."""
+
+    def __init__(
+        self,
+        base_scaler: BaseEstimator,
+        split_indices: Optional[Mapping[str, Sequence[int]]] = None,
+    ) -> None:
+        if not hasattr(base_scaler, "fit") or not hasattr(base_scaler, "transform"):
+            raise TypeError("base_scaler must implement fit and transform methods")
+        self.base_scaler = base_scaler
+        self.split_indices: Optional[Dict[str, np.ndarray]] = None
+        if split_indices is not None:
+            self.split_indices = self.normalize_split_indices(split_indices)
+        self._fitted: bool = False
+        self._fitted_split: Optional[str] = None
+
+    @staticmethod
+    def normalize_split_indices(
+        split_indices: Mapping[str, Sequence[int]]
+    ) -> Dict[str, np.ndarray]:
+        """Validate and normalize split metadata into integer index arrays."""
+
+        if split_indices is None:
+            raise ValueError("Split metadata must be provided")
+
+        normalized: Dict[str, np.ndarray] = {}
+        for split_name, indices in split_indices.items():
+            if indices is None:
+                raise ValueError(f"Split '{split_name}' has no indices")
+            array = np.array(indices, dtype=int, copy=True)
+            if array.ndim != 1:
+                raise ValueError(
+                    f"Split '{split_name}' indices must be 1-dimensional, got shape {array.shape}"
+                )
+            normalized[split_name] = array
+        if not normalized:
+            raise ValueError("At least one split must be provided")
+        return normalized
+
+    def set_split_indices(
+        self, split_indices: Mapping[str, Sequence[int]]
+    ) -> "SplitAwareScaler":
+        """Assign split metadata after instantiation."""
+
+        self.split_indices = self.normalize_split_indices(split_indices)
+        return self
+
+    def get_split_indices(self, split: str) -> np.ndarray:
+        """Return indices for the requested split."""
+
+        indices = self._require_split_indices().get(split)
+        if indices is None:
+            raise KeyError(f"Split '{split}' not found in metadata")
+        return indices
+
+    def fit(self, X: Any, y: Any = None, *, split: str = "train") -> "SplitAwareScaler":
+        """Fit the underlying scaler using data from the specified split."""
+
+        if split != "train":
+            raise ValueError("SplitAwareScaler.fit may only be called with split='train'")
+        indices = self.get_split_indices(split)
+        X_subset = self._subset(X, indices)
+        y_subset = self._subset(y, indices)
+        self.base_scaler.fit(X_subset, y_subset)
+        self._fitted = True
+        self._fitted_split = split
+        return self
+
+    def transform(self, X: Any, *, split: str = "train") -> Any:
+        """Transform the specified split with the fitted scaler."""
+
+        if not self._fitted:
+            raise RuntimeError("SplitAwareScaler must be fitted before calling transform")
+        indices = self.get_split_indices(split)
+        X_subset = self._subset(X, indices)
+        return self.base_scaler.transform(X_subset)
+
+    def fit_transform(self, X: Any, y: Any = None, *, split: str = "train") -> Any:
+        """Fit and transform the training split."""
+
+        if split != "train":
+            raise ValueError("fit_transform is only permitted for the 'train' split")
+        self.fit(X, y=y, split=split)
+        return self.transform(X, split=split)
+
+    @property
+    def is_fitted(self) -> bool:
+        """Whether the underlying scaler has been fitted."""
+
+        return self._fitted
+
+    def _require_split_indices(self) -> Dict[str, np.ndarray]:
+        if self.split_indices is None:
+            raise ValueError("Split metadata has not been provided")
+        return self.split_indices
+
+    @staticmethod
+    def _subset(data: Any, indices: np.ndarray) -> Any:
+        if data is None:
+            return None
+        if hasattr(data, "iloc"):
+            return data.iloc[indices]
+        array = np.asarray(data)
+        return array[indices]
 
 def _serialize_failure_cases(error: pa_errors.SchemaError, limit: int = 3) -> str:
     if hasattr(error, "failure_cases"):

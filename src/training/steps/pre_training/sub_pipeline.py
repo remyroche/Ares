@@ -95,6 +95,14 @@ STEP_REGISTRY: Dict[str, StepSpec] = {
     ),
 }
 
+STEP_PROGRESS_ICONS: Dict[str, str] = {
+    'multi_horizon_profit_labeler': '🎯',
+    'feature_lookback_optimization': '⚙️',
+    'optimized_lookback_generation': '⚡',
+    'interactive_feature_generation': '🔧',
+    'final_feature_selection': '🎯',
+}
+
 try:  # pragma: no cover - platform specific import
     import resource
 except ImportError:  # pragma: no cover
@@ -619,6 +627,180 @@ class PreTrainingSubPipeline:
                 return bool(pipeline_params.get('continue_on_error'))
         return False
 
+    async def _run_pipeline_step(
+        self,
+        *,
+        spec: StepSpec,
+        config: SubPipelineConfig,
+        run_id: str,
+        results: Dict[str, Any],
+        metrics_sink: Optional[MetricsSink],
+        step_metric_records: List[Dict[str, Any]],
+        continue_on_error: bool,
+        step_failures: List[Tuple[str, SubPipelineFailure, SubPipelineResult]],
+        start_time: datetime,
+        step_index: int,
+        total_steps: int,
+    ) -> Optional[PipelineResultDict]:
+        icon = STEP_PROGRESS_ICONS.get(spec.name, '🚀')
+        self.logger.info(
+            f"{icon} Step {step_index}/{total_steps}: {spec.display_name}"
+        )
+
+        context = StepLogContext(
+            run_id=run_id,
+            step=spec.name,
+            symbol=config.symbol,
+            timeframe=config.timeframe,
+        )
+        self.event_logger.step_begin(context)
+
+        executor = getattr(self, spec.executor_method, None)
+        if executor is None:
+            message = (
+                f"Executor '{spec.executor_method}' missing for step "
+                f"'{spec.name}'. Implement the executor or disable the step."
+            )
+            failure = self._create_failure(
+                'pipeline',
+                f"{self._default_step_error_code('pipeline')}_MISSING_EXECUTOR",
+                message,
+            )
+            self.logger.error(f"❌ {message}")
+            self.event_logger.step_end(
+                context,
+                duration_ms=0.0,
+                success=False,
+                error=message,
+                extra={'error_code': failure.error_code},
+            )
+            return self._apply_failure_to_results(
+                results,
+                failure,
+                start_time,
+                metrics_sink,
+                step_metric_records,
+                config,
+            )
+
+        result = await executor(config, self._run_metadata)
+        self._capture_step_timing_metrics(spec.name, result, config, results)
+        rows_in, rows_out = self._resolve_row_counts(result)
+        context.rows_in = rows_in
+        context.rows_out = rows_out
+
+        if result.success:
+            results['completed_steps'] += 1
+
+        self._record_step_metrics(spec.name, result, results, metrics_sink, step_metric_records)
+        step_duration_ms = self._result_duration_ms(result)
+        self._extend_pipeline_collections(results, result)
+
+        if not result.success:
+            failure = self._resolve_failure_from_result(
+                spec.name,
+                result,
+                f"{spec.display_name} failed",
+            )
+            code_text = f"[{failure.error_code}] " if failure.error_code else ''
+            self.logger.error(
+                f"❌ {spec.display_name} failed: {code_text}{failure.message}"
+            )
+            self.event_logger.step_end(
+                context,
+                duration_ms=step_duration_ms,
+                success=False,
+                error=failure.message,
+                extra={'error_code': failure.error_code},
+            )
+            results['results'][spec.name] = result.artifacts
+            results['error_message'] = failure.message
+            results['error_code'] = failure.error_code
+            step_failures.append((spec.name, failure, result))
+            if not continue_on_error:
+                return self._apply_failure_to_results(
+                    results,
+                    failure,
+                    start_time,
+                    metrics_sink,
+                    step_metric_records,
+                    config,
+                )
+
+            warning_message = (
+                f"⚠️ Continue-on-error enabled; proceeding after {spec.name} failure"
+            )
+            tprint_warning(warning_message)
+            self.logger.warning(warning_message)
+            return None
+
+        artifacts = result.artifacts or {}
+        if artifacts:
+            try:
+                merged_artifacts = self._current_pipeline_state.merge_step_artifacts(
+                    spec.name,
+                    artifacts,
+                )
+            except UnexpectedArtifactKeyError as merge_error:
+                failure = self._create_failure(
+                    spec.name,
+                    f"{self._default_step_error_code(spec.name)}_SCHEMA",
+                    str(merge_error),
+                    context={'unexpected_keys': merge_error.keys},
+                )
+                self.logger.error(f"❌ {merge_error}")
+                self.event_logger.step_end(
+                    context,
+                    duration_ms=step_duration_ms,
+                    success=False,
+                    error=str(merge_error),
+                    extra={'error_code': failure.error_code},
+                )
+                return self._apply_failure_to_results(
+                    results,
+                    failure,
+                    start_time,
+                    metrics_sink,
+                    step_metric_records,
+                    config,
+                )
+
+            results['results'][spec.name] = merged_artifacts
+        else:
+            message = (
+                f"{spec.display_name} completed without emitting artifacts; "
+                f"this violates the documented pipeline contract."
+            )
+            failure = self._create_failure(
+                spec.name,
+                f"{self._default_step_error_code(spec.name)}_MISSING_ARTIFACTS",
+                message,
+            )
+            self.logger.error(f"❌ {message}")
+            self.event_logger.step_end(
+                context,
+                duration_ms=step_duration_ms,
+                success=False,
+                error=message,
+                extra={'error_code': failure.error_code},
+            )
+            return self._apply_failure_to_results(
+                results,
+                failure,
+                start_time,
+                metrics_sink,
+                step_metric_records,
+                config,
+            )
+
+        self.event_logger.step_end(
+            context,
+            duration_ms=step_duration_ms,
+            success=True,
+            extra={'artifact_keys': sorted(result.artifacts.keys())},
+        )
+
+        return None
     def _build_event_context(
         self,
         step: str,
@@ -1172,14 +1354,13 @@ class PreTrainingSubPipeline:
                         config,
                     )
 
-            if mh_result.success:
-                self.event_logger.step_end(
-                    mh_context,
-                    duration_ms=mh_duration_ms,
-                    success=True,
-                    extra={'artifact_keys': sorted(mh_result.artifacts.keys())},
-                )
+        end_time: Optional[datetime] = None
 
+        try:
+            if not sequence_specs:
+                message = (
+                    'No pre-training steps are enabled in STEP_REGISTRY. '
+                    'Enable at least one step or adjust the configuration.'
             # Step 2: Feature Lookback Optimization
             flo_context = StepLogContext(
                 run_id=run_id,
@@ -1361,22 +1542,16 @@ class PreTrainingSubPipeline:
                     interactive_result,
                     'Interactive feature generation failed',
                 )
-                code_text = f"[{failure.error_code}] " if failure.error_code else ''
-                self.logger.error(
-                    f"❌ Interactive feature generation failed: {code_text}{failure.message}"
+                failure = self._create_failure(
+                    'pipeline',
+                    f"{self._default_step_error_code('pipeline')}_NO_STEPS",
+                    message,
                 )
-                self.event_logger.step_end(
-                    interactive_context,
-                    duration_ms=interactive_duration_ms,
-                    success=False,
-                    error=failure.message,
-                    extra={'error_code': failure.error_code},
+                self.logger.error(f'❌ {message}')
+                self.event_logger.error(
+                    message,
+                    context={'error_code': failure.error_code, 'run_id': run_id},
                 )
-                results['results']['interactive_feature_generation'] = interactive_result.artifacts
-                results['error_message'] = failure.message
-                results['error_code'] = failure.error_code
-                step_failures.append(('interactive_feature_generation', failure, interactive_result))
-                if not continue_on_error:
                 return self._apply_failure_to_results(
                     results,
                     failure,
@@ -1386,6 +1561,19 @@ class PreTrainingSubPipeline:
                     config,
                 )
 
+            for index, spec in enumerate(sequence_specs, start=1):
+                step_result = await self._run_pipeline_step(
+                    spec=spec,
+                    config=config,
+                    run_id=run_id,
+                    results=results,
+                    metrics_sink=metrics_sink,
+                    step_metric_records=step_metric_records,
+                    continue_on_error=continue_on_error,
+                    step_failures=step_failures,
+                    start_time=start_time,
+                    step_index=index,
+                    total_steps=sequence_step_count,
             interactive_artifacts = interactive_result.artifacts or {}
 
             # Validate artifacts before updating state
@@ -1577,6 +1765,8 @@ class PreTrainingSubPipeline:
                     success=True,
                     extra={'artifact_keys': sorted(ffs_result.artifacts.keys())},
                 )
+                if step_result is not None:
+                    return step_result
 
             if step_failures:
                 primary_failure = step_failures[0][1]
@@ -1589,84 +1779,6 @@ class PreTrainingSubPipeline:
                     config,
                 )
 
-            ffs_artifacts = ffs_result.artifacts or {}
-
-            # Validate artifacts before updating state
-            if 'final_feature_selection_result' in ffs_artifacts:
-                selected_features = ffs_artifacts.get('final_feature_selection_result', {}).get('selected_features', [])
-                self.logger.info(f"✅ Final feature selection completed for {config.symbol}")
-                self.logger.info(f"   → Final features: {len(selected_features)}")
-                try:
-                    merged_ffs_artifacts = self._current_pipeline_state.merge_step_artifacts(
-                        'final_feature_selection',
-                        ffs_artifacts,
-                    )
-                except UnexpectedArtifactKeyError as merge_error:
-                    failure = self._create_failure(
-                        'final_feature_selection',
-                        f"{self._default_step_error_code('final_feature_selection')}_SCHEMA",
-                        str(merge_error),
-                        context={'unexpected_keys': merge_error.keys},
-                    )
-                    self.logger.error(f"❌ {merge_error}")
-                    self.event_logger.step_end(
-                        ffs_context,
-                        duration_ms=ffs_duration_ms,
-                        success=False,
-                        error=str(merge_error),
-                        extra={'error_code': failure.error_code},
-                    )
-                    return self._apply_failure_to_results(
-                        results,
-                        failure,
-                        start_time,
-                        metrics_sink,
-                        step_metric_records,
-                        config,
-                    )
-
-                results['results']['final_feature_selection'] = merged_ffs_artifacts
-            elif ffs_artifacts:
-                self.logger.warning("⚠️ Final feature selection completed but artifact structure unexpected")
-                try:
-                    merged_ffs_artifacts = self._current_pipeline_state.merge_step_artifacts(
-                        'final_feature_selection',
-                        ffs_artifacts,
-                    )
-                except UnexpectedArtifactKeyError as merge_error:
-                    failure = self._create_failure(
-                        'final_feature_selection',
-                        f"{self._default_step_error_code('final_feature_selection')}_SCHEMA",
-                        str(merge_error),
-                        context={'unexpected_keys': merge_error.keys},
-                    )
-                    self.logger.error(f"❌ {merge_error}")
-                    self.event_logger.step_end(
-                        ffs_context,
-                        duration_ms=ffs_duration_ms,
-                        success=False,
-                        error=str(merge_error),
-                        extra={'error_code': failure.error_code},
-                    )
-                    return self._apply_failure_to_results(
-                        results,
-                        failure,
-                        start_time,
-                        metrics_sink,
-                        step_metric_records,
-                        config,
-                    )
-
-                results['results']['final_feature_selection'] = merged_ffs_artifacts
-
-            self.event_logger.step_end(
-                ffs_context,
-                duration_ms=ffs_duration_ms,
-                success=True,
-                extra={'artifact_keys': sorted(ffs_result.artifacts.keys())},
-            )
-
-            # Success
             end_time = datetime.now()
             results['success'] = True
             results['execution_time'] = (end_time - start_time).total_seconds()
@@ -1676,12 +1788,16 @@ class PreTrainingSubPipeline:
             end_metadata['end_time_utc'] = datetime.utcnow().isoformat() + 'Z'
             end_metadata['duration_seconds'] = results['execution_time']
             self._run_metadata = end_metadata
-            completion_block = json.dumps(self._run_metadata, indent=2, sort_keys=True)
 
+            completion_block = json.dumps(self._run_metadata, indent=2, sort_keys=True)
             pipeline_duration_ms = results['execution_time'] * 1000.0
-            self.logger.info(f"🎉 Pre-Training Sub-Pipeline execution completed successfully for {config.symbol}")
-            self.logger.info(f"⏱️ Total execution time: {results['execution_time']:.2f} seconds")
-            self.logger.info(f"🧾 Run metadata summary:\n{completion_block}")
+            self.logger.info(
+                f'🎉 Pre-Training Sub-Pipeline execution completed successfully for {config.symbol}'
+            )
+            self.logger.info(
+                f"⏱️ Total execution time: {results['execution_time']:.2f} seconds"
+            )
+            self.logger.info(f"🧾 Run metadata:\n{completion_block}")
             self.event_logger.pipeline_end(
                 run_id=run_id,
                 symbol=config.symbol,
@@ -1693,8 +1809,6 @@ class PreTrainingSubPipeline:
                 total_steps=results['total_steps'],
                 metadata=dict(self._run_metadata),
             )
-
-
         except ImportError as e:
             message = f"Missing dependencies: {str(e)}"
             failure = self._create_failure(

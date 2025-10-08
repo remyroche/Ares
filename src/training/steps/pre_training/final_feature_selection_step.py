@@ -744,6 +744,18 @@ class FinalFeatureSelectionStep:
             X, y
         )
 
+        final_scores = getattr(selection_result, 'final_scores', {}) or {}
+        selection_result.eligible_for_selection = bool(final_scores.get('eligible_for_selection', True))
+        selection_result.turnover_rejection_reason = final_scores.get('turnover_rejection_reason')
+        if not selection_result.eligible_for_selection:
+            reason = selection_result.turnover_rejection_reason or 'Turnover constraints violated'
+            tprint_warning(f"🚫 Selection result marked ineligible: {reason}")
+
+        final_numeric_scores = {
+            key: float(value)
+            for key, value in final_scores.items()
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
         horizon_p_values, feature_p_values, lookback_p_values = self._collect_hypothesis_p_values(selection_result)
         hypothesis_report = track_and_control_hypotheses(
             horizon_results=horizon_p_values,
@@ -769,10 +781,12 @@ class FinalFeatureSelectionStep:
                 'stage_1': dict(getattr(selection_result, 'stage_1_scores', {})),
                 'stage_2': dict(getattr(selection_result, 'stage_2_scores', {})),
                 'stage_3': dict(getattr(selection_result, 'stage_3_scores', {})),
-                'final': dict(getattr(selection_result, 'final_scores', {})),
+                'final': final_numeric_scores,
             },
             'selection_time': getattr(selection_result, 'selection_time', None),
             'is_unsupervised': getattr(selection_result, 'is_unsupervised', None),
+            'eligible_for_selection': selection_result.eligible_for_selection,
+            'turnover_rejection_reason': selection_result.turnover_rejection_reason,
             'hypothesis_report': selection_result.hypothesis_report,
             'horizon_p_values': selection_result.horizon_p_values,
             'feature_p_values': selection_result.feature_p_values,
@@ -906,6 +920,8 @@ class FinalFeatureSelectionStep:
             },
             'selection_time': selection_result.selection_time,
             'is_unsupervised': getattr(selection_result, 'is_unsupervised', False),
+            'eligible_for_selection': getattr(selection_result, 'eligible_for_selection', True),
+            'turnover_rejection_reason': getattr(selection_result, 'turnover_rejection_reason', None),
             'hypothesis_report': getattr(selection_result, 'hypothesis_report', {}),
             'horizon_p_values': getattr(selection_result, 'horizon_p_values', {}),
             'feature_p_values': getattr(selection_result, 'feature_p_values', {}),
@@ -953,7 +969,15 @@ class FinalFeatureSelectionStep:
                 final_scores = selection_result.final_scores
                 ic_score = final_scores.get('information_coefficient')
                 sharpe_score = final_scores.get('long_short_sharpe')
-                turnover = final_scores.get('turnover')
+                turnover = final_scores.get('turnover_per_period', final_scores.get('turnover'))
+                turnover_annual = final_scores.get('turnover_annual')
+                avg_holding = final_scores.get('avg_holding_period_bars')
+                stability = final_scores.get('position_stability')
+                mean_cost = final_scores.get('mean_transaction_cost')
+                mean_impact = final_scores.get('mean_market_impact_cost')
+                capacity_exceeded = bool(final_scores.get('capacity_exceeded'))
+                rejection_reason = final_scores.get('turnover_rejection_reason')
+                eligible = bool(final_scores.get('eligible_for_selection', True))
 
                 if isinstance(ic_score, (int, float)):
                     tprint(f"   📈 OOS Information Coefficient: {ic_score:.4f}")
@@ -966,11 +990,45 @@ class FinalFeatureSelectionStep:
                     tprint(f"   ⚖️ Cost-adjusted Sharpe: {sharpe_score}")
 
                 if isinstance(turnover, (int, float)):
-                    tprint(f"   🔄 Average Turnover: {turnover:.4f}")
+                    tprint(f"   🔄 Average Turnover / Period: {turnover:.4f}")
                 else:
-                    tprint(f"   🔄 Average Turnover: {turnover}")
-                score = selection_result.final_scores.get('cv_mean', 'N/A')
-                tprint(f"   🎯 Final CV Score ({selection_result.final_scores.get('cv_metric', 'unknown')}): {score:.4f}" if isinstance(score, (int, float)) else f"   🎯 Final CV Score: {score}")
+                    tprint(f"   🔄 Average Turnover / Period: {turnover}")
+
+                if isinstance(turnover_annual, (int, float)):
+                    tprint(f"   📅 Annualized Turnover: {turnover_annual:.2f}x")
+                elif turnover_annual is not None:
+                    tprint(f"   📅 Annualized Turnover: {turnover_annual}")
+
+                if isinstance(avg_holding, (int, float)):
+                    tprint(f"   🕒 Avg Holding Period (bars): {avg_holding:.2f}")
+                if isinstance(stability, (int, float)):
+                    tprint(f"   🧱 Position Stability: {stability:.2%}")
+
+                if isinstance(mean_cost, (int, float)):
+                    tprint(f"   💸 Mean Transaction Cost: {mean_cost:.6f}")
+                if isinstance(mean_impact, (int, float)):
+                    tprint(f"   🌊 Mean Market Impact Cost: {mean_impact:.6f}")
+
+                if capacity_exceeded:
+                    tprint_warning("   🚨 Capacity limit exceeded during backtest")
+
+                if not eligible:
+                    if rejection_reason:
+                        tprint_warning(f"   🚫 Configuration rejected: {rejection_reason}")
+                    else:
+                        tprint_warning("   🚫 Configuration rejected due to turnover constraints")
+                else:
+                    tprint("   ✅ Configuration passes turnover checks")
+                score = final_scores.get('cv_mean', 'N/A')
+                cv_metric = final_scores.get('cv_metric', 'unknown')
+                if isinstance(score, (int, float)) and not np.isnan(score):
+                    tprint(f"   🎯 Final CV Score ({cv_metric}): {score:.4f}")
+                else:
+                    tprint(f"   🎯 Final CV Score ({cv_metric}): N/A")
+
+                trading_cv = final_scores.get('cv_mean_trading')
+                if isinstance(trading_cv, (int, float)):
+                    tprint(f"   🎯 Trading CV Sharpe Mean: {trading_cv:.4f}")
                 for metric_key, label in (
                     ('average_precision', 'PR-AUC'),
                     ('balanced_accuracy', 'Balanced Accuracy'),

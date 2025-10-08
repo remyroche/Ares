@@ -16,6 +16,7 @@ from src.utils.common_operations import safe_dataframe_operation
 from src.utils.common_utilities import CommonUtilities
 from src.utils.math_validation import safe_divide
 from src.utils.serialization_utils import UniversalSerializer
+from src.feature_generation.core.feature_cache import FeatureCacheService
 
 # Import numpy for type checking
 from .dependency_manager import get_dependency
@@ -173,6 +174,18 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         self.start_time: Optional[float] = None
         self.metrics: Optional[OptimizationMetrics] = None
 
+        # Feature cache state
+        self.feature_cache = FeatureCacheService(subdirectory="feature_bank")
+        self.cache_metrics = {
+            'hits': 0,
+            'misses': 0,
+            'writes': 0,
+            'force_refreshes': 0
+        }
+        self._current_cache_key: Optional[str] = None
+        self._current_lookback_hash: Optional[str] = None
+        self._force_cache_refresh: bool = False
+
         # Performance monitoring (separate from PerformanceMonitor instance)
         self.performance_data = {
             'memory_usage': [],
@@ -213,6 +226,8 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         Returns:
             ComponentResult with optimization results
         """
+        pipeline_state = dict(pipeline_state or {})
+
         tprint("🚀 Starting modular feature lookback optimization execution...")
         start_time = self.performance_monitor.start_operation("execute")
 
@@ -246,6 +261,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
             # Extract execution mode parameters from pipeline configuration
             execution_mode_params = {}
+            lookback_config = None
             if self.execution_mode_config and hasattr(pipeline_state, 'get'):
                 try:
                     # Try to extract execution mode from pipeline state or config
@@ -258,6 +274,16 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 except Exception as e:
                     self.logger.warning(f"⚠️ Could not extract execution mode parameters: {e}")
                     execution_mode_params = {}
+            else:
+                execution_mode_params = {}
+
+            pipeline_state['lookback_config'] = lookback_config or pipeline_state.get('lookback_config', {})
+            cache_key = self._resolve_cache_key(pipeline_state, lookback_config)
+            self.logger.info(f"🗂️ Feature cache key resolved: {cache_key}")
+            self.set_run_metadata({
+                'feature_cache_key': cache_key,
+                'lookback_config_hash': self._current_lookback_hash,
+            })
 
             # Load required data
             tprint("📥 Loading market data for optimization")
@@ -347,6 +373,8 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             except Exception as e:
                 log_warning(f"⚠️ [FEATURE_LOOKBACK] Failed to save artifacts persistently: {e}")
 
+            pipeline_state['feature_cache_metrics'] = dict(self.cache_metrics)
+
             result = ComponentResult(
                 success=True,
                 artifacts=artifacts,
@@ -357,7 +385,10 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                     'performance_metrics': self.performance_monitor.get_performance_summary(),
                     'optimization_results': optimization_results,
                     'artifacts_saved_persistently': True,
-                    'pipeline_type': 'differentiated_long_short'
+                    'pipeline_type': 'differentiated_long_short',
+                    'feature_cache_metrics': dict(self.cache_metrics),
+                    'feature_cache_key': self._current_cache_key,
+                    'feature_cache_force_refresh': self._force_cache_refresh,
                 }
             )
 
@@ -384,6 +415,35 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             artifacts={},
             metadata={'optimization_status': 'failed'}
         )
+
+    def _current_feature_bank_version(self) -> str:
+        try:
+            from src.feature_generation.core.feature_bank import FeatureBank
+            return getattr(FeatureBank, 'VERSION', 'unknown')
+        except Exception:
+            return 'unknown'
+
+    def _resolve_cache_key(self, pipeline_state: Dict[str, Any], lookback_config: Optional[Any] = None) -> Optional[str]:
+        if pipeline_state is None:
+            return None
+
+        symbol = pipeline_state.get('symbol', self.config.symbol)
+        timeframe = pipeline_state.get('timeframe', self.config.timeframe)
+        lookback_source = lookback_config or pipeline_state.get('lookback_config') or {}
+        lookback_hash = FeatureCacheService.compute_config_hash(lookback_source)
+
+        self._current_lookback_hash = lookback_hash
+        pipeline_state['lookback_config_hash'] = lookback_hash
+
+        version = self._current_feature_bank_version()
+        cache_key = FeatureCacheService.build_key(symbol, timeframe, version, lookback_hash)
+        pipeline_state['feature_cache_key'] = cache_key
+        self._current_cache_key = cache_key
+        return cache_key
+
+    def _sync_cache_metrics(self) -> None:
+        if hasattr(self.performance_monitor, 'update_cache_metrics'):
+            self.performance_monitor.update_cache_metrics(dict(self.cache_metrics))
 
     async def _load_market_data(self, data: Any) -> Optional[pd.DataFrame]:
         """Load market data for optimization."""
@@ -522,24 +582,56 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             self.logger.warning(f"⚠️ Failed to align data with regime assignments: {e}")
             return market_data
 
-    async def _generate_features_for_optimization(self, data: pd.DataFrame) -> List[str]:
-        """Generate features using the feature bank system to get 200+ engineered features."""
+    async def _generate_features_for_optimization(
+        self,
+        data: pd.DataFrame,
+        pipeline_state: Optional[Dict[str, Any]] = None,
+        *,
+        force_refresh: bool = False,
+    ) -> List[str]:
+        """Generate features using the feature bank system with caching support."""
+
+        pipeline_state = dict(pipeline_state or {})
+        cache_key = pipeline_state.get('feature_cache_key') or self._current_cache_key
+
         try:
+            cached_features = None
+            if cache_key:
+                if force_refresh:
+                    self.logger.info("♻️ Force refresh requested for feature cache key %s", cache_key)
+                    self.cache_metrics['force_refreshes'] += 1
+                    self.performance_monitor.record_cache_event('force_refresh', cache_key)
+                    self._sync_cache_metrics()
+                else:
+                    cached_features = self.feature_cache.load(cache_key)
+                    if cached_features is not None and not cached_features.empty:
+                        self.logger.info("📦 Reusing cached feature bank matrix for key %s", cache_key)
+                        self.cache_metrics['hits'] += 1
+                        self.performance_monitor.record_cache_event('hit', cache_key)
+                        aligned = cached_features.reindex(data.index)
+                        for col in aligned.columns:
+                            data[col] = aligned[col].values
+                        self._sync_cache_metrics()
+                        return aligned.columns.tolist()
+                    else:
+                        self.logger.info("🔁 Feature cache miss for key %s", cache_key)
+                        self.cache_metrics['misses'] += 1
+                        self.performance_monitor.record_cache_event('miss', cache_key)
+                        self._sync_cache_metrics()
+
             # Import the feature bank system
             from src.feature_generation.core.feature_bank import FeatureBank
-            
+
             self.logger.info("🔧 Generating features using feature bank system...")
-            
+
             # Initialize feature bank
             feature_bank = FeatureBank()
-            
+
             # Generate features using the feature bank directly
-            # This will create 200+ engineered features (RSI, MACD, Bollinger Bands, ATR, etc.)
-            # Include only the categories we want (exclude autoencoders and interaction features)
             from src.feature_generation.core.feature_generator import FeatureCategory
             included_categories = [
                 FeatureCategory.RETURNS,
-                FeatureCategory.MOMENTUM, 
+                FeatureCategory.MOMENTUM,
                 FeatureCategory.VOLUME,
                 FeatureCategory.VOLATILITY,
                 FeatureCategory.TREND,
@@ -550,57 +642,65 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 FeatureCategory.ENTROPY,
                 FeatureCategory.ORDER_FLOW,
                 FeatureCategory.ACCELERATION,
-                FeatureCategory.TIME
+                FeatureCategory.TIME,
             ]
             generated_features = feature_bank.generate_features(data, categories=included_categories)
-            
+
             if generated_features is not None and not generated_features.empty:
-                # Provide detailed information about generated features
                 total_features = generated_features.shape[1]
                 total_rows = generated_features.shape[0]
                 self.logger.info(f"✅ Generated {total_features} features from feature bank")
                 self.logger.info(f"📊 Feature matrix: {total_rows} rows × {total_features} columns")
-                
-                # Show feature categories breakdown
+
                 feature_categories = {}
                 for col in generated_features.columns:
                     if '_' in col:
                         category = col.split('_')[0]
                         feature_categories[category] = feature_categories.get(category, 0) + 1
-                
+
                 self.logger.info(f"📋 Feature breakdown: {dict(sorted(feature_categories.items()))}")
-                
-                # Get feature columns, excluding unwanted types
-                excluded_columns = ['regime_id', 'regime_prob', 'open', 'high', 'low', 'close', 'volume', 
-                                  'timestamp', 'symbol', 'open_time', 'close_time', 'interval', 'exchange', 'timeframe']
-                
+
+                excluded_columns = [
+                    'regime_id', 'regime_prob', 'open', 'high', 'low', 'close', 'volume',
+                    'timestamp', 'symbol', 'open_time', 'close_time', 'interval', 'exchange', 'timeframe'
+                ]
+
                 feature_columns = [col for col in generated_features.columns if col not in excluded_columns]
-                
-                # Filter out unwanted features: wavelets, autoencoders, NAS, TAS, interaction, cross-timeframe, regime-specific
-                # Also exclude bid/ask features that require missing data
-                feature_columns = [col for col in feature_columns 
-                                 if not any(unwanted in col.lower() for unwanted in [
-                                     'wavelet', 'autoencoder', 'regime_', 'nas_', 'tas_',
-                                     'interaction_', 'cross_timeframe_', 'cross_timeframe',
-                                     'bid_ask', 'bidask', 'market_depth', 'liquidity_proxy',
-                                     'order_flow', 'trade_intensity', 'volume_weighted'
-                                 ])]
-                
-                self.logger.info(f"🎯 Found {len(feature_columns)} engineered features for optimization (excluding unwanted types)")
-                
-                # Add the engineered features to the data
+                feature_columns = [
+                    col for col in feature_columns
+                    if not any(
+                        unwanted in col.lower()
+                        for unwanted in [
+                            'wavelet', 'autoencoder', 'regime_', 'nas_', 'tas_',
+                            'interaction_', 'cross_timeframe_', 'cross_timeframe',
+                            'bid_ask', 'bidask', 'market_depth', 'liquidity_proxy',
+                            'order_flow', 'trade_intensity', 'volume_weighted'
+                        ]
+                    )
+                ]
+
+                self.logger.info(
+                    f"🎯 Found {len(feature_columns)} engineered features for optimization (excluding unwanted types)"
+                )
+
                 for col in feature_columns:
-                    if col in generated_features.columns and col not in data.columns:
-                        data[col] = generated_features[col].values[:len(data)]  # Align with data length
-                
+                    if col in generated_features.columns:
+                        data[col] = generated_features[col].reindex(data.index).values
+
+                if cache_key:
+                    cached_matrix = generated_features[feature_columns].reindex(data.index)
+                    self.feature_cache.save(cache_key, cached_matrix)
+                    self.cache_metrics['writes'] += 1
+                    self.performance_monitor.record_cache_event('write', cache_key)
+                    self._sync_cache_metrics()
+
                 return feature_columns
-            else:
-                self.logger.warning("⚠️ Feature generation failed, falling back to basic features")
-                return []
-                
+
+            self.logger.warning("⚠️ Feature generation failed, falling back to basic features")
+            return []
+
         except Exception as e:
             self.logger.error(f"❌ Error generating features with feature bank: {e}")
-            # Fail fast - don't fallback to basic features
             raise RuntimeError(f"Failed to generate features using feature bank: {e}")
 
     def _coerce_to_dataframe(self, value: Any) -> Optional[pd.DataFrame]:
@@ -848,7 +948,20 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         try:
             # Generate features using PID-based feature generation system
             tprint("🧪 Generating features for optimization")
-            feature_columns = await self._generate_features_for_optimization(data)
+            force_refresh = bool(
+                pipeline_state.get('feature_cache_force_refresh')
+                or pipeline_state.get('force_feature_cache_refresh')
+                or pipeline_state.get('force_refresh_features')
+                or self.config.force_rerun
+            )
+            pipeline_state['feature_cache_force_refresh'] = force_refresh
+            self._force_cache_refresh = force_refresh
+
+            feature_columns = await self._generate_features_for_optimization(
+                data,
+                pipeline_state,
+                force_refresh=force_refresh,
+            )
 
             if not feature_columns:
                 # Fallback to basic features if feature generation fails

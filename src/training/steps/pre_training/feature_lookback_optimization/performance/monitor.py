@@ -118,6 +118,14 @@ class PerformanceMonitor:
             'network_io_bytes': 0
         }
 
+        # Cache metrics
+        self.cache_metrics = {
+            'hits': 0,
+            'misses': 0,
+            'writes': 0,
+            'force_refreshes': 0
+        }
+
         # Initialize monitoring
         self._initialize_monitoring()
 
@@ -368,6 +376,36 @@ class PerformanceMonitor:
         except Exception as e:
             self.logger.debug(f"Failed to record system metrics: {e}")
 
+    def record_cache_event(self, event_type: str, cache_key: str, *, artifact_type: str = "features") -> None:
+        """Track cache hits, misses, writes, and forced refreshes."""
+        if not event_type:
+            return
+
+        event_type = event_type.lower()
+        increment_map = {
+            'hit': 'hits',
+            'miss': 'misses',
+            'write': 'writes',
+            'force_refresh': 'force_refreshes',
+        }
+
+        metric_key = increment_map.get(event_type)
+        if metric_key:
+            self.cache_metrics[metric_key] = self.cache_metrics.get(metric_key, 0) + 1
+
+        self._record_metric(
+            name=f"cache_{event_type}",
+            value=1.0,
+            metric_type=MetricType.TECHNICAL,
+            level=MetricLevel.INFO,
+            tags={'cache_key': cache_key, 'artifact_type': artifact_type}
+        )
+
+    def update_cache_metrics(self, metrics: Dict[str, Any]) -> None:
+        for key, value in (metrics or {}).items():
+            if key in self.cache_metrics:
+                self.cache_metrics[key] = value
+
     def get_performance_summary(self) -> Dict[str, Any]:
         """Get comprehensive performance summary."""
         if not self.start_time:
@@ -405,7 +443,8 @@ class PerformanceMonitor:
             'peak_memory_usage_mb': self.resource_metrics['peak_memory_mb'],
             'operation_statistics': operation_stats,
             'quality_metrics': self.quality_metrics.copy(),
-            'resource_metrics': self.resource_metrics.copy()
+            'resource_metrics': self.resource_metrics.copy(),
+            'cache_metrics': self.cache_metrics.copy(),
         }
 
     def get_metric_summary(self, metric_name: str) -> Optional[MetricSummary]:

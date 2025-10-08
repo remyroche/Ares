@@ -69,6 +69,22 @@ STEP_REGISTRY: Dict[str, StepSpec] = {
         description='Apply multi-horizon profit labeling to market data.',
         order=10,
     ),
+    'analyst_profit_labeler': StepSpec(
+        name='analyst_profit_labeler',
+        component_key='analyst_profit_labeler',
+        executor_method='_execute_analyst_profit_labeler',
+        display_name='Analyst profit labeling',
+        description='Apply Analyst-specific multi-horizon profit labeling (60m timeframe).',
+        order=11,
+    ),
+    'tactician_entry_labeler': StepSpec(
+        name='tactician_entry_labeler',
+        component_key='tactician_entry_labeler',
+        executor_method='_execute_tactician_entry_labeler',
+        display_name='Tactician entry labeling',
+        description='Apply Tactician-specific entry timing labels (15m timeframe).',
+        order=12,
+    ),
     'feature_lookback_optimization': StepSpec(
         name='feature_lookback_optimization',
         component_key='feature_lookback_optimization',
@@ -106,6 +122,8 @@ STEP_REGISTRY: Dict[str, StepSpec] = {
 
 STEP_PROGRESS_ICONS: Dict[str, str] = {
     'multi_horizon_profit_labeler': '🎯',
+    'analyst_profit_labeler': '📈',
+    'tactician_entry_labeler': '🎲',
     'feature_lookback_optimization': '⚙️',
     'optimized_lookback_generation': '⚡',
     'interactive_feature_generation': '🔧',

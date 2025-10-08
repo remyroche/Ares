@@ -89,9 +89,14 @@ except Exception:
 # Import system utilities
 from src.utils.logger import get_logger
 from src.utils.matrix_operations import get_unified_matrix_operations
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_warning
 from src.feature_selection import EntropyBalancerConfig, EntropyFilterResult, EntropyStabilityFilter
 from .calibration_utils import compute_classification_calibration, evaluate_conformal_interval
+from .backtesting.turnover import (
+    apply_market_impact_model,
+    calculate_turnover_metrics,
+    reject_high_turnover_configs,
+)
 
 try:
     from src.utils.ml_common.validation.cv import PurgedKFoldTime
@@ -169,6 +174,10 @@ class FeatureSelectionConfig:
     trading_horizon: int = 252  # Periods used to annualize Sharpe
     turnover_penalty: float = 0.0
     ic_method: str = 'spearman'
+    market_impact_coefficient: float = 0.1
+    capacity_limit_usd: float = 1_000_000.0
+    max_turnover_annual: float = 50.0
+    min_sharpe_to_turnover_ratio: float = 0.1
 
     # Uncertainty & calibration reporting
     enable_uncertainty_reporting: bool = True
@@ -268,6 +277,8 @@ class FeatureSelectionResult:
     stage_2_scores: Dict[str, Any] = field(default_factory=dict)
     stage_3_scores: Dict[str, Any] = field(default_factory=dict)
     final_scores: Dict[str, Any] = field(default_factory=dict)
+    eligible_for_selection: bool = True
+    turnover_rejection_reason: Optional[str] = None
     
     # Feature importance
     rf_importance: Dict[str, float] = field(default_factory=dict)
@@ -2211,43 +2222,96 @@ class MultiStageFeatureSelector:
             if not np.isfinite(ic_value):
                 ic_value = 0.0
 
-        positions = np.sign(pred_values)
-        position_changes = np.diff(positions, prepend=0.0)
-        turnover = float(np.mean(np.abs(position_changes))) if len(position_changes) else 0.0
+        positions = pd.Series(np.sign(pred_values), index=data.index, dtype=float)
+        position_changes = positions.diff().abs()
+        if not position_changes.empty:
+            position_changes.iloc[0] = abs(positions.iloc[0])
 
-        gross_returns = positions * y_values
-        costs = np.abs(position_changes) * self.config.trading_cost
-        net_returns = gross_returns - costs
+        gross_returns = positions * data['target']
+        costs = position_changes * self.config.trading_cost
+        net_returns_before_impact = gross_returns - costs
 
-        mean_transaction_cost = float(np.mean(costs)) if len(costs) else 0.0
-        mean_return = float(np.mean(gross_returns)) if len(gross_returns) else 0.0
-        net_mean_return = float(np.mean(net_returns)) if len(net_returns) else 0.0
-        std_return = float(np.std(net_returns, ddof=0)) if len(net_returns) else 0.0
+        turnover_metrics = calculate_turnover_metrics(
+            positions,
+            gross_returns,
+            position_changes=position_changes,
+            periods_per_year=float(self.config.trading_horizon or 252),
+        )
 
-        penalty_adjustment = self.config.turnover_penalty * turnover
-        adjusted_net_mean = net_mean_return - penalty_adjustment
+        mean_transaction_cost = float(costs.mean()) if not costs.empty else 0.0
+        mean_return = float(gross_returns.mean()) if not gross_returns.empty else 0.0
+        net_mean_return = float(net_returns_before_impact.mean()) if not net_returns_before_impact.empty else 0.0
+
+        volume_series = getattr(self, 'market_volume_series', None)
+        if isinstance(volume_series, pd.Series):
+            volume_series = volume_series.reindex(data.index)
+        elif volume_series is not None:
+            volume_series = pd.Series(volume_series, index=data.index, dtype=float)
+
+        impact_adjusted_returns, market_impact_costs, capacity_exceeded, max_trade_size = apply_market_impact_model(
+            net_returns_before_impact,
+            position_changes,
+            volume=volume_series,
+            impact_coefficient=getattr(self.config, 'market_impact_coefficient', 0.1),
+            capacity_limit_usd=getattr(self.config, 'capacity_limit_usd', 1_000_000.0),
+        )
+
+        impact_adjusted_mean = float(impact_adjusted_returns.mean()) if not impact_adjusted_returns.empty else 0.0
+        std_return = float(impact_adjusted_returns.std(ddof=0)) if not impact_adjusted_returns.empty else 0.0
+        mean_market_impact = float(market_impact_costs.mean()) if not market_impact_costs.empty else 0.0
+        total_market_impact = float(market_impact_costs.sum()) if not market_impact_costs.empty else 0.0
+
+        penalty_adjustment = self.config.turnover_penalty * turnover_metrics['turnover_per_period']
+        adjusted_net_mean = impact_adjusted_mean - penalty_adjustment
 
         horizon = max(self.config.trading_horizon, 1)
         annualization_factor = float(np.sqrt(horizon))
-        if std_return <= 1e-12:
-            sharpe = 0.0
-        else:
+        sharpe = 0.0
+        if std_return > 1e-12:
             sharpe = adjusted_net_mean / std_return * annualization_factor
 
-        return {
+        rejected, rejection_reason = reject_high_turnover_configs(
+            {
+                'turnover_annual': turnover_metrics['turnover_annual'],
+                'sharpe': sharpe,
+            },
+            max_turnover_annual=getattr(self.config, 'max_turnover_annual', 50.0),
+            max_sharpe_to_turnover_ratio=getattr(self.config, 'min_sharpe_to_turnover_ratio', 0.1),
+        )
+
+        if rejected and rejection_reason:
+            tprint_warning(f"🚫 {rejection_reason}")
+
+        metrics: Dict[str, Any] = {
             'information_coefficient': ic_value,
             'long_short_sharpe': float(sharpe),
-            'turnover': turnover,
+            'turnover': turnover_metrics['turnover_per_period'],
+            'turnover_per_period': turnover_metrics['turnover_per_period'],
+            'turnover_annual': turnover_metrics['turnover_annual'],
+            'avg_holding_period_bars': turnover_metrics['avg_holding_period_bars'],
+            'position_stability': turnover_metrics['position_stability'],
             'mean_return': mean_return,
             'std_return': std_return,
             'net_mean_return': net_mean_return,
+            'impact_adjusted_mean_return': impact_adjusted_mean,
             'adjusted_mean_return': adjusted_net_mean,
             'mean_transaction_cost': mean_transaction_cost,
+            'total_transaction_cost': float(costs.sum()) if not costs.empty else 0.0,
+            'mean_market_impact_cost': mean_market_impact,
+            'total_market_impact_cost': total_market_impact,
             'transaction_cost': self.config.trading_cost,
             'turnover_penalty_applied': penalty_adjustment,
             'annualization_factor': annualization_factor,
             'n_observations': int(len(data)),
+            'capacity_exceeded': capacity_exceeded,
+            'max_trade_size': max_trade_size,
+            'is_turnover_rejected': rejected,
         }
+
+        if rejection_reason:
+            metrics['turnover_rejection_reason'] = rejection_reason
+
+        return metrics
 
     def _generate_cv_trading_metrics(self, X: pd.DataFrame, y: pd.Series) -> Tuple[Dict[str, float], pd.Series, List[Dict[str, float]]]:
         """Run cross-validation to obtain validation predictions and trading metrics."""
@@ -2330,11 +2394,16 @@ class MultiStageFeatureSelector:
         ic_values = [float(m.get('information_coefficient', 0.0)) for m in fold_metrics]
         turnover_values = [float(m.get('turnover', 0.0)) for m in fold_metrics]
 
+        trading_cv_mean = float(np.mean(sharpe_values)) if sharpe_values else aggregated_metrics.get('long_short_sharpe', 0.0)
+        trading_cv_std = float(np.std(sharpe_values)) if sharpe_values else 0.0
+
         aggregated_metrics.update({
             'cv_folds': len(fold_metrics),
             'fold_metrics': fold_metrics,
-            'cv_mean': float(np.mean(sharpe_values)) if sharpe_values else aggregated_metrics.get('long_short_sharpe', 0.0),
-            'cv_std': float(np.std(sharpe_values)) if sharpe_values else 0.0,
+            'cv_mean_trading': trading_cv_mean,
+            'cv_std_trading': trading_cv_std,
+            'cv_mean': trading_cv_mean,
+            'cv_std': trading_cv_std,
             'sharpe_by_fold': sharpe_values,
             'information_coefficient_by_fold': ic_values,
             'turnover_by_fold': turnover_values,
@@ -2458,12 +2527,10 @@ class MultiStageFeatureSelector:
         model_score = float(final_model.score(X[stage_3_features], y)) if hasattr(final_model, 'score') else 0.0
 
         trading_metrics = dict(trading_metrics)
-        trading_metrics.setdefault('model_score', model_score)
-        trading_metrics.setdefault('cv_mean', trading_metrics.get('long_short_sharpe', 0.0))
-        trading_metrics.setdefault('cv_std', trading_metrics.get('cv_std', 0.0))
+        trading_metrics['model_score'] = model_score
         trading_metrics.setdefault('validation_sample_count', trading_metrics.get('n_observations', len(y)))
-
-        self.results.final_scores = trading_metrics
+        trading_metrics.setdefault('cv_mean_trading', trading_metrics.get('cv_mean'))
+        trading_metrics.setdefault('cv_std_trading', trading_metrics.get('cv_std'))
         
         try:
             from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
@@ -2476,16 +2543,34 @@ class MultiStageFeatureSelector:
         cv_std = float(np.nanstd(cv_scores)) if cv_scores.size else float('nan')
         metric_name, metric_value = self._calculate_model_metric(final_model, X[stage_3_features], y)
 
-        final_scores: Dict[str, Any] = {
+        final_scores: Dict[str, Any] = dict(trading_metrics)
+        final_scores.update({
+            'cv_metric': self.config.cv_scoring,
             'cv_mean': cv_mean,
             'cv_std': cv_std,
-            'cv_metric': self.config.cv_scoring
-        }
+            'model_cv_mean': cv_mean,
+            'model_cv_std': cv_std,
+            'cv_mean_trading': trading_metrics.get('cv_mean_trading'),
+            'cv_std_trading': trading_metrics.get('cv_std_trading'),
+            'validation_sample_count': trading_metrics.get('validation_sample_count'),
+            'model_score': model_score,
+        })
 
         if metric_value is not None:
             final_scores[metric_name] = metric_value
 
+        if final_scores.get('is_turnover_rejected'):
+            final_scores['eligible_for_selection'] = False
+            final_scores['cv_mean'] = float('nan')
+            final_scores['cv_std'] = float('nan')
+            final_scores['model_cv_mean'] = float('nan')
+            final_scores['model_cv_std'] = float('nan')
+        else:
+            final_scores['eligible_for_selection'] = True
+
         self.results.final_scores = final_scores
+        self.results.eligible_for_selection = bool(final_scores.get('eligible_for_selection', True))
+        self.results.turnover_rejection_reason = final_scores.get('turnover_rejection_reason')
 
         validation_predictions: Optional[np.ndarray]
         validation_probabilities: Optional[np.ndarray]
@@ -2548,12 +2633,6 @@ class MultiStageFeatureSelector:
                         )
                 except Exception as exc:
                     self.logger.warning(f"⚠️ Failed to compute regression uncertainty metrics: {exc}")
-
-        self.results.final_scores = {
-            'cv_mean': cv_scores.mean(),
-            'cv_std': cv_scores.std(),
-            'model_score': final_model.score(X[stage_3_features], y)
-        }
 
         # Store feature counts
         self.results.feature_counts = {
@@ -2650,31 +2729,38 @@ class MultiStageFeatureSelector:
         # Train final model
         final_model = self._train_random_forest(X, y)
         predictions = self._predict_signal(final_model, X)
-        trading_metrics = self._evaluate_trading_metrics(y, predictions)
+        trading_metrics = dict(self._evaluate_trading_metrics(y, predictions))
         model_score = float(final_model.score(X, y)) if hasattr(final_model, 'score') else 0.0
 
         trading_metrics.update({
             'model_score': model_score,
-            'cv_mean': trading_metrics.get('long_short_sharpe', 0.0),
-            'cv_std': 0.0,
+            'cv_mean_trading': trading_metrics.get('long_short_sharpe', 0.0),
+            'cv_std_trading': 0.0,
             'cv_folds': 1,
             'fold_metrics': [],
             'validation_sample_count': trading_metrics.get('n_observations', len(y)),
         })
 
-        self.results.final_scores = trading_metrics
-        
-
         metric_name, metric_value = self._calculate_model_metric(final_model, X, y)
-        final_scores: Dict[str, Any] = {
-            'cv_mean': 0.0,
-            'cv_std': 0.0,
-            'cv_metric': self.config.cv_scoring
-        }
+        final_scores: Dict[str, Any] = dict(trading_metrics)
+        final_scores.update({
+            'cv_metric': self.config.cv_scoring,
+            'cv_mean': float('nan'),
+            'cv_std': float('nan'),
+            'model_cv_mean': float('nan'),
+            'model_cv_std': float('nan'),
+        })
         if metric_value is not None:
             final_scores[metric_name] = metric_value
 
+        if final_scores.get('is_turnover_rejected'):
+            final_scores['eligible_for_selection'] = False
+        else:
+            final_scores['eligible_for_selection'] = True
+
         self.results.final_scores = final_scores
+        self.results.eligible_for_selection = bool(final_scores.get('eligible_for_selection', True))
+        self.results.turnover_rejection_reason = final_scores.get('turnover_rejection_reason')
 
         self.results.feature_counts = {
             'initial': len(X.columns),

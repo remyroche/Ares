@@ -417,6 +417,7 @@ class EnhancedLabelDefinitions:
                 self.analyst_config.trading_costs,
                 entry_prices=execution_context['entry_prices'],
                 exit_prices=execution_context['exit_prices']
+            )
 
             # Apply regime conditioning if enabled
             if self.analyst_config.enable_regime_conditioning and regime_data is not None:
@@ -935,7 +936,8 @@ class EnhancedLabelDefinitions:
         exit_column = 'close' if 'close' in market_data.columns else entry_column
 
         entry_prices = market_data[entry_column].shift(-1)
-        exit_prices = market_data[exit_column].shift(-horizon_bars)
+        exit_shift = -(horizon_bars + 1)
+        exit_prices = market_data[exit_column].shift(exit_shift)
         execution_mask = entry_prices.notna() & exit_prices.notna()
 
         bar_duration_minutes = self._get_bar_duration_minutes(market_data)
@@ -944,8 +946,10 @@ class EnhancedLabelDefinitions:
             'signal_to_execution_delay_bars': 1,
             'signal_to_execution_delay_minutes': None if bar_duration_minutes is None else float(bar_duration_minutes),
             'entry_price_source': f'next_{entry_column}',
-            'exit_price_source': f'{exit_column}_plus_{horizon_bars}_bars',
+            'exit_price_source': f'{exit_column}_plus_{horizon_bars + 1}_bars',
             'horizon_bars': horizon_bars,
+            'holding_period_bars': horizon_bars,
+            'signal_to_exit_delay_bars': horizon_bars + 1,
             'slippage_pct': self.analyst_config.trading_costs.slippage_pct,
             'fees': {
                 'maker_fee': self.analyst_config.trading_costs.maker_fee,
@@ -958,7 +962,12 @@ class EnhancedLabelDefinitions:
         }
 
         if bar_duration_minutes is not None:
-            self._last_execution_metadata['execution_horizon_minutes'] = float(bar_duration_minutes * horizon_bars)
+            holding_minutes = float(bar_duration_minutes * horizon_bars)
+            self._last_execution_metadata.update({
+                'execution_horizon_minutes': holding_minutes,
+                'holding_period_minutes': holding_minutes,
+                'signal_to_exit_delay_minutes': float(bar_duration_minutes * (horizon_bars + 1)),
+            })
 
         return {
             'entry_prices': entry_prices,
@@ -1071,81 +1080,6 @@ class EnhancedLabelDefinitions:
         total_costs = entry_fee + exit_fee + entry_slippage + exit_slippage
         valid_mask = entry_prices.notna() & exit_prices.notna()
         total_costs = total_costs.where(valid_mask, 0.0)
-
-        expected_returns: Optional[pd.Series] = None,
-        stress_scenario: Optional[str] = None
-    ) -> pd.Series:
-        """Calculate trading costs for each bar including borrow, funding, and stress."""
-        if market_data.empty:
-            return pd.Series(dtype=float)
-
-        volume = market_data.get('volume', pd.Series(0.0, index=market_data.index)).fillna(0.0)
-        close_prices = market_data.get('close', pd.Series(0.0, index=market_data.index)).ffill().fillna(0.0)
-        trade_size = (volume * close_prices * 0.01).astype(float)
-
-        trade_size_values = trade_size.to_numpy()
-        trade_size_values = np.where(
-            trade_size_values > 0,
-            np.maximum(trade_size_values, costs.min_trade_size),
-            0.0
-        )
-        trade_size = pd.Series(trade_size_values, index=market_data.index)
-
-        if 'is_maker' in market_data.columns:
-            is_maker_series = market_data['is_maker'].fillna(costs.default_is_maker).astype(bool)
-        else:
-            is_maker_series = pd.Series(costs.default_is_maker, index=market_data.index)
-
-        fee_rates = np.where(is_maker_series, costs.maker_fee, costs.taker_fee)
-        fee_rates = pd.Series(fee_rates, index=market_data.index, dtype=float)
-        fee_costs = trade_size * fee_rates + trade_size * costs.slippage_pct
-
-        if expected_returns is not None:
-            aligned_returns = expected_returns.reindex(market_data.index).fillna(0.0)
-            direction_series = pd.Series(
-                np.where(aligned_returns >= 0, 'long', 'short'),
-                index=market_data.index
-            )
-        elif 'trade_direction' in market_data.columns:
-            direction_series = market_data['trade_direction'].fillna('long').astype(str).str.lower()
-        elif 'position' in market_data.columns:
-            direction_series = pd.Series(
-                np.where(market_data['position'] >= 0, 'long', 'short'),
-                index=market_data.index
-            )
-        else:
-            direction_series = pd.Series('long', index=market_data.index)
-
-        if 'asset_class' in market_data.columns:
-            asset_classes = market_data['asset_class'].fillna(costs.default_asset_class).astype(str)
-        else:
-            asset_classes = pd.Series(costs.default_asset_class, index=market_data.index)
-
-        costs.validate_asset_assumptions(asset_classes.unique())
-
-        borrow_rates = []
-        funding_rates = []
-        stress_multipliers = []
-        scenario_key = stress_scenario or costs.active_stress_scenario
-
-        for idx in market_data.index:
-            asset_class = asset_classes.loc[idx]
-            direction = direction_series.loc[idx]
-            borrow_rates.append(costs.get_borrow_rate(asset_class, direction))
-            funding_rates.append(costs.get_funding_rate(asset_class, direction))
-            stress_multipliers.append(
-                costs.get_stress_multiplier(asset_class, direction, scenario=scenario_key)
-            )
-
-        borrow_rates = pd.Series(borrow_rates, index=market_data.index, dtype=float)
-        funding_rates = pd.Series(funding_rates, index=market_data.index, dtype=float)
-        stress_multipliers = pd.Series(stress_multipliers, index=market_data.index, dtype=float)
-
-        borrow_costs = trade_size * borrow_rates
-        funding_costs = trade_size * funding_rates
-
-        total_costs = (fee_costs + borrow_costs + funding_costs) * stress_multipliers
-
         return total_costs.fillna(0.0)
 
     def _calculate_regime_multipliers(self, volatility_series: pd.Series, regime_data: pd.Series) -> pd.Series:

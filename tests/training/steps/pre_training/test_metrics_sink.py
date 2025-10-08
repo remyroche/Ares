@@ -28,6 +28,7 @@ components_stub.ComponentFactory = _StubFactory
 components_stub.ComponentConfig = _StubConfig
 sys.modules.setdefault("src.training.steps.pre_training.components", components_stub)
 
+from src.training.config.data_locator import DataLocatorConfig
 from src.training.steps.pre_training.sub_pipeline import (
     PreTrainingSubPipeline,
     SubPipelineConfig,
@@ -190,3 +191,24 @@ def test_pre_training_metrics_sink_jsonl_and_prometheus(tmp_path, monkeypatch):
         {'record': 'pipeline_total'},
     )
     assert completed_value == pytest.approx(4.0)
+
+
+def test_pre_training_metrics_sink_uses_locator_default(tmp_path, monkeypatch):
+    _patch_pipeline_steps(monkeypatch)
+    pipeline = PreTrainingSubPipeline()
+
+    custom_artifacts = tmp_path / "artifacts"
+    config = SubPipelineConfig(
+        data_locator_config=DataLocatorConfig(
+            base_artifacts_dir=str(custom_artifacts),
+        ),
+        metrics_output_path=None,
+        metrics_output_format="csv",
+        metrics_prometheus_enabled=False,
+    )
+
+    result = asyncio.run(pipeline.execute_pipeline(config))
+    assert result['success'] is True
+
+    metrics_path = custom_artifacts / "pre_training_metrics.csv"
+    assert metrics_path.exists()

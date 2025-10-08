@@ -12,6 +12,8 @@ that were moved from market_analysis:
 Each step can receive a timeframe parameter, with default 15m.
 """
 
+from __future__ import annotations
+
 from typing import Any, Dict, List, Optional, Tuple, TypedDict
 from datetime import datetime
 from enum import Enum
@@ -77,6 +79,7 @@ class LoggingConfig:
 @dataclass
 class SubPipelineConfig:
     """Configuration for sub-pipeline execution."""
+
     mode: ExecutionMode = ExecutionMode.FULL
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
@@ -109,6 +112,7 @@ class SubPipelineConfig:
     generated_dir_key: str = "market_analysis"
     outcomes_dir_key: str = "multi_horizon_outcomes"
     final_feature_selection_dir_key: str = "final_feature_selection"
+    _path_view: Optional[LocatorPaths] = field(default=None, init=False, repr=False)
     """
     Metrics capture configuration.
 
@@ -117,6 +121,59 @@ class SubPipelineConfig:
         metrics_output_format: ``csv``
         metrics_prometheus_enabled: ``False``
     """
+
+    def attach_locator(self, locator: DataLocator) -> None:
+        """Attach a :class:`DataLocator` instance to the configuration."""
+
+        self.data_locator = locator
+        self._path_view = LocatorPaths(locator)
+
+    def _ensure_paths(self) -> LocatorPaths:
+        if self.data_locator is None:
+            self.attach_locator(DataLocator(self.data_locator_config))
+        elif self._path_view is None or self._path_view.locator is not self.data_locator:
+            self._path_view = LocatorPaths(self.data_locator)
+        return self._path_view
+
+    @property
+    def paths(self) -> LocatorPaths:
+        return self._ensure_paths()
+
+    @property
+    def data(self) -> _LocatorCategoryView:
+        return self.paths.data
+
+    @property
+    def cache(self) -> _LocatorCategoryView:
+        return self.paths.cache
+
+    @property
+    def artifacts(self) -> _LocatorCategoryView:
+        return self.paths.artifacts
+
+    @property
+    def generated(self) -> _LocatorCategoryView:
+        return self.paths.generated
+
+    @property
+    def config_paths(self) -> _LocatorCategoryView:
+        return self.paths.config
+
+    @property
+    def config_files(self) -> _LocatorCategoryView:
+        """Alias for backwards compatibility with callers expecting ``config``."""
+
+        return self.paths.config
+
+    @property
+    def config_root(self) -> Path:
+        return self.paths.config.root
+
+    @property
+    def config(self) -> _LocatorCategoryView:
+        """Expose configuration files via ``config`` attribute for convenience."""
+
+        return self.paths.config
 
 @dataclass
 class SubPipelineFailure:
@@ -321,7 +378,7 @@ class PreTrainingSubPipeline:
 
         return finalized
 
-    def _gather_run_metadata(self, config: SubPipelineConfig) -> Dict[str, Any]:
+    def _gather_run_metadata(self, config: SubPipelineConfig, seed: Any) -> Dict[str, Any]:
         """Collect reproducibility metadata for the current run."""
 
         def _safe_git_sha() -> str:
@@ -380,14 +437,26 @@ class PreTrainingSubPipeline:
         merged['run_metadata'] = dict(self._run_metadata)
         return merged
 
+    def _emit_effective_configuration(self, config: SubPipelineConfig) -> None:
+        """Log the resolved filesystem configuration for operator visibility."""
+
+        locator = self._data_locator or self._resolve_data_locator(config)
+        config.attach_locator(locator)
+        summary = config.paths.summary()
+        summary_json = json.dumps(summary, indent=2, sort_keys=True)
+
+        self.logger.info('📁 Effective filesystem configuration:\n%s', summary_json)
+        tprint(f"📁 Effective filesystem configuration:\n{summary_json}")
+
     def _resolve_data_locator(self, config: SubPipelineConfig) -> DataLocator:
         """Return a data locator instance for the current run."""
 
-        if config.data_locator is not None:
+        if isinstance(config.data_locator, DataLocator):
+            config.attach_locator(config.data_locator)
             return config.data_locator
 
         locator = DataLocator(config.data_locator_config)
-        config.data_locator = locator
+        config.attach_locator(locator)
         return locator
 
     async def execute_pipeline(self, config: SubPipelineConfig) -> PipelineResultDict:
@@ -425,11 +494,12 @@ class PreTrainingSubPipeline:
         tprint(f"📊 Configuration: force_rerun={config.force_rerun}, parallel={config.parallel_processing}")
         tprint(f"🧾 Run metadata:\n{metadata_block}")
 
+        self._data_locator = self._resolve_data_locator(config)
+        self._emit_effective_configuration(config)
+
         metrics_sink = self._create_metrics_sink(config)
         self._metrics_sink = metrics_sink
         step_metric_records: List[Dict[str, Any]] = []
-
-        self._data_locator = self._resolve_data_locator(config)
 
         results = {
             'success': False,
@@ -722,13 +792,23 @@ class PreTrainingSubPipeline:
             output_path = Path(config.metrics_output_path)
         elif config.metrics_output_path is None:
             extension = 'jsonl' if config.metrics_output_format.lower() == 'jsonl' else 'csv'
-            output_path = Path('artifacts') / f'pre_training_metrics.{extension}'
+            locator = self._data_locator or self._resolve_data_locator(config)
+            base_dir = locator.artifacts_path(
+                config.artifacts_dir_key,
+                ensure_exists=True,
+            )
+            output_path = base_dir / f'pre_training_metrics.{extension}'
 
         if output_path is None and not config.metrics_prometheus_enabled:
             return None
 
         if output_path is None:
-            output_path = Path('artifacts') / f'pre_training_metrics.{config.metrics_output_format.lower()}'
+            locator = self._data_locator or self._resolve_data_locator(config)
+            base_dir = locator.artifacts_path(
+                config.artifacts_dir_key,
+                ensure_exists=True,
+            )
+            output_path = base_dir / f'pre_training_metrics.{config.metrics_output_format.lower()}'
 
         sink_config = MetricsSinkConfig(
             output_path=output_path,
@@ -2065,3 +2145,57 @@ async def execute_pre_training_pipeline(config: SubPipelineConfig) -> Dict[str, 
     """
     pipeline = PreTrainingSubPipeline()
     return await pipeline.execute_pipeline(config)
+class _LocatorCategoryView:
+    """Attribute-access helper that proxies lookups to a :class:`DataLocator`."""
+
+    def __init__(self, locator: DataLocator, category: str) -> None:
+        self._locator = locator
+        self._category = category
+
+    @property
+    def root(self) -> Path:
+        return getattr(self._locator, f"base_{self._category}_dir")
+
+    def path(
+        self,
+        key: Optional[str] = None,
+        *,
+        default: Optional[str] = None,
+        ensure_exists: bool = False,
+    ) -> Path:
+        resolver = getattr(self._locator, f"{self._category}_path")
+        return resolver(key, default=default, ensure_exists=ensure_exists)
+
+    def __getattr__(self, item: str) -> Path:
+        if item == "root":
+            return self.root
+        return self.path(item)
+
+    def __getitem__(self, item: str) -> Path:
+        return self.path(item)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"LocatorCategoryView(category={self._category!r}, root={self.root!s})"
+
+
+class LocatorPaths:
+    """Collection of category views backed by a :class:`DataLocator`."""
+
+    def __init__(self, locator: DataLocator) -> None:
+        self._locator = locator
+        self.data = _LocatorCategoryView(locator, "data")
+        self.cache = _LocatorCategoryView(locator, "cache")
+        self.artifacts = _LocatorCategoryView(locator, "artifacts")
+        self.generated = _LocatorCategoryView(locator, "generated")
+        self.config = _LocatorCategoryView(locator, "config")
+
+    @property
+    def locator(self) -> DataLocator:
+        return self._locator
+
+    def summary(self) -> Dict[str, Dict[str, str]]:
+        return self._locator.resolved_paths()
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"LocatorPaths(locator={self._locator!r})"
+

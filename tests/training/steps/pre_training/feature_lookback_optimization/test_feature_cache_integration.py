@@ -178,10 +178,12 @@ sys.modules[_FLO_SPEC.name] = _FLO_MODULE
 assert _FLO_SPEC.loader is not None
 _FLO_SPEC.loader.exec_module(_FLO_MODULE)
 FeatureLookbackOptimizationComponent = _FLO_MODULE.FeatureLookbackOptimizationComponent
+from src.training.config.data_locator import DataLocator, DataLocatorConfig
 from src.training.steps.pre_training.components.base_component import ComponentConfig
 from src.training.steps.pre_training.feature_lookback_optimization.feature_lookback_optimization import (
     FeatureLookbackOptimizationComponent,
 )
+from src.training.steps.pre_training.feature_lookback_optimization.core.optimizer import CoreOptimizer
 from src.training.steps.pre_training.interaction_feature_generator.feature_interaction_generation.optimized_interaction_orchestrator import (
     OptimizedInteractionOrchestrator,
     OptimizedInteractionResult,
@@ -266,6 +268,68 @@ def test_feature_bank_cache_skips_regeneration(monkeypatch, tmp_path):
         assert cols_first == cols_second
 
     asyncio.run(_run_test())
+
+
+def test_aligns_market_data_using_locator_fallback(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    component = FeatureLookbackOptimizationComponent()
+    market_data = pd.DataFrame(
+        {
+            'open': [1.0, 2.0, 3.0],
+            'high': [1.0, 2.0, 3.0],
+            'low': [1.0, 2.0, 3.0],
+            'close': [1.0, 2.0, 3.0],
+            'volume': [10.0, 11.0, 12.0],
+        }
+    )
+
+    locator = DataLocator(
+        DataLocatorConfig(
+            base_cache_dir=str(tmp_path / 'regime_cache'),
+        )
+    )
+
+    pipeline_state = {
+        'symbol': 'ETHUSDT',
+        'custom_params': {},
+        'data_locator': locator,
+        'cache_dir_key': 'default',
+    }
+
+    with caplog.at_level("WARNING"):
+        aligned = component._align_data_with_regime_assignments(market_data.copy(), pipeline_state)
+
+    pd.testing.assert_frame_equal(aligned, market_data)
+    assert str(locator.base_cache_dir) in caplog.text
+
+
+def test_core_optimizer_uses_locator_for_configuration(tmp_path: Path) -> None:
+    config_root = tmp_path / 'configs'
+    config_root.mkdir()
+    config_file = config_root / 'multi_horizon_labeling_config.yaml'
+    config_file.write_text(
+        '\n'.join(
+            [
+                'multi_horizon_labeling:',
+                '  time_horizons:',
+                '    immediate: 3',
+                '    short: 6',
+            ]
+        ),
+        encoding='utf-8',
+    )
+
+    locator = DataLocator(
+        DataLocatorConfig(
+            base_config_dir=str(config_root),
+        )
+    )
+
+    optimizer = CoreOptimizer()
+    optimizer.set_data_locator(locator)
+
+    immediate, short = optimizer._get_multi_horizon_boundaries()
+    assert immediate == 3
+    assert short == 6
 
 
 def test_interaction_orchestrator_reuses_cached_artifacts(monkeypatch, tmp_path):

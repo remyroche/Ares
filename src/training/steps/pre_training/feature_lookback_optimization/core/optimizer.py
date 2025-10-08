@@ -45,6 +45,7 @@ from src.core.decorators import handles_errors, traced, validates, log_execution
 
 from ..constants import OPTIMIZATION_CONSTANTS, PERFORMANCE_CONSTANTS, ALGORITHM_CONSTANTS
 from ..dependency_manager import get_dependency
+from src.training.config.data_locator import DataLocator as PipelineDataLocator
 
 # Get dependencies with fallbacks
 np, _ = get_dependency('numpy')
@@ -151,7 +152,7 @@ class CoreOptimizer:
         # Shared forward returns matrix cache (reused across all features)
         self.shared_forward_returns = {}
         self.shared_forward_returns_hash = None
-        
+
         # Initialize matrix operations if available
         self.matrix_ops = None
         self.batch_processor = None
@@ -166,10 +167,17 @@ class CoreOptimizer:
                 self.batch_processor = None
 
         self._cached_multi_horizon_limits: Optional[Tuple[int, int]] = None
+        self._data_locator: Optional[PipelineDataLocator] = None
 
     def set_rng(self, rng: Optional['np.random.Generator']) -> None:
         """Update the RNG used for stochastic routines."""
         self._rng = rng or np.random.default_rng()
+
+    def set_data_locator(self, locator: Optional[PipelineDataLocator]) -> None:
+        """Attach a locator used when resolving shared configuration files."""
+
+        self._data_locator = locator
+        self._cached_multi_horizon_limits = None
 
     def optimize_single_feature(
         self,
@@ -2943,7 +2951,11 @@ class CoreOptimizer:
             return self._cached_multi_horizon_limits
 
         immediate_default, short_default = 2, 4
-        config_path = Path('src/config/multi_horizon_labeling_config.yaml')
+        locator = self._data_locator
+        if locator is not None:
+            config_path = locator.config_path('multi_horizon_labeling')
+        else:
+            config_path = Path('src/config/multi_horizon_labeling_config.yaml')
 
         if config_path.exists():
             try:

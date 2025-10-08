@@ -143,6 +143,7 @@ from .optimized_interaction_orchestrator import (
 try:
     from ..components.base_component import BaseComponent, ComponentResult
     from ..components.component_factory import ComponentFactory
+    from ..components.contracts import InteractiveFeatureArtifacts
 except ImportError:
     tprint_warning(
         "Component subsystem not available; using lightweight stubs for tests"
@@ -174,6 +175,12 @@ except ImportError:
         @staticmethod
         def create(*args, **kwargs):  # pragma: no cover - stub
             return BaseComponent(*args, **kwargs)
+
+    class InteractiveFeatureArtifacts(dict):  # type: ignore
+        """Lightweight fallback when component contracts are unavailable."""
+
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -425,7 +432,7 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
             return ComponentResult(
                 success=False,
                 error_message=error_message,
-                artifacts={},
+                artifacts=InteractiveFeatureArtifacts(),
                 execution_time=execution_time,
                 metadata={
                     'schema_error': {
@@ -444,7 +451,7 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
             return ComponentResult(
                 success=False,
                 error_message=error_message,
-                artifacts={},
+                artifacts=InteractiveFeatureArtifacts(),
                 execution_time=execution_time,
                 metadata={
                     'data_contract_error': {
@@ -464,7 +471,7 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
             return ComponentResult(
                 success=False,
                 error_message=error_message,
-                artifacts={},
+                artifacts=InteractiveFeatureArtifacts(),
                 execution_time=execution_time
             )
     
@@ -729,34 +736,35 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
         execution_time = time.time() - start_time
 
         # Create artifacts
-        artifacts = {
-            'interactive_feature_generation_result': {
-                'features': result.features,
-                'feature_names': result.feature_names,
-                'selected_features': result.selected_features,
-                'interaction_features': result.interaction_features,
-                'cross_timeframe_features': result.cross_timeframe_features,
-                'execution_time': result.execution_time,
-                'memory_usage_mb': getattr(result, 'memory_usage_mb', 0.0),
-                'success': result.success,
-                'error_message': result.error_message,
-                'validated_schemas': validation_metadata
-            },
-            'stage_results': getattr(result, 'stage_results', {}),
-            'performance_metrics': getattr(result, 'performance_metrics', {}),
-            'artifacts': getattr(result, 'artifacts', {}),
+        artifact_payload = {
+            'features': result.features,
+            'feature_names': result.feature_names,
+            'selected_features': result.selected_features,
+            'interaction_features': result.interaction_features,
+            'cross_timeframe_features': result.cross_timeframe_features,
+            'execution_time': result.execution_time,
+            'memory_usage_mb': getattr(result, 'memory_usage_mb', 0.0),
+            'success': result.success,
+            'error_message': result.error_message,
+            'validated_schemas': validation_metadata,
         }
 
         try:
-            artifacts['interactive_feature_generation_result'] = validate_feature_artifact(
-                artifacts['interactive_feature_generation_result'],
+            validated_payload = validate_feature_artifact(
+                artifact_payload,
                 context='interactive_feature_generation_component.artifacts',
             )
         except DataContractValidationError as contract_error:
             tprint_error(f"❌ Interactive feature generation artifact invalid: {contract_error}")
             raise
 
-        artifacts.setdefault('validated_schemas', validation_metadata)
+        artifact_bundle = InteractiveFeatureArtifacts(
+            interactive_feature_generation_result=validated_payload,
+            stage_results=getattr(result, 'stage_results', {}) or {},
+            performance_metrics=getattr(result, 'performance_metrics', {}) or {},
+            artifacts=getattr(result, 'artifacts', {}) or {},
+            validated_schemas=validation_metadata,
+        )
 
         # Create output files list (for backward compatibility)
         output_files = []
@@ -796,9 +804,9 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
         return ComponentResult(
             success=result.success,
             error_message=result.error_message,
-            artifacts=artifacts,
+            artifacts=artifact_bundle,
             execution_time=execution_time,
-            metadata=metadata
+            metadata=metadata,
         )
     
     def get_component_info(self) -> Dict[str, Any]:

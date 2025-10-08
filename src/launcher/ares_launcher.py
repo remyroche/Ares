@@ -1019,7 +1019,14 @@ class AresLauncher:
             'tactician_entry_labeler': "Tactician-specific entry timing labels (15m timeframe, local maxima/minima detection)",
             'triple_barrier_labeling': "Apply triple barrier method",
             'feature_lookback_optimization': "Optimize feature lookback periods",
+            'analyst_feature_lookback_optimization': "Optimize feature lookback periods for Analyst (60m timeframe, strategic)",
+            'tactician_feature_lookback_optimization': "Optimize feature lookback periods for Tactician (15m timeframe, tactical)",
             'interactive_feature_generation': "Interactive feature generation with optimized lookbacks, cross-timeframe coverage, and matrix acceleration",
+            'analyst_interactive_feature_generation': "Generate interactive features for Analyst models (60m timeframe)",
+            'tactician_interactive_feature_generation': "Generate interactive features for Tactician models (15m timeframe)",
+            'final_feature_selection': "Perform staged final feature selection (120→100→80→60)",
+            'analyst_final_feature_selection': "Final feature selection for Analyst models",
+            'tactician_final_feature_selection': "Final feature selection for Tactician models",
             'sr_feature_integration': "Integrate SR-specific features into feature set",
             
             # Model Training (6 sub-pipelines - Analyst & Tactician orchestration)

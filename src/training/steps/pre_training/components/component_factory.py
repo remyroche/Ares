@@ -300,6 +300,13 @@ class ComponentFactory:
         "tactician_pid_generation": "pid_based_feature_generation",
         "tactician_horizon_labeling": "multi_horizon_profit_labeler",
         "tactician_feature_selection": "final_feature_selection",
+        # Role-specific aliases for feature engineering
+        "analyst_feature_lookback_optimization": "feature_lookback_optimization",
+        "analyst_interactive_feature_generation": "interactive_feature_generation",
+        "analyst_final_feature_selection": "final_feature_selection",
+        "tactician_feature_lookback_optimization": "feature_lookback_optimization",
+        "tactician_interactive_feature_generation": "interactive_feature_generation",
+        "tactician_final_feature_selection": "final_feature_selection",
     }
 
     @classmethod

@@ -93,6 +93,24 @@ STEP_REGISTRY: Dict[str, StepSpec] = {
         description='Optimize feature lookback periods using modular optimization.',
         order=20,
     ),
+    'analyst_feature_lookback_optimization': StepSpec(
+        name='analyst_feature_lookback_optimization',
+        component_key='feature_lookback_optimization',
+        executor_method='_execute_feature_lookback_optimization',
+        display_name='Analyst feature optimization',
+        description='Optimize feature lookback periods for Analyst (60m timeframe, strategic).',
+        order=21,
+        include_in_default_sequence=False,
+    ),
+    'tactician_feature_lookback_optimization': StepSpec(
+        name='tactician_feature_lookback_optimization',
+        component_key='feature_lookback_optimization',
+        executor_method='_execute_feature_lookback_optimization',
+        display_name='Tactician feature optimization',
+        description='Optimize feature lookback periods for Tactician (15m timeframe, tactical).',
+        order=22,
+        include_in_default_sequence=False,
+    ),
     'optimized_lookback_generation': StepSpec(
         name='optimized_lookback_generation',
         component_key='optimized_lookback_generation',
@@ -110,6 +128,24 @@ STEP_REGISTRY: Dict[str, StepSpec] = {
         description='Produce interactive roadmap features with analyst oversight.',
         order=40,
     ),
+    'analyst_interactive_feature_generation': StepSpec(
+        name='analyst_interactive_feature_generation',
+        component_key='interactive_feature_generation',
+        executor_method='_execute_interactive_feature_generation',
+        display_name='Analyst interactive feature generation',
+        description='Generate interactive features for Analyst (60m timeframe).',
+        order=41,
+        include_in_default_sequence=False,
+    ),
+    'tactician_interactive_feature_generation': StepSpec(
+        name='tactician_interactive_feature_generation',
+        component_key='interactive_feature_generation',
+        executor_method='_execute_interactive_feature_generation',
+        display_name='Tactician interactive feature generation',
+        description='Generate interactive features for Tactician (15m timeframe).',
+        order=42,
+        include_in_default_sequence=False,
+    ),
     'final_feature_selection': StepSpec(
         name='final_feature_selection',
         component_key='final_feature_selection',
@@ -118,6 +154,24 @@ STEP_REGISTRY: Dict[str, StepSpec] = {
         description='Perform the staged final feature selection.',
         order=50,
     ),
+    'analyst_final_feature_selection': StepSpec(
+        name='analyst_final_feature_selection',
+        component_key='final_feature_selection',
+        executor_method='_execute_final_feature_selection',
+        display_name='Analyst final feature selection',
+        description='Final feature selection for Analyst models.',
+        order=51,
+        include_in_default_sequence=False,
+    ),
+    'tactician_final_feature_selection': StepSpec(
+        name='tactician_final_feature_selection',
+        component_key='final_feature_selection',
+        executor_method='_execute_final_feature_selection',
+        display_name='Tactician final feature selection',
+        description='Final feature selection for Tactician models.',
+        order=52,
+        include_in_default_sequence=False,
+    ),
 }
 
 STEP_PROGRESS_ICONS: Dict[str, str] = {
@@ -125,9 +179,15 @@ STEP_PROGRESS_ICONS: Dict[str, str] = {
     'analyst_profit_labeler': '📈',
     'tactician_entry_labeler': '🎲',
     'feature_lookback_optimization': '⚙️',
+    'analyst_feature_lookback_optimization': '📊',
+    'tactician_feature_lookback_optimization': '⚡',
     'optimized_lookback_generation': '⚡',
     'interactive_feature_generation': '🔧',
+    'analyst_interactive_feature_generation': '🔬',
+    'tactician_interactive_feature_generation': '🔨',
     'final_feature_selection': '🎯',
+    'analyst_final_feature_selection': '🎓',
+    'tactician_final_feature_selection': '🎪',
 }
 
 try:  # pragma: no cover - platform specific import

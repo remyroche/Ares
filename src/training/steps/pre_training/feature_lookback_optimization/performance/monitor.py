@@ -16,6 +16,7 @@ from enum import Enum
 # Import utility modules
 from src.utils.common_utilities import CommonUtilities
 from src.utils.serialization_utils import UniversalSerializer
+from src.utils.tprint import tprint, tprint_error, tprint_warning, tprint_success, tprint_debug, tprint_performance
 
 from ..dependency_manager import get_dependency
 

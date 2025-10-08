@@ -12,6 +12,18 @@ from typing import Any
 
 import logging
 
+# Import tprint for enhanced logging
+try:
+    from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print(*args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+
 class TrackingType(Enum):
     ENSEMBLE_DECISION = "ensemble_decision"
     REGIME_ANALYSIS = "regime_analysis"
@@ -25,6 +37,8 @@ class TrackingSystem:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("TrackingSystem")
+        tprint("🔧 Initializing Tracking System...")
+        tprint(f"   → Configuration loaded: {len(config)} parameters")
 
     @handles_errors(
         error_handlers={
@@ -36,5 +50,6 @@ class TrackingSystem:
     )
     async def initialize(self) -> bool:
         self.logger.info("Initializing Tracking System ...")
-        self.logger.info("✅ Tracking System initialization completed")
+        tprint("🚀 Initializing Tracking System...")
+        tprint("✅ Tracking System initialization completed")
         return True

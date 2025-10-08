@@ -14,6 +14,18 @@ import numpy as np
 
 from .constants import OPTIMIZATION_CONSTANTS
 
+# Import tprint for enhanced logging
+try:
+    from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print(*args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+
 # Import math validation utilities for safe operations
 try:
     from src.utils.math_validation import (
@@ -151,11 +163,16 @@ class GridSearchStrategy(OptimizationStrategy):
         from sklearn.feature_selection import mutual_info_regression
         
         start_time = time.time()
+        tprint(f"🔍 Starting grid search optimization for {feature_name}")
+        tprint(f"   → Target column: {target_column}")
         
         # Get parameters
         min_lookback = self.config.get('min_lookback', OPTIMIZATION_CONSTANTS.DEFAULT_MIN_LOOKBACK)
         max_lookback = self.config.get('max_lookback', OPTIMIZATION_CONSTANTS.DEFAULT_MAX_LOOKBACK)
         grid_size = self.config.get('grid_size', 20)
+        
+        tprint(f"   → Lookback range: {min_lookback} to {max_lookback}")
+        tprint(f"   → Grid size: {grid_size}")
         
         # Create grid
         lookback_values = np.linspace(min_lookback, max_lookback, grid_size, dtype=int)

@@ -14,6 +14,7 @@ from enum import Enum
 # Import utility modules
 from src.utils.common_utilities import CommonUtilities
 from src.utils.serialization_utils import UniversalSerializer
+from src.utils.tprint import tprint, tprint_error, tprint_warning, tprint_success, tprint_debug
 
 
 class ErrorSeverity(Enum):
@@ -102,14 +103,21 @@ class StandardizedErrorHandler:
             # Create error details
             error_details = self._create_error_details(error, operation, context)
 
-            # Log the error
+            # Log the error with tprint
             self._log_error(error_details)
+            tprint_error(f"❌ Error in {operation}: {error_details.error_message}")
+            if error_details.severity == ErrorSeverity.CRITICAL:
+                tprint_error(f"🚨 Critical error - operation may fail: {operation}")
 
             # Track error statistics
             self._track_error(error_details)
 
             # Attempt recovery
             recovery_result = self._attempt_recovery(error_details, return_value)
+            if recovery_result.success:
+                tprint_success(f"✅ Error recovery successful for {operation}")
+            else:
+                tprint_warning(f"⚠️ Error recovery failed for {operation}")
 
             # Update recent errors
             self.recent_errors.append(error_details)
@@ -123,6 +131,7 @@ class StandardizedErrorHandler:
 
         except Exception as e:
             self.logger.critical(f"Error handler failed: {e}")
+            tprint_error(f"🚨 Error handler itself failed: {e}")
             if reraise:
                 raise error
             return return_value

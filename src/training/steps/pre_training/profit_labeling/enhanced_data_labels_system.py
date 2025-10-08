@@ -626,8 +626,12 @@ class EnhancedDataLabelsSystem:
                                 )
                                 leakage_scores.append(mi_score)
                                 leakage_details[f'{col}_mutual_info'] = mi_score
-                            except:
-                                pass
+                            except Exception as e:
+                                from src.utils.tprint import tprint_warning
+                                tprint_warning(f"⚠️ Failed to calculate mutual information for {col}: {e}")
+                                # Use a default high leakage score for failed calculations
+                                leakage_scores.append(0.8)
+                                leakage_details[f'{col}_mutual_info'] = 0.8
             
             # Calculate overall leakage score (lower is better)
             overall_leakage = 1.0 - np.mean(leakage_scores) if leakage_scores else 1.0
@@ -669,8 +673,12 @@ class EnhancedDataLabelsSystem:
                             drift_score = 1.0 - ks_pvalue  # Higher score = less drift
                             drift_scores.append(drift_score)
                             drift_details[f'{col}_ks_pvalue'] = ks_pvalue
-                        except:
-                            pass
+                        except Exception as e:
+                            from src.utils.tprint import tprint_warning
+                            tprint_warning(f"⚠️ Failed to calculate drift for {col}: {e}")
+                            # Use a default moderate drift score for failed calculations
+                            drift_scores.append(0.5)
+                            drift_details[f'{col}_ks_pvalue'] = 0.5
             
             overall_drift = np.mean(drift_scores) if drift_scores else 1.0
             

@@ -22,7 +22,7 @@ import numpy as np
 from src.utils.logger import system_logger
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.version_manager import get_version_manager
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_error
 
 # Import component system
 from .components import ComponentFactory, ComponentConfig
@@ -202,9 +202,24 @@ class PreTrainingSubPipeline:
 
             self.logger.info(f'🎉 Pre-Training Sub-Pipeline completed successfully in {results["execution_time"]:.2f}s')
 
+        except ImportError as e:
+            self.logger.error(f'❌ Pre-Training Sub-Pipeline failed due to missing dependencies: {e}')
+            tprint_error(f"❌ Missing dependencies: {e}")
+            results['error_message'] = f"Missing dependencies: {str(e)}"
+        except FileNotFoundError as e:
+            self.logger.error(f'❌ Pre-Training Sub-Pipeline failed due to missing files: {e}')
+            tprint_error(f"❌ Missing files: {e}")
+            results['error_message'] = f"Missing files: {str(e)}"
+        except MemoryError as e:
+            self.logger.error(f'❌ Pre-Training Sub-Pipeline failed due to memory issues: {e}')
+            tprint_error(f"❌ Memory error: {e}")
+            results['error_message'] = f"Memory error: {str(e)}"
         except Exception as e:
-            self.logger.error(f'❌ Pre-Training Sub-Pipeline failed with exception: {e}')
-            results['error_message'] = str(e)
+            self.logger.error(f'❌ Pre-Training Sub-Pipeline failed with unexpected error: {e}')
+            tprint_error(f"❌ Unexpected error: {e}")
+            import traceback
+            tprint_error(f"🔍 Error details: {traceback.format_exc()}")
+            results['error_message'] = f"Unexpected error: {str(e)}"
 
         return results
 
@@ -301,11 +316,26 @@ class PreTrainingSubPipeline:
             result.artifacts = component_result.artifacts
             result.error_message = component_result.error_message
 
+        except ImportError as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = f"Missing dependencies: {str(e)}"
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            tprint_error(f"❌ Multi-horizon profit labeler failed - missing dependencies: {e}")
+        except FileNotFoundError as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = f"Missing files: {str(e)}"
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            tprint_error(f"❌ Multi-horizon profit labeler failed - missing files: {e}")
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
             result.end_time = datetime.now()
             result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            tprint_error(f"❌ Multi-horizon profit labeler failed with unexpected error: {e}")
+            import traceback
+            tprint_error(f"🔍 Error details: {traceback.format_exc()}")
 
         return result
 
@@ -341,11 +371,26 @@ class PreTrainingSubPipeline:
             result.artifacts = component_result.artifacts
             result.error_message = component_result.error_message
 
+        except ImportError as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = f"Missing dependencies: {str(e)}"
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            tprint_error(f"❌ Feature lookback optimization failed - missing dependencies: {e}")
+        except FileNotFoundError as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = f"Missing files: {str(e)}"
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            tprint_error(f"❌ Feature lookback optimization failed - missing files: {e}")
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
             result.end_time = datetime.now()
             result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            tprint_error(f"❌ Feature lookback optimization failed with unexpected error: {e}")
+            import traceback
+            tprint_error(f"🔍 Error details: {traceback.format_exc()}")
 
         return result
 
@@ -397,12 +442,26 @@ class PreTrainingSubPipeline:
             result.metadata = component_result.metadata
             result.error_message = component_result.error_message
 
+        except ImportError as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = f"Missing dependencies: {str(e)}"
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            tprint_error(f"❌ Interactive feature generation failed - missing dependencies: {e}")
+        except FileNotFoundError as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = f"Missing files: {str(e)}"
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            tprint_error(f"❌ Interactive feature generation failed - missing files: {e}")
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
             result.end_time = datetime.now()
             result.duration_seconds = (result.end_time - result.start_time).total_seconds()
-            tprint_error(f"❌ Roadmap feature generation failed: {e}")
+            tprint_error(f"❌ Interactive feature generation failed with unexpected error: {e}")
+            import traceback
+            tprint_error(f"🔍 Error details: {traceback.format_exc()}")
 
         return result
 
@@ -438,11 +497,26 @@ class PreTrainingSubPipeline:
             result.artifacts = component_result.artifacts
             result.error_message = component_result.error_message
 
+        except ImportError as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = f"Missing dependencies: {str(e)}"
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            tprint_error(f"❌ Optimized lookback generation failed - missing dependencies: {e}")
+        except FileNotFoundError as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = f"Missing files: {str(e)}"
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            tprint_error(f"❌ Optimized lookback generation failed - missing files: {e}")
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
             result.end_time = datetime.now()
             result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            tprint_error(f"❌ Optimized lookback generation failed with unexpected error: {e}")
+            import traceback
+            tprint_error(f"🔍 Error details: {traceback.format_exc()}")
 
         return result
 
@@ -478,11 +552,26 @@ class PreTrainingSubPipeline:
             result.artifacts = component_result.artifacts
             result.error_message = component_result.error_message
 
+        except ImportError as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = f"Missing dependencies: {str(e)}"
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            tprint_error(f"❌ Final feature selection failed - missing dependencies: {e}")
+        except FileNotFoundError as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = f"Missing files: {str(e)}"
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            tprint_error(f"❌ Final feature selection failed - missing files: {e}")
         except Exception as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = str(e)
             result.end_time = datetime.now()
             result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            tprint_error(f"❌ Final feature selection failed with unexpected error: {e}")
+            import traceback
+            tprint_error(f"🔍 Error details: {traceback.format_exc()}")
 
         return result
 

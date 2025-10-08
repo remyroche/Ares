@@ -8,9 +8,19 @@ import os
 import sys
 from pathlib import Path
 
+# Try to import tprint, fallback to print if not available
+try:
+    from src.utils.tprint import tprint, tprint_success, tprint_error
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print(*args, **kwargs)
+    def tprint_success(*args, **kwargs): print("✅", *args, **kwargs)
+    def tprint_error(*args, **kwargs): print("❌", *args, **kwargs)
+
 def validate_file_structure():
     """Validate that all required files are present."""
-    print("🔍 Validating file structure...")
+    tprint("🔍 Validating file structure...")
     
     required_files = [
         "feature_lookback_optimization_optimized.py",
@@ -24,21 +34,21 @@ def validate_file_structure():
     for file in required_files:
         file_path = base_path / file
         if file_path.exists():
-            print(f"✅ {file} - Found")
+            tprint_success(f"{file} - Found")
         else:
-            print(f"❌ {file} - Missing")
+            tprint_error(f"{file} - Missing")
             return False
     
     return True
 
 def validate_optimized_implementation():
     """Validate the optimized implementation code structure."""
-    print("\n🔍 Validating optimized implementation...")
+    tprint("\n🔍 Validating optimized implementation...")
     
     optimized_file = Path(__file__).parent / "feature_lookback_optimization_optimized.py"
     
     if not optimized_file.exists():
-        print("❌ Optimized implementation file not found")
+        tprint_error("Optimized implementation file not found")
         return False
     
     with open(optimized_file, 'r') as f:
@@ -63,21 +73,21 @@ def validate_optimized_implementation():
     
     for check, description in checks:
         if check in content:
-            print(f"✅ {description}")
+            tprint_success(description)
         else:
-            print(f"❌ {description} - Missing")
+            tprint_error(f"{description} - Missing")
             return False
     
     return True
 
 def validate_configuration():
     """Validate the configuration file."""
-    print("\n🔍 Validating configuration...")
+    tprint("\n🔍 Validating configuration...")
     
     config_file = Path(__file__).parent / "feature_lookback_optimization_optimized_config.yaml"
     
     if not config_file.exists():
-        print("❌ Configuration file not found")
+        tprint_error("Configuration file not found")
         return False
     
     with open(config_file, 'r') as f:
@@ -102,21 +112,21 @@ def validate_configuration():
     
     for check, description in checks:
         if check in content:
-            print(f"✅ {description}")
+            tprint_success(description)
         else:
-            print(f"❌ {description} - Missing")
+            tprint_error(f"{description} - Missing")
             return False
     
     return True
 
 def validate_test_suite():
     """Validate the test suite structure."""
-    print("\n🔍 Validating test suite...")
+    tprint("\n🔍 Validating test suite...")
     
     test_file = Path(__file__).parent / "test_optimized_implementation.py"
     
     if not test_file.exists():
-        print("❌ Test file not found")
+        tprint_error("Test file not found")
         return False
     
     with open(test_file, 'r') as f:
@@ -139,21 +149,21 @@ def validate_test_suite():
     
     for check, description in checks:
         if check in content:
-            print(f"✅ {description}")
+            tprint_success(description)
         else:
-            print(f"❌ {description} - Missing")
+            tprint_error(f"{description} - Missing")
             return False
     
     return True
 
 def validate_documentation():
     """Validate the documentation."""
-    print("\n🔍 Validating documentation...")
+    tprint("\n🔍 Validating documentation...")
     
     doc_file = Path(__file__).parent / "OPTIMIZATION_SUMMARY.md"
     
     if not doc_file.exists():
-        print("❌ Documentation file not found")
+        tprint_error("Documentation file not found")
         return False
     
     with open(doc_file, 'r') as f:
@@ -178,17 +188,17 @@ def validate_documentation():
     
     for check, description in checks:
         if check in content:
-            print(f"✅ {description}")
+            tprint_success(description)
         else:
-            print(f"❌ {description} - Missing")
+            tprint_error(f"{description} - Missing")
             return False
     
     return True
 
 def main():
     """Main validation function."""
-    print("🚀 Starting validation of optimized feature lookback optimization implementation")
-    print("=" * 80)
+    tprint("🚀 Starting validation of optimized feature lookback optimization implementation")
+    tprint("=" * 80)
     
     all_passed = True
     
@@ -202,33 +212,33 @@ def main():
     ]
     
     for name, validation_func in validations:
-        print(f"\n📋 {name} Validation")
-        print("-" * 40)
+        tprint(f"\n📋 {name} Validation")
+        tprint("-" * 40)
         
         if validation_func():
-            print(f"✅ {name} validation passed")
+            tprint_success(f"{name} validation passed")
         else:
-            print(f"❌ {name} validation failed")
+            tprint_error(f"{name} validation failed")
             all_passed = False
     
-    print("\n" + "=" * 80)
+    tprint("\n" + "=" * 80)
     
     if all_passed:
-        print("🎉 All validations passed successfully!")
-        print("\n✅ The optimized implementation addresses all identified issues:")
-        print("   → Removes duplicate logic for forward returns calculation")
-        print("   → Ensures full alignment with multi_horizon_profit_labeler methodology")
-        print("   → Adds proper tprint logging at every important stage")
-        print("   → Optimizes for 5m timeframe by default")
-        print("   → Handles failures gracefully without silent errors")
-        print("\n📁 Files created:")
-        print("   → feature_lookback_optimization_optimized.py")
-        print("   → feature_lookback_optimization_optimized_config.yaml")
-        print("   → test_optimized_implementation.py")
-        print("   → OPTIMIZATION_SUMMARY.md")
-        print("   → validate_optimization.py (this file)")
+        tprint_success("All validations passed successfully!")
+        tprint("\n✅ The optimized implementation addresses all identified issues:")
+        tprint("   → Removes duplicate logic for forward returns calculation")
+        tprint("   → Ensures full alignment with multi_horizon_profit_labeler methodology")
+        tprint("   → Adds proper tprint logging at every important stage")
+        tprint("   → Optimizes for 5m timeframe by default")
+        tprint("   → Handles failures gracefully without silent errors")
+        tprint("\n📁 Files created:")
+        tprint("   → feature_lookback_optimization_optimized.py")
+        tprint("   → feature_lookback_optimization_optimized_config.yaml")
+        tprint("   → test_optimized_implementation.py")
+        tprint("   → OPTIMIZATION_SUMMARY.md")
+        tprint("   → validate_optimization.py (this file)")
     else:
-        print("❌ Some validations failed. Please review the implementation.")
+        tprint_error("Some validations failed. Please review the implementation.")
     
     return all_passed
 

@@ -12,6 +12,18 @@ import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
 
+# Import tprint for enhanced logging
+try:
+    from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print(*args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+
 
 class FeatureFamily(Enum):
     """Feature families for organization."""
@@ -41,6 +53,7 @@ class ParentFeature(ABC):
     def __init__(self, name: str, metadata: FeatureMetadata):
         self.name = name
         self.metadata = metadata
+        tprint_debug(f"🔧 Initialized feature: {name} ({metadata.family.value})")
     
     @abstractmethod
     def compute(self, data: pd.DataFrame) -> pd.Series:

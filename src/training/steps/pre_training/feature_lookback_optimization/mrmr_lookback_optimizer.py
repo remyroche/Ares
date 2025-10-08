@@ -77,6 +77,19 @@ except ImportError as e:
     COMMON_OPERATIONS_AVAILABLE = False
     logging.warning(f"Common operations not available: {e}")
 
+# Import tprint for enhanced logging
+try:
+    from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug, tprint_performance
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint(*args, **kwargs): print(*args, **kwargs)
+    def tprint_error(*args, **kwargs): print("ERROR:", *args, **kwargs)
+    def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
+    def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+    def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
+
 # Import math validation utilities for safe operations
 try:
     from src.utils.math_validation import (
@@ -495,9 +508,13 @@ class MRMRLookbackOptimizer:
         """
         start_time = time.time()
         self.logger.info(f"🔍 Starting lookback optimization for {feature_name}")
+        tprint(f"🔍 Starting lookback optimization for {feature_name}")
+        tprint(f"   → Parameter type: {parameter_type}")
+        tprint(f"   → Target column: {target_column}")
         
         # Validate input data
         if not self._validate_input_data(data, feature_name, target_column):
+            tprint_error(f"❌ Invalid input data for optimization: {feature_name}")
             raise ValueError("Invalid input data for optimization")
         
         # Create objective function

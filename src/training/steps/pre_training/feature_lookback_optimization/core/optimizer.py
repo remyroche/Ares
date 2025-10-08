@@ -39,7 +39,7 @@ try:
 except ImportError:
     MULTI_HORIZON_AVAILABLE = False
 from src.utils.serialization_utils import UniversalSerializer
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug
 from src.utils.logger import get_logger
 from src.core.decorators import handles_errors, traced, validates, log_execution_time
 
@@ -109,6 +109,11 @@ class CoreOptimizer:
         self.common_utils = CommonUtilities()
         self.serializer = UniversalSerializer()
         
+        tprint("🔧 Initializing Core Optimizer...")
+        tprint("   → Performance tracking enabled")
+        tprint("   → Feature calculation cache initialized")
+        tprint("   → Shared forward returns cache ready")
+        
         # Performance tracking
         self.optimization_history = []
         self.performance_metrics = {
@@ -168,9 +173,11 @@ class CoreOptimizer:
         try:
             start_time = time.time()
             self.logger.info(f'🎯 Starting optimization for feature: {feature_name} using {method.value}')
+            tprint(f"🎯 Starting optimization for feature: {feature_name} using {method.value}")
 
             # Validate inputs
             if not self._validate_optimization_inputs(data, feature_name, target_column):
+                tprint_error(f"❌ Input validation failed for feature: {feature_name}")
                 return self._create_failed_result(method.value, time.time() - start_time)
 
             # Select optimization algorithm based on method
@@ -198,10 +205,12 @@ class CoreOptimizer:
             self._update_performance_metrics(result, time.time() - start_time)
 
             self.logger.info(f'✅ Optimization completed: best_lookback={result.best_lookback_period}, score={result.best_score:.4f}')
+            tprint_success(f"✅ Optimization completed for {feature_name}: best_lookback={result.best_lookback_period}, score={result.best_score:.4f}")
             return result
 
         except Exception as e:
             self.logger.error(f"❌ Optimization failed for feature {feature_name}: {e}")
+            tprint_error(f"❌ Optimization failed for feature {feature_name}: {e}")
             return self._create_failed_result(method.value, time.time() - start_time)
 
     def _validate_optimization_inputs(

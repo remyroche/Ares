@@ -14,6 +14,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+# Import tprint for enhanced logging
+try:
+    from src.utils.tprint import tprint_debug
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
+
 
 @dataclass
 class SessionConfig:

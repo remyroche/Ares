@@ -57,6 +57,42 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _log_info(message: str, active_logger: Optional[logging.Logger] = None) -> None:
+    """Log an informational message and mirror it through tprint."""
+    (active_logger or logger).info(message)
+    tprint_info(message)
+
+
+def _log_warning(message: str, active_logger: Optional[logging.Logger] = None) -> None:
+    """Log a warning message and mirror it through tprint."""
+    (active_logger or logger).warning(message)
+    tprint_warning(message)
+
+
+def _log_error(message: str, active_logger: Optional[logging.Logger] = None) -> None:
+    """Log an error message and mirror it through tprint."""
+    (active_logger or logger).error(message)
+    tprint_error(message)
+
+
+def _log_success(message: str, active_logger: Optional[logging.Logger] = None) -> None:
+    """Log a success message and mirror it through tprint."""
+    (active_logger or logger).info(message)
+    tprint_success(message)
+
+
+def _log_performance(message: str, active_logger: Optional[logging.Logger] = None) -> None:
+    """Log a performance-related message and mirror it through tprint."""
+    (active_logger or logger).info(message)
+    tprint_performance(message)
+
+
+def _log_debug(message: str, active_logger: Optional[logging.Logger] = None) -> None:
+    """Log a debug message and mirror it through tprint."""
+    (active_logger or logger).debug(message)
+    tprint(message)
+
+
 @dataclass
 class FeatureSelectionResult:
     """Complete result of the data-driven feature selection process."""
@@ -88,6 +124,7 @@ class FeatureSelectionResult:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
+        _log_debug("📝 Serializing FeatureSelectionResult to dictionary")
         return {
             'phase1_result': self.phase1_result.to_dict() if self.phase1_result else None,
             'phase2_result': self.phase2_result.to_dict() if self.phase2_result else None,
@@ -116,10 +153,13 @@ class DataDrivenFeatureSelector:
     def __init__(self, config: Optional[DataDrivenFeatureSelectionConfig] = None):
         self.config = config or create_production_config()
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
-        
+
+        config_type = getattr(self.config, 'name', 'custom')
+        _log_info(f"🚀 Initializing DataDrivenFeatureSelector with {config_type} configuration", self.logger)
+
         # Initialize hardware optimizations
         self._initialize_hardware_optimizations()
-        
+
         # Initialize matrix operations
         self._initialize_matrix_operations()
         
@@ -138,9 +178,9 @@ class DataDrivenFeatureSelector:
     def _initialize_hardware_optimizations(self):
         """Initialize hardware optimization components."""
         if not HARDWARE_AVAILABLE:
-            tprint_warning("Hardware optimizations not available, using CPU-only mode")
+            _log_warning("Hardware optimizations not available, using CPU-only mode", self.logger)
             return
-        
+
         try:
             # Initialize unified hardware manager
             self.hardware_manager = UnifiedHardwareManager()
@@ -159,17 +199,17 @@ class DataDrivenFeatureSelector:
             else:
                 self.hardware_processor = None
             
-            tprint_success("✅ Hardware optimizations initialized")
-            
+            _log_success("✅ Hardware optimizations initialized", self.logger)
+
         except Exception as e:
-            tprint_warning(f"⚠️ Failed to initialize hardware optimizations: {e}")
+            _log_warning(f"⚠️ Failed to initialize hardware optimizations: {e}", self.logger)
             self.hardware_manager = None
             self.hardware_processor = None
-    
+
     def _initialize_matrix_operations(self):
         """Initialize matrix operations for vectorized computations."""
         if not MATRIX_OPS_AVAILABLE:
-            tprint_warning("Matrix operations not available, using basic numpy operations")
+            _log_warning("Matrix operations not available, using basic numpy operations", self.logger)
             self.matrix_ops = None
             return
         
@@ -181,10 +221,10 @@ class DataDrivenFeatureSelector:
                 enable_parallel=self.config.enable_parallel_processing
             )
             
-            tprint_success("✅ Matrix operations initialized")
-            
+            _log_success("✅ Matrix operations initialized", self.logger)
+
         except Exception as e:
-            tprint_warning(f"⚠️ Failed to initialize matrix operations: {e}")
+            _log_warning(f"⚠️ Failed to initialize matrix operations: {e}", self.logger)
             self.matrix_ops = None
     
     def _initialize_phase_components(self):
@@ -205,85 +245,85 @@ class DataDrivenFeatureSelector:
             # Final model selection
             self.final_selection = FinalModelSelection(self.config.final_selection, self.matrix_ops)
             
-            tprint_success("✅ Phase components initialized")
-            
+            _log_success("✅ Phase components initialized", self.logger)
+
         except Exception as e:
-            tprint_error(f"❌ Failed to initialize phase components: {e}")
+            _log_error(f"❌ Failed to initialize phase components: {e}", self.logger)
             raise
     
     async def select_features(self, data: pd.DataFrame, target: np.ndarray, 
                             data_availability: Optional[Dict[str, float]] = None) -> FeatureSelectionResult:
         """Run the complete data-driven feature selection process."""
         start_time = time.time()
-        
+
         try:
-            tprint_info("🚀 Starting Data-Driven Feature Selection")
-            tprint_info(f"📊 Data shape: {data.shape}, Target length: {len(target)}")
+            _log_info("🚀 Starting Data-Driven Feature Selection", self.logger)
+            _log_info(f"📊 Data shape: {data.shape}, Target length: {len(target)}", self.logger)
             
             # Initialize result
             result = FeatureSelectionResult()
             
             # Step 1: Create feature generator wrappers
-            tprint_info("🔧 Step 1: Creating feature generator wrappers...")
+            _log_info("🔧 Step 1: Creating feature generator wrappers...", self.logger)
             wrappers = await self._create_feature_wrappers()
-            
+
             if not wrappers:
-                tprint_error("❌ No feature generators available")
+                _log_error("❌ No feature generators available", self.logger)
                 return result
             
             # Filter by data availability
             if data_availability:
                 wrappers = filter_wrappers_by_availability(wrappers, data_availability)
-                tprint_info(f"📊 Filtered to {len(wrappers)} wrappers based on data availability")
+                _log_info(f"📊 Filtered to {len(wrappers)} wrappers based on data availability", self.logger)
             
             result.total_features_evaluated = len(wrappers)
             
             # Step 2: Phase 1 - Cheap Probes
-            tprint_info("🔍 Step 2: Phase 1 - Cheap Probes")
+            _log_info("🔍 Step 2: Phase 1 - Cheap Probes", self.logger)
             phase1_result = self.phase1.run_phase1(wrappers, data, target)
             result.phase1_result = phase1_result
             
             if not phase1_result.selected_wrappers:
-                tprint_warning("⚠️ No features selected in Phase 1")
+                _log_warning("⚠️ No features selected in Phase 1", self.logger)
                 return result
-            
-            tprint_success(f"✅ Phase 1 completed: {len(phase1_result.selected_wrappers)} features selected")
-            
+
+            _log_success(f"✅ Phase 1 completed: {len(phase1_result.selected_wrappers)} features selected", self.logger)
+
             # Step 3: Phase 2 - Rich Probes
-            tprint_info("🔧 Step 3: Phase 2 - Rich Probes with Bayesian Optimization")
+            _log_info("🔧 Step 3: Phase 2 - Rich Probes with Bayesian Optimization", self.logger)
             phase2_result = self.phase2.run_phase2(phase1_result.selected_wrappers, data, target)
             result.phase2_result = phase2_result
             
             if not phase2_result.selected_wrappers:
-                tprint_warning("⚠️ No features selected in Phase 2")
+                _log_warning("⚠️ No features selected in Phase 2", self.logger)
                 return result
-            
-            tprint_success(f"✅ Phase 2 completed: {len(phase2_result.selected_wrappers)} features selected")
-            
+
+            _log_success(f"✅ Phase 2 completed: {len(phase2_result.selected_wrappers)} features selected", self.logger)
+
             # Step 4: Budgeted Selection
-            tprint_info("💰 Step 4: Budgeted Selection")
+            _log_info("💰 Step 4: Budgeted Selection", self.logger)
             budgeted_result = self.budgeted_selection.select_features(
                 phase2_result.selected_wrappers, data, target
             )
             result.budgeted_result = budgeted_result
             
             if not budgeted_result.selected_wrappers:
-                tprint_warning("⚠️ No features selected in budgeted selection")
+                _log_warning("⚠️ No features selected in budgeted selection", self.logger)
                 return result
-            
-            tprint_success(f"✅ Budgeted selection completed: {len(budgeted_result.selected_wrappers)} features selected")
-            
+
+            _log_success(f"✅ Budgeted selection completed: {len(budgeted_result.selected_wrappers)} features selected", self.logger)
+
             # Step 5: Interaction Generation
-            tprint_info("🔗 Step 5: Interaction Feature Generation")
+            _log_info("🔗 Step 5: Interaction Feature Generation", self.logger)
             interaction_result = self.interaction_generator.generate_interactions(
                 budgeted_result.selected_wrappers, data, target
             )
             result.interaction_result = interaction_result
             
-            tprint_success(f"✅ Interaction generation completed: {len(interaction_result.selected_interactions)} interactions selected")
-            
+            _log_success(f"✅ Interaction generation completed: {len(interaction_result.selected_interactions)} interactions selected", self.logger)
+
             # Step 6: Final Model Selection
-            tprint_info("🎯 Step 6: Final Model Selection")
+            _log_info("🎯 Step 6: Final Model Selection", self.logger)
             final_result = self.final_selection.select_final_features(
                 budgeted_result.selected_wrappers, 
                 interaction_result.selected_interactions,
@@ -322,19 +362,28 @@ class DataDrivenFeatureSelector:
                 budgeted_result.memory_efficient_ops
             ])
             result.bayesian_optimizations = phase2_result.bayesian_optimizations
-            
-            tprint_success(f"🎉 Data-driven feature selection completed in {execution_time:.3f}s")
-            tprint_success(f"📊 Final selection: {result.total_features_selected} features")
-            tprint_success(f"💰 Budget utilization: {result.budget_utilization:.1%}")
-            tprint_success(f"📈 Coverage achieved: {sum(result.coverage_achieved.values())}/{len(result.coverage_achieved)} families")
-            
+
+            self.performance_metrics.update({
+                'matrix_ops_used': result.matrix_ops_used,
+                'hardware_accelerated_ops': result.hardware_accelerated_ops,
+                'memory_efficient_ops': result.memory_efficient_ops,
+                'bayesian_optimizations': result.bayesian_optimizations
+            })
+            _log_performance("⚡ Updated performance metrics after feature selection run", self.logger)
+
+            _log_success(f"🎉 Data-driven feature selection completed in {execution_time:.3f}s", self.logger)
+            _log_success(f"📊 Final selection: {result.total_features_selected} features", self.logger)
+            _log_success(f"💰 Budget utilization: {result.budget_utilization:.1%}", self.logger)
+            _log_success(f"📈 Coverage achieved: {sum(result.coverage_achieved.values())}/{len(result.coverage_achieved)} families", self.logger)
+
             return result
-            
+
         except Exception as e:
             execution_time = time.time() - start_time
-            self.logger.error(f"Data-driven feature selection failed: {e}")
-            self.logger.error(f"Error details: {traceback.format_exc()}")
-            
+            _log_error(f"Data-driven feature selection failed: {e}", self.logger)
+            _log_debug(f"Error details: {traceback.format_exc()}", self.logger)
+            self.performance_metrics['total_execution_time'] = execution_time
+
             # Return partial result
             result = FeatureSelectionResult()
             result.total_execution_time = execution_time
@@ -345,9 +394,9 @@ class DataDrivenFeatureSelector:
         try:
             # Create wrappers from feature bank
             wrappers = create_feature_generator_wrappers()
-            
+
             if not wrappers:
-                tprint_warning("⚠️ No feature generators found in feature bank")
+                _log_warning("⚠️ No feature generators found in feature bank", self.logger)
                 return []
             
             # Filter out excluded categories and generators
@@ -357,16 +406,16 @@ class DataDrivenFeatureSelector:
                     not any(excluded in wrapper.name for excluded in self.config.exclude_generators)):
                     filtered_wrappers.append(wrapper)
             
-            tprint_info(f"📊 Created {len(filtered_wrappers)} feature generator wrappers")
+            _log_info(f"📊 Created {len(filtered_wrappers)} feature generator wrappers", self.logger)
             return filtered_wrappers
-            
+
         except Exception as e:
-            tprint_error(f"❌ Failed to create feature wrappers: {e}")
+            _log_error(f"❌ Failed to create feature wrappers: {e}", self.logger)
             return []
     
     def get_performance_summary(self) -> Dict[str, Any]:
         """Get comprehensive performance summary."""
-        return {
+        summary = {
             'total_execution_time': self.performance_metrics['total_execution_time'],
             'matrix_ops_used': self.performance_metrics['matrix_ops_used'],
             'hardware_accelerated_ops': self.performance_metrics['hardware_accelerated_ops'],
@@ -376,6 +425,8 @@ class DataDrivenFeatureSelector:
             'matrix_ops_available': MATRIX_OPS_AVAILABLE,
             'config': self.config.to_dict()
         }
+        _log_performance("📈 Generated performance summary for DataDrivenFeatureSelector", self.logger)
+        return summary
     
     def save_results(self, result: FeatureSelectionResult, filepath: str) -> bool:
         """Save selection results to file."""
@@ -384,12 +435,12 @@ class DataDrivenFeatureSelector:
             
             with open(filepath, 'w') as f:
                 json.dump(result.to_dict(), f, indent=2, default=str)
-            
-            tprint_success(f"✅ Results saved to {filepath}")
+
+            _log_success(f"✅ Results saved to {filepath}", self.logger)
             return True
-            
+
         except Exception as e:
-            tprint_error(f"❌ Failed to save results: {e}")
+            _log_error(f"❌ Failed to save results: {e}", self.logger)
             return False
     
     def load_results(self, filepath: str) -> Optional[FeatureSelectionResult]:
@@ -411,20 +462,21 @@ class DataDrivenFeatureSelector:
             result.budget_utilization = data.get('budget_utilization', 0.0)
             result.coverage_achieved = data.get('coverage_achieved', {})
             
-            tprint_success(f"✅ Results loaded from {filepath}")
+            _log_success(f"✅ Results loaded from {filepath}", self.logger)
             return result
-            
+
         except Exception as e:
-            tprint_error(f"❌ Failed to load results: {e}")
+            _log_error(f"❌ Failed to load results: {e}", self.logger)
             return None
 
 
 # Convenience functions
-async def select_features_development(data: pd.DataFrame, target: np.ndarray, 
+async def select_features_development(data: pd.DataFrame, target: np.ndarray,
                                    data_availability: Optional[Dict[str, float]] = None) -> FeatureSelectionResult:
     """Select features using development configuration (fast, less thorough)."""
     config = create_development_config()
     selector = DataDrivenFeatureSelector(config)
+    _log_info("🛠️ Executing development feature selection workflow")
     return await selector.select_features(data, target, data_availability)
 
 
@@ -433,6 +485,7 @@ async def select_features_production(data: pd.DataFrame, target: np.ndarray,
     """Select features using production configuration (thorough, robust)."""
     config = create_production_config()
     selector = DataDrivenFeatureSelector(config)
+    _log_info("🏭 Executing production feature selection workflow")
     return await selector.select_features(data, target, data_availability)
 
 
@@ -441,4 +494,6 @@ async def select_features_custom(data: pd.DataFrame, target: np.ndarray,
                                data_availability: Optional[Dict[str, float]] = None) -> FeatureSelectionResult:
     """Select features using custom configuration."""
     selector = DataDrivenFeatureSelector(config)
+    _log_info("⚙️ Executing custom feature selection workflow")
     return await selector.select_features(data, target, data_availability)
+

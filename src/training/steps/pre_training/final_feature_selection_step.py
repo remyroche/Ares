@@ -47,6 +47,7 @@ from src.training.steps.pre_training.validation.data_contracts import (
     validate_selection_artifact,
 )
 from src.training.config.data_locator import DataLocator as PipelineDataLocator
+from .settings import get_pre_training_settings
 from .column_naming import (
     ColumnNamespace,
     ensure_namespace,
@@ -60,6 +61,7 @@ class FinalFeatureSelectionStep:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
         self.logger = get_logger("FinalFeatureSelectionStep")
+        self._settings = get_pre_training_settings()
 
         tprint("🧠 Initializing FinalFeatureSelectionStep")
         if self.config:
@@ -347,7 +349,7 @@ class FinalFeatureSelectionStep:
             fallback_allowed = True
 
         if fallback_allowed:
-            outcomes_dir = Path("outcomes")
+            outcomes_dir = self._settings.outcomes_root
             if outcomes_dir.exists():
                 pattern = f"market_analysis_multi_horizon_profit_labeler_outcome_{symbol}_{exchange}_{timeframe}_*.json"
                 outcome_files = list(outcomes_dir.glob(pattern))

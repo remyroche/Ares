@@ -37,6 +37,12 @@ DEFAULT_STEP_TIME_BUDGETS: Dict[str, float] = {
 }
 
 
+def _default_data_locator_config() -> DataLocatorConfig:
+    """Build a :class:`DataLocatorConfig` from the global settings."""
+
+    return get_pre_training_settings().to_data_locator_config()
+
+
 @dataclass(frozen=True)
 class StepSpec:
     """Specification describing an executable pre-training step."""
@@ -130,6 +136,7 @@ from src.training.steps.pre_training.validation.data_contracts import (
     validate_multi_horizon_labeling_result,
     validate_selection_artifact,
 )
+from .settings import get_pre_training_settings
 from src.training.common.component_result import ComponentError
 
 logger = system_logger.getChild('PreTrainingSubPipeline')
@@ -313,7 +320,7 @@ class SubPipelineConfig:
     step_time_budgets: Dict[str, float] = field(default_factory=lambda: DEFAULT_STEP_TIME_BUDGETS.copy())
     market_data_batch_size: Optional[int] = None
     market_data_window_days: Optional[int] = None
-    data_locator_config: DataLocatorConfig = field(default_factory=DataLocatorConfig)
+    data_locator_config: DataLocatorConfig = field(default_factory=_default_data_locator_config)
     data_locator: Optional[DataLocator] = None
     data_dir_key: str = "market_data"
     cache_dir_key: str = "default"
@@ -476,6 +483,7 @@ class PreTrainingSubPipeline:
         self._data_locator: Optional[DataLocator] = None
         self._seeded_rngs: Optional[SeededRNGs] = None
         self._active_seed: Optional[int] = None
+        self._settings = get_pre_training_settings()
         self._missing_components: Set[str] = set()
 
         self._refresh_component_registry()
@@ -1105,7 +1113,11 @@ class PreTrainingSubPipeline:
         summary = config.paths.summary()
         summary_json = json.dumps(summary, indent=2, sort_keys=True)
 
+        settings_summary = self._settings.summary()
+        settings_json = json.dumps(settings_summary, indent=2, sort_keys=True)
+
         self.logger.info('📁 Effective filesystem configuration:\n%s', summary_json)
+        self.logger.info('⚙️ Effective pre-training settings:\n%s', settings_json)
         self.event_logger.info(
             "Effective filesystem configuration resolved",
             context={
@@ -1114,6 +1126,16 @@ class PreTrainingSubPipeline:
                 'symbol': config.symbol,
                 'timeframe': config.timeframe,
                 'configuration': summary,
+            },
+        )
+        self.event_logger.info(
+            "Pre-training settings resolved",
+            context={
+                'run_id': self._run_metadata.get('run_id'),
+                'step': 'pipeline.settings',
+                'symbol': config.symbol,
+                'timeframe': config.timeframe,
+                'configuration': settings_summary,
             },
         )
 
@@ -1865,14 +1887,25 @@ class PreTrainingSubPipeline:
         output_path: Optional[Path] = None
         if config.metrics_output_path:
             output_path = Path(config.metrics_output_path)
-        elif config.metrics_output_path is None:
+        else:
             extension = 'jsonl' if config.metrics_output_format.lower() == 'jsonl' else 'csv'
-            locator = self._data_locator or self._resolve_data_locator(config)
-            base_dir = locator.artifacts_path(
-                config.artifacts_dir_key,
-                ensure_exists=True,
-            )
-            output_path = base_dir / f'pre_training_metrics.{extension}'
+            metrics_dir_setting = self._settings.metrics.output_dir
+            if metrics_dir_setting is not None:
+                base_dir = metrics_dir_setting.resolved
+                base_dir.mkdir(parents=True, exist_ok=True)
+                filename = self._settings.metrics.filename
+                if Path(filename).suffix:
+                    metrics_filename = filename
+                else:
+                    metrics_filename = f'{filename}.{extension}'
+                output_path = base_dir / metrics_filename
+            else:
+                locator = self._data_locator or self._resolve_data_locator(config)
+                base_dir = locator.artifacts_path(
+                    config.artifacts_dir_key,
+                    ensure_exists=True,
+                )
+                output_path = base_dir / f'pre_training_metrics.{extension}'
 
         if output_path is None and not config.metrics_prometheus_enabled:
             return None
@@ -2360,6 +2393,8 @@ class PreTrainingSubPipeline:
             data_cache_dir = config.custom_params.get('data_cache_dir') if config.custom_params else None
             if data_cache_dir:
                 regime_cache_path = str((Path(data_cache_dir).expanduser() / 'nas_tas_clustering').resolve(strict=False))
+        if not regime_cache_path and self._settings.regime.cache_dir is not None:
+            regime_cache_path = str(self._settings.regime.cache_dir.resolved)
 
         if regime_cache_path:
             pipeline_state['regime_cache_path'] = regime_cache_path

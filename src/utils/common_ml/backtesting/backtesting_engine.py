@@ -56,13 +56,18 @@ from src.utils.math_validation import (
 )
 from src.utils.parquet_utils import get_parquet_utils, ParquetUtils
 from src.core.decorators import (
-    handles_errors, validates, traced, log_execution_time, 
-    timeout, error_boundary, compose, validate_data_quality, 
+    handles_errors, validates, traced, log_execution_time,
+    timeout, error_boundary, compose, validate_data_quality,
     monitor_step_execution, ensure_data_integrity, validate_pipeline_step
 )
 from src.core.errors import (
     ValidationError, DataIntegrityError, FileOperationError,
     MathValidationError, TimeoutError
+)
+from .turnover import (
+    calculate_turnover_metrics,
+    apply_market_impact_model,
+    reject_high_turnover_configs,
 )
 
 logger = logging.getLogger(__name__)
@@ -157,6 +162,19 @@ class BacktestingResults:
     cvar_95: float
     beta: float
     alpha: float
+
+    # Turnover metrics
+    turnover_per_period: float = 0.0
+    turnover_annual: float = 0.0
+    avg_holding_period_bars: float = 0.0
+    position_stability: float = 0.0
+
+    # Market impact adjustments
+    impact_adjusted_total_return: float = 0.0
+    impact_adjusted_annualized_return: float = 0.0
+    impact_adjusted_sharpe: float = 0.0
+    market_impact_cost: float = 0.0
+    impact_adjusted_daily_returns: pd.Series = field(default_factory=pd.Series)
     
     # Walk-forward results
     walk_forward_results: List[Dict[str, Any]] = field(default_factory=list)
@@ -359,13 +377,27 @@ class WalkForwardValidator:
         else:
             # Use CPU backtesting
             results = await self._cpu_backtest(testing_data, strategy_params, strategy_func)
-        
+
+        rejected = False
+        rejection_reason = None
+        if reject_high_turnover_configs(results):
+            rejected = True
+            rejection_reason = 'turnover_constraints'
+            self.logger.warning(
+                "Window %s rejected due to turnover constraints (turnover=%.2f, sharpe=%.2f)",
+                window_id,
+                results.get('turnover_annual', 0.0),
+                results.get('sharpe_ratio', 0.0),
+            )
+
         return {
             'window_id': window_id,
             'training_period': f"{window['training_start']} to {window['training_end']}",
             'testing_period': f"{window['testing_start']} to {window['testing_end']}",
             'results': results,
-            'strategy_params': strategy_params
+            'strategy_params': strategy_params,
+            'rejected': rejected,
+            'rejection_reason': rejection_reason,
         }
     
     async def _gpu_backtest(
@@ -402,22 +434,29 @@ class WalkForwardValidator:
             'cash': self.config.initial_capital,
             'position': 0.0,
             'equity': self.config.initial_capital,
-            'trades': []
+            'trades': [],
+            'position_history': [],
+            'equity_history': [],
         }
         
         # Execute strategy on each bar
         for i, (timestamp, bar) in enumerate(data.iterrows()):
             # Get signal from strategy
             signal = await strategy_func(
-                data.iloc[:i+1], 
-                mode='predict', 
+                data.iloc[:i+1],
+                mode='predict',
                 params=strategy_params
             )
-            
+
             # Execute trade based on signal
             if signal is not None:
                 await self._execute_trade(portfolio, bar, signal, timestamp)
-        
+
+            # Mark-to-market and record state
+            portfolio['equity'] = portfolio['cash'] + (portfolio['position'] * bar['close'])
+            portfolio['position_history'].append(portfolio['position'])
+            portfolio['equity_history'].append(portfolio['equity'])
+
         # Calculate performance metrics
         return self._calculate_metrics(portfolio, data)
     
@@ -480,50 +519,134 @@ class WalkForwardValidator:
         portfolio['equity'] = portfolio['cash'] + (portfolio['position'] * bar['close'])
     
     def _calculate_metrics(self, portfolio: Dict[str, Any], data: pd.DataFrame) -> Dict[str, Any]:
-        """Calculate performance metrics."""
-        if not portfolio['trades']:
-            return {
-                'total_return': 0.0,
-                'sharpe_ratio': 0.0,
-                'max_drawdown': 0.0,
-                'win_rate': 0.0,
-                'total_trades': 0
-            }
-        
-        # Calculate returns
+        """Calculate comprehensive performance, turnover, and market impact metrics."""
+
         initial_equity = self.config.initial_capital
-        final_equity = portfolio['equity']
-        total_return = (final_equity - initial_equity) / initial_equity
-        
-        # Calculate trade statistics
-        trades = portfolio['trades']
-        buy_trades = [t for t in trades if t['action'] == 'buy']
-        sell_trades = [t for t in trades if t['action'] == 'sell']
-        
-        if len(buy_trades) > 0 and len(sell_trades) > 0:
-            # Calculate P&L for each trade pair
-            pnl_list = []
-            for i in range(min(len(buy_trades), len(sell_trades))):
-                buy_price = buy_trades[i]['price']
-                sell_price = sell_trades[i]['price']
-                pnl = (sell_price - buy_price) / buy_price
-                pnl_list.append(pnl)
-            
-            win_rate = len([p for p in pnl_list if p > 0]) / len(pnl_list) if pnl_list else 0.0
-            avg_return = np.mean(pnl_list) if pnl_list else 0.0
-            volatility = np.std(pnl_list) if len(pnl_list) > 1 else 0.0
-            sharpe_ratio = avg_return / volatility if volatility > 0 else 0.0
+        trades = portfolio.get('trades', [])
+        trade_log = pd.DataFrame(trades) if trades else pd.DataFrame(columns=['timestamp', 'action', 'price', 'shares'])
+
+        index = data.index[:len(portfolio.get('equity_history', []))]
+        equity_series = pd.Series(portfolio.get('equity_history', []), index=index, dtype=float)
+        positions_series = pd.Series(portfolio.get('position_history', []), index=index, dtype=float)
+
+        if equity_series.empty:
+            returns_series = pd.Series(dtype=float)
         else:
-            win_rate = 0.0
-            sharpe_ratio = 0.0
-        
+            returns_series = equity_series.pct_change().fillna(0.0)
+
+        if returns_series.empty:
+            gross_equity_curve = pd.Series([initial_equity], index=index[:1])
+            impact_adjusted_returns = returns_series
+        else:
+            gross_equity_curve = (1.0 + returns_series).cumprod() * initial_equity
+            impact_adjusted_returns = apply_market_impact_model(
+                returns_series,
+                positions_series,
+                data['volume']
+            )
+
+        if impact_adjusted_returns.empty:
+            impact_equity_curve = pd.Series([initial_equity], index=gross_equity_curve.index[:1])
+        else:
+            impact_equity_curve = (1.0 + impact_adjusted_returns).cumprod() * initial_equity
+
+        gross_total_return = 0.0 if gross_equity_curve.empty else (gross_equity_curve.iloc[-1] - initial_equity) / initial_equity
+        impact_total_return = 0.0 if impact_equity_curve.empty else (impact_equity_curve.iloc[-1] - initial_equity) / initial_equity
+
+        periods = len(returns_series)
+        if periods > 0 and gross_total_return > -1:
+            annualized_return = (1 + gross_total_return) ** (252 / periods) - 1
+        else:
+            annualized_return = 0.0
+
+        if len(impact_adjusted_returns) > 0 and impact_total_return > -1:
+            impact_annualized_return = (1 + impact_total_return) ** (252 / len(impact_adjusted_returns)) - 1
+        else:
+            impact_annualized_return = 0.0
+
+        daily_mean = returns_series.mean() if not returns_series.empty else 0.0
+        daily_std = returns_series.std(ddof=0) if len(returns_series) > 1 else 0.0
+        sharpe_ratio = (daily_mean / daily_std * np.sqrt(252)) if daily_std > 0 else 0.0
+        volatility = daily_std * np.sqrt(252) if daily_std > 0 else 0.0
+
+        impact_mean = impact_adjusted_returns.mean() if len(impact_adjusted_returns) > 0 else 0.0
+        impact_std = impact_adjusted_returns.std(ddof=0) if len(impact_adjusted_returns) > 1 else 0.0
+        impact_sharpe = (impact_mean / impact_std * np.sqrt(252)) if impact_std > 0 else 0.0
+
+        var_95 = returns_series.quantile(0.05) if len(returns_series) > 0 else 0.0
+        if len(returns_series) > 0:
+            tail_losses = returns_series[returns_series <= var_95]
+            cvar_95 = tail_losses.mean() if not tail_losses.empty else var_95
+        else:
+            cvar_95 = 0.0
+
+        if not gross_equity_curve.empty:
+            running_max = gross_equity_curve.cummax()
+            drawdowns = (gross_equity_curve - running_max) / running_max.replace(0, np.nan)
+            max_drawdown = abs(drawdowns.min()) if len(drawdowns) > 0 else 0.0
+        else:
+            max_drawdown = 0.0
+
+        market_impact_cost = 0.0
+        if not gross_equity_curve.empty and not impact_equity_curve.empty:
+            market_impact_cost = float(gross_equity_curve.iloc[-1] - impact_equity_curve.iloc[-1])
+
+        turnover_metrics = calculate_turnover_metrics(positions_series, returns_series)
+
+        buy_trades = [t for t in trades if t.get('action') == 'buy']
+        sell_trades = [t for t in trades if t.get('action') == 'sell']
+        pnl_list = []
+        for i in range(min(len(buy_trades), len(sell_trades))):
+            buy_price = buy_trades[i]['price']
+            sell_price = sell_trades[i]['price']
+            if buy_price:
+                pnl_list.append((sell_price - buy_price) / buy_price)
+
+        win_trades = [p for p in pnl_list if p > 0]
+        loss_trades = [-p for p in pnl_list if p < 0]
+        win_rate = len(win_trades) / len(pnl_list) if pnl_list else 0.0
+        average_win = float(np.mean(win_trades)) if win_trades else 0.0
+        average_loss = float(np.mean(loss_trades)) if loss_trades else 0.0
+        gross_profit = float(np.sum(win_trades)) if win_trades else 0.0
+        gross_loss = float(np.sum(loss_trades)) if loss_trades else 0.0
+        profit_factor = gross_profit / gross_loss if gross_loss > 0 else 0.0
+
+        equity_curve = pd.DataFrame({
+            'equity': gross_equity_curve,
+            'impact_adjusted_equity': impact_equity_curve.reindex(gross_equity_curve.index, method='ffill').fillna(initial_equity)
+        }) if not gross_equity_curve.empty else pd.DataFrame()
+
         return {
-            'total_return': total_return,
+            'total_return': gross_total_return,
+            'annualized_return': annualized_return,
             'sharpe_ratio': sharpe_ratio,
-            'max_drawdown': 0.0,  # TODO: Calculate actual drawdown
-            'win_rate': win_rate,
+            'sortino_ratio': 0.0,
+            'max_drawdown': max_drawdown,
+            'calmar_ratio': gross_total_return / max_drawdown if max_drawdown > 0 else 0.0,
             'total_trades': len(trades),
-            'final_equity': final_equity
+            'winning_trades': len(win_trades),
+            'losing_trades': len(loss_trades),
+            'win_rate': win_rate,
+            'profit_factor': profit_factor,
+            'average_win': average_win,
+            'average_loss': average_loss,
+            'volatility': volatility,
+            'var_95': float(var_95),
+            'cvar_95': float(cvar_95),
+            'beta': 0.0,
+            'alpha': 0.0,
+            'turnover_per_period': turnover_metrics['turnover_per_period'],
+            'turnover_annual': turnover_metrics['turnover_annual'],
+            'avg_holding_period_bars': turnover_metrics['avg_holding_period_bars'],
+            'position_stability': turnover_metrics['position_stability'],
+            'impact_adjusted_total_return': impact_total_return,
+            'impact_adjusted_annualized_return': impact_annualized_return,
+            'impact_adjusted_sharpe': impact_sharpe,
+            'market_impact_cost': market_impact_cost,
+            'equity_curve': equity_curve,
+            'trade_log': trade_log,
+            'daily_returns': returns_series,
+            'impact_adjusted_daily_returns': impact_adjusted_returns,
         }
 
 
@@ -618,7 +741,10 @@ class BacktestingEngine:
     
     def _aggregate_results(self, walk_forward_results: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Aggregate walk-forward results into overall metrics."""
-        if not walk_forward_results:
+
+        valid_results = [r for r in walk_forward_results if r.get('results') and not r.get('rejected')]
+
+        if not valid_results:
             return {
                 'total_return': 0.0,
                 'annualized_return': 0.0,
@@ -637,41 +763,144 @@ class BacktestingEngine:
                 'var_95': 0.0,
                 'cvar_95': 0.0,
                 'beta': 0.0,
-                'alpha': 0.0
+                'alpha': 0.0,
+                'turnover_per_period': 0.0,
+                'turnover_annual': 0.0,
+                'avg_holding_period_bars': 0.0,
+                'position_stability': 0.0,
+                'impact_adjusted_total_return': 0.0,
+                'impact_adjusted_annualized_return': 0.0,
+                'impact_adjusted_sharpe': 0.0,
+                'market_impact_cost': 0.0,
+                'equity_curve': pd.DataFrame(),
+                'trade_log': pd.DataFrame(),
+                'daily_returns': pd.Series(dtype=float),
+                'impact_adjusted_daily_returns': pd.Series(dtype=float),
             }
-        
-        # Extract metrics from each window
-        returns = [r['results']['total_return'] for r in walk_forward_results if 'results' in r]
-        sharpe_ratios = [r['results']['sharpe_ratio'] for r in walk_forward_results if 'results' in r]
-        win_rates = [r['results']['win_rate'] for r in walk_forward_results if 'results' in r]
-        total_trades = [r['results']['total_trades'] for r in walk_forward_results if 'results' in r]
-        
-        # Calculate aggregated metrics
-        total_return = np.mean(returns) if returns else 0.0
-        annualized_return = total_return * (252 / self.config.testing_window_days) if self.config.testing_window_days > 0 else 0.0
-        sharpe_ratio = np.mean(sharpe_ratios) if sharpe_ratios else 0.0
-        win_rate = np.mean(win_rates) if win_rates else 0.0
-        total_trades_sum = sum(total_trades) if total_trades else 0
-        
+
+        total_trades_sum = sum(r['results'].get('total_trades', 0) for r in valid_results)
+        winning_trades_sum = sum(r['results'].get('winning_trades', 0) for r in valid_results)
+        losing_trades_sum = sum(r['results'].get('losing_trades', 0) for r in valid_results)
+
+        turnover_per_period = np.mean([r['results'].get('turnover_per_period', 0.0) for r in valid_results])
+        turnover_annual = np.mean([r['results'].get('turnover_annual', 0.0) for r in valid_results])
+        avg_holding_period = np.mean([r['results'].get('avg_holding_period_bars', 0.0) for r in valid_results])
+        position_stability = np.mean([r['results'].get('position_stability', 0.0) for r in valid_results])
+
+        profit_factor = np.mean([r['results'].get('profit_factor', 0.0) for r in valid_results])
+        average_win = np.mean([r['results'].get('average_win', 0.0) for r in valid_results])
+        average_loss = np.mean([r['results'].get('average_loss', 0.0) for r in valid_results])
+
+        daily_series_list = [r['results'].get('daily_returns', pd.Series(dtype=float)) for r in valid_results]
+        if any(not series.empty for series in daily_series_list):
+            combined_daily_returns = pd.concat(daily_series_list, axis=0).sort_index()
+        else:
+            combined_daily_returns = pd.Series(dtype=float)
+
+        impact_series_list = [r['results'].get('impact_adjusted_daily_returns', pd.Series(dtype=float)) for r in valid_results]
+        if any(not series.empty for series in impact_series_list):
+            combined_impact_returns = pd.concat(impact_series_list, axis=0).sort_index()
+        else:
+            combined_impact_returns = pd.Series(dtype=float)
+
+        equity_frames = [r['results'].get('equity_curve', pd.DataFrame()) for r in valid_results if not r['results'].get('equity_curve', pd.DataFrame()).empty]
+        aggregated_equity_curve = pd.concat(equity_frames, axis=0).sort_index() if equity_frames else pd.DataFrame()
+
+        trade_logs = [r['results'].get('trade_log', pd.DataFrame()) for r in valid_results if not r['results'].get('trade_log', pd.DataFrame()).empty]
+        aggregated_trade_log = pd.concat(trade_logs, axis=0, ignore_index=True) if trade_logs else pd.DataFrame()
+        if not aggregated_trade_log.empty and 'timestamp' in aggregated_trade_log.columns:
+            aggregated_trade_log = aggregated_trade_log.sort_values('timestamp').reset_index(drop=True)
+
+        if combined_daily_returns.empty:
+            total_return = 0.0
+            annualized_return = 0.0
+            sharpe_ratio = 0.0
+            volatility = 0.0
+            var_95 = 0.0
+            cvar_95 = 0.0
+            max_drawdown = 0.0
+            calmar_ratio = 0.0
+        else:
+            cumulative = (1.0 + combined_daily_returns).cumprod()
+            total_return = float(cumulative.iloc[-1] - 1)
+            periods = len(combined_daily_returns)
+            annualized_return = (1 + total_return) ** (252 / periods) - 1 if periods > 0 and total_return > -1 else 0.0
+            daily_std = combined_daily_returns.std(ddof=0) if periods > 1 else 0.0
+            sharpe_ratio = (combined_daily_returns.mean() / daily_std * np.sqrt(252)) if daily_std > 0 else 0.0
+            volatility = daily_std * np.sqrt(252) if daily_std > 0 else 0.0
+            var_95 = float(combined_daily_returns.quantile(0.05))
+            tail_losses = combined_daily_returns[combined_daily_returns <= var_95]
+            cvar_95 = float(tail_losses.mean()) if not tail_losses.empty else var_95
+
+            equity_curve = cumulative * self.config.initial_capital
+            running_max = equity_curve.cummax()
+            drawdowns = (equity_curve - running_max) / running_max.replace(0, np.nan)
+            max_drawdown = abs(drawdowns.min()) if not drawdowns.empty else 0.0
+            calmar_ratio = total_return / max_drawdown if max_drawdown > 0 else 0.0
+
+            if aggregated_equity_curve.empty:
+                aggregated_equity_curve = pd.DataFrame({
+                    'equity': equity_curve
+                })
+            elif 'equity' not in aggregated_equity_curve.columns:
+                aggregated_equity_curve['equity'] = equity_curve.reindex(aggregated_equity_curve.index, method='ffill').fillna(self.config.initial_capital)
+
+        if combined_impact_returns.empty:
+            impact_total_return = 0.0
+            impact_annualized_return = 0.0
+            impact_sharpe = 0.0
+            market_impact_cost = 0.0
+        else:
+            impact_cumulative = (1.0 + combined_impact_returns).cumprod()
+            impact_total_return = float(impact_cumulative.iloc[-1] - 1)
+            impact_periods = len(combined_impact_returns)
+            impact_annualized_return = (1 + impact_total_return) ** (252 / impact_periods) - 1 if impact_periods > 0 and impact_total_return > -1 else 0.0
+            impact_std = combined_impact_returns.std(ddof=0) if impact_periods > 1 else 0.0
+            impact_sharpe = (combined_impact_returns.mean() / impact_std * np.sqrt(252)) if impact_std > 0 else 0.0
+
+            impact_equity = impact_cumulative * self.config.initial_capital
+            market_impact_cost = 0.0
+            if not aggregated_equity_curve.empty:
+                aggregated_equity_curve['impact_adjusted_equity'] = impact_equity.reindex(aggregated_equity_curve.index, method='ffill').fillna(self.config.initial_capital)
+                if 'equity' in aggregated_equity_curve.columns:
+                    market_impact_cost = float(aggregated_equity_curve['equity'].iloc[-1] - aggregated_equity_curve['impact_adjusted_equity'].iloc[-1])
+            else:
+                aggregated_equity_curve = pd.DataFrame({
+                    'impact_adjusted_equity': impact_equity
+                })
+                market_impact_cost = float(self.config.initial_capital * total_return - self.config.initial_capital * impact_total_return)
+
         return {
             'total_return': total_return,
             'annualized_return': annualized_return,
             'sharpe_ratio': sharpe_ratio,
-            'sortino_ratio': 0.0,  # TODO: Calculate Sortino ratio
-            'max_drawdown': 0.0,   # TODO: Calculate max drawdown
-            'calmar_ratio': 0.0,   # TODO: Calculate Calmar ratio
+            'sortino_ratio': 0.0,
+            'max_drawdown': max_drawdown,
+            'calmar_ratio': calmar_ratio,
             'total_trades': total_trades_sum,
-            'winning_trades': int(total_trades_sum * win_rate),
-            'losing_trades': int(total_trades_sum * (1 - win_rate)),
-            'win_rate': win_rate,
-            'profit_factor': 0.0,  # TODO: Calculate profit factor
-            'average_win': 0.0,    # TODO: Calculate average win
-            'average_loss': 0.0,   # TODO: Calculate average loss
-            'volatility': np.std(returns) if len(returns) > 1 else 0.0,
-            'var_95': np.percentile(returns, 5) if returns else 0.0,
-            'cvar_95': 0.0,        # TODO: Calculate CVaR
-            'beta': 0.0,           # TODO: Calculate beta
-            'alpha': 0.0           # TODO: Calculate alpha
+            'winning_trades': winning_trades_sum,
+            'losing_trades': losing_trades_sum,
+            'win_rate': winning_trades_sum / total_trades_sum if total_trades_sum > 0 else 0.0,
+            'profit_factor': profit_factor,
+            'average_win': average_win,
+            'average_loss': average_loss,
+            'volatility': volatility,
+            'var_95': var_95,
+            'cvar_95': cvar_95,
+            'beta': 0.0,
+            'alpha': 0.0,
+            'turnover_per_period': turnover_per_period,
+            'turnover_annual': turnover_annual,
+            'avg_holding_period_bars': avg_holding_period,
+            'position_stability': position_stability,
+            'impact_adjusted_total_return': impact_total_return,
+            'impact_adjusted_annualized_return': impact_annualized_return,
+            'impact_adjusted_sharpe': impact_sharpe,
+            'market_impact_cost': market_impact_cost,
+            'equity_curve': aggregated_equity_curve,
+            'trade_log': aggregated_trade_log,
+            'daily_returns': combined_daily_returns,
+            'impact_adjusted_daily_returns': combined_impact_returns,
         }
     
     def _get_optimization_used(self) -> List[str]:

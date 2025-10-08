@@ -11,7 +11,9 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult, ComponentError
+import pandas as pd
+
+from .base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
 from .component_factory import register_component
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
@@ -22,6 +24,11 @@ from ...market_analysis.logging_standards import (
 
 # Import optimized process engine
 from ...market_analysis.optimized_process_engines import OptimizedFeatureSelectionEngine, ProcessType
+from ..validation.schemas import (
+    SchemaValidationException,
+    schema_metadata,
+    validate_engineered_features,
+)
 
 # Import hardware optimization tools
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
@@ -176,8 +183,35 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
         """
         log_info('🎯 Starting Final Feature Selection')
         tprint('🚀 [FinalFeatureSelection] Starting execute routine')
+        validation_metadata: Dict[str, Dict[str, Optional[Dict[str, str]]]] = {
+            'inputs': {},
+            'outputs': {},
+            'derived': {},
+        }
+
+        def _record_validated_frame(label: str, frame: pd.DataFrame) -> pd.DataFrame:
+            validated = validate_engineered_features(
+                frame,
+                context=f"final_feature_selection.{label}"
+            )
+            validation_metadata['inputs'][label] = schema_metadata('engineered_features').get('engineered_features')
+            return validated
 
         try:
+            if isinstance(data, pd.DataFrame) and not data.empty:
+                data = _record_validated_frame('input_data', data)
+            elif isinstance(data, dict):
+                for key in ('features', 'feature_matrix', 'data'):
+                    candidate = data.get(key)
+                    if isinstance(candidate, pd.DataFrame) and not candidate.empty:
+                        data[key] = _record_validated_frame(key, candidate)
+
+            if isinstance(pipeline_state, dict):
+                for key in ('feature_matrix', 'final_feature_candidates'):
+                    candidate = pipeline_state.get(key)
+                    if isinstance(candidate, pd.DataFrame) and not candidate.empty:
+                        pipeline_state[key] = _record_validated_frame(key, candidate)
+
             # Check memory pressure and apply optimizations
             memory_pressure = getattr(self.memory_optimizer, 'memory_pressure', 0.0)
             if memory_pressure > 0.75:
@@ -339,9 +373,11 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                             'stage_2': 80,
                             'stage_3': 60
                         },
-                        'hardware_performance': performance_metrics
+                        'hardware_performance': performance_metrics,
+                        'validated_schemas': validation_metadata
                     }
                 }
+                artifacts.setdefault('validated_schemas', validation_metadata)
 
                 log_success(f'✅ Final feature selection completed successfully with hardware optimizations')
                 log_info(f'📊 Performance metrics: {performance_metrics}')
@@ -365,7 +401,8 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                         'component_type': 'final_feature_selection',
                         'symbol': symbol,
                         'exchange': exchange,
-                        'timeframe': timeframe
+                        'timeframe': timeframe,
+                        'validated_schemas': validation_metadata
                     })
                     
                     if saved_files:
@@ -411,6 +448,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                         'timeframe': timeframe,
                         'artifacts_saved_persistently': artifacts_saved_persistently,
                         'artifact_persistence_paths': saved_files,
+                        'validated_schemas': validation_metadata,
                         **({'artifact_persistence_error': persistence_error} if persistence_error else {})
                     }
                 )
@@ -435,9 +473,30 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                         'symbol': symbol,
                         'exchange': exchange,
                         'timeframe': timeframe,
-                        'memory_pressure': getattr(self.memory_optimizer, 'memory_pressure', 0.0)
+                        'memory_pressure': getattr(self.memory_optimizer, 'memory_pressure', 0.0),
+                        'validated_schemas': validation_metadata
                     }
                 )
+
+        except SchemaValidationException as schema_error:
+            error_message = str(schema_error)
+            log_error(f'Final feature selection schema validation failed: {error_message}')
+            tprint(f'❌ [FinalFeatureSelection] Schema validation error: {error_message}')
+            return ComponentResult(
+                success=False,
+                artifacts={},
+                error_message=error_message,
+                execution_time=0.0,
+                metadata={
+                    'component_type': 'final_feature_selection',
+                    'schema_error': {
+                        'schema_key': schema_error.schema_key,
+                        'context': schema_error.context,
+                        'schema_metadata': schema_metadata(schema_error.schema_key).get(schema_error.schema_key)
+                    },
+                    'validated_schemas': validation_metadata
+                }
+            )
 
         except Exception as e:
             log_error(f'Final feature selection failed with exception: {e}')
@@ -463,7 +522,8 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     'symbol': symbol if 'symbol' in locals() else 'unknown',
                     'exchange': exchange if 'exchange' in locals() else 'unknown',
                     'timeframe': timeframe if 'timeframe' in locals() else 'unknown',
-                    'memory_pressure': getattr(self.memory_optimizer, 'memory_pressure', 0.0)
+                    'memory_pressure': getattr(self.memory_optimizer, 'memory_pressure', 0.0),
+                    'validated_schemas': validation_metadata
                 }
             )
 

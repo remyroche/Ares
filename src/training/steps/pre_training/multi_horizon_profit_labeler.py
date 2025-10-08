@@ -43,6 +43,12 @@ from src.training.steps.pre_training.standardized_labeling_interface import (
     assert_labels_sigma_scaled,
     validate_dataframe_schema
 )
+from src.training.steps.pre_training.validation.schemas import (
+    SchemaValidationException,
+    schema_metadata,
+    validate_engineered_features,
+    validate_labeled_dataset,
+    validate_raw_ohlcv
 from src.training.steps.pre_training.column_naming import (
     ColumnNamespace,
     ensure_dataframe_namespace,
@@ -563,6 +569,12 @@ class MultiHorizonProfitLabeler:
 
             # Load market data
             tprint_info("📊 Loading market data...")
+            market_data = await self._load_market_data(symbol, exchange, timeframe, data_dir)
+            market_data = validate_raw_ohlcv(
+                market_data,
+                context="multi_horizon_profit_labeler.market_data"
+            )
+            if market_data is None or market_data.empty:
             market_data_batches: List[pd.DataFrame] = []
             async for batch in self._load_market_data(
                 symbol,
@@ -628,6 +640,10 @@ class MultiHorizonProfitLabeler:
                 duplicate_threshold=thresholds.get('duplicate_index'),
                 quality_metrics=mapping_metrics,
             )
+            mapped_labels = validate_labeled_dataset(
+                mapped_labels,
+                context="multi_horizon_profit_labeler.labeled_data"
+            )
 
             # Create properly structured artifacts that feature lookback optimization expects
             # The feature lookback optimization expects 'labeled_data' or 'labels' keys
@@ -653,12 +669,20 @@ class MultiHorizonProfitLabeler:
             smoothing_metadata = self._build_smoothing_metadata(balanced_labeling_result)
             normalization_factors = copy.deepcopy(balanced_labeling_result.normalization_factors or {})
 
+            # Validate engineered scoring frames
+            confidence_scores_df = balanced_labeling_result.confidence_scores
+            if isinstance(confidence_scores_df, pd.DataFrame) and not confidence_scores_df.empty:
+                confidence_scores_df = validate_engineered_features(
+                    confidence_scores_df,
+                    context="multi_horizon_profit_labeler.confidence_scores"
+                )
+
             # Create enhanced artifacts with comprehensive metadata for downstream components
             artifacts = {
                 'multi_horizon_labeling_result': {
                     'labeled_data': mapped_labels,  # This is what feature lookback optimization expects
                     'labels': mapped_labels,  # Backward compatibility
-                    'confidence_scores': balanced_labeling_result.confidence_scores,
+                    'confidence_scores': confidence_scores_df,
                     'eligibility_masks': balanced_labeling_result.eligibility_masks,
                     'sigma_payoffs': balanced_labeling_result.sigma_payoffs,
                     'quality_scores': balanced_labeling_result.quality_scores,
@@ -709,6 +733,25 @@ class MultiHorizonProfitLabeler:
                     }
                 }
             }
+
+            validation_metadata = {
+                'inputs': {
+                    'market_data': schema_metadata('raw_ohlcv').get('raw_ohlcv')
+                },
+                'outputs': {
+                    'labeled_data': schema_metadata('labeled_dataset').get('labeled_dataset')
+                },
+                'derived': {}
+            }
+
+            if isinstance(confidence_scores_df, pd.DataFrame) and not confidence_scores_df.empty:
+                validation_metadata['derived']['confidence_scores'] = schema_metadata('engineered_features').get('engineered_features')
+
+            artifacts.setdefault('validated_schemas', validation_metadata)
+            mh_metadata = artifacts['multi_horizon_labeling_result'].setdefault('metadata', {})
+            mh_metadata['validated_schemas'] = validation_metadata
+            std_metadata = artifacts.get('standardized_output', {}).setdefault('metadata', {})
+            std_metadata['validated_schemas'] = validation_metadata
 
             mh_metadata = artifacts['multi_horizon_labeling_result'].setdefault('metadata', {})
             if thresholds:
@@ -2157,6 +2200,7 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                 regime_data=regime_data,
                 quality_thresholds=self.quality_thresholds or pipeline_state.get('quality_thresholds')
             )
+            validation_metadata = labeling_result.get('validated_schemas', {})
 
             # Save artifacts persistently for other components to use
             artifacts_saved = False
@@ -2181,6 +2225,8 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                     'artifacts': labeling_result,
                     'metadata': outcome_metadata
                 }
+                if validation_metadata:
+                    outcome_data['metadata']['validated_schemas'] = validation_metadata
 
                 import json
                 outcomes_dir_value = pipeline_state.get('outcomes_dir')
@@ -2233,9 +2279,27 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                     'exchange': exchange,
                     'timeframe': timeframe,
                     'artifacts_saved': artifacts_saved,
+                    'validated_schemas': validation_metadata,
                     **({'artifact_digest': artifact_digest} if artifact_digest else {}),
                     **({'artifact_path': artifact_path} if artifact_path else {}),
                     **({'artifact_save_error': artifact_save_error} if artifact_save_error else {})
+                }
+            )
+
+        except SchemaValidationException as validation_error:
+            error_message = str(validation_error)
+            tprint_error(f"❌ Schema validation error in multi-horizon labeler: {error_message}")
+            return ComponentResult(
+                success=False,
+                artifacts={},
+                error_message=error_message,
+                metadata={
+                    'component_type': 'multi_horizon_profit_labeler',
+                    'schema_error': {
+                        'schema_key': validation_error.schema_key,
+                        'context': validation_error.context,
+                        'schema_metadata': schema_metadata(validation_error.schema_key).get(validation_error.schema_key)
+                    }
                 }
             )
 

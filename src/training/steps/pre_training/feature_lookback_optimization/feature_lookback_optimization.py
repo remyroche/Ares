@@ -24,10 +24,13 @@ np, _ = get_dependency('numpy')
 # Utility function to convert int64 to int for dictionary keys
 def convert_int64_to_int(value: Any) -> Any:
     """Convert int64 values to regular Python int for JSON serialization."""
+    tprint(f"🔄 Converting value of type {type(value).__name__} for JSON safety")
     try:
         if hasattr(value, 'dtype') and value.dtype == 'int64':
+            tprint("📏 Detected numpy dtype int64, converting to int")
             return int(value)
         elif isinstance(value, np.int64):
+            tprint("📏 Detected numpy.int64 instance, converting to int")
             return int(value)
         elif isinstance(value, dict):
             # Convert both keys and values to handle int64 keys
@@ -36,8 +39,10 @@ def convert_int64_to_int(value: Any) -> Any:
                 # Convert key if it's int64
                 converted_key = k
                 if isinstance(k, np.int64):
+                    tprint("🔑 Converting dict key from numpy.int64 to int")
                     converted_key = int(k)
                 elif hasattr(k, 'dtype') and k.dtype == 'int64':
+                    tprint("🔑 Converting dict key from numpy dtype int64 to int")
                     converted_key = int(k)
 
                 # Convert value recursively
@@ -46,10 +51,12 @@ def convert_int64_to_int(value: Any) -> Any:
             return converted_dict
         elif isinstance(value, (list, tuple)):
             # Convert each item in the list/tuple recursively
+            tprint("📚 Converting sequence items for JSON safety")
             return [convert_int64_to_int(item) for item in value]
         elif hasattr(value, 'shape') and len(value.shape) > 0:
             # Handle numpy arrays that might be problematic
             if value.size > 100:  # Large arrays might cause issues
+                tprint("📦 Large numpy array detected, summarizing instead of full conversion")
                 return {
                     'type': 'numpy_array',
                     'shape': value.shape,
@@ -57,6 +64,7 @@ def convert_int64_to_int(value: Any) -> Any:
                     'size': value.size
                 }
             else:
+                tprint("📦 Small numpy array detected, converting to list")
                 return value.tolist()  # Convert small arrays to lists
         else:
             return value
@@ -175,6 +183,8 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             'memory_warnings': 0
         }
 
+        tprint("📈 Performance data trackers initialized for optimization component")
+
         # Memory monitoring thresholds
         self.memory_warning_threshold_mb = 1000.0  # 1GB
         self.memory_critical_threshold_mb = 2000.0  # 2GB
@@ -217,6 +227,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             )
 
             if not is_valid:
+                tprint("❌ Data validation failed, aborting execution")
                 error_msg = f"Data validation failed: {validation_summary.recommendations}"
                 self.error_handler.handle_error(
                     ValueError(error_msg),
@@ -226,6 +237,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 return self._create_failed_result()
 
             # Record validation metrics
+            tprint("📈 Recording validation metrics after successful validation")
             self.performance_monitor.record_optimization_metrics(
                 {},
                 data_quality_score=validation_summary.quality_score,
@@ -248,6 +260,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                     execution_mode_params = {}
 
             # Load required data
+            tprint("📥 Loading market data for optimization")
             market_data = await self._load_market_data(cleaned_data)
             labeling_data = self._load_recent_labeling_results(
                 pipeline_state.get('symbol', 'UNKNOWN'),
@@ -268,31 +281,40 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
             if market_data is None:
                 log_error("Market data loading failed - no data available for feature lookback optimization")
+                tprint("❌ Market data missing, returning failed result")
                 return self._create_failed_result()
 
             # Align data with regime assignments to ensure consistency
+            tprint("📐 Aligning market data with regime assignments")
             market_data = self._align_data_with_regime_assignments(market_data, pipeline_state)
 
             # Prepare data for optimization
+            tprint("🧰 Preparing data for feature optimization")
             optimization_data = self._prepare_data_for_optimization(market_data, labeling_data)
 
             if optimization_data is None or optimization_data.empty:
                 log_error(f"Data preparation failed - optimization data is {'None' if optimization_data is None else 'empty'}")
+                tprint("❌ Prepared optimization data is empty or None")
                 return self._create_failed_result()
 
             # Perform feature optimization
+            tprint("⚙️ Performing feature optimization workflow")
             optimization_results = await self._perform_feature_optimization(optimization_data, pipeline_state)
 
             # Convert int64 values to regular int values for JSON serialization
+            tprint("🔄 Converting optimization results for JSON serialization")
             optimization_results = convert_int64_to_int(optimization_results)
 
             # Create optimization metrics
+            tprint("📏 Creating optimization metrics")
             metrics = self._create_optimization_metrics(optimization_results)
 
             # Create artifacts
+            tprint("📦 Creating artifacts from optimization results")
             artifacts = self._create_artifacts(optimization_results, pipeline_state)
 
             # Record final metrics
+            tprint("🏁 Ending performance monitoring for execute operation")
             self.performance_monitor.end_operation("execute", start_time, success=True)
 
             # Save artifacts persistently using the artifact manager
@@ -313,6 +335,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                     log_success(f"💾 [FEATURE_LOOKBACK] Artifacts saved persistently: {list(saved_files.keys())}")
                 except RuntimeError:
                     # No running event loop, use asyncio.run()
+                    tprint("💾 Saving artifacts using asyncio.run")
                     saved_files = asyncio.run(self.save_artifacts(artifacts, {
                         'optimization_status': 'completed',
                         'total_features_optimized': len(optimization_results.get('feature_results', {})),
@@ -341,6 +364,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             long_count = len(optimization_results.get('feature_results', {}).get('long_pipeline', {}))
             short_count = len(optimization_results.get('feature_results', {}).get('short_pipeline', {}))
             log_success(f"🎯 Multi-horizon feature lookback optimization completed successfully - Long: {long_count} features, Short: {short_count} features")
+            tprint("✅ Feature lookback optimization execution completed successfully")
             return result
 
         except Exception as e:
@@ -350,6 +374,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 return_value=self._create_failed_result()
             )
             self.performance_monitor.end_operation("execute", start_time, success=False)
+            tprint("❌ Feature lookback optimization execution failed")
             return self._create_failed_result()
 
     def _create_failed_result(self) -> ComponentResult:
@@ -526,7 +551,9 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
     def _normalize_labeling_result(self, labeling_source: Any) -> Optional[Dict[str, Any]]:
         """Normalize labeling payload into a standardized dictionary with DataFrame values."""
+        tprint("🧼 Normalizing labeling result payload")
         if not labeling_source:
+            tprint("⚠️ No labeling source provided for normalization")
             return None
 
         if isinstance(labeling_source, dict) and 'labeled_data' in labeling_source:
@@ -538,12 +565,14 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
         labeled_df = self._coerce_to_dataframe(result.get('labeled_data') or result.get('labels'))
         if labeled_df is None or labeled_df.empty:
+            tprint("⚠️ Normalized labeling dataframe is empty")
             return None
 
         result['labeled_data'] = labeled_df
         if 'labels' in result:
             result['labels'] = labeled_df
 
+        tprint("✅ Labeling result normalized successfully")
         return result
 
     def _merge_labeling_into_data(
@@ -725,12 +754,15 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         pipeline_state: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Perform feature optimization using the core optimizer."""
+        tprint("⚙️ Starting feature optimization orchestration")
         try:
             # Generate features using PID-based feature generation system
+            tprint("🧪 Generating features for optimization")
             feature_columns = await self._generate_features_for_optimization(data)
-            
+
             if not feature_columns:
                 # Fallback to basic features if feature generation fails
+                tprint("⚠️ Feature bank generation failed, falling back to basic features")
                 excluded_columns = ['regime_id', 'regime_prob', 'open', 'high', 'low', 'close', 'volume', 'timestamp', 'symbol', 'open_time', 'close_time', 'interval', 'exchange', 'timeframe']
                 feature_columns = [col for col in data.columns if col not in excluded_columns]
                 numeric_columns = data.select_dtypes(include=['number']).columns.tolist()
@@ -738,9 +770,11 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 self.logger.info(f"📊 Using {len(feature_columns)} basic features as fallback")
 
             if not feature_columns:
+                tprint("❌ No features available after fallback path")
                 return {'feature_results': {}, 'error': 'No features available for optimization'}
 
             # Optimize each feature
+            tprint(f"🔍 Optimizing {len(feature_columns)} features across long/short pipelines")
             feature_results = {}
 
             # Use differentiated long/short pipelines with separate optimization
@@ -821,6 +855,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
             total_features = len(long_feature_results) + len(short_feature_results)
             log_info(f"🎯 Completed differentiated optimization - Long: {len(long_feature_results)} features, Short: {len(short_feature_results)} features")
+            tprint("✅ Feature optimization orchestration completed")
 
             return {
                 'feature_results': feature_results,
@@ -834,6 +869,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 "_perform_feature_optimization",
                 return_value={'feature_results': {}, 'error': str(e)}
             )
+            tprint("❌ Feature optimization orchestration encountered an error")
             return {'feature_results': {}, 'error': str(e)}
 
     def _prepare_data_for_optimization(self, data: Any, labeling_data: Optional[Dict[str, Any]]) -> pd.DataFrame:
@@ -882,6 +918,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
     def _create_optimization_metrics(self, optimization_results: Dict[str, Any]) -> OptimizationMetrics:
         """Create optimization metrics for differentiated long/short pipelines."""
+        tprint("📏 Calculating optimization metrics from results")
         try:
             feature_results = optimization_results.get('feature_results', {})
             long_pipeline = feature_results.get('long_pipeline', {})
@@ -911,6 +948,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             combined_best_lookback = best_lookback_long if best_score_long >= best_score_short else best_lookback_short
             combined_best_score = max(best_score_long, best_score_short)
 
+            tprint("✅ Optimization metrics calculated successfully")
             return OptimizationMetrics(
                 best_lookback_period=combined_best_lookback,
                 best_score=combined_best_score,
@@ -945,6 +983,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                     error_rate=1.0
                 )
             )
+            tprint("❌ Failed to calculate optimization metrics, returning fallback values")
             return OptimizationMetrics(
                 best_lookback_period=10,
                 best_score=0.0,
@@ -962,6 +1001,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
     def _create_artifacts(self, optimization_results: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Create artifacts from optimization results."""
+        tprint("🗄️ Creating feature lookback optimization artifacts")
         try:
             artifacts = {}
 
@@ -984,6 +1024,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 'timestamp': pd.Timestamp.now().isoformat()
             }
 
+            tprint("✅ Artifact creation complete")
             return artifacts
 
         except Exception as e:
@@ -992,6 +1033,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 "_create_artifacts",
                 return_value={}
             )
+            tprint("❌ Artifact creation failed due to an error")
             return {}
 
     def _select_optimal_target_column(self, data: pd.DataFrame, direction: str = None) -> str:
@@ -1106,6 +1148,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
     def compute_enhanced_correlation_analysis(self, data: pd.DataFrame, feature_columns: List[str]) -> Dict[str, Any]:
         """Compute enhanced correlation analysis using core optimizer."""
+        tprint("📊 Computing enhanced correlation analysis")
         try:
             return {
                 'correlation_matrix': pd.DataFrame(),
@@ -1118,4 +1161,5 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 "compute_enhanced_correlation_analysis",
                 return_value={'status': 'failed', 'error': str(e)}
             )
+            tprint("❌ Correlation analysis computation failed")
             return {'status': 'failed', 'error': str(e)}

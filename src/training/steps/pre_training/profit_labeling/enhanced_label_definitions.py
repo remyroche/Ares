@@ -14,7 +14,7 @@ This extends the existing volatility-aware labeling system with these specific d
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Any, Tuple, Union, Callable
+from typing import Dict, List, Optional, Any, Tuple, Union, Callable, Iterable
 from dataclasses import dataclass, field
 from enum import Enum
 import logging
@@ -44,13 +44,112 @@ class TradingCosts:
     taker_fee: float = 0.002    # 0.2% taker fee
     slippage_pct: float = 0.001  # 0.1% slippage estimate
     min_trade_size: float = 10.0  # Minimum trade size in USD
+    default_is_maker: bool = True
+    default_asset_class: str = "default"
+    borrow_fees: Dict[str, Dict[str, float]] = field(
+        default_factory=lambda: {"default": {"long": 0.0, "short": 0.0}}
+    )
+    funding_rates: Dict[str, Dict[str, float]] = field(
+        default_factory=lambda: {"default": {"long": 0.0, "short": 0.0}}
+    )
+    stress_scenarios: Dict[str, Dict[str, Dict[str, float]]] = field(
+        default_factory=lambda: {
+            "default": {
+                "base": {"long": 1.0, "short": 1.0}
+            }
+        }
+    )
+    active_stress_scenario: str = "base"
 
-    def total_costs(self, trade_size_usd: float, is_maker: bool = True) -> float:
+    def total_costs(self, trade_size_usd: float, is_maker: Optional[bool] = None) -> float:
         """Calculate total costs for a trade."""
-        fee_rate = self.maker_fee if is_maker else self.taker_fee
+        maker_flag = self.default_is_maker if is_maker is None else is_maker
+        fee_rate = self.maker_fee if maker_flag else self.taker_fee
         fee_cost = trade_size_usd * fee_rate
         slippage_cost = trade_size_usd * self.slippage_pct
         return fee_cost + slippage_cost
+
+    def _normalize_direction(self, position_side: str) -> str:
+        side = (position_side or "long").lower()
+        if side not in {"long", "short"}:
+            return "long"
+        return side
+
+    def _resolve_asset_entry(self, mapping: Dict[str, Any], asset_class: str) -> Optional[Any]:
+        if asset_class in mapping:
+            return mapping[asset_class]
+        if self.default_asset_class in mapping:
+            return mapping[self.default_asset_class]
+        return None
+
+    def get_borrow_rate(self, asset_class: str, position_side: str) -> float:
+        """Return borrow rate for the given asset class and position side."""
+        side = self._normalize_direction(position_side)
+        asset_entry = self._resolve_asset_entry(self.borrow_fees, asset_class)
+        if asset_entry is None:
+            raise ValueError(
+                f"Borrow fee assumptions missing for asset class '{asset_class}'."
+            )
+        return float(asset_entry.get(side, asset_entry.get("both", 0.0)))
+
+    def get_funding_rate(self, asset_class: str, position_side: str) -> float:
+        """Return funding rate for the given asset class and position side."""
+        side = self._normalize_direction(position_side)
+        asset_entry = self._resolve_asset_entry(self.funding_rates, asset_class)
+        if asset_entry is None:
+            raise ValueError(
+                f"Funding rate assumptions missing for asset class '{asset_class}'."
+            )
+        return float(asset_entry.get(side, asset_entry.get("both", 0.0)))
+
+    def get_stress_multiplier(
+        self,
+        asset_class: str,
+        position_side: str,
+        scenario: Optional[str] = None
+    ) -> float:
+        """Return stress multiplier for the given asset class, side, and scenario."""
+        side = self._normalize_direction(position_side)
+        asset_entry = self._resolve_asset_entry(self.stress_scenarios, asset_class)
+        if asset_entry is None:
+            return 1.0
+
+        scenario_key = scenario or self.active_stress_scenario
+        scenario_entry = asset_entry.get(scenario_key)
+
+        if scenario_entry is None:
+            # Fallback to active scenario or base scenario
+            scenario_entry = asset_entry.get(self.active_stress_scenario) or asset_entry.get("base")
+
+        if scenario_entry is None:
+            return 1.0
+
+        return float(scenario_entry.get(side, scenario_entry.get("both", 1.0)))
+
+    def validate_asset_assumptions(self, asset_classes: Iterable[str]) -> None:
+        """Ensure borrow and funding assumptions exist for the provided asset classes."""
+        missing_borrow: List[str] = []
+        missing_funding: List[str] = []
+
+        for asset_class in asset_classes:
+            asset_key = asset_class if asset_class is not None else self.default_asset_class
+            if self._resolve_asset_entry(self.borrow_fees, asset_key) is None:
+                missing_borrow.append(str(asset_key))
+            if self._resolve_asset_entry(self.funding_rates, asset_key) is None:
+                missing_funding.append(str(asset_key))
+
+        errors = []
+        if missing_borrow:
+            errors.append(
+                f"Borrow fee assumptions missing for: {', '.join(sorted(set(missing_borrow)))}"
+            )
+        if missing_funding:
+            errors.append(
+                f"Funding rate assumptions missing for: {', '.join(sorted(set(missing_funding)))}"
+            )
+
+        if errors:
+            raise ValueError("; ".join(errors))
 
 
 @dataclass
@@ -293,9 +392,12 @@ class EnhancedLabelDefinitions:
                 cleaned_data, self.analyst_config.horizon_minutes
             )
 
-            # Calculate trading costs
+            # Calculate trading costs with funding/borrow assumptions
             trading_costs = self._calculate_trading_costs(
-                cleaned_data, self.analyst_config.trading_costs
+                cleaned_data,
+                self.analyst_config.trading_costs,
+                expected_returns=expected_returns,
+                stress_scenario=self.analyst_config.trading_costs.active_stress_scenario
             )
 
             # Apply regime conditioning if enabled
@@ -650,14 +752,85 @@ class EnhancedLabelDefinitions:
 
         return expected_returns.fillna(0)
 
-    def _calculate_trading_costs(self, market_data: pd.DataFrame, costs: TradingCosts) -> pd.Series:
-        """Calculate trading costs for each bar."""
-        # Estimate costs based on volume and price
-        avg_trade_size = market_data['volume'] * market_data['close'] * 0.01  # 1% of volume
+    def _calculate_trading_costs(
+        self,
+        market_data: pd.DataFrame,
+        costs: TradingCosts,
+        expected_returns: Optional[pd.Series] = None,
+        stress_scenario: Optional[str] = None
+    ) -> pd.Series:
+        """Calculate trading costs for each bar including borrow, funding, and stress."""
+        if market_data.empty:
+            return pd.Series(dtype=float)
 
-        total_costs = costs.total_costs(avg_trade_size)
+        volume = market_data.get('volume', pd.Series(0.0, index=market_data.index)).fillna(0.0)
+        close_prices = market_data.get('close', pd.Series(0.0, index=market_data.index)).ffill().fillna(0.0)
+        trade_size = (volume * close_prices * 0.01).astype(float)
 
-        return total_costs
+        trade_size_values = trade_size.to_numpy()
+        trade_size_values = np.where(
+            trade_size_values > 0,
+            np.maximum(trade_size_values, costs.min_trade_size),
+            0.0
+        )
+        trade_size = pd.Series(trade_size_values, index=market_data.index)
+
+        if 'is_maker' in market_data.columns:
+            is_maker_series = market_data['is_maker'].fillna(costs.default_is_maker).astype(bool)
+        else:
+            is_maker_series = pd.Series(costs.default_is_maker, index=market_data.index)
+
+        fee_rates = np.where(is_maker_series, costs.maker_fee, costs.taker_fee)
+        fee_rates = pd.Series(fee_rates, index=market_data.index, dtype=float)
+        fee_costs = trade_size * fee_rates + trade_size * costs.slippage_pct
+
+        if expected_returns is not None:
+            aligned_returns = expected_returns.reindex(market_data.index).fillna(0.0)
+            direction_series = pd.Series(
+                np.where(aligned_returns >= 0, 'long', 'short'),
+                index=market_data.index
+            )
+        elif 'trade_direction' in market_data.columns:
+            direction_series = market_data['trade_direction'].fillna('long').astype(str).str.lower()
+        elif 'position' in market_data.columns:
+            direction_series = pd.Series(
+                np.where(market_data['position'] >= 0, 'long', 'short'),
+                index=market_data.index
+            )
+        else:
+            direction_series = pd.Series('long', index=market_data.index)
+
+        if 'asset_class' in market_data.columns:
+            asset_classes = market_data['asset_class'].fillna(costs.default_asset_class).astype(str)
+        else:
+            asset_classes = pd.Series(costs.default_asset_class, index=market_data.index)
+
+        costs.validate_asset_assumptions(asset_classes.unique())
+
+        borrow_rates = []
+        funding_rates = []
+        stress_multipliers = []
+        scenario_key = stress_scenario or costs.active_stress_scenario
+
+        for idx in market_data.index:
+            asset_class = asset_classes.loc[idx]
+            direction = direction_series.loc[idx]
+            borrow_rates.append(costs.get_borrow_rate(asset_class, direction))
+            funding_rates.append(costs.get_funding_rate(asset_class, direction))
+            stress_multipliers.append(
+                costs.get_stress_multiplier(asset_class, direction, scenario=scenario_key)
+            )
+
+        borrow_rates = pd.Series(borrow_rates, index=market_data.index, dtype=float)
+        funding_rates = pd.Series(funding_rates, index=market_data.index, dtype=float)
+        stress_multipliers = pd.Series(stress_multipliers, index=market_data.index, dtype=float)
+
+        borrow_costs = trade_size * borrow_rates
+        funding_costs = trade_size * funding_rates
+
+        total_costs = (fee_costs + borrow_costs + funding_costs) * stress_multipliers
+
+        return total_costs.fillna(0.0)
 
     def _calculate_regime_multipliers(self, volatility_series: pd.Series, regime_data: pd.Series) -> pd.Series:
         """Calculate regime-specific multipliers for thresholds."""
@@ -972,7 +1145,26 @@ def create_trading_aware_config() -> Dict[str, Any]:
             trading_costs=TradingCosts(
                 maker_fee=0.001,
                 taker_fee=0.002,
-                slippage_pct=0.001
+                slippage_pct=0.001,
+                default_asset_class="crypto",
+                borrow_fees={
+                    "crypto": {"long": 0.00005, "short": 0.0007},
+                    "default": {"long": 0.0, "short": 0.0005}
+                },
+                funding_rates={
+                    "crypto": {"long": 0.00025, "short": -0.00025},
+                    "default": {"long": 0.0, "short": 0.0}
+                },
+                stress_scenarios={
+                    "crypto": {
+                        "base": {"long": 1.0, "short": 1.0},
+                        "liquidity_crunch": {"long": 1.2, "short": 1.4}
+                    },
+                    "default": {
+                        "base": {"long": 1.0, "short": 1.0}
+                    }
+                },
+                active_stress_scenario="base"
             ),
             enable_regime_conditioning=True,
             volatility_scaling_factor=1.0

@@ -74,8 +74,10 @@ class OptimizationResult:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert result to dictionary."""
+        tprint_debug("🧮 Converting OptimizationResult to dictionary")
         # Ensure metadata contains serializable values
         def convert_metadata(obj):
+            tprint_debug(f"   ↳ Normalizing metadata type: {type(obj).__name__}")
             if isinstance(obj, np.int64):
                 return int(obj)
             elif isinstance(obj, dict):
@@ -221,29 +223,38 @@ class CoreOptimizer:
     ) -> bool:
         """Validate inputs for optimization."""
         try:
+            tprint_debug(f"🔍 Validating optimization inputs for feature '{feature_name}' against target '{target_column}'")
             # Check if data is valid DataFrame
             if not isinstance(data, pd.DataFrame):
                 self.logger.error("Input data must be a pandas DataFrame")
+                tprint_error("❌ Optimization data must be a pandas DataFrame")
                 return False
 
             # Check if feature and target columns exist
             if feature_name not in data.columns:
                 self.logger.error(f"Feature column '{feature_name}' not found in data")
+                tprint_error(f"❌ Feature column '{feature_name}' not found in input data")
                 return False
 
             if target_column not in data.columns:
                 self.logger.error(f"Target column '{target_column}' not found in data")
+                tprint_error(f"❌ Target column '{target_column}' not found in input data")
                 return False
 
             # Check for sufficient data
             if len(data) < OPTIMIZATION_CONSTANTS.DEFAULT_MIN_LOOKBACK:
                 self.logger.error(f"Insufficient data: {len(data)} rows, minimum {OPTIMIZATION_CONSTANTS.DEFAULT_MIN_LOOKBACK} required")
+                tprint_warning(
+                    f"⚠️ Insufficient rows for optimization: {len(data)} < {OPTIMIZATION_CONSTANTS.DEFAULT_MIN_LOOKBACK}"
+                )
                 return False
 
+            tprint_debug("✅ Optimization inputs validated successfully")
             return True
 
         except Exception as e:
             self.logger.error(f"Input validation failed: {e}")
+            tprint_error(f"❌ Exception during input validation: {e}")
             return False
 
     def _optimize_mrmr(
@@ -257,6 +268,9 @@ class CoreOptimizer:
         """Optimize using MRMR approach with proper cross-validation."""
         try:
             min_lookback, max_lookback = lookback_range
+            tprint_debug(
+                f"🧠 Running MRMR optimization for '{feature_name}' in range [{min_lookback}, {max_lookback}]"
+            )
             best_score = -float('inf')
             best_lookback = min_lookback
             trials = 0
@@ -268,11 +282,17 @@ class CoreOptimizer:
             if split_point < min_lookback:
                 # Not enough data for cross-validation, fall back to full data
                 self.logger.warning(f"Insufficient data for cross-validation ({len(data)} < {min_lookback * 1.4:.0f}), using full data")
+                tprint_warning(
+                    f"⚠️ Using full dataset for MRMR due to insufficient cross-validation rows ({len(data)})"
+                )
                 train_data = data
                 test_data = data
             else:
                 train_data = data.iloc[:split_point]
                 test_data = data.iloc[split_point:]
+                tprint_debug(
+                    f"   ↳ MRMR split at index {split_point}: train={len(train_data)}, test={len(test_data)}"
+                )
 
             # Test different lookback periods using cross-validation
             for lookback in range(min_lookback, max_lookback + 1):
@@ -295,11 +315,18 @@ class CoreOptimizer:
                     if score > best_score:
                         best_score = score
                         best_lookback = lookback
+                        tprint_debug(
+                            f"   ✅ New MRMR best for '{feature_name}': lookback={lookback}, score={score:.4f}"
+                        )
 
                 except Exception as e:
                     self.logger.warning(f"Failed to evaluate lookback {lookback} for {feature_name}: {e}")
+                    tprint_warning(f"⚠️ MRMR evaluation failed for lookback {lookback}: {e}")
                     continue
 
+            tprint_success(
+                f"🏁 MRMR optimization finished for '{feature_name}' with best lookback {best_lookback} (score={best_score:.4f})"
+            )
             return OptimizationResult(
                 best_lookback_period=best_lookback,
                 best_score=best_score,
@@ -336,17 +363,26 @@ class CoreOptimizer:
             step_size = kwargs.get('step_size', 1)
 
             self.logger.info(f'🔍 Running grid search from {min_lookback} to {max_lookback} (step={step_size})')
+            tprint_debug(
+                f"🧭 Starting grid search for '{feature_name}' range [{min_lookback}, {max_lookback}] step={step_size}"
+            )
 
             # Use time series cross-validation to avoid data leakage
             split_point = int(len(data) * 0.7)
 
             if split_point < min_lookback:
                 self.logger.warning(f"Insufficient data for cross-validation ({len(data)} < {min_lookback * 1.4:.0f}), using full data")
+                tprint_warning(
+                    f"⚠️ Grid search using full dataset due to insufficient cross-validation rows ({len(data)})"
+                )
                 train_data = data
                 test_data = data
             else:
                 train_data = data.iloc[:split_point]
                 test_data = data.iloc[split_point:]
+                tprint_debug(
+                    f"   ↳ Grid search split at {split_point}: train={len(train_data)}, test={len(test_data)}"
+                )
 
             best_score = -float('inf')
             best_lookback = min_lookback
@@ -378,17 +414,27 @@ class CoreOptimizer:
                     if score > best_score:
                         best_score = score
                         best_lookback = lookback
+                        tprint_debug(
+                            f"   ✅ Grid search best updated: lookback={lookback}, score={score:.4f}"
+                        )
 
                     if trials % 10 == 0:
                         self.logger.debug(f'   → Progress: {trials} trials, best_score={best_score:.4f}')
+                        tprint_debug(
+                            f"   ↺ Grid search progress: {trials} trials, current best={best_score:.4f}"
+                        )
 
                 except Exception as e:
                     self.logger.warning(f'⚠️ Failed to evaluate lookback {lookback}: {e}')
+                    tprint_warning(f"⚠️ Grid search evaluation failed for lookback {lookback}: {e}")
                     continue
-            
+
             # Calculate convergence metrics
             convergence_achieved = self._check_convergence(all_scores)
-            
+            tprint_debug(
+                f"📈 Grid search convergence {'achieved' if convergence_achieved else 'not achieved'} with {trials} trials"
+            )
+
             return OptimizationResult(
                 best_lookback_period=best_lookback,
                 best_score=best_score,
@@ -426,8 +472,11 @@ class CoreOptimizer:
             min_lookback, max_lookback = lookback_range
             n_trials = kwargs.get('n_trials', 50)
             n_startup_trials = kwargs.get('n_startup_trials', 10)
-            
+
             self.logger.info(f'🎯 Running Bayesian optimization with {n_trials} trials')
+            tprint_debug(
+                f"🧪 Starting Bayesian optimization for '{feature_name}' range [{min_lookback}, {max_lookback}] with {n_trials} trials"
+            )
             
             # Initialize with random samples for exploration
             startup_trials = np.random.randint(min_lookback, max_lookback + 1, n_startup_trials)
@@ -442,14 +491,18 @@ class CoreOptimizer:
                         feature_values, data[target_column].values
                     )
                     score = self._calculate_composite_score(correlations)
-                    
+
                     all_scores.append(score)
                     all_lookbacks.append(lookback)
-                    
+                    tprint_debug(
+                        f"   🔄 Bayesian startup trial lookback={lookback}, score={score:.4f}"
+                    )
+
                 except Exception as e:
                     self.logger.warning(f'⚠️ Startup trial failed for lookback {lookback}: {e}')
+                    tprint_warning(f"⚠️ Bayesian startup trial failed for lookback {lookback}: {e}")
                     continue
-            
+
             # Bayesian optimization phase
             for trial in range(n_startup_trials, n_trials):
                 try:
@@ -474,28 +527,41 @@ class CoreOptimizer:
                         feature_values, data[target_column].values
                     )
                     score = self._calculate_composite_score(correlations)
-                    
+
                     all_scores.append(score)
                     all_lookbacks.append(lookback)
-                    
+                    tprint_debug(
+                        f"   🎯 Bayesian trial {trial}: lookback={lookback}, score={score:.4f}"
+                    )
+
                     if trial % 10 == 0:
                         current_best = max(all_scores)
                         self.logger.debug(f'   → Trial {trial}: best_score={current_best:.4f}')
-                        
+                        tprint_debug(
+                            f"   📊 Bayesian progress trial {trial}: best_score={current_best:.4f}"
+                        )
+
                 except Exception as e:
                     self.logger.warning(f'⚠️ Bayesian trial failed: {e}')
+                    tprint_warning(f"⚠️ Bayesian trial failure at iteration {trial}: {e}")
                     continue
-            
+
             # Find best result
             if all_scores:
                 best_idx = np.argmax(all_scores)
                 best_score = all_scores[best_idx]
                 best_lookback = all_lookbacks[best_idx]
                 convergence_achieved = self._check_convergence(all_scores)
+                tprint_success(
+                    f"🏁 Bayesian optimization finished for '{feature_name}' with lookback {best_lookback} (score={best_score:.4f})"
+                )
             else:
                 best_score = 0.0
                 best_lookback = min_lookback
                 convergence_achieved = False
+                tprint_warning(
+                    f"⚠️ Bayesian optimization produced no valid scores for '{feature_name}', using fallback values"
+                )
             
             return OptimizationResult(
                 best_lookback_period=best_lookback,
@@ -532,8 +598,11 @@ class CoreOptimizer:
         try:
             min_lookback, max_lookback = lookback_range
             n_trials = kwargs.get('n_trials', 30)
-            
+
             self.logger.info(f'🎲 Running random search with {n_trials} trials')
+            tprint_debug(
+                f"🎲 Starting random search for '{feature_name}' between {min_lookback} and {max_lookback} ({n_trials} trials)"
+            )
             
             best_score = -float('inf')
             best_lookback = min_lookback
@@ -544,7 +613,7 @@ class CoreOptimizer:
             for trial in range(n_trials):
                 try:
                     lookback = np.random.randint(min_lookback, max_lookback + 1)
-                    
+
                     feature_values = self._calculate_feature_for_lookback(data, feature_name, lookback)
                     correlations = self._calculate_comprehensive_correlations(
                         feature_values, data[target_column].values
@@ -553,17 +622,24 @@ class CoreOptimizer:
                     
                     all_scores.append(score)
                     trials += 1
-                    
+
                     if score > best_score:
                         best_score = score
                         best_lookback = lookback
-                        
+                        tprint_debug(
+                            f"   ✅ Random search best updated on trial {trial}: lookback={lookback}, score={score:.4f}"
+                        )
+
                 except Exception as e:
                     self.logger.warning(f'⚠️ Random trial failed: {e}')
+                    tprint_warning(f"⚠️ Random search trial {trial} failed: {e}")
                     continue
-            
+
             convergence_achieved = self._check_convergence(all_scores)
-            
+            tprint_debug(
+                f"📈 Random search convergence {'achieved' if convergence_achieved else 'not achieved'} after {trials} trials"
+            )
+
             return OptimizationResult(
                 best_lookback_period=best_lookback,
                 best_score=best_score,
@@ -597,8 +673,11 @@ class CoreOptimizer:
         try:
             min_lookback, max_lookback = lookback_range
             step_size = kwargs.get('step_size', 1)
-            
+
             self.logger.info(f'🎯 Running multi-target optimization')
+            tprint_debug(
+                f"🎯 Starting multi-target optimization for '{feature_name}' range [{min_lookback}, {max_lookback}] step={step_size}"
+            )
             
             best_score = -float('inf')
             best_lookback = min_lookback
@@ -609,27 +688,34 @@ class CoreOptimizer:
             for lookback in range(min_lookback, max_lookback + 1, step_size):
                 try:
                     feature_values = self._calculate_feature_for_lookback(data, feature_name, lookback)
-                    
+
                     # Calculate multiple target metrics
                     targets = self._calculate_multi_target_metrics(
                         feature_values, data[target_column].values
                     )
-                    
+
                     # Multi-objective optimization using weighted sum
                     score = self._calculate_multi_objective_score(targets)
                     all_scores.append(score)
                     trials += 1
-                    
+
                     if score > best_score:
                         best_score = score
                         best_lookback = lookback
-                        
+                        tprint_debug(
+                            f"   ✅ Multi-target best updated: lookback={lookback}, score={score:.4f}"
+                        )
+
                 except Exception as e:
                     self.logger.warning(f'⚠️ Multi-target trial failed for lookback {lookback}: {e}')
+                    tprint_warning(f"⚠️ Multi-target evaluation failed for lookback {lookback}: {e}")
                     continue
-            
+
             convergence_achieved = self._check_convergence(all_scores)
-            
+            tprint_debug(
+                f"📈 Multi-target convergence {'achieved' if convergence_achieved else 'not achieved'} after {trials} trials"
+            )
+
             return OptimizationResult(
                 best_lookback_period=best_lookback,
                 best_score=best_score,
@@ -663,16 +749,28 @@ class CoreOptimizer:
         pipeline including RSI, MACD, Bollinger Bands, moving averages, and other indicators.
         """
         try:
+            tprint_debug(
+                f"🧮 Calculating feature '{feature_name}' values for lookback {lookback}"
+            )
             # Create feature generator based on feature name pattern
             feature_generator = self._create_feature_generator(feature_name, lookback)
 
             if feature_generator is None:
                 # Fallback to rolling mean for unknown features
                 if feature_name in data.columns:
+                    tprint_warning(
+                        f"⚠️ No generator found for '{feature_name}', using rolling mean fallback"
+                    )
                     return data[feature_name].rolling(window=lookback, min_periods=1).mean().values
                 else:
+                    tprint_warning(
+                        f"⚠️ Feature '{feature_name}' not in dataframe, returning zeros"
+                    )
                     return np.zeros(len(data))
 
+            tprint_debug(
+                f"   ↳ Using generator {type(feature_generator).__name__} for '{feature_name}'"
+            )
             # Generate feature using the technical indicator
             feature_result = feature_generator.generate(data)
 
@@ -697,26 +795,50 @@ class CoreOptimizer:
                 # For other indicators, return the single series or first column
                 if isinstance(feature_data, pd.DataFrame):
                     if len(feature_data.columns) > 0:
+                        tprint_debug(
+                            f"   ↳ Returning first column from DataFrame for '{feature_name}'"
+                        )
                         return feature_data.iloc[:, 0].values
                     else:
+                        tprint_warning(
+                            f"⚠️ Generated DataFrame empty for '{feature_name}', returning zeros"
+                        )
                         return np.zeros(len(data))
                 elif isinstance(feature_data, pd.Series):
+                    tprint_debug(
+                        f"   ↳ Returning Series values for '{feature_name}'"
+                    )
                     return feature_data.values
                 else:
+                    tprint_debug(
+                        f"   ↳ Converting generated data to numpy array for '{feature_name}'"
+                    )
                     return np.array(feature_data)
             else:
                 self.logger.warning(f"Feature generation failed for {feature_name}, using fallback")
+                tprint_warning(
+                    f"⚠️ Feature generation unsuccessful for '{feature_name}', returning zeros"
+                )
                 return np.zeros(len(data))
 
         except ImportError as e:
             self.logger.warning(f"Feature engineering modules not available: {e}, using fallback")
             # Fallback to rolling mean
             if feature_name in data.columns:
+                tprint_warning(
+                    f"⚠️ Feature modules missing ({e}), using rolling mean for '{feature_name}'"
+                )
                 return data[feature_name].rolling(window=lookback, min_periods=1).mean().values
             else:
+                tprint_error(
+                    f"❌ Feature modules missing and '{feature_name}' not in data, returning zeros"
+                )
                 return np.zeros(len(data))
         except Exception as e:
             self.logger.error(f"Failed to calculate feature {feature_name} for lookback {lookback}: {e}")
+            tprint_error(
+                f"❌ Exception during feature calculation for '{feature_name}' (lookback={lookback}): {e}"
+            )
             return np.zeros(len(data))
 
     def _create_feature_generator(self, feature_name: str, lookback: int):
@@ -731,6 +853,7 @@ class CoreOptimizer:
         Returns:
             FeatureGenerator instance or None if not recognized
         """
+        tprint_debug("🧠 Entering _create_feature_generator")
         try:
             from src.feature_generation.base_calculations.base_calculator import BaseCalculationType
 
@@ -1614,53 +1737,76 @@ class CoreOptimizer:
     def _extract_period_from_name(self, feature_name: str, default: int) -> int:
         """Extract period parameter from feature name."""
         try:
+            tprint_debug(
+                f"🧾 Extracting period from feature '{feature_name}' with default {default}"
+            )
             # Split by underscore and look for numeric values
             parts = feature_name.split('_')
             for part in reversed(parts):
                 if part.isdigit():
+                    tprint_debug(f"   ↳ Found period {part}")
                     return int(part)
+            tprint_warning(
+                f"⚠️ No explicit period found for '{feature_name}', using default {default}"
+            )
             return default
         except Exception:
+            tprint_error(
+                f"❌ Failed to parse period from '{feature_name}', using default {default}"
+            )
             return default
 
     def _extract_macd_params(self, feature_name: str) -> Optional[Tuple[int, int, int]]:
         """Extract MACD parameters (fast, slow, signal) from feature name."""
         try:
+            tprint_debug(f"🧾 Extracting MACD params from '{feature_name}'")
             # Expected format: macd_12_26_9, macd_returns_12_26_9, etc.
             parts = feature_name.lower().replace('macd', '').replace('returns', '').replace('vwap', '').split('_')
             numbers = [int(p) for p in parts if p.isdigit()]
 
             if len(numbers) >= 3:
+                tprint_debug(f"   ↳ Parsed MACD parameters: {numbers[0]}, {numbers[1]}, {numbers[2]}")
                 return (numbers[0], numbers[1], numbers[2])
             elif len(numbers) == 2:
+                tprint_debug(f"   ↳ Parsed partial MACD params {numbers}, defaulting signal to 9")
                 return (numbers[0], numbers[1], 9)  # Default signal period
             elif len(numbers) == 1:
+                tprint_debug(f"   ↳ Parsed single MACD value {numbers[0]}, defaulting fast/slow to 12/26")
                 return (12, 26, numbers[0])  # Default fast/slow, use number as signal
 
+            tprint_warning(f"⚠️ No MACD parameters found in '{feature_name}'")
             return None
-        except Exception:
+        except Exception as e:
+            tprint_error(f"❌ Exception extracting MACD parameters from '{feature_name}': {e}")
             return None
 
     def _extract_garch_params(self, feature_name: str) -> Optional[Tuple[int, int, int]]:
         """Extract GARCH parameters (p, q, h) from feature name."""
         try:
+            tprint_debug(f"🧾 Extracting GARCH params from '{feature_name}'")
             # Expected format: garch_1_1_1, garch_1_1_5, etc.
             parts = feature_name.lower().replace('garch', '').split('_')
             numbers = [int(p) for p in parts if p.isdigit()]
 
             if len(numbers) >= 3:
+                tprint_debug(f"   ↳ Parsed GARCH parameters: {numbers[0]}, {numbers[1]}, {numbers[2]}")
                 return (numbers[0], numbers[1], numbers[2])
             elif len(numbers) == 2:
+                tprint_debug(f"   ↳ Parsed partial GARCH params {numbers}, defaulting horizon to 1")
                 return (numbers[0], numbers[1], 1)  # Default horizon
             elif len(numbers) == 1:
+                tprint_debug(f"   ↳ Parsed single GARCH value {numbers[0]}, defaulting p/q to 1")
                 return (1, 1, numbers[0])  # Default p,q, use number as horizon
 
+            tprint_warning(f"⚠️ No GARCH parameters found in '{feature_name}'")
             return None
-        except Exception:
+        except Exception as e:
+            tprint_error(f"❌ Exception extracting GARCH parameters from '{feature_name}': {e}")
             return None
 
     def _extract_dual_period_params(self, feature_name: str, default_short: int, default_long: int) -> Optional[Tuple[int, int]]:
         """Extract two period parameters from feature name."""
+        tprint_debug("🧠 Entering _extract_dual_period_params")
         try:
             # Expected formats: volume_trend_strength_10_30, volume_osc_10_20, etc.
             parts = feature_name.lower().split('_')
@@ -1677,6 +1823,7 @@ class CoreOptimizer:
 
     def _extract_dual_params(self, feature_name: str, param1_name: str, param2_name: str) -> Optional[Tuple[int, int]]:
         """Extract two parameters from feature name based on parameter names."""
+        tprint_debug("🧠 Entering _extract_dual_params")
         try:
             # Expected formats:
             # - support_level_1_20, resistance_level_2_10, fibonacci_0.382_20
@@ -1720,6 +1867,7 @@ class CoreOptimizer:
 
     def _extract_column_params(self, feature_name: str) -> Optional[Tuple[str, str]]:
         """Extract column names from feature name for interaction indicators."""
+        tprint_debug("🧠 Entering _extract_column_params")
         try:
             # Expected format: feature_ratio_close_to_volume, correlation_interaction_close_volume_20
             parts = feature_name.lower().split('_')
@@ -1745,6 +1893,7 @@ class CoreOptimizer:
 
     def _create_sr_persistence_generator(self, window: int, sr_type: str):
         """Create SR persistence feature generator."""
+        tprint_debug("🧠 Entering _create_sr_persistence_generator")
         try:
             from src.feature_generation.core.feature_generator import VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
@@ -1776,6 +1925,7 @@ class CoreOptimizer:
 
     def _create_sr_touch_freq_generator(self, window: int, sr_type: str):
         """Create SR touch frequency feature generator."""
+        tprint_debug("🧠 Entering _create_sr_touch_freq_generator")
         try:
             from src.feature_generation.core.feature_generator import VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
@@ -1807,6 +1957,7 @@ class CoreOptimizer:
 
     def _create_sr_bounce_rate_generator(self, window: int, sr_type: str):
         """Create SR bounce rate feature generator."""
+        tprint_debug("🧠 Entering _create_sr_bounce_rate_generator")
         try:
             from src.feature_generation.core.feature_generator import VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
@@ -1844,6 +1995,7 @@ class CoreOptimizer:
 
     def _create_sr_strength_trend_generator(self, window: int, sr_type: str):
         """Create SR strength trend feature generator."""
+        tprint_debug("🧠 Entering _create_sr_strength_trend_generator")
         try:
             from src.feature_generation.core.feature_generator import VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
@@ -1886,6 +2038,7 @@ class CoreOptimizer:
 
     def _create_ml_reliability_generator(self, window: int):
         """Create ML reliability feature generator."""
+        tprint_debug("🧠 Entering _create_ml_reliability_generator")
         try:
             from src.feature_generation.core.feature_generator import VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
@@ -1926,6 +2079,7 @@ class CoreOptimizer:
 
     def _create_ml_bounce_prob_generator(self, window: int):
         """Create ML bounce probability feature generator."""
+        tprint_debug("🧠 Entering _create_ml_bounce_prob_generator")
         try:
             from src.feature_generation.core.feature_generator import VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
@@ -1978,6 +2132,7 @@ class CoreOptimizer:
 
     def _create_trading_sr_reliability_generator(self, window: int, sr_type: str):
         """Create trading SR reliability feature generator."""
+        tprint_debug("🧠 Entering _create_trading_sr_reliability_generator")
         try:
             from src.feature_generation.core.feature_generator import VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
@@ -2022,6 +2177,7 @@ class CoreOptimizer:
 
     def _create_volume_profile_hvn_generator(self, window: int):
         """Create volume profile HVN (High Volume Node) feature generator."""
+        tprint_debug("🧠 Entering _create_volume_profile_hvn_generator")
         try:
             from src.feature_generation.core.feature_generator import VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
@@ -2077,6 +2233,7 @@ class CoreOptimizer:
 
     def _create_volume_profile_poc_generator(self, window: int):
         """Create volume profile POC (Point of Control) feature generator."""
+        tprint_debug("🧠 Entering _create_volume_profile_poc_generator")
         try:
             from src.feature_generation.core.feature_generator import VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
@@ -2104,6 +2261,7 @@ class CoreOptimizer:
 
     def _create_volume_profile_vah_generator(self, window: int):
         """Create volume profile VAH (Value Area High) feature generator."""
+        tprint_debug("🧠 Entering _create_volume_profile_vah_generator")
         try:
             from src.feature_generation.core.feature_generator import VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
@@ -2168,6 +2326,7 @@ class CoreOptimizer:
 
     def _create_volume_profile_val_generator(self, window: int):
         """Create volume profile VAL (Value Area Low) feature generator."""
+        tprint_debug("🧠 Entering _create_volume_profile_val_generator")
         try:
             from src.feature_generation.core.feature_generator import VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
@@ -2232,6 +2391,7 @@ class CoreOptimizer:
 
     def _create_volatility_generator(self, period: int):
         """Create a custom volatility generator for volatility features."""
+        tprint_debug("🧠 Entering _create_volatility_generator")
         try:
             from src.feature_generation.core.feature_generator import VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
@@ -2269,6 +2429,7 @@ class CoreOptimizer:
 
     def _create_failed_result(self, method: str, optimization_time: float) -> OptimizationResult:
         """Create a failed optimization result."""
+        tprint_debug("🧠 Entering _create_failed_result")
         return OptimizationResult(
             best_lookback_period=OPTIMIZATION_CONSTANTS.DEFAULT_MIN_LOOKBACK,  # Already an int
             best_score=0.0,
@@ -2281,6 +2442,7 @@ class CoreOptimizer:
 
     def _calculate_comprehensive_correlations(self, feature_values: np.ndarray, target_values: np.ndarray) -> Dict[str, float]:
         """Calculate comprehensive correlation metrics."""
+        tprint_debug("🧠 Entering _calculate_comprehensive_correlations")
         try:
             correlations = {}
             
@@ -2312,6 +2474,7 @@ class CoreOptimizer:
 
     def _calculate_mutual_information(self, x: np.ndarray, y: np.ndarray) -> float:
         """Calculate simplified mutual information."""
+        tprint_debug("🧠 Entering _calculate_mutual_information")
         try:
             # Simple binning approach
             n_bins = min(10, len(x) // 10)
@@ -2347,6 +2510,7 @@ class CoreOptimizer:
 
     def _calculate_composite_score(self, correlations: Dict[str, float]) -> float:
         """Calculate composite score from multiple correlation metrics."""
+        tprint_debug("🧠 Entering _calculate_composite_score")
         try:
             # Weighted combination of different correlation measures
             weights = {
@@ -2373,6 +2537,7 @@ class CoreOptimizer:
 
     def _calculate_multi_target_metrics(self, feature_values: np.ndarray, target_values: np.ndarray) -> Dict[str, float]:
         """Calculate multiple target metrics for multi-objective optimization."""
+        tprint_debug("🧠 Entering _calculate_multi_target_metrics")
         try:
             metrics = {}
             
@@ -2397,6 +2562,7 @@ class CoreOptimizer:
 
     def _calculate_stability_metric(self, values: np.ndarray) -> float:
         """Calculate stability metric (lower variance = higher stability)."""
+        tprint_debug("🧠 Entering _calculate_stability_metric")
         try:
             if len(values) < 2:
                 return 0.0
@@ -2406,6 +2572,7 @@ class CoreOptimizer:
 
     def _calculate_information_content(self, values: np.ndarray) -> float:
         """Calculate information content using entropy."""
+        tprint_debug("🧠 Entering _calculate_information_content")
         try:
             if len(values) < 2:
                 return 0.0
@@ -2423,6 +2590,7 @@ class CoreOptimizer:
 
     def _calculate_predictive_power(self, feature_values: np.ndarray, target_values: np.ndarray) -> float:
         """Calculate predictive power using cross-validation-like approach."""
+        tprint_debug("🧠 Entering _calculate_predictive_power")
         try:
             if len(feature_values) < 10:
                 return 0.0
@@ -2441,6 +2609,7 @@ class CoreOptimizer:
 
     def _calculate_multi_objective_score(self, targets: Dict[str, float]) -> float:
         """Calculate multi-objective score using weighted combination."""
+        tprint_debug("🧠 Entering _calculate_multi_objective_score")
         try:
             # Default weights for different objectives
             weights = {
@@ -2468,6 +2637,7 @@ class CoreOptimizer:
 
     def _check_convergence(self, scores: List[float]) -> bool:
         """Check if optimization has converged."""
+        tprint_debug("🧠 Entering _check_convergence")
         try:
             if len(scores) < 5:
                 return False
@@ -2486,6 +2656,7 @@ class CoreOptimizer:
 
     def _update_performance_metrics(self, result: OptimizationResult, optimization_time: float) -> None:
         """Update performance tracking metrics."""
+        tprint_debug("🧠 Entering _update_performance_metrics")
         try:
             self.performance_metrics['total_optimizations'] += 1
             
@@ -2519,6 +2690,7 @@ class CoreOptimizer:
 
     def get_performance_summary(self) -> Dict[str, Any]:
         """Get performance summary of the optimizer."""
+        tprint_debug("🧠 Entering get_performance_summary")
         try:
             if not self.performance_metrics['best_scores']:
                 return {
@@ -2546,6 +2718,7 @@ class CoreOptimizer:
 
     def save_optimization_results(self, filepath: str) -> bool:
         """Save optimization results to file."""
+        tprint_debug("🧠 Entering save_optimization_results")
         try:
             results = {
                 'performance_metrics': self.performance_metrics,
@@ -2571,6 +2744,7 @@ class CoreOptimizer:
         Returns:
             Dictionary of feature names to their calculated values
         """
+        tprint_debug("🧠 Entering test_feature_engineering")
         test_features = [
             # RETURNS_VWAP-BASED indicators (NEW STANDARD - better signal quality)
             'rsi_14', 'macd_12_26_9', 'sma_20', 'ema_12', 'bb_upper_20',
@@ -2625,6 +2799,7 @@ class CoreOptimizer:
 
     def _get_data_hash(self, data: pd.DataFrame, feature_name: str, horizon: int) -> str:
         """Generate hash for data caching."""
+        tprint_debug("🧠 Entering _get_data_hash")
         try:
             # Create a hash based on data shape, feature name, and horizon
             data_info = f"{data.shape}_{feature_name}_{horizon}_{data.index[-1] if len(data) > 0 else 0}"
@@ -2634,6 +2809,7 @@ class CoreOptimizer:
 
     def _cached_feature_calculation(self, data: pd.DataFrame, feature_name: str, horizon: int) -> Optional[np.ndarray]:
         """Calculate feature with caching to avoid recomputation."""
+        tprint_debug("🧠 Entering _cached_feature_calculation")
         cache_key = self._get_data_hash(data, feature_name, horizon)
         
         if cache_key in self.feature_cache:
@@ -2652,6 +2828,7 @@ class CoreOptimizer:
 
     def _vectorized_mi_calculation(self, features_list: List[np.ndarray], returns_list: List[np.ndarray]) -> List[float]:
         """Calculate mutual information for multiple feature-return pairs using vectorized operations."""
+        tprint_debug("🧠 Entering _vectorized_mi_calculation")
         try:
             # Use batch processing for multiple MI calculations with safe_correlation
             mi_scores = []
@@ -2688,6 +2865,7 @@ class CoreOptimizer:
 
     def _extract_numeric_array(self, series: Union[pd.Series, np.ndarray, None]) -> Optional[np.ndarray]:
         """Convert a Series or array-like into a sanitized numpy array."""
+        tprint_debug("🧠 Entering _extract_numeric_array")
         if series is None:
             return None
 
@@ -2707,6 +2885,7 @@ class CoreOptimizer:
 
     def _combine_arrays(self, arrays: List[Optional[np.ndarray]]) -> Optional[np.ndarray]:
         """Combine multiple arrays by averaging while ignoring missing inputs."""
+        tprint_debug("🧠 Entering _combine_arrays")
         valid_arrays = [arr for arr in arrays if arr is not None]
         if not valid_arrays:
             return None
@@ -2720,6 +2899,7 @@ class CoreOptimizer:
 
     def _aggregate_probability_stream(self, data: pd.DataFrame, direction: str, horizon_keyword: str) -> Optional[np.ndarray]:
         """Aggregate probability columns for a given direction and horizon keyword."""
+        tprint_debug("🧠 Entering _aggregate_probability_stream")
         pattern = f"_{horizon_keyword}_{direction}_prob"
         matching_cols = [col for col in data.columns if pattern in col]
         if not matching_cols:
@@ -2734,6 +2914,7 @@ class CoreOptimizer:
 
     def _get_multi_horizon_boundaries(self) -> Tuple[int, int]:
         """Return cached immediate and short horizon boundaries derived from configuration."""
+        tprint_debug("🧠 Entering _get_multi_horizon_boundaries")
         if self._cached_multi_horizon_limits is not None:
             return self._cached_multi_horizon_limits
 
@@ -2772,6 +2953,7 @@ class CoreOptimizer:
         max_horizon: int
     ) -> Dict[int, np.ndarray]:
         """Create a dictionary that maps horizons to the most appropriate opportunity stream."""
+        tprint_debug("🧠 Entering _build_horizon_weighted_matrix")
         horizon_map: Dict[int, np.ndarray] = {}
 
         for horizon in range(1, max_horizon + 1):
@@ -2805,6 +2987,7 @@ class CoreOptimizer:
         Returns:
             Dictionary mapping horizon to forward returns array
         """
+        tprint_debug("🧠 Entering _get_shared_forward_returns_matrix")
         data_hash = self._get_data_hash(data, f"shared_returns_{target_column}", max_horizon)
 
         if (
@@ -2844,6 +3027,7 @@ class CoreOptimizer:
         allow_labeler: bool = True
     ) -> Dict[str, Any]:
         """Create aligned multi-horizon opportunity streams using available labeled data."""
+        tprint_debug("🧠 Entering _create_multi_horizon_aligned_targets")
         def column_array(column_name: str) -> Optional[np.ndarray]:
             return self._extract_numeric_array(data[column_name]) if column_name in data.columns else None
 
@@ -2958,6 +3142,7 @@ class CoreOptimizer:
 
     def _create_simple_forward_returns(self, data: pd.DataFrame, max_horizon: int) -> Dict[str, Dict[int, np.ndarray]]:
         """Fallback method to create simple forward returns."""
+        tprint_debug("🧠 Entering _create_simple_forward_returns")
         targets = {'simple_returns': {}}
 
         if 'close' not in data.columns:
@@ -2990,6 +3175,7 @@ class CoreOptimizer:
         max_horizon: int = 200
     ) -> Dict[str, Dict[int, np.ndarray]]:
         """Create horizon-weighted opportunity matrices derived from multi-horizon labeling signals."""
+        tprint_debug("🧠 Entering _precompute_forward_returns_matrix")
         try:
             immediate_limit, short_limit = self._get_multi_horizon_boundaries()
             immediate_limit = min(max_horizon, immediate_limit)
@@ -3108,6 +3294,7 @@ class CoreOptimizer:
         Returns:
             Tuple of (train_end_idx, validation_start_idx)
         """
+        tprint_debug("🧠 Entering _create_time_split")
         train_end_idx = int(data_length * train_ratio)
         return train_end_idx, train_end_idx
 
@@ -3122,6 +3309,7 @@ class CoreOptimizer:
         Returns:
             List of horizon values for coarse search
         """
+        tprint_debug("🧠 Entering _generate_coarse_horizons")
         # Dense sampling for short horizons (1-10)
         dense_horizons = list(range(min_horizon, min(11, max_horizon + 1)))
         
@@ -3151,6 +3339,7 @@ class CoreOptimizer:
         Returns:
             Mutual information value
         """
+        tprint_debug("🧠 Entering _calculate_mutual_information_robust")
         try:
             # Remove NaN values
             valid_mask = ~(np.isnan(x) | np.isnan(y))
@@ -3222,6 +3411,7 @@ class CoreOptimizer:
         Returns:
             Dictionary with mean_mi, std_mi, and objective score
         """
+        tprint_debug("🧠 Entering _bootstrap_mi_validation")
         try:
             # Align arrays
             min_length = min(len(feature_values), len(forward_returns))
@@ -3277,6 +3467,7 @@ class CoreOptimizer:
         Returns:
             List of refined (horizon, mi_score) tuples
         """
+        tprint_debug("🧠 Entering _parallel_refinement")
         def refine_single_horizon(horizon_mi_tuple):
             horizon, coarse_mi = horizon_mi_tuple
             refinement_horizons = range(
@@ -3361,6 +3552,7 @@ class CoreOptimizer:
         Returns:
             Dictionary mapping horizon to feature values
         """
+        tprint_debug("🧠 Entering _vectorized_feature_generation")
         try:
             # Extract price data for vectorized operations
             if 'close' not in data.columns:
@@ -3453,6 +3645,7 @@ class CoreOptimizer:
         Returns:
             OptimizationResult with best lookback period and score
         """
+        tprint_debug("🧠 Entering _optimize_coarse_to_refine")
         try:
             min_lookback, max_lookback = lookback_range
             # Step 1: Get shared forward returns matrix (reused across all features)

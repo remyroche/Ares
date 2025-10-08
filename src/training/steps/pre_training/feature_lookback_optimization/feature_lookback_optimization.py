@@ -222,6 +222,10 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             log_info("🚀 Starting feature lookback optimization with multi-horizon profit targets...")
             tprint("📊 Performance monitoring started for execute operation")
 
+            numpy_rng = pipeline_state.get('numpy_rng') if isinstance(pipeline_state, dict) else None
+            if numpy_rng is not None:
+                self.core_optimizer.set_rng(numpy_rng)
+
             # Validate inputs
             is_valid, validation_summary, cleaned_data = self.validator.validate_data(
                 data,

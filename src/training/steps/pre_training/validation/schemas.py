@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set, Tuple
+
+import math
 
 import pandas as pd
 
@@ -157,4 +160,203 @@ def schema_metadata(*schema_keys: str) -> Dict[str, Dict[str, str]]:
         if key in SCHEMA_REGISTRY:
             metadata[key] = dict(SCHEMA_REGISTRY[key])
     return metadata
+
+
+def _should_skip_object(obj: Any) -> bool:
+    """Return ``True`` when an object should be skipped during recursion."""
+
+    module = getattr(obj, "__module__", "")
+    if module.startswith("pandas") or module.startswith("numpy"):
+        return True
+    return False
+
+
+def extract_p_value_mapping(results: Any) -> Dict[str, float]:
+    """Recursively extract p-values from nested selection results.
+
+    The function walks dictionaries, dataclass ``__dict__`` objects, and
+    sequences, collecting any values stored under ``p_value`` keys or nested
+    ``p_values`` mappings.  The return value maps a dotted path (representing
+    the traversal route) to the numeric p-value discovered at that location.
+    Non-numeric or non-finite entries are ignored.
+    """
+
+    extracted: Dict[str, float] = {}
+    visited: Set[int] = set()
+
+    def _walk(obj: Any, path: str) -> None:
+        if obj is None:
+            return
+        if _should_skip_object(obj):
+            return
+
+        if isinstance(obj, Mapping):
+            obj_id = id(obj)
+            if obj_id in visited:
+                return
+            visited.add(obj_id)
+            for key, value in obj.items():
+                key_str = str(key)
+                key_lower = key_str.lower()
+                next_path = f"{path}.{key_str}" if path else key_str
+
+                if key_lower in {"p_value", "pvalue"}:
+                    if isinstance(value, (int, float)) and math.isfinite(value):
+                        extracted[path or key_str] = float(value)
+                    continue
+
+                if key_lower in {"p_values", "pvalues"} and isinstance(value, Mapping):
+                    for inner_key, inner_val in value.items():
+                        if isinstance(inner_val, (int, float)) and math.isfinite(inner_val):
+                            inner_path = f"{next_path}.{inner_key}"
+                            extracted[inner_path] = float(inner_val)
+                    continue
+
+                _walk(value, next_path)
+            return
+
+        if isinstance(obj, (list, tuple, set)):
+            obj_id = id(obj)
+            if obj_id in visited:
+                return
+            visited.add(obj_id)
+            for idx, item in enumerate(obj):
+                next_path = f"{path}[{idx}]" if path else f"[{idx}]"
+                _walk(item, next_path)
+            return
+
+        if hasattr(obj, "__dict__") and not _should_skip_object(obj):
+            _walk(vars(obj), path)
+
+    _walk(results, "")
+    return extracted
+
+
+def _bh_fdr_adjustment(p_values: Dict[str, float]) -> Dict[str, float]:
+    """Apply Benjamini-Hochberg FDR correction to a mapping of p-values."""
+
+    if not p_values:
+        return {}
+
+    items: Sequence[Tuple[str, float]] = tuple((key, float(value)) for key, value in p_values.items())
+    sorted_indices = sorted(range(len(items)), key=lambda idx: items[idx][1])
+    adjusted: Dict[str, float] = {}
+
+    n = len(items)
+    prev = 1.0
+    for rank, index in enumerate(reversed(sorted_indices), start=1):
+        key, value = items[index]
+        corrected = min(prev, (value * n) / (n - rank + 1))
+        corrected = float(max(0.0, min(1.0, corrected)))
+        adjusted[key] = corrected
+        prev = corrected
+
+    # Preserve original order for readability
+    return {key: adjusted.get(key, float(value)) for key, value in items}
+
+
+def _normalise_p_values(results: Optional[Mapping[str, Any]]) -> Dict[str, float]:
+    """Normalise raw result mappings into string→float p-value mappings."""
+
+    if results is None:
+        return {}
+    if isinstance(results, Mapping):
+        flattened = extract_p_value_mapping(results)
+        if flattened:
+            return flattened
+        normalised: Dict[str, float] = {}
+        for key, value in results.items():
+            if isinstance(value, (int, float)) and math.isfinite(value):
+                normalised[str(key)] = float(value)
+        return normalised
+    return {}
+
+
+def track_and_control_hypotheses(
+    horizon_results: Optional[Mapping[str, Any]] = None,
+    feature_results: Optional[Mapping[str, Any]] = None,
+    lookback_results: Optional[Mapping[str, Any]] = None,
+    *,
+    alpha: float = 0.05,
+) -> Dict[str, Any]:
+    """Aggregate hypothesis counts and apply FDR correction to p-values.
+
+    Parameters
+    ----------
+    horizon_results
+        Mapping containing horizon-related hypothesis test results.
+    feature_results
+        Mapping containing feature-level hypothesis test results.
+    lookback_results
+        Mapping containing lookback optimisation hypothesis test results.
+    alpha
+        Significance level used when counting significant hypotheses.
+
+    Returns
+    -------
+    Dict[str, Any]
+        Structured report describing hypothesis volumes, adjusted p-values,
+        significant counts before/after correction, and a warning message that
+        callers should log for visibility.
+    """
+
+    horizon_p = _normalise_p_values(horizon_results)
+    feature_p = _normalise_p_values(feature_results)
+    lookback_p = _normalise_p_values(lookback_results)
+
+    breakdown = {
+        "horizons": len(horizon_p),
+        "features": len(feature_p),
+        "lookbacks": len(lookback_p),
+    }
+    total_hypotheses = sum(breakdown.values())
+
+    adjusted = {
+        "horizons": _bh_fdr_adjustment(horizon_p),
+        "features": _bh_fdr_adjustment(feature_p),
+        "lookbacks": _bh_fdr_adjustment(lookback_p),
+    }
+
+    significant_before = {
+        "horizons": sum(1 for value in horizon_p.values() if value < alpha),
+        "features": sum(1 for value in feature_p.values() if value < alpha),
+        "lookbacks": sum(1 for value in lookback_p.values() if value < alpha),
+    }
+    significant_after = {
+        "horizons": sum(1 for value in adjusted["horizons"].values() if value < alpha),
+        "features": sum(1 for value in adjusted["features"].values() if value < alpha),
+        "lookbacks": sum(1 for value in adjusted["lookbacks"].values() if value < alpha),
+    }
+    significant_before["total"] = sum(significant_before.values())
+    significant_after["total"] = sum(significant_after.values())
+
+    warning: str = ""
+    if total_hypotheses > 0:
+        warning = (
+            f"⚠️ Multiple testing detected across {total_hypotheses} hypotheses. "
+            "Applied Benjamini–Hochberg FDR correction to control the false discovery rate."
+        )
+        if total_hypotheses > 100:
+            warning = (
+                f"⚠️ Multiple testing detected across {total_hypotheses} hypotheses (exceeds 100). "
+                "Applied Benjamini–Hochberg FDR correction to control the false discovery rate."
+            )
+
+    report = {
+        "hypothesis_breakdown": breakdown,
+        "total_hypotheses": total_hypotheses,
+        "raw_p_values": {
+            "horizons": horizon_p,
+            "features": feature_p,
+            "lookbacks": lookback_p,
+        },
+        "adjusted_p_values": adjusted,
+        "significant_counts": {
+            "before": significant_before,
+            "after": significant_after,
+        },
+        "warning": warning,
+    }
+
+    return report
 

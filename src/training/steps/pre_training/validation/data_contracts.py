@@ -166,6 +166,11 @@ class SelectionResultSchema(_BaseContractModel):
     stage_scores: Dict[str, Dict[str, float]] = Field(default_factory=dict)
     selection_time: Optional[float] = None
     is_unsupervised: Optional[bool] = None
+    hypothesis_report: Dict[str, Any] = Field(default_factory=dict)
+    horizon_p_values: Dict[str, float] = Field(default_factory=dict)
+    feature_p_values: Dict[str, float] = Field(default_factory=dict)
+    lookback_p_values: Dict[str, float] = Field(default_factory=dict)
+    adjusted_p_values: Dict[str, Dict[str, float]] = Field(default_factory=dict)
 
     @field_validator(
         "final_features",
@@ -180,6 +185,60 @@ class SelectionResultSchema(_BaseContractModel):
         if isinstance(value, (list, tuple)) and all(isinstance(item, str) for item in value):
             return list(value)
         raise ValueError("expected a sequence of strings")
+
+    @field_validator(
+        "horizon_p_values",
+        "feature_p_values",
+        "lookback_p_values",
+        mode="before",
+    )
+    def _ensure_float_mapping(cls, value: Any) -> Dict[str, float]:
+        if value is None:
+            return {}
+        if isinstance(value, Mapping):
+            cleaned: Dict[str, float] = {}
+            for key, item in value.items():
+                if not isinstance(item, (int, float)):
+                    raise ValueError("p-values must be numeric")
+                cleaned[str(key)] = float(item)
+            return cleaned
+        raise ValueError("expected mapping of p-values")
+
+    @field_validator("adjusted_p_values", mode="before")
+    def _ensure_nested_float_mapping(cls, value: Any) -> Dict[str, Dict[str, float]]:
+        if value is None:
+            return {}
+        if not isinstance(value, Mapping):
+            raise ValueError("adjusted_p_values must be a mapping")
+        cleaned: Dict[str, Dict[str, float]] = {}
+        for category, sub_mapping in value.items():
+            if sub_mapping is None:
+                cleaned[str(category)] = {}
+                continue
+            if not isinstance(sub_mapping, Mapping):
+                raise ValueError("adjusted_p_values entries must be mappings")
+            cleaned_category: Dict[str, float] = {}
+            for key, item in sub_mapping.items():
+                if not isinstance(item, (int, float)):
+                    raise ValueError("adjusted p-values must be numeric")
+                cleaned_category[str(key)] = float(item)
+            cleaned[str(category)] = cleaned_category
+        return cleaned
+
+    @field_validator("hypothesis_report", mode="before")
+    def _ensure_hypothesis_report(cls, value: Any) -> Dict[str, Any]:
+        if value is None:
+            return {}
+        if not isinstance(value, Mapping):
+            raise ValueError("hypothesis_report must be a mapping")
+        report = dict(value)
+        total = report.get("total_hypotheses")
+        warning = report.get("warning")
+        if isinstance(total, (int, float)) and total > 100 and not warning:
+            report["warning"] = (
+                f"⚠️ Multiple testing detected across {int(total)} hypotheses (exceeds 100)."
+            )
+        return report
 
 
 def _format_pydantic_errors(error: ValidationError) -> List[str]:  # pragma: no cover - exercised via tests

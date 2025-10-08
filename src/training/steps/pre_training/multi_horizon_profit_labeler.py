@@ -7,17 +7,23 @@ to create differentiated profit labels for different market regimes.
 
 import asyncio
 import copy
+import hashlib
+import json
 import numpy as np
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Iterable, AsyncIterator
 from datetime import datetime
 from dataclasses import dataclass, asdict
 import logging
-from pathlib import Path
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.logger import system_logger
+from src.training.config.data_locator import DataLocator
+from src.training.steps.pre_training.artifacts.manifest import (
+    ArtifactManifest,
+    DataLocator,
+)
 
 try:
     from src.utils.data.klines_parquet import get_klines_manager
@@ -36,6 +42,13 @@ from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler im
 from src.training.steps.pre_training.standardized_labeling_interface import (
     assert_labels_sigma_scaled,
     validate_dataframe_schema
+)
+from src.training.steps.pre_training.column_naming import (
+    ColumnNamespace,
+    ensure_dataframe_namespace,
+    ensure_namespace,
+    filter_namespace_columns,
+    strip_namespace,
 )
 
 # Import the label balancing system
@@ -57,6 +70,60 @@ except ImportError:
 
 # Import base component
 from src.training.steps.pre_training.components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+
+
+def _normalize_for_hash(value: Any) -> Any:
+    """Normalize complex structures into hash-friendly primitives."""
+    if isinstance(value, dict):
+        return {str(k): _normalize_for_hash(v) for k, v in sorted(value.items(), key=lambda item: str(item[0]))}
+    if isinstance(value, (list, tuple)):
+        return [_normalize_for_hash(v) for v in value]
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (np.floating,)):
+        return float(value)
+    if isinstance(value, (np.bool_, bool)):
+        return bool(value)
+    if isinstance(value, pd.Series):
+        return _normalize_for_hash(value.to_dict())
+    if isinstance(value, pd.Index):
+        return _normalize_for_hash(list(value))
+    if isinstance(value, pd.DataFrame):
+        return {
+            'columns': _normalize_for_hash(list(value.columns)),
+            'index': _normalize_for_hash(value.index.tolist()),
+            'data': _normalize_for_hash(value.to_dict(orient='list')),
+        }
+    if isinstance(value, np.ndarray):
+        return _normalize_for_hash(value.tolist())
+    return value
+
+
+def _json_default(value: Any) -> Any:
+    normalized = _normalize_for_hash(value)
+    if isinstance(normalized, (dict, list, str, int, float, bool)) or normalized is None:
+        return normalized
+    return str(normalized)
+
+
+def _compute_outcome_digest(symbol: str, exchange: str, timeframe: str, artifacts: Dict[str, Any]) -> str:
+    payload = {
+        'symbol': symbol,
+        'exchange': exchange,
+        'timeframe': timeframe,
+        'artifacts': _normalize_for_hash(artifacts),
+    }
+    serialized = json.dumps(payload, sort_keys=True, default=_json_default)
+    return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
+
+
+def _build_outcome_filename(symbol: str, exchange: str, timeframe: str, artifacts: Dict[str, Any]) -> Tuple[str, str]:
+    digest = _compute_outcome_digest(symbol, exchange, timeframe, artifacts)
+    filename = (
+        f"market_analysis_multi_horizon_profit_labeler_outcome_"
+        f"{symbol}_{exchange}_{timeframe}_{digest[:16]}.json"
+    )
+    return filename, digest
 
 
 @dataclass
@@ -141,6 +208,10 @@ class MultiHorizonConfig:
     save_intermediate_results: bool = True
     generate_reports: bool = True
 
+    # Market data streaming controls
+    market_data_batch_size: Optional[int] = None
+    market_data_window_days: Optional[int] = None
+
     # Quality thresholds
     min_auc_threshold: float = 0.55
     max_auc_std_threshold: float = 0.03
@@ -159,6 +230,9 @@ class MultiHorizonConfig:
     weighting_config: WeightingConfig = None
     regime_config: RegimeConfig = None
     fairness_config: ValidationFairnessConfig = None
+    data_locator: Optional[DataLocator] = None
+    data_dir_key: str = "market_data"
+    outcomes_dir_key: str = "multi_horizon_outcomes"
 
 
 def validate_and_prepare_dataframe(
@@ -232,6 +306,7 @@ class MultiHorizonProfitLabeler:
         self.config = config or MultiHorizonConfig()
         self.logger = logging.getLogger('MultiHorizonProfitLabeler')
         self.quality_thresholds: Dict[str, float] = {}
+        self.data_locator: Optional[DataLocator] = self.config.data_locator
 
         # Initialize the volatility-aware labeler
         if self.config.enable_enhanced_labels:
@@ -276,6 +351,10 @@ class MultiHorizonProfitLabeler:
         else:
             tprint_info("ℹ️ Label balancing system disabled or not available")
 
+        # Initialize artifact helpers
+        self.data_locator = DataLocator()
+        self.artifact_manifest = ArtifactManifest()
+
         tprint_success("🚀 Multi-Horizon Profit Labeler initialized")
         tprint_info(f"   → Timeframe: {self.config.timeframe}")
         tprint_info(f"   → Regime-aware: {self.config.enable_regime_aware_labeling}")
@@ -292,7 +371,30 @@ class MultiHorizonProfitLabeler:
             min_auc_threshold=self.config.min_auc_threshold,
             max_auc_std_threshold=self.config.max_auc_std_threshold
         )
-    
+
+    def _apply_namespace_conventions(self, labeling_result: LabelingResult) -> LabelingResult:
+        """Ensure all labeling artifacts use the standardized namespaces."""
+
+        if labeling_result.labels is not None and not labeling_result.labels.empty:
+            labeling_result.labels = ensure_dataframe_namespace(labeling_result.labels, ColumnNamespace.TARGET)
+        if labeling_result.training_labels is not None and not labeling_result.training_labels.empty:
+            labeling_result.training_labels = ensure_dataframe_namespace(
+                labeling_result.training_labels, ColumnNamespace.TARGET
+            )
+        if labeling_result.confidence_scores is not None and not labeling_result.confidence_scores.empty:
+            labeling_result.confidence_scores = ensure_dataframe_namespace(
+                labeling_result.confidence_scores, ColumnNamespace.LABEL
+            )
+        if labeling_result.eligibility_masks is not None and not labeling_result.eligibility_masks.empty:
+            labeling_result.eligibility_masks = ensure_dataframe_namespace(
+                labeling_result.eligibility_masks, ColumnNamespace.LABEL
+            )
+        if labeling_result.sigma_payoffs is not None and not labeling_result.sigma_payoffs.empty:
+            labeling_result.sigma_payoffs = ensure_dataframe_namespace(
+                labeling_result.sigma_payoffs, ColumnNamespace.TARGET
+            )
+        return labeling_result
+
     def _adjust_returns_for_transaction_costs(
         self,
         labeling_result: LabelingResult
@@ -362,9 +464,10 @@ class MultiHorizonProfitLabeler:
             n_targets=labeling_result.n_targets,
             processing_time=labeling_result.processing_time
         )
-        
+
+        adjusted_result = self._apply_namespace_conventions(adjusted_result)
         tprint_success(f"✅ Transaction cost adjustment applied (round-trip: {roundtrip_cost:.4%})")
-        
+
         return adjusted_result
     
     def _create_temporal_splits(
@@ -426,7 +529,7 @@ class MultiHorizonProfitLabeler:
         symbol: str,
         exchange: str,
         timeframe: str,
-        data_dir: str = "historical_data",
+        data_dir: Optional[str] = None,
         regime_data: Optional[Dict[str, Any]] = None,
         quality_thresholds: Optional[Dict[str, float]] = None,
     ) -> Dict[str, Any]:
@@ -451,14 +554,42 @@ class MultiHorizonProfitLabeler:
             if quality_thresholds is not None:
                 self.quality_thresholds = thresholds
 
+            locator = self.data_locator or self.config.data_locator
+            if data_dir is None and locator:
+                data_dir = str(locator.data_path(self.config.data_dir_key))
+
+            if data_dir is None:
+                raise ValueError("data_dir must be provided or resolvable via DataLocator")
+
             # Load market data
             tprint_info("📊 Loading market data...")
-            market_data = await self._load_market_data(symbol, exchange, timeframe, data_dir)
-            if market_data is None or market_data.empty:
+            market_data_batches: List[pd.DataFrame] = []
+            async for batch in self._load_market_data(
+                symbol,
+                exchange,
+                timeframe,
+                data_dir,
+                batch_size=self.config.market_data_batch_size,
+                window_days=self.config.market_data_window_days,
+            ):
+                market_data_batches.append(batch)
+
+            if not market_data_batches:
                 tprint_error(f"❌ No market data available for {symbol} {timeframe}")
                 raise ValueError(f"No market data available for {symbol} {timeframe}")
-            
-            tprint_success(f"✅ Market data loaded: {len(market_data)} rows, {len(market_data.columns)} columns")
+
+            market_data = pd.concat(market_data_batches, axis=0).sort_index()
+            market_data = market_data[~market_data.index.duplicated(keep="first")]
+
+            tprint_success(
+                f"✅ Market data loaded: {len(market_data)} rows, {len(market_data.columns)} columns"
+            )
+            if self.config.market_data_batch_size or self.config.market_data_window_days:
+                tprint_info(
+                    "   → Batches processed: "
+                    f"{len(market_data_batches)} (batch_size={self.config.market_data_batch_size}, "
+                    f"window_days={self.config.market_data_window_days})"
+                )
 
             # Apply regime-aware labeling if enabled and regime data is available
             if self.config.enable_regime_aware_labeling and regime_data:
@@ -469,7 +600,9 @@ class MultiHorizonProfitLabeler:
                 tprint_info("📊 Using standard volatility-aware labeling...")
                 labeling_result = self.volatility_labeler.generate_labels(market_data)
                 tprint_success("✅ Standard labeling completed")
-            
+
+            labeling_result = self._apply_namespace_conventions(labeling_result)
+
             # Apply transaction cost adjustment if enabled
             labeling_result = self._adjust_returns_for_transaction_costs(labeling_result)
 
@@ -478,6 +611,7 @@ class MultiHorizonProfitLabeler:
             balanced_labeling_result = await self._apply_balancing_and_weighting(
                 labeling_result, market_data, regime_data
             )
+            balanced_labeling_result = self._apply_namespace_conventions(balanced_labeling_result)
             tprint_success("✅ Balancing and weighting completed")
 
             # Generate comprehensive report using the profit labeling report generator
@@ -549,7 +683,9 @@ class MultiHorizonProfitLabeler:
                         'quality_summary': self._summarize_quality_scores(balanced_labeling_result.quality_scores),
                         'downstream_ready': validation_results['is_valid'],
                         'forward_return_smoothing': smoothing_metadata
-                    }
+                    },
+                    'market_data': market_data,
+                    'market_data_batches': tuple(market_data_batches),
                 },
                 'labeling_report': report,
                 'standardized_output': {  # New: standardized format for all downstream steps
@@ -786,7 +922,7 @@ class MultiHorizonProfitLabeler:
 
             # Prepare data for balancing
             # Use market data as features (exclude target columns and metadata)
-            exclude_cols = [col for col in market_data.columns if col.startswith('target_')]
+            exclude_cols = filter_namespace_columns(market_data.columns, ColumnNamespace.TARGET)
             exclude_cols.extend(['sample_weight', 'timestamp'])
 
             feature_cols = [col for col in market_data.columns if col not in exclude_cols]
@@ -795,12 +931,19 @@ class MultiHorizonProfitLabeler:
             # Extract targets from labeling result
             if labeling_result.labels is not None and not labeling_result.labels.empty:
                 # Use the first target column for balancing (can be extended for multi-target)
-                target_cols = [col for col in labeling_result.labels.columns if 'target' in col.lower()]
+                target_cols = filter_namespace_columns(labeling_result.labels.columns, ColumnNamespace.TARGET)
+                if not target_cols:
+                    target_cols = filter_namespace_columns(labeling_result.labels.columns, ColumnNamespace.LABEL)
                 if target_cols:
                     y = labeling_result.labels[target_cols[0]]
                 else:
                     # Fallback: create a simple target from the first column
-                    y = labeling_result.labels.iloc[:, 0] if not labeling_result.labels.empty else pd.Series()
+                    fallback_col = labeling_result.labels.columns[0]
+                    namespaced = ensure_namespace(fallback_col, ColumnNamespace.TARGET)
+                    if fallback_col != namespaced:
+                        labeling_result.labels = labeling_result.labels.rename(columns={fallback_col: namespaced})
+                        fallback_col = namespaced
+                    y = labeling_result.labels[fallback_col] if not labeling_result.labels.empty else pd.Series()
             else:
                 tprint_warning("⚠️ No labels available for balancing")
                 return labeling_result
@@ -883,13 +1026,13 @@ class MultiHorizonProfitLabeler:
             if original_distribution and balanced_distribution:
                 original_balance = min(original_distribution.values()) / max(original_distribution.values()) if max(original_distribution.values()) > 0 else 0
                 balanced_balance = min(balanced_distribution.values()) / max(balanced_distribution.values()) if max(balanced_distribution.values()) > 0 else 0
-                
+
                 if balanced_balance > original_balance:
                     tprint_success(f"✅ Class balance improved: {original_balance:.3f} → {balanced_balance:.3f}")
                 else:
                     tprint_warning(f"⚠️ Class balance may have worsened: {original_balance:.3f} → {balanced_balance:.3f}")
 
-            return balanced_result
+            return self._apply_namespace_conventions(balanced_result)
 
         except Exception as e:
             tprint_warning(f"⚠️ Balancing failed: {e}, returning original labels")
@@ -901,9 +1044,16 @@ class MultiHorizonProfitLabeler:
         symbol: str,
         exchange: str,
         timeframe: str,
-        data_dir: str
-    ) -> Optional[pd.DataFrame]:
-        """Load market data for the specified symbol and timeframe."""
+        data_dir: str,
+        *,
+        batch_size: Optional[int] = None,
+        window_days: Optional[int] = None,
+    ) -> Iterable[pd.DataFrame]:
+        """Load market data for the specified symbol and timeframe.
+
+        Returns an iterable of DataFrame batches to support streaming
+        consumption by downstream components.
+        """
 
         if get_klines_manager is None:
             message = (
@@ -927,48 +1077,20 @@ class MultiHorizonProfitLabeler:
         for sym in symbol_variants:
             for tf in timeframe_variants:
                 for data_type in data_type_variants:
-                    try:
-                        tprint_info(
-                            f"🔍 Attempting klines_parquet load for {sym}/{tf} [{data_type}]"
-                        )
-                        raw_df = await asyncio.to_thread(
-                            manager.read_data,
-                            sym,
-                            tf,
-                            None,
-                            None,
-                            data_type,
-                        )
-                    except Exception as load_error:  # pragma: no cover - defensive guard
-                        error_msg = (
-                            f"Failed to load {sym}/{tf} ({data_type}) via klines_parquet: {load_error}"
-                        )
-                        self.logger.warning(error_msg)
-                        load_errors.append(error_msg)
-                        continue
-
-                    if raw_df is None or raw_df.empty:
-                        info_msg = (
-                            f"klines_parquet returned no data for {sym}/{tf} ({data_type})"
-                        )
-                        self.logger.info(info_msg)
-                        load_errors.append(info_msg)
-                        continue
-
-                    try:
-                        prepared = self._prepare_market_data_frame(raw_df)
-                    except Exception as prep_error:
-                        prep_msg = (
-                            f"Loaded data for {sym}/{tf} ({data_type}) could not be prepared: {prep_error}"
-                        )
-                        self.logger.warning(prep_msg)
-                        load_errors.append(prep_msg)
-                        continue
-
-                    tprint_success(
-                        f"✅ Loaded {len(prepared)} rows via klines_parquet for {sym} {tf}"
-                    )
-                    return prepared
+                    streamed = False
+                    async for batch in self._stream_market_data_batches(
+                        manager,
+                        sym,
+                        tf,
+                        data_type,
+                        batch_size=batch_size,
+                        window_days=window_days,
+                        load_errors=load_errors,
+                    ):
+                        streamed = True
+                        yield batch
+                    if streamed:
+                        return
 
         error_message = (
             f"No market data available for {symbol} on {exchange} with timeframe {timeframe}."
@@ -979,6 +1101,192 @@ class MultiHorizonProfitLabeler:
         self.logger.error(error_message)
         tprint_error(f"❌ {error_message}")
         raise FileNotFoundError(error_message)
+
+    async def _stream_market_data_batches(
+        self,
+        manager,
+        symbol: str,
+        timeframe: str,
+        data_type: str,
+        *,
+        batch_size: Optional[int],
+        window_days: Optional[int],
+        load_errors: List[str],
+    ) -> AsyncIterator[pd.DataFrame]:
+        """Yield prepared market data batches for the requested parameters."""
+
+        tprint_info(
+            f"🔍 Attempting klines_parquet load for {symbol}/{timeframe} [{data_type}]"
+        )
+
+        try:
+            if window_days:
+                async for chunk in self._stream_by_date_window(
+                    manager,
+                    symbol,
+                    timeframe,
+                    data_type,
+                    window_days,
+                    batch_size,
+                    load_errors,
+                ):
+                    yield chunk
+                return
+
+            raw_df = await asyncio.to_thread(
+                manager.read_data,
+                symbol,
+                timeframe,
+                None,
+                None,
+                data_type,
+            )
+        except Exception as load_error:  # pragma: no cover - defensive guard
+            error_msg = (
+                f"Failed to load {symbol}/{timeframe} ({data_type}) via klines_parquet: {load_error}"
+            )
+            self.logger.warning(error_msg)
+            load_errors.append(error_msg)
+            return
+
+        if raw_df is None or raw_df.empty:
+            info_msg = (
+                f"klines_parquet returned no data for {symbol}/{timeframe} ({data_type})"
+            )
+            self.logger.info(info_msg)
+            load_errors.append(info_msg)
+            return
+
+        try:
+            prepared = self._prepare_market_data_frame(raw_df)
+        except Exception as prep_error:
+            prep_msg = (
+                f"Loaded data for {symbol}/{timeframe} ({data_type}) could not be prepared: {prep_error}"
+            )
+            self.logger.warning(prep_msg)
+            load_errors.append(prep_msg)
+            return
+
+        tprint_success(
+            f"✅ Loaded {len(prepared)} rows via klines_parquet for {symbol} {timeframe}"
+        )
+
+        for chunk in self._split_market_data_batches(prepared, batch_size=batch_size):
+            yield chunk
+
+    async def _stream_by_date_window(
+        self,
+        manager,
+        symbol: str,
+        timeframe: str,
+        data_type: str,
+        window_days: int,
+        batch_size: Optional[int],
+        load_errors: List[str],
+    ) -> AsyncIterator[pd.DataFrame]:
+        """Yield market data batches by iterating over date windows."""
+
+        date_info = None
+        try:
+            date_info = manager.get_data_info(symbol, timeframe, data_type)
+        except Exception as info_error:  # pragma: no cover - defensive guard
+            self.logger.debug(f"ℹ️ Could not retrieve data info for streaming: {info_error}")
+
+        start_date, end_date = self._extract_date_range(date_info)
+        if not start_date or not end_date:
+            return
+
+        current_start = start_date
+        while current_start < end_date:
+            current_end = min(current_start + pd.Timedelta(days=window_days), end_date)
+            try:
+                raw_df = await asyncio.to_thread(
+                    manager.read_data,
+                    symbol,
+                    timeframe,
+                    current_start.to_pydatetime(),
+                    current_end.to_pydatetime(),
+                    data_type,
+                )
+            except Exception as load_error:  # pragma: no cover - defensive guard
+                error_msg = (
+                    f"Failed to load {symbol}/{timeframe} ({data_type}) for {current_start}→{current_end}: {load_error}"
+                )
+                self.logger.warning(error_msg)
+                load_errors.append(error_msg)
+                current_start = current_end
+                continue
+
+            if raw_df is None or raw_df.empty:
+                current_start = current_end
+                continue
+
+            try:
+                prepared = self._prepare_market_data_frame(raw_df)
+            except Exception as prep_error:
+                prep_msg = (
+                    f"Window {current_start}→{current_end} for {symbol}/{timeframe} could not be prepared: {prep_error}"
+                )
+                self.logger.warning(prep_msg)
+                load_errors.append(prep_msg)
+                current_start = current_end
+                continue
+
+            for chunk in self._split_market_data_batches(prepared, batch_size=batch_size):
+                yield chunk
+
+            current_start = current_end
+
+    def _split_market_data_batches(
+        self,
+        data: pd.DataFrame,
+        *,
+        batch_size: Optional[int]
+    ) -> Iterable[pd.DataFrame]:
+        """Split a prepared market data frame into row-based batches."""
+
+        if batch_size is None or batch_size <= 0 or len(data) <= batch_size:
+            yield data.copy()
+            return
+
+        for start in range(0, len(data), batch_size):
+            end = start + batch_size
+            yield data.iloc[start:end].copy()
+
+    def _extract_date_range(self, info: Optional[Dict[str, Any]]) -> Tuple[Optional[pd.Timestamp], Optional[pd.Timestamp]]:
+        """Parse the available date range from manager metadata."""
+
+        if not info:
+            return None, None
+
+        date_range = info.get('date_range') if isinstance(info, dict) else None
+        if not date_range:
+            return None, None
+
+        start_value = None
+        end_value = None
+
+        if isinstance(date_range, dict):
+            start_value = date_range.get('start') or date_range.get('from')
+            end_value = date_range.get('end') or date_range.get('to')
+        elif isinstance(date_range, (list, tuple)) and len(date_range) >= 2:
+            start_value, end_value = date_range[0], date_range[1]
+
+        if not start_value or not end_value:
+            return None, None
+
+        start_ts = pd.to_datetime(start_value, utc=True, errors='coerce')
+        end_ts = pd.to_datetime(end_value, utc=True, errors='coerce')
+
+        if pd.isna(start_ts) or pd.isna(end_ts):
+            return None, None
+
+        if start_ts.tzinfo is not None:
+            start_ts = start_ts.tz_convert(None)
+        if end_ts.tzinfo is not None:
+            end_ts = end_ts.tz_convert(None)
+
+        return start_ts, end_ts
 
     def _prepare_market_data_frame(self, data: pd.DataFrame) -> pd.DataFrame:
         """Ensure loaded market data is indexed and typed as expected by the labeler."""
@@ -1227,10 +1535,18 @@ class MultiHorizonProfitLabeler:
                 'short_term_opportunity': []
             }
 
+            column_bases = {col: strip_namespace(col)[0] for col in labels_df.columns}
+
             # Priority 1: Map small band targets to immediate_opportunity (shortest horizon)
             # Handle both regular targets and regime-specific targets
-            small_targets = [col for col in labels_df.columns if 'small_' in col and '_regime_' not in col]
-            small_regime_targets = [col for col in labels_df.columns if 'small_' in col and '_regime_' in col]
+            small_targets = [
+                col for col, base in column_bases.items()
+                if base.startswith('small_') and '_regime_' not in base
+            ]
+            small_regime_targets = [
+                col for col, base in column_bases.items()
+                if base.startswith('small_') and '_regime_' in base
+            ]
 
             # Use regular targets first, then regime targets if no regular targets available
             if small_targets:
@@ -1244,8 +1560,14 @@ class MultiHorizonProfitLabeler:
                     column_mappings['immediate_opportunity'].append(best_small_target)
 
             # Priority 2: Map medium band targets to short_term_opportunity (medium horizon)
-            medium_targets = [col for col in labels_df.columns if 'medium_' in col and '_regime_' not in col]
-            medium_regime_targets = [col for col in labels_df.columns if 'medium_' in col and '_regime_' in col]
+            medium_targets = [
+                col for col, base in column_bases.items()
+                if base.startswith('medium_') and '_regime_' not in base
+            ]
+            medium_regime_targets = [
+                col for col, base in column_bases.items()
+                if base.startswith('medium_') and '_regime_' in base
+            ]
 
             if medium_targets:
                 best_medium_target = self._select_best_target_by_pattern(medium_targets, labels_df, 'medium')
@@ -1257,8 +1579,14 @@ class MultiHorizonProfitLabeler:
                     column_mappings['short_term_opportunity'].append(best_medium_target)
 
             # Priority 3: Map high band targets to leverage_adjusted_score (longest horizon)
-            high_targets = [col for col in labels_df.columns if 'high_' in col and '_regime_' not in col]
-            high_regime_targets = [col for col in labels_df.columns if 'high_' in col and '_regime_' in col]
+            high_targets = [
+                col for col, base in column_bases.items()
+                if base.startswith('high_') and '_regime_' not in base
+            ]
+            high_regime_targets = [
+                col for col, base in column_bases.items()
+                if base.startswith('high_') and '_regime_' in base
+            ]
 
             if high_targets:
                 best_high_target = self._select_best_target_by_pattern(high_targets, labels_df, 'high')
@@ -1275,10 +1603,12 @@ class MultiHorizonProfitLabeler:
                     # Use the first (best) source column
                     source_col = source_columns[0]
                     if source_col in mapped_df.columns:
-                        mapped_df[expected_name] = mapped_df[source_col]
-                        tprint_info(f"✅ Mapped '{source_col}' → '{expected_name}'")
+                        expected_col = ensure_namespace(expected_name, ColumnNamespace.TARGET)
+                        mapped_df[expected_col] = mapped_df[source_col]
+                        tprint_info(f"✅ Mapped '{source_col}' → '{expected_col}'")
 
             # Also add the original columns for backward compatibility and debugging
+            mapped_df = ensure_dataframe_namespace(mapped_df, ColumnNamespace.TARGET)
             tprint_info(f"✅ Target column mapping completed. Original: {len(labels_df.columns)}, Mapped: {len(mapped_df.columns)}")
 
             return mapped_df
@@ -1354,10 +1684,26 @@ class MultiHorizonProfitLabeler:
             if labeling_result.quality_scores:
                 quality_scores = labeling_result.quality_scores
 
+                aliases = {
+                    'small': ('small_', 'immediate_opportunity', 'directional_confidence'),
+                    'medium': ('medium_', 'short_term_opportunity'),
+                    'high': ('high_', 'leverage_adjusted_score', 'overall_opportunity'),
+                }
+
+                column_bases = {col: strip_namespace(col)[0].lower() for col in labels_df.columns}
+
+                def _match_targets(pattern: str) -> List[str]:
+                    patterns = aliases.get(pattern, ())
+                    return [
+                        col
+                        for col, base in column_bases.items()
+                        if any(alias in base for alias in patterns)
+                    ]
+
                 # Find targets for each horizon pattern
-                small_targets = [col for col in labels_df.columns if 'small_' in col]
-                medium_targets = [col for col in labels_df.columns if 'medium_' in col]
-                high_targets = [col for col in labels_df.columns if 'high_' in col]
+                small_targets = _match_targets('small')
+                medium_targets = _match_targets('medium')
+                high_targets = _match_targets('high')
 
                 # Calculate average quality for each horizon
                 small_quality = self._calculate_average_quality(small_targets, quality_scores)
@@ -1399,8 +1745,10 @@ class MultiHorizonProfitLabeler:
 
         qualities = []
         for target in target_columns:
-            if target in quality_scores:
-                quality = quality_scores[target]
+            base_name = strip_namespace(target)[0]
+            quality_entry = quality_scores.get(target) or quality_scores.get(base_name)
+            if quality_entry:
+                quality = quality_entry
                 if hasattr(quality, 'overall_quality'):
                     qualities.append(quality.overall_quality)
                 elif isinstance(quality, dict) and 'overall_quality' in quality:
@@ -1422,6 +1770,7 @@ class MultiHorizonProfitLabeler:
             tprint_info("🎯 Extracting target columns for feature optimization")
 
             target_columns = []
+            column_bases = {col: strip_namespace(col)[0] for col in labels_df.columns}
 
             # Priority order for target selection
             priority_patterns = [
@@ -1434,7 +1783,9 @@ class MultiHorizonProfitLabeler:
             ]
 
             for pattern in priority_patterns:
-                matching_columns = [col for col in labels_df.columns if pattern in col]
+                matching_columns = [
+                    col for col, base in column_bases.items() if pattern in base
+                ]
                 if matching_columns:
                     # Select the best target for this pattern
                     if pattern in ['immediate_opportunity', 'short_term_opportunity', 'leverage_adjusted_score']:
@@ -1459,7 +1810,10 @@ class MultiHorizonProfitLabeler:
         except Exception as e:
             tprint_warning(f"⚠️ Error extracting target columns: {e}")
             # Fallback: return first few columns that look like targets
-            target_like_columns = [col for col in labels_df.columns if any(x in col.lower() for x in ['target', 'opportunity', 'score'])]
+            target_like_columns = [
+                col for col, base in column_bases.items()
+                if any(token in base.lower() for token in ['target', 'opportunity', 'score'])
+            ]
             return target_like_columns[:3] if target_like_columns else []
 
     def _calculate_target_distribution(self, labels_df: pd.DataFrame) -> Dict[str, Any]:
@@ -1776,7 +2130,20 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
             symbol = pipeline_state.get('symbol', 'ETHUSDT')
             exchange = pipeline_state.get('exchange', 'binance')
             timeframe = pipeline_state.get('timeframe', '1h')  # Updated to 1h for analyst
-            data_dir = pipeline_state.get('data_dir', 'historical_data')
+
+            data_locator: Optional[DataLocator] = pipeline_state.get('data_locator')
+            if data_locator:
+                self.labeler.config.data_locator = data_locator
+                self.labeler.data_locator = data_locator
+            data_dir_key = pipeline_state.get('data_dir_key', self.labeler.config.data_dir_key)
+            outcomes_dir_key = pipeline_state.get('outcomes_dir_key', self.labeler.config.outcomes_dir_key)
+            if data_locator:
+                self.labeler.config.data_dir_key = data_dir_key
+                self.labeler.config.outcomes_dir_key = outcomes_dir_key
+
+            data_dir = pipeline_state.get('data_dir')
+            if not data_dir and data_locator:
+                data_dir = str(data_locator.data_path(data_dir_key))
 
             # Extract regime data from pipeline state if available
             regime_data = pipeline_state.get('regime_data_splitting_result')
@@ -1794,9 +2161,17 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
             # Save artifacts persistently for other components to use
             artifacts_saved = False
             artifact_save_error: Optional[str] = None
+            artifact_digest: Optional[str] = None
+            artifact_path: Optional[str] = None
             try:
                 # Save the complete artifacts structure as a single outcome file
                 # that the feature lookback optimization can load
+                outcome_metadata = {
+                    'component_type': 'multi_horizon_profit_labeler',
+                    'random_seed': pipeline_state.get('random_seed'),
+                }
+                filename, artifact_digest = _build_outcome_filename(symbol, exchange, timeframe, labeling_result)
+                outcome_metadata['artifact_digest'] = artifact_digest
                 outcome_data = {
                     'config': {
                         'symbol': symbol,
@@ -1804,25 +2179,46 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                         'timeframe': timeframe
                     },
                     'artifacts': labeling_result,
-                    'metadata': {
-                        'component_type': 'multi_horizon_profit_labeler',
-                        'saved_at': datetime.now().isoformat()
-                    }
+                    'metadata': outcome_metadata
                 }
 
-                # Save as a single outcome file that matches the expected pattern
                 import json
-                outcomes_dir = Path("outcomes")
-                outcomes_dir.mkdir(exist_ok=True)
+                outcomes_dir_value = pipeline_state.get('outcomes_dir')
+                if outcomes_dir_value:
+                    outcomes_dir = Path(outcomes_dir_value)
+                elif data_locator:
+                    outcomes_dir = data_locator.artifacts_path(outcomes_dir_key, ensure_exists=True)
+                else:
+                    outcomes_dir = Path("outcomes")
+                    outcomes_dir.mkdir(parents=True, exist_ok=True)
 
-                filename = f"market_analysis_multi_horizon_profit_labeler_outcome_{symbol}_{exchange}_{timeframe}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-                outcome_file = outcomes_dir / filename
+                artifact_base_name = 'market_analysis_multi_horizon_profit_labeler_outcome'
+                artifact_path, version = self.data_locator.resolve_artifact_path(
+                    artifact_base_name,
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                )
+                artifact_path.parent.mkdir(parents=True, exist_ok=True)
 
-                with open(outcome_file, 'w') as f:
+                with open(artifact_path, 'w', encoding='utf-8') as f:
                     json.dump(outcome_data, f, indent=2, default=str)
 
-                tprint_info(f"💾 Labeling outcome saved to {outcome_file}")
+                logical_name = DataLocator.build_logical_name(
+                    artifact_base_name,
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                )
+                self.artifact_manifest.register(
+                    logical_name=logical_name,
+                    path=artifact_path,
+                    version=version,
+                )
+
+                tprint_info(f"💾 Labeling outcome saved to {artifact_path}")
                 artifacts_saved = True
+                artifact_path = str(outcome_file)
 
             except Exception as e:
                 tprint_warning(f"⚠️ Failed to save outcome: {e}")
@@ -1837,6 +2233,8 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                     'exchange': exchange,
                     'timeframe': timeframe,
                     'artifacts_saved': artifacts_saved,
+                    **({'artifact_digest': artifact_digest} if artifact_digest else {}),
+                    **({'artifact_path': artifact_path} if artifact_path else {}),
                     **({'artifact_save_error': artifact_save_error} if artifact_save_error else {})
                 }
             )

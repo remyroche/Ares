@@ -6,6 +6,8 @@
   "symbol": "BTCUSDT",
   "exchange": "binance",
   "timeframe": "1m",
+  "market_data_batch_size": null,
+  "market_data_window_days": null,
   "data_dir": "./test_data",
   "output_dir": "./test_output",
   "model_dir": "./test_models",

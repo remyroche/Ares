@@ -132,6 +132,13 @@ class AnalystPreMLOrchestrator:
         except Exception as e:
             tprint_error(f"❌ Failed to initialize AnalystPreMLOrchestrator: {e}")
             raise
+
+    @staticmethod
+    def _extract_failure_details(step_result: SubPipelineResult) -> Tuple[Optional[str], str]:
+        failure = getattr(step_result, 'failure', None)
+        message = step_result.error_message or (failure.message if failure else 'Unknown error')
+        error_code = getattr(step_result, 'error_code', None) or (failure.error_code if failure else None)
+        return error_code, message
     
     async def orchestrate(
         self,
@@ -188,10 +195,15 @@ class AnalystPreMLOrchestrator:
             tprint_info("📈 Step 1/4: Multi-Horizon Profit Labeling...")
             result.phase = OrchestrationPhase.HORIZON_LABELING
             horizon_result = await self.pre_training_pipeline._execute_multi_horizon_profit_labeler(sub_config)
-            
+
             if not horizon_result.success:
-                raise RuntimeError(f"Horizon labeling failed: {horizon_result.error_message}")
-            
+                error_code, message = self._extract_failure_details(horizon_result)
+                code_text = f"[{error_code}] " if error_code else ''
+                log_message = f"Horizon labeling failed: {code_text}{message}"
+                tprint_error(f"❌ {log_message}")
+                self.logger.error(f"❌ {log_message}")
+                raise RuntimeError(f"Horizon labeling failed ({error_code or 'unknown_error'}): {message}")
+
             result.horizon_labeling_result = horizon_result.artifacts
             tprint_success("✅ Horizon labeling completed")
             
@@ -199,9 +211,14 @@ class AnalystPreMLOrchestrator:
             tprint_info("⚙️ Step 2/4: Feature Lookback Optimization (per-regime/cluster)...")
             result.phase = OrchestrationPhase.LOOKBACK_OPTIMIZATION
             lookback_result = await self.pre_training_pipeline._execute_feature_lookback_optimization(sub_config)
-            
+
             if not lookback_result.success:
-                raise RuntimeError(f"Lookback optimization failed: {lookback_result.error_message}")
+                error_code, message = self._extract_failure_details(lookback_result)
+                code_text = f"[{error_code}] " if error_code else ''
+                log_message = f"Lookback optimization failed: {code_text}{message}"
+                tprint_error(f"❌ {log_message}")
+                self.logger.error(f"❌ {log_message}")
+                raise RuntimeError(f"Lookback optimization failed ({error_code or 'unknown_error'}): {message}")
             
             result.lookback_optimization_result = lookback_result.artifacts
             tprint_success("✅ Lookback optimization completed")
@@ -212,7 +229,12 @@ class AnalystPreMLOrchestrator:
             interactive_result = await self.pre_training_pipeline._execute_interactive_feature_generation(sub_config)
 
             if not interactive_result.success:
-                raise RuntimeError(f"Interactive feature generation failed: {interactive_result.error_message}")
+                error_code, message = self._extract_failure_details(interactive_result)
+                code_text = f"[{error_code}] " if error_code else ''
+                log_message = f"Interactive feature generation failed: {code_text}{message}"
+                tprint_error(f"❌ {log_message}")
+                self.logger.error(f"❌ {log_message}")
+                raise RuntimeError(f"Interactive feature generation failed ({error_code or 'unknown_error'}): {message}")
 
             result.interactive_feature_generation_result = interactive_result.artifacts
             interactive_artifacts = interactive_result.artifacts.get('interactive_feature_generation_result', {})
@@ -232,9 +254,14 @@ class AnalystPreMLOrchestrator:
             tprint_info("🎯 Step 4/4: Final Feature Selection (multi-stage)...")
             result.phase = OrchestrationPhase.FEATURE_SELECTION
             selection_result = await self.pre_training_pipeline._execute_final_feature_selection(sub_config)
-            
+
             if not selection_result.success:
-                raise RuntimeError(f"Feature selection failed: {selection_result.error_message}")
+                error_code, message = self._extract_failure_details(selection_result)
+                code_text = f"[{error_code}] " if error_code else ''
+                log_message = f"Feature selection failed: {code_text}{message}"
+                tprint_error(f"❌ {log_message}")
+                self.logger.error(f"❌ {log_message}")
+                raise RuntimeError(f"Feature selection failed ({error_code or 'unknown_error'}): {message}")
             
             result.feature_selection_result = selection_result.artifacts
             result.final_features = selection_result.artifacts.get('final_features')

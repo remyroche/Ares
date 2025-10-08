@@ -14,6 +14,57 @@ from dataclasses import dataclass
 from enum import Enum
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+from .column_naming import (
+    ColumnNamespace,
+    filter_namespace_columns,
+    find_nonconforming_columns,
+    validate_dataframe_names,
+)
+
+try:  # Pandera is required for schema enforcement; keep import guarded for tests.
+    import pandera as pa
+    from pandera import Check, DataFrameSchema
+except ImportError as exc:  # pragma: no cover - defensive fallback
+    pa = None  # type: ignore[assignment]
+    DataFrameSchema = None  # type: ignore[assignment]
+    Check = None  # type: ignore[assignment]
+
+
+if pa:
+    def _namespace_check(df: pd.DataFrame) -> bool:
+        return not find_nonconforming_columns(df.columns)
+
+
+    LabelFrameSchema: DataFrameSchema = pa.DataFrameSchema(
+        columns={},
+        checks=[
+            Check(lambda df: not df.empty, error="Label frame cannot be empty"),
+            Check(_namespace_check, error="Label frame contains non-namespaced columns"),
+            Check(
+                lambda df: bool(filter_namespace_columns(df.columns, ColumnNamespace.TARGET)),
+                error="Label frame must contain at least one target column",
+            ),
+        ],
+        strict=False,
+        coerce=False,
+    )
+
+    FeatureFrameSchema: DataFrameSchema = pa.DataFrameSchema(
+        columns={},
+        checks=[
+            Check(lambda df: not df.empty, error="Feature frame cannot be empty"),
+            Check(_namespace_check, error="Feature frame contains non-namespaced columns"),
+            Check(
+                lambda df: bool(filter_namespace_columns(df.columns, ColumnNamespace.FEATURE)),
+                error="Feature frame must contain at least one namespaced feature column",
+            ),
+        ],
+        strict=False,
+        coerce=False,
+    )
+else:
+    LabelFrameSchema = None  # type: ignore[assignment]
+    FeatureFrameSchema = None  # type: ignore[assignment]
 
 
 def validate_dataframe_schema(
@@ -21,7 +72,9 @@ def validate_dataframe_schema(
     required_columns: Optional[List[str]] = None,
     expected_dtypes: Optional[Dict[str, type]] = None,
     min_rows: int = 0,
-    allow_nulls: bool = True
+    allow_nulls: bool = True,
+    schema: Optional[DataFrameSchema] = None,
+    allowed_unprefixed: Optional[List[str]] = None,
 ) -> Tuple[bool, List[str]]:
     """
     Validate DataFrame schema against expected structure.
@@ -49,7 +102,7 @@ def validate_dataframe_schema(
     # Check minimum rows
     if len(df) < min_rows:
         issues.append(f"DataFrame has {len(df)} rows, minimum required: {min_rows}")
-    
+
     # Check required columns
     if required_columns:
         missing_columns = set(required_columns) - set(df.columns)
@@ -70,6 +123,29 @@ def validate_dataframe_schema(
         if null_columns:
             issues.append(f"Columns with null values: {null_columns}")
     
+    # Check namespace conventions
+    try:
+        validate_dataframe_names(df, allowed_unprefixed=allowed_unprefixed)
+    except ValueError as exc:
+        issues.append(str(exc))
+
+    # Run Pandera schema validation if available
+    schema_to_use: Optional[DataFrameSchema] = schema
+    if pa is not None:
+        if schema_to_use is None:
+            if filter_namespace_columns(df.columns, ColumnNamespace.TARGET):
+                schema_to_use = LabelFrameSchema
+            elif filter_namespace_columns(df.columns, ColumnNamespace.FEATURE):
+                schema_to_use = FeatureFrameSchema
+
+        if schema_to_use is not None:
+            try:
+                schema_to_use.validate(df, lazy=True)
+            except pa.errors.SchemaErrors as exc:  # type: ignore[attr-defined]
+                issues.extend(sorted({msg for msg in exc.failure_cases["failure_case"].astype(str)}))
+            except pa.errors.SchemaError as exc:  # type: ignore[attr-defined]
+                issues.append(str(exc))
+
     # Check for duplicate indices
     if df.index.has_duplicates:
         dup_count = df.index.duplicated().sum()
@@ -93,9 +169,9 @@ def assert_labels_sigma_scaled(labels: pd.DataFrame, tolerance: float = 0.35) ->
         return
 
     numeric_columns = labels.select_dtypes(include=[np.number]).columns
-    target_like_columns = [
-        col for col in numeric_columns if 'target' in col.lower() or 'label' in col.lower()
-    ]
+    target_like_columns = filter_namespace_columns(numeric_columns, ColumnNamespace.TARGET)
+    if not target_like_columns:
+        target_like_columns = filter_namespace_columns(numeric_columns, ColumnNamespace.LABEL)
 
     if not target_like_columns:
         return
@@ -185,7 +261,7 @@ class StandardizedLabelingResult:
         """Get the best target based on weights."""
         if not self.weights or not self.target_columns:
             # No weights available, use first available target
-            available_targets = [col for col in self.labels.columns if col not in ['timestamp', 'symbol']]
+            available_targets = filter_namespace_columns(self.labels.columns, ColumnNamespace.TARGET)
             return available_targets[0] if available_targets else None
 
         # Priority order based on horizon weights (higher weight = higher priority)

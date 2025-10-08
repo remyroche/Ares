@@ -265,10 +265,14 @@ class OptimizedInteractionConfig:
     # Validation configuration
     enable_validation: bool = True
     validation_threshold: float = 0.02
-    
+
     # Logging configuration
     verbose_logging: bool = True
     log_performance: bool = True
+
+    # Market data streaming configuration
+    market_data_batch_size: Optional[int] = None
+    market_data_window_days: Optional[int] = None
     
     def __post_init__(self):
         if self.lookback_config is None:
@@ -294,10 +298,11 @@ class OptimizedInteractionResult:
     memory_usage_mb: float = 0.0
     cpu_usage_percent: float = 0.0
     gpu_usage_percent: float = 0.0
-    
+    performance_metrics: Dict[str, Any] = field(default_factory=dict)
+
     # Stage results
     stage_results: Dict[PipelineStage, Dict[str, Any]] = field(default_factory=dict)
-    
+
     # Artifacts
     artifacts: Dict[str, Any] = field(default_factory=dict)
 

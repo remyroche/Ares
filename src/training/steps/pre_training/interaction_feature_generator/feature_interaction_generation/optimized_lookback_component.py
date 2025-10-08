@@ -19,6 +19,7 @@ import pandas as pd
 
 # Import pipeline components
 from ...components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+from ...components.component_factory import register_component
 
 # Import the optimization system
 from .orchestrator import LookbackOptimizationOrchestrator
@@ -56,6 +57,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+@register_component('optimized_lookback_generation')
 class OptimizedLookbackComponent(BasePreTrainingComponent):
     """
     Optimized Lookback Component with Matrix Operations and Hardware Acceleration.

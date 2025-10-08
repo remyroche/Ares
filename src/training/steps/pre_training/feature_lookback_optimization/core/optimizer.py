@@ -121,11 +121,13 @@ class CoreOptimizer:
     Provides standardized interface for different optimization algorithms.
     """
 
-    def __init__(self, logger=None):
+    def __init__(self, logger=None, rng: Optional['np.random.Generator'] = None):
         """Initialize the core optimizer."""
         self.logger = logger or get_logger('CoreOptimizer')
         self.common_utils = CommonUtilities()
         self.serializer = UniversalSerializer()
+
+        self._rng: 'np.random.Generator' = rng or np.random.default_rng()
         
         tprint("🔧 Initializing Core Optimizer...")
         tprint("   → Performance tracking enabled")
@@ -164,6 +166,10 @@ class CoreOptimizer:
                 self.batch_processor = None
 
         self._cached_multi_horizon_limits: Optional[Tuple[int, int]] = None
+
+    def set_rng(self, rng: Optional['np.random.Generator']) -> None:
+        """Update the RNG used for stochastic routines."""
+        self._rng = rng or np.random.default_rng()
 
     def optimize_single_feature(
         self,
@@ -495,7 +501,7 @@ class CoreOptimizer:
             )
             
             # Initialize with random samples for exploration
-            startup_trials = np.random.randint(min_lookback, max_lookback + 1, n_startup_trials)
+            startup_trials = self._rng.integers(min_lookback, max_lookback + 1, n_startup_trials)
             all_scores = []
             all_lookbacks = []
             
@@ -525,7 +531,7 @@ class CoreOptimizer:
                     # Use simple acquisition function (exploration vs exploitation)
                     if len(all_scores) < 5:
                         # More exploration
-                        lookback = np.random.randint(min_lookback, max_lookback + 1)
+                        lookback = int(self._rng.integers(min_lookback, max_lookback + 1))
                     else:
                         # Exploit best regions
                         best_idx = np.argmax(all_scores)
@@ -533,9 +539,11 @@ class CoreOptimizer:
                         
                         # Add some exploration around best point
                         exploration_range = max(1, (max_lookback - min_lookback) // 10)
-                        lookback = np.random.randint(
-                            max(min_lookback, best_lookback - exploration_range),
-                            min(max_lookback + 1, best_lookback + exploration_range + 1)
+                        lookback = int(
+                            self._rng.integers(
+                                max(min_lookback, best_lookback - exploration_range),
+                                min(max_lookback + 1, best_lookback + exploration_range + 1)
+                            )
                         )
                     
                     feature_values = self._calculate_feature_for_lookback(data, feature_name, lookback)
@@ -628,7 +636,7 @@ class CoreOptimizer:
             # Random sampling
             for trial in range(n_trials):
                 try:
-                    lookback = np.random.randint(min_lookback, max_lookback + 1)
+                    lookback = int(self._rng.integers(min_lookback, max_lookback + 1))
 
                     feature_values = self._calculate_feature_for_lookback(data, feature_name, lookback)
                     correlations = self._calculate_comprehensive_correlations(
@@ -3440,7 +3448,7 @@ class CoreOptimizer:
             mi_samples = []
             for _ in range(n_resamples):
                 # Bootstrap sampling with replacement
-                bootstrap_idx = np.random.choice(min_length, min_length, replace=True)
+                bootstrap_idx = self._rng.choice(min_length, min_length, replace=True)
                 bootstrap_features = feature_aligned[bootstrap_idx]
                 bootstrap_returns = returns_aligned[bootstrap_idx]
                 

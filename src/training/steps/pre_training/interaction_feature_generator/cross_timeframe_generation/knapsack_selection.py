@@ -40,7 +40,7 @@ MODULE_LOGGER = logging.getLogger(__name__)
 
 
 def log_info(logger: logging.Logger, message: str) -> None:
-    formatted = message if isinstance(message, str) else str(message)
+    formatted = str(message)
     logger.info(formatted)
     tprint(f"ℹ️ {formatted}")
 

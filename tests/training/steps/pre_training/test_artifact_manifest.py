@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 from src.training.steps.pre_training.artifacts.manifest import ArtifactManifest, DataLocator
+from src.training.config.data_locator import DataLocator as TrainingDataLocator, DataLocatorConfig
 from src.training.steps.pre_training.final_feature_selection_step import FinalFeatureSelectionStep
 
 
@@ -207,3 +208,22 @@ def test_feature_lookback_manifest_lookup(tmp_path, monkeypatch):
     labeled_df = result["labeled_data"]
     assert isinstance(labeled_df, pd.DataFrame)
     assert not labeled_df.empty
+
+
+def test_final_feature_selection_step_uses_locator_paths(tmp_path: Path) -> None:
+    locator = TrainingDataLocator(
+        DataLocatorConfig(
+            base_generated_dir=str(tmp_path / "custom_generated"),
+        )
+    )
+
+    config = {
+        'data_locator': locator,
+        'output_directory_key': 'market_analysis',
+        'final_features_dir_key': 'final_feature_selection',
+    }
+
+    step = FinalFeatureSelectionStep(config)
+
+    assert Path(step.feature_config.output_directory) == locator.generated_path('market_analysis')
+    assert step.final_features_dir == locator.generated_path('final_feature_selection')

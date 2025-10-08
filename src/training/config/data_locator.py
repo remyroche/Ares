@@ -52,6 +52,14 @@ def _default_generated_paths() -> Dict[str, str]:
     }
 
 
+def _default_config_paths() -> Dict[str, str]:
+    """Return default configuration path mappings relative to the config root."""
+
+    return {
+        "multi_horizon_labeling": "multi_horizon_labeling_config.yaml",
+    }
+
+
 @dataclass
 class DataLocatorConfig:
     """Configuration describing how logical keys map to filesystem paths."""
@@ -60,10 +68,12 @@ class DataLocatorConfig:
     cache: Dict[str, str] = field(default_factory=_default_cache_paths)
     artifacts: Dict[str, str] = field(default_factory=_default_artifact_paths)
     generated: Dict[str, str] = field(default_factory=_default_generated_paths)
+    config: Dict[str, str] = field(default_factory=_default_config_paths)
     base_data_dir: Optional[str] = None
     base_cache_dir: Optional[str] = None
     base_artifacts_dir: Optional[str] = None
     base_generated_dir: Optional[str] = None
+    base_config_dir: Optional[str] = None
 
 
 class DataLocator:
@@ -116,6 +126,12 @@ class DataLocator:
             env_override=None,
             default="generated",
         )
+        self._base_config_dir = self._resolve_base(
+            category="config",
+            explicit=self._config.base_config_dir,
+            env_override=self._env.get("ARES_CONFIG_DIR"),
+            default="src/config",
+        )
 
     @property
     def base_data_dir(self) -> Path:
@@ -132,6 +148,10 @@ class DataLocator:
     @property
     def base_generated_dir(self) -> Path:
         return self._base_generated_dir
+
+    @property
+    def base_config_dir(self) -> Path:
+        return self._base_config_dir
 
     # ------------------------------------------------------------------
     # Public helpers
@@ -180,6 +200,17 @@ class DataLocator:
 
         return self._resolve("generated", key, default, ensure_exists)
 
+    def config_path(
+        self,
+        key: Optional[str] = None,
+        *,
+        default: Optional[str] = None,
+        ensure_exists: bool = False,
+    ) -> Path:
+        """Resolve a configuration path for ``key``."""
+
+        return self._resolve("config", key, default, ensure_exists)
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -223,6 +254,28 @@ class DataLocator:
         if ensure_exists:
             resolved.mkdir(parents=True, exist_ok=True)
         return resolved
+
+    def resolved_paths(self) -> Dict[str, Dict[str, str]]:
+        """Return a mapping of categories to resolved filesystem paths."""
+
+        summary: Dict[str, Dict[str, str]] = {}
+        for category in ("data", "cache", "artifacts", "generated", "config"):
+            resolver = getattr(self, f"{category}_path")
+            base_dir = getattr(self, f"base_{category}_dir")
+            mapping: Dict[str, str] = {}
+            mapping["root"] = str(base_dir)
+
+            configured = getattr(self._config, category, {})
+            for key in sorted(configured.keys()):
+                try:
+                    mapping[key] = str(resolver(key))
+                except Exception:
+                    # Fall back to the configured relative path if resolution fails
+                    mapping[key] = str(configured[key])
+
+            summary[category] = mapping
+
+        return summary
 
     def _coerce_relative(self, value: str, *, base: Optional[Path] = None) -> Path:
         path = Path(value).expanduser()

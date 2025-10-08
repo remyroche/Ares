@@ -182,8 +182,10 @@ class MultiHorizonComponentWrapper(BaseMarketAnalysisComponent):
             if result.get('status') == 'completed':
                 # Save artifacts persistently using the artifact manager
                 try:
-                    saved_files = await self.save_artifacts(result.get('artifacts', {}), result.get('metadata', {}))
-                    print(f"💾 [MULTI_HORIZON] Artifacts saved persistently: {list(saved_files.keys())}")
+                    save_report = await self.save_artifacts(result.get('artifacts', {}), result.get('metadata', {}))
+                    print(
+                        f"💾 [MULTI_HORIZON] Artifacts saved persistently (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}"
+                    )
                 except Exception as e:
                     print(f"⚠️ [MULTI_HORIZON] Failed to save artifacts persistently: {e}")
                 

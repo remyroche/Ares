@@ -435,7 +435,7 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
 
             # Save artifacts persistently using the artifact manager
             try:
-                saved_files = await self.save_artifacts(artifacts, {
+                saved_report = await self.save_artifacts(artifacts, {
                     'symbol': getattr(self.config, 'symbol', 'ETHUSDT'),
                     'timeframe': getattr(self.config, 'timeframe', '4h'),  # Updated to 4h for regime detection
                     'data_points_processed': len(market_data),
@@ -444,7 +444,10 @@ class NASTASClusteringComponent(BaseMarketAnalysisComponent):
                     'execution_successful': True,
                     'uses_shared_utilities': True
                 })
-                tprint(f"💾 Artifacts saved persistently: {list(saved_files.keys())}", "SUCCESS")
+                tprint(
+                    f"💾 Artifacts saved persistently (correlation_id={saved_report.correlation_id}): {list(saved_report.paths.keys())}",
+                    "SUCCESS"
+                )
             except Exception as e:
                 tprint_warning(f"⚠️ Failed to save artifacts persistently: {e}")
 

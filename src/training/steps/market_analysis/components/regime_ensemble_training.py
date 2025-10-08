@@ -293,11 +293,14 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             
             # Save artifacts persistently using the artifact manager
             try:
-                saved_files = await self.save_artifacts(results, {
+                save_report = await self.save_artifacts(results, {
                     'component_type': 'regime_ensemble_training',
                     'execution_time': (datetime.now() - start_time).total_seconds()
                 })
-                tprint(f"💾 [REGIME_ENSEMBLE] Artifacts saved persistently: {list(saved_files.keys())}", color="green")
+                tprint(
+                    f"💾 [REGIME_ENSEMBLE] Artifacts saved persistently (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}",
+                    color="green"
+                )
             except Exception as e:
                 tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to save artifacts persistently: {e}", color="yellow")
             

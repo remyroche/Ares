@@ -5,6 +5,7 @@ import types
 
 import pytest
 
+from src.training.steps.pre_training.components import base_component as base_component_module
 from src.training.steps.pre_training.components.base_component import (
     BasePreTrainingComponent,
     ComponentResult,
@@ -55,7 +56,7 @@ def test_save_artifacts_propagates_errors(monkeypatch):
     def _fail(*args, **kwargs):
         raise RuntimeError("storage backend failure")
 
-    monkeypatch.setattr(component.artifact_manager, "save_artifact", _fail)
+    monkeypatch.setattr(base_component_module, "persist_artifacts", _fail)
 
     with pytest.raises(RuntimeError, match="storage backend failure"):
         asyncio.run(component.save_artifacts({"test_artifact": {"value": 1}}, {}))
@@ -127,7 +128,7 @@ def test_final_feature_selection_fails_when_artifact_save_fails(monkeypatch):
     def _fail(*args, **kwargs):
         raise RuntimeError("artifact persistence failure")
 
-    monkeypatch.setattr(component.artifact_manager, "save_artifact", _fail)
+    monkeypatch.setattr(base_component_module, "persist_artifacts", _fail)
 
     result = asyncio.run(component.execute(data={}, pipeline_state={}))
 
@@ -138,3 +139,4 @@ def test_final_feature_selection_fails_when_artifact_save_fails(monkeypatch):
     assert any("artifact persistence failure" in warning for warning in result.warnings)
     assert error_logs and "artifact persistence failure" in error_logs[-1]
     assert result.metadata.get("artifacts_saved_persistently") is False
+    assert result.metadata.get("artifact_persistence_report") == {}

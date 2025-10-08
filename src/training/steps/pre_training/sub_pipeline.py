@@ -326,6 +326,12 @@ class PreTrainingSubPipeline:
         self.logger = logger.getChild('PreTrainingSubPipeline')
         self.event_logger = PreTrainingEventLogger(configure_pre_training_logging())
         self.results: List[SubPipelineResult] = []
+        self._current_pipeline_state: Dict[str, Any] = {}
+        self._metrics_sink: Optional[MetricsSink] = None
+        self._run_metadata: Dict[str, Any] = {}
+        self._data_locator: Optional[DataLocator] = None
+        self._seeded_rngs: Optional[SeededRNGs] = None
+        self._active_seed: Optional[int] = None
 
     @staticmethod
     def _get_step_spec(step_name: str) -> Optional[StepSpec]:
@@ -350,12 +356,6 @@ class PreTrainingSubPipeline:
             specs = [spec for spec in specs if spec.include_in_default_sequence]
 
         return sorted(specs, key=lambda spec: (spec.order, spec.name))
-        self._current_pipeline_state: Dict[str, Any] = {}
-        self._metrics_sink: Optional[MetricsSink] = None
-        self._run_metadata: Dict[str, Any] = {}
-        self._data_locator: Optional[DataLocator] = None
-        self._seeded_rngs: Optional[SeededRNGs] = None
-        self._active_seed: Optional[int] = None
 
     # ------------------------------------------------------------------
     # Run metadata helpers
@@ -2404,21 +2404,10 @@ class PreTrainingSubPipeline:
         if not self._run_metadata:
             self._run_metadata = self._gather_run_metadata(config)
 
-        if sub_pipeline_name == 'multi_horizon_profit_labeler':
-            return await self._execute_multi_horizon_profit_labeler(config, self._run_metadata)
-        elif sub_pipeline_name == 'feature_lookback_optimization':
-            return await self._execute_feature_lookback_optimization(config, self._run_metadata)
-        elif sub_pipeline_name == 'optimized_lookback_generation':
-            return await self._execute_optimized_lookback_generation(config, self._run_metadata)
-        elif sub_pipeline_name == 'interactive_feature_generation':
-            return await self._execute_interactive_feature_generation(config, self._run_metadata)
-        elif sub_pipeline_name == 'final_feature_selection':
-            return await self._execute_final_feature_selection(config, self._run_metadata)
-        else:
-            self.logger.error(f"❌ Unknown sub-pipeline requested: {sub_pipeline_name}")
-            self.logger.info(f"📋 Available sub-pipelines: {self.get_available_sub_pipelines()}")
         spec = self._get_step_spec(sub_pipeline_name)
         if spec is None:
+            self.logger.error(f"❌ Unknown sub-pipeline requested: {sub_pipeline_name}")
+            self.logger.info(f"📋 Available sub-pipelines: {self.get_available_sub_pipelines()}")
             tprint_error(f"❌ Unknown sub-pipeline requested: {sub_pipeline_name}")
             tprint(f"📋 Available sub-pipelines: {self.get_available_sub_pipelines()}")
             raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
@@ -2436,7 +2425,8 @@ class PreTrainingSubPipeline:
         if executor is None:
             message = (
                 f"Sub-pipeline '{sub_pipeline_name}' is registered but missing executor "
-                f"'{spec.executor_method}'."
+                f"'{spec.executor_method}'. Implement the executor or disable the step in "
+                "STEP_REGISTRY."
             )
             tprint_error(f"❌ {message}")
             self.logger.error(message)
@@ -2447,21 +2437,27 @@ class PreTrainingSubPipeline:
     async def execute_sub_pipeline_with_next(self, sub_pipeline_name: str, config: SubPipelineConfig) -> SubPipelineResult:
         """Execute a specific sub-pipeline and automatically trigger subsequent sub-pipelines."""
         # For pre-training, execute the default enabled steps in sequence
-        available_steps = self.get_available_sub_pipelines()
-        
+        ordered_specs = self._get_ordered_step_specs(sequence_only=True)
+        ordered_names = [spec.name for spec in ordered_specs]
+
         try:
-            start_index = available_steps.index(sub_pipeline_name)
+            start_index = ordered_names.index(sub_pipeline_name)
+            steps_to_run = ordered_specs[start_index:]
         except ValueError:
-            raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
-        
+            # Step not part of the default sequence; execute it directly
+            direct_spec = self._get_step_spec(sub_pipeline_name)
+            if direct_spec is None:
+                raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
+            steps_to_run = [direct_spec]
+
         # Execute all steps starting from the specified one
-        for i in range(start_index, len(available_steps)):
-            step_name = available_steps[i]
+        for spec in steps_to_run:
+            step_name = spec.name
             self.logger.info(f"🚀 Executing pre-training step: {step_name}")
 
             result = await self.execute_sub_pipeline(step_name, config)
             self.results.append(result)
-            
+
             # If this step failed, stop the sequence
             if not result.success:
                 self.logger.error(f"❌ Step {step_name} failed, stopping execution sequence")

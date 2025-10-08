@@ -108,6 +108,7 @@ class DirectionalFeatureSelectionResult:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary format."""
+        tprint("🧾 Converting DirectionalFeatureSelectionResult to dictionary format")
         return {
             'selected_long_features': self.selected_long_features,
             'selected_short_features': self.selected_short_features,
@@ -158,6 +159,7 @@ class DirectionalFeatureSelectionAdapter:
 
     def _set_model_specific_parameters(self):
         """Set model-specific feature selection parameters."""
+        tprint("⚙️ Applying model-specific feature selection parameters")
         model_specific_params = {
             'AdvancedMambaHybrid': {
                 'target_total_features': 100,
@@ -202,6 +204,9 @@ class DirectionalFeatureSelectionAdapter:
             for param, value in params.items():
                 setattr(self.config, param, value)
             self.logger.info(f"✅ Applied {self.config.model_type} specific parameters")
+            tprint(f"✅ Applied model-specific parameters for {self.config.model_type}")
+        else:
+            tprint(f"ℹ️ Using default configuration for model type: {self.config.model_type}")
     
     def select_optimal_directional_features(self,
                                           directional_result: DirectionalOptimizationResult,
@@ -267,9 +272,10 @@ class DirectionalFeatureSelectionAdapter:
         return selection_result
     
     def _quality_filter_features(self,
-                               directional_result: DirectionalOptimizationResult) -> Tuple[Dict[str, DirectionalFeatureResult], 
+                               directional_result: DirectionalOptimizationResult) -> Tuple[Dict[str, DirectionalFeatureResult],
                                                                                          Dict[str, DirectionalFeatureResult]]:
         """Filter features based on quality thresholds."""
+        tprint("🧹 Performing quality filtering on directional features")
         filtered_long = {}
         filtered_short = {}
         
@@ -292,6 +298,7 @@ class DirectionalFeatureSelectionAdapter:
     
     def _passes_quality_check(self, feature_result: DirectionalFeatureResult) -> bool:
         """Check if a feature passes quality thresholds."""
+        tprint(f"🔎 Evaluating quality for feature {feature_result.feature_name} ({feature_result.direction})")
         checks = [
             feature_result.mutual_info_score >= self.config.min_mutual_info_score,
             feature_result.stability_score >= self.config.min_stability_score,
@@ -299,8 +306,13 @@ class DirectionalFeatureSelectionAdapter:
             feature_result.convergence_achieved,
             feature_result.sample_count >= 50  # Minimum sample size
         ]
-        
-        return all(checks)
+
+        passed = all(checks)
+        if passed:
+            tprint(f"✅ Feature {feature_result.feature_name} passed quality checks")
+        else:
+            tprint(f"❌ Feature {feature_result.feature_name} failed quality checks")
+        return passed
     
     def _cross_directional_filter(self,
                                 long_features: Dict[str, DirectionalFeatureResult],
@@ -308,6 +320,7 @@ class DirectionalFeatureSelectionAdapter:
                                 directional_result: DirectionalOptimizationResult) -> Tuple[Dict[str, DirectionalFeatureResult], 
                                                                                           Dict[str, DirectionalFeatureResult]]:
         """Filter features based on cross-directional analysis."""
+        tprint("🔁 Executing cross-directional filtering")
         filtered_long = long_features.copy()
         filtered_short = short_features.copy()
         
@@ -338,8 +351,9 @@ class DirectionalFeatureSelectionAdapter:
     
     def _rank_features_by_performance(self, features: Dict[str, DirectionalFeatureResult]) -> List[Tuple[str, DirectionalFeatureResult, float]]:
         """Rank features by performance score."""
+        tprint(f"🏅 Ranking {len(features)} features by performance")
         ranked_features = []
-        
+
         for feature_name, feature_result in features.items():
             # Calculate composite performance score
             performance_score = (
@@ -350,10 +364,12 @@ class DirectionalFeatureSelectionAdapter:
             )
             
             ranked_features.append((feature_name, feature_result, performance_score))
-        
+
         # Sort by performance score (descending)
         ranked_features.sort(key=lambda x: x[2], reverse=True)
-        
+
+        tprint(f"📊 Completed ranking for {len(ranked_features)} features")
+
         return ranked_features
     
     def _balanced_feature_selection(self,
@@ -361,7 +377,8 @@ class DirectionalFeatureSelectionAdapter:
                                   ranked_short: List[Tuple[str, DirectionalFeatureResult, float]],
                                   selection_result: DirectionalFeatureSelectionResult) -> DirectionalFeatureSelectionResult:
         """Select features with directional balance."""
-        
+        tprint("⚖️ Executing balanced feature selection")
+
         # Calculate target counts per direction
         target_per_direction = self.config.target_total_features // 2
         
@@ -409,7 +426,7 @@ class DirectionalFeatureSelectionAdapter:
         selection_result.selected_long_features = [name for name, _, _ in ranked_long[:max_long]]
         selection_result.selected_short_features = [name for name, _, _ in ranked_short[:max_short]]
         selection_result.total_selected_features = len(selection_result.selected_long_features) + len(selection_result.selected_short_features)
-        
+
         # Store feature details
         for name, result, score in ranked_long[:max_long]:
             selection_result.feature_details[f"{name}_long"] = {
@@ -428,14 +445,20 @@ class DirectionalFeatureSelectionAdapter:
                 'stability_score': result.stability_score,
                 'lookback_period': result.optimal_lookback_period
             }
-        
+
+        tprint(
+            f"📌 Balanced selection selected {len(selection_result.selected_long_features)} long and "
+            f"{len(selection_result.selected_short_features)} short features"
+        )
+
         return selection_result
     
     def _final_validation_and_optimization(self,
                                          selection_result: DirectionalFeatureSelectionResult,
                                          directional_result: DirectionalOptimizationResult) -> DirectionalFeatureSelectionResult:
         """Final validation and optimization of selected features."""
-        
+        tprint("🧪 Performing final validation and optimization")
+
         # Check if we're within target range
         total_features = selection_result.total_selected_features
         
@@ -455,6 +478,7 @@ class DirectionalFeatureSelectionAdapter:
                             selection_result: DirectionalFeatureSelectionResult, 
                             target_count: int) -> DirectionalFeatureSelectionResult:
         """Reduce feature count while maintaining balance."""
+        tprint(f"📉 Reducing feature count to target of {target_count}")
         current_long = len(selection_result.selected_long_features)
         current_short = len(selection_result.selected_short_features)
         current_total = current_long + current_short
@@ -488,8 +512,12 @@ class DirectionalFeatureSelectionAdapter:
             
             selection_result.selected_long_features = [name for name, direction, _ in top_features if direction == 'long']
             selection_result.selected_short_features = [name for name, direction, _ in top_features if direction == 'short']
-        
+
         selection_result.total_selected_features = len(selection_result.selected_long_features) + len(selection_result.selected_short_features)
+        tprint(
+            f"✅ Reduced feature count to {selection_result.total_selected_features} "
+            f"({len(selection_result.selected_long_features)} long / {len(selection_result.selected_short_features)} short)"
+        )
         return selection_result
     
     def _increase_feature_count(self,
@@ -504,6 +532,7 @@ class DirectionalFeatureSelectionAdapter:
     
     def _final_quality_check(self, selection_result: DirectionalFeatureSelectionResult) -> DirectionalFeatureSelectionResult:
         """Final quality check on selected features."""
+        tprint("🔍 Running final quality check on selected features")
         # Add rationale for selection
         selection_result.selection_rationale = {
             'method': 'balanced_performance_selection',
@@ -513,15 +542,17 @@ class DirectionalFeatureSelectionAdapter:
                 'directional_balance maintained' if self.config.maintain_directional_balance else 'performance_optimized'
             ]
         }
-        
+
         selection_result.method_used = 'directional_balanced_selection'
+        tprint("✅ Final quality check completed")
         return selection_result
     
     def _calculate_selection_metrics(self,
                                    selection_result: DirectionalFeatureSelectionResult,
                                    directional_result: DirectionalOptimizationResult) -> DirectionalFeatureSelectionResult:
         """Calculate final selection metrics."""
-        
+        tprint("📊 Calculating selection metrics")
+
         # Directional balance ratio
         long_count = len(selection_result.selected_long_features)
         short_count = len(selection_result.selected_short_features)
@@ -540,22 +571,35 @@ class DirectionalFeatureSelectionAdapter:
         target_met_ratio = selection_result.total_selected_features / self.config.target_total_features
         balance_quality = selection_result.directional_balance_ratio
         performance_quality = selection_result.average_mutual_info_score
-        
+
         selection_result.selection_quality_score = (
             min(target_met_ratio, 1.0) * 0.4 +  # Don't penalize for exceeding target
             balance_quality * 0.3 +
             performance_quality * 0.3
         )
-        
+
+        tprint(
+            f"📈 Metrics calculated - Balance ratio: {selection_result.directional_balance_ratio:.3f}, "
+            f"Average MI: {selection_result.average_mutual_info_score:.4f}, "
+            f"Quality score: {selection_result.selection_quality_score:.4f}"
+        )
+
         return selection_result
-    
+
     def get_selection_summary(self) -> Dict[str, Any]:
         """Get summary of selection process."""
+        tprint("🗒️ Generating selection summary")
         if not self.selection_history:
+            tprint("ℹ️ No selection history available")
             return {"message": "No selections completed yet"}
-        
+
         latest = self.selection_history[-1]
-        
+
+        tprint(
+            f"📋 Latest selection - Total: {latest.total_selected_features}, "
+            f"Long: {len(latest.selected_long_features)}, Short: {len(latest.selected_short_features)}"
+        )
+
         return {
             "total_selections": len(self.selection_history),
             "latest_selection": {
@@ -592,7 +636,9 @@ def select_directional_features(directional_result: DirectionalOptimizationResul
     Returns:
         DirectionalFeatureSelectionResult with selected features
     """
+    tprint("🚀 Initiating directional feature selection via convenience function")
     adapter = DirectionalFeatureSelectionAdapter(config=config)
+    tprint("🔧 Adapter created, starting selection process")
     return adapter.select_optimal_directional_features(
         directional_result=directional_result,
         data=data,

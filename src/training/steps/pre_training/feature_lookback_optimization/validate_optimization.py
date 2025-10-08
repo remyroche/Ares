@@ -8,16 +8,47 @@ import os
 import sys
 from pathlib import Path
 
-# Try to import tprint, fallback to print if not available
+# Try to import tprint utilities, fallback to print if not available
 try:
-    from src.utils.tprint import tprint, tprint_success, tprint_error
+    from src.utils.tprint import (
+        LogLevel,
+        tprint,
+        tprint_error,
+        tprint_logged,
+        tprint_success,
+    )
     TPRINT_AVAILABLE = True
-except ImportError:
+except ImportError:  # pragma: no cover - fallback for environments without full utils package
     TPRINT_AVAILABLE = False
-    def tprint(*args, **kwargs): print(*args, **kwargs)
-    def tprint_success(*args, **kwargs): print("✅", *args, **kwargs)
-    def tprint_error(*args, **kwargs): print("❌", *args, **kwargs)
 
+    class LogLevel:  # type: ignore[too-many-ancestors]
+        """Fallback log level container when tprint utilities are unavailable."""
+
+        INFO = "INFO"
+        SUCCESS = "SUCCESS"
+        ERROR = "ERROR"
+
+    def tprint_logged(*_args, **_kwargs):  # type: ignore[unused-argument]
+        """Fallback decorator that leaves the wrapped function unchanged."""
+
+        def decorator(func):
+            return func
+
+        return decorator
+
+    @tprint_logged(LogLevel.INFO)
+    def tprint(*args, **kwargs):  # type: ignore[unused-argument]
+        print(*args, **kwargs)
+
+    @tprint_logged(LogLevel.SUCCESS)
+    def tprint_success(*args, **kwargs):  # type: ignore[unused-argument]
+        print("✅", *args, **kwargs)
+
+    @tprint_logged(LogLevel.ERROR)
+    def tprint_error(*args, **kwargs):  # type: ignore[unused-argument]
+        print("❌", *args, **kwargs)
+
+@tprint_logged(LogLevel.INFO, include_args=False, include_result=True)
 def validate_file_structure():
     """Validate that all required files are present."""
     tprint("🔍 Validating file structure...")
@@ -80,6 +111,7 @@ def validate_optimized_implementation():
     
     return True
 
+@tprint_logged(LogLevel.INFO, include_args=False, include_result=True)
 def validate_configuration():
     """Validate the configuration file."""
     tprint("\n🔍 Validating configuration...")
@@ -119,6 +151,7 @@ def validate_configuration():
     
     return True
 
+@tprint_logged(LogLevel.INFO, include_args=False, include_result=True)
 def validate_test_suite():
     """Validate the test suite structure."""
     tprint("\n🔍 Validating test suite...")
@@ -156,6 +189,7 @@ def validate_test_suite():
     
     return True
 
+@tprint_logged(LogLevel.INFO, include_args=False, include_result=True)
 def validate_documentation():
     """Validate the documentation."""
     tprint("\n🔍 Validating documentation...")
@@ -195,6 +229,7 @@ def validate_documentation():
     
     return True
 
+@tprint_logged(LogLevel.INFO, include_args=False, include_result=True)
 def main():
     """Main validation function."""
     tprint("🚀 Starting validation of optimized feature lookback optimization implementation")

@@ -6,6 +6,7 @@ import types
 import pytest
 
 from src.training.steps.pre_training.components import base_component as base_component_module
+from src.training.steps.pre_training.components import component_factory
 from src.training.steps.pre_training.components.base_component import (
     BasePreTrainingComponent,
     ComponentResult,
@@ -98,6 +99,7 @@ def test_final_feature_selection_fails_when_artifact_save_fails(monkeypatch):
 
     # Ensure a clean import of the component module
     sys.modules.pop("src.training.steps.pre_training.components.final_feature_selection", None)
+    component_factory._registry.unregister("final_feature_selection")
     ffs_module = importlib.import_module("src.training.steps.pre_training.components.final_feature_selection")
 
     # Patch heavy dependencies with lightweight stubs

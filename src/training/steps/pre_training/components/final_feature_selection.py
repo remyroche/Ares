@@ -8,7 +8,7 @@ in the market analysis pipeline.
 import dataclasses
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Mapping
 
 import pandas as pd
 
@@ -34,6 +34,7 @@ from ...market_analysis.logging_standards import (
 from ...market_analysis.optimized_process_engines import OptimizedFeatureSelectionEngine
 from ..validation.schemas import (
     SchemaValidationException,
+    enforce_feature_temporal_alignment,
     schema_metadata,
     validate_engineered_features,
 )
@@ -223,10 +224,30 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             'derived': {},
         }
 
+        target_shifts: Dict[str, int] = {}
+
+        def _update_target_shifts(source: Any) -> None:
+            if isinstance(source, Mapping):
+                raw_shifts = source.get('target_shifts')
+                if isinstance(raw_shifts, Mapping):
+                    for key, value in raw_shifts.items():
+                        try:
+                            target_shifts[str(key)] = int(value)
+                        except (TypeError, ValueError):
+                            continue
+
+        _update_target_shifts(pipeline_state)
+
         def _record_validated_frame(label: str, frame: pd.DataFrame) -> pd.DataFrame:
             validated = validate_engineered_features(
                 frame,
                 context=f"final_feature_selection.{label}"
+            )
+            enforce_feature_temporal_alignment(
+                validated,
+                context=f"final_feature_selection.{label}",
+                target_shifts=target_shifts,
+                feature_metadata=pipeline_state.get('feature_metadata') if isinstance(pipeline_state, Mapping) else None,
             )
             validation_metadata['inputs'][label] = schema_metadata('engineered_features').get('engineered_features')
             return validated
@@ -235,6 +256,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             if isinstance(data, pd.DataFrame) and not data.empty:
                 data = _record_validated_frame('input_data', data)
             elif isinstance(data, dict):
+                _update_target_shifts(data)
                 for key in ('features', 'feature_matrix', 'data'):
                     candidate = data.get(key)
                     if isinstance(candidate, pd.DataFrame) and not candidate.empty:

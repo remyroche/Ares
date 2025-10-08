@@ -25,10 +25,47 @@ except ModuleNotFoundError:  # pragma: no cover - pydantic should be available i
 
 from .schemas import (
     SchemaValidationException,
+    enforce_feature_temporal_alignment,
     validate_engineered_features,
     validate_labeled_dataset,
     validate_raw_ohlcv,
 )
+
+
+def _normalize_shift_mapping(raw: Any) -> Dict[str, int]:
+    if not isinstance(raw, Mapping):
+        return {}
+    normalized: Dict[str, int] = {}
+    for key, value in raw.items():
+        try:
+            normalized[str(key)] = int(value)
+        except (TypeError, ValueError):
+            continue
+    return normalized
+
+
+def _extract_target_shifts(payload: Mapping[str, Any]) -> Dict[str, int]:
+    shifts: Dict[str, int] = {}
+    if not isinstance(payload, Mapping):
+        return shifts
+
+    shifts.update(_normalize_shift_mapping(payload.get("target_shifts")))
+
+    metadata = payload.get("metadata")
+    if isinstance(metadata, Mapping):
+        shifts.update(_normalize_shift_mapping(metadata.get("target_shifts")))
+
+    target_params = payload.get("target_parameters")
+    if isinstance(target_params, Mapping):
+        for name, params in target_params.items():
+            if isinstance(params, Mapping):
+                if "target_shift" in params:
+                    try:
+                        shifts[str(name)] = int(params["target_shift"])
+                    except (TypeError, ValueError):
+                        continue
+
+    return shifts
 
 
 class DataContractValidationError(RuntimeError):
@@ -262,6 +299,8 @@ def validate_multi_horizon_labeling_result(
 ) -> Dict[str, Any]:
     """Validate the multi-horizon labeling artifact structure and contents."""
 
+    target_shifts = _extract_target_shifts(payload)
+
     try:
         model = LabeledDataSchema.model_validate({**payload, "context": context})
     except ValidationError as err:
@@ -282,6 +321,13 @@ def validate_multi_horizon_labeling_result(
             validated_payload["confidence_scores"] = validate_engineered_features(
                 model.confidence_scores,
                 context=f"{context}.confidence_scores",
+            )
+            enforce_feature_temporal_alignment(
+                validated_payload["confidence_scores"],
+                context=f"{context}.confidence_scores",
+                target_shifts=target_shifts,
+                feature_metadata=payload.get("confidence_scores_metadata")
+                or payload.get("feature_metadata"),
             )
         if model.market_data is not None:
             validated_payload["market_data"] = validate_raw_ohlcv(
@@ -319,6 +365,11 @@ def validate_feature_artifact(
 ) -> Dict[str, Any]:
     """Validate the interactive feature generation artifact."""
 
+    target_shifts = _extract_target_shifts(payload)
+    feature_metadata = payload.get("feature_metadata")
+    interaction_metadata = payload.get("interaction_feature_metadata")
+    cross_timeframe_metadata = payload.get("cross_timeframe_feature_metadata")
+
     try:
         model = FeaturesSchema.model_validate({**payload, "context": context})
     except ValidationError as err:
@@ -331,15 +382,33 @@ def validate_feature_artifact(
             model.features,
             context=f"{context}.features",
         )
+        enforce_feature_temporal_alignment(
+            validated_payload["features"],
+            context=f"{context}.features",
+            target_shifts=target_shifts,
+            feature_metadata=feature_metadata,
+        )
         if model.interaction_features is not None:
             validated_payload["interaction_features"] = validate_engineered_features(
                 model.interaction_features,
                 context=f"{context}.interaction_features",
             )
+            enforce_feature_temporal_alignment(
+                validated_payload["interaction_features"],
+                context=f"{context}.interaction_features",
+                target_shifts=target_shifts,
+                feature_metadata=interaction_metadata,
+            )
         if model.cross_timeframe_features is not None:
             validated_payload["cross_timeframe_features"] = validate_engineered_features(
                 model.cross_timeframe_features,
                 context=f"{context}.cross_timeframe_features",
+            )
+            enforce_feature_temporal_alignment(
+                validated_payload["cross_timeframe_features"],
+                context=f"{context}.cross_timeframe_features",
+                target_shifts=target_shifts,
+                feature_metadata=cross_timeframe_metadata,
             )
     except SchemaValidationException as schema_error:
         raise _wrap_pandera_error(context, schema_error) from schema_error

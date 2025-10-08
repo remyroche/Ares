@@ -226,29 +226,29 @@ class TacticianPreMLOrchestrator:
     """
 
     COMPONENT_FACTORY_KEYS: Dict[str, str] = {
-        'feature_optimization': 'feature_lookback_optimization',
-        'pid_generation': 'pid_based_feature_generation',
-        'horizon_labeling': 'multi_horizon_profit_labeler',
-        'feature_selection': 'final_feature_selection',
+        'feature_optimization': 'tactician_feature_optimization',
+        'pid_generation': 'tactician_pid_generation',
+        'horizon_labeling': 'tactician_horizon_labeling',
+        'feature_selection': 'tactician_feature_selection',
     }
 
     COMPONENT_HINTS: Dict[str, str] = {
         'feature_optimization': (
-            "Ensure 'feature_lookback_optimization' is registered with the pre-training "
-            "ComponentFactory (check config/pre_training_component_modules.txt or install "
-            "the optional feature optimization extras)."
+            "Ensure the 'tactician_feature_optimization' alias is registered in the ComponentFactory. "
+            "It maps to the 'feature_lookback_optimization' implementation—verify optional extras or "
+            "config/pre_training_component_modules.txt if missing."
         ),
         'pid_generation': (
-            "Ensure 'pid_based_feature_generation' is registered with the ComponentFactory or "
-            "disable PID generation in the orchestrator configuration."
+            "Ensure the 'tactician_pid_generation' alias is available in the ComponentFactory. It maps to "
+            "'pid_based_feature_generation'; install the PID extras or disable PID generation if unavailable."
         ),
         'horizon_labeling': (
-            "Ensure 'multi_horizon_profit_labeler' is registered with the ComponentFactory or "
-            "disable horizon labeling in the orchestrator configuration."
+            "Ensure the 'tactician_horizon_labeling' alias is registered (maps to 'multi_horizon_profit_labeler'). "
+            "Install the labeling extras or disable horizon labeling when missing."
         ),
         'feature_selection': (
-            "Ensure 'final_feature_selection' is registered with the ComponentFactory or disable "
-            "final feature selection in the orchestrator configuration."
+            "Ensure the 'tactician_feature_selection' alias resolves in the ComponentFactory (backed by "
+            "'final_feature_selection') or disable final feature selection in the configuration."
         ),
     }
 

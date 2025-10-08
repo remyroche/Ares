@@ -209,27 +209,15 @@ class BasePreTrainingComponent(ABC):
             logger=self.logger,
         )
 
-        tprint_success(
+        self._log_success(
             f"✅ Artifacts persisted for {component_name}",
-            {'correlation_id': report.correlation_id, 'artifact_count': len(artifacts)}
+            correlation_id=report.correlation_id,
+            artifact_count=len(artifacts),
+            event='component_artifacts_persisted',
+            duration=report.duration,
         )
 
-            # Save artifact
-            file_path = self.artifact_manager.save_artifact(
-                data=payload,
-                base_name=artifact_name,
-                extension=".json"
-            )
-
-            saved_files[artifact_name] = file_path
-            self.logger.info(f"💾 Saved artifact {artifact_name} to {file_path}")
-            self._log_success(
-                f"✅ Artifact saved: {artifact_name}",
-                path=file_path,
-                event='component_artifact_saved',
-            )
-
-        return saved_files
+        return report
 
     def validate_config(self) -> bool:
         """Validate the component configuration."""

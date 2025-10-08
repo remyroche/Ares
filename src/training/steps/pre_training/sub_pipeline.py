@@ -14,7 +14,7 @@ Each step can receive a timeframe parameter, with default 15m.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple, TypedDict
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, TypedDict
 from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass, field
@@ -102,6 +102,7 @@ except ImportError:  # pragma: no cover
 
 
 from src.utils.logger import system_logger
+from src.utils.tprint import tprint, tprint_error, tprint_warning
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.version_manager import get_version_manager
 from src.utils.random_seeding import SeededRNGs, seed_rngs
@@ -114,7 +115,7 @@ from .logging_utils import (
 # Import component system
 from .components import ComponentFactory, ComponentConfig
 from .metrics_sink import MetricsSink, MetricsSinkConfig
-from src.training.config.data_locator import DataLocator, DataLocatorConfig
+from src.training.config.data_locator import DataLocator, DataLocatorConfig, LocatorPaths
 from src.training.steps.pre_training.validation.data_contracts import (
     DataContractValidationError,
     validate_feature_artifact,
@@ -123,6 +124,133 @@ from src.training.steps.pre_training.validation.data_contracts import (
 )
 
 logger = system_logger.getChild('PreTrainingSubPipeline')
+
+
+class UnexpectedArtifactKeyError(RuntimeError):
+    """Raised when a component emits artifacts outside the documented schema."""
+
+    def __init__(self, step_name: str, unexpected_keys: Iterable[str]):
+        keys = sorted(str(key) for key in unexpected_keys)
+        message = (
+            f"Step '{step_name}' produced unexpected artifact keys: {', '.join(keys)}"
+        )
+        super().__init__(message)
+        self.step_name = step_name
+        self.keys: Tuple[str, ...] = tuple(keys)
+
+
+class PipelineState(dict):
+    """Mutable mapping describing the canonical pre-training pipeline state.
+
+    The state exposes a dictionary-like interface for backwards compatibility
+    while constraining which artifact keys each component may contribute. The
+    keys are grouped by component:
+
+    * ``multi_horizon_profit_labeler``
+        - ``multi_horizon_labeling_result``: Validated labeling payload.
+        - ``labeling_report``: Structured diagnostic report.
+        - ``standardized_output``: Normalised label view for downstream steps.
+        - ``validated_schemas``: Schema metadata applied during validation.
+    * ``feature_lookback_optimization``
+        - ``feature_lookback_optimization_result``: Optimisation payload.
+        - ``feature_lookback_optimization_summary``: Human readable summary.
+        - ``validated_schemas``: Schema metadata for optimisation outputs.
+    * ``interactive_feature_generation``
+        - ``interactive_feature_generation_result``: Feature catalogue.
+        - ``stage_results``: Intermediate stage diagnostics.
+        - ``performance_metrics``: Recorded performance metrics.
+        - ``artifacts``: Auxiliary artifact bundle emitted by the orchestrator.
+        - ``validated_schemas``: Schema metadata for generated features.
+    * ``optimized_lookback_generation``
+        - ``optimized_lookback_results``: Lookback optimisation payload.
+        - ``feature_interaction_matrix``: Numpy matrix of generated features.
+        - ``feature_names``: Names for ``feature_interaction_matrix`` columns.
+        - ``optimization_metrics``: Performance metrics for the optimisation.
+        - ``hardware_utilization_report``: Hardware utilisation diagnostics.
+        - ``feature_generation_metadata``: Summary metadata for generation.
+    * ``final_feature_selection``
+        - ``final_feature_selection_result``: Final selection manifest.
+        - ``validated_schemas``: Schema metadata for selection outputs.
+
+    Additional non-artifact keys (e.g. ``random_seed`` or
+    ``regime_data_splitting_result``) are written directly by the pipeline and
+    remain unconstrained. Any unexpected artifact keys cause an
+    :class:`UnexpectedArtifactKeyError` to be raised so upstream bugs are
+    surfaced early.
+    """
+
+    #: Allowed artifact keys per pipeline step.
+    _STEP_ARTIFACT_KEYS: Dict[str, frozenset[str]] = {
+        'multi_horizon_profit_labeler': frozenset({
+            'multi_horizon_labeling_result',
+            'labeling_report',
+            'standardized_output',
+            'validated_schemas',
+        }),
+        'feature_lookback_optimization': frozenset({
+            'feature_lookback_optimization_result',
+            'feature_lookback_optimization_summary',
+            'validated_schemas',
+        }),
+        'interactive_feature_generation': frozenset({
+            'interactive_feature_generation_result',
+            'stage_results',
+            'performance_metrics',
+            'artifacts',
+            'validated_schemas',
+        }),
+        'optimized_lookback_generation': frozenset({
+            'optimized_lookback_results',
+            'feature_interaction_matrix',
+            'feature_names',
+            'optimization_metrics',
+            'hardware_utilization_report',
+            'feature_generation_metadata',
+            'validated_schemas',
+        }),
+        'final_feature_selection': frozenset({
+            'final_feature_selection_result',
+            'validated_schemas',
+        }),
+    }
+
+    def merge_step_artifacts(
+        self,
+        step_name: str,
+        artifacts: Mapping[str, Any],
+    ) -> Dict[str, Any]:
+        """Merge validated step artifacts into the pipeline state.
+
+        Args:
+            step_name: Registry name of the step emitting ``artifacts``.
+            artifacts: Mapping of artifact keys to payloads.
+
+        Returns:
+            Subset of ``artifacts`` containing only schema-approved keys.
+
+        Raises:
+            UnexpectedArtifactKeyError: If ``artifacts`` contains unexpected
+                keys for ``step_name``.
+        """
+
+        if not artifacts:
+            return {}
+
+        allowed_keys = self._STEP_ARTIFACT_KEYS.get(step_name)
+        if allowed_keys is None:
+            raise UnexpectedArtifactKeyError(step_name, artifacts.keys())
+
+        unexpected = set(artifacts) - allowed_keys
+        if unexpected:
+            raise UnexpectedArtifactKeyError(step_name, unexpected)
+
+        merged: Dict[str, Any] = {
+            key: artifacts[key]
+            for key in allowed_keys
+            if key in artifacts
+        }
+        super().update(merged)
+        return merged
 
 class ExecutionMode(Enum):
     """Execution modes for sub-pipelines."""
@@ -210,27 +338,27 @@ class SubPipelineConfig:
         return self._ensure_paths()
 
     @property
-    def data(self) -> _LocatorCategoryView:
+    def data(self) -> Any:
         return self.paths.data
 
     @property
-    def cache(self) -> _LocatorCategoryView:
+    def cache(self) -> Any:
         return self.paths.cache
 
     @property
-    def artifacts(self) -> _LocatorCategoryView:
+    def artifacts(self) -> Any:
         return self.paths.artifacts
 
     @property
-    def generated(self) -> _LocatorCategoryView:
+    def generated(self) -> Any:
         return self.paths.generated
 
     @property
-    def config_paths(self) -> _LocatorCategoryView:
+    def config_paths(self) -> Any:
         return self.paths.config
 
     @property
-    def config_files(self) -> _LocatorCategoryView:
+    def config_files(self) -> Any:
         """Alias for backwards compatibility with callers expecting ``config``."""
 
         return self.paths.config
@@ -240,7 +368,7 @@ class SubPipelineConfig:
         return self.paths.config.root
 
     @property
-    def config(self) -> _LocatorCategoryView:
+    def config(self) -> Any:
         """Expose configuration files via ``config`` attribute for convenience."""
 
         return self.paths.config
@@ -326,6 +454,12 @@ class PreTrainingSubPipeline:
         self.logger = logger.getChild('PreTrainingSubPipeline')
         self.event_logger = PreTrainingEventLogger(configure_pre_training_logging())
         self.results: List[SubPipelineResult] = []
+        self._current_pipeline_state = PipelineState()
+        self._metrics_sink: Optional[MetricsSink] = None
+        self._run_metadata: Dict[str, Any] = {}
+        self._data_locator: Optional[DataLocator] = None
+        self._seeded_rngs: Optional[SeededRNGs] = None
+        self._active_seed: Optional[int] = None
 
     @staticmethod
     def _get_step_spec(step_name: str) -> Optional[StepSpec]:
@@ -350,12 +484,6 @@ class PreTrainingSubPipeline:
             specs = [spec for spec in specs if spec.include_in_default_sequence]
 
         return sorted(specs, key=lambda spec: (spec.order, spec.name))
-        self._current_pipeline_state: Dict[str, Any] = {}
-        self._metrics_sink: Optional[MetricsSink] = None
-        self._run_metadata: Dict[str, Any] = {}
-        self._data_locator: Optional[DataLocator] = None
-        self._seeded_rngs: Optional[SeededRNGs] = None
-        self._active_seed: Optional[int] = None
 
     # ------------------------------------------------------------------
     # Run metadata helpers
@@ -558,6 +686,9 @@ class PreTrainingSubPipeline:
             'config_hash': _config_hash(),
             'data_snapshot_id': _data_snapshot_id(),
             'rng_seed': _rng_seed(),
+            'symbol': config.symbol,
+            'timeframe': config.timeframe,
+            'mode': config.mode.value,
             'host_name': socket.gethostname(),
             'start_time_utc': start_timestamp,
             'end_time_utc': None,
@@ -579,7 +710,16 @@ class PreTrainingSubPipeline:
         summary_json = json.dumps(summary, indent=2, sort_keys=True)
 
         self.logger.info('📁 Effective filesystem configuration:\n%s', summary_json)
-        tprint(f"📁 Effective filesystem configuration:\n{summary_json}")
+        self.event_logger.info(
+            "Effective filesystem configuration resolved",
+            context={
+                'run_id': self._run_metadata.get('run_id'),
+                'step': 'pipeline.configuration',
+                'symbol': config.symbol,
+                'timeframe': config.timeframe,
+                'configuration': summary,
+            },
+        )
 
     def _resolve_data_locator(self, config: SubPipelineConfig) -> DataLocator:
         """Return a data locator instance for the current run."""
@@ -705,13 +845,43 @@ class PreTrainingSubPipeline:
                 )
 
             # Validate artifacts before updating state
-            if 'multi_horizon_labeling_result' in mh_result.artifacts:
-                labeled_data = mh_result.artifacts.get('multi_horizon_labeling_result', {}).get('labeled_data', pd.DataFrame())
+            artifacts = mh_result.artifacts or {}
+
+            if 'multi_horizon_labeling_result' in artifacts:
+                labeled_data = artifacts.get('multi_horizon_labeling_result', {}).get('labeled_data', pd.DataFrame())
                 if isinstance(labeled_data, pd.DataFrame) and not labeled_data.empty:
                     self.logger.info(f"✅ Multi-horizon profit labeling completed for {config.symbol}")
                     self.logger.info(f"   → Labels generated: {len(labeled_data.columns)} columns")
-                    results['results']['multi_horizon_profit_labeler'] = mh_result.artifacts
-                    self._current_pipeline_state.update(mh_result.artifacts)
+                    try:
+                        merged_artifacts = self._current_pipeline_state.merge_step_artifacts(
+                            'multi_horizon_profit_labeler',
+                            artifacts,
+                        )
+                    except UnexpectedArtifactKeyError as merge_error:
+                        failure = self._create_failure(
+                            'multi_horizon_profit_labeler',
+                            f"{self._default_step_error_code('multi_horizon_profit_labeler')}_SCHEMA",
+                            str(merge_error),
+                            context={'unexpected_keys': merge_error.keys},
+                        )
+                        self.logger.error(f"❌ {merge_error}")
+                        self.event_logger.step_end(
+                            mh_context,
+                            duration_ms=mh_duration_ms,
+                            success=False,
+                            error=str(merge_error),
+                            extra={'error_code': failure.error_code},
+                        )
+                        return self._apply_failure_to_results(
+                            results,
+                            failure,
+                            start_time,
+                            metrics_sink,
+                            step_metric_records,
+                            config,
+                        )
+
+                    results['results']['multi_horizon_profit_labeler'] = merged_artifacts
                 else:
                     message = "Multi-horizon labeling artifact validation failed"
                     failure = self._create_failure(
@@ -812,17 +982,75 @@ class PreTrainingSubPipeline:
                     config,
                 )
 
+            flo_artifacts = flo_result.artifacts or {}
+
             # Validate artifacts before updating state
-            if 'feature_lookback_optimization_result' in flo_result.artifacts:
-                optimized_features = flo_result.artifacts.get('feature_lookback_optimization_result', {}).get('optimized_features', {})
+            if 'feature_lookback_optimization_result' in flo_artifacts:
+                optimized_features = flo_artifacts.get('feature_lookback_optimization_result', {}).get('optimized_features', {})
                 self.logger.info(f"✅ Feature lookback optimization completed for {config.symbol}")
                 self.logger.info(f"   → Features optimized: {len(optimized_features)}")
-                results['results']['feature_lookback_optimization'] = flo_result.artifacts
-                self._current_pipeline_state.update(flo_result.artifacts)
-            else:
+                try:
+                    merged_flo_artifacts = self._current_pipeline_state.merge_step_artifacts(
+                        'feature_lookback_optimization',
+                        flo_artifacts,
+                    )
+                except UnexpectedArtifactKeyError as merge_error:
+                    failure = self._create_failure(
+                        'feature_lookback_optimization',
+                        f"{self._default_step_error_code('feature_lookback_optimization')}_SCHEMA",
+                        str(merge_error),
+                        context={'unexpected_keys': merge_error.keys},
+                    )
+                    self.logger.error(f"❌ {merge_error}")
+                    self.event_logger.step_end(
+                        flo_context,
+                        duration_ms=flo_duration_ms,
+                        success=False,
+                        error=str(merge_error),
+                        extra={'error_code': failure.error_code},
+                    )
+                    return self._apply_failure_to_results(
+                        results,
+                        failure,
+                        start_time,
+                        metrics_sink,
+                        step_metric_records,
+                        config,
+                    )
+
+                results['results']['feature_lookback_optimization'] = merged_flo_artifacts
+            elif flo_artifacts:
                 self.logger.warning("⚠️ Feature lookback optimization completed but artifact structure unexpected")
-                results['results']['feature_lookback_optimization'] = flo_result.artifacts
-                self._current_pipeline_state.update(flo_result.artifacts)
+                try:
+                    merged_flo_artifacts = self._current_pipeline_state.merge_step_artifacts(
+                        'feature_lookback_optimization',
+                        flo_artifacts,
+                    )
+                except UnexpectedArtifactKeyError as merge_error:
+                    failure = self._create_failure(
+                        'feature_lookback_optimization',
+                        f"{self._default_step_error_code('feature_lookback_optimization')}_SCHEMA",
+                        str(merge_error),
+                        context={'unexpected_keys': merge_error.keys},
+                    )
+                    self.logger.error(f"❌ {merge_error}")
+                    self.event_logger.step_end(
+                        flo_context,
+                        duration_ms=flo_duration_ms,
+                        success=False,
+                        error=str(merge_error),
+                        extra={'error_code': failure.error_code},
+                    )
+                    return self._apply_failure_to_results(
+                        results,
+                        failure,
+                        start_time,
+                        metrics_sink,
+                        step_metric_records,
+                        config,
+                    )
+
+                results['results']['feature_lookback_optimization'] = merged_flo_artifacts
 
             self.event_logger.step_end(
                 flo_context,
@@ -875,17 +1103,75 @@ class PreTrainingSubPipeline:
                     config,
                 )
 
+            interactive_artifacts = interactive_result.artifacts or {}
+
             # Validate artifacts before updating state
-            if 'interactive_feature_generation_result' in interactive_result.artifacts:
-                features = interactive_result.artifacts.get('interactive_feature_generation_result', {}).get('features', {})
+            if 'interactive_feature_generation_result' in interactive_artifacts:
+                features = interactive_artifacts.get('interactive_feature_generation_result', {}).get('features', {})
                 self.logger.info(f"✅ Interactive feature generation completed for {config.symbol}")
                 self.logger.info(f"   → Features generated: {len(features)}")
-                results['results']['interactive_feature_generation'] = interactive_result.artifacts
-                self._current_pipeline_state.update(interactive_result.artifacts)
-            else:
+                try:
+                    merged_interactive_artifacts = self._current_pipeline_state.merge_step_artifacts(
+                        'interactive_feature_generation',
+                        interactive_artifacts,
+                    )
+                except UnexpectedArtifactKeyError as merge_error:
+                    failure = self._create_failure(
+                        'interactive_feature_generation',
+                        f"{self._default_step_error_code('interactive_feature_generation')}_SCHEMA",
+                        str(merge_error),
+                        context={'unexpected_keys': merge_error.keys},
+                    )
+                    self.logger.error(f"❌ {merge_error}")
+                    self.event_logger.step_end(
+                        interactive_context,
+                        duration_ms=interactive_duration_ms,
+                        success=False,
+                        error=str(merge_error),
+                        extra={'error_code': failure.error_code},
+                    )
+                    return self._apply_failure_to_results(
+                        results,
+                        failure,
+                        start_time,
+                        metrics_sink,
+                        step_metric_records,
+                        config,
+                    )
+
+                results['results']['interactive_feature_generation'] = merged_interactive_artifacts
+            elif interactive_artifacts:
                 self.logger.warning("⚠️ Interactive feature generation completed but artifact structure unexpected")
-                results['results']['interactive_feature_generation'] = interactive_result.artifacts
-                self._current_pipeline_state.update(interactive_result.artifacts)
+                try:
+                    merged_interactive_artifacts = self._current_pipeline_state.merge_step_artifacts(
+                        'interactive_feature_generation',
+                        interactive_artifacts,
+                    )
+                except UnexpectedArtifactKeyError as merge_error:
+                    failure = self._create_failure(
+                        'interactive_feature_generation',
+                        f"{self._default_step_error_code('interactive_feature_generation')}_SCHEMA",
+                        str(merge_error),
+                        context={'unexpected_keys': merge_error.keys},
+                    )
+                    self.logger.error(f"❌ {merge_error}")
+                    self.event_logger.step_end(
+                        interactive_context,
+                        duration_ms=interactive_duration_ms,
+                        success=False,
+                        error=str(merge_error),
+                        extra={'error_code': failure.error_code},
+                    )
+                    return self._apply_failure_to_results(
+                        results,
+                        failure,
+                        start_time,
+                        metrics_sink,
+                        step_metric_records,
+                        config,
+                    )
+
+                results['results']['interactive_feature_generation'] = merged_interactive_artifacts
 
             self.event_logger.step_end(
                 interactive_context,
@@ -938,17 +1224,75 @@ class PreTrainingSubPipeline:
                     config,
                 )
 
+            ffs_artifacts = ffs_result.artifacts or {}
+
             # Validate artifacts before updating state
-            if 'final_feature_selection_result' in ffs_result.artifacts:
-                selected_features = ffs_result.artifacts.get('final_feature_selection_result', {}).get('selected_features', [])
+            if 'final_feature_selection_result' in ffs_artifacts:
+                selected_features = ffs_artifacts.get('final_feature_selection_result', {}).get('selected_features', [])
                 self.logger.info(f"✅ Final feature selection completed for {config.symbol}")
                 self.logger.info(f"   → Final features: {len(selected_features)}")
-                results['results']['final_feature_selection'] = ffs_result.artifacts
-                self._current_pipeline_state.update(ffs_result.artifacts)
-            else:
+                try:
+                    merged_ffs_artifacts = self._current_pipeline_state.merge_step_artifacts(
+                        'final_feature_selection',
+                        ffs_artifacts,
+                    )
+                except UnexpectedArtifactKeyError as merge_error:
+                    failure = self._create_failure(
+                        'final_feature_selection',
+                        f"{self._default_step_error_code('final_feature_selection')}_SCHEMA",
+                        str(merge_error),
+                        context={'unexpected_keys': merge_error.keys},
+                    )
+                    self.logger.error(f"❌ {merge_error}")
+                    self.event_logger.step_end(
+                        ffs_context,
+                        duration_ms=ffs_duration_ms,
+                        success=False,
+                        error=str(merge_error),
+                        extra={'error_code': failure.error_code},
+                    )
+                    return self._apply_failure_to_results(
+                        results,
+                        failure,
+                        start_time,
+                        metrics_sink,
+                        step_metric_records,
+                        config,
+                    )
+
+                results['results']['final_feature_selection'] = merged_ffs_artifacts
+            elif ffs_artifacts:
                 self.logger.warning("⚠️ Final feature selection completed but artifact structure unexpected")
-                results['results']['final_feature_selection'] = ffs_result.artifacts
-                self._current_pipeline_state.update(ffs_result.artifacts)
+                try:
+                    merged_ffs_artifacts = self._current_pipeline_state.merge_step_artifacts(
+                        'final_feature_selection',
+                        ffs_artifacts,
+                    )
+                except UnexpectedArtifactKeyError as merge_error:
+                    failure = self._create_failure(
+                        'final_feature_selection',
+                        f"{self._default_step_error_code('final_feature_selection')}_SCHEMA",
+                        str(merge_error),
+                        context={'unexpected_keys': merge_error.keys},
+                    )
+                    self.logger.error(f"❌ {merge_error}")
+                    self.event_logger.step_end(
+                        ffs_context,
+                        duration_ms=ffs_duration_ms,
+                        success=False,
+                        error=str(merge_error),
+                        extra={'error_code': failure.error_code},
+                    )
+                    return self._apply_failure_to_results(
+                        results,
+                        failure,
+                        start_time,
+                        metrics_sink,
+                        step_metric_records,
+                        config,
+                    )
+
+                results['results']['final_feature_selection'] = merged_ffs_artifacts
 
             self.event_logger.step_end(
                 ffs_context,
@@ -1242,6 +1586,19 @@ class PreTrainingSubPipeline:
                 budget_text += ')'
             message = f"   {status_icon} {label}: {duration:.2f}s{budget_text}"
             self.logger.info(message)
+            self.event_logger.info(
+                "Step duration summary",
+                context={
+                    'run_id': self._run_metadata.get('run_id'),
+                    'step': f'pipeline.summary.{step_name}',
+                    'symbol': self._run_metadata.get('symbol'),
+                    'timeframe': self._run_metadata.get('timeframe'),
+                    'duration_seconds': duration,
+                    'budget_seconds': budget,
+                    'over_budget': over_budget,
+                    'over_budget_seconds': over_budget_seconds,
+                },
+            )
 
     @staticmethod
     def _get_step_display_name(step_name: str) -> str:
@@ -1411,7 +1768,11 @@ class PreTrainingSubPipeline:
         # On Linux ru_maxrss is reported in kilobytes.
         return max_rss / 1024.0
 
-    async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(
+        self,
+        training_input: Dict[str, Any],
+        pipeline_state: Mapping[str, Any],
+    ) -> Dict[str, Any]:
         """
         Execute the pre-training pipeline with backward compatible interface.
 
@@ -1443,7 +1804,7 @@ class PreTrainingSubPipeline:
         # Execute the pipeline
         return await self.execute_pipeline(config)
 
-    def _prepare_component_pipeline_state(self, config: SubPipelineConfig) -> Dict[str, Any]:
+    def _prepare_component_pipeline_state(self, config: SubPipelineConfig) -> PipelineState:
         """Construct the pipeline state passed to individual components."""
         locator = self._data_locator or self._resolve_data_locator(config)
 
@@ -1466,7 +1827,7 @@ class PreTrainingSubPipeline:
             ensure_exists=True,
         )
 
-        pipeline_state: Dict[str, Any] = {
+        pipeline_state = PipelineState({
             'symbol': config.symbol,
             'exchange': config.exchange,
             'timeframe': config.timeframe,
@@ -1487,7 +1848,7 @@ class PreTrainingSubPipeline:
             'quality_thresholds': self._get_quality_thresholds(config),
             'market_data_batch_size': config.market_data_batch_size,
             'market_data_window_days': config.market_data_window_days,
-        }
+        })
 
         pipeline_state.update({k: v for k, v in self._current_pipeline_state.items() if k not in pipeline_state})
         if self._seeded_rngs is not None:
@@ -1537,7 +1898,7 @@ class PreTrainingSubPipeline:
 
     def _prepare_interactive_training_input(
         self,
-        pipeline_state: Dict[str, Any]
+        pipeline_state: Mapping[str, Any]
     ) -> Dict[str, Any]:
         """Prepare the training input dictionary for interaction feature generation."""
 
@@ -1735,11 +2096,33 @@ class PreTrainingSubPipeline:
 
             if precomputed_result:
                 self.logger.info('📥 Using precomputed entry labeling result for tactician pipeline')
+                try:
+                    merged_artifacts = self._current_pipeline_state.merge_step_artifacts(
+                        'multi_horizon_profit_labeler',
+                        precomputed_result,
+                    )
+                except UnexpectedArtifactKeyError as merge_error:
+                    result.status = SubPipelineStatus.FAILED
+                    result.success = False
+                    result.end_time = datetime.now()
+                    result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+                    result.error_message = str(merge_error)
+                    result.error_code = (
+                        f"{self._default_step_error_code('multi_horizon_profit_labeler')}_SCHEMA"
+                    )
+                    result.failure = self._create_failure(
+                        'multi_horizon_profit_labeler',
+                        result.error_code,
+                        result.error_message,
+                        context={'unexpected_keys': merge_error.keys},
+                    )
+                    return result
+
                 result.status = SubPipelineStatus.COMPLETED
                 result.success = True
                 result.end_time = datetime.now()
                 result.duration_seconds = (result.end_time - result.start_time).total_seconds()
-                result.artifacts = precomputed_result
+                result.artifacts = merged_artifacts
                 base_metadata = self._merge_run_metadata({
                     'component_type': 'multi_horizon_profit_labeler',
                     'source': 'precomputed',
@@ -1799,7 +2182,16 @@ class PreTrainingSubPipeline:
                         artifacts['multi_horizon_labeling_result'] = validated_contract
                         result.artifacts = artifacts
                 except DataContractValidationError as contract_error:
-                    tprint_error(f"❌ {contract_error}")
+                    self.event_logger.error(
+                        "Contract validation error",
+                        context={
+                            'run_id': self._run_metadata.get('run_id'),
+                            'step': 'multi_horizon_profit_labeler.validation',
+                            'symbol': self._run_metadata.get('symbol'),
+                            'timeframe': self._run_metadata.get('timeframe'),
+                            'error': str(contract_error),
+                        },
+                    )
                     return self._handle_contract_error(result, 'multi_horizon_profit_labeler', contract_error)
 
                 quality_metrics, quality_alerts = self._analyze_component_quality(
@@ -2076,7 +2468,16 @@ class PreTrainingSubPipeline:
                         artifacts['interactive_feature_generation_result'] = validated_features
                         result.artifacts = artifacts
                 except DataContractValidationError as contract_error:
-                    tprint_error(f"❌ {contract_error}")
+                    self.event_logger.error(
+                        "Contract validation error",
+                        context={
+                            'run_id': self._run_metadata.get('run_id'),
+                            'step': 'interactive_feature_generation.validation',
+                            'symbol': self._run_metadata.get('symbol'),
+                            'timeframe': self._run_metadata.get('timeframe'),
+                            'error': str(contract_error),
+                        },
+                    )
                     return self._handle_contract_error(result, 'interactive_feature_generation', contract_error)
 
                 quality_metrics, quality_alerts = self._analyze_component_quality(
@@ -2322,7 +2723,16 @@ class PreTrainingSubPipeline:
                         artifacts['final_feature_selection_result'] = validated_selection
                         result.artifacts = artifacts
                 except DataContractValidationError as contract_error:
-                    tprint_error(f"❌ {contract_error}")
+                    self.event_logger.error(
+                        "Contract validation error",
+                        context={
+                            'run_id': self._run_metadata.get('run_id'),
+                            'step': 'final_feature_selection.validation',
+                            'symbol': self._run_metadata.get('symbol'),
+                            'timeframe': self._run_metadata.get('timeframe'),
+                            'error': str(contract_error),
+                        },
+                    )
                     return self._handle_contract_error(result, 'final_feature_selection', contract_error)
 
                 quality_metrics, quality_alerts = self._analyze_component_quality(
@@ -2416,32 +2826,62 @@ class PreTrainingSubPipeline:
             return await self._execute_interactive_feature_generation(config, self._run_metadata)
         elif sub_pipeline_name == 'final_feature_selection':
             return await self._execute_final_feature_selection(config, self._run_metadata)
-        else:
-            self.logger.error(f"❌ Unknown sub-pipeline requested: {sub_pipeline_name}")
-            self.logger.info(f"📋 Available sub-pipelines: {self.get_available_sub_pipelines()}")
+
         spec = self._get_step_spec(sub_pipeline_name)
         if spec is None:
-            tprint_error(f"❌ Unknown sub-pipeline requested: {sub_pipeline_name}")
-            tprint(f"📋 Available sub-pipelines: {self.get_available_sub_pipelines()}")
-            raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
+            available = self.get_available_sub_pipelines()
+            self.logger.error(f"❌ Unknown sub-pipeline requested: {sub_pipeline_name}")
+            self.logger.info(f"📋 Available sub-pipelines: {available}")
+            self.event_logger.error(
+                "Unknown sub-pipeline requested",
+                context={
+                    'run_id': self._run_metadata.get('run_id'),
+                    'step': 'pipeline.dispatch',
+                    'symbol': config.symbol,
+                    'timeframe': config.timeframe,
+                    'requested_sub_pipeline': sub_pipeline_name,
+                    'available_sub_pipelines': available,
+                },
+            )
 
         if not spec.enabled:
             message = (
                 f"Sub-pipeline '{sub_pipeline_name}' is currently disabled. "
                 f"Reason: {getattr(spec, 'description', 'temporarily unavailable')}"
             )
-            tprint_warning(f"⚠️ {message}")
             self.logger.warning(message)
+            self.event_logger.warning(
+                message,
+                context={
+                    'run_id': self._run_metadata.get('run_id'),
+                    'step': 'pipeline.dispatch',
+                    'symbol': config.symbol,
+                    'timeframe': config.timeframe,
+                    'requested_sub_pipeline': sub_pipeline_name,
+                    'status': 'disabled',
+                },
+            )
             raise ValueError(message)
 
         executor = getattr(self, spec.executor_method, None)
         if executor is None:
             message = (
                 f"Sub-pipeline '{sub_pipeline_name}' is registered but missing executor "
-                f"'{spec.executor_method}'."
+                f"'{spec.executor_method}'. Implement the executor or disable the step in "
+                "STEP_REGISTRY."
             )
-            tprint_error(f"❌ {message}")
             self.logger.error(message)
+            self.event_logger.error(
+                message,
+                context={
+                    'run_id': self._run_metadata.get('run_id'),
+                    'step': 'pipeline.dispatch',
+                    'symbol': config.symbol,
+                    'timeframe': config.timeframe,
+                    'requested_sub_pipeline': sub_pipeline_name,
+                    'missing_executor': spec.executor_method,
+                },
+            )
             raise RuntimeError(message)
 
         return await executor(config, self._run_metadata)
@@ -2449,21 +2889,27 @@ class PreTrainingSubPipeline:
     async def execute_sub_pipeline_with_next(self, sub_pipeline_name: str, config: SubPipelineConfig) -> SubPipelineResult:
         """Execute a specific sub-pipeline and automatically trigger subsequent sub-pipelines."""
         # For pre-training, execute the default enabled steps in sequence
-        available_steps = self.get_available_sub_pipelines()
-        
+        ordered_specs = self._get_ordered_step_specs(sequence_only=True)
+        ordered_names = [spec.name for spec in ordered_specs]
+
         try:
-            start_index = available_steps.index(sub_pipeline_name)
+            start_index = ordered_names.index(sub_pipeline_name)
+            steps_to_run = ordered_specs[start_index:]
         except ValueError:
-            raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
-        
+            # Step not part of the default sequence; execute it directly
+            direct_spec = self._get_step_spec(sub_pipeline_name)
+            if direct_spec is None:
+                raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
+            steps_to_run = [direct_spec]
+
         # Execute all steps starting from the specified one
-        for i in range(start_index, len(available_steps)):
-            step_name = available_steps[i]
+        for spec in steps_to_run:
+            step_name = spec.name
             self.logger.info(f"🚀 Executing pre-training step: {step_name}")
 
             result = await self.execute_sub_pipeline(step_name, config)
             self.results.append(result)
-            
+
             # If this step failed, stop the sequence
             if not result.success:
                 self.logger.error(f"❌ Step {step_name} failed, stopping execution sequence")
@@ -2504,57 +2950,3 @@ async def execute_pre_training_pipeline(config: SubPipelineConfig) -> Dict[str, 
     """
     pipeline = PreTrainingSubPipeline()
     return await pipeline.execute_pipeline(config)
-class _LocatorCategoryView:
-    """Attribute-access helper that proxies lookups to a :class:`DataLocator`."""
-
-    def __init__(self, locator: DataLocator, category: str) -> None:
-        self._locator = locator
-        self._category = category
-
-    @property
-    def root(self) -> Path:
-        return getattr(self._locator, f"base_{self._category}_dir")
-
-    def path(
-        self,
-        key: Optional[str] = None,
-        *,
-        default: Optional[str] = None,
-        ensure_exists: bool = False,
-    ) -> Path:
-        resolver = getattr(self._locator, f"{self._category}_path")
-        return resolver(key, default=default, ensure_exists=ensure_exists)
-
-    def __getattr__(self, item: str) -> Path:
-        if item == "root":
-            return self.root
-        return self.path(item)
-
-    def __getitem__(self, item: str) -> Path:
-        return self.path(item)
-
-    def __repr__(self) -> str:  # pragma: no cover - debug helper
-        return f"LocatorCategoryView(category={self._category!r}, root={self.root!s})"
-
-
-class LocatorPaths:
-    """Collection of category views backed by a :class:`DataLocator`."""
-
-    def __init__(self, locator: DataLocator) -> None:
-        self._locator = locator
-        self.data = _LocatorCategoryView(locator, "data")
-        self.cache = _LocatorCategoryView(locator, "cache")
-        self.artifacts = _LocatorCategoryView(locator, "artifacts")
-        self.generated = _LocatorCategoryView(locator, "generated")
-        self.config = _LocatorCategoryView(locator, "config")
-
-    @property
-    def locator(self) -> DataLocator:
-        return self._locator
-
-    def summary(self) -> Dict[str, Dict[str, str]]:
-        return self._locator.resolved_paths()
-
-    def __repr__(self) -> str:  # pragma: no cover - debug helper
-        return f"LocatorPaths(locator={self._locator!r})"
-

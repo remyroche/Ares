@@ -104,7 +104,8 @@ except ImportError:  # pragma: no cover
 from src.utils.logger import system_logger
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.version_manager import get_version_manager
-from src.utils.random_seeding import SeededRNGs, seed_rngs
+from src.utils.random_seeding import SeededRNGs, seed_rngs, set_global_seed
+from src.utils.tprint import tprint, tprint_error, tprint_warning
 from .logging_utils import (
     PreTrainingEventLogger,
     StepLogContext,
@@ -292,6 +293,7 @@ class SubPipelineConfig:
     fast_mode: bool = False
     skip_next_pipeline: bool = False
     custom_params: Dict[str, Any] = field(default_factory=dict)
+    random_seed: Optional[int] = None
     pipeline: Dict[str, Any] = field(default_factory=dict)
     label_imbalance_warning_threshold: float = 0.75
     nan_rate_warning_threshold: float = 0.05
@@ -894,7 +896,11 @@ class PreTrainingSubPipeline:
             PipelineResultDict containing execution results with typed fields
         """
         seed = self._resolve_random_seed(config)
-        self._seeded_rngs = seed_rngs(seed)
+        config.random_seed = seed
+        if config.custom_params is None:
+            config.custom_params = {}
+        config.custom_params.setdefault('random_seed', seed)
+        self._seeded_rngs = set_global_seed(seed)
         self._active_seed = seed
 
         run_metadata = self._gather_run_metadata(config, seed)
@@ -910,6 +916,7 @@ class PreTrainingSubPipeline:
         self.logger.info('🚀 Starting Pre-Training Sub-Pipeline execution')
         self.logger.info(f'📊 Symbol: {config.symbol}, Exchange: {config.exchange}')
         self.logger.info(f'⏰ Timeframe: {config.timeframe}, Mode: {config.mode.value}')
+        self.logger.info(f'🎲 Random seed: {seed}')
         self.logger.info(f'🧾 Run metadata:\n{metadata_block}')
 
         run_id = self._run_metadata.get('run_id', 'unknown')
@@ -2094,13 +2101,25 @@ class PreTrainingSubPipeline:
         if data_dir is None and isinstance(locator, DataLocator):
             data_dir = str(locator.data_path(data_dir_key))
 
+        custom_params_source = pipeline_state.get('custom_params')
+        custom_params = dict(custom_params_source) if isinstance(custom_params_source, Mapping) else {}
+        random_seed_value = pipeline_state.get('random_seed')
+        resolved_seed: Optional[int] = None
+        if random_seed_value is not None:
+            try:
+                resolved_seed = int(random_seed_value)
+                custom_params.setdefault('random_seed', resolved_seed)
+            except (TypeError, ValueError):
+                resolved_seed = None
+
         config = SubPipelineConfig(
             symbol=pipeline_state.get('symbol', 'ETHUSDT'),
             exchange=pipeline_state.get('exchange', 'binance'),
             timeframe=pipeline_state.get('timeframe', '1h'),  # Default 1h for pre-training (analyst)
             data_dir=data_dir,
             mode=ExecutionMode.FULL,  # Default to full mode
-            custom_params=pipeline_state.get('custom_params', {}),
+            custom_params=custom_params,
+            random_seed=resolved_seed,
             data_locator=locator if isinstance(locator, DataLocator) else None,
             data_dir_key=data_dir_key,
         )
@@ -2191,8 +2210,9 @@ class PreTrainingSubPipeline:
     def _build_component_custom_params(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Augment component custom parameters with quality thresholds."""
         params = dict(config.custom_params or {})
-        if self._active_seed is not None:
-            params.setdefault('random_seed', self._active_seed)
+        seed = config.random_seed if config.random_seed is not None else self._active_seed
+        if seed is not None:
+            params.setdefault('random_seed', seed)
         params.setdefault('quality_thresholds', self._get_quality_thresholds(config))
         if config.market_data_batch_size is not None:
             params.setdefault('market_data_batch_size', config.market_data_batch_size)

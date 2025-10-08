@@ -10,7 +10,7 @@ import copy
 import numpy as np
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Iterable, AsyncIterator
 from datetime import datetime
 from dataclasses import dataclass, asdict
 import logging
@@ -140,6 +140,10 @@ class MultiHorizonConfig:
     min_data_points: int = 1000
     save_intermediate_results: bool = True
     generate_reports: bool = True
+
+    # Market data streaming controls
+    market_data_batch_size: Optional[int] = None
+    market_data_window_days: Optional[int] = None
 
     # Quality thresholds
     min_auc_threshold: float = 0.55
@@ -453,12 +457,33 @@ class MultiHorizonProfitLabeler:
 
             # Load market data
             tprint_info("📊 Loading market data...")
-            market_data = await self._load_market_data(symbol, exchange, timeframe, data_dir)
-            if market_data is None or market_data.empty:
+            market_data_batches: List[pd.DataFrame] = []
+            async for batch in self._load_market_data(
+                symbol,
+                exchange,
+                timeframe,
+                data_dir,
+                batch_size=self.config.market_data_batch_size,
+                window_days=self.config.market_data_window_days,
+            ):
+                market_data_batches.append(batch)
+
+            if not market_data_batches:
                 tprint_error(f"❌ No market data available for {symbol} {timeframe}")
                 raise ValueError(f"No market data available for {symbol} {timeframe}")
-            
-            tprint_success(f"✅ Market data loaded: {len(market_data)} rows, {len(market_data.columns)} columns")
+
+            market_data = pd.concat(market_data_batches, axis=0).sort_index()
+            market_data = market_data[~market_data.index.duplicated(keep="first")]
+
+            tprint_success(
+                f"✅ Market data loaded: {len(market_data)} rows, {len(market_data.columns)} columns"
+            )
+            if self.config.market_data_batch_size or self.config.market_data_window_days:
+                tprint_info(
+                    "   → Batches processed: "
+                    f"{len(market_data_batches)} (batch_size={self.config.market_data_batch_size}, "
+                    f"window_days={self.config.market_data_window_days})"
+                )
 
             # Apply regime-aware labeling if enabled and regime data is available
             if self.config.enable_regime_aware_labeling and regime_data:
@@ -549,7 +574,9 @@ class MultiHorizonProfitLabeler:
                         'quality_summary': self._summarize_quality_scores(balanced_labeling_result.quality_scores),
                         'downstream_ready': validation_results['is_valid'],
                         'forward_return_smoothing': smoothing_metadata
-                    }
+                    },
+                    'market_data': market_data,
+                    'market_data_batches': tuple(market_data_batches),
                 },
                 'labeling_report': report,
                 'standardized_output': {  # New: standardized format for all downstream steps
@@ -901,9 +928,16 @@ class MultiHorizonProfitLabeler:
         symbol: str,
         exchange: str,
         timeframe: str,
-        data_dir: str
-    ) -> Optional[pd.DataFrame]:
-        """Load market data for the specified symbol and timeframe."""
+        data_dir: str,
+        *,
+        batch_size: Optional[int] = None,
+        window_days: Optional[int] = None,
+    ) -> Iterable[pd.DataFrame]:
+        """Load market data for the specified symbol and timeframe.
+
+        Returns an iterable of DataFrame batches to support streaming
+        consumption by downstream components.
+        """
 
         if get_klines_manager is None:
             message = (
@@ -927,48 +961,20 @@ class MultiHorizonProfitLabeler:
         for sym in symbol_variants:
             for tf in timeframe_variants:
                 for data_type in data_type_variants:
-                    try:
-                        tprint_info(
-                            f"🔍 Attempting klines_parquet load for {sym}/{tf} [{data_type}]"
-                        )
-                        raw_df = await asyncio.to_thread(
-                            manager.read_data,
-                            sym,
-                            tf,
-                            None,
-                            None,
-                            data_type,
-                        )
-                    except Exception as load_error:  # pragma: no cover - defensive guard
-                        error_msg = (
-                            f"Failed to load {sym}/{tf} ({data_type}) via klines_parquet: {load_error}"
-                        )
-                        self.logger.warning(error_msg)
-                        load_errors.append(error_msg)
-                        continue
-
-                    if raw_df is None or raw_df.empty:
-                        info_msg = (
-                            f"klines_parquet returned no data for {sym}/{tf} ({data_type})"
-                        )
-                        self.logger.info(info_msg)
-                        load_errors.append(info_msg)
-                        continue
-
-                    try:
-                        prepared = self._prepare_market_data_frame(raw_df)
-                    except Exception as prep_error:
-                        prep_msg = (
-                            f"Loaded data for {sym}/{tf} ({data_type}) could not be prepared: {prep_error}"
-                        )
-                        self.logger.warning(prep_msg)
-                        load_errors.append(prep_msg)
-                        continue
-
-                    tprint_success(
-                        f"✅ Loaded {len(prepared)} rows via klines_parquet for {sym} {tf}"
-                    )
-                    return prepared
+                    streamed = False
+                    async for batch in self._stream_market_data_batches(
+                        manager,
+                        sym,
+                        tf,
+                        data_type,
+                        batch_size=batch_size,
+                        window_days=window_days,
+                        load_errors=load_errors,
+                    ):
+                        streamed = True
+                        yield batch
+                    if streamed:
+                        return
 
         error_message = (
             f"No market data available for {symbol} on {exchange} with timeframe {timeframe}."
@@ -979,6 +985,192 @@ class MultiHorizonProfitLabeler:
         self.logger.error(error_message)
         tprint_error(f"❌ {error_message}")
         raise FileNotFoundError(error_message)
+
+    async def _stream_market_data_batches(
+        self,
+        manager,
+        symbol: str,
+        timeframe: str,
+        data_type: str,
+        *,
+        batch_size: Optional[int],
+        window_days: Optional[int],
+        load_errors: List[str],
+    ) -> AsyncIterator[pd.DataFrame]:
+        """Yield prepared market data batches for the requested parameters."""
+
+        tprint_info(
+            f"🔍 Attempting klines_parquet load for {symbol}/{timeframe} [{data_type}]"
+        )
+
+        try:
+            if window_days:
+                async for chunk in self._stream_by_date_window(
+                    manager,
+                    symbol,
+                    timeframe,
+                    data_type,
+                    window_days,
+                    batch_size,
+                    load_errors,
+                ):
+                    yield chunk
+                return
+
+            raw_df = await asyncio.to_thread(
+                manager.read_data,
+                symbol,
+                timeframe,
+                None,
+                None,
+                data_type,
+            )
+        except Exception as load_error:  # pragma: no cover - defensive guard
+            error_msg = (
+                f"Failed to load {symbol}/{timeframe} ({data_type}) via klines_parquet: {load_error}"
+            )
+            self.logger.warning(error_msg)
+            load_errors.append(error_msg)
+            return
+
+        if raw_df is None or raw_df.empty:
+            info_msg = (
+                f"klines_parquet returned no data for {symbol}/{timeframe} ({data_type})"
+            )
+            self.logger.info(info_msg)
+            load_errors.append(info_msg)
+            return
+
+        try:
+            prepared = self._prepare_market_data_frame(raw_df)
+        except Exception as prep_error:
+            prep_msg = (
+                f"Loaded data for {symbol}/{timeframe} ({data_type}) could not be prepared: {prep_error}"
+            )
+            self.logger.warning(prep_msg)
+            load_errors.append(prep_msg)
+            return
+
+        tprint_success(
+            f"✅ Loaded {len(prepared)} rows via klines_parquet for {symbol} {timeframe}"
+        )
+
+        for chunk in self._split_market_data_batches(prepared, batch_size=batch_size):
+            yield chunk
+
+    async def _stream_by_date_window(
+        self,
+        manager,
+        symbol: str,
+        timeframe: str,
+        data_type: str,
+        window_days: int,
+        batch_size: Optional[int],
+        load_errors: List[str],
+    ) -> AsyncIterator[pd.DataFrame]:
+        """Yield market data batches by iterating over date windows."""
+
+        date_info = None
+        try:
+            date_info = manager.get_data_info(symbol, timeframe, data_type)
+        except Exception as info_error:  # pragma: no cover - defensive guard
+            self.logger.debug(f"ℹ️ Could not retrieve data info for streaming: {info_error}")
+
+        start_date, end_date = self._extract_date_range(date_info)
+        if not start_date or not end_date:
+            return
+
+        current_start = start_date
+        while current_start < end_date:
+            current_end = min(current_start + pd.Timedelta(days=window_days), end_date)
+            try:
+                raw_df = await asyncio.to_thread(
+                    manager.read_data,
+                    symbol,
+                    timeframe,
+                    current_start.to_pydatetime(),
+                    current_end.to_pydatetime(),
+                    data_type,
+                )
+            except Exception as load_error:  # pragma: no cover - defensive guard
+                error_msg = (
+                    f"Failed to load {symbol}/{timeframe} ({data_type}) for {current_start}→{current_end}: {load_error}"
+                )
+                self.logger.warning(error_msg)
+                load_errors.append(error_msg)
+                current_start = current_end
+                continue
+
+            if raw_df is None or raw_df.empty:
+                current_start = current_end
+                continue
+
+            try:
+                prepared = self._prepare_market_data_frame(raw_df)
+            except Exception as prep_error:
+                prep_msg = (
+                    f"Window {current_start}→{current_end} for {symbol}/{timeframe} could not be prepared: {prep_error}"
+                )
+                self.logger.warning(prep_msg)
+                load_errors.append(prep_msg)
+                current_start = current_end
+                continue
+
+            for chunk in self._split_market_data_batches(prepared, batch_size=batch_size):
+                yield chunk
+
+            current_start = current_end
+
+    def _split_market_data_batches(
+        self,
+        data: pd.DataFrame,
+        *,
+        batch_size: Optional[int]
+    ) -> Iterable[pd.DataFrame]:
+        """Split a prepared market data frame into row-based batches."""
+
+        if batch_size is None or batch_size <= 0 or len(data) <= batch_size:
+            yield data.copy()
+            return
+
+        for start in range(0, len(data), batch_size):
+            end = start + batch_size
+            yield data.iloc[start:end].copy()
+
+    def _extract_date_range(self, info: Optional[Dict[str, Any]]) -> Tuple[Optional[pd.Timestamp], Optional[pd.Timestamp]]:
+        """Parse the available date range from manager metadata."""
+
+        if not info:
+            return None, None
+
+        date_range = info.get('date_range') if isinstance(info, dict) else None
+        if not date_range:
+            return None, None
+
+        start_value = None
+        end_value = None
+
+        if isinstance(date_range, dict):
+            start_value = date_range.get('start') or date_range.get('from')
+            end_value = date_range.get('end') or date_range.get('to')
+        elif isinstance(date_range, (list, tuple)) and len(date_range) >= 2:
+            start_value, end_value = date_range[0], date_range[1]
+
+        if not start_value or not end_value:
+            return None, None
+
+        start_ts = pd.to_datetime(start_value, utc=True, errors='coerce')
+        end_ts = pd.to_datetime(end_value, utc=True, errors='coerce')
+
+        if pd.isna(start_ts) or pd.isna(end_ts):
+            return None, None
+
+        if start_ts.tzinfo is not None:
+            start_ts = start_ts.tz_convert(None)
+        if end_ts.tzinfo is not None:
+            end_ts = end_ts.tz_convert(None)
+
+        return start_ts, end_ts
 
     def _prepare_market_data_frame(self, data: pd.DataFrame) -> pd.DataFrame:
         """Ensure loaded market data is indexed and typed as expected by the labeler."""

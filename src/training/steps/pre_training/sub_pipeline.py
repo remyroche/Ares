@@ -104,6 +104,8 @@ class SubPipelineConfig:
     metrics_output_format: str = "csv"
     metrics_prometheus_enabled: bool = False
     step_time_budgets: Dict[str, float] = field(default_factory=lambda: DEFAULT_STEP_TIME_BUDGETS.copy())
+    market_data_batch_size: Optional[int] = None
+    market_data_window_days: Optional[int] = None
     """
     Metrics capture configuration.
 
@@ -402,7 +404,7 @@ class PreTrainingSubPipeline:
             tprint(f"   ⚙️ Feature optimization: ✅ Complete")
             tprint(f"   🔧 Roadmap features: ✅ Complete")
             tprint(f"   🎯 Final selection: ✅ Complete")
-            tprint(f"🎉 Pre-Training Sub-Pipeline completed successfully in {results["execution_time"]:.2f}s")
+            tprint(f"🎉 Pre-Training Sub-Pipeline completed successfully in {results['execution_time']:.2f}s")
             tprint(f"🧾 Run metadata summary:\n{completion_block}")
             tprint(results)
 
@@ -789,7 +791,11 @@ class PreTrainingSubPipeline:
             'data_dir': config.data_dir,
             'custom_params': self._build_component_custom_params(config),
             'quality_thresholds': self._get_quality_thresholds(config),
+            'market_data_batch_size': config.market_data_batch_size,
+            'market_data_window_days': config.market_data_window_days,
         }
+
+        pipeline_state.update({k: v for k, v in self._current_pipeline_state.items() if k not in pipeline_state})
 
         regime_cache_path = config.custom_params.get('regime_cache_path') if config.custom_params else None
         if not regime_cache_path:
@@ -822,7 +828,50 @@ class PreTrainingSubPipeline:
         """Augment component custom parameters with quality thresholds."""
         params = dict(config.custom_params or {})
         params.setdefault('quality_thresholds', self._get_quality_thresholds(config))
+        if config.market_data_batch_size is not None:
+            params.setdefault('market_data_batch_size', config.market_data_batch_size)
+        if config.market_data_window_days is not None:
+            params.setdefault('market_data_window_days', config.market_data_window_days)
         return params
+
+    def _prepare_interactive_training_input(
+        self,
+        pipeline_state: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Prepare the training input dictionary for interaction feature generation."""
+
+        mh_result = pipeline_state.get('multi_horizon_labeling_result')
+        if mh_result is None:
+            mh_result = self._current_pipeline_state.get('multi_horizon_labeling_result', {})
+
+        if not mh_result:
+            raise ValueError("Multi-horizon labeling result is required for interactive feature generation")
+
+        market_data_batches = mh_result.get('market_data_batches')
+        market_data = mh_result.get('market_data')
+
+        if market_data is None and market_data_batches:
+            market_data = pd.concat(market_data_batches, axis=0).sort_index()
+
+        if market_data is None:
+            raise ValueError("Market data is missing from multi-horizon labeling result")
+
+        labels_df = mh_result.get('labeled_data')
+        if labels_df is None or (isinstance(labels_df, pd.DataFrame) and labels_df.empty):
+            labels_df = mh_result.get('labels')
+        targets: Dict[str, pd.Series] = {}
+        if isinstance(labels_df, pd.DataFrame):
+            targets = {column: labels_df[column] for column in labels_df.columns}
+
+        training_input: Dict[str, Any] = {
+            'data': market_data,
+            'targets': targets,
+        }
+
+        if market_data_batches:
+            training_input['data_batches'] = list(market_data_batches)
+
+        return training_input
 
     def _extend_with_quality_metadata(
         self,
@@ -1008,7 +1057,8 @@ class PreTrainingSubPipeline:
 
             # Execute component
             pipeline_state = self._prepare_component_pipeline_state(config)
-            component_result = await component.execute(None, pipeline_state)
+            training_input = self._prepare_interactive_training_input(pipeline_state)
+            component_result = await component.execute(training_input, pipeline_state)
             component_result.metadata = self._merge_run_metadata(component_result.metadata)
 
             result.status = SubPipelineStatus.COMPLETED if component_result.success else SubPipelineStatus.FAILED

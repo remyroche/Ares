@@ -15,16 +15,10 @@ from src.training.common.component_result import ComponentError, ComponentResult
 from src.utils.logger import system_logger
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.version_manager import get_version_manager
-from src.utils.tprint import (
-    tprint,
-    tprint_error,
-    tprint_warning,
-    tprint_success,
-    tprint_debug,
-    tprint_info,
-)
+from ..logging_utils import PreTrainingEventLogger, configure_pre_training_logging
 
 logger = system_logger.getChild('PreTrainingComponent')
+component_event_logger = PreTrainingEventLogger(configure_pre_training_logging())
 
 @dataclass
 class ComponentConfig:
@@ -44,17 +38,22 @@ class ComponentConfig:
     def __post_init__(self):
         if self.custom_params is None:
             self.custom_params = {}
-        tprint_debug(
+        details = {
+            'symbol': self.symbol,
+            'exchange': self.exchange,
+            'timeframe': self.timeframe,
+            'force_rerun': self.force_rerun,
+            'validation_enabled': self.validation_enabled,
+            'monitoring_enabled': self.monitoring_enabled,
+            'fast_mode': self.fast_mode,
+        }
+        logger.debug(
             "🛠️ ComponentConfig initialized",
-            {
-                'symbol': self.symbol,
-                'exchange': self.exchange,
-                'timeframe': self.timeframe,
-                'force_rerun': self.force_rerun,
-                'validation_enabled': self.validation_enabled,
-                'monitoring_enabled': self.monitoring_enabled,
-                'fast_mode': self.fast_mode
-            }
+            extra={'extra_fields': {'event': 'component_config_init', **details}},
+        )
+        component_event_logger.info(
+            "ComponentConfig initialized",
+            context={'component': 'ComponentConfig', **details},
         )
 
 class ComponentResult(_BaseComponentResult):
@@ -82,17 +81,22 @@ class ComponentResult(_BaseComponentResult):
             error=error,
             error_message=error_message,
         )
-        tprint_debug(
+        details = {
+            'success': self.success,
+            'artifacts_keys': list(self.artifacts.keys()),
+            'metadata_keys': list(self.metadata.keys()),
+            'metrics_keys': list(self.metrics.keys()),
+            'warnings': list(self.warnings),
+            'error': self.error_message,
+            'execution_time': self.execution_time,
+        }
+        logger.debug(
             "📦 ComponentResult initialized",
-            {
-                'success': self.success,
-                'artifacts_keys': list(self.artifacts.keys()),
-                'metadata_keys': list(self.metadata.keys()),
-                'metrics_keys': list(self.metrics.keys()),
-                'warnings': list(self.warnings),
-                'error': self.error_message,
-                'execution_time': self.execution_time,
-            }
+            extra={'extra_fields': {'event': 'component_result_init', **details}},
+        )
+        component_event_logger.info(
+            "ComponentResult initialized",
+            context={'component': 'ComponentResult', **details},
         )
 
 class BasePreTrainingComponent(ABC):
@@ -106,36 +110,71 @@ class BasePreTrainingComponent(ABC):
         """Initialize the component."""
         self.config = config or ComponentConfig()
         self.logger = logger.getChild(self.__class__.__name__)
+        self.event_logger = PreTrainingEventLogger(configure_pre_training_logging())
         self.artifact_manager = get_artifact_manager()
         self.version_manager = get_version_manager()
         self._run_metadata: Dict[str, Any] = {}
-        tprint_success(
+        self._log_info(
             f"🚀 Initialized {self.__class__.__name__}",
-            {
-                'symbol': self.config.symbol,
-                'exchange': self.config.exchange,
-                'timeframe': self.config.timeframe
-            }
+            event='component_initialized',
         )
 
     def set_run_metadata(self, metadata: Optional[Dict[str, Any]]) -> None:
         """Store run metadata for later use."""
         self._run_metadata = dict(metadata or {})
 
+    def _component_context(self, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        base = {
+            'run_id': self._run_metadata.get('run_id'),
+            'step': f'component.{self.__class__.__name__}',
+            'component': self.__class__.__name__,
+            'symbol': self.config.symbol,
+            'exchange': self.config.exchange,
+            'timeframe': self.config.timeframe,
+        }
+        if extra:
+            base.update(extra)
+        return base
+
+    def _log_info(self, message: str, **context: Any) -> None:
+        payload = self._component_context(context)
+        self.logger.info(message)
+        self.event_logger.info(message, context=payload)
+
+    def _log_warning(self, message: str, **context: Any) -> None:
+        payload = self._component_context(context)
+        self.logger.warning(message)
+        self.event_logger.warning(message, context=payload)
+
+    def _log_error(self, message: str, **context: Any) -> None:
+        payload = self._component_context(context)
+        self.logger.error(message)
+        self.event_logger.error(message, context=payload)
+
+    def _log_debug(self, message: str, **context: Any) -> None:
+        payload = self._component_context(context)
+        self.logger.debug(message)
+        self.event_logger.info(message, context=payload)
+
+    def _log_success(self, message: str, **context: Any) -> None:
+        self._log_info(message, **context)
+
     @abstractmethod
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
-        tprint_debug(
-            f"🧩 get_required_artifacts called on base class {self.__class__.__name__}"
+        self._log_debug(
+            f"🧩 get_required_artifacts called on base class {self.__class__.__name__}",
+            event='component_get_required_artifacts',
         )
         raise NotImplementedError("Subclasses must implement get_required_artifacts")
 
     @abstractmethod
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """Execute the component."""
-        tprint_debug(
+        self._log_debug(
             f"⚙️ execute called on base class {self.__class__.__name__}",
-            {'data_type': type(data).__name__}
+            data_type=type(data).__name__,
+            event='component_execute_called',
         )
         raise NotImplementedError("Subclasses must implement execute")
 
@@ -153,9 +192,10 @@ class BasePreTrainingComponent(ABC):
         metadata = dict(metadata or {})
         metadata['run_metadata'] = dict(self._run_metadata)
 
-        tprint_info(
+        self._log_info(
             f"💾 Saving {len(artifacts)} artifacts for {self.__class__.__name__}",
-            {'metadata_keys': list(metadata.keys())}
+            event='component_save_artifacts',
+            metadata_keys=list(metadata.keys()),
         )
         saved_files = {}
 
@@ -184,9 +224,10 @@ class BasePreTrainingComponent(ABC):
 
             saved_files[artifact_name] = file_path
             self.logger.info(f"💾 Saved artifact {artifact_name} to {file_path}")
-            tprint_success(
+            self._log_success(
                 f"✅ Artifact saved: {artifact_name}",
-                {'path': file_path}
+                path=file_path,
+                event='component_artifact_saved',
             )
 
         return saved_files
@@ -199,13 +240,9 @@ class BasePreTrainingComponent(ABC):
             raise ValueError("Exchange is required")
         if not self.config.timeframe:
             raise ValueError("Timeframe is required")
-        tprint_success(
+        self._log_success(
             f"✅ Configuration validated for {self.__class__.__name__}",
-            {
-                'symbol': self.config.symbol,
-                'exchange': self.config.exchange,
-                'timeframe': self.config.timeframe
-            }
+            event='component_config_validated',
         )
         return True
 
@@ -216,12 +253,9 @@ class BasePreTrainingComponent(ABC):
             'config': self.config,
             'required_artifacts': self.get_required_artifacts()
         }
-        tprint_info(
+        self._log_info(
             f"📊 Status requested for {self.__class__.__name__}",
-            {
-                'required_artifacts': status['required_artifacts'],
-                'symbol': self.config.symbol,
-                'exchange': self.config.exchange
-            }
+            event='component_status_requested',
+            required_artifacts=status['required_artifacts'],
         )
         return status

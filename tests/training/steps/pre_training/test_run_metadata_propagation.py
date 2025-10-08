@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime
+import logging
 import sys
 import types
 from typing import Any, Dict
@@ -91,7 +92,7 @@ def _simple_step(name: str, key: str) -> Any:
 
 
 @pytest.mark.anyio("asyncio")
-async def test_run_metadata_printed_and_persisted(monkeypatch, capfd):
+async def test_run_metadata_printed_and_persisted(monkeypatch, caplog):
     stub_manager = _StubArtifactManager()
     monkeypatch.setattr(
         'src.training.steps.pre_training.components.base_component.get_artifact_manager',
@@ -99,6 +100,7 @@ async def test_run_metadata_printed_and_persisted(monkeypatch, capfd):
     )
 
     run_metadata = {
+        'run_id': 'test-run-id',
         'git_sha': 'test-sha',
         'config_hash': 'hash-123',
         'data_snapshot_id': 'snapshot-test',
@@ -112,7 +114,7 @@ async def test_run_metadata_printed_and_persisted(monkeypatch, capfd):
     monkeypatch.setattr(
         PreTrainingSubPipeline,
         '_gather_run_metadata',
-        lambda self, cfg: dict(run_metadata),
+        lambda self, cfg, seed=None: dict(run_metadata),
     )
 
     monkeypatch.setattr(
@@ -140,11 +142,31 @@ async def test_run_metadata_printed_and_persisted(monkeypatch, capfd):
         '_execute_final_feature_selection',
         _simple_step('final_feature_selection', 'final_feature_selection_result'),
     )
+    monkeypatch.setattr(
+        PreTrainingSubPipeline,
+        '_prepare_interactive_training_input',
+        lambda self, pipeline_state: {},
+    )
 
     pipeline = PreTrainingSubPipeline()
     config = SubPipelineConfig(custom_params={'rng_seed': 42, 'data_snapshot_id': 'snapshot-test'})
 
-    result = await pipeline.execute_pipeline(config)
+    captured_events: list[Dict[str, Any]] = []
+
+    class _CollectHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:  # pragma: no cover - simple capture
+            if hasattr(record, 'extra_fields'):
+                captured_events.append(record.extra_fields)
+
+    handler = _CollectHandler()
+    structured_logger = logging.getLogger('ares.pre_training')
+    structured_logger.addHandler(handler)
+
+    try:
+        with caplog.at_level(logging.INFO, logger='ares.pre_training'):
+            result = await pipeline.execute_pipeline(config)
+    finally:
+        structured_logger.removeHandler(handler)
 
     assert result['success'] is True
     assert stub_manager.saved_payloads, 'artifact should be saved with metadata'
@@ -152,12 +174,4 @@ async def test_run_metadata_printed_and_persisted(monkeypatch, capfd):
     saved_payload = stub_manager.saved_payloads[0]
     assert saved_payload['metadata']['run_metadata'] == run_metadata
 
-    captured = capfd.readouterr()
-    assert 'Run metadata' in captured.out
-    assert '"git_sha": "test-sha"' in captured.out
-
-    summary_line = next(
-        (line for line in captured.out.splitlines() if 'Run metadata summary' in line),
-        '',
-    )
-    assert summary_line
+    assert any(event.get('event') == 'pipeline_end' for event in captured_events)

@@ -13,7 +13,10 @@ import logging
 from pathlib import Path
 import asyncio
 
-from src.training.steps.pre_training.standardized_labeling_interface import assert_labels_sigma_scaled
+from src.training.steps.pre_training.standardized_labeling_interface import (
+    assert_labels_sigma_scaled,
+    validate_dataframe_schema
+)
 
 # Import the final feature selection pipeline
 from .final_feature_selection_pipeline import (
@@ -234,8 +237,23 @@ class FinalFeatureSelectionStep:
                                 target_df = target_data
                             else:
                                 self.logger.warning("⚠️ Target data in unexpected format")
+                                tprint_warning(f"⚠️ Target data has unexpected type: {type(target_data)}")
                                 return None
 
+                            # Validate target DataFrame schema
+                            is_valid, issues = validate_dataframe_schema(
+                                target_df,
+                                required_columns=target_columns if target_columns else None,
+                                min_rows=100,  # Require at least 100 samples
+                                allow_nulls=True  # Nulls may be present in targets
+                            )
+                            
+                            if not is_valid:
+                                tprint_warning(f"⚠️ Target DataFrame schema validation failed:")
+                                for issue in issues:
+                                    tprint_warning(f"  - {issue}")
+                                # Continue anyway, but log the issues
+                            
                             assert_labels_sigma_scaled(target_df)
 
                             # Select the best target based on weights

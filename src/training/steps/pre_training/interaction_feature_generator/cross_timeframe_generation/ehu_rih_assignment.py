@@ -15,6 +15,35 @@ from datetime import datetime, timedelta
 import logging
 from enum import Enum
 
+# Import tprint utilities with graceful fallback
+try:
+    from src.utils.tprint import (
+        tprint,
+        tprint_debug,
+        tprint_info,
+        tprint_warning,
+        tprint_error,
+        tprint_success,
+    )
+except ImportError:  # pragma: no cover - fallback for environments without tprint module
+    def tprint(*args, **kwargs):  # type: ignore[override]
+        print(*args, **kwargs)
+
+    def tprint_debug(*args, **kwargs):  # type: ignore[override]
+        print("DEBUG:", *args, **kwargs)
+
+    def tprint_info(*args, **kwargs):  # type: ignore[override]
+        print("INFO:", *args, **kwargs)
+
+    def tprint_warning(*args, **kwargs):  # type: ignore[override]
+        print("WARNING:", *args, **kwargs)
+
+    def tprint_error(*args, **kwargs):  # type: ignore[override]
+        print("ERROR:", *args, **kwargs)
+
+    def tprint_success(*args, **kwargs):  # type: ignore[override]
+        print("SUCCESS:", *args, **kwargs)
+
 from .staleness_curve import (
     StalenessCurve,
     StalenessCurveCalculator,
@@ -50,7 +79,7 @@ class CostBenefitAnalyzer:
         self.config = config
         self.logger = logging.getLogger(__name__)
     
-    def analyze_cost_benefit(self, 
+    def analyze_cost_benefit(self,
                            feature_name: str,
                            family: str,
                            lookback: int,
@@ -69,10 +98,13 @@ class CostBenefitAnalyzer:
         Returns:
             Cost-benefit analysis results
         """
+        tprint_debug(
+            f"[CostBenefitAnalyzer] Analyzing feature='{feature_name}' family='{family}' lookback={lookback}"
+        )
         # Calculate costs
         ehu_cost = self._calculate_ehu_cost(family, lookback)
         rih_cost = self._calculate_rih_cost(family, lookback)
-        
+
         # Calculate benefits (IC degradation due to staleness)
         ehu_benefit = self._calculate_ehu_benefit(expected_ic, staleness_curve)
         rih_benefit = self._calculate_rih_benefit(expected_ic, staleness_curve)
@@ -84,8 +116,8 @@ class CostBenefitAnalyzer:
         # Calculate cost per millisecond
         ehu_cost_per_ms = ehu_cost / max(lookback, 1)
         rih_cost_per_ms = rih_cost / max(lookback, 1)
-        
-        return {
+
+        results = {
             'ehu_cost': ehu_cost,
             'rih_cost': rih_cost,
             'ehu_benefit': ehu_benefit,
@@ -97,21 +129,42 @@ class CostBenefitAnalyzer:
             'net_benefit_ehu': ehu_benefit - ehu_cost,
             'net_benefit_rih': rih_benefit - rih_cost
         }
-    
+
+        tprint_info(
+            "[CostBenefitAnalyzer] Results:",
+            {
+                'feature': feature_name,
+                'lookback': lookback,
+                'net_benefit_ehu': round(results['net_benefit_ehu'], 6),
+                'net_benefit_rih': round(results['net_benefit_rih'], 6),
+                'preferred_mode': 'rih' if results['rih_marginal'] > results['ehu_marginal'] else 'ehu'
+            }
+        )
+
+        return results
+
     def _calculate_ehu_cost(self, family: str, lookback: int) -> float:
         """Calculate EHU cost (typically very low)."""
         # EHU features are computed once per HTF period
         base_cost = 0.001  # ms per computation
         family_multiplier = self._get_family_multiplier(family)
-        return base_cost * family_multiplier
-    
+        cost = base_cost * family_multiplier
+        tprint_debug(
+            f"[CostBenefitAnalyzer] EHU cost computed for family='{family}' lookback={lookback}: {cost:.6f}"
+        )
+        return cost
+
     def _calculate_rih_cost(self, family: str, lookback: int) -> float:
         """Calculate RIH cost (incremental updates)."""
         # RIH features require incremental state maintenance
         base_cost = 0.01  # ms per update
         family_multiplier = self._get_family_multiplier(family)
         lookback_factor = np.log(lookback) / np.log(60)  # Scale with lookback
-        return base_cost * family_multiplier * lookback_factor
+        cost = base_cost * family_multiplier * lookback_factor
+        tprint_debug(
+            f"[CostBenefitAnalyzer] RIH cost computed for family='{family}' lookback={lookback}: {cost:.6f}"
+        )
+        return cost
     
     def _get_family_multiplier(self, family: str) -> float:
         """Get family-specific cost multiplier."""
@@ -131,21 +184,29 @@ class CostBenefitAnalyzer:
         # EHU features are stale for the entire HTF period
         # Use average staleness over the HTF period
         avg_staleness = staleness_curve.summary.average if staleness_curve.staleness_values else 0.5
-        
+
         # IC degradation is proportional to staleness
         ic_degradation = expected_ic * avg_staleness
-        return expected_ic - ic_degradation
-    
-    def _calculate_rih_benefit(self, 
+        benefit = expected_ic - ic_degradation
+        tprint_debug(
+            f"[CostBenefitAnalyzer] EHU benefit for expected_ic={expected_ic:.6f}: {benefit:.6f}"
+        )
+        return benefit
+
+    def _calculate_rih_benefit(self,
                              expected_ic: float,
                              staleness_curve: StalenessCurve) -> float:
         """Calculate RIH benefit (minimal staleness)."""
         # RIH features have minimal staleness (just the base timeframe)
         min_staleness = staleness_curve.summary.at_base
-        
+
         # IC degradation is minimal
         ic_degradation = expected_ic * min_staleness
-        return expected_ic - ic_degradation
+        benefit = expected_ic - ic_degradation
+        tprint_debug(
+            f"[CostBenefitAnalyzer] RIH benefit for expected_ic={expected_ic:.6f}: {benefit:.6f}"
+        )
+        return benefit
 
 
 class HybridModeManager:
@@ -159,7 +220,7 @@ class HybridModeManager:
         self.switch_history = []
         self.current_modes = {}  # feature_name -> UpdateStyle
     
-    def should_switch_to_rih(self, 
+    def should_switch_to_rih(self,
                            feature_name: str,
                            current_mode: UpdateStyle,
                            latency_headroom: float,
@@ -172,13 +233,22 @@ class HybridModeManager:
             current_mode: Current update mode
             latency_headroom: Available latency headroom in ms
             market_conditions: Current market conditions
-            
+
         Returns:
             True if should switch to RIH
         """
+        tprint_debug(
+            "[HybridModeManager] Evaluating switch to RIH",
+            {
+                'feature': feature_name,
+                'current_mode': current_mode.value,
+                'latency_headroom': latency_headroom,
+                'market_conditions': market_conditions,
+            }
+        )
         if current_mode == UpdateStyle.RIH:
             return False  # Already in RIH mode
-        
+
         # Check latency headroom
         if latency_headroom < 10:  # Need at least 10ms headroom
             return False
@@ -189,16 +259,27 @@ class HybridModeManager:
         
         # Switch to RIH in high volatility or near news
         if volatility_level > 0.7 or news_proximity > 0.5:
+            tprint_info(
+                f"[HybridModeManager] Switching {feature_name} to RIH due to market conditions",
+                {
+                    'volatility_level': volatility_level,
+                    'news_proximity': news_proximity,
+                }
+            )
             return True
-        
+
         # Check recent switching frequency (avoid thrashing)
         recent_switches = self._count_recent_switches(feature_name, minutes=30)
         if recent_switches > 2:  # Max 2 switches per 30 minutes
+            tprint_warning(
+                f"[HybridModeManager] Preventing switch to RIH for {feature_name} due to frequent toggles",
+                {'recent_switches': recent_switches}
+            )
             return False
-        
+
         return False
-    
-    def should_switch_to_ehu(self, 
+
+    def should_switch_to_ehu(self,
                            feature_name: str,
                            current_mode: UpdateStyle,
                            latency_headroom: float,
@@ -211,25 +292,45 @@ class HybridModeManager:
             current_mode: Current update mode
             latency_headroom: Available latency headroom in ms
             market_conditions: Current market conditions
-            
+
         Returns:
             True if should switch to EHU
         """
+        tprint_debug(
+            "[HybridModeManager] Evaluating switch to EHU",
+            {
+                'feature': feature_name,
+                'current_mode': current_mode.value,
+                'latency_headroom': latency_headroom,
+                'market_conditions': market_conditions,
+            }
+        )
         if current_mode == UpdateStyle.EHU:
             return False  # Already in EHU mode
-        
+
         # Check latency headroom
         if latency_headroom < 5:  # Switch to EHU if low headroom
+            tprint_info(
+                f"[HybridModeManager] Switching {feature_name} to EHU due to low headroom",
+                {'latency_headroom': latency_headroom}
+            )
             return True
-        
+
         # Check market conditions
         volatility_level = market_conditions.get('volatility_level', 0.5)
         news_proximity = market_conditions.get('news_proximity', 0.0)
-        
+
         # Switch to EHU in low volatility and no news
         if volatility_level < 0.3 and news_proximity < 0.2:
+            tprint_info(
+                f"[HybridModeManager] Switching {feature_name} to EHU due to calm market",
+                {
+                    'volatility_level': volatility_level,
+                    'news_proximity': news_proximity,
+                }
+            )
             return True
-        
+
         return False
     
     def _count_recent_switches(self, feature_name: str, minutes: int) -> int:
@@ -388,6 +489,14 @@ class EHU_RIH_Assignment:
             Updated assignment decisions
         """
         updated_assignments = []
+        tprint_debug(
+            "[EHU_RIH_Assignment] Updating hybrid assignments",
+            {
+                'latency_headroom': latency_headroom,
+                'market_conditions': market_conditions,
+                'assignments': len(current_assignments),
+            }
+        )
         
         for assignment in current_assignments:
             if assignment.switch_conditions is None:
@@ -402,6 +511,13 @@ class EHU_RIH_Assignment:
                 assignment.feature_name, current_mode, latency_headroom, market_conditions
             ):
                 # Switch to RIH
+                tprint_info(
+                    f"[EHU_RIH_Assignment] Switching {assignment.feature_name} to RIH",
+                    {
+                        'previous_mode': current_mode.value,
+                        'latency_headroom': latency_headroom,
+                    }
+                )
                 new_assignment = AssignmentDecision(
                     feature_name=assignment.feature_name,
                     family=assignment.family,
@@ -425,6 +541,13 @@ class EHU_RIH_Assignment:
                 assignment.feature_name, current_mode, latency_headroom, market_conditions
             ):
                 # Switch to EHU
+                tprint_info(
+                    f"[EHU_RIH_Assignment] Switching {assignment.feature_name} to EHU",
+                    {
+                        'previous_mode': current_mode.value,
+                        'latency_headroom': latency_headroom,
+                    }
+                )
                 new_assignment = AssignmentDecision(
                     feature_name=assignment.feature_name,
                     family=assignment.family,
@@ -458,7 +581,7 @@ class EHU_RIH_Assignment:
         total_cost = sum(a.cost_per_ms for a in assignments)
         avg_cost = total_cost / len(assignments) if assignments else 0
         
-        return {
+        summary = {
             'total_features': len(assignments),
             'ehu_count': ehu_count,
             'rih_count': rih_count,
@@ -467,3 +590,16 @@ class EHU_RIH_Assignment:
             'avg_cost_per_ms': avg_cost,
             'switch_history': self.hybrid_manager.switch_history[-10:]  # Last 10 switches
         }
+
+        tprint_success(
+            "[EHU_RIH_Assignment] Assignment summary computed",
+            {
+                'totals': summary['total_features'],
+                'ehu': summary['ehu_count'],
+                'rih': summary['rih_count'],
+                'hybrid': summary['hybrid_count'],
+                'avg_cost_ms': round(summary['avg_cost_per_ms'], 6),
+            }
+        )
+
+        return summary

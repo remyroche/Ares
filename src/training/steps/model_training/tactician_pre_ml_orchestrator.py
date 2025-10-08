@@ -18,6 +18,7 @@ horizon labeling for each direction.
 """
 
 import asyncio
+import copy
 import logging
 import numpy as np
 import pandas as pd
@@ -58,8 +59,9 @@ except ImportError as e:
 # Import feature processing components
 try:
     from src.training.steps.pre_training.feature_lookback_optimization import (
-        FeatureLookbackOptimizationComponent, ModularFeatureLookbackOptimizationComponent
+        FeatureLookbackOptimizationComponent as _FeatureLookbackOptimizationComponent
     )
+    _ = _FeatureLookbackOptimizationComponent
     FEATURE_OPTIMIZATION_AVAILABLE = True
 except ImportError as e:
     FEATURE_OPTIMIZATION_AVAILABLE = False
@@ -94,6 +96,8 @@ try:
 except ImportError as e:
     FEATURE_SELECTION_AVAILABLE = False
     tprint_warning(f"⚠️ Final feature selection not available: {e}")
+
+from src.training.steps.pre_training.components import ComponentFactory, ComponentConfig
 
 
 class SignalDirection(Enum):
@@ -221,6 +225,74 @@ class TacticianPreMLOrchestrator:
     7. Preparing data for dual training (longs and shorts)
     """
 
+    COMPONENT_FACTORY_KEYS: Dict[str, str] = {
+        'feature_optimization': 'feature_lookback_optimization',
+        'pid_generation': 'pid_based_feature_generation',
+        'horizon_labeling': 'multi_horizon_profit_labeler',
+        'feature_selection': 'final_feature_selection',
+    }
+
+    COMPONENT_HINTS: Dict[str, str] = {
+        'feature_optimization': (
+            "Ensure 'feature_lookback_optimization' is registered with the pre-training "
+            "ComponentFactory (check config/pre_training_component_modules.txt or install "
+            "the optional feature optimization extras)."
+        ),
+        'pid_generation': (
+            "Ensure 'pid_based_feature_generation' is registered with the ComponentFactory or "
+            "disable PID generation in the orchestrator configuration."
+        ),
+        'horizon_labeling': (
+            "Ensure 'multi_horizon_profit_labeler' is registered with the ComponentFactory or "
+            "disable horizon labeling in the orchestrator configuration."
+        ),
+        'feature_selection': (
+            "Ensure 'final_feature_selection' is registered with the ComponentFactory or disable "
+            "final feature selection in the orchestrator configuration."
+        ),
+    }
+
+    COMPONENT_CONFIG_MAPPING: Dict[str, Dict[str, str]] = {
+        'feature_optimization': {
+            'max_lookback_periods': 'max_lookback_periods',
+            'max_interaction_features': 'max_interaction_features',
+            'max_polynomial_features': 'max_polynomial_features',
+            'max_cross_timeframe_features': 'max_cross_timeframe_features',
+            'direction_mode': 'direction_mode',
+            'separate_directional_features': 'separate_directional_features',
+            'directional_feature_prefixes': 'directional_feature_prefixes',
+        },
+        'pid_generation': {
+            'synergy_threshold': 'synergy_threshold',
+            'redundancy_threshold': 'redundancy_threshold',
+            'unique_info_threshold': 'unique_info_threshold',
+            'max_interaction_features': 'max_interaction_features',
+            'max_polynomial_features': 'max_polynomial_features',
+            'max_cross_timeframe_features': 'max_cross_timeframe_features',
+            'enable_parallel_processing': 'enable_parallel_processing',
+            'enable_gpu_acceleration': 'enable_gpu_acceleration',
+            'memory_limit_gb': 'memory_limit_gb',
+        },
+        'horizon_labeling': {
+            'profit_targets': 'profit_targets',
+            'time_horizons': 'time_horizons',
+            'direction_mode': 'direction_mode',
+            'separate_directional_targets': 'separate_directional_features',
+            'directional_target_prefixes': 'directional_feature_prefixes',
+        },
+        'feature_selection': {
+            'initial_features': 'initial_features',
+            'stage_1_target': 'stage_1_target',
+            'stage_2_target': 'stage_2_target',
+            'stage_3_target': 'stage_3_target',
+            'direction_mode': 'direction_mode',
+            'separate_directional_features': 'separate_directional_features',
+            'directional_feature_prefixes': 'directional_feature_prefixes',
+            'output_directory': 'output_directory',
+            'save_analysis': 'save_intermediate_results',
+        },
+    }
+
     def __init__(self, config: Optional[OrchestratorConfig] = None):
         """Initialize the Tactician pre-ML orchestrator."""
         try:
@@ -254,21 +326,43 @@ class TacticianPreMLOrchestrator:
 
     def _initialize_feature_processors(self):
         """Initialize feature processing components."""
+        self.factory_component_status: Dict[str, bool] = self._evaluate_factory_components()
+        self.factory_component_configs: Dict[str, ComponentConfig] = {
+            alias: self._build_factory_component_config(alias)
+            for alias in self.COMPONENT_FACTORY_KEYS
+        }
+
         # Feature lookback optimization
-        if FEATURE_OPTIMIZATION_AVAILABLE and self.config.enable_feature_optimization:
-            try:
-                self.feature_optimizer = ModularFeatureLookbackOptimizationComponent()
-                tprint_success("✅ Feature lookback optimization initialized")
-            except Exception as e:
-                tprint_error(f"❌ Failed to initialize feature optimization: {e}")
-                self.feature_optimizer = None
-        else:
+        if not self.config.enable_feature_optimization:
             self.feature_optimizer = None
-            if self.config.enable_feature_optimization:
-                tprint_warning("⚠️ Feature optimization requested but not available")
+        elif not FEATURE_OPTIMIZATION_AVAILABLE:
+            self.feature_optimizer = None
+            tprint_warning("⚠️ Feature optimization requested but not available")
+        elif not self.factory_component_status.get('feature_optimization', False):
+            self.feature_optimizer = None
+            self._log_factory_unavailable('feature_optimization')
+        else:
+            component_key = self.COMPONENT_FACTORY_KEYS['feature_optimization']
+            component_config = self.factory_component_configs['feature_optimization']
+            try:
+                self.feature_optimizer = ComponentFactory.create_component(
+                    component_key,
+                    component_config,
+                )
+                tprint_success("✅ Feature lookback optimization initialized via ComponentFactory")
+            except Exception as exc:
+                self.feature_optimizer = None
+                self._log_factory_error('feature_optimization', exc)
 
         # PID-based feature generation
-        if PID_GENERATION_AVAILABLE and self.config.enable_pid_generation:
+        if not self.config.enable_pid_generation:
+            self.pid_orchestrator = None
+        elif not PID_GENERATION_AVAILABLE:
+            self.pid_orchestrator = None
+            tprint_warning("⚠️ PID generation requested but not available")
+        else:
+            if not self.factory_component_status.get('pid_generation', False):
+                self._log_factory_unavailable('pid_generation')
             try:
                 pid_config = OrchestratorConfig(
                     max_interaction_features=self.config.max_interaction_features,
@@ -286,13 +380,16 @@ class TacticianPreMLOrchestrator:
             except Exception as e:
                 tprint_error(f"❌ Failed to initialize PID orchestrator: {e}")
                 self.pid_orchestrator = None
-        else:
-            self.pid_orchestrator = None
-            if self.config.enable_pid_generation:
-                tprint_warning("⚠️ PID generation requested but not available")
 
         # Multi-horizon profit labeling
-        if HORIZON_LABELING_AVAILABLE and self.config.enable_horizon_labeling:
+        if not self.config.enable_horizon_labeling:
+            self.horizon_labeler = None
+        elif not HORIZON_LABELING_AVAILABLE:
+            self.horizon_labeler = None
+            tprint_warning("⚠️ Horizon labeling requested but not available")
+        else:
+            if not self.factory_component_status.get('horizon_labeling', False):
+                self._log_factory_unavailable('horizon_labeling')
             try:
                 labeler_config = MultiHorizonConfig(
                     profit_targets=self.config.profit_targets,
@@ -308,13 +405,16 @@ class TacticianPreMLOrchestrator:
             except Exception as e:
                 tprint_error(f"❌ Failed to initialize horizon labeler: {e}")
                 self.horizon_labeler = None
-        else:
-            self.horizon_labeler = None
-            if self.config.enable_horizon_labeling:
-                tprint_warning("⚠️ Horizon labeling requested but not available")
 
         # Final feature selection
-        if FEATURE_SELECTION_AVAILABLE and self.config.enable_feature_selection:
+        if not self.config.enable_feature_selection:
+            self.feature_selector = None
+        elif not FEATURE_SELECTION_AVAILABLE:
+            self.feature_selector = None
+            tprint_warning("⚠️ Feature selection requested but not available")
+        else:
+            if not self.factory_component_status.get('feature_selection', False):
+                self._log_factory_unavailable('feature_selection')
             try:
                 selection_config = FeatureSelectionConfig(
                     initial_features=self.config.initial_features,
@@ -333,10 +433,64 @@ class TacticianPreMLOrchestrator:
             except Exception as e:
                 tprint_error(f"❌ Failed to initialize feature selector: {e}")
                 self.feature_selector = None
-        else:
-            self.feature_selector = None
-            if self.config.enable_feature_selection:
-                tprint_warning("⚠️ Feature selection requested but not available")
+
+    def _evaluate_factory_components(self) -> Dict[str, bool]:
+        """Check availability of orchestrator components in the ComponentFactory."""
+        status: Dict[str, bool] = {}
+        for alias, component_key in self.COMPONENT_FACTORY_KEYS.items():
+            try:
+                status[alias] = ComponentFactory.is_component_available(component_key)
+            except Exception as exc:  # pragma: no cover - defensive logging
+                status[alias] = False
+                tprint_warning(
+                    f"⚠️ Unable to query ComponentFactory availability for '{component_key}': {exc}"
+                )
+        return status
+
+    def _build_factory_component_config(self, alias: str) -> ComponentConfig:
+        """Build a ComponentConfig based on orchestrator settings for factory components."""
+        component_key = self.COMPONENT_FACTORY_KEYS.get(alias, alias)
+        custom_params: Dict[str, Any] = {
+            'component_alias': alias,
+            'factory_component_key': component_key,
+            'source': 'tactician_pre_ml_orchestrator',
+        }
+
+        mapping = self.COMPONENT_CONFIG_MAPPING.get(alias, {})
+        for component_param, config_attr in mapping.items():
+            if not hasattr(self.config, config_attr):
+                continue
+            value = getattr(self.config, config_attr)
+            if isinstance(value, (dict, list)):
+                custom_params[component_param] = copy.deepcopy(value)
+            else:
+                custom_params[component_param] = value
+
+        return ComponentConfig(custom_params=custom_params)
+
+    def _log_factory_unavailable(self, alias: str) -> None:
+        """Log a standardized warning when a factory component is not registered."""
+        component_key = self.COMPONENT_FACTORY_KEYS.get(alias, alias)
+        hint = self.COMPONENT_HINTS.get(alias)
+        alias_label = alias.replace('_', ' ')
+        message = (
+            f"⚠️ ComponentFactory does not have '{component_key}' registered for {alias_label}."
+        )
+        if hint:
+            message = f"{message} Hint: {hint}"
+        tprint_warning(message)
+
+    def _log_factory_error(self, alias: str, exc: Exception) -> None:
+        """Log a standardized error when a factory-backed initialization fails."""
+        component_key = self.COMPONENT_FACTORY_KEYS.get(alias, alias)
+        hint = self.COMPONENT_HINTS.get(alias)
+        alias_label = alias.replace('_', ' ')
+        message = (
+            f"❌ Failed to initialize '{component_key}' via ComponentFactory for {alias_label}: {exc}"
+        )
+        if hint:
+            message = f"{message} Hint: {hint}"
+        tprint_error(message)
 
     async def orchestrate_pre_ml_training(
         self,

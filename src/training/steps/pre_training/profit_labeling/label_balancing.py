@@ -1034,7 +1034,7 @@ class SampleWeighter:
                                    additional_features: Optional[Dict[str, pd.Series]] = None) -> pd.Series:
         """Compute confidence-based weights (w_t ∝ Δp)."""
         if additional_features and 'confidence' in additional_features:
-            confidence = additional_features['confidence']
+            confidence = pd.Series(additional_features['confidence'], index=y.index)
         else:
             # Compute confidence based on different methods
             if self.config.confidence_method == "probability":
@@ -1061,19 +1061,28 @@ class SampleWeighter:
                 class_freq = y.value_counts(normalize=True)
                 confidence = y.map(lambda x: 1.0 / class_freq.get(x, 0.5))
 
+        confidence = pd.Series(confidence, index=y.index, dtype=float)
+
         # Apply smoothing
         if self.config.confidence_smoothing > 0:
-            confidence = confidence.rolling(window=3, center=True).mean().fillna(confidence)
+            confidence = confidence.rolling(window=3, min_periods=1).mean()
 
         # Apply minimum threshold
-        confidence = np.maximum(confidence, self.config.confidence_min_threshold)
+        confidence = confidence.clip(lower=self.config.confidence_min_threshold)
 
         # Scale confidence weights
         weights = self.config.confidence_scale * confidence
 
         # Normalize and clip
-        weights = (weights - weights.min()) / (weights.max() - weights.min() + 1e-8)
-        weights = np.clip(weights, self.config.min_weight, self.config.max_weight)
+        weights_min = weights.min()
+        weights_range = weights.max() - weights_min
+
+        if weights_range > 0:
+            weights = (weights - weights_min) / (weights_range + 1e-8)
+        else:
+            weights = pd.Series(1.0, index=weights.index)
+
+        weights = weights.clip(lower=self.config.min_weight, upper=self.config.max_weight)
 
         return weights
 
@@ -1308,9 +1317,13 @@ class SampleWeighter:
 
         # Apply smoothing if enabled
         if self.config.weight_smoothing > 0:
-            combined_weights = pd.Series(combined_weights).rolling(
-                window=3, center=True
-            ).mean().fillna(combined_weights).values
+            base_index = None
+            if isinstance(weights_components[0], pd.Series):
+                base_index = weights_components[0].index
+
+            combined_series = pd.Series(combined_weights, index=base_index)
+            combined_series = combined_series.rolling(window=3, min_periods=1).mean()
+            combined_weights = combined_series.values if base_index is not None else combined_series.to_numpy()
 
         # Apply normalization
         if self.config.weight_normalization == "l1":
@@ -1366,14 +1379,18 @@ class SampleWeighter:
         
         for col in X.columns:
             if X[col].dtype in [np.number, 'int64', 'float64']:
-                # Compute rolling variance as uncertainty measure
-                rolling_var = X[col].rolling(window=5, center=True).var().fillna(X[col].var())
-                uncertainty_weights += rolling_var
+                # Compute rolling variance as uncertainty measure using trailing window
+                rolling_var = X[col].rolling(window=5, min_periods=1).var(ddof=0)
+                expanding_var = X[col].expanding(min_periods=1).var(ddof=0)
+                combined_var = rolling_var.fillna(expanding_var).fillna(0.0)
+                uncertainty_weights = uncertainty_weights.add(combined_var, fill_value=0.0)
         
-        # Normalize
-        if uncertainty_weights.max() > 0:
-            uncertainty_weights = uncertainty_weights / uncertainty_weights.max()
-        
+        # Normalize using trailing maximum to avoid future leakage
+        if not uncertainty_weights.empty:
+            expanding_max = uncertainty_weights.expanding(min_periods=1).max()
+            scaled_weights = uncertainty_weights / expanding_max.replace(0, np.nan)
+            uncertainty_weights = scaled_weights.fillna(0.0)
+
         return uncertainty_weights
 
 

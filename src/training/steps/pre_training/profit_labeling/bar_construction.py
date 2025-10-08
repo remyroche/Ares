@@ -324,7 +324,7 @@ class EventBasedBarConstructor:
             window_size = min(20, len(market_data) // 10)  # Adaptive window size
             if window_size > 1:
                 market_data['median_volume'] = market_data['volume'].rolling(
-                    window=window_size, center=True, min_periods=1
+                    window=window_size, min_periods=1
                 ).median()
                 # Use median volume for bar size calculation when available
                 market_data['effective_volume'] = market_data['median_volume'].fillna(market_data['volume'])

@@ -8,6 +8,7 @@ import pytest
 from typing import Optional
 
 from src.training.steps.pre_training.multi_horizon_profit_labeler import (
+    LabelingResult,
     MultiHorizonConfig,
     MultiHorizonProfitLabeler,
     MultiHorizonProfitLabelerComponent,
@@ -328,6 +329,111 @@ async def test_execute_labeling_chunked_matches_full(monkeypatch):
 
     chunk_batches = chunked_artifacts["multi_horizon_labeling_result"].get("market_data_batches")
     assert chunk_batches is not None and len(chunk_batches) >= 2
+
+
+@pytest.mark.anyio("asyncio")
+async def test_balancing_preserves_multi_target_columns(monkeypatch):
+    """Balancing should retain all target columns and aligned ancillary data."""
+
+    config = MultiHorizonConfig(min_data_points=10)
+    labeler = MultiHorizonProfitLabeler(config)
+
+    index = pd.date_range("2022-01-01", periods=6, freq="1h")
+    balanced_index = index[[0, 2, 4]]
+
+    labels = pd.DataFrame(
+        {
+            "y_small": np.array([1, -1, 0, 1, -1, 0], dtype=float),
+            "y_large": np.array([-1, 0, 1, -1, 0, 1], dtype=float),
+        },
+        index=index,
+    )
+    training_labels = labels.copy()
+
+    confidence_scores = pd.DataFrame(
+        {
+            "y_small_conf": np.linspace(0.1, 0.6, len(index)),
+            "y_large_conf": np.linspace(0.6, 0.1, len(index)),
+        },
+        index=index,
+    )
+    eligibility_masks = pd.DataFrame(
+        {
+            "y_small_mask": np.ones(len(index), dtype=bool),
+            "y_large_mask": np.ones(len(index), dtype=bool),
+        },
+        index=index,
+    )
+    sigma_payoffs = pd.DataFrame(
+        {
+            "y_small_sigma": np.linspace(0.5, 1.0, len(index)),
+            "y_large_sigma": np.linspace(1.0, 0.5, len(index)),
+        },
+        index=index,
+    )
+    normalization_factors = {
+        "sigma_payoffs": sigma_payoffs.copy(),
+        "raw_payoffs": sigma_payoffs.copy() * 2.0,
+        "nested": {"series": sigma_payoffs["y_small_sigma"].copy()},
+    }
+
+    labeling_result = LabelingResult(
+        labels=labels,
+        confidence_scores=confidence_scores,
+        eligibility_masks=eligibility_masks,
+        sigma_payoffs=sigma_payoffs,
+        training_labels=training_labels,
+        normalization_factors=normalization_factors,
+        quality_scores={},
+        n_samples=len(index),
+        n_targets=labels.shape[1],
+        processing_time=0.0,
+    )
+
+    market_data = pd.DataFrame(
+        {
+            "feature_a": np.linspace(0.0, 1.0, len(index)),
+            "feature_b": np.linspace(1.0, 2.0, len(index)),
+        },
+        index=index,
+    )
+
+    class _BalancingStub:
+        def __init__(self, target_index: pd.Index):
+            self.target_index = target_index
+
+        def balance_and_weight(self, X, y, sample_weight, additional_features):
+            return (
+                X.reindex(self.target_index),
+                y.reindex(self.target_index),
+                pd.Series(0.5, index=self.target_index),
+            )
+
+    labeler.balancing_system = _BalancingStub(balanced_index)
+
+    balanced_result = await labeler._apply_balancing_and_weighting(labeling_result, market_data)
+
+    expected_labels = labels.reindex(balanced_index)
+    pd.testing.assert_frame_equal(balanced_result.labels, expected_labels)
+    pd.testing.assert_frame_equal(balanced_result.training_labels, expected_labels)
+    pd.testing.assert_frame_equal(
+        balanced_result.confidence_scores,
+        confidence_scores.reindex(balanced_index),
+    )
+    pd.testing.assert_frame_equal(
+        balanced_result.eligibility_masks,
+        eligibility_masks.reindex(balanced_index),
+    )
+    pd.testing.assert_frame_equal(
+        balanced_result.sigma_payoffs,
+        sigma_payoffs.reindex(balanced_index),
+    )
+    assert balanced_result.n_targets == expected_labels.shape[1]
+    assert list(balanced_result.sample_weights.index) == list(balanced_index)
+    assert list(balanced_result.normalization_factors["sigma_payoffs"].index) == list(balanced_index)
+    assert list(balanced_result.normalization_factors["raw_payoffs"].index) == list(balanced_index)
+    nested_series = balanced_result.normalization_factors["nested"]["series"]
+    assert list(nested_series.index) == list(balanced_index)
 
 
 @pytest.mark.anyio("asyncio")

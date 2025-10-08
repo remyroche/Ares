@@ -206,7 +206,10 @@ class ComponentFactory:
         Returns:
             List of component names
         """
-        available = list(self._components.keys())
+        available = [
+            name for name, component in self._components.items()
+            if component is not None
+        ]
         tprint(
             f"📋 [PRE_TRAINING_FACTORY] Available components: {available}",
             color="magenta",

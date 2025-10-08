@@ -47,6 +47,12 @@ from src.training.steps.pre_training.validation.data_contracts import (
     validate_selection_artifact,
 )
 from src.training.config.data_locator import DataLocator as PipelineDataLocator
+from .column_naming import (
+    ColumnNamespace,
+    ensure_namespace,
+    filter_namespace_columns,
+    standardize_namespace_frame,
+)
 
 class FinalFeatureSelectionStep:
     """Final feature selection step for market analysis pipeline."""
@@ -190,12 +196,24 @@ class FinalFeatureSelectionStep:
         tprint("✅ FinalFeatureSelectionStep initialization complete")
         tprint(f"   🎯 Model Type: {model_type}")
         tprint(f"   📊 Feature targets: {profile['stage_targets']}")
-    
+
+    @staticmethod
+    def _standardize_feature_frame(data: pd.DataFrame) -> pd.DataFrame:
+        """Ensure feature columns follow the ``X_*`` naming convention."""
+
+        return standardize_namespace_frame(data, ColumnNamespace.FEATURE, allowed_unprefixed={"datetime"})
+
+    @staticmethod
+    def _standardize_target_frame(data: pd.DataFrame) -> pd.DataFrame:
+        """Ensure target columns follow the ``y_*`` naming convention."""
+
+        return standardize_namespace_frame(data, ColumnNamespace.TARGET)
+
     @log_all_calls
     @handles_errors(Exception, fallback=False)
     @log_execution_time()
-    async def execute_final_feature_selection(self, 
-                                            symbol: str, 
+    async def execute_final_feature_selection(self,
+                                            symbol: str,
                                             exchange: str, 
                                             timeframe: str, 
                                             data_dir: str,
@@ -408,6 +426,13 @@ class FinalFeatureSelectionStep:
                 tprint_warning(f"⚠️ Target data has unexpected type: {type(target_data)}")
                 return None
 
+        target_df = self._standardize_target_frame(target_df)
+
+        if target_columns:
+            target_columns = [ensure_namespace(col, ColumnNamespace.TARGET) for col in target_columns]
+        else:
+            target_columns = filter_namespace_columns(target_df.columns, ColumnNamespace.TARGET)
+
         if target_df.empty:
             self.logger.warning("⚠️ Standardized target dataframe is empty")
             return None
@@ -554,6 +579,8 @@ class FinalFeatureSelectionStep:
                     self.logger.warning(f"⚠️ Data cleaning failed for final feature selection, proceeding with original data: {e}")
                     tprint_warning(f"   ⚠️ Data cleaning issues encountered: {e}")
 
+                data = self._standardize_feature_frame(data)
+
                 self.logger.info(f"✅ Loaded {len(data)} samples with {len(data.columns)} features")
                 tprint_success(f"   ✅ Loaded feature data with shape {data.shape}")
                 return data
@@ -564,6 +591,7 @@ class FinalFeatureSelectionStep:
             self.logger.info(f"📂 Loading matrix operations data from: {matrix_file}")
             tprint_info(f"   📂 Falling back to matrix operations file: {matrix_file.name}")
             data = pd.read_parquet(matrix_file)
+            data = self._standardize_feature_frame(data)
             self.logger.info(f"✅ Loaded {len(data)} samples with {len(data.columns)} features from matrix operations")
             tprint_success(f"   ✅ Loaded matrix operations data with shape {data.shape}")
             return data
@@ -607,15 +635,10 @@ class FinalFeatureSelectionStep:
                 self.logger.info(f"📂 Loading target data from: {file_path}")
                 tprint_success(f"   📂 Found target file: {file_path.name}")
                 data = pd.read_parquet(file_path)
+                data = self._standardize_target_frame(data)
 
-                # Try to find target column
-                target_columns = ['target', 'label', 'y', 'return', 'triple_barrier_label']
-                target_col = None
-
-                for col in target_columns:
-                    if col in data.columns:
-                        target_col = col
-                        break
+                canonical_targets = filter_namespace_columns(data.columns, ColumnNamespace.TARGET)
+                target_col = canonical_targets[0] if canonical_targets else None
 
                 if target_col:
                     target_data = data[target_col]

@@ -102,10 +102,9 @@ except ImportError:  # pragma: no cover
 
 
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_error, tprint_warning
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.version_manager import get_version_manager
-from src.utils.random_seeding import SeededRNGs, seed_rngs
+from src.utils.random_seeding import SeededRNGs, seed_rngs, set_global_seed
 from src.utils.tprint import tprint, tprint_error, tprint_warning
 from .logging_utils import (
     PreTrainingEventLogger,
@@ -123,6 +122,7 @@ from src.training.steps.pre_training.validation.data_contracts import (
     validate_multi_horizon_labeling_result,
     validate_selection_artifact,
 )
+from src.training.common.component_result import ComponentError
 
 logger = system_logger.getChild('PreTrainingSubPipeline')
 
@@ -294,6 +294,7 @@ class SubPipelineConfig:
     fast_mode: bool = False
     skip_next_pipeline: bool = False
     custom_params: Dict[str, Any] = field(default_factory=dict)
+    random_seed: Optional[int] = None
     pipeline: Dict[str, Any] = field(default_factory=dict)
     label_imbalance_warning_threshold: float = 0.75
     nan_rate_warning_threshold: float = 0.05
@@ -548,6 +549,11 @@ class PreTrainingSubPipeline:
 
     @staticmethod
     def _extract_component_error_code(component_result: Any, default_code: str) -> str:
+        component_errors = getattr(component_result, 'errors', None)
+        if component_errors:
+            for err in component_errors:
+                if isinstance(err, ComponentError) and err.code:
+                    return err.code
         for attr in ('error_code', 'error_code_slug'):
             value = getattr(component_result, attr, None)
             if value:
@@ -580,7 +586,18 @@ class PreTrainingSubPipeline:
     def _collect_component_errors(self, component_result: Any) -> List[str]:
         errors: List[str] = []
         component_errors = getattr(component_result, 'errors', []) or []
-        self._extend_messages(errors, component_errors)
+        formatted_errors: List[str] = []
+        for item in component_errors:
+            if isinstance(item, ComponentError):
+                text = f"[{item.code}] {item.message}" if item.code else item.message
+                if item.details:
+                    details_preview = ', '.join(f"{k}={v}" for k, v in list(item.details.items())[:3])
+                    if details_preview:
+                        text = f"{text} (details: {details_preview})"
+                formatted_errors.append(text)
+            else:
+                formatted_errors.append(str(item))
+        self._extend_messages(errors, formatted_errors)
         error_message = getattr(component_result, 'error_message', None)
         if error_message:
             self._extend_messages(errors, [error_message])
@@ -601,6 +618,31 @@ class PreTrainingSubPipeline:
             if isinstance(pipeline_params, dict) and pipeline_params.get('continue_on_error') is not None:
                 return bool(pipeline_params.get('continue_on_error'))
         return False
+
+    def _build_event_context(
+        self,
+        step: str,
+        *,
+        config: Optional[SubPipelineConfig] = None,
+        rows_in: Optional[int] = None,
+        rows_out: Optional[int] = None,
+        duration_ms: Optional[float] = None,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Construct structured logging context with standard fields."""
+
+        context: Dict[str, Any] = {
+            'run_id': self._run_metadata.get('run_id', 'unknown'),
+            'step': step,
+            'symbol': (config.symbol if config else self._run_metadata.get('symbol')) or 'unknown',
+            'timeframe': (config.timeframe if config else self._run_metadata.get('timeframe')) or 'unknown',
+            'rows_in': rows_in,
+            'rows_out': rows_out,
+            'duration_ms': duration_ms,
+        }
+        if extra:
+            context.update(extra)
+        return context
 
     def _create_failure(
         self,
@@ -725,12 +767,55 @@ class PreTrainingSubPipeline:
         errors = pipeline_results.setdefault('errors', [])
         summary = self._compose_error_summary(failure, errors)
         pipeline_results['error_summary'] = summary
+        rows_in: Optional[int] = None
+        rows_out: Optional[int] = None
+        duration_ms: Optional[float] = None
+        if failure.context:
+            rows_in = self._search_numeric_fields(
+                failure.context,
+                ('rows_in', 'input_rows', 'rows_before', 'n_rows_in', 'samples_in'),
+                depth=1,
+            )
+            rows_out = self._search_numeric_fields(
+                failure.context,
+                ('rows_out', 'output_rows', 'rows_after', 'n_rows_out', 'samples_out'),
+                depth=1,
+            )
+            if isinstance(failure.context.get('duration_ms'), (int, float)):
+                duration_ms = float(failure.context['duration_ms'])
+            else:
+                duration_seconds = self._search_numeric_fields(
+                    failure.context,
+                    ('duration_seconds',),
+                    depth=1,
+                )
+                if duration_seconds is not None:
+                    duration_ms = float(duration_seconds) * 1000.0
+
+        message = summary or failure.message
+        event_extra: Dict[str, Any] = {
+            'error_code': failure.error_code,
+            'failure_context': failure.context,
+        }
         if summary:
-            tprint_error(f"❌ {summary}")
             self.logger.error(summary)
+            event_extra['error_summary'] = summary
         else:
-            tprint_error(f"❌ {failure.message}")
             self.logger.error(failure.message)
+        if failure.traceback:
+            event_extra['traceback'] = failure.traceback
+
+        self.event_logger.error(
+            message,
+            context=self._build_event_context(
+                failure.step,
+                config=config,
+                rows_in=rows_in,
+                rows_out=rows_out,
+                duration_ms=duration_ms,
+                extra=event_extra,
+            ),
+        )
 
         self._log_step_timing_summary(pipeline_results)
 
@@ -872,7 +957,11 @@ class PreTrainingSubPipeline:
             PipelineResultDict containing execution results with typed fields
         """
         seed = self._resolve_random_seed(config)
-        self._seeded_rngs = seed_rngs(seed)
+        config.random_seed = seed
+        if config.custom_params is None:
+            config.custom_params = {}
+        config.custom_params.setdefault('random_seed', seed)
+        self._seeded_rngs = set_global_seed(seed)
         self._active_seed = seed
 
         run_metadata = self._gather_run_metadata(config, seed)
@@ -888,6 +977,7 @@ class PreTrainingSubPipeline:
         self.logger.info('🚀 Starting Pre-Training Sub-Pipeline execution')
         self.logger.info(f'📊 Symbol: {config.symbol}, Exchange: {config.exchange}')
         self.logger.info(f'⏰ Timeframe: {config.timeframe}, Mode: {config.mode.value}')
+        self.logger.info(f'🎲 Random seed: {seed}')
         self.logger.info(f'🧾 Run metadata:\n{metadata_block}')
 
         run_id = self._run_metadata.get('run_id', 'unknown')
@@ -983,8 +1073,19 @@ class PreTrainingSubPipeline:
                         step_metric_records,
                         config,
                     )
-                tprint_warning(
-                    "⚠️ Continue-on-error enabled; proceeding after multi_horizon_profit_labeler failure"
+                self.event_logger.warning(
+                    "Continue-on-error enabled; proceeding after multi_horizon_profit_labeler failure",
+                    context=self._build_event_context(
+                        'multi_horizon_profit_labeler',
+                        config=config,
+                        rows_in=mh_context.rows_in,
+                        rows_out=mh_context.rows_out,
+                        duration_ms=mh_duration_ms,
+                        extra={
+                            'error_code': failure.error_code,
+                            'continue_on_error': True,
+                        },
+                    ),
                 )
                 self.logger.warning(
                     "Continue-on-error enabled; proceeding after multi_horizon_profit_labeler failure",
@@ -1164,8 +1265,19 @@ class PreTrainingSubPipeline:
                         step_metric_records,
                         config,
                     )
-                tprint_warning(
-                    "⚠️ Continue-on-error enabled; proceeding after feature_lookback_optimization failure"
+                self.event_logger.warning(
+                    "Continue-on-error enabled; proceeding after feature_lookback_optimization failure",
+                    context=self._build_event_context(
+                        'feature_lookback_optimization',
+                        config=config,
+                        rows_in=flo_context.rows_in,
+                        rows_out=flo_context.rows_out,
+                        duration_ms=flo_duration_ms,
+                        extra={
+                            'error_code': failure.error_code,
+                            'continue_on_error': True,
+                        },
+                    ),
                 )
                 self.logger.warning(
                     "Continue-on-error enabled; proceeding after feature_lookback_optimization failure",
@@ -1309,8 +1421,19 @@ class PreTrainingSubPipeline:
                         step_metric_records,
                         config,
                     )
-                tprint_warning(
-                    "⚠️ Continue-on-error enabled; proceeding after interactive_feature_generation failure"
+                self.event_logger.warning(
+                    "Continue-on-error enabled; proceeding after interactive_feature_generation failure",
+                    context=self._build_event_context(
+                        'interactive_feature_generation',
+                        config=config,
+                        rows_in=interactive_context.rows_in,
+                        rows_out=interactive_context.rows_out,
+                        duration_ms=interactive_duration_ms,
+                        extra={
+                            'error_code': failure.error_code,
+                            'continue_on_error': True,
+                        },
+                    ),
                 )
                 self.logger.warning(
                     "Continue-on-error enabled; proceeding after interactive_feature_generation failure",
@@ -1418,8 +1541,19 @@ class PreTrainingSubPipeline:
                         step_metric_records,
                         config,
                     )
-                tprint_warning(
-                    "⚠️ Continue-on-error enabled; proceeding after final_feature_selection failure"
+                self.event_logger.warning(
+                    "Continue-on-error enabled; proceeding after final_feature_selection failure",
+                    context=self._build_event_context(
+                        'final_feature_selection',
+                        config=config,
+                        rows_in=ffs_context.rows_in,
+                        rows_out=ffs_context.rows_out,
+                        duration_ms=ffs_duration_ms,
+                        extra={
+                            'error_code': failure.error_code,
+                            'continue_on_error': True,
+                        },
+                    ),
                 )
                 self.logger.warning(
                     "Continue-on-error enabled; proceeding after final_feature_selection failure",
@@ -1797,7 +1931,14 @@ class PreTrainingSubPipeline:
         ):
             pass
 
-        tprint("📈 Step duration summary:")
+        self.logger.info("📈 Step duration summary:")
+        self.event_logger.info(
+            "Step duration summary emitted",
+            context=self._build_event_context(
+                'pipeline.summary',
+                extra={'steps': sorted(step_metrics.keys())},
+            ),
+        )
         for spec in self._get_ordered_step_specs(sequence_only=True):
             step_name = spec.name
             metrics = step_metrics.get(step_name)
@@ -1819,16 +1960,16 @@ class PreTrainingSubPipeline:
             self.logger.info(message)
             self.event_logger.info(
                 "Step duration summary",
-                context={
-                    'run_id': self._run_metadata.get('run_id'),
-                    'step': f'pipeline.summary.{step_name}',
-                    'symbol': self._run_metadata.get('symbol'),
-                    'timeframe': self._run_metadata.get('timeframe'),
-                    'duration_seconds': duration,
-                    'budget_seconds': budget,
-                    'over_budget': over_budget,
-                    'over_budget_seconds': over_budget_seconds,
-                },
+                context=self._build_event_context(
+                    f'pipeline.summary.{step_name}',
+                    duration_ms=duration * 1000.0,
+                    extra={
+                        'duration_seconds': duration,
+                        'budget_seconds': budget,
+                        'over_budget': over_budget,
+                        'over_budget_seconds': over_budget_seconds,
+                    },
+                ),
             )
 
     @staticmethod
@@ -2021,13 +2162,25 @@ class PreTrainingSubPipeline:
         if data_dir is None and isinstance(locator, DataLocator):
             data_dir = str(locator.data_path(data_dir_key))
 
+        custom_params_source = pipeline_state.get('custom_params')
+        custom_params = dict(custom_params_source) if isinstance(custom_params_source, Mapping) else {}
+        random_seed_value = pipeline_state.get('random_seed')
+        resolved_seed: Optional[int] = None
+        if random_seed_value is not None:
+            try:
+                resolved_seed = int(random_seed_value)
+                custom_params.setdefault('random_seed', resolved_seed)
+            except (TypeError, ValueError):
+                resolved_seed = None
+
         config = SubPipelineConfig(
             symbol=pipeline_state.get('symbol', 'ETHUSDT'),
             exchange=pipeline_state.get('exchange', 'binance'),
             timeframe=pipeline_state.get('timeframe', '1h'),  # Default 1h for pre-training (analyst)
             data_dir=data_dir,
             mode=ExecutionMode.FULL,  # Default to full mode
-            custom_params=pipeline_state.get('custom_params', {}),
+            custom_params=custom_params,
+            random_seed=resolved_seed,
             data_locator=locator if isinstance(locator, DataLocator) else None,
             data_dir_key=data_dir_key,
         )
@@ -2118,8 +2271,9 @@ class PreTrainingSubPipeline:
     def _build_component_custom_params(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Augment component custom parameters with quality thresholds."""
         params = dict(config.custom_params or {})
-        if self._active_seed is not None:
-            params.setdefault('random_seed', self._active_seed)
+        seed = config.random_seed if config.random_seed is not None else self._active_seed
+        if seed is not None:
+            params.setdefault('random_seed', seed)
         params.setdefault('quality_thresholds', self._get_quality_thresholds(config))
         if config.market_data_batch_size is not None:
             params.setdefault('market_data_batch_size', config.market_data_batch_size)

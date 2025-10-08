@@ -76,6 +76,7 @@ class LabeledDataSchema(_BaseContractModel):
     horizon_weights: Dict[str, float] = Field(default_factory=dict)
     target_columns: Sequence[str] = Field(default_factory=list)
     normalization_factors: Dict[str, Any] = Field(default_factory=dict)
+    execution_timing: Dict[str, Any] = Field(default_factory=dict)
     method: Optional[str] = None
     balancing_applied: Optional[bool] = None
     sample_weights: Optional[Any] = None

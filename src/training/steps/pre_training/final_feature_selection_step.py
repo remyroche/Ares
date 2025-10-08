@@ -48,6 +48,24 @@ class FinalFeatureSelectionStep:
             tprint(f"   ⚙️ Provided configuration keys: {sorted(self.config.keys())}")
         else:
             tprint("   ⚙️ No custom configuration supplied, using defaults")
+        
+        # Drift monitoring configuration
+        self.enable_drift_monitoring = self.config.get('enable_drift_monitoring', True)
+        self.drift_thresholds = {
+            'max_kl_divergence': self.config.get('max_kl_divergence', 0.5),
+            'max_mean_shift': self.config.get('max_mean_shift', 2.0),
+            'max_vif': self.config.get('max_vif', 10.0)
+        }
+        
+        # Bootstrap validation configuration
+        self.enable_bootstrap_validation = self.config.get('enable_bootstrap_validation', True)
+        self.bootstrap_iterations = self.config.get('bootstrap_iterations', 10)
+        self.stability_threshold = self.config.get('stability_threshold', 0.6)
+        
+        if self.enable_drift_monitoring:
+            tprint(f"   🔍 Drift monitoring: Enabled (KL threshold={self.drift_thresholds['max_kl_divergence']})")
+        if self.enable_bootstrap_validation:
+            tprint(f"   🔄 Bootstrap validation: Enabled ({self.bootstrap_iterations} iterations)")
 
         # Model-specific feature count profiles
         self.model_profiles = {
@@ -715,6 +733,60 @@ class FinalFeatureSelectionStep:
             tprint(f"🔍 Error details: {traceback.format_exc()}")
 
 # Convenience function for pipeline integration
+def detect_feature_drift_simple(train_features: pd.DataFrame, val_features: pd.DataFrame, 
+                                max_mean_shift: float = 2.0) -> Dict[str, Any]:
+    """
+    Simple feature drift detection between training and validation sets.
+    
+    Args:
+        train_features: Training feature DataFrame
+        val_features: Validation feature DataFrame
+        max_mean_shift: Maximum allowed mean shift in standard deviations
+    
+    Returns:
+        Dictionary with drift detection results
+    """
+    tprint("🔍 Detecting feature drift...")
+    
+    drift_results = {
+        'drifted_features': [],
+        'drift_scores': {},
+        'n_drifted': 0,
+        'drift_detected': False
+    }
+    
+    common_features = list(set(train_features.columns).intersection(set(val_features.columns)))
+    
+    for feature in common_features:
+        train_data = train_features[feature].dropna()
+        val_data = val_features[feature].dropna()
+        
+        if len(train_data) < 10 or len(val_data) < 10:
+            continue
+        
+        # Calculate mean shift
+        train_mean = train_data.mean()
+        train_std = train_data.std()
+        val_mean = val_data.mean()
+        
+        mean_shift = abs(val_mean - train_mean) / (train_std + 1e-8)
+        
+        # Check threshold
+        if mean_shift > max_mean_shift:
+            drift_results['drifted_features'].append(feature)
+            drift_results['drift_scores'][feature] = float(mean_shift)
+            drift_results['n_drifted'] += 1
+    
+    drift_results['drift_detected'] = drift_results['n_drifted'] > 0
+    
+    if drift_results['drift_detected']:
+        tprint_warning(f"⚠️ Drift detected in {drift_results['n_drifted']} features")
+    else:
+        tprint_success(f"✅ No significant drift detected")
+    
+    return drift_results
+
+
 async def run_final_feature_selection_step(symbol: str,
                                          exchange: str,
                                          timeframe: str = '1h',  # Updated to 1h for analyst

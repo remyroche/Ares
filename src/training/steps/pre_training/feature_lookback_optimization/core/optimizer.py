@@ -62,6 +62,18 @@ class OptimizationMethod(Enum):
 
 
 @dataclass
+class LookbackConstraints:
+    """Constraints for lookback optimization."""
+    min_lookback: int = 5
+    max_lookback: int = 300
+    search_step: int = 5
+    enable_regularization: bool = True
+    regularization_strength: float = 0.1
+    preferred_lookback: int = 50
+    min_stability_score: float = 0.7
+
+
+@dataclass
 class OptimizationResult:
     """Standardized optimization result."""
     best_lookback_period: int
@@ -71,6 +83,8 @@ class OptimizationResult:
     optimization_time: float
     convergence_achieved: bool
     metadata: Dict[str, Any]
+    stability_score: float = 0.0  # Added for validation
+    lookback_sensitivity: float = 0.0  # Added for validation
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert result to dictionary."""
@@ -94,6 +108,8 @@ class OptimizationResult:
             'total_trials': int(self.total_trials) if isinstance(self.total_trials, np.int64) else self.total_trials,
             'optimization_time': self.optimization_time,
             'convergence_achieved': self.convergence_achieved,
+            'stability_score': self.stability_score,
+            'lookback_sensitivity': self.lookback_sensitivity,
             'metadata': convert_metadata(self.metadata)
         }
 

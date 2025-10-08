@@ -407,23 +407,85 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
     def _align_data_with_regime_assignments(self, market_data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> pd.DataFrame:
         """Align market data with regime assignments to ensure consistency with clustering step."""
         try:
-            # Resolve the regime cache directory from pipeline state or configuration
-            configured_path = pipeline_state.get('regime_cache_path')
-            if not configured_path:
-                configured_path = self.config.custom_params.get('regime_cache_path') if self.config and getattr(self.config, 'custom_params', None) else None
+            symbol = pipeline_state.get('symbol', 'ETHUSDT').lower()
 
-            if configured_path:
-                regime_cache_dir = Path(configured_path).expanduser()
-                if not regime_cache_dir.is_absolute():
-                    base_data_dir = Path(self.config.data_dir).expanduser()
-                    if not base_data_dir.is_absolute():
-                        base_data_dir = Path.cwd() / base_data_dir
-                    regime_cache_dir = base_data_dir / regime_cache_dir
-            else:
-                base_data_dir = Path(self.config.data_dir).expanduser()
-                if not base_data_dir.is_absolute():
-                    base_data_dir = Path.cwd() / base_data_dir
-                regime_cache_dir = base_data_dir / 'nas_tas_clustering'
+            pipeline_custom_params = pipeline_state.get('custom_params', {}) if isinstance(pipeline_state, dict) else {}
+            config_custom_params = getattr(self.config, 'custom_params', {}) or {}
+
+            candidate_dirs: List[Path] = []
+
+            def _normalize_candidate(path_value: Any) -> Optional[Path]:
+                if not path_value:
+                    return None
+                path = path_value if isinstance(path_value, Path) else Path(path_value)
+                path = path.expanduser()
+
+                # If a file path is provided, use its parent directory
+                if path.suffix:
+                    path = path.parent
+
+                # If the path already points to the symbol directory, use its parent
+                if path.name.lower() == symbol:
+                    path = path.parent
+
+                if not path.is_absolute():
+                    path = Path.cwd() / path
+
+                return path
+
+            def _register_candidate(path_value: Any) -> None:
+                normalized = _normalize_candidate(path_value)
+                if not normalized:
+                    return
+
+                candidate_dirs.append(normalized)
+                if normalized.name.lower() != 'nas_tas_clustering':
+                    candidate_dirs.append(normalized / 'nas_tas_clustering')
+
+            # Gather candidate directories from pipeline state and configuration
+            _register_candidate(pipeline_state.get('regime_cache_path'))
+            _register_candidate(pipeline_custom_params.get('regime_cache_path'))
+            _register_candidate(config_custom_params.get('regime_cache_path'))
+
+            for base_dir in (
+                pipeline_state.get('data_cache_dir'),
+                pipeline_custom_params.get('data_cache_dir'),
+                config_custom_params.get('data_cache_dir'),
+                pipeline_state.get('data_dir'),
+                getattr(self.config, 'data_dir', None),
+            ):
+                _register_candidate(base_dir)
+
+            # Fallback to the default cache directory in the project root
+            _register_candidate(Path('data_cache'))
+
+            # Remove duplicates while preserving order
+            seen_paths = set()
+            unique_candidates: List[Path] = []
+            for candidate in candidate_dirs:
+                candidate = candidate.expanduser()
+                if not candidate.is_absolute():
+                    candidate = Path.cwd() / candidate
+                key = candidate.as_posix()
+                if key not in seen_paths:
+                    seen_paths.add(key)
+                    unique_candidates.append(candidate)
+
+            regime_cache_dir: Optional[Path] = None
+            for candidate in unique_candidates:
+                if candidate.exists():
+                    regime_cache_dir = candidate
+                    break
+
+            if regime_cache_dir is None:
+                search_locations = ", ".join(str(path) for path in unique_candidates) or "None"
+                self.logger.warning(
+                    f"⚠️ Regime cache directory not found; searched locations: {search_locations}. Using full dataset"
+                )
+                return market_data
+
+            if regime_cache_dir.is_file():
+                regime_cache_dir = regime_cache_dir.parent
 
             try:
                 resolved_regime_cache_dir = regime_cache_dir.resolve(strict=False)
@@ -437,14 +499,13 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 return market_data
 
             # Try to load regime assignment file to get the correct data size
-            symbol = pipeline_state.get('symbol', 'ETHUSDT').lower()
             regime_files = list(regime_cache_dir.glob(f'**/{symbol}/nas_tas_regime_assignments_*.parquet'))
 
             if regime_files:
                 # Load the most recent regime assignment file
                 latest_file = max(regime_files, key=lambda x: x.stat().st_mtime)
                 regime_df = pd.read_parquet(latest_file)
-                
+
                 # Filter market data to match the regime assignment size
                 if len(regime_df) < len(market_data):
                     # Use the same number of records as regime assignments

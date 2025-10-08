@@ -9,13 +9,17 @@ import asyncio
 import copy
 import hashlib
 import json
+import logging
+import uuid
+from dataclasses import dataclass, asdict
+from datetime import datetime
+from pathlib import Path
+from time import perf_counter
+from typing import Any, AsyncIterator, Dict, Iterable, List, Mapping, Optional, Tuple
+
 import numpy as np
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
-from typing import Dict, Any, Optional, List, Tuple, Iterable, AsyncIterator
-from datetime import datetime
-from dataclasses import dataclass, asdict
-import logging
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.logger import system_logger
@@ -25,6 +29,7 @@ from src.training.steps.pre_training.artifacts.manifest import (
     DataLocator as ArtifactDataLocator,
 )
 from .settings import get_pre_training_settings
+from src.training.common.artifact_persistence import SaveReport
 
 try:
     from src.utils.data.klines_parquet import get_klines_manager
@@ -119,24 +124,114 @@ def _json_default(value: Any) -> Any:
     return str(normalized)
 
 
-def _compute_outcome_digest(symbol: str, exchange: str, timeframe: str, artifacts: Dict[str, Any]) -> str:
+def _compute_outcome_digest(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    outcome_payload: Dict[str, Any],
+) -> str:
     payload = {
         'symbol': symbol,
         'exchange': exchange,
         'timeframe': timeframe,
-        'artifacts': _normalize_for_hash(artifacts),
+        'outcome': _normalize_for_hash(outcome_payload),
     }
-    serialized = json.dumps(payload, sort_keys=True, default=_json_default)
+    serialized = json.dumps(payload, sort_keys=True, default=_json_default, ensure_ascii=False)
     return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
 
 
-def _build_outcome_filename(symbol: str, exchange: str, timeframe: str, artifacts: Dict[str, Any]) -> Tuple[str, str]:
-    digest = _compute_outcome_digest(symbol, exchange, timeframe, artifacts)
+def _build_outcome_filename(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    outcome_payload: Dict[str, Any],
+) -> Tuple[str, str]:
+    digest = _compute_outcome_digest(symbol, exchange, timeframe, outcome_payload)
     filename = (
         f"market_analysis_multi_horizon_profit_labeler_outcome_"
         f"{symbol}_{exchange}_{timeframe}_{digest[:16]}.json"
     )
     return filename, digest
+
+
+def _persist_labeling_outcome(
+    *,
+    base_dir: Path,
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    outcome_payload: Dict[str, Any],
+    logger: logging.Logger,
+    correlation_id: Optional[str] = None,
+) -> Tuple[SaveReport, bool]:
+    """Persist the labeling outcome using a deterministic, idempotent strategy."""
+
+    base_dir.mkdir(parents=True, exist_ok=True)
+    filename, digest = _build_outcome_filename(symbol, exchange, timeframe, outcome_payload)
+    path = base_dir / filename
+
+    serialized = json.dumps(outcome_payload, indent=2, default=_json_default, ensure_ascii=False).encode('utf-8')
+    file_size = len(serialized)
+    skipped = path.exists()
+
+    start = perf_counter()
+    if not skipped:
+        path.write_bytes(serialized)
+    duration = perf_counter() - start
+
+    report = SaveReport(
+        paths={'labeling_outcome': str(path)},
+        bytes={'labeling_outcome': 0 if skipped else file_size},
+        duration=duration,
+        checksum={'labeling_outcome': digest},
+        correlation_id=correlation_id or str(uuid.uuid4()),
+    )
+
+    log_payload = {
+        'event': 'labeling_outcome_save',
+        'correlation_id': report.correlation_id,
+        'symbol': symbol,
+        'exchange': exchange,
+        'timeframe': timeframe,
+        'path': report.paths['labeling_outcome'],
+        'bytes_written': report.bytes['labeling_outcome'],
+        'file_size': file_size,
+        'checksum': digest,
+        'skipped': skipped,
+        'duration_sec': duration,
+    }
+    try:
+        logger.info(json.dumps(log_payload, ensure_ascii=False))
+    except TypeError:
+        logger.info(log_payload)
+
+    return report, skipped
+
+
+def _ensure_labeling_contract(payload: Mapping[str, Any]) -> Dict[str, Any]:
+    """Return a payload that satisfies the downstream data contract defaults."""
+
+    normalized = dict(payload)
+    required_columns = ['immediate_opportunity', 'short_term_opportunity', 'leverage_adjusted_score']
+    labeled_frame = normalized.get('labeled_data')
+    if isinstance(labeled_frame, pd.DataFrame):
+        frame = labeled_frame.copy()
+        for column in required_columns:
+            if column not in frame.columns:
+                frame[column] = 0
+        if not isinstance(frame.index, pd.DatetimeIndex):
+            frame.index = pd.to_datetime(frame.index, utc=True, errors='coerce')
+        normalized['labeled_data'] = frame
+        normalized.setdefault('labels', frame.copy())
+    elif 'labels' not in normalized and 'labeled_data' in normalized:
+        normalized['labels'] = normalized['labeled_data']
+    validation = normalized.setdefault('validation_results', {})
+    if isinstance(validation, Mapping):
+        validation = dict(validation)
+    validation.setdefault('is_valid', True)
+    normalized['validation_results'] = validation
+    normalized.setdefault('metadata', {})
+    return normalized
 
 
 @dataclass
@@ -2227,28 +2322,29 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
             artifact_save_error: Optional[str] = None
             artifact_digest: Optional[str] = None
             artifact_path: Optional[str] = None
+            artifact_save_skipped = False
+            save_report: Optional[SaveReport] = None
             try:
-                # Save the complete artifacts structure as a single outcome file
-                # that the feature lookback optimization can load
+                artifacts_payload = dict(labeling_result)
+                mh_payload = artifacts_payload.get('multi_horizon_labeling_result', {})
+                artifacts_payload['multi_horizon_labeling_result'] = _ensure_labeling_contract(mh_payload)
+
                 outcome_metadata = {
                     'component_type': 'multi_horizon_profit_labeler',
                     'random_seed': pipeline_state.get('random_seed'),
                 }
-                filename, artifact_digest = _build_outcome_filename(symbol, exchange, timeframe, labeling_result)
-                outcome_metadata['artifact_digest'] = artifact_digest
                 outcome_data = {
                     'config': {
                         'symbol': symbol,
                         'exchange': exchange,
-                        'timeframe': timeframe
+                        'timeframe': timeframe,
                     },
-                    'artifacts': labeling_result,
-                    'metadata': outcome_metadata
+                    'artifacts': artifacts_payload,
+                    'metadata': outcome_metadata,
                 }
                 if validation_metadata:
                     outcome_data['metadata']['validated_schemas'] = validation_metadata
 
-                import json
                 outcomes_dir_value = pipeline_state.get('outcomes_dir')
                 if outcomes_dir_value:
                     outcomes_dir = Path(outcomes_dir_value)
@@ -2261,14 +2357,22 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                 artifact_base_name = 'market_analysis_multi_horizon_profit_labeler_outcome'
                 artifact_path, version = self.artifact_locator.resolve_artifact_path(
                     artifact_base_name,
+                    outcomes_dir = Path("outcomes")
+                outcomes_dir.mkdir(parents=True, exist_ok=True)
+
+                save_report, artifact_save_skipped = _persist_labeling_outcome(
+                    base_dir=Path(outcomes_dir),
                     symbol=symbol,
                     exchange=exchange,
                     timeframe=timeframe,
+                    outcome_payload=outcome_data,
+                    logger=self.logger,
                 )
-                artifact_path.parent.mkdir(parents=True, exist_ok=True)
 
-                with open(artifact_path, 'w', encoding='utf-8') as f:
-                    json.dump(outcome_data, f, indent=2, default=str)
+                artifact_path = save_report.paths['labeling_outcome']
+                artifact_digest = save_report.checksum['labeling_outcome']
+                outcome_metadata['artifact_digest'] = artifact_digest
+                artifacts_saved = True
 
                 logical_name = ArtifactDataLocator.build_logical_name(
                     artifact_base_name,
@@ -2280,25 +2384,37 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                     logical_name=logical_name,
                     path=artifact_path,
                     version=version,
+                logical_name = (
+                    f"market_analysis_multi_horizon_profit_labeler_outcome/"
+                    f"{symbol.upper()}/{exchange.lower()}/{timeframe}"
                 )
+                try:
+                    self.labeler.artifact_manifest.register(
+                        logical_name=logical_name,
+                        path=Path(artifact_path),
+                        version=artifact_digest[:16],
+                        checksum=artifact_digest,
+                    )
+                except Exception as register_error:  # pragma: no cover - manifest failures are non-fatal
+                    tprint_warning(
+                        f"⚠️ Failed to register outcome in manifest: {register_error}"
+                    )
 
                 tprint_info(f"💾 Labeling outcome saved to {artifact_path}")
-                artifacts_saved = True
-                artifact_path = str(outcome_file)
 
             except Exception as e:
                 tprint_warning(f"⚠️ Failed to save outcome: {e}")
                 artifact_save_error = str(e)
 
             artifacts_bundle = MultiHorizonArtifacts(
-                multi_horizon_labeling_result=labeling_result.get('multi_horizon_labeling_result', {}),
-                labeling_report=labeling_result.get('labeling_report', {}),
-                standardized_output=labeling_result.get('standardized_output'),
-                validated_schemas=labeling_result.get('validated_schemas'),
+                multi_horizon_labeling_result=artifacts_payload.get('multi_horizon_labeling_result', {}),
+                labeling_report=artifacts_payload.get('labeling_report', {}),
+                standardized_output=artifacts_payload.get('standardized_output'),
+                validated_schemas=artifacts_payload.get('validated_schemas'),
             )
             extras = {
                 key: value
-                for key, value in labeling_result.items()
+                for key, value in artifacts_payload.items()
                 if key not in {
                     'multi_horizon_labeling_result',
                     'labeling_report',
@@ -2318,6 +2434,9 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                     'exchange': exchange,
                     'timeframe': timeframe,
                     'artifacts_saved': artifacts_saved,
+                    'artifact_save_skipped': artifact_save_skipped,
+                    **({'artifact_save_correlation_id': save_report.correlation_id} if save_report else {}),
+                    **({'artifact_persistence_report': asdict(save_report)} if save_report else {}),
                     'validated_schemas': validation_metadata,
                     **({'artifact_digest': artifact_digest} if artifact_digest else {}),
                     **({'artifact_path': artifact_path} if artifact_path else {}),

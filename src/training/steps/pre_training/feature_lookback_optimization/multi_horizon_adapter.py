@@ -190,6 +190,7 @@ class MultiHorizonOptimizer:
     
     def _generate_parameter_space(self) -> List[Dict[str, Any]]:
         """Generate parameter space for optimization."""
+        tprint("🔧 Generating multi-horizon parameter space...")
         param_combinations = []
         
         # Generate time horizon combinations
@@ -221,19 +222,22 @@ class MultiHorizonOptimizer:
             np.random.seed(42)
             indices = np.random.choice(len(param_combinations), self.config.n_trials, replace=False)
             param_combinations = [param_combinations[i] for i in indices]
-        
+
+        tprint(f"✅ Prepared {len(param_combinations)} parameter combinations for evaluation")
         return param_combinations
     
     def _generate_horizon_combinations(self) -> List[Dict[str, int]]:
         """Generate time horizon combinations."""
+        tprint("🧭 Generating candidate time horizon combinations...")
         combinations = []
         
         # Get ranges for each horizon type
         horizon_ranges = {}
         for horizon_name, (min_val, max_val, step) in self.config.time_horizon_ranges.items():
             horizon_ranges[horizon_name] = list(range(min_val, max_val + 1, step))
-        
+
         self.logger.info(f'🔧 Horizon ranges: {horizon_ranges}')
+        tprint(f"   → Horizon ranges prepared for {len(horizon_ranges)} segments")
         
         # Generate all combinations (limited to reasonable number)
         horizon_names = list(horizon_ranges.keys())
@@ -261,6 +265,7 @@ class MultiHorizonOptimizer:
                 combinations.append(horizon_dict)
         
         self.logger.info(f'✅ Generated {len(combinations)} valid horizon combinations')
+        tprint(f"✅ Generated {len(combinations)} valid time horizon combinations")
         return combinations
     
     def _is_valid_horizon_combination(self, horizons: Dict[str, int]) -> bool:
@@ -288,14 +293,17 @@ class MultiHorizonOptimizer:
         """Generate profit target combinations (optional)."""
         # For now, return empty list to use default targets
         # Can be enhanced later to optimize profit targets as well
+        tprint("ℹ️ Using default profit target combinations (no optimization)")
         return []
     
     def _grid_search_optimization(self, data: pd.DataFrame, param_space: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Perform grid search optimization."""
+        tprint("🔍 Executing grid search optimization for multi-horizon configuration...")
         self.logger.info(f'🔍 Running grid search optimization with {len(param_space)} configurations')
-        
+
         if len(param_space) == 0:
             self.logger.warning('⚠️ No parameter combinations to evaluate')
+            tprint("⚠️ Grid search aborted - no parameter combinations generated")
             return {
                 'method': 'grid_search',
                 'best_config': None,
@@ -308,10 +316,11 @@ class MultiHorizonOptimizer:
         best_score = -np.inf
         best_config = None
         all_results = []
-        
+
         for i, params in enumerate(param_space):
             if i % 10 == 0:
                 self.logger.info(f'   → Progress: {i}/{len(param_space)} ({i/len(param_space)*100:.1f}%)')
+                tprint(f"   → Grid search progress: {i}/{len(param_space)} configurations evaluated")
             
             # Evaluate configuration
             score, metrics = self._evaluate_configuration(data, params)
@@ -333,7 +342,8 @@ class MultiHorizonOptimizer:
         all_results.sort(key=lambda x: x['score'], reverse=True)
         for i, result in enumerate(all_results):
             result['rank'] = i + 1
-        
+
+        tprint(f"✅ Grid search completed with best score {best_score:.4f}")
         return {
             'method': 'grid_search',
             'best_config': best_config,
@@ -344,22 +354,27 @@ class MultiHorizonOptimizer:
     
     def _bayesian_optimization(self, data: pd.DataFrame, param_space: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Perform Bayesian optimization (simplified version)."""
+        tprint("🎯 Executing Bayesian optimization strategy (simplified)")
         self.logger.info(f'🎯 Running Bayesian optimization with {len(param_space)} initial configurations')
-        
+
         # For now, use a simplified approach similar to grid search
         # Can be enhanced with proper Bayesian optimization libraries
+        tprint("ℹ️ Falling back to grid search implementation for Bayesian optimization")
         return self._grid_search_optimization(data, param_space)
     
     def _genetic_optimization(self, data: pd.DataFrame, param_space: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Perform genetic algorithm optimization (simplified version)."""
+        tprint("🧬 Executing genetic optimization strategy (simplified)")
         self.logger.info(f'🧬 Running genetic optimization with {len(param_space)} initial population')
-        
+
         # For now, use a simplified approach similar to grid search
         # Can be enhanced with proper genetic algorithm implementation
+        tprint("ℹ️ Falling back to grid search implementation for genetic optimization")
         return self._grid_search_optimization(data, param_space)
     
     def _evaluate_configuration(self, data: pd.DataFrame, params: Dict[str, Any]) -> Tuple[float, Dict[str, Any]]:
         """Evaluate a specific configuration."""
+        tprint(f"🧪 Evaluating configuration #{params.get('config_id', 'unknown')}")
         try:
             # Create multi-horizon config from parameters
             horizon_config = MultiHorizonConfig()
@@ -388,15 +403,18 @@ class MultiHorizonOptimizer:
             
             # Weighted combination
             composite_score = primary_score * 0.6 + np.mean(secondary_scores) * 0.4
-            
+
+            tprint(f"   → Configuration score: {composite_score:.4f}")
             return composite_score, metrics
-            
+
         except Exception as e:
             self.logger.warning(f'⚠️ Configuration evaluation failed: {e}')
+            tprint(f"❌ Configuration evaluation failed: {e}")
             return -1.0, {'error': str(e)}
     
     def _calculate_evaluation_metrics(self, labeled_data: pd.DataFrame) -> Dict[str, float]:
         """Calculate evaluation metrics for labeled data."""
+        tprint("📊 Calculating evaluation metrics for labeled data")
         metrics = {}
         
         # Extract key columns
@@ -427,11 +445,13 @@ class MultiHorizonOptimizer:
             if len(overall_opp) > 0:
                 metrics['signal_quality'] = overall_opp.std()  # Higher std = more diverse signals
                 metrics['opportunity_coverage'] = (overall_opp > 0.5).sum() / len(overall_opp)
-        
+
+        tprint(f"✅ Metrics calculated: {list(metrics.keys())}")
         return metrics
     
     def _finalize_optimization_results(self, results: Dict[str, Any], start_time: float) -> Dict[str, Any]:
         """Finalize optimization results with additional analysis."""
+        tprint("📦 Finalizing optimization results")
         optimization_time = time.time() - start_time
         
         final_results = {
@@ -456,16 +476,20 @@ class MultiHorizonOptimizer:
         # Store top N results
         top_n = min(10, len(results['all_results']))
         final_results['top_configurations'] = results['all_results'][:top_n]
-        
+
+        tprint("✅ Optimization results finalized with performance analysis")
         return final_results
     
     def _analyze_optimization_performance(self, results: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze optimization performance."""
+        tprint("📈 Analyzing optimization performance statistics")
         all_scores = [r['score'] for r in results['all_results'] if r['score'] > 0]
-        
+
         if not all_scores:
+            tprint("⚠️ No valid scores available for performance analysis")
             return {'error': 'No valid scores found'}
-        
+
+        tprint(f"   → Processed {len(all_scores)} valid scores")
         return {
             'score_statistics': {
                 'mean': np.mean(all_scores),
@@ -483,41 +507,48 @@ class MultiHorizonOptimizer:
     
     def _create_recommended_config(self, best_config: Dict[str, Any]) -> MultiHorizonConfig:
         """Create recommended MultiHorizonConfig from optimization results."""
+        tprint("🛠️ Creating recommended MultiHorizonConfig from best parameters")
         config = MultiHorizonConfig()
-        
+
         # Update time horizons
         if 'time_horizons' in best_config:
             config.time_horizons = best_config['time_horizons']
-        
+
         # Update profit targets if optimized
         if best_config.get('profit_targets') is not None:
             config.profit_targets = best_config['profit_targets']
-        
+
+        tprint("✅ Recommended configuration prepared")
         return config
     
     def _validate_best_config(self, best_config: Dict[str, Any]) -> Dict[str, Any]:
         """Validate the best configuration."""
+        tprint("🔍 Validating best configuration")
         validation = {'valid': True, 'issues': []}
-        
+
         # Check time horizons
         horizons = best_config.get('time_horizons', {})
         if not horizons:
             validation['valid'] = False
             validation['issues'].append('No time horizons specified')
-        
+            tprint("⚠️ Validation issue: No time horizons specified")
+
         # Check logical ordering
         if not self._is_valid_horizon_combination(horizons):
             validation['issues'].append('Illogical time horizon ordering')
-        
+            tprint("⚠️ Validation issue: Illogical time horizon ordering")
+
         # Check reasonable ranges
         for name, value in horizons.items():
             if value < 1 or value > 50:  # Reasonable range for 5m data
                 validation['issues'].append(f'Unreasonable horizon value: {name}={value}')
-        
+                tprint(f"⚠️ Validation issue: {name} horizon value {value} out of bounds")
+
         return validation
     
     def _integrate_with_feature_lookback(self, results: Dict[str, Any]) -> Dict[str, Any]:
         """Integrate results with existing feature lookback optimization."""
+        tprint("🔗 Integrating optimized horizons with feature lookback configuration")
         integration = {
             'integration_attempted': True,
             'integration_successful': False,
@@ -561,11 +592,13 @@ class MultiHorizonOptimizer:
                 self.logger.info(f'✅ Updated configuration saved to {config_path}')
             else:
                 integration['error'] = 'No time horizons found in optimization results'
-                
+                tprint("⚠️ Integration skipped - no optimized time horizons available")
+
         except Exception as e:
             integration['error'] = str(e)
             self.logger.error(f'❌ Integration failed: {e}')
-        
+            tprint(f"❌ Integration failed: {e}")
+
         return integration
     
     def get_optimized_config(self) -> Optional[MultiHorizonConfig]:
@@ -576,24 +609,32 @@ class MultiHorizonOptimizer:
     
     def save_optimization_results(self, filepath: str):
         """Save optimization results to file."""
+        tprint(f"💾 Saving optimization results to {filepath}")
         if self.optimization_results:
             with open(filepath, 'w') as f:
                 import json
                 json.dump(self.optimization_results, f, indent=2, default=str)
             self.logger.info(f'💾 Optimization results saved to {filepath}')
+            tprint("✅ Optimization results saved successfully")
 
 # Convenience functions
-def optimize_multi_horizon_config(data: pd.DataFrame, 
+def optimize_multi_horizon_config(data: pd.DataFrame,
                                  config: Optional[MultiHorizonOptimizationConfig] = None) -> Dict[str, Any]:
     """Optimize multi-horizon configuration."""
+    tprint("🚀 Starting standalone multi-horizon optimization workflow")
     optimizer = MultiHorizonOptimizer(config)
-    return optimizer.optimize_time_horizons(data)
+    results = optimizer.optimize_time_horizons(data)
+    tprint("✅ Standalone multi-horizon optimization completed")
+    return results
 
 def get_optimized_multi_horizon_config(data: pd.DataFrame) -> MultiHorizonConfig:
     """Get optimized multi-horizon configuration."""
+    tprint("🧭 Retrieving optimized multi-horizon configuration")
     results = optimize_multi_horizon_config(data)
     if 'recommended_config' in results:
+        tprint("✅ Retrieved recommended multi-horizon configuration")
         return results['recommended_config']
+    tprint("⚠️ Optimization failed or missing - returning default configuration")
     return MultiHorizonConfig()  # Return default if optimization fails
 
 # Test function

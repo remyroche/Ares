@@ -24,6 +24,38 @@ warnings.filterwarnings('ignore')
 
 from .config import MonitoringConfig, ScoringConfig, RegimeConfig
 
+# Import tprint utilities for enriched monitoring visibility
+try:
+    from src.utils.tprint import (
+        tprint,
+        tprint_info,
+        tprint_warning,
+        tprint_error,
+        tprint_debug,
+        tprint_success,
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:  # pragma: no cover - fallback when utils package unavailable
+    TPRINT_AVAILABLE = False
+
+    def tprint(*args, **kwargs):
+        print(*args, **kwargs)
+
+    def tprint_info(*args, **kwargs):
+        print("INFO:", *args, **kwargs)
+
+    def tprint_warning(*args, **kwargs):
+        print("WARNING:", *args, **kwargs)
+
+    def tprint_error(*args, **kwargs):
+        print("ERROR:", *args, **kwargs)
+
+    def tprint_debug(*args, **kwargs):
+        print("DEBUG:", *args, **kwargs)
+
+    def tprint_success(*args, **kwargs):
+        print("SUCCESS:", *args, **kwargs)
+
 # Try to import dashboard libraries
 try:
     import plotly.graph_objects as go
@@ -104,18 +136,31 @@ class AdaptivePenaltyLearner:
             Updated penalty parameters
         """
         if not recent_performance:
+            tprint_debug(
+                "AdaptivePenaltyLearner: No recent performance provided. Retaining existing penalties.",
+            )
             return self.penalty_parameters
-        
+
         # Analyze recent performance
         recent_ics = [p.ic for p in recent_performance if not pd.isna(p.ic)]
         recent_sharpes = [p.sharpe for p in recent_performance if not pd.isna(p.sharpe)]
-        
+
         if not recent_ics:
+            tprint_warning(
+                "AdaptivePenaltyLearner: Unable to compute IC statistics from recent performance."
+                " Keeping prior penalties.",
+            )
             return self.penalty_parameters
-        
+
         avg_ic = np.mean(recent_ics)
         ic_std = np.std(recent_ics)
         avg_sharpe = np.mean(recent_sharpes) if recent_sharpes else 0.0
+
+        tprint_debug(
+            f"AdaptivePenaltyLearner: avg_ic={avg_ic:.4f}, ic_std={ic_std:.4f}, avg_sharpe={avg_sharpe:.4f}"
+            f" | volatility={market_conditions.get('volatility_level', 'n/a')}"
+            f" | news_proximity={market_conditions.get('news_proximity', 'n/a')}",
+        )
         
         # Market conditions
         volatility_level = market_conditions.get('volatility_level', 0.5)
@@ -173,29 +218,38 @@ class AdaptivePenaltyLearner:
         })
         
         self.penalty_history.append(self.penalty_parameters.copy())
-        
+
+        tprint_info(
+            f"AdaptivePenaltyLearner: Updated penalty parameters to {self.penalty_parameters}",
+        )
+
         return self.penalty_parameters
-    
+
     def get_penalty_parameters(self) -> Dict[str, float]:
         """Get current penalty parameters."""
+        tprint_debug(
+            f"AdaptivePenaltyLearner: Returning penalty parameters {self.penalty_parameters}",
+        )
         return self.penalty_parameters.copy()
-    
+
     def save_state(self, filepath: str):
         """Save penalty learner state."""
+        tprint_info(f"AdaptivePenaltyLearner: Saving state to {filepath}")
         state = {
             'penalty_parameters': self.penalty_parameters,
             'performance_history': self.performance_history,
             'penalty_history': self.penalty_history
         }
-        
+
         with open(filepath, 'w') as f:
             json.dump(state, f, indent=2, default=str)
-    
+
     def load_state(self, filepath: str):
         """Load penalty learner state."""
+        tprint_info(f"AdaptivePenaltyLearner: Loading state from {filepath}")
         with open(filepath, 'r') as f:
             state = json.load(f)
-        
+
         self.penalty_parameters = state.get('penalty_parameters', self.penalty_parameters)
         self.performance_history = state.get('performance_history', [])
         self.penalty_history = state.get('penalty_history', [])
@@ -231,19 +285,28 @@ class BOCPDTrigger:
             List of triggered alerts
         """
         alerts = []
-        
+
         # Calculate change point probability
         cp_prob = self.hazard / (self.hazard + self.run_length)
-        
+        tprint_debug(
+            f"BOCPDTrigger: Observation={new_observation:.4f} | run_length={self.run_length}"
+            f" | cp_prob={cp_prob:.4f}",
+        )
+
         # Update run length
         self.run_length += 1
-        
+
         # Check for change point
         if cp_prob > self.change_threshold:
             # Change point detected
             self.run_length = 0
             self.last_change_time = timestamp
-            
+
+            tprint_info(
+                f"BOCPDTrigger: Regime change detected at {timestamp.isoformat()}"
+                f" with probability {cp_prob:.4f}",
+            )
+
             # Record change
             self.change_history.append({
                 'timestamp': timestamp,
@@ -264,15 +327,22 @@ class BOCPDTrigger:
                 }
             )
             alerts.append(alert)
-        
+
         return alerts
-    
+
     def get_change_history(self) -> List[Dict[str, Any]]:
         """Get change point history."""
+        tprint_debug(
+            f"BOCPDTrigger: Returning change history with {len(self.change_history)} entries",
+        )
         return self.change_history.copy()
-    
+
     def get_current_state(self) -> Dict[str, Any]:
         """Get current BOCPD state."""
+        tprint_debug(
+            "BOCPDTrigger: Current state requested",
+            {'run_length': self.run_length, 'last_change_time': self.last_change_time},
+        )
         return {
             'run_length': self.run_length,
             'last_change_time': self.last_change_time,
@@ -294,16 +364,24 @@ class PerformanceDashboard:
     def update_metrics(self, metrics: PerformanceMetrics):
         """Update performance metrics."""
         self.metrics_history.append(metrics)
-        
+        tprint_debug(
+            f"PerformanceDashboard: Added metrics entry for {metrics.timestamp.isoformat()}"
+            f" | IC={metrics.ic:.4f} | Sharpe={metrics.sharpe:.4f}",
+        )
+
         # Keep only recent history (last 1000 points)
         if len(self.metrics_history) > 1000:
             self.metrics_history = self.metrics_history[-1000:]
-    
+            tprint_warning(
+                "PerformanceDashboard: Metrics history exceeded 1000 entries. Trimming to the most recent records.",
+            )
+
     def generate_dashboard(self) -> Dict[str, Any]:
         """Generate dashboard data."""
         if not self.metrics_history:
+            tprint_warning("PerformanceDashboard: No metrics available to generate dashboard.")
             return {'error': 'No metrics available'}
-        
+
         # Extract time series data
         timestamps = [m.timestamp for m in self.metrics_history]
         ics = [m.ic for m in self.metrics_history if not pd.isna(m.ic)]
@@ -344,9 +422,13 @@ class PerformanceDashboard:
             'plots': plots,
             'last_updated': datetime.now().isoformat()
         }
-        
+
+        tprint_info(
+            f"PerformanceDashboard: Generated dashboard with {len(self.metrics_history)} metric entries",
+        )
+
         return dashboard_data
-    
+
     def _generate_plots(self, time_series_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate Plotly plots."""
         plots = {}
@@ -399,11 +481,14 @@ class PerformanceDashboard:
                 yaxis_title='Feature Count'
             )
             plots['feature_count_plot'] = feature_fig.to_json()
-            
+
         except Exception as e:
             self.logger.warning(f"Failed to generate plots: {e}")
             plots = {'error': str(e)}
-        
+            tprint_warning(f"PerformanceDashboard: Plot generation failed - {e}")
+        else:
+            tprint_debug("PerformanceDashboard: Successfully generated Plotly visualizations.")
+
         return plots
 
 
@@ -419,6 +504,7 @@ class AlertSystem:
     
     def _create_alert_rules(self) -> List[Dict[str, Any]]:
         """Create alert rules."""
+        tprint_debug("AlertSystem: Initializing alert rules configuration.")
         return [
             {
                 'name': 'low_ic_alert',
@@ -449,7 +535,7 @@ class AlertSystem:
     def check_alerts(self, metrics: PerformanceMetrics) -> List[MonitoringAlert]:
         """Check for alerts based on metrics."""
         alerts = []
-        
+
         for rule in self.alert_rules:
             try:
                 if rule['condition'](metrics):
@@ -466,37 +552,61 @@ class AlertSystem:
                         }
                     )
                     alerts.append(alert)
+                    tprint_info(
+                        f"AlertSystem: Triggered {rule['name']} at {metrics.timestamp.isoformat()}"
+                        f" | severity={rule['severity']}",
+                    )
             except Exception as e:
                 self.logger.warning(f"Alert rule {rule['name']} failed: {e}")
+                tprint_warning(
+                    f"AlertSystem: Rule {rule['name']} failed while evaluating metrics - {e}",
+                )
                 continue
-        
+
+        tprint_debug(f"AlertSystem: Evaluated alerts - generated {len(alerts)} new alerts.")
         return alerts
-    
+
     def add_alert(self, alert: MonitoringAlert):
         """Add an alert to the system."""
         self.alerts.append(alert)
-        
+        tprint_info(
+            f"AlertSystem: Added alert {alert.alert_type} with severity {alert.severity}"
+            f" at {alert.timestamp.isoformat()}",
+        )
+
         # Keep only recent alerts (last 1000)
         if len(self.alerts) > 1000:
             self.alerts = self.alerts[-1000:]
-    
+            tprint_warning(
+                "AlertSystem: Alert backlog exceeded 1000 entries. Trimming to maintain recency.",
+            )
+
     def get_recent_alerts(self, hours: int = 24) -> List[MonitoringAlert]:
         """Get recent alerts."""
         cutoff_time = datetime.now() - timedelta(hours=hours)
+        tprint_debug(
+            f"AlertSystem: Fetching alerts newer than {cutoff_time.isoformat()} (window={hours}h)",
+        )
         return [a for a in self.alerts if a.timestamp > cutoff_time]
-    
+
     def get_alert_summary(self) -> Dict[str, Any]:
         """Get alert summary."""
         severity_counts = {}
         for alert in self.alerts:
             severity = alert.severity
             severity_counts[severity] = severity_counts.get(severity, 0) + 1
-        
-        return {
+
+        summary = {
             'total_alerts': len(self.alerts),
             'severity_counts': severity_counts,
             'recent_alerts': len(self.get_recent_alerts(24))
         }
+
+        tprint_info(
+            f"AlertSystem: Summary -> total={summary['total_alerts']} | recent={summary['recent_alerts']}",
+        )
+
+        return summary
 
 
 class RetrainingTrigger:
@@ -511,6 +621,7 @@ class RetrainingTrigger:
     
     def _create_retraining_rules(self) -> List[Dict[str, Any]]:
         """Create retraining rules."""
+        tprint_debug("RetrainingTrigger: Building retraining rule set.")
         return [
             {
                 'name': 'performance_degradation',
@@ -529,49 +640,74 @@ class RetrainingTrigger:
             }
         ]
     
-    def _check_performance_degradation(self, 
+    def _check_performance_degradation(self,
                                      current_metrics: PerformanceMetrics,
                                      history: List[PerformanceMetrics]) -> bool:
         """Check for performance degradation."""
         if len(history) < 10:
+            tprint_debug("RetrainingTrigger: Insufficient history for performance degradation check.")
             return False
-        
+
         # Compare current IC with recent average
         recent_ics = [m.ic for m in history[-10:] if not pd.isna(m.ic)]
         if not recent_ics:
+            tprint_warning(
+                "RetrainingTrigger: No valid IC values in recent history for degradation evaluation.",
+            )
             return False
-        
+
         recent_avg_ic = np.mean(recent_ics)
         current_ic = current_metrics.ic
-        
+
         # Trigger if current IC is significantly below recent average
-        return current_ic < recent_avg_ic - 0.05
-    
-    def _check_regime_change(self, 
+        triggered = current_ic < recent_avg_ic - 0.05
+        if triggered:
+            tprint_info(
+                f"RetrainingTrigger: Performance degradation detected. Current IC={current_ic:.4f}"
+                f" vs recent_avg={recent_avg_ic:.4f}",
+            )
+        else:
+            tprint_debug(
+                f"RetrainingTrigger: Performance stable. Current IC={current_ic:.4f}"
+                f" vs recent_avg={recent_avg_ic:.4f}",
+            )
+        return triggered
+
+    def _check_regime_change(self,
                            current_metrics: PerformanceMetrics,
                            history: List[PerformanceMetrics]) -> bool:
         """Check for regime change."""
         # This would integrate with BOCPD results
         # For now, return False
+        tprint_debug("RetrainingTrigger: Regime change check currently disabled.")
         return False
-    
-    def _check_time_based(self, 
+
+    def _check_time_based(self,
                         current_metrics: PerformanceMetrics,
                         history: List[PerformanceMetrics]) -> bool:
         """Check for time-based retraining."""
         if self.last_retraining is None:
+            tprint_info(
+                f"RetrainingTrigger: No prior retraining recorded. Triggering time-based retraining"
+                f" at {current_metrics.timestamp.isoformat()}",
+            )
             return True
-        
+
         # Retrain every 7 days
         time_since_retraining = current_metrics.timestamp - self.last_retraining
-        return time_since_retraining.days >= 7
-    
-    def check_retraining_triggers(self, 
+        should_retrain = time_since_retraining.days >= 7
+        tprint_debug(
+            f"RetrainingTrigger: Time since last retraining = {time_since_retraining.days} days"
+            f" | threshold=7 | trigger={should_retrain}",
+        )
+        return should_retrain
+
+    def check_retraining_triggers(self,
                                 current_metrics: PerformanceMetrics,
                                 history: List[PerformanceMetrics]) -> List[Dict[str, Any]]:
         """Check for retraining triggers."""
         triggers = []
-        
+
         for rule in self.retraining_rules:
             try:
                 if rule['condition'](current_metrics, history):
@@ -586,15 +722,28 @@ class RetrainingTrigger:
                         }
                     }
                     triggers.append(trigger)
+                    tprint_success(
+                        f"RetrainingTrigger: Rule '{rule['name']}' triggered retraining at"
+                        f" {current_metrics.timestamp.isoformat()}",
+                    )
             except Exception as e:
                 self.logger.warning(f"Retraining rule {rule['name']} failed: {e}")
+                tprint_error(
+                    f"RetrainingTrigger: Rule {rule['name']} failed during evaluation - {e}",
+                )
                 continue
-        
+
+        tprint_debug(
+            f"RetrainingTrigger: Completed evaluation. {len(triggers)} retraining triggers detected.",
+        )
         return triggers
-    
+
     def mark_retraining_completed(self, timestamp: datetime):
         """Mark retraining as completed."""
         self.last_retraining = timestamp
+        tprint_info(
+            f"RetrainingTrigger: Retraining marked complete at {timestamp.isoformat()}",
+        )
 
 
 class MonitoringSystem:
@@ -632,6 +781,7 @@ class MonitoringSystem:
             regime_segments: Regime segmentation details for contextual monitoring.
         """
         self.logger.info("Setting up monitoring system")
+        tprint_info("MonitoringSystem: Starting setup with provided evaluation summary and features.")
 
         performance_metrics: List[PerformanceMetrics] = []
         penalty_parameters = self.penalty_learner.get_penalty_parameters()
@@ -654,6 +804,9 @@ class MonitoringSystem:
                         "Adaptive penalty parameters updated during monitoring setup: %s",
                         penalty_parameters,
                     )
+                    tprint_info(
+                        f"MonitoringSystem: Adaptive penalties initialized -> {penalty_parameters}",
+                    )
 
         # Initialize system state
         self.system_state = SystemState(
@@ -671,12 +824,14 @@ class MonitoringSystem:
         )
 
         self.logger.info("Monitoring system setup completed")
+        tprint_success("MonitoringSystem: Setup completed successfully.")
 
     def _convert_summary_to_metrics(self,
                                     evaluation_summary: Dict[str, Any],
                                     feature_count: int) -> Optional[PerformanceMetrics]:
         """Convert evaluation summary into performance metrics for monitoring."""
         if not evaluation_summary:
+            tprint_warning("MonitoringSystem: Empty evaluation summary received for metrics conversion.")
             return None
 
         ic = float(evaluation_summary.get('overall_ic', np.nan))
@@ -705,7 +860,7 @@ class MonitoringSystem:
         if not regime:
             regime = metadata.get('dominant_regime', 'overall')
 
-        return PerformanceMetrics(
+        metrics = PerformanceMetrics(
             timestamp=datetime.now(),
             ic=ic,
             ic_std=float(ic_std) if ic_std is not None else np.nan,
@@ -716,9 +871,17 @@ class MonitoringSystem:
             metadata=metadata,
         )
 
+        tprint_debug(
+            f"MonitoringSystem: Converted evaluation summary to metrics -> IC={metrics.ic:.4f},"
+            f" Sharpe={metrics.sharpe:.4f}, Drawdown={metrics.max_drawdown:.4f}",
+        )
+
+        return metrics
+
     def _extract_market_conditions(self, evaluation_summary: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         """Extract market condition hints from evaluation metadata."""
         if not evaluation_summary:
+            tprint_warning("MonitoringSystem: No evaluation summary available for market condition extraction.")
             return {}
 
         metadata = evaluation_summary.get('metadata', {}) or {}
@@ -737,17 +900,23 @@ class MonitoringSystem:
             'volatility_level': volatility_level,
             'news_proximity': news_proximity,
         }
-    
-    def update_monitoring(self, 
+
+    def update_monitoring(self,
                          new_metrics: PerformanceMetrics,
                          market_conditions: Dict[str, Any]) -> Dict[str, Any]:
         """Update monitoring with new metrics."""
         if not self.monitoring_enabled:
+            tprint_warning("MonitoringSystem: Update requested while monitoring disabled.")
             return {'status': 'monitoring_disabled'}
-        
+
+        tprint_info(
+            f"MonitoringSystem: Updating monitoring with metrics timestamp={new_metrics.timestamp.isoformat()}"
+            f" | IC={new_metrics.ic:.4f}",
+        )
+
         # Update dashboard
         self.dashboard.update_metrics(new_metrics)
-        
+
         # Check alerts
         alerts = self.alert_system.check_alerts(new_metrics)
         for alert in alerts:
@@ -765,7 +934,7 @@ class MonitoringSystem:
             self.penalty_learner.update_penalties(
                 [new_metrics], market_conditions
             )
-        
+
         # Check retraining triggers
         retraining_triggers = self.retraining_trigger.check_retraining_triggers(
             new_metrics, self.dashboard.metrics_history
@@ -779,32 +948,43 @@ class MonitoringSystem:
             self.system_state.penalty_parameters = self.penalty_learner.get_penalty_parameters()
             self.system_state.bocpd_state = self.bocpd_trigger.get_current_state()
             self.system_state.timestamp = datetime.now()
-        
-        return {
+
+        update_summary = {
             'status': 'updated',
             'alerts_generated': len(alerts) + len(bocpd_alerts),
             'retraining_triggers': retraining_triggers,
             'penalty_parameters': self.penalty_learner.get_penalty_parameters()
         }
-    
+
+        tprint_info(
+            f"MonitoringSystem: Update completed -> alerts={update_summary['alerts_generated']}"
+            f" | retraining_triggers={len(update_summary['retraining_triggers'])}",
+        )
+
+        return update_summary
+
     def get_dashboard_data(self) -> Dict[str, Any]:
         """Get dashboard data."""
+        tprint_debug("MonitoringSystem: Dashboard data requested.")
         return self.dashboard.generate_dashboard()
 
     def get_penalty_parameters(self) -> Dict[str, float]:
         """Expose the latest adaptive penalty parameters."""
+        tprint_debug("MonitoringSystem: Current penalty parameters requested.")
         return self.penalty_learner.get_penalty_parameters()
-    
+
     def get_alert_summary(self) -> Dict[str, Any]:
         """Get alert summary."""
+        tprint_debug("MonitoringSystem: Alert summary requested.")
         return self.alert_system.get_alert_summary()
-    
+
     def get_system_status(self) -> Dict[str, Any]:
         """Get system status."""
         if not self.system_state:
+            tprint_warning("MonitoringSystem: Status requested before initialization.")
             return {'status': 'not_initialized'}
-        
-        return {
+
+        status = {
             'status': 'active' if self.monitoring_enabled else 'disabled',
             'last_update': self.system_state.timestamp.isoformat(),
             'total_metrics': len(self.system_state.performance_metrics),
@@ -812,12 +992,21 @@ class MonitoringSystem:
             'penalty_parameters': self.system_state.penalty_parameters,
             'bocpd_state': self.system_state.bocpd_state
         }
-    
+
+        tprint_info(
+            f"MonitoringSystem: Status -> {status['status']} | metrics={status['total_metrics']}"
+            f" | alerts={status['total_alerts']}",
+        )
+
+        return status
+
     def save_system_state(self, filepath: str):
         """Save system state to disk."""
         if not self.system_state:
+            tprint_warning("MonitoringSystem: Attempted to save state before initialization.")
             return
-        
+
+        tprint_info(f"MonitoringSystem: Saving system state to {filepath}")
         state_data = {
             'timestamp': self.system_state.timestamp.isoformat(),
             'pipeline_state': self.system_state.pipeline_state,
@@ -851,9 +1040,10 @@ class MonitoringSystem:
         
         with open(filepath, 'w') as f:
             json.dump(state_data, f, indent=2)
-    
+
     def load_system_state(self, filepath: str):
         """Load system state from disk."""
+        tprint_info(f"MonitoringSystem: Loading system state from {filepath}")
         with open(filepath, 'r') as f:
             state_data = json.load(f)
         
@@ -899,13 +1089,19 @@ class MonitoringSystem:
         self.dashboard.metrics_history = performance_metrics
         self.alert_system.alerts = alerts
         self.penalty_learner.penalty_parameters = state_data['penalty_parameters']
-    
+
+        tprint_success(
+            "MonitoringSystem: System state restored. Metrics history and alerts rehydrated.",
+        )
+
     def enable_monitoring(self):
         """Enable monitoring."""
         self.monitoring_enabled = True
         self.logger.info("Monitoring enabled")
-    
+        tprint_success("MonitoringSystem: Monitoring enabled.")
+
     def disable_monitoring(self):
         """Disable monitoring."""
         self.monitoring_enabled = False
         self.logger.info("Monitoring disabled")
+        tprint_warning("MonitoringSystem: Monitoring disabled.")

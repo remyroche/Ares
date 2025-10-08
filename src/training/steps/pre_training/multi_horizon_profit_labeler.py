@@ -43,6 +43,13 @@ from src.training.steps.pre_training.standardized_labeling_interface import (
     assert_labels_sigma_scaled,
     validate_dataframe_schema
 )
+from src.training.steps.pre_training.column_naming import (
+    ColumnNamespace,
+    ensure_dataframe_namespace,
+    ensure_namespace,
+    filter_namespace_columns,
+    strip_namespace,
+)
 
 # Import the label balancing system
 try:
@@ -364,7 +371,30 @@ class MultiHorizonProfitLabeler:
             min_auc_threshold=self.config.min_auc_threshold,
             max_auc_std_threshold=self.config.max_auc_std_threshold
         )
-    
+
+    def _apply_namespace_conventions(self, labeling_result: LabelingResult) -> LabelingResult:
+        """Ensure all labeling artifacts use the standardized namespaces."""
+
+        if labeling_result.labels is not None and not labeling_result.labels.empty:
+            labeling_result.labels = ensure_dataframe_namespace(labeling_result.labels, ColumnNamespace.TARGET)
+        if labeling_result.training_labels is not None and not labeling_result.training_labels.empty:
+            labeling_result.training_labels = ensure_dataframe_namespace(
+                labeling_result.training_labels, ColumnNamespace.TARGET
+            )
+        if labeling_result.confidence_scores is not None and not labeling_result.confidence_scores.empty:
+            labeling_result.confidence_scores = ensure_dataframe_namespace(
+                labeling_result.confidence_scores, ColumnNamespace.LABEL
+            )
+        if labeling_result.eligibility_masks is not None and not labeling_result.eligibility_masks.empty:
+            labeling_result.eligibility_masks = ensure_dataframe_namespace(
+                labeling_result.eligibility_masks, ColumnNamespace.LABEL
+            )
+        if labeling_result.sigma_payoffs is not None and not labeling_result.sigma_payoffs.empty:
+            labeling_result.sigma_payoffs = ensure_dataframe_namespace(
+                labeling_result.sigma_payoffs, ColumnNamespace.TARGET
+            )
+        return labeling_result
+
     def _adjust_returns_for_transaction_costs(
         self,
         labeling_result: LabelingResult
@@ -434,9 +464,10 @@ class MultiHorizonProfitLabeler:
             n_targets=labeling_result.n_targets,
             processing_time=labeling_result.processing_time
         )
-        
+
+        adjusted_result = self._apply_namespace_conventions(adjusted_result)
         tprint_success(f"✅ Transaction cost adjustment applied (round-trip: {roundtrip_cost:.4%})")
-        
+
         return adjusted_result
     
     def _create_temporal_splits(
@@ -569,7 +600,9 @@ class MultiHorizonProfitLabeler:
                 tprint_info("📊 Using standard volatility-aware labeling...")
                 labeling_result = self.volatility_labeler.generate_labels(market_data)
                 tprint_success("✅ Standard labeling completed")
-            
+
+            labeling_result = self._apply_namespace_conventions(labeling_result)
+
             # Apply transaction cost adjustment if enabled
             labeling_result = self._adjust_returns_for_transaction_costs(labeling_result)
 
@@ -578,6 +611,7 @@ class MultiHorizonProfitLabeler:
             balanced_labeling_result = await self._apply_balancing_and_weighting(
                 labeling_result, market_data, regime_data
             )
+            balanced_labeling_result = self._apply_namespace_conventions(balanced_labeling_result)
             tprint_success("✅ Balancing and weighting completed")
 
             # Generate comprehensive report using the profit labeling report generator
@@ -888,7 +922,7 @@ class MultiHorizonProfitLabeler:
 
             # Prepare data for balancing
             # Use market data as features (exclude target columns and metadata)
-            exclude_cols = [col for col in market_data.columns if col.startswith('target_')]
+            exclude_cols = filter_namespace_columns(market_data.columns, ColumnNamespace.TARGET)
             exclude_cols.extend(['sample_weight', 'timestamp'])
 
             feature_cols = [col for col in market_data.columns if col not in exclude_cols]
@@ -897,12 +931,19 @@ class MultiHorizonProfitLabeler:
             # Extract targets from labeling result
             if labeling_result.labels is not None and not labeling_result.labels.empty:
                 # Use the first target column for balancing (can be extended for multi-target)
-                target_cols = [col for col in labeling_result.labels.columns if 'target' in col.lower()]
+                target_cols = filter_namespace_columns(labeling_result.labels.columns, ColumnNamespace.TARGET)
+                if not target_cols:
+                    target_cols = filter_namespace_columns(labeling_result.labels.columns, ColumnNamespace.LABEL)
                 if target_cols:
                     y = labeling_result.labels[target_cols[0]]
                 else:
                     # Fallback: create a simple target from the first column
-                    y = labeling_result.labels.iloc[:, 0] if not labeling_result.labels.empty else pd.Series()
+                    fallback_col = labeling_result.labels.columns[0]
+                    namespaced = ensure_namespace(fallback_col, ColumnNamespace.TARGET)
+                    if fallback_col != namespaced:
+                        labeling_result.labels = labeling_result.labels.rename(columns={fallback_col: namespaced})
+                        fallback_col = namespaced
+                    y = labeling_result.labels[fallback_col] if not labeling_result.labels.empty else pd.Series()
             else:
                 tprint_warning("⚠️ No labels available for balancing")
                 return labeling_result
@@ -985,13 +1026,13 @@ class MultiHorizonProfitLabeler:
             if original_distribution and balanced_distribution:
                 original_balance = min(original_distribution.values()) / max(original_distribution.values()) if max(original_distribution.values()) > 0 else 0
                 balanced_balance = min(balanced_distribution.values()) / max(balanced_distribution.values()) if max(balanced_distribution.values()) > 0 else 0
-                
+
                 if balanced_balance > original_balance:
                     tprint_success(f"✅ Class balance improved: {original_balance:.3f} → {balanced_balance:.3f}")
                 else:
                     tprint_warning(f"⚠️ Class balance may have worsened: {original_balance:.3f} → {balanced_balance:.3f}")
 
-            return balanced_result
+            return self._apply_namespace_conventions(balanced_result)
 
         except Exception as e:
             tprint_warning(f"⚠️ Balancing failed: {e}, returning original labels")
@@ -1494,10 +1535,18 @@ class MultiHorizonProfitLabeler:
                 'short_term_opportunity': []
             }
 
+            column_bases = {col: strip_namespace(col)[0] for col in labels_df.columns}
+
             # Priority 1: Map small band targets to immediate_opportunity (shortest horizon)
             # Handle both regular targets and regime-specific targets
-            small_targets = [col for col in labels_df.columns if 'small_' in col and '_regime_' not in col]
-            small_regime_targets = [col for col in labels_df.columns if 'small_' in col and '_regime_' in col]
+            small_targets = [
+                col for col, base in column_bases.items()
+                if base.startswith('small_') and '_regime_' not in base
+            ]
+            small_regime_targets = [
+                col for col, base in column_bases.items()
+                if base.startswith('small_') and '_regime_' in base
+            ]
 
             # Use regular targets first, then regime targets if no regular targets available
             if small_targets:
@@ -1511,8 +1560,14 @@ class MultiHorizonProfitLabeler:
                     column_mappings['immediate_opportunity'].append(best_small_target)
 
             # Priority 2: Map medium band targets to short_term_opportunity (medium horizon)
-            medium_targets = [col for col in labels_df.columns if 'medium_' in col and '_regime_' not in col]
-            medium_regime_targets = [col for col in labels_df.columns if 'medium_' in col and '_regime_' in col]
+            medium_targets = [
+                col for col, base in column_bases.items()
+                if base.startswith('medium_') and '_regime_' not in base
+            ]
+            medium_regime_targets = [
+                col for col, base in column_bases.items()
+                if base.startswith('medium_') and '_regime_' in base
+            ]
 
             if medium_targets:
                 best_medium_target = self._select_best_target_by_pattern(medium_targets, labels_df, 'medium')
@@ -1524,8 +1579,14 @@ class MultiHorizonProfitLabeler:
                     column_mappings['short_term_opportunity'].append(best_medium_target)
 
             # Priority 3: Map high band targets to leverage_adjusted_score (longest horizon)
-            high_targets = [col for col in labels_df.columns if 'high_' in col and '_regime_' not in col]
-            high_regime_targets = [col for col in labels_df.columns if 'high_' in col and '_regime_' in col]
+            high_targets = [
+                col for col, base in column_bases.items()
+                if base.startswith('high_') and '_regime_' not in base
+            ]
+            high_regime_targets = [
+                col for col, base in column_bases.items()
+                if base.startswith('high_') and '_regime_' in base
+            ]
 
             if high_targets:
                 best_high_target = self._select_best_target_by_pattern(high_targets, labels_df, 'high')
@@ -1542,10 +1603,12 @@ class MultiHorizonProfitLabeler:
                     # Use the first (best) source column
                     source_col = source_columns[0]
                     if source_col in mapped_df.columns:
-                        mapped_df[expected_name] = mapped_df[source_col]
-                        tprint_info(f"✅ Mapped '{source_col}' → '{expected_name}'")
+                        expected_col = ensure_namespace(expected_name, ColumnNamespace.TARGET)
+                        mapped_df[expected_col] = mapped_df[source_col]
+                        tprint_info(f"✅ Mapped '{source_col}' → '{expected_col}'")
 
             # Also add the original columns for backward compatibility and debugging
+            mapped_df = ensure_dataframe_namespace(mapped_df, ColumnNamespace.TARGET)
             tprint_info(f"✅ Target column mapping completed. Original: {len(labels_df.columns)}, Mapped: {len(mapped_df.columns)}")
 
             return mapped_df
@@ -1621,10 +1684,26 @@ class MultiHorizonProfitLabeler:
             if labeling_result.quality_scores:
                 quality_scores = labeling_result.quality_scores
 
+                aliases = {
+                    'small': ('small_', 'immediate_opportunity', 'directional_confidence'),
+                    'medium': ('medium_', 'short_term_opportunity'),
+                    'high': ('high_', 'leverage_adjusted_score', 'overall_opportunity'),
+                }
+
+                column_bases = {col: strip_namespace(col)[0].lower() for col in labels_df.columns}
+
+                def _match_targets(pattern: str) -> List[str]:
+                    patterns = aliases.get(pattern, ())
+                    return [
+                        col
+                        for col, base in column_bases.items()
+                        if any(alias in base for alias in patterns)
+                    ]
+
                 # Find targets for each horizon pattern
-                small_targets = [col for col in labels_df.columns if 'small_' in col]
-                medium_targets = [col for col in labels_df.columns if 'medium_' in col]
-                high_targets = [col for col in labels_df.columns if 'high_' in col]
+                small_targets = _match_targets('small')
+                medium_targets = _match_targets('medium')
+                high_targets = _match_targets('high')
 
                 # Calculate average quality for each horizon
                 small_quality = self._calculate_average_quality(small_targets, quality_scores)
@@ -1666,8 +1745,10 @@ class MultiHorizonProfitLabeler:
 
         qualities = []
         for target in target_columns:
-            if target in quality_scores:
-                quality = quality_scores[target]
+            base_name = strip_namespace(target)[0]
+            quality_entry = quality_scores.get(target) or quality_scores.get(base_name)
+            if quality_entry:
+                quality = quality_entry
                 if hasattr(quality, 'overall_quality'):
                     qualities.append(quality.overall_quality)
                 elif isinstance(quality, dict) and 'overall_quality' in quality:
@@ -1689,6 +1770,7 @@ class MultiHorizonProfitLabeler:
             tprint_info("🎯 Extracting target columns for feature optimization")
 
             target_columns = []
+            column_bases = {col: strip_namespace(col)[0] for col in labels_df.columns}
 
             # Priority order for target selection
             priority_patterns = [
@@ -1701,7 +1783,9 @@ class MultiHorizonProfitLabeler:
             ]
 
             for pattern in priority_patterns:
-                matching_columns = [col for col in labels_df.columns if pattern in col]
+                matching_columns = [
+                    col for col, base in column_bases.items() if pattern in base
+                ]
                 if matching_columns:
                     # Select the best target for this pattern
                     if pattern in ['immediate_opportunity', 'short_term_opportunity', 'leverage_adjusted_score']:
@@ -1726,7 +1810,10 @@ class MultiHorizonProfitLabeler:
         except Exception as e:
             tprint_warning(f"⚠️ Error extracting target columns: {e}")
             # Fallback: return first few columns that look like targets
-            target_like_columns = [col for col in labels_df.columns if any(x in col.lower() for x in ['target', 'opportunity', 'score'])]
+            target_like_columns = [
+                col for col, base in column_bases.items()
+                if any(token in base.lower() for token in ['target', 'opportunity', 'score'])
+            ]
             return target_like_columns[:3] if target_like_columns else []
 
     def _calculate_target_distribution(self, labels_df: pd.DataFrame) -> Dict[str, Any]:

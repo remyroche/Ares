@@ -115,6 +115,13 @@ except ImportError as e:
     tprint_warning(f"Data utilities not available: {e}")
     DATA_UTILS_AVAILABLE = False
 
+# Import column naming utilities
+from ...column_naming import (
+    ColumnNamespace,
+    ensure_dataframe_namespace,
+    ensure_namespace,
+)
+
 # Import the optimized orchestrator
 from .optimized_interaction_orchestrator import (
     OptimizedInteractionOrchestrator,
@@ -330,6 +337,8 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
             self._update_orchestrator_config(pipeline_state)
 
             # Execute feature generation
+            tprint_info("🔧 Executing optimized interaction feature generation...")
+            result = await self.orchestrator.generate_features(training_input, pipeline_state)
             data_batches = list(self._iter_data_batches(training_input))
             if data_batches:
                 tprint_info(
@@ -347,6 +356,8 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
             if not result.success:
                 raise RuntimeError(f"Feature generation failed: {result.error_message}")
 
+            result = self._apply_namespace_to_result(result)
+            
             # Convert result to component result format
             component_result = self._convert_to_component_result(result, start_time)
             
@@ -599,8 +610,31 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
         if 'data_dir' in pipeline_state:
             self.config.data_dir = pipeline_state['data_dir']
             self.orchestrator.config.data_dir = pipeline_state['data_dir']
-        
+
         tprint_debug("✅ Orchestrator configuration updated")
+
+    def _apply_namespace_to_result(self, result: OptimizedInteractionResult) -> OptimizedInteractionResult:
+        """Apply standardized namespaces to generated feature artifacts."""
+
+        if result.features is not None and isinstance(result.features, pd.DataFrame):
+            result.features = ensure_dataframe_namespace(result.features, ColumnNamespace.FEATURE)
+        if result.interaction_features is not None and isinstance(result.interaction_features, pd.DataFrame):
+            result.interaction_features = ensure_dataframe_namespace(
+                result.interaction_features, ColumnNamespace.FEATURE
+            )
+        if result.cross_timeframe_features is not None and isinstance(result.cross_timeframe_features, pd.DataFrame):
+            result.cross_timeframe_features = ensure_dataframe_namespace(
+                result.cross_timeframe_features, ColumnNamespace.FEATURE
+            )
+
+        if getattr(result, 'feature_names', None):
+            result.feature_names = [ensure_namespace(name, ColumnNamespace.FEATURE) for name in result.feature_names]
+        if getattr(result, 'selected_features', None):
+            result.selected_features = [
+                ensure_namespace(name, ColumnNamespace.FEATURE) for name in result.selected_features
+            ]
+
+        return result
     
     def _convert_to_component_result(self, 
                                    result: OptimizedInteractionResult, 

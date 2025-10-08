@@ -44,7 +44,9 @@ if "src.training.steps.models_training.nas_tas.training_orchestrator" not in sys
             return types.SimpleNamespace(
                 success=False,
                 training_result=None,
-                error_message="stub",
+                error=RuntimeError("stub"),
+                warnings=["stub"],
+                metrics={},
                 execution_time=0.0,
             )
 

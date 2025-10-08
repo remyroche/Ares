@@ -7,6 +7,8 @@ to create differentiated profit labels for different market regimes.
 
 import asyncio
 import copy
+import hashlib
+import json
 import numpy as np
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
@@ -14,11 +16,14 @@ from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 from dataclasses import dataclass, asdict
 import logging
-from pathlib import Path
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.logger import system_logger
 from src.training.config.data_locator import DataLocator
+from src.training.steps.pre_training.artifacts.manifest import (
+    ArtifactManifest,
+    DataLocator,
+)
 
 try:
     from src.utils.data.klines_parquet import get_klines_manager
@@ -58,6 +63,60 @@ except ImportError:
 
 # Import base component
 from src.training.steps.pre_training.components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+
+
+def _normalize_for_hash(value: Any) -> Any:
+    """Normalize complex structures into hash-friendly primitives."""
+    if isinstance(value, dict):
+        return {str(k): _normalize_for_hash(v) for k, v in sorted(value.items(), key=lambda item: str(item[0]))}
+    if isinstance(value, (list, tuple)):
+        return [_normalize_for_hash(v) for v in value]
+    if isinstance(value, (np.integer,)):
+        return int(value)
+    if isinstance(value, (np.floating,)):
+        return float(value)
+    if isinstance(value, (np.bool_, bool)):
+        return bool(value)
+    if isinstance(value, pd.Series):
+        return _normalize_for_hash(value.to_dict())
+    if isinstance(value, pd.Index):
+        return _normalize_for_hash(list(value))
+    if isinstance(value, pd.DataFrame):
+        return {
+            'columns': _normalize_for_hash(list(value.columns)),
+            'index': _normalize_for_hash(value.index.tolist()),
+            'data': _normalize_for_hash(value.to_dict(orient='list')),
+        }
+    if isinstance(value, np.ndarray):
+        return _normalize_for_hash(value.tolist())
+    return value
+
+
+def _json_default(value: Any) -> Any:
+    normalized = _normalize_for_hash(value)
+    if isinstance(normalized, (dict, list, str, int, float, bool)) or normalized is None:
+        return normalized
+    return str(normalized)
+
+
+def _compute_outcome_digest(symbol: str, exchange: str, timeframe: str, artifacts: Dict[str, Any]) -> str:
+    payload = {
+        'symbol': symbol,
+        'exchange': exchange,
+        'timeframe': timeframe,
+        'artifacts': _normalize_for_hash(artifacts),
+    }
+    serialized = json.dumps(payload, sort_keys=True, default=_json_default)
+    return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
+
+
+def _build_outcome_filename(symbol: str, exchange: str, timeframe: str, artifacts: Dict[str, Any]) -> Tuple[str, str]:
+    digest = _compute_outcome_digest(symbol, exchange, timeframe, artifacts)
+    filename = (
+        f"market_analysis_multi_horizon_profit_labeler_outcome_"
+        f"{symbol}_{exchange}_{timeframe}_{digest[:16]}.json"
+    )
+    return filename, digest
 
 
 @dataclass
@@ -280,6 +339,10 @@ class MultiHorizonProfitLabeler:
             tprint_success("✅ Label balancing system initialized")
         else:
             tprint_info("ℹ️ Label balancing system disabled or not available")
+
+        # Initialize artifact helpers
+        self.data_locator = DataLocator()
+        self.artifact_manifest = ArtifactManifest()
 
         tprint_success("🚀 Multi-Horizon Profit Labeler initialized")
         tprint_info(f"   → Timeframe: {self.config.timeframe}")
@@ -1819,9 +1882,17 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
             # Save artifacts persistently for other components to use
             artifacts_saved = False
             artifact_save_error: Optional[str] = None
+            artifact_digest: Optional[str] = None
+            artifact_path: Optional[str] = None
             try:
                 # Save the complete artifacts structure as a single outcome file
                 # that the feature lookback optimization can load
+                outcome_metadata = {
+                    'component_type': 'multi_horizon_profit_labeler',
+                    'random_seed': pipeline_state.get('random_seed'),
+                }
+                filename, artifact_digest = _build_outcome_filename(symbol, exchange, timeframe, labeling_result)
+                outcome_metadata['artifact_digest'] = artifact_digest
                 outcome_data = {
                     'config': {
                         'symbol': symbol,
@@ -1829,13 +1900,9 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                         'timeframe': timeframe
                     },
                     'artifacts': labeling_result,
-                    'metadata': {
-                        'component_type': 'multi_horizon_profit_labeler',
-                        'saved_at': datetime.now().isoformat()
-                    }
+                    'metadata': outcome_metadata
                 }
 
-                # Save as a single outcome file that matches the expected pattern
                 import json
                 outcomes_dir_value = pipeline_state.get('outcomes_dir')
                 if outcomes_dir_value:
@@ -1846,14 +1913,33 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                     outcomes_dir = Path("outcomes")
                     outcomes_dir.mkdir(parents=True, exist_ok=True)
 
-                filename = f"market_analysis_multi_horizon_profit_labeler_outcome_{symbol}_{exchange}_{timeframe}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-                outcome_file = outcomes_dir / filename
+                artifact_base_name = 'market_analysis_multi_horizon_profit_labeler_outcome'
+                artifact_path, version = self.data_locator.resolve_artifact_path(
+                    artifact_base_name,
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                )
+                artifact_path.parent.mkdir(parents=True, exist_ok=True)
 
-                with open(outcome_file, 'w') as f:
+                with open(artifact_path, 'w', encoding='utf-8') as f:
                     json.dump(outcome_data, f, indent=2, default=str)
 
-                tprint_info(f"💾 Labeling outcome saved to {outcome_file}")
+                logical_name = DataLocator.build_logical_name(
+                    artifact_base_name,
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                )
+                self.artifact_manifest.register(
+                    logical_name=logical_name,
+                    path=artifact_path,
+                    version=version,
+                )
+
+                tprint_info(f"💾 Labeling outcome saved to {artifact_path}")
                 artifacts_saved = True
+                artifact_path = str(outcome_file)
 
             except Exception as e:
                 tprint_warning(f"⚠️ Failed to save outcome: {e}")
@@ -1868,6 +1954,8 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                     'exchange': exchange,
                     'timeframe': timeframe,
                     'artifacts_saved': artifacts_saved,
+                    **({'artifact_digest': artifact_digest} if artifact_digest else {}),
+                    **({'artifact_path': artifact_path} if artifact_path else {}),
                     **({'artifact_save_error': artifact_save_error} if artifact_save_error else {})
                 }
             )

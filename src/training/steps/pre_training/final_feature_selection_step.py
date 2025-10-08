@@ -6,6 +6,7 @@ This module provides the integration step for the final feature selection pipeli
 that runs at the end of the market analysis pipeline.
 """
 
+import json
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Any, Tuple
@@ -16,6 +17,10 @@ import asyncio
 from src.training.steps.pre_training.standardized_labeling_interface import (
     assert_labels_sigma_scaled,
     validate_dataframe_schema
+)
+from src.training.steps.pre_training.artifacts.manifest import (
+    ArtifactManifest,
+    DataLocator,
 )
 
 # Import the final feature selection pipeline
@@ -260,86 +265,150 @@ class FinalFeatureSelectionStep:
         self.logger.info("🎯 Loading target data from standardized format")
         tprint("🔍 Attempting to load standardized target data artifacts")
 
-        # First try to load from outcomes directory (most recent results)
-        outcomes_dir = Path("outcomes")
-        if outcomes_dir.exists():
-            # Look for the most recent multi_horizon_profit_labeler outcome
-            pattern = f"market_analysis_multi_horizon_profit_labeler_outcome_{symbol}_{exchange}_{timeframe}_*.json"
-            outcome_files = list(outcomes_dir.glob(pattern))
+        manifest = ArtifactManifest()
+        artifact_base_name = 'market_analysis_multi_horizon_profit_labeler_outcome'
+        logical_name = DataLocator.build_logical_name(
+            artifact_base_name,
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+        )
+        entry = manifest.get_latest(logical_name)
+        fallback_allowed = False
 
-            if outcome_files:
-                latest_outcome_file = max(outcome_files, key=lambda f: f.stat().st_mtime)
-                self.logger.info(f"📂 Loading target data from: {latest_outcome_file}")
+        if entry:
+            outcome_file = entry.resolved_path
+            if outcome_file.exists():
+                self.logger.info(f"📂 Loading target data from manifest entry: {outcome_file}")
+                result = self._load_standardized_target_from_file(
+                    outcome_file,
+                    expected_symbol=symbol,
+                    expected_exchange=exchange,
+                    expected_timeframe=timeframe,
+                )
+                if result is not None:
+                    return result
+                fallback_allowed = True
+            else:
+                self.logger.warning(f"⚠️ Manifest referenced outcome file missing: {outcome_file}")
+                fallback_allowed = True
+        else:
+            fallback_allowed = True
 
-                import json
-                with open(latest_outcome_file, 'r') as f:
-                    outcome_data = json.load(f)
-
-                # Extract standardized output
-                artifacts = outcome_data.get('artifacts', {})
-                if 'standardized_output' in artifacts:
-                    standardized_output = artifacts['standardized_output']
-                    target_data = standardized_output.get('labels')
-                    weights = standardized_output.get('weights', {})
-                    target_columns = standardized_output.get('target_columns', [])
-                    sample_weights = standardized_output.get('sample_weights', None)
-                    quality_scores = standardized_output.get('quality_scores', {})
-                    validation_results = standardized_output.get('validation_results', {})
-
-                    if target_data is not None:
-                        self.logger.info("✅ Successfully loaded target data from standardized format")
-                        tprint_info(f"🎯 Target columns: {target_columns}")
-                        tprint_info(f"⚖️ Horizon weights: {weights}")
-                        tprint_info(f"📊 Sample weights: {'Available' if sample_weights is not None else 'Not available'}")
-                        tprint_info(f"🔍 Quality scores: {'Available' if quality_scores else 'Not available'}")
-                        tprint_info(f"✅ Validation status: {'Passed' if validation_results.get('is_valid', False) else 'Failed'}")
-
-                        if isinstance(target_data, dict):
-                            # Convert dict to DataFrame if needed
-                            target_df = pd.DataFrame(target_data)
-                        elif isinstance(target_data, pd.DataFrame):
-                            target_df = target_data
-                        else:
-                            self.logger.warning("⚠️ Target data in unexpected format")
-                            tprint_warning(f"⚠️ Target data has unexpected type: {type(target_data)}")
-                            return None
-
-                        # Validate target DataFrame schema
-                        is_valid, issues = validate_dataframe_schema(
-                            target_df,
-                            required_columns=target_columns if target_columns else None,
-                            min_rows=100,  # Require at least 100 samples
-                            allow_nulls=True  # Nulls may be present in targets
-                        )
-
-                        if not is_valid:
-                            tprint_warning(f"⚠️ Target DataFrame schema validation failed:")
-                            for issue in issues:
-                                tprint_warning(f"  - {issue}")
-                            # Continue anyway, but log the issues
-
-                        assert_labels_sigma_scaled(target_df)
-
-                        # Select the best target based on weights
-                        best_target = self._select_best_target_with_weights(target_df, weights, target_columns)
-                        if best_target:
-                            tprint_success(f"✅ Selected best target for feature selection: {best_target}")
-                            # Return DataFrame with the selected target
-                            selected_target_df = pd.DataFrame({best_target: target_df[best_target]})
-                            self.logger.info(f"📊 Target data loaded: {len(selected_target_df)} rows, 1 target column")
-                            return selected_target_df
-                        else:
-                            # Fallback to all targets
-                            self.logger.info("📊 Using all available targets")
-                            self.logger.info(f"📊 Target data loaded: {len(target_df)} rows, {len(target_df.columns)} columns")
-                            return target_df
-                    else:
-                        self.logger.warning("⚠️ No labels found in standardized output")
-                else:
-                    self.logger.warning("⚠️ No standardized output found in outcome file")
+        if fallback_allowed:
+            outcomes_dir = Path("outcomes")
+            if outcomes_dir.exists():
+                pattern = f"market_analysis_multi_horizon_profit_labeler_outcome_{symbol}_{exchange}_{timeframe}_*.json"
+                outcome_files = list(outcomes_dir.glob(pattern))
+                if outcome_files:
+                    latest_outcome_file = max(outcome_files, key=lambda f: f.stat().st_mtime)
+                    self.logger.info(f"📂 Loading target data from fallback outcomes file: {latest_outcome_file}")
+                    result = self._load_standardized_target_from_file(
+                        latest_outcome_file,
+                        expected_symbol=symbol,
+                        expected_exchange=exchange,
+                        expected_timeframe=timeframe,
+                    )
+                    if result is not None:
+                        return result
 
         # Fallback: try to load from data_cache or other locations
         return None
+
+    def _load_standardized_target_from_file(
+        self,
+        outcome_file: Path,
+        *,
+        expected_symbol: str,
+        expected_exchange: str,
+        expected_timeframe: str,
+    ) -> Optional[pd.DataFrame]:
+        """Load standardized target data from a manifest-referenced outcome file."""
+        try:
+            with open(outcome_file, 'r', encoding='utf-8') as handle:
+                outcome_data = json.load(handle)
+        except FileNotFoundError:
+            self.logger.warning(f"⚠️ Outcome file missing: {outcome_file}")
+            return None
+        except json.JSONDecodeError as exc:
+            self.logger.warning(f"⚠️ Could not parse outcome JSON {outcome_file}: {exc}")
+            return None
+
+        config_data = outcome_data.get('config', {})
+        if config_data:
+            if config_data.get('symbol') and config_data.get('symbol') != expected_symbol:
+                self.logger.warning("⚠️ Outcome file symbol mismatch; skipping")
+                return None
+            if config_data.get('exchange') and config_data.get('exchange') != expected_exchange:
+                self.logger.warning("⚠️ Outcome file exchange mismatch; skipping")
+                return None
+            if config_data.get('timeframe') and config_data.get('timeframe') != expected_timeframe:
+                self.logger.warning("⚠️ Outcome file timeframe mismatch; skipping")
+                return None
+
+        artifacts = outcome_data.get('artifacts', {})
+        standardized_output = artifacts.get('standardized_output') if isinstance(artifacts, dict) else None
+        if not standardized_output:
+            self.logger.warning("⚠️ No standardized output found in outcome file")
+            return None
+
+        target_data = standardized_output.get('labels')
+        weights = standardized_output.get('weights', {})
+        target_columns = standardized_output.get('target_columns', [])
+        sample_weights = standardized_output.get('sample_weights', None)
+        quality_scores = standardized_output.get('quality_scores', {})
+        validation_results = standardized_output.get('validation_results', {})
+
+        if target_data is None:
+            self.logger.warning("⚠️ No labels found in standardized output")
+            return None
+
+        if isinstance(target_data, dict):
+            target_df = pd.DataFrame(target_data)
+        elif isinstance(target_data, pd.DataFrame):
+            target_df = target_data
+        else:
+            try:
+                target_df = pd.DataFrame(target_data)
+            except Exception:
+                self.logger.warning("⚠️ Target data in unexpected format")
+                tprint_warning(f"⚠️ Target data has unexpected type: {type(target_data)}")
+                return None
+
+        if target_df.empty:
+            self.logger.warning("⚠️ Standardized target dataframe is empty")
+            return None
+
+        self.logger.info("✅ Successfully loaded target data from standardized format")
+        tprint_info(f"🎯 Target columns: {target_columns}")
+        tprint_info(f"⚖️ Horizon weights: {weights}")
+        tprint_info(f"📊 Sample weights: {'Available' if sample_weights is not None else 'Not available'}")
+        tprint_info(f"🔍 Quality scores: {'Available' if quality_scores else 'Not available'}")
+        tprint_info(f"✅ Validation status: {'Passed' if validation_results.get('is_valid', False) else 'Failed'}")
+
+        is_valid, issues = validate_dataframe_schema(
+            target_df,
+            required_columns=target_columns if target_columns else None,
+            min_rows=100,
+            allow_nulls=True,
+        )
+        if not is_valid:
+            tprint_warning("⚠️ Target DataFrame schema validation failed:")
+            for issue in issues:
+                tprint_warning(f"  - {issue}")
+
+        assert_labels_sigma_scaled(target_df)
+
+        best_target = self._select_best_target_with_weights(target_df, weights, target_columns)
+        if best_target:
+            tprint_success(f"✅ Selected best target for feature selection: {best_target}")
+            selected_target_df = pd.DataFrame({best_target: target_df[best_target]})
+            self.logger.info(f"📊 Target data loaded: {len(selected_target_df)} rows, 1 target column")
+            return selected_target_df
+
+        self.logger.info("📊 Using all available targets")
+        self.logger.info(f"📊 Target data loaded: {len(target_df)} rows, {len(target_df.columns)} columns")
+        return target_df
 
     def _select_best_target_with_weights(self, labels: pd.DataFrame, weights: Dict[str, float], target_columns: List[str]) -> Optional[str]:
         """Select the best target based on horizon weights and availability for feature selection."""

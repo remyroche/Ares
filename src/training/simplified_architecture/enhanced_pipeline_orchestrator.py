@@ -9,6 +9,7 @@ maintainable architecture.
 """
 import asyncio
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -20,6 +21,7 @@ import json
 from .dependency_injection import EnhancedDIContainer, ServiceLifetime
 from .enhanced_interfaces import IPipelineStep, StepResult, StepStatus, StepConfig, StepFactory, BasePipelineStep
 from .enhanced_config_system import ConfigurationManager, PipelineConfiguration, StepConfiguration, ConfigurationError, Environment
+from src.utils.random_seeding import SeededRNGs, seed_rngs
 
 class PipelineStatus(Enum):
     """Pipeline execution status."""
@@ -95,6 +97,7 @@ class EnhancedPipelineOrchestrator:
         self._execution_history: List[PipelineResult] = []
         self._is_running = False
         self._cancellation_requested = False
+        self._seeded_rngs: Optional[SeededRNGs] = None
         self._register_core_services()
 
     async def run(self, start_from_step: Optional[str]=None, stop_at_step: Optional[str]=None, parallel_execution: bool = True, checkpoint_interval: int = 5) -> PipelineResult:
@@ -120,6 +123,8 @@ class EnhancedPipelineOrchestrator:
         try:
             self.logger.info(f'Starting pipeline execution: {self.config.name} v{self.config.version}')
             self.logger.info(f'Execution ID: {execution_id}')
+            seed = self._initialize_random_generators()
+            result.metrics['random_seed'] = seed
             result.status = PipelineStatus.RUNNING
             await self._initialize_steps()
             execution_order = self._determine_execution_order(start_from_step, stop_at_step)
@@ -180,6 +185,43 @@ class EnhancedPipelineOrchestrator:
         self.di_container.register_instance('pipeline_config', self.config)
         self.di_container.register_instance('logger', self.logger)
         self.di_container.register_instance('di_container', self.di_container)
+        if self._seeded_rngs:
+            self._register_rng_services(self._seeded_rngs)
+
+    def _register_rng_services(self, rngs: SeededRNGs) -> None:
+        """Register seeded RNG instances with the DI container."""
+        self.di_container.register_instance('random_seed', rngs.seed)
+        self.di_container.register_instance('seeded_rngs', rngs)
+        self.di_container.register_instance('python_rng', rngs.python)
+        self.di_container.register_instance('numpy_rng', rngs.numpy)
+        if rngs.torch is not None:
+            self.di_container.register_instance('torch_rng', rngs.torch)
+        if rngs.tensorflow is not None:
+            self.di_container.register_instance('tensorflow_rng', rngs.tensorflow)
+
+    def _resolve_random_seed(self) -> int:
+        """Determine the random seed to use for this run."""
+        candidates = [
+            os.environ.get('ARES_RANDOM_SEED'),
+            getattr(getattr(self.config.global_settings, 'model', {}), 'get', lambda *_: None)('random_seed')
+            if isinstance(self.config.global_settings.model, dict) else None,
+            getattr(self.config.metadata, 'get', lambda *_: None)('random_seed') if isinstance(self.config.metadata, dict) else None,
+        ]
+        for candidate in candidates:
+            if candidate is None:
+                continue
+            try:
+                return int(candidate)
+            except (TypeError, ValueError):
+                continue
+        return 42
+
+    def _initialize_random_generators(self) -> int:
+        """Seed RNG backends and register them for dependency injection."""
+        seed = self._resolve_random_seed()
+        self._seeded_rngs = seed_rngs(seed)
+        self._register_rng_services(self._seeded_rngs)
+        return seed
 
     async def _initialize_steps(self) -> None:
         """Initialize all pipeline step instances."""

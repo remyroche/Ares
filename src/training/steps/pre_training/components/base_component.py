@@ -93,14 +93,14 @@ class ComponentResult(_BaseComponentResult):
             error=error,
             error_message=error_message,
         )
-        self.artifacts = validated_bundle
+        self.artifact_bundle = validated_bundle
         details = {
             'success': self.success,
             'artifacts_keys': list(self.artifacts.keys()),
             'metadata_keys': list(self.metadata.keys()),
             'metrics_keys': list(self.metrics.keys()),
             'warnings': list(self.warnings),
-            'errors': [str(err) for err in self.errors],
+            'errors': [err.to_dict() for err in self.errors],
             'error': self.error_message,
             'execution_time': self.execution_time,
         }

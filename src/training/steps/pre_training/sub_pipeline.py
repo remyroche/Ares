@@ -123,6 +123,7 @@ from src.training.steps.pre_training.validation.data_contracts import (
     validate_multi_horizon_labeling_result,
     validate_selection_artifact,
 )
+from src.training.common.component_result import ComponentError
 
 logger = system_logger.getChild('PreTrainingSubPipeline')
 
@@ -504,6 +505,11 @@ class PreTrainingSubPipeline:
 
     @staticmethod
     def _extract_component_error_code(component_result: Any, default_code: str) -> str:
+        component_errors = getattr(component_result, 'errors', None)
+        if component_errors:
+            for err in component_errors:
+                if isinstance(err, ComponentError) and err.code:
+                    return err.code
         for attr in ('error_code', 'error_code_slug'):
             value = getattr(component_result, attr, None)
             if value:
@@ -536,7 +542,18 @@ class PreTrainingSubPipeline:
     def _collect_component_errors(self, component_result: Any) -> List[str]:
         errors: List[str] = []
         component_errors = getattr(component_result, 'errors', []) or []
-        self._extend_messages(errors, component_errors)
+        formatted_errors: List[str] = []
+        for item in component_errors:
+            if isinstance(item, ComponentError):
+                text = f"[{item.code}] {item.message}" if item.code else item.message
+                if item.details:
+                    details_preview = ', '.join(f"{k}={v}" for k, v in list(item.details.items())[:3])
+                    if details_preview:
+                        text = f"{text} (details: {details_preview})"
+                formatted_errors.append(text)
+            else:
+                formatted_errors.append(str(item))
+        self._extend_messages(errors, formatted_errors)
         error_message = getattr(component_result, 'error_message', None)
         if error_message:
             self._extend_messages(errors, [error_message])

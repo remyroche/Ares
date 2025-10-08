@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import logging
 
+from src.training.common.component_result import ComponentError, ComponentResult
 from src.utils.logger import system_logger
 from .artifact_manager import ArtifactManager
 
@@ -60,18 +61,6 @@ class ComponentConfig:
             ]
 
 
-@dataclass
-class ComponentResult:
-    """Result from a pipeline component execution."""
-    success: bool
-    artifacts: Dict[str, Any]
-    error_message: Optional[str] = None
-    execution_time: float = 0.0
-    metadata: Dict[str, Any] = None
-    
-    def __post_init__(self):
-        if self.metadata is None:
-            self.metadata = {}
 
 
 class BaseMarketAnalysisComponent(ABC):
@@ -259,9 +248,11 @@ class BaseMarketAnalysisComponent(ABC):
                 return ComponentResult(
                     success=False,
                     artifacts=result.artifacts,
-                    error_message="Invalid artifacts produced - missing required artifacts",
+                    error=ComponentError("Invalid artifacts produced - missing required artifacts"),
+                    warnings=["Invalid artifacts produced - missing required artifacts"],
                     execution_time=self._end_execution(),
-                    metadata=result.metadata
+                    metadata=result.metadata,
+                    metrics=result.metrics,
                 )
             
             # Save artifacts if execution was successful
@@ -275,12 +266,15 @@ class BaseMarketAnalysisComponent(ABC):
                     # Clean up any partial artifacts
                     component_name = self.__class__.__name__.replace('Component', '').lower()
                     self.artifact_manager.cleanup_failed_artifacts(component_name)
+                    warning_message = f"Artifact saving failed: {e}"
                     return ComponentResult(
                         success=False,
                         artifacts=result.artifacts,
-                        error_message=f"Artifact saving failed: {e}",
+                        error=e,
+                        warnings=[warning_message],
                         execution_time=self._end_execution(),
-                        metadata=result.metadata
+                        metadata=result.metadata,
+                        metrics=result.metrics,
                     )
             
             # Update execution time
@@ -292,9 +286,12 @@ class BaseMarketAnalysisComponent(ABC):
             # Clean up any partial artifacts
             component_name = self.__class__.__name__.replace('Component', '').lower()
             self.artifact_manager.cleanup_failed_artifacts(component_name)
+            warning_message = f"Component execution failed: {e}"
             return ComponentResult(
                 success=False,
                 artifacts={},
-                error_message=str(e),
-                execution_time=self._end_execution()
+                error=e,
+                warnings=[warning_message],
+                execution_time=self._end_execution(),
+                metrics={},
             )

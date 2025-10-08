@@ -879,6 +879,31 @@ class TacticianPreMLOrchestrator:
             tprint_error(f"❌ Failed to initialize TacticianPreMLOrchestrator: {e}")
             raise
 
+    @staticmethod
+    def _extract_failure_details(step_result: SubPipelineResult) -> Tuple[Optional[str], str]:
+        failure = getattr(step_result, 'failure', None)
+        message = step_result.error_message or (failure.message if failure else 'Unknown error')
+        error_code = getattr(step_result, 'error_code', None) or (failure.error_code if failure else None)
+        return error_code, message
+
+    def _log_subpipeline_failure(
+        self,
+        prefix: str,
+        step_result: SubPipelineResult,
+        *,
+        warning: bool = False,
+    ) -> Tuple[Optional[str], str]:
+        error_code, message = self._extract_failure_details(step_result)
+        code_text = f"[{error_code}] " if error_code else ''
+        composed = f"{prefix}: {code_text}{message}"
+        if warning:
+            tprint_warning(f"⚠️ {composed}")
+            self.logger.warning(f"⚠️ {composed}")
+        else:
+            tprint_error(f"❌ {composed}")
+            self.logger.error(f"❌ {composed}")
+        return error_code, message
+
     def _extract_green_light_series(
         self,
         analyst_predictions: Optional[pd.DataFrame],
@@ -1232,7 +1257,11 @@ class TacticianPreMLOrchestrator:
                 horizon_result = await self.pre_training_pipeline._execute_multi_horizon_profit_labeler(regime_config)
 
                 if not horizon_result.success:
-                    tprint_warning(f"⚠️ Horizon labeling failed for {regime_name}: {horizon_result.error_message}")
+                    self._log_subpipeline_failure(
+                        f"Horizon labeling failed for {regime_name}",
+                        horizon_result,
+                        warning=True,
+                    )
                     continue
 
                 # Step 2: Feature Lookback Optimization for this regime
@@ -1241,7 +1270,11 @@ class TacticianPreMLOrchestrator:
                 lookback_result = await self.pre_training_pipeline._execute_feature_lookback_optimization(regime_config)
 
                 if not lookback_result.success:
-                    tprint_warning(f"⚠️ Lookback optimization failed for {regime_name}: {lookback_result.error_message}")
+                    self._log_subpipeline_failure(
+                        f"Lookback optimization failed for {regime_name}",
+                        lookback_result,
+                        warning=True,
+                    )
                     continue
 
                 # Step 3: Interactive Feature Generation for this regime
@@ -1250,8 +1283,10 @@ class TacticianPreMLOrchestrator:
                 interactive_result = await self.pre_training_pipeline._execute_interactive_feature_generation(regime_config)
 
                 if not interactive_result.success:
-                    tprint_warning(
-                        f"⚠️ Interactive feature generation failed for {regime_name}: {interactive_result.error_message}"
+                    self._log_subpipeline_failure(
+                        f"Interactive feature generation failed for {regime_name}",
+                        interactive_result,
+                        warning=True,
                     )
                     continue
 
@@ -1261,7 +1296,11 @@ class TacticianPreMLOrchestrator:
                 selection_result = await self.pre_training_pipeline._execute_final_feature_selection(regime_config)
 
                 if not selection_result.success:
-                    tprint_warning(f"⚠️ Feature selection failed for {regime_name}: {selection_result.error_message}")
+                    self._log_subpipeline_failure(
+                        f"Feature selection failed for {regime_name}",
+                        selection_result,
+                        warning=True,
+                    )
                     continue
 
                 # Collect results for this regime
@@ -1491,7 +1530,11 @@ class TacticianPreMLOrchestrator:
             )
 
             if not horizon_result.success:
-                raise RuntimeError(f"Horizon labeling failed: {horizon_result.error_message}")
+                error_code, message = self._log_subpipeline_failure(
+                    "Horizon labeling failed",
+                    horizon_result,
+                )
+                raise RuntimeError(f"Horizon labeling failed ({error_code or 'unknown_error'}): {message}")
             
             result.horizon_labeling_result = horizon_result.artifacts
             tprint_success("✅ Horizon labeling completed")
@@ -1505,7 +1548,11 @@ class TacticianPreMLOrchestrator:
             )
 
             if not lookback_result.success:
-                raise RuntimeError(f"Lookback optimization failed: {lookback_result.error_message}")
+                error_code, message = self._log_subpipeline_failure(
+                    "Lookback optimization failed",
+                    lookback_result,
+                )
+                raise RuntimeError(f"Lookback optimization failed ({error_code or 'unknown_error'}): {message}")
             
             result.lookback_optimization_result = lookback_result.artifacts
             tprint_success("✅ Lookback optimization completed")
@@ -1519,8 +1566,12 @@ class TacticianPreMLOrchestrator:
             )
 
             if not interactive_result.success:
+                error_code, message = self._log_subpipeline_failure(
+                    "Interactive feature generation failed",
+                    interactive_result,
+                )
                 raise RuntimeError(
-                    f"Interactive feature generation failed: {interactive_result.error_message}"
+                    f"Interactive feature generation failed ({error_code or 'unknown_error'}): {message}"
                 )
 
             result.interactive_feature_generation_result = interactive_result.artifacts
@@ -1546,7 +1597,11 @@ class TacticianPreMLOrchestrator:
             )
 
             if not selection_result.success:
-                raise RuntimeError(f"Feature selection failed: {selection_result.error_message}")
+                error_code, message = self._log_subpipeline_failure(
+                    "Feature selection failed",
+                    selection_result,
+                )
+                raise RuntimeError(f"Feature selection failed ({error_code or 'unknown_error'}): {message}")
             
             result.feature_selection_result = selection_result.artifacts
             result.final_features = selection_result.artifacts.get('final_features')

@@ -132,6 +132,9 @@ def test_final_feature_selection_fails_when_artifact_save_fails(monkeypatch):
     result = asyncio.run(component.execute(data={}, pipeline_state={}))
 
     assert result.success is False
-    assert result.error_message == "artifact persistence failure"
+    assert isinstance(result.error, Exception)
+    assert "artifact persistence failure" in str(result.error)
+    assert result.metrics == {}
+    assert any("artifact persistence failure" in warning for warning in result.warnings)
     assert error_logs and "artifact persistence failure" in error_logs[-1]
-    assert "artifacts_saved_persistently" not in result.metadata
+    assert result.metadata.get("artifacts_saved_persistently") is False

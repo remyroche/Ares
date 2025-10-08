@@ -26,6 +26,7 @@ import threading
 import time
 import json
 import logging
+import inspect
 from datetime import datetime, timezone
 from typing import Any, Optional, Union, Dict, List, TextIO, Callable
 from pathlib import Path
@@ -776,28 +777,52 @@ def tprint_logged(level: LogLevel = LogLevel.INFO, include_args: bool = False, i
             return x + y
     """
     def decorator(func):
+        func_name = func.__name__
+        is_coroutine = inspect.iscoroutinefunction(func)
+
+        if is_coroutine:
+            @functools.wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                if include_args:
+                    tprint_with_level(level, f"Calling {func_name} with args={args}, kwargs={kwargs}")
+                else:
+                    tprint_with_level(level, f"Calling {func_name}")
+
+                try:
+                    result = await func(*args, **kwargs)
+
+                    if include_result:
+                        tprint_with_level(level, f"{func_name} completed with result={result}")
+                    else:
+                        tprint_with_level(level, f"{func_name} completed")
+
+                    return result
+                except Exception as e:
+                    tprint_error(f"{func_name} failed with error: {e}")
+                    raise
+
+            return async_wrapper
+
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            func_name = func.__name__
-            
             if include_args:
                 tprint_with_level(level, f"Calling {func_name} with args={args}, kwargs={kwargs}")
             else:
                 tprint_with_level(level, f"Calling {func_name}")
-            
+
             try:
                 result = func(*args, **kwargs)
-                
+
                 if include_result:
                     tprint_with_level(level, f"{func_name} completed with result={result}")
                 else:
                     tprint_with_level(level, f"{func_name} completed")
-                
+
                 return result
             except Exception as e:
                 tprint_error(f"{func_name} failed with error: {e}")
                 raise
-        
+
         return wrapper
     return decorator
 

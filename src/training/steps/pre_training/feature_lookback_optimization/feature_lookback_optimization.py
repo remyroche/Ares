@@ -83,6 +83,7 @@ from .error_handling.error_handler import StandardizedErrorHandler, ErrorSeverit
 from .performance.monitor import PerformanceMonitor, MetricType, MetricLevel
 
 from ..components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+from ..components.component_factory import register_component
 
 # Import optimized process engine
 from ...market_analysis.optimized_process_engines import OptimizedFeatureLookbackEngine, ProcessType
@@ -120,6 +121,7 @@ class OptimizationMetrics:
     error_rate: float
 
 
+@register_component('feature_lookback_optimization')
 class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
     """
     Modular Feature Lookback Optimization Component.

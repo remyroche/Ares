@@ -85,6 +85,10 @@ class PerformanceMonitor:
         self.common_utils = CommonUtilities()
         self.serializer = UniversalSerializer()
 
+        tprint_success(
+            f"[PerformanceMonitor] Initializing monitoring for component: {self.component_name}"
+        )
+
         # Metrics storage
         self.metrics: List[MetricPoint] = []
         self.start_time: Optional[datetime] = None
@@ -116,6 +120,10 @@ class PerformanceMonitor:
 
         # Initialize monitoring
         self._initialize_monitoring()
+
+        tprint_debug(
+            f"[PerformanceMonitor] Monitoring initialized at {self.start_time.isoformat()}"
+        )
 
     def _initialize_monitoring(self):
         """Initialize monitoring state."""
@@ -309,8 +317,14 @@ class PerformanceMonitor:
             if len(self.metrics) > 10000:
                 self.metrics = self.metrics[-5000:]
 
+            tprint_debug(
+                f"[PerformanceMonitor] Recorded metric '{name}' with value={value}"
+                f" type={metric_type.value} level={level.value}"
+            )
+
         except Exception as e:
             self.logger.error(f"Failed to record metric {name}: {e}")
+            tprint_error(f"[PerformanceMonitor] Failed to record metric {name}: {e}")
 
     def _record_system_metrics(self):
         """Record current system resource usage."""
@@ -459,7 +473,7 @@ class PerformanceMonitor:
             Metrics in the requested format
         """
         if format == 'dict':
-            return {
+            export_payload = {
                 'metrics': [self._metric_to_dict(m) for m in self.metrics],
                 'performance_summary': self.get_performance_summary(),
                 'metric_summaries': {
@@ -468,9 +482,21 @@ class PerformanceMonitor:
                     if summary is not None
                 }
             }
+            tprint_performance(
+                f"[PerformanceMonitor] Exported {len(export_payload['metrics'])} metrics as dictionary"
+            )
+            return export_payload
         elif format == 'json':
-            return self.serializer.serialize_json(self.export_metrics('dict'))
+            dict_export = self.export_metrics('dict')
+            json_export = self.serializer.serialize_json(dict_export)
+            tprint_performance(
+                f"[PerformanceMonitor] Exported metrics as JSON payload ({len(json_export)} characters)"
+            )
+            return json_export
         else:
+            tprint_error(
+                f"[PerformanceMonitor] Unsupported export format requested: {format}"
+            )
             raise ValueError(f"Unsupported export format: {format}")
 
     def _metric_to_dict(self, metric: MetricPoint) -> Dict[str, Any]:
@@ -523,3 +549,6 @@ class PerformanceMonitor:
             'network_io_bytes': 0
         }
         self.start_time = datetime.now()
+        tprint(
+            f"[PerformanceMonitor] Monitoring data reset at {self.start_time.isoformat()}"
+        )

@@ -1,5 +1,6 @@
 """Tests for the multi-horizon profit labeler data loading and execution pipeline."""
 from datetime import datetime, timedelta
+import builtins
 
 import numpy as np
 import pandas as pd
@@ -8,6 +9,7 @@ import pytest
 from src.training.steps.pre_training.multi_horizon_profit_labeler import (
     MultiHorizonConfig,
     MultiHorizonProfitLabeler,
+    MultiHorizonProfitLabelerComponent,
 )
 
 
@@ -146,6 +148,8 @@ class _DummyLabelingResult:
             "medium_h1.00_a2.00": {"overall_quality": 0.65},
             "large_h1.50_a3.00": {"overall_quality": 0.6},
         }
+        self.normalization_factors = {}
+        self.sigma_payoffs = {}
         self.processing_time = 0.5
         self.n_samples = len(index)
         self.n_targets = self.labels.shape[1]
@@ -200,3 +204,36 @@ async def test_execute_labeling_produces_feature_lookback_artifacts(monkeypatch)
     assert expected_targets.issubset(set(mh_result["labeled_data"].columns))
     assert artifacts["labeling_report"]["status"] == "ok"
     assert stub_manager.calls, "klines manager should be used during execute_labeling"
+
+
+@pytest.mark.anyio("asyncio")
+async def test_component_metadata_records_outcome_save_failure(monkeypatch):
+    """Component metadata should flag when the persistent outcome cannot be saved."""
+
+    component = MultiHorizonProfitLabelerComponent()
+
+    async def fake_execute_labeling(*args, **kwargs):
+        return {
+            "multi_horizon_labeling_result": {"labels": []},
+            "labeling_report": {"status": "ok"},
+        }
+
+    monkeypatch.setattr(component.labeler, "execute_labeling", fake_execute_labeling)
+
+    real_open = builtins.open
+
+    def failing_open(file, mode="r", *args, **kwargs):
+        if "market_analysis_multi_horizon_profit_labeler_outcome" in str(file) and "w" in mode:
+            raise OSError("disk full")
+        return real_open(file, mode, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", failing_open)
+
+    result = await component.execute(
+        None,
+        {"symbol": "ETHUSDT", "exchange": "binance", "timeframe": "1h"},
+    )
+
+    assert result.success is True
+    assert result.metadata.get("artifacts_saved") is False
+    assert result.metadata.get("artifact_save_error") == "disk full"

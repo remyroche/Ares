@@ -1488,6 +1488,8 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
             )
 
             # Save artifacts persistently for other components to use
+            artifacts_saved = False
+            artifact_save_error: Optional[str] = None
             try:
                 # Save the complete artifacts structure as a single outcome file
                 # that the feature lookback optimization can load
@@ -1516,9 +1518,11 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                     json.dump(outcome_data, f, indent=2, default=str)
 
                 tprint_info(f"💾 Labeling outcome saved to {outcome_file}")
+                artifacts_saved = True
 
             except Exception as e:
                 tprint_warning(f"⚠️ Failed to save outcome: {e}")
+                artifact_save_error = str(e)
 
             return ComponentResult(
                 success=True,
@@ -1528,7 +1532,8 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                     'symbol': symbol,
                     'exchange': exchange,
                     'timeframe': timeframe,
-                    'artifacts_saved': True
+                    'artifacts_saved': artifacts_saved,
+                    **({'artifact_save_error': artifact_save_error} if artifact_save_error else {})
                 }
             )
 

@@ -2,12 +2,13 @@ import sys
 import types
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import pandas as pd
 import pytest
 
 import src.training.steps.pre_training.multi_horizon_profit_labeler as mh_module
+from src.training.config.data_locator import DataLocator, DataLocatorConfig
 
 
 if not hasattr(mh_module, "create_multi_horizon_labeler"):
@@ -28,8 +29,16 @@ class _TestComponentConfig:
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
     timeframe: str = "15m"
-    data_dir: str = "historical_data"
+    data_dir: Optional[str] = None
     custom_params: dict = field(default_factory=dict)
+    data_locator: Optional[DataLocator] = None
+    data_locator_config: DataLocatorConfig = field(default_factory=DataLocatorConfig)
+    data_dir_key: str = "market_data"
+    cache_dir_key: str = "default"
+    artifacts_dir_key: str = "default"
+    generated_dir_key: str = "market_analysis"
+    outcomes_dir_key: str = "multi_horizon_outcomes"
+    final_feature_selection_dir_key: str = "final_feature_selection"
 
 
 class _TestComponentFactory:
@@ -79,7 +88,7 @@ async def test_tactician_orchestrator_passes_regime_split(monkeypatch):
         symbol: str
         exchange: str
         timeframe: str
-        data_dir: str
+        data_dir: Optional[str] = None
         parallel_processing: bool = True
         custom_params: dict = field(default_factory=dict)
         mode: str = "full"
@@ -91,6 +100,14 @@ async def test_tactician_orchestrator_passes_regime_split(monkeypatch):
         monitoring_enabled: bool = True
         fast_mode: bool = False
         skip_next_pipeline: bool = False
+        data_locator: Optional[DataLocator] = None
+        data_locator_config: DataLocatorConfig = field(default_factory=DataLocatorConfig)
+        data_dir_key: str = "market_data"
+        cache_dir_key: str = "default"
+        artifacts_dir_key: str = "default"
+        generated_dir_key: str = "market_analysis"
+        outcomes_dir_key: str = "multi_horizon_outcomes"
+        final_feature_selection_dir_key: str = "final_feature_selection"
 
     module.SubPipelineConfig = _StubSubPipelineConfig
 

@@ -5,12 +5,13 @@ This module provides the base classes for all pre-training pipeline components.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass
 from datetime import datetime
 import pandas as pd
 import numpy as np
 
+from src.training.common.component_result import ComponentError, ComponentResult as _BaseComponentResult
 from src.utils.logger import system_logger
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.version_manager import get_version_manager
@@ -56,28 +57,41 @@ class ComponentConfig:
             }
         )
 
-@dataclass
-class ComponentResult:
-    """Result of component execution."""
-    success: bool
-    artifacts: Dict[str, Any] = None
-    metadata: Dict[str, Any] = None
-    error_message: Optional[str] = None
-    execution_time: float = 0.0
+class ComponentResult(_BaseComponentResult):
+    """Pre-training specific ComponentResult with structured logging."""
 
-    def __post_init__(self):
-        if self.artifacts is None:
-            self.artifacts = {}
-        if self.metadata is None:
-            self.metadata = {}
+    def __init__(
+        self,
+        success: bool,
+        artifacts: Optional[Dict[str, Any]] = None,
+        *,
+        metadata: Optional[Dict[str, Any]] = None,
+        execution_time: float = 0.0,
+        metrics: Optional[Dict[str, float]] = None,
+        warnings: Optional[List[str]] = None,
+        error: Optional[Union[Exception, ComponentError]] = None,
+        error_message: Optional[str] = None,
+    ) -> None:
+        super().__init__(
+            success,
+            artifacts,
+            metadata=metadata,
+            execution_time=execution_time,
+            metrics=metrics,
+            warnings=warnings,
+            error=error,
+            error_message=error_message,
+        )
         tprint_debug(
             "📦 ComponentResult initialized",
             {
                 'success': self.success,
                 'artifacts_keys': list(self.artifacts.keys()),
                 'metadata_keys': list(self.metadata.keys()),
-                'error_message': self.error_message,
-                'execution_time': self.execution_time
+                'metrics_keys': list(self.metrics.keys()),
+                'warnings': list(self.warnings),
+                'error': self.error_message,
+                'execution_time': self.execution_time,
             }
         )
 

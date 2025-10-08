@@ -18,7 +18,7 @@ Key Features:
 import asyncio
 import logging
 import pandas as pd
-from typing import Any, Dict, List, Optional, Union, Callable
+from typing import Any, Dict, List, Optional, Union, Callable, Tuple
 from datetime import datetime, timedelta
 from pathlib import Path
 from enum import Enum
@@ -262,7 +262,18 @@ class MainTrainingPipeline:
         # Pipeline state
         self.current_stage: Optional[PipelineStage] = None
         self.pipeline_results: List[MainPipelineResult] = []
-    
+
+    @staticmethod
+    def _extract_subpipeline_failure(result: Any) -> Tuple[Optional[str], Optional[str]]:
+        error_code = getattr(result, 'error_code', None)
+        message = getattr(result, 'error_message', None)
+        failure = getattr(result, 'failure', None)
+        if not message and failure is not None:
+            message = getattr(failure, 'message', None) or message
+        if not error_code and failure is not None:
+            error_code = getattr(failure, 'error_code', None) or error_code
+        return error_code, message
+
     async def execute_pipeline(
         self,
         config: Optional[MainPipelineConfig] = None
@@ -613,14 +624,21 @@ class MainTrainingPipeline:
                     raise ValueError(f"Unknown pipeline stage: {stage}")
                 
                 results.append(result)
-                
+
                 # Check if this sub-pipeline failed
                 if result.status == SubPipelineStatus.FAILED:
-                    self.logger.error(f"❌ Sub-pipeline {sub_pipeline_name} failed, stopping sequential execution")
+                    error_code, message = self._extract_subpipeline_failure(result)
+                    code_text = f"[{error_code}] " if error_code else ''
+                    detail = f"{code_text}{message}" if message else code_text.strip()
+                    failure_msg = (
+                        f"❌ Sub-pipeline {sub_pipeline_name} failed"
+                        f"{': ' + detail if detail else ''}, stopping sequential execution"
+                    )
+                    self.logger.error(failure_msg)
                     break
                 else:
                     self.logger.info(f"✅ Sub-pipeline {sub_pipeline_name} completed successfully")
-                    
+
             except Exception as e:
                 self.logger.error(f"❌ Error executing sub-pipeline {sub_pipeline_name}: {e}")
                 # Create a failed result
@@ -631,6 +649,8 @@ class MainTrainingPipeline:
                     end_time=datetime.now(),
                     error_message=str(e)
                 )
+                if hasattr(failed_result, 'error_code'):
+                    setattr(failed_result, 'error_code', 'PRETRAIN_STAGE_EXEC_ERROR')
                 results.append(failed_result)
                 break
         

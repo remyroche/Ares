@@ -16,6 +16,12 @@ from src.utils.common_operations import safe_dataframe_operation
 from src.utils.common_utilities import CommonUtilities
 from src.utils.math_validation import safe_divide
 from src.utils.serialization_utils import UniversalSerializer
+from src.training.steps.pre_training.column_naming import (
+    ColumnNamespace,
+    ensure_namespace,
+    filter_namespace_columns,
+    strip_namespace,
+)
 
 # Import numpy for type checking
 from .dependency_manager import get_dependency
@@ -1138,9 +1144,19 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             str: Optimal target column name
         """
         try:
+            column_bases = {col: strip_namespace(col)[0] for col in data.columns}
+
+            def _resolve_candidate(name: str) -> Optional[str]:
+                namespaced = ensure_namespace(name, ColumnNamespace.TARGET)
+                if namespaced in data.columns:
+                    return namespaced
+                for col, base in column_bases.items():
+                    if base == name:
+                        return col
+                return None
+
             # If direction is specified, prioritize directional targets
             if direction == 'long':
-                # Priority 1: Long-specific directional targets
                 long_priority = [
                     'long_overall_opportunity',
                     'long_leverage_adjusted_score',
@@ -1149,12 +1165,12 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 ]
 
                 for target in long_priority:
-                    if target in data.columns:
-                        log_success(f"🎯 Selected long-specific target: {target}")
-                        return target
+                    resolved = _resolve_candidate(target)
+                    if resolved:
+                        log_success(f"🎯 Selected long-specific target: {resolved}")
+                        return resolved
 
             elif direction == 'short':
-                # Priority 1: Short-specific directional targets
                 short_priority = [
                     'short_overall_opportunity',
                     'short_leverage_adjusted_score',
@@ -1163,23 +1179,25 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 ]
 
                 for target in short_priority:
-                    if target in data.columns:
-                        log_success(f"🎯 Selected short-specific target: {target}")
-                        return target
+                    resolved = _resolve_candidate(target)
+                    if resolved:
+                        log_success(f"🎯 Selected short-specific target: {resolved}")
+                        return resolved
 
             # Priority 2: Multi-horizon composite targets (best overall signal)
             composite_priority = [
-                'leverage_adjusted_score',  # Primary target from config
-                'overall_opportunity',      # Secondary target
-                'immediate_opportunity',    # Short-term focused
-                'directional_confidence',   # Directional bias confidence
-                'opportunity_asymmetry'     # Long vs short opportunity difference
+                'leverage_adjusted_score',
+                'overall_opportunity',
+                'immediate_opportunity',
+                'directional_confidence',
+                'opportunity_asymmetry'
             ]
 
             for target in composite_priority:
-                if target in data.columns:
-                    log_success(f"🎯 Selected multi-horizon target: {target}")
-                    return target
+                resolved = _resolve_candidate(target)
+                if resolved:
+                    log_success(f"🎯 Selected multi-horizon target: {resolved}")
+                    return resolved
 
             # Priority 3: Remaining directional opportunity targets (if direction not already handled above)
             if direction != 'long' and direction != 'short':
@@ -1191,21 +1209,23 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 ]
 
                 for target in directional_priority:
-                    if target in data.columns:
-                        log_success(f"🎯 Selected directional opportunity target: {target}")
-                        return target
+                    resolved = _resolve_candidate(target)
+                    if resolved:
+                        log_success(f"🎯 Selected directional opportunity target: {resolved}")
+                        return resolved
 
             # Priority 3: Any multi-horizon probability target
-            prob_targets = [col for col in data.columns if '_prob' in col and ('long' in col or 'short' in col)]
+            prob_targets = [
+                col for col, base in column_bases.items()
+                if '_prob' in base and ('long' in base or 'short' in base)
+            ]
             if prob_targets:
-                # Prefer immediate probabilities
-                immediate_probs = [col for col in prob_targets if 'immediate' in col]
+                immediate_probs = [col for col in prob_targets if 'immediate' in strip_namespace(col)[0]]
                 if immediate_probs:
                     log_success(f"🎯 Selected multi-horizon probability target: {immediate_probs[0]}")
                     return immediate_probs[0]
-                else:
-                    log_success(f"🎯 Selected multi-horizon probability target: {prob_targets[0]}")
-                    return prob_targets[0]
+                log_success(f"🎯 Selected multi-horizon probability target: {prob_targets[0]}")
+                return prob_targets[0]
 
             # Priority 4: Fallback to price-based targets
             price_targets = ['close', 'returns', 'target']
@@ -1213,6 +1233,10 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 if target in data.columns:
                     log_warning(f"⚠️ Using fallback target (no multi-horizon targets found): {target}")
                     return target
+                for col, base in column_bases.items():
+                    if base == target:
+                        log_warning(f"⚠️ Using fallback target (no multi-horizon targets found): {col}")
+                        return col
 
             # Last resort: any numeric column
             numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()

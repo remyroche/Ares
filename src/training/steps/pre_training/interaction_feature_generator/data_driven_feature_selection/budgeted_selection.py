@@ -52,6 +52,41 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def log_info(logger_obj: Optional[logging.Logger], message: str) -> None:
+    """Log an info-level message with optional tprint output."""
+    if logger_obj is not None:
+        logger_obj.info(message)
+    tprint_info(message)
+
+
+def log_warning(logger_obj: Optional[logging.Logger], message: str) -> None:
+    """Log a warning-level message with optional tprint output."""
+    if logger_obj is not None:
+        logger_obj.warning(message)
+    tprint_warning(message)
+
+
+def log_error(logger_obj: Optional[logging.Logger], message: str) -> None:
+    """Log an error-level message with optional tprint output."""
+    if logger_obj is not None:
+        logger_obj.error(message)
+    tprint_error(message)
+
+
+def log_success(logger_obj: Optional[logging.Logger], message: str) -> None:
+    """Log a success-style message with optional tprint output."""
+    if logger_obj is not None:
+        logger_obj.info(message)
+    tprint_success(message)
+
+
+def log_debug(logger_obj: Optional[logging.Logger], message: str) -> None:
+    """Log a debug-level message with optional tprint output."""
+    if logger_obj is not None:
+        logger_obj.debug(message)
+    tprint_info(f"🔍 {message}")
+
+
 @dataclass
 class BudgetedSelectionResult:
     """Result of budgeted feature selection."""
@@ -68,9 +103,10 @@ class BudgetedSelectionResult:
     matrix_ops_used: int = 0
     vectorized_ops: int = 0
     optimization_iterations: int = 0
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
+        log_info(logger, f"📝 Serializing selection result with {len(self.selected_wrappers)} selected wrappers")
         return {
             'selected_wrappers': [w.to_dict() for w in self.selected_wrappers],
             'rejected_wrappers': [w.to_dict() for w in self.rejected_wrappers],
@@ -175,9 +211,9 @@ class BudgetedFeatureSelection:
             
         except Exception as e:
             execution_time = time.time() - start_time
-            self.logger.error(f"Budgeted selection failed: {e}")
-            self.logger.error(f"Error details: {traceback.format_exc()}")
-            
+            log_error(self.logger, f"Budgeted selection failed: {e}")
+            log_error(self.logger, f"Error details: {traceback.format_exc()}")
+
             # Return empty result
             return BudgetedSelectionResult(
                 selected_wrappers=[],
@@ -192,8 +228,9 @@ class BudgetedFeatureSelection:
     
     def _preprocess_wrappers(self, wrappers: List[FeatureGeneratorWrapper]) -> List[FeatureGeneratorWrapper]:
         """Pre-process wrappers for selection."""
+        log_info(self.logger, f"🧮 Preprocessing {len(wrappers)} wrappers for budgeted selection")
         processed = []
-        
+
         for wrapper in wrappers:
             try:
                 # Ensure we have Phase 2 results
@@ -212,19 +249,21 @@ class BudgetedFeatureSelection:
                 # Adjust utility
                 adjusted_utility = wrapper.phase2_utility - cost_penalty
                 wrapper.phase2_utility = max(0.0, adjusted_utility)  # Ensure non-negative
-                
+
                 processed.append(wrapper)
-                
+
             except Exception as e:
-                self.logger.warning(f"Failed to preprocess wrapper {wrapper.name}: {e}")
+                log_warning(self.logger, f"Failed to preprocess wrapper {wrapper.name}: {e}")
                 continue
-        
+
+        log_success(self.logger, f"🧮 Completed preprocessing for {len(processed)} wrappers")
         return processed
-    
-    def _apply_diversification_penalty(self, wrappers: List[FeatureGeneratorWrapper], 
+
+    def _apply_diversification_penalty(self, wrappers: List[FeatureGeneratorWrapper],
                                      data: pd.DataFrame, target: np.ndarray) -> List[FeatureGeneratorWrapper]:
         """Apply diversification penalty to highly correlated features."""
         try:
+            log_info(self.logger, "🎯 Applying diversification penalty to candidate features")
             # Generate proxy features for correlation analysis
             proxy_features = {}
             for wrapper in wrappers:
@@ -234,29 +273,31 @@ class BudgetedFeatureSelection:
                     if proxy is not None and len(proxy) > 10:
                         proxy_features[wrapper.name] = proxy
                 except Exception as e:
-                    self.logger.debug(f"Failed to generate proxy for {wrapper.name}: {e}")
+                    log_debug(self.logger, f"Failed to generate proxy for {wrapper.name}: {e}")
                     continue
-            
+
             if len(proxy_features) < 2:
+                log_info(self.logger, "🎯 Not enough proxy features for diversification analysis; skipping")
                 return wrappers
-            
+
             # Compute correlations
             correlations = compute_feature_correlations(
-                pd.DataFrame(proxy_features), 
+                pd.DataFrame(proxy_features),
                 threshold=self.config.correlation_threshold
             )
-            
+
             # Apply diversification penalty
             for wrapper in wrappers:
                 if wrapper.name in correlations:
                     n_correlated = len(correlations[wrapper.name])
                     penalty_factor = 1.0 - (self.config.diversification_penalty * n_correlated)
                     wrapper.phase2_utility *= penalty_factor
-            
+
+            log_success(self.logger, "🎯 Diversification penalties applied")
             return wrappers
-            
+
         except Exception as e:
-            self.logger.warning(f"Failed to apply diversification penalty: {e}")
+            log_warning(self.logger, f"Failed to apply diversification penalty: {e}")
             return wrappers
     
     def _generate_proxy_feature(self, wrapper: FeatureGeneratorWrapper, data: pd.DataFrame) -> Optional[np.ndarray]:
@@ -277,32 +318,35 @@ class BudgetedFeatureSelection:
                 return None
                 
         except Exception as e:
-            self.logger.debug(f"Failed to generate proxy for {wrapper.name}: {e}")
+            log_debug(self.logger, f"Failed to generate proxy for {wrapper.name}: {e}")
             return None
     
     def _compute_bang_per_buck_scores(self, wrappers: List[FeatureGeneratorWrapper]) -> List[FeatureGeneratorWrapper]:
         """Compute bang-per-buck scores for wrappers."""
+        log_info(self.logger, "⚖️ Computing bang-per-buck scores for candidates")
         for wrapper in wrappers:
             try:
                 if wrapper.total_cost > 0:
                     bang_per_buck = wrapper.phase2_utility / wrapper.total_cost
                 else:
                     bang_per_buck = wrapper.phase2_utility
-                
+
                 # Store as a temporary attribute
                 wrapper.bang_per_buck = bang_per_buck
-                
+
             except Exception as e:
-                self.logger.warning(f"Failed to compute bang-per-buck for {wrapper.name}: {e}")
+                log_warning(self.logger, f"Failed to compute bang-per-buck for {wrapper.name}: {e}")
                 wrapper.bang_per_buck = 0.0
-        
+
+        log_success(self.logger, "⚖️ Bang-per-buck computation complete")
         return wrappers
     
     def _greedy_selection(self, wrappers: List[FeatureGeneratorWrapper]) -> Tuple[List[FeatureGeneratorWrapper], List[FeatureGeneratorWrapper]]:
         """Greedy selection based on bang-per-buck scores."""
         # Sort by bang-per-buck (descending)
+        log_info(self.logger, f"🤖 Performing greedy selection on {len(wrappers)} candidates")
         sorted_wrappers = sorted(wrappers, key=lambda w: getattr(w, 'bang_per_buck', 0.0), reverse=True)
-        
+
         selected = []
         rejected = []
         total_cost = 0.0
@@ -317,54 +361,58 @@ class BudgetedFeatureSelection:
                 self.performance_metrics['greedy_selections'] += 1
             else:
                 rejected.append(wrapper)
-        
+
+        log_success(self.logger, f"🤖 Greedy selection chose {len(selected)} wrappers (rejected {len(rejected)})")
         return selected, rejected
-    
-    def _enforce_coverage_requirements(self, selected_wrappers: List[FeatureGeneratorWrapper], 
+
+    def _enforce_coverage_requirements(self, selected_wrappers: List[FeatureGeneratorWrapper],
                                      all_wrappers: List[FeatureGeneratorWrapper]) -> List[FeatureGeneratorWrapper]:
         """Enforce coverage requirements for required families."""
         try:
             # Check current coverage
             current_families = set(w.family for w in selected_wrappers)
             required_families = {f.value for f in self.config.required_families}
-            
+
             missing_families = required_families - current_families
-            
+
             if not missing_families:
+                log_success(self.logger, "🔒 Coverage requirements already satisfied")
                 return selected_wrappers
-            
-            tprint_info(f"🔧 Enforcing coverage for missing families: {missing_families}")
-            
+
+            log_info(self.logger, f"🔧 Enforcing coverage for missing families: {missing_families}")
+
             # Find best wrappers for missing families
             additional_wrappers = []
-            
+
             for missing_family in missing_families:
                 family_wrappers = [w for w in all_wrappers if w.family == missing_family]
-                
+
                 if not family_wrappers:
-                    self.logger.warning(f"No wrappers found for required family: {missing_family}")
+                    log_warning(self.logger, f"No wrappers found for required family: {missing_family}")
                     continue
-                
+
                 # Sort by utility and select best one
                 best_wrapper = max(family_wrappers, key=lambda w: w.phase2_utility or 0.0)
-                
+
                 # Check if we can add it within budget
                 current_total_cost = sum(w.total_cost for w in selected_wrappers)
-                if (current_total_cost + best_wrapper.total_cost <= self.config.feature_compute_p99_budget_ms and 
+                if (current_total_cost + best_wrapper.total_cost <= self.config.feature_compute_p99_budget_ms and
                     len(selected_wrappers) + len(additional_wrappers) < self.config.max_features_pre_selection):
-                    
+
                     additional_wrappers.append(best_wrapper)
                     self.performance_metrics['coverage_enforcements'] += 1
                 else:
-                    self.logger.warning(f"Cannot add {best_wrapper.name} due to budget constraints")
-            
+                    log_warning(self.logger, f"Cannot add {best_wrapper.name} due to budget constraints")
+
             # Add additional wrappers
             selected_wrappers.extend(additional_wrappers)
-            
+
+            if additional_wrappers:
+                log_success(self.logger, f"🔧 Added {len(additional_wrappers)} wrappers to satisfy coverage")
             return selected_wrappers
-            
+
         except Exception as e:
-            self.logger.warning(f"Failed to enforce coverage requirements: {e}")
+            log_warning(self.logger, f"Failed to enforce coverage requirements: {e}")
             return selected_wrappers
     
     def _check_coverage_achievement(self, selected_wrappers: List[FeatureGeneratorWrapper]) -> Dict[str, bool]:
@@ -382,8 +430,10 @@ class BudgetedFeatureSelection:
         """Alternative optimization using linear programming (for comparison)."""
         try:
             if len(wrappers) < 2:
+                log_info(self.logger, "🧮 Insufficient wrappers for LP optimization; returning originals")
                 return wrappers
-            
+
+            log_info(self.logger, "🧮 Running linear programming optimization for feature selection")
             # Prepare data for linear programming
             n_wrappers = len(wrappers)
             utilities = np.array([w.phase2_utility or 0.0 for w in wrappers])
@@ -405,32 +455,35 @@ class BudgetedFeatureSelection:
             
             # Solve linear program
             result = linprog(c, A_ub=A_ub, b_ub=b_ub, bounds=bounds, method='highs')
-            
+
             if result.success:
                 # Select wrappers with x > 0.5
                 selected_indices = [i for i, x in enumerate(result.x) if x > 0.5]
                 selected_wrappers = [wrappers[i] for i in selected_indices]
-                
+
                 self.performance_metrics['optimization_iterations'] += 1
+                log_success(self.logger, f"🧮 Linear programming selected {len(selected_wrappers)} wrappers")
                 return selected_wrappers
             else:
-                self.logger.warning(f"Linear programming failed: {result.message}")
+                log_warning(self.logger, f"Linear programming failed: {result.message}")
                 return self._greedy_selection(wrappers)[0]
-                
+
         except Exception as e:
-            self.logger.warning(f"Linear programming optimization failed: {e}")
+            log_warning(self.logger, f"Linear programming optimization failed: {e}")
             return self._greedy_selection(wrappers)[0]
     
     def _compute_selection_quality_metrics(self, selected_wrappers: List[FeatureGeneratorWrapper]) -> Dict[str, float]:
         """Compute quality metrics for the selection."""
         if not selected_wrappers:
+            log_warning(self.logger, "📉 No wrappers selected; skipping quality metric computation")
             return {}
-        
+
         try:
+            log_info(self.logger, f"📈 Computing selection quality metrics for {len(selected_wrappers)} wrappers")
             utilities = [w.phase2_utility or 0.0 for w in selected_wrappers]
             costs = [w.total_cost for w in selected_wrappers]
             stabilities = [w.phase2_stability or 0.0 for w in selected_wrappers]
-            
+
             metrics = {
                 'mean_utility': np.mean(utilities),
                 'std_utility': np.std(utilities),
@@ -441,19 +494,21 @@ class BudgetedFeatureSelection:
                 'utility_per_cost': np.sum(utilities) / np.sum(costs) if np.sum(costs) > 0 else 0.0,
                 'diversity_score': self._compute_diversity_score(selected_wrappers)
             }
-            
+
+            log_success(self.logger, "📈 Selection quality metrics computed")
             return metrics
-            
+
         except Exception as e:
-            self.logger.warning(f"Failed to compute selection quality metrics: {e}")
+            log_warning(self.logger, f"Failed to compute selection quality metrics: {e}")
             return {}
-    
+
     def _compute_diversity_score(self, selected_wrappers: List[FeatureGeneratorWrapper]) -> float:
         """Compute diversity score for selected wrappers."""
         try:
             if len(selected_wrappers) < 2:
+                log_info(self.logger, "🌈 Single wrapper selected; diversity score defaults to 1.0")
                 return 1.0
-            
+
             # Count unique families
             families = set(w.family for w in selected_wrappers)
             family_diversity = len(families) / len(selected_wrappers)
@@ -464,9 +519,10 @@ class BudgetedFeatureSelection:
             
             # Combine diversity scores
             diversity_score = 0.7 * family_diversity + 0.3 * category_diversity
-            
+
+            log_success(self.logger, f"🌈 Diversity score computed: {diversity_score:.3f}")
             return min(1.0, diversity_score)
-            
+
         except Exception as e:
-            self.logger.debug(f"Failed to compute diversity score: {e}")
+            log_debug(self.logger, f"Failed to compute diversity score: {e}")
             return 0.0

@@ -102,6 +102,9 @@ class BacktestingConfig:
     max_drawdown: float = 0.2
     stop_loss: float = 0.05
     take_profit: float = 0.1
+    capacity_limit: float = 1.0
+    market_impact_coefficient: float = 0.0005
+    turnover_warning_threshold: float = 0.8
 
 @dataclass
 class MonteCarloConfig:

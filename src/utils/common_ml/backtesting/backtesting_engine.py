@@ -107,16 +107,21 @@ class BacktestingConfig:
     enable_caching: bool = True
     cache_size_mb: int = 100
     enable_profiling: bool = False
-    
+
     # Risk management
     max_drawdown_threshold: float = 0.2
     stop_loss_threshold: float = 0.05
     take_profit_threshold: float = 0.1
-    
+
+    # Turnover and capacity diagnostics
+    capacity_limit: float = 1.0  # Maximum acceptable turnover relative to capital
+    market_impact_coefficient: float = 0.0005  # Impact penalty per unit turnover
+    turnover_warning_threshold: float = 0.8  # Warn when utilization exceeds this fraction
+
     # Validation settings
     min_trades_for_validation: int = 10
     confidence_level: float = 0.95
-    
+
     # Output settings
     save_detailed_results: bool = True
     generate_plots: bool = True
@@ -157,7 +162,14 @@ class BacktestingResults:
     cvar_95: float
     beta: float
     alpha: float
-    
+
+    # Turnover diagnostics
+    turnover: float = 0.0
+    average_holding_period_days: float = 0.0
+    capacity_utilization: float = 0.0
+    capacity_limit: float = 0.0
+    market_impact_cost: float = 0.0
+
     # Walk-forward results
     walk_forward_results: List[Dict[str, Any]] = field(default_factory=list)
     
@@ -430,10 +442,10 @@ class WalkForwardValidator:
         return gpu_data
     
     async def _execute_trade(
-        self, 
-        portfolio: Dict[str, Any], 
-        bar: pd.Series, 
-        signal: Dict[str, Any], 
+        self,
+        portfolio: Dict[str, Any],
+        bar: pd.Series,
+        signal: Dict[str, Any],
         timestamp: pd.Timestamp
     ):
         """Execute a trade based on signal."""
@@ -478,7 +490,79 @@ class WalkForwardValidator:
         
         # Update equity
         portfolio['equity'] = portfolio['cash'] + (portfolio['position'] * bar['close'])
-    
+
+    def _calculate_turnover_metrics(
+        self,
+        trades: List[Dict[str, Any]],
+        initial_equity: float,
+        final_equity: float
+    ) -> Dict[str, float]:
+        """Calculate turnover, holding period, and capacity utilization metrics."""
+        if not trades:
+            return {
+                'turnover': 0.0,
+                'average_holding_period_days': 0.0,
+                'capacity_utilization': 0.0,
+                'capacity_limit': self.config.capacity_limit,
+                'market_impact_cost': 0.0
+            }
+
+        sorted_trades = sorted(trades, key=lambda t: t.get('timestamp'))
+        total_notional = 0.0
+        holding_periods: List[float] = []
+        open_positions: List[Dict[str, Any]] = []
+
+        for trade in sorted_trades:
+            price = float(trade.get('price', 0.0))
+            shares = float(trade.get('shares', 0.0))
+            total_notional += abs(price * shares)
+
+            action = str(trade.get('action', '')).lower()
+            if action == 'buy':
+                open_positions.append(trade)
+            elif action == 'sell' and open_positions:
+                entry_trade = open_positions.pop(0)
+                entry_time = entry_trade.get('timestamp')
+                exit_time = trade.get('timestamp')
+
+                if isinstance(entry_time, pd.Timestamp) and isinstance(exit_time, pd.Timestamp):
+                    holding_period = max((exit_time - entry_time).total_seconds() / 86400, 0.0)
+                    holding_periods.append(holding_period)
+
+        average_equity = (initial_equity + final_equity) / 2 if final_equity > 0 else initial_equity
+        turnover = total_notional / average_equity if average_equity > 0 else 0.0
+
+        capacity_limit = self.config.capacity_limit if self.config.capacity_limit > 0 else None
+        if capacity_limit:
+            capacity_utilization = turnover / capacity_limit
+        else:
+            capacity_utilization = turnover
+
+        market_impact_cost = turnover * self.config.market_impact_coefficient
+
+        if capacity_limit:
+            if capacity_utilization > 1.0:
+                self.logger.warning(
+                    "⚠️ Capacity limit exceeded: utilization %.2fx exceeds limit %.2fx",
+                    capacity_utilization,
+                    1.0
+                )
+            elif capacity_utilization > self.config.turnover_warning_threshold:
+                self.logger.warning(
+                    "⚠️ Capacity utilization approaching limit: %.2f%% of allowable turnover",
+                    capacity_utilization * 100
+                )
+
+        average_holding_period = float(np.mean(holding_periods)) if holding_periods else 0.0
+
+        return {
+            'turnover': turnover,
+            'average_holding_period_days': average_holding_period,
+            'capacity_utilization': capacity_utilization,
+            'capacity_limit': capacity_limit or 0.0,
+            'market_impact_cost': market_impact_cost
+        }
+
     def _calculate_metrics(self, portfolio: Dict[str, Any], data: pd.DataFrame) -> Dict[str, Any]:
         """Calculate performance metrics."""
         if not portfolio['trades']:
@@ -493,8 +577,11 @@ class WalkForwardValidator:
         # Calculate returns
         initial_equity = self.config.initial_capital
         final_equity = portfolio['equity']
-        total_return = (final_equity - initial_equity) / initial_equity
-        
+        turnover_metrics = self._calculate_turnover_metrics(portfolio['trades'], initial_equity, final_equity)
+
+        raw_total_return = (final_equity - initial_equity) / initial_equity
+        total_return = raw_total_return - turnover_metrics['market_impact_cost']
+
         # Calculate trade statistics
         trades = portfolio['trades']
         buy_trades = [t for t in trades if t['action'] == 'buy']
@@ -523,7 +610,13 @@ class WalkForwardValidator:
             'max_drawdown': 0.0,  # TODO: Calculate actual drawdown
             'win_rate': win_rate,
             'total_trades': len(trades),
-            'final_equity': final_equity
+            'final_equity': final_equity,
+            'turnover': turnover_metrics['turnover'],
+            'average_holding_period_days': turnover_metrics['average_holding_period_days'],
+            'capacity_utilization': turnover_metrics['capacity_utilization'],
+            'capacity_limit': turnover_metrics['capacity_limit'],
+            'market_impact_cost': turnover_metrics['market_impact_cost'],
+            'raw_total_return': raw_total_return
         }
 
 
@@ -581,7 +674,18 @@ class BacktestingEngine:
         self.logger.info(f"✅ Backtesting completed in {execution_time:.2f}s")
         self.logger.info(f"📊 Total return: {results.total_return:.2%}")
         self.logger.info(f"📈 Sharpe ratio: {results.sharpe_ratio:.2f}")
-        
+        self.logger.info(
+            "🔁 Turnover: %.2f%% | Avg holding period: %.2f days",
+            results.turnover * 100,
+            results.average_holding_period_days
+        )
+        capacity_limit_display = results.capacity_limit * 100 if results.capacity_limit else 0.0
+        self.logger.info(
+            "📦 Capacity utilization: %.2f%% of limit %.2f%%",
+            results.capacity_utilization * 100,
+            capacity_limit_display
+        )
+
         return results
     
     async def _execute_backtesting(
@@ -637,22 +741,35 @@ class BacktestingEngine:
                 'var_95': 0.0,
                 'cvar_95': 0.0,
                 'beta': 0.0,
-                'alpha': 0.0
+                'alpha': 0.0,
+                'turnover': 0.0,
+                'average_holding_period_days': 0.0,
+                'capacity_utilization': 0.0,
+                'capacity_limit': self.config.capacity_limit,
+                'market_impact_cost': 0.0
             }
-        
+
         # Extract metrics from each window
         returns = [r['results']['total_return'] for r in walk_forward_results if 'results' in r]
         sharpe_ratios = [r['results']['sharpe_ratio'] for r in walk_forward_results if 'results' in r]
         win_rates = [r['results']['win_rate'] for r in walk_forward_results if 'results' in r]
         total_trades = [r['results']['total_trades'] for r in walk_forward_results if 'results' in r]
-        
+        turnovers = [r['results'].get('turnover', 0.0) for r in walk_forward_results if 'results' in r]
+        holding_periods = [r['results'].get('average_holding_period_days', 0.0) for r in walk_forward_results if 'results' in r]
+        capacity_utilizations = [r['results'].get('capacity_utilization', 0.0) for r in walk_forward_results if 'results' in r]
+        market_impacts = [r['results'].get('market_impact_cost', 0.0) for r in walk_forward_results if 'results' in r]
+
         # Calculate aggregated metrics
         total_return = np.mean(returns) if returns else 0.0
         annualized_return = total_return * (252 / self.config.testing_window_days) if self.config.testing_window_days > 0 else 0.0
         sharpe_ratio = np.mean(sharpe_ratios) if sharpe_ratios else 0.0
         win_rate = np.mean(win_rates) if win_rates else 0.0
         total_trades_sum = sum(total_trades) if total_trades else 0
-        
+        average_turnover = float(np.mean(turnovers)) if turnovers else 0.0
+        average_holding_period = float(np.mean(holding_periods)) if holding_periods else 0.0
+        average_capacity_utilization = float(np.mean(capacity_utilizations)) if capacity_utilizations else 0.0
+        average_market_impact = float(np.mean(market_impacts)) if market_impacts else 0.0
+
         return {
             'total_return': total_return,
             'annualized_return': annualized_return,
@@ -671,7 +788,12 @@ class BacktestingEngine:
             'var_95': np.percentile(returns, 5) if returns else 0.0,
             'cvar_95': 0.0,        # TODO: Calculate CVaR
             'beta': 0.0,           # TODO: Calculate beta
-            'alpha': 0.0           # TODO: Calculate alpha
+            'alpha': 0.0,          # TODO: Calculate alpha
+            'turnover': average_turnover,
+            'average_holding_period_days': average_holding_period,
+            'capacity_utilization': average_capacity_utilization,
+            'capacity_limit': self.config.capacity_limit,
+            'market_impact_cost': average_market_impact
         }
     
     def _get_optimization_used(self) -> List[str]:

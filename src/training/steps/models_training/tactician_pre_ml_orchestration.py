@@ -566,7 +566,8 @@ class Tactician5mEntryOptimizer:
     def _find_optimal_5m_entries_in_green_period(
         self,
         green_period: Dict[str, Any],
-        data_5m: pd.DataFrame
+        data_5m: pd.DataFrame,
+        data_15m: Optional[pd.DataFrame] = None
     ) -> List[Dict[str, Any]]:
         """Find optimal 5m entry points within Analyst green period using ML models."""
         tprint_info(f"🎯 Finding optimal 5m entries in green period: {green_period['start_time']} to {green_period['end_time']}")
@@ -1219,6 +1220,7 @@ class TacticianPreMLOrchestrator:
         **kwargs
     ) -> TacticianPreMLResult:
         """Orchestrate feature engineering per regime with regime-specific optimization."""
+        start_time = tprint_timer()
         tprint_info("🏷️ Starting per-regime feature engineering orchestration...")
 
         result = TacticianPreMLResult()

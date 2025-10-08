@@ -166,6 +166,21 @@ class StandardizedLabelingResult:
             self.metadata.error is None
         )
     
+    HORIZON_KEYWORD_MAPPING = [
+        ("micro", ("micro",)),
+        ("small", ("immediate", "small")),
+        ("medium", ("short", "medium")),
+        ("high", ("long", "leverage", "high")),
+    ]
+
+    def _resolve_weight_key(self, target_name: str) -> str:
+        """Map a target name to the appropriate weight key."""
+        target_lower = target_name.lower()
+        for weight_key, keywords in self.HORIZON_KEYWORD_MAPPING:
+            if any(keyword in target_lower for keyword in keywords):
+                return weight_key
+        return "small"
+
     def get_best_target(self) -> Optional[str]:
         """Get the best target based on weights."""
         if not self.weights or not self.target_columns:
@@ -175,20 +190,11 @@ class StandardizedLabelingResult:
 
         # Priority order based on horizon weights (higher weight = higher priority)
         target_priority = []
-        
+
         for target in self.target_columns:
             if target in self.labels.columns:
-                # Determine horizon type from target name
-                if 'immediate' in target.lower() or 'small' in target.lower():
-                    horizon_weight = self.weights.get('small', 0.0)
-                elif 'short' in target.lower() or 'medium' in target.lower():
-                    horizon_weight = self.weights.get('medium', 0.0)
-                elif 'leverage' in target.lower() or 'high' in target.lower():
-                    horizon_weight = self.weights.get('high', 0.0)
-                else:
-                    # Default to small horizon if unclear
-                    horizon_weight = self.weights.get('small', 0.0)
-                
+                weight_key = self._resolve_weight_key(target)
+                horizon_weight = self.weights.get(weight_key, 0.0)
                 target_priority.append((target, horizon_weight))
 
         # Sort by weight (descending) and return the highest weighted target

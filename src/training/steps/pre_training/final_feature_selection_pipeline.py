@@ -16,6 +16,7 @@ import time
 import json
 from pathlib import Path
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+from sklearn.metrics import average_precision_score, balanced_accuracy_score
 from sklearn.base import clone
 from sklearn.model_selection import cross_val_score, StratifiedKFold, KFold
 from sklearn.metrics import mean_squared_error, accuracy_score
@@ -250,10 +251,10 @@ class FeatureSelectionResult:
     final_features: List[str] = field(default_factory=list)
     
     # Scores and metrics
-    stage_1_scores: Dict[str, float] = field(default_factory=dict)
-    stage_2_scores: Dict[str, float] = field(default_factory=dict)
-    stage_3_scores: Dict[str, float] = field(default_factory=dict)
-    final_scores: Dict[str, float] = field(default_factory=dict)
+    stage_1_scores: Dict[str, Any] = field(default_factory=dict)
+    stage_2_scores: Dict[str, Any] = field(default_factory=dict)
+    stage_3_scores: Dict[str, Any] = field(default_factory=dict)
+    final_scores: Dict[str, Any] = field(default_factory=dict)
     
     # Feature importance
     rf_importance: Dict[str, float] = field(default_factory=dict)
@@ -370,7 +371,7 @@ class MultiStageFeatureSelector:
                 'model_importance_threshold': 0.002,  # Lower threshold for comprehensive input
                 'min_correlation_threshold': 0.96,   # Very tight correlation filtering
                 'min_variance_threshold': 0.01,      # Standard variance requirement
-                'cv_scoring': 'accuracy'  # For regime classification
+                'cv_scoring': 'average_precision'  # For regime classification with imbalanced labels
             },
             'DeepScaler': {
                 'model_correlation_threshold': 0.85,  # Looser correlation for precision focus
@@ -2086,15 +2087,15 @@ class MultiStageFeatureSelector:
             self.logger.warning(f"⚠️ Failed to collect CV predictions for calibration: {exc}")
             return None, None, None
     
-    def _compile_results(self, 
-                        X: pd.DataFrame, 
+    def _compile_results(self,
+                        X: pd.DataFrame,
                         y: pd.Series,
                         stage_1_features: List[str],
-                        stage_2_features: List[str], 
+                        stage_2_features: List[str],
                         stage_3_features: List[str],
-                        stage_1_scores: Dict[str, float],
-                        stage_2_scores: Dict[str, float],
-                        stage_3_scores: Dict[str, float]):
+                        stage_1_scores: Dict[str, Any],
+                        stage_2_scores: Dict[str, Any],
+                        stage_3_scores: Dict[str, Any]):
         """Compile final results."""
         
         is_classification = self._is_classification(y)
@@ -2104,7 +2105,7 @@ class MultiStageFeatureSelector:
         self.results.stage_2_features = stage_2_features
         self.results.stage_3_features = stage_3_features
         self.results.final_features = stage_3_features
-        
+
         # Store scores
         self.results.stage_1_scores = stage_1_scores
         self.results.stage_2_scores = stage_2_scores
@@ -2118,6 +2119,21 @@ class MultiStageFeatureSelector:
             cv_scores = np.array(cv_res.get('scores', []) or [])
         except Exception:
             cv_scores = np.array([])
+
+        cv_mean = float(np.nanmean(cv_scores)) if cv_scores.size else float('nan')
+        cv_std = float(np.nanstd(cv_scores)) if cv_scores.size else float('nan')
+        metric_name, metric_value = self._calculate_model_metric(final_model, X[stage_3_features], y)
+
+        final_scores: Dict[str, Any] = {
+            'cv_mean': cv_mean,
+            'cv_std': cv_std,
+            'cv_metric': self.config.cv_scoring
+        }
+
+        if metric_value is not None:
+            final_scores[metric_name] = metric_value
+
+        self.results.final_scores = final_scores
 
         validation_predictions: Optional[np.ndarray]
         validation_probabilities: Optional[np.ndarray]
@@ -2200,7 +2216,9 @@ class MultiStageFeatureSelector:
         self.results.model_performance = {
             'final_model': final_model,
             'cv_scores': cv_scores.tolist(),
-            'feature_importance': dict(zip(stage_3_features, final_model.feature_importances_))
+            'feature_importance': dict(zip(stage_3_features, final_model.feature_importances_)),
+            'evaluation_metric': metric_name,
+            'evaluation_score': metric_value
         }
         if validation_predictions is not None:
             self.results.model_performance['cv_predictions'] = (
@@ -2219,7 +2237,48 @@ class MultiStageFeatureSelector:
 
         self.results.polarity_adjustments = getattr(self, 'feature_polarity_adjustments', {})
         self.results.sign_stability = getattr(self, 'feature_sign_stability', {})
-    
+
+    def _calculate_model_metric(self, model: Any, X: pd.DataFrame, y: pd.Series) -> Tuple[str, Optional[float]]:
+        """Calculate the final evaluation metric for the trained model."""
+
+        if self._is_classification(y):
+            return self._calculate_classification_metric(model, X, y)
+
+        try:
+            return 'r2', float(model.score(X, y))
+        except Exception:
+            return 'r2', None
+
+    def _calculate_classification_metric(self, model: Any, X: pd.DataFrame, y: pd.Series) -> Tuple[str, Optional[float]]:
+        """Calculate imbalance-aware classification metrics."""
+
+        y_array = y.values if hasattr(y, 'values') else np.asarray(y)
+        unique_classes = np.unique(y_array)
+
+        if unique_classes.size <= 1:
+            return 'average_precision', None
+
+        if unique_classes.size <= 2:
+            try:
+                if hasattr(model, 'predict_proba'):
+                    proba = model.predict_proba(X)
+                    if proba.ndim == 2 and proba.shape[1] > 1:
+                        positive_scores = proba[:, 1]
+                    else:
+                        positive_scores = proba.ravel()
+                    return 'average_precision', float(average_precision_score(y_array, positive_scores))
+                if hasattr(model, 'decision_function'):
+                    scores = model.decision_function(X)
+                    return 'average_precision', float(average_precision_score(y_array, scores))
+            except Exception:
+                pass
+
+        try:
+            predictions = model.predict(X)
+            return 'balanced_accuracy', float(balanced_accuracy_score(y_array, predictions))
+        except Exception:
+            return 'balanced_accuracy', None
+
     def _handle_insufficient_features(self, X: pd.DataFrame, y: pd.Series) -> FeatureSelectionResult:
         """Handle case where we don't have enough features."""
         
@@ -2233,13 +2292,18 @@ class MultiStageFeatureSelector:
         
         # Train final model
         final_model = self._train_random_forest(X, y)
-        
-        self.results.final_scores = {
+
+        metric_name, metric_value = self._calculate_model_metric(final_model, X, y)
+        final_scores: Dict[str, Any] = {
             'cv_mean': 0.0,
             'cv_std': 0.0,
-            'model_score': final_model.score(X, y)
+            'cv_metric': self.config.cv_scoring
         }
-        
+        if metric_value is not None:
+            final_scores[metric_name] = metric_value
+
+        self.results.final_scores = final_scores
+
         self.results.feature_counts = {
             'initial': len(X.columns),
             'stage_1': len(X.columns),

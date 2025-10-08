@@ -8,7 +8,7 @@ import logging
 import time
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 from dataclasses import dataclass
 from enum import Enum
 import itertools
@@ -18,6 +18,7 @@ from functools import lru_cache
 import hashlib
 import gc
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import defaultdict
 
 # Import utility modules
 from src.utils.common_operations import safe_dataframe_operation, validate_dataframe_columns
@@ -3667,6 +3668,40 @@ class CoreOptimizer:
         feature_name: str,
         target_column: str,
         lookback_range: Tuple[int, int],
+        outer_split_iterator: Optional[Iterable[Tuple[slice, slice]]] = None,
+        **kwargs
+    ) -> OptimizationResult:
+        """Optimize using coarse-to-refine search with optional nested CV."""
+        provided_iterator = kwargs.pop('outer_split_iterator', None)
+        if provided_iterator is not None:
+            outer_split_iterator = provided_iterator
+
+        if outer_split_iterator:
+            outer_splits = list(outer_split_iterator)
+            if outer_splits:
+                return self._optimize_coarse_to_refine_with_outer(
+                    data,
+                    feature_name,
+                    target_column,
+                    lookback_range,
+                    outer_splits,
+                    **kwargs,
+                )
+
+        return self._coarse_to_refine_single_pass(
+            data,
+            feature_name,
+            target_column,
+            lookback_range,
+            **kwargs,
+        )
+
+    def _coarse_to_refine_single_pass(
+        self,
+        data: pd.DataFrame,
+        feature_name: str,
+        target_column: str,
+        lookback_range: Tuple[int, int],
         **kwargs
     ) -> OptimizationResult:
         """
@@ -3955,3 +3990,206 @@ class CoreOptimizer:
         except Exception as e:
             self.logger.error(f"❌ Coarse-to-refine optimization failed: {e}")
             return self._create_failed_result("coarse_to_refine", 0.0)
+
+    def _optimize_coarse_to_refine_with_outer(
+        self,
+        data: pd.DataFrame,
+        feature_name: str,
+        target_column: str,
+        lookback_range: Tuple[int, int],
+        outer_splits: List[Tuple[slice, slice]],
+        **kwargs
+    ) -> OptimizationResult:
+        """Run coarse-to-refine optimization inside nested outer splits."""
+        tprint_debug("🧠 Entering _optimize_coarse_to_refine_with_outer")
+
+        try:
+            min_lookback, max_lookback = lookback_range
+            forward_returns_full = self._get_shared_forward_returns_matrix(
+                data,
+                target_column,
+                max_horizon=max_lookback,
+            )
+            if not forward_returns_full:
+                return self._create_failed_result("coarse_to_refine", 0.0)
+
+            lookback_scores: Dict[int, List[float]] = defaultdict(list)
+            fold_records: List[Dict[str, Any]] = []
+            total_trials = 0
+            stability_scores: List[float] = []
+            sensitivity_scores: List[float] = []
+            convergence_flags: List[bool] = []
+
+            for fold_index, (train_split, val_split) in enumerate(outer_splits):
+                train_bounds = self._normalize_split_bounds(train_split, len(data))
+                val_bounds = self._normalize_split_bounds(val_split, len(data))
+
+                if not train_bounds or not val_bounds:
+                    continue
+
+                train_start, train_end = train_bounds
+                val_start, val_end = val_bounds
+
+                if train_end - train_start < min_lookback:
+                    continue
+
+                train_frame = data.iloc[train_start:train_end]
+                if train_frame.empty:
+                    continue
+
+                inner_result = self._coarse_to_refine_single_pass(
+                    train_frame,
+                    feature_name,
+                    target_column,
+                    lookback_range,
+                    **kwargs,
+                )
+
+                total_trials += inner_result.total_trials
+                convergence_flags.append(inner_result.convergence_achieved)
+
+                if inner_result.stability_score:
+                    stability_scores.append(float(inner_result.stability_score))
+                if inner_result.lookback_sensitivity:
+                    sensitivity_scores.append(float(inner_result.lookback_sensitivity))
+
+                lookback = int(inner_result.best_lookback_period)
+                if lookback <= 0:
+                    continue
+
+                validation_score = self._score_frozen_lookback(
+                    data,
+                    feature_name,
+                    lookback,
+                    (val_start, val_end),
+                    forward_returns_full,
+                )
+
+                lookback_scores[lookback].append(validation_score)
+
+                fold_records.append({
+                    'fold_index': fold_index,
+                    'train_start': train_start,
+                    'train_end': train_end,
+                    'validation_start': val_start,
+                    'validation_end': val_end,
+                    'inner_best_lookback': lookback,
+                    'inner_score': inner_result.best_score,
+                    'validation_score': validation_score,
+                })
+
+            if not fold_records or not lookback_scores:
+                return self._coarse_to_refine_single_pass(
+                    data,
+                    feature_name,
+                    target_column,
+                    lookback_range,
+                    **kwargs,
+                )
+
+            def aggregate_mean(values: List[float]) -> float:
+                cleaned = [float(v) for v in values if v is not None and not np.isnan(v)]
+                if not cleaned:
+                    return 0.0
+                return float(np.mean(cleaned))
+
+            aggregate_scores = {lb: aggregate_mean(scores) for lb, scores in lookback_scores.items()}
+            best_lookback, best_score = max(aggregate_scores.items(), key=lambda item: item[1])
+
+            metadata = {
+                'feature_name': feature_name,
+                'target_column': target_column,
+                'outer_folds': fold_records,
+                'lookback_aggregates': {
+                    int(lb): {
+                        'mean_validation_score': aggregate_scores[lb],
+                        'folds': len(scores),
+                    }
+                    for lb, scores in lookback_scores.items()
+                },
+                'frozen_from_inner': True,
+                'outer_split_count': len(fold_records),
+            }
+
+            stability_value = aggregate_mean(stability_scores)
+            sensitivity_value = aggregate_mean(sensitivity_scores)
+
+            return OptimizationResult(
+                best_lookback_period=int(best_lookback),
+                best_score=float(best_score),
+                optimization_method="coarse_to_refine",
+                total_trials=total_trials,
+                optimization_time=0.0,
+                convergence_achieved=all(convergence_flags) if convergence_flags else True,
+                metadata=metadata,
+                stability_score=stability_value,
+                lookback_sensitivity=sensitivity_value,
+            )
+
+        except Exception as exc:
+            self.logger.error(f"❌ Nested coarse-to-refine optimization failed: {exc}")
+            return self._create_failed_result("coarse_to_refine", 0.0)
+
+    def _normalize_split_bounds(
+        self,
+        split: Union[slice, Iterable[int]],
+        data_length: int,
+    ) -> Optional[Tuple[int, int]]:
+        """Normalize split definitions to concrete integer bounds."""
+        if isinstance(split, slice):
+            start = 0 if split.start is None else max(0, int(split.start))
+            stop = data_length if split.stop is None else min(data_length, int(split.stop))
+            if start >= stop:
+                return None
+            return start, stop
+
+        if isinstance(split, Iterable):
+            indices = [int(idx) for idx in split if isinstance(idx, (int, np.integer))]
+            if not indices:
+                return None
+            indices.sort()
+            start = max(0, indices[0])
+            stop = min(data_length, indices[-1] + 1)
+            if start >= stop:
+                return None
+            return start, stop
+
+        return None
+
+    def _score_frozen_lookback(
+        self,
+        data: pd.DataFrame,
+        feature_name: str,
+        lookback: int,
+        bounds: Tuple[int, int],
+        forward_returns: Dict[int, np.ndarray],
+    ) -> float:
+        """Evaluate a frozen lookback on the specified outer validation window."""
+        start, end = bounds
+        if start >= end or lookback <= 0:
+            return 0.0
+
+        feature_values = self._cached_feature_calculation(data, feature_name, lookback)
+        if feature_values is None or len(feature_values) == 0:
+            return 0.0
+
+        returns_array = forward_returns.get(lookback, np.array([]))
+        if len(returns_array) == 0:
+            return 0.0
+
+        feature_segment = feature_values[start:end]
+        returns_segment = returns_array[start:end]
+
+        min_length = min(len(feature_segment), len(returns_segment))
+        if min_length < 10:
+            return 0.0
+
+        score = self._calculate_mutual_information_robust(
+            feature_segment[:min_length],
+            returns_segment[:min_length],
+        )
+
+        if score is None or np.isnan(score):
+            return 0.0
+
+        return float(score)

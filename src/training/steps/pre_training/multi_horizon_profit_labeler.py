@@ -51,6 +51,7 @@ from src.training.steps.pre_training.standardized_labeling_interface import (
 )
 from src.training.steps.pre_training.validation.schemas import (
     SchemaValidationException,
+    report_hypothesis_count,
     schema_metadata,
     validate_engineered_features,
     validate_labeled_dataset,
@@ -896,6 +897,10 @@ class MultiHorizonProfitLabeler:
             mh_metadata['validated_schemas'] = validation_metadata
             std_metadata = artifacts.get('standardized_output', {}).setdefault('metadata', {})
             std_metadata['validated_schemas'] = validation_metadata
+
+            hypothesis_statistics = report_hypothesis_count(self.config)
+            mh_metadata.setdefault('hypothesis_statistics', hypothesis_statistics)
+            std_metadata.setdefault('hypothesis_statistics', dict(hypothesis_statistics))
 
             mh_metadata = artifacts['multi_horizon_labeling_result'].setdefault('metadata', {})
             if thresholds:

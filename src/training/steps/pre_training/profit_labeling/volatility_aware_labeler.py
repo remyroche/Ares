@@ -564,6 +564,7 @@ class VolatilityAwareMultiHorizonLabeler:
                 filtered_result,
                 'target_parameters',
                 getattr(target_result, 'target_parameters', {})
+            )
             result.execution_timing = deepcopy(
                 getattr(
                     filtered_result,

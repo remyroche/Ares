@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Set, Tuple
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 import math
-from typing import Any, Callable, Dict, Optional, Union
-from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -35,6 +33,9 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - optional dependency for multiple testing adjustments
     multipletests = None  # type: ignore[assignment]
 
+if TYPE_CHECKING:  # pragma: no cover - type checking only
+    from ..multi_horizon_profit_labeler import MultiHorizonConfig
+
 
 __all__ = [
     "RAW_OHLCV_SCHEMA",
@@ -47,6 +48,8 @@ __all__ = [
     "validate_engineered_features",
     "schema_metadata",
     "HypothesisTracker",
+    "apply_multiple_testing_correction",
+    "report_hypothesis_count",
     "SplitAwareScaler",
 ]
 
@@ -208,6 +211,93 @@ class HypothesisTracker:
 
         _, corrected_pvalues, _, _ = multipletests(self.pvalues, alpha=alpha, method=method)
         return list(corrected_pvalues)
+
+
+def apply_multiple_testing_correction(
+    horizon_metrics: Mapping[str, Mapping[str, Any]],
+    *,
+    alpha: float = 0.05,
+    method: str = "fdr_bh",
+) -> Dict[str, Dict[str, Any]]:
+    """Augment horizon metrics with multiple-testing adjustments.
+
+    Parameters
+    ----------
+    horizon_metrics
+        Mapping of horizon identifiers to metric dictionaries containing at
+        least a ``p_value`` entry. The returned structure mirrors the input but
+        adds corrected p-values, rejection flags, and metadata describing the
+        correction.
+    alpha
+        Significance level used for the multiple-testing procedure.
+    method
+        Multiple-testing method understood by :func:`statsmodels.stats.multitest.multipletests`.
+
+    Returns
+    -------
+    Dict[str, Dict[str, Any]]
+        Mapping with enriched metric dictionaries. Entries lacking a finite
+        ``p_value`` receive metadata indicating that no adjustment was applied.
+    """
+
+    corrected: Dict[str, Dict[str, Any]] = {}
+    if not horizon_metrics:
+        return corrected
+
+    ordered_metrics: List[Tuple[str, float]] = []
+    for horizon, metrics in horizon_metrics.items():
+        horizon_key = str(horizon)
+        metrics_copy: Dict[str, Any] = dict(metrics) if isinstance(metrics, Mapping) else {}
+        corrected[horizon_key] = metrics_copy
+
+        raw_p = metrics_copy.get("p_value")
+        if isinstance(raw_p, (int, float)) and math.isfinite(raw_p):
+            ordered_metrics.append((horizon_key, float(raw_p)))
+
+    hypothesis_count = len(ordered_metrics)
+    base_metadata = {
+        "method": method,
+        "alpha": alpha,
+        "hypothesis_count": hypothesis_count,
+        "bonferroni_threshold": alpha / hypothesis_count if hypothesis_count else alpha,
+        "dependency": "statsmodels" if multipletests is not None else "benjamini_hochberg_fallback",
+    }
+
+    adjusted_values: List[float] = []
+    rejection_flags: List[bool] = []
+    if hypothesis_count:
+        if multipletests is not None:
+            reject, adjusted, _, _ = multipletests(
+                [value for _, value in ordered_metrics], alpha=alpha, method=method
+            )
+            rejection_flags = [bool(flag) for flag in reject]
+            adjusted_values = [float(value) for value in adjusted]
+        else:
+            if method != "fdr_bh":  # pragma: no cover - guarded by tests to use default method
+                raise RuntimeError(
+                    "statsmodels is unavailable; only the 'fdr_bh' method is supported as a fallback."
+                )
+            fallback_adjusted = _bh_fdr_adjustment({key: value for key, value in ordered_metrics})
+            adjusted_values = [fallback_adjusted[key] for key, _ in ordered_metrics]
+            rejection_flags = [value <= alpha for value in adjusted_values]
+
+    for index, (horizon_key, _raw_p) in enumerate(ordered_metrics):
+        metrics = corrected[horizon_key]
+        metrics["adjusted_p_value"] = float(adjusted_values[index])
+        metrics["reject_null_corrected"] = bool(rejection_flags[index])
+        metadata = dict(base_metadata)
+        metadata["adjustment_applied"] = True
+        metrics["multiple_testing_correction"] = metadata
+
+    for horizon_key, metrics in corrected.items():
+        if "multiple_testing_correction" in metrics:
+            continue
+        metadata = dict(base_metadata)
+        metadata["adjustment_applied"] = False
+        metrics["multiple_testing_correction"] = metadata
+        metrics.setdefault("reject_null_corrected", False)
+
+    return corrected
 
 
 class SplitAwareScaler(TransformerMixin, BaseEstimator):
@@ -390,6 +480,87 @@ def schema_metadata(*schema_keys: str) -> Dict[str, Dict[str, str]]:
     return metadata
 
 
+def report_hypothesis_count(
+    config: "MultiHorizonConfig",
+    *,
+    alpha: float = 0.05,
+) -> Dict[str, Any]:
+    """Summarise the hypothesis volume implied by the configuration.
+
+    The total hypothesis count is derived from the Cartesian product of active
+    horizons, declared transaction-cost scenarios, and configured regime
+    variants. A Bonferroni-adjusted threshold is reported for convenience so
+    downstream diagnostics can surface the stricter per-test significance
+    level.
+    """
+
+    def _count_numeric_horizons(weights: Any) -> Tuple[int, List[str]]:
+        if weights is None:
+            return 0, []
+        numeric_items = [
+            (str(name), float(value))
+            for name, value in vars(weights).items()
+            if isinstance(value, (int, float))
+        ]
+        active = [name for name, value in numeric_items if value > 0]
+        if active:
+            return len(active), active
+        return len(numeric_items), [name for name, _ in numeric_items]
+
+    def _count_configurations(container: Any, attribute_names: Sequence[str]) -> Tuple[int, Optional[str]]:
+        if container is None:
+            return 0, None
+        for attr in attribute_names:
+            value = getattr(container, attr, None)
+            if isinstance(value, Mapping):
+                return len(value), attr
+            if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+                return len(value), attr
+        return 0, None
+
+    horizon_count, active_horizons = _count_numeric_horizons(getattr(config, "horizon_weights", None))
+    if horizon_count == 0:
+        horizon_count = 1  # fall back to a single horizon assumption
+
+    transaction_container = getattr(config, "transaction_costs", None)
+    transaction_count, transaction_attr = _count_configurations(
+        transaction_container,
+        ("scenarios", "scenario_configs", "cost_scenarios", "scenario_grid", "configurations"),
+    )
+    if transaction_container is not None and transaction_count == 0:
+        transaction_count = 1
+    elif transaction_container is None:
+        transaction_count = 1
+
+    regime_count = 1
+    regime_attr: Optional[str] = None
+    if getattr(config, "enable_regime_aware_labeling", False):
+        regime_container = getattr(config, "regime_config", None)
+        computed_count, regime_attr = _count_configurations(
+            regime_container,
+            ("regimes", "regime_states", "regime_templates", "clusters", "configurations"),
+        )
+        if computed_count:
+            regime_count = computed_count
+
+    total_hypotheses = int(horizon_count * transaction_count * regime_count)
+    bonferroni_threshold = alpha / total_hypotheses if total_hypotheses else alpha
+
+    return {
+        "horizon_count": int(horizon_count),
+        "transaction_cost_scenarios": int(transaction_count),
+        "regime_configurations": int(regime_count),
+        "total_hypotheses": total_hypotheses,
+        "alpha": alpha,
+        "bonferroni_threshold": bonferroni_threshold,
+        "details": {
+            "active_horizons": active_horizons,
+            "transaction_attribute": transaction_attr,
+            "regime_attribute": regime_attr,
+        },
+    }
+
+
 def _should_skip_object(obj: Any) -> bool:
     """Return ``True`` when an object should be skipped during recursion."""
 
@@ -528,7 +699,21 @@ def track_and_control_hypotheses(
         callers should log for visibility.
     """
 
-    horizon_p = _normalise_p_values(horizon_results)
+    corrected_horizon_metrics: Dict[str, Dict[str, Any]] = {}
+    horizon_metrics_input: Optional[Mapping[str, Any]] = None
+    if isinstance(horizon_results, Mapping):
+        candidate_metrics = {
+            str(key): dict(value)
+            for key, value in horizon_results.items()
+            if isinstance(value, Mapping) and "p_value" in value
+        }
+        if candidate_metrics:
+            corrected_horizon_metrics = apply_multiple_testing_correction(
+                candidate_metrics, alpha=alpha
+            )
+            horizon_metrics_input = candidate_metrics
+
+    horizon_p = _normalise_p_values(horizon_metrics_input or horizon_results)
     feature_p = _normalise_p_values(feature_results)
     lookback_p = _normalise_p_values(lookback_results)
 
@@ -585,6 +770,9 @@ def track_and_control_hypotheses(
         },
         "warning": warning,
     }
+
+    if corrected_horizon_metrics:
+        report["corrected_horizon_metrics"] = corrected_horizon_metrics
 
     return report
 _RNGInput = Union[int, np.random.Generator, np.random.RandomState]

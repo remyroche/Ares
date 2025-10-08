@@ -111,3 +111,22 @@ def test_validate_selection_artifact_enforces_strings():
     with pytest.raises(DataContractValidationError) as exc:
         validate_selection_artifact(payload, context="test.selection.invalid")
     assert "test.selection.invalid" in str(exc.value)
+
+
+def test_validate_multi_horizon_schema_error_includes_metadata():
+    payload = {
+        "labeled_data": _make_labels().drop(columns=["short_term_opportunity"]),
+        "labels": _make_labels().drop(columns=["short_term_opportunity"]),
+        "horizon_weights": {"t1": 1.0},
+        "target_columns": ["target:t1"],
+        "validation_results": {"is_valid": True, "issues": []},
+        "metadata": {},
+        "smoothing_settings": {},
+    }
+
+    with pytest.raises(DataContractValidationError) as exc:
+        validate_multi_horizon_labeling_result(payload, context="test.schema")
+
+    message = str(exc.value)
+    assert "Multi-horizon Label Dataset" in message
+    assert "test.schema" in message

@@ -119,9 +119,10 @@ class FinalFeatureSelectionStep:
         elif locator:
             output_directory = str(locator.generated_path(self.output_directory_key, ensure_exists=True))
         else:
-            fallback_output_dir = Path('generated') / 'market_analysis'
-            fallback_output_dir.mkdir(parents=True, exist_ok=True)
-            output_directory = str(fallback_output_dir)
+            default_locator = PipelineDataLocator()
+            output_directory = str(
+                default_locator.generated_path(self.output_directory_key, ensure_exists=True)
+            )
 
         self.final_features_dir_key = self.config.get('final_features_dir_key', 'final_feature_selection')
         configured_final_dir = self.config.get('final_features_dir')
@@ -131,8 +132,11 @@ class FinalFeatureSelectionStep:
         elif locator:
             final_features_dir = locator.generated_path(self.final_features_dir_key, ensure_exists=True)
         else:
-            final_features_dir = (Path('generated') / 'market_analysis' / 'final_feature_selection')
-            final_features_dir.mkdir(parents=True, exist_ok=True)
+            default_locator = PipelineDataLocator()
+            final_features_dir = default_locator.generated_path(
+                self.final_features_dir_key,
+                ensure_exists=True,
+            )
         self.final_features_dir = final_features_dir
 
         # Initialize feature selection configuration with model-aware defaults

@@ -32,6 +32,7 @@ Sub-pipelines:
 """
 
 import asyncio
+import json
 import logging
 import os
 import sys
@@ -59,6 +60,7 @@ from src.utils.comprehensive_function_logger import log_step_functions, log_impo
 from src.utils.error_recovery.advanced_error_recovery import get_error_recovery, with_error_recovery
 from src.utils.memory_management.streaming_data_processor import get_streaming_processor, with_memory_optimization
 from src.utils.data.quality.comprehensive_quality_scorer import get_quality_scorer
+from src.training.config.data_locator import DataLocator, DataLocatorConfig, LocatorPaths
 
 logger = system_logger.getChild('DataCollectionSubPipeline')
 
@@ -100,6 +102,9 @@ class LoggingConfig:
     enable_file: bool = False
     log_file: Optional[str] = None
 
+DEFAULT_DATA_DIR = "historical_data"
+
+
 @dataclass
 class SubPipelineConfig:
     """Configuration for sub-pipeline execution."""
@@ -107,7 +112,7 @@ class SubPipelineConfig:
     symbol: str = "BTCUSDT"
     exchange: str = "binance"
     timeframe: str = "1m"
-    data_dir: str = "historical_data"
+    data_dir: str = DEFAULT_DATA_DIR
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     force_rerun: bool = False
@@ -118,6 +123,63 @@ class SubPipelineConfig:
     single_stage_only: bool = False
     custom_params: Dict[str, Any] = field(default_factory=dict)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    data_locator_config: DataLocatorConfig = field(default_factory=DataLocatorConfig)
+    data_locator: Optional[DataLocator] = None
+    data_dir_key: str = "market_data"
+    cache_dir_key: str = "default"
+    artifacts_dir_key: str = "default"
+    generated_dir_key: str = "market_analysis"
+    config_dir_key: str = "multi_horizon_labeling"
+    _path_view: Optional[LocatorPaths] = field(default=None, init=False, repr=False)
+
+    def attach_locator(self, locator: DataLocator) -> None:
+        """Attach a :class:`DataLocator` instance to the configuration."""
+
+        self.data_locator = locator
+        self._path_view = LocatorPaths(locator)
+
+    def _ensure_paths(self) -> LocatorPaths:
+        if self.data_locator is None:
+            self.attach_locator(DataLocator(self.data_locator_config))
+        elif self._path_view is None or self._path_view.locator is not self.data_locator:
+            self._path_view = LocatorPaths(self.data_locator)
+        return self._path_view
+
+    @property
+    def paths(self) -> LocatorPaths:
+        return self._ensure_paths()
+
+    @property
+    def data(self):
+        return self.paths.data
+
+    @property
+    def cache(self):
+        return self.paths.cache
+
+    @property
+    def artifacts(self):
+        return self.paths.artifacts
+
+    @property
+    def generated(self):
+        return self.paths.generated
+
+    @property
+    def config_paths(self):
+        return self.paths.config
+
+    @property
+    def config_files(self):
+        return self.paths.config
+
+    @property
+    def config_root(self) -> Path:
+        return self.paths.config.root
+
+    @property
+    def config(self):
+        return self.paths.config
 
 @dataclass
 class SubPipelineResult:
@@ -149,10 +211,17 @@ class DataCollectionSubPipeline:
         self.config = config or SubPipelineConfig()
         self.logger = logger.getChild('DataCollectionSubPipeline')
         self.results: List[SubPipelineResult] = []
-        
+
         # Apply logging configuration
         self._apply_logging_config(self.config.logging)
-        
+
+        # Locator state used for filesystem resolution
+        self._data_locator: Optional[DataLocator] = None
+        self._configuration_logged = False
+
+        # Resolve filesystem configuration before initializing components
+        self._prepare_filesystem(self.config)
+
         # Initialize artifact and version managers
         self.artifact_manager = get_artifact_manager()
         self.version_manager = get_version_manager()
@@ -232,6 +301,7 @@ class DataCollectionSubPipeline:
             SubPipelineResult with execution details
         """
         config = config or self.config
+        self._prepare_filesystem(config)
         self.logger.info(f"🚀 Starting sub-pipeline: {sub_pipeline_name} (mode: {config.mode.value})")
         
         start_time = datetime.now()
@@ -294,6 +364,7 @@ class DataCollectionSubPipeline:
             List of SubPipelineResult objects
         """
         config = config or self.config
+        self._prepare_filesystem(config)
         self.logger.info(f"🚀 Starting {len(sub_pipeline_names)} sub-pipelines (sequential: {sequential})")
         
         if sequential:
@@ -1400,6 +1471,48 @@ class DataCollectionSubPipeline:
             'total_duration_seconds': total_duration,
             'results': self.results
         }
+
+    def _resolve_data_locator(self, config: SubPipelineConfig) -> DataLocator:
+        if isinstance(config.data_locator, DataLocator):
+            locator = config.data_locator
+        else:
+            locator = DataLocator(config.data_locator_config)
+            config.data_locator = locator
+        config.attach_locator(locator)
+        self._data_locator = locator
+        return locator
+
+    def _ensure_data_directory(self, config: SubPipelineConfig, locator: DataLocator) -> None:
+        data_value = config.data_dir
+        default_key = config.data_dir_key or "market_data"
+
+        if data_value:
+            candidate = Path(data_value).expanduser()
+            if candidate.is_absolute():
+                resolved = candidate
+            elif data_value == DEFAULT_DATA_DIR:
+                resolved = locator.data_path(default_key, ensure_exists=True)
+            else:
+                resolved = locator.data_path(default=data_value, ensure_exists=True)
+        else:
+            resolved = locator.data_path(default_key, ensure_exists=True)
+
+        resolved.mkdir(parents=True, exist_ok=True)
+        config.data_dir = str(resolved)
+
+    def _emit_effective_configuration(self, config: SubPipelineConfig) -> None:
+        summary = config.paths.summary()
+        summary_json = json.dumps(summary, indent=2, sort_keys=True)
+        self.logger.info('📁 Effective filesystem configuration:\n%s', summary_json)
+        tprint(f"📁 Effective filesystem configuration:\n{summary_json}")
+        self._configuration_logged = True
+
+    def _prepare_filesystem(self, config: SubPipelineConfig) -> DataLocator:
+        locator = self._resolve_data_locator(config)
+        self._ensure_data_directory(config, locator)
+        if not self._configuration_logged:
+            self._emit_effective_configuration(config)
+        return locator
 
 # Convenience functions
 def get_data_collection_sub_pipeline(config: Optional[SubPipelineConfig] = None) -> DataCollectionSubPipeline:

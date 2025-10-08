@@ -115,7 +115,7 @@ from .logging_utils import (
 # Import component system
 from .components import ComponentFactory, ComponentConfig
 from .metrics_sink import MetricsSink, MetricsSinkConfig
-from src.training.config.data_locator import DataLocator, DataLocatorConfig
+from src.training.config.data_locator import DataLocator, DataLocatorConfig, LocatorPaths
 from src.training.steps.pre_training.validation.data_contracts import (
     DataContractValidationError,
     validate_feature_artifact,
@@ -338,27 +338,27 @@ class SubPipelineConfig:
         return self._ensure_paths()
 
     @property
-    def data(self) -> _LocatorCategoryView:
+    def data(self) -> Any:
         return self.paths.data
 
     @property
-    def cache(self) -> _LocatorCategoryView:
+    def cache(self) -> Any:
         return self.paths.cache
 
     @property
-    def artifacts(self) -> _LocatorCategoryView:
+    def artifacts(self) -> Any:
         return self.paths.artifacts
 
     @property
-    def generated(self) -> _LocatorCategoryView:
+    def generated(self) -> Any:
         return self.paths.generated
 
     @property
-    def config_paths(self) -> _LocatorCategoryView:
+    def config_paths(self) -> Any:
         return self.paths.config
 
     @property
-    def config_files(self) -> _LocatorCategoryView:
+    def config_files(self) -> Any:
         """Alias for backwards compatibility with callers expecting ``config``."""
 
         return self.paths.config
@@ -368,7 +368,7 @@ class SubPipelineConfig:
         return self.paths.config.root
 
     @property
-    def config(self) -> _LocatorCategoryView:
+    def config(self) -> Any:
         """Expose configuration files via ``config`` attribute for convenience."""
 
         return self.paths.config
@@ -686,6 +686,9 @@ class PreTrainingSubPipeline:
             'config_hash': _config_hash(),
             'data_snapshot_id': _data_snapshot_id(),
             'rng_seed': _rng_seed(),
+            'symbol': config.symbol,
+            'timeframe': config.timeframe,
+            'mode': config.mode.value,
             'host_name': socket.gethostname(),
             'start_time_utc': start_timestamp,
             'end_time_utc': None,
@@ -707,7 +710,16 @@ class PreTrainingSubPipeline:
         summary_json = json.dumps(summary, indent=2, sort_keys=True)
 
         self.logger.info('📁 Effective filesystem configuration:\n%s', summary_json)
-        tprint(f"📁 Effective filesystem configuration:\n{summary_json}")
+        self.event_logger.info(
+            "Effective filesystem configuration resolved",
+            context={
+                'run_id': self._run_metadata.get('run_id'),
+                'step': 'pipeline.configuration',
+                'symbol': config.symbol,
+                'timeframe': config.timeframe,
+                'configuration': summary,
+            },
+        )
 
     def _resolve_data_locator(self, config: SubPipelineConfig) -> DataLocator:
         """Return a data locator instance for the current run."""
@@ -1566,6 +1578,19 @@ class PreTrainingSubPipeline:
                 budget_text += ')'
             message = f"   {status_icon} {label}: {duration:.2f}s{budget_text}"
             self.logger.info(message)
+            self.event_logger.info(
+                "Step duration summary",
+                context={
+                    'run_id': self._run_metadata.get('run_id'),
+                    'step': f'pipeline.summary.{step_name}',
+                    'symbol': self._run_metadata.get('symbol'),
+                    'timeframe': self._run_metadata.get('timeframe'),
+                    'duration_seconds': duration,
+                    'budget_seconds': budget,
+                    'over_budget': over_budget,
+                    'over_budget_seconds': over_budget_seconds,
+                },
+            )
 
     @staticmethod
     def _get_step_display_name(step_name: str) -> str:
@@ -2149,7 +2174,16 @@ class PreTrainingSubPipeline:
                         artifacts['multi_horizon_labeling_result'] = validated_contract
                         result.artifacts = artifacts
                 except DataContractValidationError as contract_error:
-                    tprint_error(f"❌ {contract_error}")
+                    self.event_logger.error(
+                        "Contract validation error",
+                        context={
+                            'run_id': self._run_metadata.get('run_id'),
+                            'step': 'multi_horizon_profit_labeler.validation',
+                            'symbol': self._run_metadata.get('symbol'),
+                            'timeframe': self._run_metadata.get('timeframe'),
+                            'error': str(contract_error),
+                        },
+                    )
                     return self._handle_contract_error(result, 'multi_horizon_profit_labeler', contract_error)
 
                 quality_metrics, quality_alerts = self._analyze_component_quality(
@@ -2426,7 +2460,16 @@ class PreTrainingSubPipeline:
                         artifacts['interactive_feature_generation_result'] = validated_features
                         result.artifacts = artifacts
                 except DataContractValidationError as contract_error:
-                    tprint_error(f"❌ {contract_error}")
+                    self.event_logger.error(
+                        "Contract validation error",
+                        context={
+                            'run_id': self._run_metadata.get('run_id'),
+                            'step': 'interactive_feature_generation.validation',
+                            'symbol': self._run_metadata.get('symbol'),
+                            'timeframe': self._run_metadata.get('timeframe'),
+                            'error': str(contract_error),
+                        },
+                    )
                     return self._handle_contract_error(result, 'interactive_feature_generation', contract_error)
 
                 quality_metrics, quality_alerts = self._analyze_component_quality(
@@ -2672,7 +2715,16 @@ class PreTrainingSubPipeline:
                         artifacts['final_feature_selection_result'] = validated_selection
                         result.artifacts = artifacts
                 except DataContractValidationError as contract_error:
-                    tprint_error(f"❌ {contract_error}")
+                    self.event_logger.error(
+                        "Contract validation error",
+                        context={
+                            'run_id': self._run_metadata.get('run_id'),
+                            'step': 'final_feature_selection.validation',
+                            'symbol': self._run_metadata.get('symbol'),
+                            'timeframe': self._run_metadata.get('timeframe'),
+                            'error': str(contract_error),
+                        },
+                    )
                     return self._handle_contract_error(result, 'final_feature_selection', contract_error)
 
                 quality_metrics, quality_alerts = self._analyze_component_quality(
@@ -2766,32 +2818,62 @@ class PreTrainingSubPipeline:
             return await self._execute_interactive_feature_generation(config, self._run_metadata)
         elif sub_pipeline_name == 'final_feature_selection':
             return await self._execute_final_feature_selection(config, self._run_metadata)
-        else:
-            self.logger.error(f"❌ Unknown sub-pipeline requested: {sub_pipeline_name}")
-            self.logger.info(f"📋 Available sub-pipelines: {self.get_available_sub_pipelines()}")
+
         spec = self._get_step_spec(sub_pipeline_name)
         if spec is None:
-            tprint_error(f"❌ Unknown sub-pipeline requested: {sub_pipeline_name}")
-            tprint(f"📋 Available sub-pipelines: {self.get_available_sub_pipelines()}")
-            raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
+            available = self.get_available_sub_pipelines()
+            self.logger.error(f"❌ Unknown sub-pipeline requested: {sub_pipeline_name}")
+            self.logger.info(f"📋 Available sub-pipelines: {available}")
+            self.event_logger.error(
+                "Unknown sub-pipeline requested",
+                context={
+                    'run_id': self._run_metadata.get('run_id'),
+                    'step': 'pipeline.dispatch',
+                    'symbol': config.symbol,
+                    'timeframe': config.timeframe,
+                    'requested_sub_pipeline': sub_pipeline_name,
+                    'available_sub_pipelines': available,
+                },
+            )
 
         if not spec.enabled:
             message = (
                 f"Sub-pipeline '{sub_pipeline_name}' is currently disabled. "
                 f"Reason: {getattr(spec, 'description', 'temporarily unavailable')}"
             )
-            tprint_warning(f"⚠️ {message}")
             self.logger.warning(message)
+            self.event_logger.warning(
+                message,
+                context={
+                    'run_id': self._run_metadata.get('run_id'),
+                    'step': 'pipeline.dispatch',
+                    'symbol': config.symbol,
+                    'timeframe': config.timeframe,
+                    'requested_sub_pipeline': sub_pipeline_name,
+                    'status': 'disabled',
+                },
+            )
             raise ValueError(message)
 
         executor = getattr(self, spec.executor_method, None)
         if executor is None:
             message = (
                 f"Sub-pipeline '{sub_pipeline_name}' is registered but missing executor "
-                f"'{spec.executor_method}'."
+                f"'{spec.executor_method}'. Implement the executor or disable the step in "
+                "STEP_REGISTRY."
             )
-            tprint_error(f"❌ {message}")
             self.logger.error(message)
+            self.event_logger.error(
+                message,
+                context={
+                    'run_id': self._run_metadata.get('run_id'),
+                    'step': 'pipeline.dispatch',
+                    'symbol': config.symbol,
+                    'timeframe': config.timeframe,
+                    'requested_sub_pipeline': sub_pipeline_name,
+                    'missing_executor': spec.executor_method,
+                },
+            )
             raise RuntimeError(message)
 
         return await executor(config, self._run_metadata)
@@ -2799,21 +2881,27 @@ class PreTrainingSubPipeline:
     async def execute_sub_pipeline_with_next(self, sub_pipeline_name: str, config: SubPipelineConfig) -> SubPipelineResult:
         """Execute a specific sub-pipeline and automatically trigger subsequent sub-pipelines."""
         # For pre-training, execute the default enabled steps in sequence
-        available_steps = self.get_available_sub_pipelines()
-        
+        ordered_specs = self._get_ordered_step_specs(sequence_only=True)
+        ordered_names = [spec.name for spec in ordered_specs]
+
         try:
-            start_index = available_steps.index(sub_pipeline_name)
+            start_index = ordered_names.index(sub_pipeline_name)
+            steps_to_run = ordered_specs[start_index:]
         except ValueError:
-            raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
-        
+            # Step not part of the default sequence; execute it directly
+            direct_spec = self._get_step_spec(sub_pipeline_name)
+            if direct_spec is None:
+                raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
+            steps_to_run = [direct_spec]
+
         # Execute all steps starting from the specified one
-        for i in range(start_index, len(available_steps)):
-            step_name = available_steps[i]
+        for spec in steps_to_run:
+            step_name = spec.name
             self.logger.info(f"🚀 Executing pre-training step: {step_name}")
 
             result = await self.execute_sub_pipeline(step_name, config)
             self.results.append(result)
-            
+
             # If this step failed, stop the sequence
             if not result.success:
                 self.logger.error(f"❌ Step {step_name} failed, stopping execution sequence")
@@ -2854,57 +2942,3 @@ async def execute_pre_training_pipeline(config: SubPipelineConfig) -> Dict[str, 
     """
     pipeline = PreTrainingSubPipeline()
     return await pipeline.execute_pipeline(config)
-class _LocatorCategoryView:
-    """Attribute-access helper that proxies lookups to a :class:`DataLocator`."""
-
-    def __init__(self, locator: DataLocator, category: str) -> None:
-        self._locator = locator
-        self._category = category
-
-    @property
-    def root(self) -> Path:
-        return getattr(self._locator, f"base_{self._category}_dir")
-
-    def path(
-        self,
-        key: Optional[str] = None,
-        *,
-        default: Optional[str] = None,
-        ensure_exists: bool = False,
-    ) -> Path:
-        resolver = getattr(self._locator, f"{self._category}_path")
-        return resolver(key, default=default, ensure_exists=ensure_exists)
-
-    def __getattr__(self, item: str) -> Path:
-        if item == "root":
-            return self.root
-        return self.path(item)
-
-    def __getitem__(self, item: str) -> Path:
-        return self.path(item)
-
-    def __repr__(self) -> str:  # pragma: no cover - debug helper
-        return f"LocatorCategoryView(category={self._category!r}, root={self.root!s})"
-
-
-class LocatorPaths:
-    """Collection of category views backed by a :class:`DataLocator`."""
-
-    def __init__(self, locator: DataLocator) -> None:
-        self._locator = locator
-        self.data = _LocatorCategoryView(locator, "data")
-        self.cache = _LocatorCategoryView(locator, "cache")
-        self.artifacts = _LocatorCategoryView(locator, "artifacts")
-        self.generated = _LocatorCategoryView(locator, "generated")
-        self.config = _LocatorCategoryView(locator, "config")
-
-    @property
-    def locator(self) -> DataLocator:
-        return self._locator
-
-    def summary(self) -> Dict[str, Dict[str, str]]:
-        return self._locator.resolved_paths()
-
-    def __repr__(self) -> str:  # pragma: no cover - debug helper
-        return f"LocatorPaths(locator={self._locator!r})"
-

@@ -331,7 +331,7 @@ class IntegerProgramSolver:
                 log_success_message = (
                     f"CVXPY solver optimal with {len(selected_indices)} features selected"
                 )
-                log_info(self.logger, log_success_message)
+                self.logger.info(log_success_message)
                 tprint_success(f"✅ {log_success_message}")
                 return [features[i] for i in selected_indices]
             else:

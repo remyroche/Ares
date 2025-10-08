@@ -111,7 +111,7 @@ class DirectionalFeatureResult:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary format."""
-        tprint(f"📦 Converting DirectionalFeatureResult for {self.feature_name} ({self.direction}) to dict")
+        tprint_debug(f"📦 Converting DirectionalFeatureResult for {self.feature_name} ({self.direction}) to dict")
         return {
             'feature_name': self.feature_name,
             'direction': self.direction,

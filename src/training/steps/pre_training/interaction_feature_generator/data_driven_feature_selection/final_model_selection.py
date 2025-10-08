@@ -86,10 +86,10 @@ class FinalSelectionResult:
     vectorized_ops: int = 0
     stability_selections: int = 0
     fdr_controls: int = 0
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
-        return {
+        summary = {
             'final_feature_names': self.final_feature_names,
             'final_feature_matrix_shape': self.final_feature_matrix.shape if self.final_feature_matrix is not None else None,
             'selection_frequencies': self.selection_frequencies,
@@ -107,6 +107,12 @@ class FinalSelectionResult:
             'stability_selections': self.stability_selections,
             'fdr_controls': self.fdr_controls
         }
+        tprint_info(
+            "🧾 Final selection summary prepared",
+            f"features={len(self.final_feature_names)}",
+            f"families={len(self.family_contributions)}"
+        )
+        return summary
 
 
 class FinalModelSelection:
@@ -121,6 +127,8 @@ class FinalModelSelection:
         except Exception as exc:
             self.logger.warning(f"Failed to initialize FeatureRegistry: {exc}")
             self.feature_registry = None
+        else:
+            tprint_info("📚 Feature registry initialised successfully")
 
         # Performance tracking
         self.performance_metrics = {
@@ -130,6 +138,11 @@ class FinalModelSelection:
             'fdr_controls': 0,
             'bootstrap_samples': 0
         }
+        tprint_info(
+            "⚙️ FinalModelSelection configured",
+            f"target={self.config.target_feature_count}",
+            f"model={self.config.model_type}"
+        )
     
     def select_final_features(self, selected_wrappers: List[FeatureGeneratorWrapper],
                             selected_interactions: List[InteractionFeature],
@@ -284,7 +297,8 @@ class FinalModelSelection:
             execution_time = time.time() - start_time
             self.logger.error(f"Final selection failed: {e}")
             self.logger.error(f"Error details: {traceback.format_exc()}")
-            
+            tprint_error(f"❌ Final selection failed after {execution_time:.3f}s: {e}")
+
             return self._create_empty_result(execution_time)
 
     def _lookup_feature_family(self, feature_name: str, fallback: Optional[str] = None) -> Optional[str]:
@@ -322,6 +336,7 @@ class FinalModelSelection:
             feature_metadata: Dict[str, Dict[str, Any]] = {}
             wrapper_category_map: Dict[str, str] = {}
             wrapper_family_map: Dict[str, List[str]] = {}
+            tprint_info("🧱 Building base feature matrix components…")
 
             # Generate base features
             for wrapper in selected_wrappers:
@@ -388,20 +403,26 @@ class FinalModelSelection:
                     continue
 
             if not features:
+                tprint_warning("⚠️ Feature generation produced no usable columns")
                 return None, [], {}
-            
+
             # Align all features to same length
             min_length = min(len(f) for f in features)
             aligned_features = [f[:min_length] for f in features]
-            
+
             # Create feature matrix
             feature_matrix = np.column_stack(aligned_features)
-            
-            tprint_info(f"📊 Generated feature matrix: {feature_matrix.shape}")
+
+            tprint_info(
+                "📊 Generated feature matrix",
+                f"shape={feature_matrix.shape}",
+                f"features={len(feature_names)}"
+            )
             return feature_matrix, feature_names, feature_metadata
 
         except Exception as e:
             self.logger.error(f"Failed to generate feature matrix: {e}")
+            tprint_error(f"❌ Feature matrix generation failed: {e}")
             return None, [], {}
     
     def _generate_wrapper_feature(self, wrapper: FeatureGeneratorWrapper, data: pd.DataFrame) -> Optional[np.ndarray]:
@@ -508,15 +529,21 @@ class FinalModelSelection:
         """Evaluate family-level contributions and drop low-signal families."""
         try:
             if not candidate_features:
+                tprint_warning("⚠️ No candidate features available for group regularization")
                 return candidate_features, {}, []
 
             candidate_indices = [i for i, name in enumerate(feature_names) if name in candidate_features]
 
             if not candidate_indices:
+                tprint_warning("⚠️ Candidate indices missing during group regularization")
                 return candidate_features, {}, []
 
             candidate_names = [feature_names[i] for i in candidate_indices]
             X_candidate = feature_matrix[:, candidate_indices]
+            tprint_info(
+                "🧮 Evaluating group contributions",
+                f"candidates={len(candidate_names)}"
+            )
 
             feature_groups = {
                 name: self._extract_feature_families(feature_metadata.get(name, {}))
@@ -531,6 +558,7 @@ class FinalModelSelection:
             )
 
             if not contributions:
+                tprint_warning("⚠️ Unable to estimate family contributions")
                 return candidate_features, contributions, []
 
             threshold = float(getattr(self.config, 'group_contribution_threshold', 0.0) or 0.0)
@@ -541,6 +569,14 @@ class FinalModelSelection:
                 if family not in {'unassigned', 'interaction'} and value < threshold
             ]
 
+            if dropped_families:
+                tprint_warning(
+                    "🧹 Dropping underperforming families",
+                    ", ".join(sorted(dropped_families))
+                )
+            else:
+                tprint_info("✅ No families dropped during regularization")
+
             retained_set = {
                 name for name in candidate_names
                 if not any(family in dropped_families for family in feature_groups.get(name, []))
@@ -548,10 +584,16 @@ class FinalModelSelection:
 
             retained_ordered = [name for name in candidate_features if name in retained_set]
 
+            tprint_info(
+                "📦 Group regularization retained",
+                f"features={len(retained_ordered)}"
+            )
+
             return retained_ordered, contributions, dropped_families
 
         except Exception as exc:
             self.logger.warning(f"Group regularization failed: {exc}")
+            tprint_error(f"❌ Group regularization failed: {exc}")
             return candidate_features, {}, []
 
     def _extract_feature_families(self, metadata: Dict[str, Any]) -> List[str]:
@@ -584,12 +626,14 @@ class FinalModelSelection:
 
         try:
             if method == 'shap' and LIGHTGBM_AVAILABLE:
+                tprint_info("📐 Estimating family contributions with SHAP")
                 feature_scores = self._estimate_contributions_with_shap(
                     X_candidate,
                     target,
                     candidate_names
                 )
             elif method == 'lasso':
+                tprint_info("📐 Estimating family contributions with Lasso coefficients")
                 feature_scores = self._estimate_contributions_with_lasso(
                     X_candidate,
                     target,
@@ -598,6 +642,7 @@ class FinalModelSelection:
             elif method == 'shap':
                 raise RuntimeError('LightGBM not available for SHAP contributions')
             else:
+                tprint_info("📐 Defaulting to Lasso-based family contributions")
                 feature_scores = self._estimate_contributions_with_lasso(
                     X_candidate,
                     target,
@@ -606,6 +651,9 @@ class FinalModelSelection:
         except Exception as exc:
             self.logger.warning(
                 f"Primary group contribution method '{method}' failed: {exc}"
+            )
+            tprint_warning(
+                f"⚠️ Primary group contribution method '{method}' failed; falling back to Lasso"
             )
             feature_scores = self._estimate_contributions_with_lasso(
                 X_candidate,
@@ -629,6 +677,7 @@ class FinalModelSelection:
             random_state=42
         )
 
+        tprint_info("🔍 Training LightGBM surrogate for SHAP contributions")
         model.fit(X_candidate, target)
 
         try:
@@ -660,10 +709,12 @@ class FinalModelSelection:
             if cv_folds < 2 or cv_folds >= n_samples:
                 raise ValueError("Insufficient samples for LassoCV")
             lasso = LassoCV(cv=cv_folds, random_state=42)
+            tprint_info("🧷 Fitting Lasso model for contribution estimates")
             lasso.fit(X_scaled, target)
             coefs = np.abs(lasso.coef_)
         except Exception as exc:
             self.logger.debug(f"Lasso contribution estimation failed: {exc}")
+            tprint_warning("⚠️ Lasso contribution estimation failed; using correlations")
             coefs = []
             for i in range(X_candidate.shape[1]):
                 try:
@@ -753,13 +804,18 @@ class FinalModelSelection:
             return bucket
         return 'engineered'
     
-    def _run_stability_selection(self, feature_matrix: np.ndarray, target: np.ndarray, 
+    def _run_stability_selection(self, feature_matrix: np.ndarray, target: np.ndarray,
                                feature_names: List[str]) -> Dict[str, float]:
         """Run stability selection with block bootstrap."""
         try:
             n_features = feature_matrix.shape[1]
             selection_counts = np.zeros(n_features)
-            
+            tprint_info(
+                "🔁 Running stability selection",
+                f"bootstrap_samples={self.config.n_bootstrap_samples}",
+                f"features={n_features}"
+            )
+
             # Run bootstrap samples
             for i in range(self.config.n_bootstrap_samples):
                 try:
@@ -776,9 +832,10 @@ class FinalModelSelection:
                         selection_counts[idx] += 1
                     
                     self.performance_metrics['bootstrap_samples'] += 1
-                    
+
                 except Exception as e:
                     self.logger.debug(f"Bootstrap sample {i} failed: {e}")
+                    tprint_warning(f"⚠️ Bootstrap sample {i} failed: {e}")
                     continue
             
             # Convert to frequencies
@@ -786,21 +843,28 @@ class FinalModelSelection:
             for i, name in enumerate(feature_names):
                 frequency = selection_counts[i] / self.config.n_bootstrap_samples
                 selection_frequencies[name] = frequency
-            
+
             self.performance_metrics['stability_selections'] += 1
+            tprint_info("📈 Stability selection frequencies computed")
             return selection_frequencies
-            
+
         except Exception as e:
             self.logger.warning(f"Stability selection failed: {e}")
+            tprint_error(f"❌ Stability selection failed: {e}")
             return {name: 1.0 for name in feature_names}
-    
+
     def _create_bootstrap_sample(self, n_samples: int) -> np.ndarray:
         """Create bootstrap sample with block structure."""
         try:
             # Use block bootstrap for time series
             block_size = max(1, n_samples // 20)  # 20 blocks
             n_blocks = n_samples // block_size
-            
+            tprint_info(
+                "📦 Creating bootstrap sample",
+                f"block_size={block_size}",
+                f"blocks={n_blocks}"
+            )
+
             # Sample blocks with replacement
             block_indices = np.random.choice(n_blocks, size=n_blocks, replace=True)
             
@@ -813,12 +877,13 @@ class FinalModelSelection:
             
             # Ensure we have the right number of samples
             bootstrap_indices = np.array(bootstrap_indices[:n_samples])
-            
+
             return bootstrap_indices
-            
+
         except Exception as e:
             self.logger.debug(f"Failed to create bootstrap sample: {e}")
             # Fallback to simple bootstrap
+            tprint_warning("⚠️ Block bootstrap failed; using simple bootstrap")
             return np.random.choice(n_samples, size=n_samples, replace=True)
     
     def _select_features_single_sample(self, X: np.ndarray, y: np.ndarray, 
@@ -826,16 +891,21 @@ class FinalModelSelection:
         """Select features for a single bootstrap sample."""
         try:
             if self.config.model_type == "lightgbm" and LIGHTGBM_AVAILABLE:
+                tprint_info("🌳 Selecting features with LightGBM")
                 return self._select_features_lightgbm(X, y, feature_names)
             elif self.config.model_type == "lasso":
+                tprint_info("🧷 Selecting features with Lasso")
                 return self._select_features_lasso(X, y, feature_names)
             elif self.config.model_type == "random_forest":
+                tprint_info("🌲 Selecting features with Random Forest")
                 return self._select_features_random_forest(X, y, feature_names)
             else:
+                tprint_info("📊 Selecting features with univariate method")
                 return self._select_features_univariate(X, y, feature_names)
-                
+
         except Exception as e:
             self.logger.debug(f"Feature selection failed for single sample: {e}")
+            tprint_warning(f"⚠️ Feature selection fallback triggered: {e}")
             return []
     
     def _select_features_lightgbm(self, X: np.ndarray, y: np.ndarray, feature_names: List[str]) -> List[int]:
@@ -843,7 +913,7 @@ class FinalModelSelection:
         try:
             # Create LightGBM dataset
             train_data = lgb.Dataset(X, label=y)
-            
+
             # Train model
             params = {
                 'objective': 'regression',
@@ -856,18 +926,24 @@ class FinalModelSelection:
             }
             
             model = lgb.train(params, train_data, num_boost_round=self.config.n_estimators)
-            
+
             # Get feature importance
             importance = model.feature_importance(importance_type='gain')
-            
+
             # Select top features
             n_select = min(len(feature_names), self.config.target_feature_count)
             top_indices = np.argsort(importance)[-n_select:]
-            
+
+            tprint_info(
+                "🌳 LightGBM selected features",
+                f"count={len(top_indices)}"
+            )
+
             return top_indices.tolist()
-            
+
         except Exception as e:
             self.logger.debug(f"LightGBM feature selection failed: {e}")
+            tprint_warning("⚠️ LightGBM selection failed; using univariate scores")
             return self._select_features_univariate(X, y, feature_names)
     
     def _select_features_lasso(self, X: np.ndarray, y: np.ndarray, feature_names: List[str]) -> List[int]:
@@ -875,15 +951,22 @@ class FinalModelSelection:
         try:
             # Use LassoCV for automatic alpha selection
             lasso = LassoCV(cv=3, random_state=42)
+            tprint_info("🧷 Fitting LassoCV for feature selection")
             lasso.fit(X, y)
-            
+
             # Get non-zero coefficients
             non_zero_indices = np.where(np.abs(lasso.coef_) > 1e-6)[0]
-            
+
+            tprint_info(
+                "🧷 Lasso selected features",
+                f"count={len(non_zero_indices)}"
+            )
+
             return non_zero_indices.tolist()
-            
+
         except Exception as e:
             self.logger.debug(f"Lasso feature selection failed: {e}")
+            tprint_warning("⚠️ Lasso selection failed; using univariate scores")
             return self._select_features_univariate(X, y, feature_names)
     
     def _select_features_random_forest(self, X: np.ndarray, y: np.ndarray, feature_names: List[str]) -> List[int]:
@@ -895,6 +978,7 @@ class FinalModelSelection:
                 max_depth=self.config.max_depth,
                 random_state=42
             )
+            tprint_info("🌲 Training Random Forest for feature selection")
             rf.fit(X, y)
             
             # Get feature importance
@@ -903,11 +987,17 @@ class FinalModelSelection:
             # Select top features
             n_select = min(len(feature_names), self.config.target_feature_count)
             top_indices = np.argsort(importance)[-n_select:]
-            
+
+            tprint_info(
+                "🌲 Random Forest selected features",
+                f"count={len(top_indices)}"
+            )
+
             return top_indices.tolist()
-            
+
         except Exception as e:
             self.logger.debug(f"Random Forest feature selection failed: {e}")
+            tprint_warning("⚠️ Random Forest selection failed; using univariate scores")
             return self._select_features_univariate(X, y, feature_names)
     
     def _select_features_univariate(self, X: np.ndarray, y: np.ndarray, feature_names: List[str]) -> List[int]:
@@ -916,11 +1006,18 @@ class FinalModelSelection:
             # Use F-test
             selector = SelectKBest(f_regression, k=min(len(feature_names), self.config.target_feature_count))
             selector.fit(X, y)
-            
-            return selector.get_support(indices=True).tolist()
-            
+
+            indices = selector.get_support(indices=True).tolist()
+            tprint_info(
+                "📊 Univariate selection completed",
+                f"count={len(indices)}"
+            )
+
+            return indices
+
         except Exception as e:
             self.logger.debug(f"Univariate feature selection failed: {e}")
+            tprint_warning("⚠️ Univariate selection failed; returning default indices")
             return list(range(min(len(feature_names), self.config.target_feature_count)))
     
     def _apply_fdr_control(self, feature_matrix: np.ndarray, target: np.ndarray, 
@@ -929,6 +1026,7 @@ class FinalModelSelection:
         try:
             # Compute p-values for all features
             p_values = []
+            tprint_info("🧪 Computing p-values for FDR control")
             for i in range(feature_matrix.shape[1]):
                 try:
                     # Compute correlation and p-value
@@ -963,12 +1061,17 @@ class FinalModelSelection:
             
             # Return significant feature names
             fdr_controlled_features = [feature_names[i] for i in significant_indices]
-            
+
             self.performance_metrics['fdr_controls'] += 1
+            tprint_info(
+                "✅ FDR control applied",
+                f"features_retained={len(fdr_controlled_features)}"
+            )
             return fdr_controlled_features
-            
+
         except Exception as e:
             self.logger.warning(f"FDR control failed: {e}")
+            tprint_error(f"❌ FDR control failed: {e}")
             return feature_names
     
     def _apply_group_heredity(self, fdr_controlled_features: List[str], 
@@ -976,6 +1079,7 @@ class FinalModelSelection:
         """Apply group heredity for interactions."""
         try:
             if not self.config.enable_group_heredity:
+                tprint_info("🔗 Group heredity disabled; retaining FDR features")
                 return fdr_controlled_features
             
             # Get parent features
@@ -983,6 +1087,11 @@ class FinalModelSelection:
             for interaction in selected_interactions:
                 parent_features.add(interaction.parent1)
                 parent_features.add(interaction.parent2)
+
+            tprint_info(
+                "🔗 Evaluating group heredity",
+                f"parent_features={len(parent_features)}"
+            )
             
             # Check heredity requirements
             final_features = []
@@ -998,11 +1107,16 @@ class FinalModelSelection:
                 else:
                     # Regular feature, add it
                     final_features.append(feature)
-            
+
+            tprint_info(
+                "✅ Group heredity applied",
+                f"features_retained={len(final_features)}"
+            )
             return final_features
-            
+
         except Exception as e:
             self.logger.warning(f"Group heredity failed: {e}")
+            tprint_error(f"❌ Group heredity failed: {e}")
             return fdr_controlled_features
     
     def _is_interaction_feature(self, feature_name: str, selected_interactions: List[InteractionFeature]) -> bool:
@@ -1028,9 +1142,10 @@ class FinalModelSelection:
                 return parent1_selected and parent2_selected
             else:
                 return True
-                
+
         except Exception as e:
             self.logger.debug(f"Failed to check heredity for {feature_name}: {e}")
+            tprint_warning(f"⚠️ Heredity check failed for {feature_name}: {e}")
             return True
     
     def _select_final_features(self, feature_matrix: np.ndarray, target: np.ndarray,
@@ -1161,6 +1276,7 @@ class FinalModelSelection:
 
         try:
             if self.config.model_type == "lightgbm" and LIGHTGBM_AVAILABLE:
+                tprint_info("📈 Ranking candidates with LightGBM importance")
                 train_data = lgb.Dataset(X_candidate, label=target)
                 params = {
                     'objective': 'regression',
@@ -1174,10 +1290,12 @@ class FinalModelSelection:
                 model = lgb.train(params, train_data, num_boost_round=self.config.n_estimators)
                 scores = model.feature_importance(importance_type='gain').astype(float)
             elif self.config.model_type == "lasso":
+                tprint_info("📈 Ranking candidates with Lasso coefficients")
                 lasso = LassoCV(cv=3, random_state=42)
                 lasso.fit(X_candidate, target)
                 scores = np.abs(lasso.coef_)
             elif self.config.model_type == "random_forest":
+                tprint_info("📈 Ranking candidates with Random Forest importance")
                 rf = RandomForestRegressor(
                     n_estimators=100,
                     max_depth=self.config.max_depth,
@@ -1186,15 +1304,19 @@ class FinalModelSelection:
                 rf.fit(X_candidate, target)
                 scores = rf.feature_importances_.astype(float)
             else:
+                tprint_info("📈 Ranking candidates with univariate F-test")
                 scores, _ = f_regression(X_candidate, target)
         except Exception as e:
             self.logger.debug(f"Primary ranking method failed: {e}")
+            tprint_warning(f"⚠️ Primary ranking method failed: {e}")
 
         if scores is None or len(scores) != len(candidate_names):
             try:
+                tprint_info("🔁 Falling back to univariate F-test ranking")
                 scores, _ = f_regression(X_candidate, target)
             except Exception as e:
                 self.logger.warning(f"Fallback ranking failed: {e}")
+                tprint_error(f"❌ Ranking fallback failed: {e}")
                 return candidate_names
 
         scores = np.nan_to_num(scores, nan=0.0, posinf=0.0, neginf=0.0)
@@ -1203,6 +1325,8 @@ class FinalModelSelection:
             key=lambda item: item[0],
             reverse=True
         )
+
+        tprint_info("🏁 Candidate ranking complete")
 
         return [name for _, name in ranking_pairs]
 
@@ -1225,27 +1349,34 @@ class FinalModelSelection:
         message = f"Final feature allocation by category -> {summary}"
         self.logger.info(message)
         tprint_info(message)
-    
-    def _generate_final_matrix(self, feature_matrix: np.ndarray, feature_names: List[str], 
+
+    def _generate_final_matrix(self, feature_matrix: np.ndarray, feature_names: List[str],
                              final_features: List[str]) -> Optional[np.ndarray]:
         """Generate final feature matrix with selected features."""
         try:
             if not final_features:
+                tprint_warning("⚠️ No final features to assemble into matrix")
                 return None
-            
+
             # Get indices of final features
             final_indices = [i for i, name in enumerate(feature_names) if name in final_features]
-            
+
             if not final_indices:
+                tprint_warning("⚠️ Final feature indices could not be resolved")
                 return None
-            
+
             # Extract final features
             final_matrix = feature_matrix[:, final_indices]
-            
+
+            tprint_info(
+                "🧾 Final matrix generated",
+                f"shape={final_matrix.shape}"
+            )
             return final_matrix
-            
+
         except Exception as e:
             self.logger.warning(f"Failed to generate final matrix: {e}")
+            tprint_error(f"❌ Final matrix generation failed: {e}")
             return None
     
     def _compute_importance_scores(self, final_matrix: np.ndarray, target: np.ndarray, 
@@ -1253,10 +1384,11 @@ class FinalModelSelection:
         """Compute importance scores for final features."""
         try:
             if final_matrix is None or len(final_features) == 0:
+                tprint_warning("⚠️ Skipping importance scores due to empty matrix")
                 return {}
-            
+
             importance_scores = {}
-            
+
             for i, feature_name in enumerate(final_features):
                 try:
                     # Compute correlation as importance score
@@ -1268,19 +1400,36 @@ class FinalModelSelection:
                 except Exception as e:
                     self.logger.debug(f"Failed to compute importance for {feature_name}: {e}")
                     importance_scores[feature_name] = 0.0
-            
+
+            tprint_info(
+                "⭐ Computed importance scores",
+                f"features={len(importance_scores)}"
+            )
             return importance_scores
-            
+
         except Exception as e:
             self.logger.warning(f"Failed to compute importance scores: {e}")
+            tprint_error(f"❌ Importance score computation failed: {e}")
             return {}
-    
+
     def _check_target_achievement(self, n_features: int) -> bool:
         """Check if target feature count is achieved."""
-        return (self.config.min_feature_count <= n_features <= self.config.max_feature_count)
-    
+        achieved = (self.config.min_feature_count <= n_features <= self.config.max_feature_count)
+        tprint_info(
+            "🎯 Target feature range check",
+            f"count={n_features}",
+            f"min={self.config.min_feature_count}",
+            f"max={self.config.max_feature_count}",
+            f"achieved={achieved}"
+        )
+        return achieved
+
     def _create_empty_result(self, execution_time: float) -> FinalSelectionResult:
         """Create empty result for error cases."""
+        tprint_warning(
+            "⚠️ Returning empty FinalSelectionResult",
+            f"execution_time={execution_time:.3f}s"
+        )
         return FinalSelectionResult(
             final_feature_names=[],
             final_feature_matrix=None,

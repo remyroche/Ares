@@ -80,12 +80,26 @@ def _install_base_component_stub() -> None:
             self.timeframe = kwargs.get('timeframe', '1h')
 
     class ComponentResult:
-        def __init__(self, success: bool, artifacts: dict | None = None, error_message: str | None = None, execution_time: float = 0.0, metadata: dict | None = None):
+        def __init__(
+            self,
+            success: bool,
+            artifacts: dict | None = None,
+            error: Exception | None = None,
+            metrics: dict | None = None,
+            warnings: list | None = None,
+            execution_time: float = 0.0,
+            metadata: dict | None = None,
+        ):
             self.success = success
             self.artifacts = artifacts or {}
-            self.error_message = error_message
+            self.error = error
+            self.metrics = metrics or {}
+            self.warnings = warnings or []
             self.execution_time = execution_time
             self.metadata = metadata or {}
+
+            if (self.success and self.error is not None) or (not self.success and self.error is None):
+                raise ValueError("Invalid ComponentResult state for stub")
 
     class BaseMarketAnalysisComponent:
         def __init__(self, config: ComponentConfig | None = None):

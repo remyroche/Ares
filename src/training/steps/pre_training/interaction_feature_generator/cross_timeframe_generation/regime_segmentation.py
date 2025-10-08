@@ -21,6 +21,39 @@ warnings.filterwarnings('ignore')
 
 from .config import RegimeConfig
 
+# Import tprint for enhanced runtime diagnostics
+try:
+    from src.utils.tprint import (
+        tprint,
+        tprint_debug,
+        tprint_info,
+        tprint_warning,
+        tprint_error,
+        tprint_success,
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:  # pragma: no cover - fallback for limited environments
+    TPRINT_AVAILABLE = False
+
+    def tprint(*args, **kwargs):
+        print(*args, **kwargs)
+
+    def tprint_debug(*args, **kwargs):
+        print("DEBUG:", *args, **kwargs)
+
+    def tprint_info(*args, **kwargs):
+        print("INFO:", *args, **kwargs)
+
+    def tprint_warning(*args, **kwargs):
+        print("WARNING:", *args, **kwargs)
+
+    def tprint_error(*args, **kwargs):
+        print("ERROR:", *args, **kwargs)
+
+    def tprint_success(*args, **kwargs):
+        print("SUCCESS:", *args, **kwargs)
+
+
 # Try to import ruptures for change-point detection
 try:
     import ruptures as rpt
@@ -62,7 +95,7 @@ class ChangePointDetector:
         self.penalty = penalty
         self.logger = logging.getLogger(__name__)
     
-    def detect_change_points(self, 
+    def detect_change_points(self,
                            data: pd.Series,
                            min_segment_length: int = 50) -> List[ChangePoint]:
         """
@@ -75,17 +108,41 @@ class ChangePointDetector:
         Returns:
             List of detected change points
         """
+        tprint_debug(
+            "Running change-point detection",
+            {
+                'method': self.method,
+                'data_points': len(data),
+                'min_segment_length': min_segment_length,
+            },
+        )
         if len(data) < min_segment_length * 2:
+            tprint_warning(
+                "Insufficient data for change-point detection",
+                {
+                    'data_points': len(data),
+                    'required': min_segment_length * 2,
+                },
+            )
             return []
-        
+
         if self.method == 'PELT' and RUPTURES_AVAILABLE:
-            return self._detect_pelt(data, min_segment_length)
+            result = self._detect_pelt(data, min_segment_length)
         elif self.method == 'CUSUM':
-            return self._detect_cusum(data, min_segment_length)
+            result = self._detect_cusum(data, min_segment_length)
         else:
             # Fallback to simple variance-based detection
-            return self._detect_variance_based(data, min_segment_length)
-    
+            result = self._detect_variance_based(data, min_segment_length)
+
+        tprint_info(
+            "Change-point detection complete",
+            {
+                'method': self.method,
+                'change_points_detected': len(result),
+            },
+        )
+        return result
+
     def _detect_pelt(self, data: pd.Series, min_segment_length: int) -> List[ChangePoint]:
         """Detect change points using PELT algorithm."""
         try:
@@ -116,18 +173,29 @@ class ChangePointDetector:
                 ))
             
             return result
-            
+
         except Exception as e:
             self.logger.warning(f"PELT detection failed: {e}, falling back to variance-based")
+            tprint_error(
+                "PELT detection failed, falling back to variance-based method",
+                {'error': str(e)},
+            )
             return self._detect_variance_based(data, min_segment_length)
-    
+
     def _detect_cusum(self, data: pd.Series, min_segment_length: int) -> List[ChangePoint]:
         """Detect change points using CUSUM algorithm."""
         values = data.dropna().values
-        
+
         if len(values) < min_segment_length * 2:
+            tprint_warning(
+                "CUSUM detection skipped due to insufficient data",
+                {
+                    'data_points': len(values),
+                    'required': min_segment_length * 2,
+                },
+            )
             return []
-        
+
         # Calculate CUSUM statistics
         mean_val = np.mean(values)
         cusum = np.cumsum(values - mean_val)
@@ -149,16 +217,30 @@ class ChangePointDetector:
                     method='CUSUM',
                     metadata={'cusum_value': cusum[peak]}
                 ))
-        
+
+        tprint_debug(
+            "CUSUM detection results",
+            {
+                'peaks_found': len(peaks),
+                'change_points_kept': len(result),
+            },
+        )
         return result
-    
+
     def _detect_variance_based(self, data: pd.Series, min_segment_length: int) -> List[ChangePoint]:
         """Fallback variance-based change point detection."""
         values = data.dropna().values
-        
+
         if len(values) < min_segment_length * 2:
+            tprint_warning(
+                "Variance-based detection skipped due to insufficient data",
+                {
+                    'data_points': len(values),
+                    'required': min_segment_length * 2,
+                },
+            )
             return []
-        
+
         # Calculate rolling variance
         window_size = min_segment_length
         rolling_var = pd.Series(values).rolling(window_size).var()
@@ -183,7 +265,14 @@ class ChangePointDetector:
                     method='variance_based',
                     metadata={'variance_change': var_changes.iloc[i]}
                 ))
-        
+
+        tprint_debug(
+            "Variance-based detection results",
+            {
+                'threshold': threshold,
+                'change_points_detected': len(change_points),
+            },
+        )
         return change_points
 
 
@@ -215,6 +304,13 @@ class BOCPD:
         Returns:
             Dictionary with change point probability and other statistics
         """
+        tprint_debug(
+            "Updating BOCPD",
+            {
+                'observation': observation,
+                'current_run_length': self.run_length,
+            },
+        )
         # Calculate change point probability
         cp_prob = self.hazard / (self.hazard + self.run_length)
         
@@ -231,7 +327,7 @@ class BOCPD:
         
         # Check for change point
         change_detected = cp_prob > 0.5  # Threshold for change detection
-        
+
         if change_detected:
             # Reset state
             self.run_length = 0
@@ -241,7 +337,11 @@ class BOCPD:
             self.kappa_t = 1
             self.nu_t = 1
             self.phi_t = observation
-        
+            tprint_info(
+                "BOCPD change detected; state reset",
+                {'observation': observation, 'cp_probability': cp_prob},
+            )
+
         return {
             'change_point_probability': cp_prob,
             'change_detected': change_detected,
@@ -280,6 +380,7 @@ class RegimeClassifier:
             Updated segments with regime classifications
         """
         if not segments:
+            tprint_warning("No segments provided for regime classification")
             return segments
         
         # Calculate volatility levels for each segment
@@ -322,7 +423,14 @@ class RegimeClassifier:
                 metadata=segment.metadata
             )
             updated_segments.append(updated_segment)
-        
+
+        tprint_info(
+            "Regime classification complete",
+            {
+                'segments_processed': len(segments),
+                'threshold': threshold,
+            },
+        )
         return updated_segments
 
 
@@ -356,7 +464,8 @@ class RegimeSegmentation:
             Dictionary containing regime segmentation results
         """
         self.logger.info("Starting regime segmentation")
-        
+        tprint_info("Starting regime segmentation", {'sessions': len(sessionized_data)})
+
         aligned_data = sessionized_data['aligned_data']
         
         # Create volatility proxy (r1 variance or VIX proxy)
@@ -364,7 +473,7 @@ class RegimeSegmentation:
         
         # Detect change points
         change_points = self.change_point_detector.detect_change_points(volatility_proxy)
-        
+
         # Create segments from change points
         segments = self._create_segments_from_change_points(
             change_points, volatility_proxy, aligned_data
@@ -391,8 +500,15 @@ class RegimeSegmentation:
             'bocpd_state': bocpd_state,
             'regime_transitions': self._identify_regime_transitions(classified_segments)
         }
-        
+
         self.logger.info(f"Regime segmentation completed: {len(classified_segments)} segments")
+        tprint_success(
+            "Regime segmentation completed",
+            {
+                'segments': len(classified_segments),
+                'change_points': len(change_points),
+            },
+        )
         return results
     
     def _create_volatility_proxy(self, data: pd.DataFrame) -> pd.Series:
@@ -508,9 +624,16 @@ class RegimeSegmentation:
     def _initialize_bocpd(self, volatility_proxy: pd.Series) -> Dict[str, Any]:
         """Initialize BOCPD with historical data."""
         # Feed historical data to BOCPD to initialize state
+        tprint_debug(
+            "Initializing BOCPD",
+            {
+                'initial_points': min(len(volatility_proxy.dropna()), 100),
+                'hazard': self.bocpd.hazard,
+            },
+        )
         for value in volatility_proxy.dropna().values[:100]:  # Use first 100 points
             self.bocpd.update(value)
-        
+
         return {
             'hazard': self.bocpd.hazard,
             'current_state': self.bocpd.get_regime_posterior(),
@@ -539,8 +662,16 @@ class RegimeSegmentation:
     
     def update_regime_monitoring(self, new_observation: float) -> Dict[str, Any]:
         """Update regime monitoring with new observation."""
+        tprint_debug("Updating regime monitoring", {'observation': new_observation})
         bocpd_result = self.bocpd.update(new_observation)
-        
+
+        tprint_info(
+            "Regime monitoring updated",
+            {
+                'change_detected': bocpd_result['change_detected'],
+                'cp_probability': bocpd_result['change_point_probability'],
+            },
+        )
         return {
             'bocpd_result': bocpd_result,
             'current_regime_posterior': self.bocpd.get_regime_posterior(),

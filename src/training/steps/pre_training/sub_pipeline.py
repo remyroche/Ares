@@ -48,6 +48,7 @@ from src.utils.random_seeding import SeededRNGs, seed_rngs
 # Import component system
 from .components import ComponentFactory, ComponentConfig
 from .metrics_sink import MetricsSink, MetricsSinkConfig
+from src.training.config.data_locator import DataLocator, DataLocatorConfig
 
 logger = system_logger.getChild('PreTrainingSubPipeline')
 
@@ -80,7 +81,7 @@ class SubPipelineConfig:
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
     timeframe: str = "1h"  # Default timeframe for pre-training steps (analyst)
-    data_dir: str = "historical_data"
+    data_dir: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     force_rerun: bool = False
@@ -98,6 +99,14 @@ class SubPipelineConfig:
     metrics_output_format: str = "csv"
     metrics_prometheus_enabled: bool = False
     step_time_budgets: Dict[str, float] = field(default_factory=lambda: DEFAULT_STEP_TIME_BUDGETS.copy())
+    data_locator_config: DataLocatorConfig = field(default_factory=DataLocatorConfig)
+    data_locator: Optional[DataLocator] = None
+    data_dir_key: str = "market_data"
+    cache_dir_key: str = "default"
+    artifacts_dir_key: str = "default"
+    generated_dir_key: str = "market_analysis"
+    outcomes_dir_key: str = "multi_horizon_outcomes"
+    final_feature_selection_dir_key: str = "final_feature_selection"
     """
     Metrics capture configuration.
 
@@ -190,6 +199,7 @@ class PreTrainingSubPipeline:
         self._current_pipeline_state: Dict[str, Any] = {}
         self._metrics_sink: Optional[MetricsSink] = None
         self._run_metadata: Dict[str, Any] = {}
+        self._data_locator: Optional[DataLocator] = None
         self._seeded_rngs: Optional[SeededRNGs] = None
         self._active_seed: Optional[int] = None
 
@@ -368,6 +378,16 @@ class PreTrainingSubPipeline:
         merged['run_metadata'] = dict(self._run_metadata)
         return merged
 
+    def _resolve_data_locator(self, config: SubPipelineConfig) -> DataLocator:
+        """Return a data locator instance for the current run."""
+
+        if config.data_locator is not None:
+            return config.data_locator
+
+        locator = DataLocator(config.data_locator_config)
+        config.data_locator = locator
+        return locator
+
     async def execute_pipeline(self, config: SubPipelineConfig) -> PipelineResultDict:
         """
         Execute the complete pre-training pipeline.
@@ -406,6 +426,8 @@ class PreTrainingSubPipeline:
         metrics_sink = self._create_metrics_sink(config)
         self._metrics_sink = metrics_sink
         step_metric_records: List[Dict[str, Any]] = []
+
+        self._data_locator = self._resolve_data_locator(config)
 
         results = {
             'success': False,
@@ -1020,13 +1042,21 @@ class PreTrainingSubPipeline:
             Dictionary containing execution results
         """
         # Extract configuration from pipeline state
+        locator = pipeline_state.get('data_locator')
+        data_dir_key = pipeline_state.get('data_dir_key', 'market_data')
+        data_dir = pipeline_state.get('data_dir')
+        if data_dir is None and isinstance(locator, DataLocator):
+            data_dir = str(locator.data_path(data_dir_key))
+
         config = SubPipelineConfig(
             symbol=pipeline_state.get('symbol', 'ETHUSDT'),
             exchange=pipeline_state.get('exchange', 'binance'),
             timeframe=pipeline_state.get('timeframe', '1h'),  # Default 1h for pre-training (analyst)
-            data_dir=pipeline_state.get('data_dir', 'historical_data'),
+            data_dir=data_dir,
             mode=ExecutionMode.FULL,  # Default to full mode
-            custom_params=pipeline_state.get('custom_params', {})
+            custom_params=pipeline_state.get('custom_params', {}),
+            data_locator=locator if isinstance(locator, DataLocator) else None,
+            data_dir_key=data_dir_key,
         )
 
         # Execute the pipeline
@@ -1034,11 +1064,44 @@ class PreTrainingSubPipeline:
 
     def _prepare_component_pipeline_state(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Construct the pipeline state passed to individual components."""
+        locator = self._data_locator or self._resolve_data_locator(config)
+
+        if config.data_dir:
+            data_dir_path = Path(config.data_dir).expanduser()
+            if not data_dir_path.is_absolute():
+                data_dir_path = locator.data_path(config.data_dir_key).joinpath(data_dir_path).resolve()
+        else:
+            data_dir_path = locator.data_path(config.data_dir_key)
+
+        cache_dir_path = locator.cache_path(config.cache_dir_key)
+        artifacts_dir_path = locator.artifacts_path(config.artifacts_dir_key)
+        generated_dir_path = locator.generated_path(config.generated_dir_key)
+        outcomes_dir_path = locator.artifacts_path(
+            config.outcomes_dir_key,
+            ensure_exists=True,
+        )
+        final_feature_selection_dir = locator.generated_path(
+            config.final_feature_selection_dir_key,
+            ensure_exists=True,
+        )
+
         pipeline_state: Dict[str, Any] = {
             'symbol': config.symbol,
             'exchange': config.exchange,
             'timeframe': config.timeframe,
-            'data_dir': config.data_dir,
+            'data_dir': str(data_dir_path),
+            'data_cache_dir': str(cache_dir_path),
+            'artifacts_dir': str(artifacts_dir_path),
+            'generated_dir': str(generated_dir_path),
+            'outcomes_dir': str(outcomes_dir_path),
+            'final_feature_selection_dir': str(final_feature_selection_dir),
+            'data_dir_key': config.data_dir_key,
+            'cache_dir_key': config.cache_dir_key,
+            'artifacts_dir_key': config.artifacts_dir_key,
+            'generated_dir_key': config.generated_dir_key,
+            'outcomes_dir_key': config.outcomes_dir_key,
+            'final_feature_selection_dir_key': config.final_feature_selection_dir_key,
+            'data_locator': locator,
             'custom_params': self._build_component_custom_params(config),
             'quality_thresholds': self._get_quality_thresholds(config),
         }

@@ -27,6 +27,7 @@ from ...market_analysis.optimized_process_engines import OptimizedFeatureSelecti
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
 from src.utils.hardware.adaptive_optimization_engine import AdaptiveOptimizationEngine
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
+from src.training.config.data_locator import DataLocator
 
 
 CONFIG_ROOT_ENV = "ARES_CONFIG_ROOT"
@@ -223,12 +224,35 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             if timeframe is None:
                 timeframe = '15m'  # Default timeframe
 
-            # Resolve data directory from config or pipeline state
+            # Resolve data locator and directory information
+            data_locator: Optional[DataLocator] = getattr(self.config, 'data_locator', None)
+            if data_locator is None:
+                data_locator = pipeline_state.get('data_locator')
+
             data_dir = getattr(self.config, 'data_dir', None)
-            if data_dir is None and 'data_dir' in pipeline_state:
-                data_dir = pipeline_state['data_dir']
             if data_dir is None:
-                data_dir = 'historical_data'  # Default data directory
+                data_dir = pipeline_state.get('data_dir')
+
+            data_dir_key = getattr(self.config, 'data_dir_key', None) or pipeline_state.get('data_dir_key', 'market_data')
+            final_features_dir_key = (
+                getattr(self.config, 'final_feature_selection_dir_key', None)
+                or pipeline_state.get('final_feature_selection_dir_key', 'final_feature_selection')
+            )
+
+            if data_dir is None and isinstance(data_locator, DataLocator):
+                data_dir = str(data_locator.data_path(data_dir_key))
+
+            if data_dir is None:
+                raise ValueError("Data directory could not be resolved for final feature selection")
+
+            final_features_dir_override = (
+                getattr(self.config, 'final_feature_selection_dir', None)
+                or pipeline_state.get('final_feature_selection_dir')
+            )
+
+            output_directory_override = getattr(self.config, 'output_directory', None)
+            if output_directory_override is None:
+                output_directory_override = pipeline_state.get('generated_dir')
 
             tprint(
                 "📥 [FinalFeatureSelection] Resolved execution context "
@@ -269,12 +293,26 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             # Execute final feature selection with hardware optimization
             log_info(f'🚀 Executing feature selection with hardware optimizations...')
             tprint('🚀 [FinalFeatureSelection] Executing feature selection step')
+            runtime_config = dict(final_feature_selection_config)
+            runtime_config['data_dir_key'] = data_dir_key
+            runtime_config['final_features_dir_key'] = final_features_dir_key
+            if final_features_dir_override:
+                runtime_config['final_features_dir'] = final_features_dir_override
+            if output_directory_override and 'output_directory' not in runtime_config:
+                runtime_config['output_directory'] = output_directory_override
+            if isinstance(data_locator, DataLocator):
+                runtime_config['data_locator'] = data_locator
+                runtime_config.setdefault(
+                    'output_directory_key',
+                    pipeline_state.get('generated_dir_key', 'market_analysis'),
+                )
+
             success = await run_final_feature_selection_step(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
                 data_dir=data_dir,
-                config=final_feature_selection_config
+                config=runtime_config
             )
 
             if success:

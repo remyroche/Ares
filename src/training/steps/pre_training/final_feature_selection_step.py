@@ -40,6 +40,7 @@ from src.utils.tprint import (
     tprint_success,
     tprint_warning,
 )
+from src.training.config.data_locator import DataLocator
 
 class FinalFeatureSelectionStep:
     """Final feature selection step for market analysis pipeline."""
@@ -96,6 +97,34 @@ class FinalFeatureSelectionStep:
             }
         }
 
+        # Resolve locator-aware output directories
+        locator_candidate = self.config.get('data_locator')
+        self.data_locator: Optional[DataLocator] = locator_candidate if isinstance(locator_candidate, DataLocator) else None
+
+        self.output_directory_key = self.config.get('output_directory_key', 'market_analysis')
+        configured_output_dir = self.config.get('output_directory')
+        if configured_output_dir:
+            output_directory = str(Path(configured_output_dir).expanduser())
+            Path(output_directory).mkdir(parents=True, exist_ok=True)
+        elif self.data_locator:
+            output_directory = str(self.data_locator.generated_path(self.output_directory_key, ensure_exists=True))
+        else:
+            fallback_output_dir = Path('generated') / 'market_analysis'
+            fallback_output_dir.mkdir(parents=True, exist_ok=True)
+            output_directory = str(fallback_output_dir)
+
+        self.final_features_dir_key = self.config.get('final_features_dir_key', 'final_feature_selection')
+        configured_final_dir = self.config.get('final_features_dir')
+        if configured_final_dir:
+            final_features_dir = Path(configured_final_dir).expanduser()
+            final_features_dir.mkdir(parents=True, exist_ok=True)
+        elif self.data_locator:
+            final_features_dir = self.data_locator.generated_path(self.final_features_dir_key, ensure_exists=True)
+        else:
+            final_features_dir = Path('generated/market_analysis') / 'final_feature_selection'
+            final_features_dir.mkdir(parents=True, exist_ok=True)
+        self.final_features_dir = final_features_dir
+
         # Initialize feature selection configuration with model-aware defaults
         model_type = self.config.get('model_type', 'default')
         profile = self.model_profiles.get(model_type, {
@@ -112,7 +141,7 @@ class FinalFeatureSelectionStep:
             rf_n_estimators=self.config.get('rf_n_estimators', 100),
             cv_folds=self.config.get('cv_folds', 5),
             save_analysis=self.config.get('save_analysis', True),
-            output_directory=self.config.get('output_directory', "outcomes/market_analysis"),
+            output_directory=output_directory,
             verbose=self.config.get('verbose', True),
             # Add model-specific parameters
             model_type=model_type,
@@ -691,7 +720,7 @@ class FinalFeatureSelectionStep:
                                      timeframe: str) -> None:
         """Synchronous helper for saving feature selection results."""
 
-        output_dir = Path("generated/market_analysis") / "final_feature_selection"
+        output_dir = self.final_features_dir
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Save final selected features
@@ -859,13 +888,22 @@ def detect_feature_drift_simple(train_features: pd.DataFrame, val_features: pd.D
 async def run_final_feature_selection_step(symbol: str,
                                          exchange: str,
                                          timeframe: str = '1h',  # Updated to 1h for analyst
-                                         data_dir: str = 'historical_data',
+                                         data_dir: Optional[str] = None,
                                          config: Optional[Dict[str, Any]] = None) -> bool:
     """Run the final feature selection step."""
 
+    runtime_config: Dict[str, Any] = dict(config or {})
+    locator = runtime_config.get('data_locator')
+    if data_dir is None and isinstance(locator, DataLocator):
+        data_dir_key = runtime_config.get('data_dir_key', 'market_data')
+        data_dir = str(locator.data_path(data_dir_key))
+
+    if data_dir is None:
+        raise ValueError("data_dir must be provided or resolvable via DataLocator")
+
     tprint("🚀 Invoking run_final_feature_selection_step helper")
     tprint(f"   📊 Parameters: symbol={symbol}, exchange={exchange}, timeframe={timeframe}, data_dir={data_dir}")
-    step = FinalFeatureSelectionStep(config)
+    step = FinalFeatureSelectionStep(runtime_config)
     tprint("🔄 Delegating execution to FinalFeatureSelectionStep instance")
     return await step.execute_final_feature_selection(symbol, exchange, timeframe, data_dir)
 

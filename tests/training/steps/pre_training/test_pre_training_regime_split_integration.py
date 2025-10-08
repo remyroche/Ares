@@ -2,11 +2,13 @@ import sys
 import types
 from datetime import datetime
 from dataclasses import dataclass, field
+from typing import Any, Dict, Optional
 
 import pandas as pd
 import pytest
 
 import src.training.steps.pre_training.multi_horizon_profit_labeler as mh_module
+from src.training.config.data_locator import DataLocator, DataLocatorConfig
 
 
 if not hasattr(mh_module, "create_multi_horizon_labeler"):
@@ -27,8 +29,16 @@ class _TestComponentConfig:
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
     timeframe: str = "15m"
-    data_dir: str = "historical_data"
+    data_dir: Optional[str] = None
     custom_params: dict = field(default_factory=dict)
+    data_locator: Optional[DataLocator] = None
+    data_locator_config: DataLocatorConfig = field(default_factory=DataLocatorConfig)
+    data_dir_key: str = "market_data"
+    cache_dir_key: str = "default"
+    artifacts_dir_key: str = "default"
+    generated_dir_key: str = "market_analysis"
+    outcomes_dir_key: str = "multi_horizon_outcomes"
+    final_feature_selection_dir_key: str = "final_feature_selection"
 
 
 class _TestComponentFactory:
@@ -100,13 +110,17 @@ def anyio_backend():
 
 
 @pytest.mark.anyio("asyncio")
-async def test_multi_horizon_receives_regime_split(monkeypatch):
+async def test_multi_horizon_receives_regime_split(monkeypatch, tmp_path):
     payload = {
         "regime_data": {
             "market_data": pd.DataFrame({"timestamp": pd.to_datetime([])})
         }
     }
-    config = SubPipelineConfig(custom_params={"regime_data_splitting_result": payload})
+    locator = DataLocator(root=tmp_path)
+    config = SubPipelineConfig(
+        custom_params={"regime_data_splitting_result": payload},
+        data_locator=locator,
+    )
     pipeline = PreTrainingSubPipeline()
 
     captured = {}
@@ -127,16 +141,18 @@ async def test_multi_horizon_receives_regime_split(monkeypatch):
     assert result.success
     assert captured["pipeline_state"]["regime_data_splitting_result"] is payload
     assert pipeline._current_pipeline_state["regime_data_splitting_result"] is payload
+    assert captured["pipeline_state"]["data_dir"] == str(locator.data_path(config.data_dir_key))
 
 
 @pytest.mark.anyio("asyncio")
-async def test_followup_steps_reuse_regime_split(monkeypatch):
+async def test_followup_steps_reuse_regime_split(monkeypatch, tmp_path):
     payload = {
         "regime_data": {
             "market_data": pd.DataFrame({"timestamp": pd.to_datetime([])})
         }
     }
-    config = SubPipelineConfig()
+    locator = DataLocator(root=tmp_path)
+    config = SubPipelineConfig(data_locator=locator)
     pipeline = PreTrainingSubPipeline()
     pipeline._current_pipeline_state["regime_data_splitting_result"] = payload
 
@@ -172,3 +188,4 @@ async def test_followup_steps_reuse_regime_split(monkeypatch):
     assert captured_states, "component should have been executed"
     for state in captured_states:
         assert state["regime_data_splitting_result"] is payload
+        assert state["data_dir"] == str(locator.data_path(config.data_dir_key))

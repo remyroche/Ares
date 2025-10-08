@@ -19,6 +19,7 @@ import logging
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.logger import system_logger
+from src.training.config.data_locator import DataLocator
 from src.training.steps.pre_training.artifacts.manifest import (
     ArtifactManifest,
     DataLocator,
@@ -218,6 +219,9 @@ class MultiHorizonConfig:
     weighting_config: WeightingConfig = None
     regime_config: RegimeConfig = None
     fairness_config: ValidationFairnessConfig = None
+    data_locator: Optional[DataLocator] = None
+    data_dir_key: str = "market_data"
+    outcomes_dir_key: str = "multi_horizon_outcomes"
 
 
 def validate_and_prepare_dataframe(
@@ -291,6 +295,7 @@ class MultiHorizonProfitLabeler:
         self.config = config or MultiHorizonConfig()
         self.logger = logging.getLogger('MultiHorizonProfitLabeler')
         self.quality_thresholds: Dict[str, float] = {}
+        self.data_locator: Optional[DataLocator] = self.config.data_locator
 
         # Initialize the volatility-aware labeler
         if self.config.enable_enhanced_labels:
@@ -489,7 +494,7 @@ class MultiHorizonProfitLabeler:
         symbol: str,
         exchange: str,
         timeframe: str,
-        data_dir: str = "historical_data",
+        data_dir: Optional[str] = None,
         regime_data: Optional[Dict[str, Any]] = None,
         quality_thresholds: Optional[Dict[str, float]] = None,
     ) -> Dict[str, Any]:
@@ -513,6 +518,13 @@ class MultiHorizonProfitLabeler:
             thresholds = quality_thresholds or self.quality_thresholds or {}
             if quality_thresholds is not None:
                 self.quality_thresholds = thresholds
+
+            locator = self.data_locator or self.config.data_locator
+            if data_dir is None and locator:
+                data_dir = str(locator.data_path(self.config.data_dir_key))
+
+            if data_dir is None:
+                raise ValueError("data_dir must be provided or resolvable via DataLocator")
 
             # Load market data
             tprint_info("📊 Loading market data...")
@@ -1839,7 +1851,20 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
             symbol = pipeline_state.get('symbol', 'ETHUSDT')
             exchange = pipeline_state.get('exchange', 'binance')
             timeframe = pipeline_state.get('timeframe', '1h')  # Updated to 1h for analyst
-            data_dir = pipeline_state.get('data_dir', 'historical_data')
+
+            data_locator: Optional[DataLocator] = pipeline_state.get('data_locator')
+            if data_locator:
+                self.labeler.config.data_locator = data_locator
+                self.labeler.data_locator = data_locator
+            data_dir_key = pipeline_state.get('data_dir_key', self.labeler.config.data_dir_key)
+            outcomes_dir_key = pipeline_state.get('outcomes_dir_key', self.labeler.config.outcomes_dir_key)
+            if data_locator:
+                self.labeler.config.data_dir_key = data_dir_key
+                self.labeler.config.outcomes_dir_key = outcomes_dir_key
+
+            data_dir = pipeline_state.get('data_dir')
+            if not data_dir and data_locator:
+                data_dir = str(data_locator.data_path(data_dir_key))
 
             # Extract regime data from pipeline state if available
             regime_data = pipeline_state.get('regime_data_splitting_result')
@@ -1879,6 +1904,14 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                 }
 
                 import json
+                outcomes_dir_value = pipeline_state.get('outcomes_dir')
+                if outcomes_dir_value:
+                    outcomes_dir = Path(outcomes_dir_value)
+                elif data_locator:
+                    outcomes_dir = data_locator.artifacts_path(outcomes_dir_key, ensure_exists=True)
+                else:
+                    outcomes_dir = Path("outcomes")
+                    outcomes_dir.mkdir(parents=True, exist_ok=True)
 
                 artifact_base_name = 'market_analysis_multi_horizon_profit_labeler_outcome'
                 artifact_path, version = self.data_locator.resolve_artifact_path(

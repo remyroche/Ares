@@ -16,10 +16,9 @@ import time
 import json
 from pathlib import Path
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-from sklearn.metrics import average_precision_score, balanced_accuracy_score
+from sklearn.metrics import average_precision_score, balanced_accuracy_score, mean_squared_error, accuracy_score
 from sklearn.base import clone
 from sklearn.model_selection import cross_val_score, StratifiedKFold, KFold
-from sklearn.metrics import mean_squared_error, accuracy_score
 import joblib
 from functools import lru_cache
 import hashlib
@@ -94,6 +93,13 @@ from src.utils.tprint import tprint
 from src.feature_selection import EntropyBalancerConfig, EntropyFilterResult, EntropyStabilityFilter
 from .calibration_utils import compute_classification_calibration, evaluate_conformal_interval
 
+try:
+    from src.utils.ml_common.validation.cv import PurgedKFoldTime
+    PURGED_KFOLD_AVAILABLE = PurgedKFoldTime is not None
+except Exception:
+    PurgedKFoldTime = None  # type: ignore
+    PURGED_KFOLD_AVAILABLE = False
+
 @dataclass
 class FeatureSelectionConfig:
     """Configuration for multi-stage feature selection."""
@@ -155,7 +161,10 @@ class FeatureSelectionConfig:
 
     # Cross-validation and trading-aware evaluation
     cv_folds: int = 5
-    cv_scoring: Optional[str] = None  # Deprecated - trading metrics computed instead
+    cv_scoring: str = 'neg_mean_squared_error'
+    label_horizon_minutes: int = 30
+    purge_minutes: Optional[int] = None
+    embargo_minutes: Optional[int] = None
     trading_cost: float = 0.0005
     trading_horizon: int = 252  # Periods used to annualize Sharpe
     turnover_penalty: float = 0.0
@@ -320,6 +329,7 @@ class MultiStageFeatureSelector:
         self.results = FeatureSelectionResult()
         self.results.polarity_adjustments = {}
         self.results.sign_stability = {}
+        self._active_event_timestamps: Optional[pd.Series] = None
 
         # Set model-specific parameters
         self._set_model_specific_parameters()
@@ -618,7 +628,8 @@ class MultiStageFeatureSelector:
     def select_features(self,
                        X: pd.DataFrame,
                        y: pd.Series,
-                       feature_names: Optional[List[str]] = None) -> FeatureSelectionResult:
+                       feature_names: Optional[List[str]] = None,
+                       event_timestamps: Optional[Union[pd.Series, pd.Index, List[pd.Timestamp], np.ndarray]] = None) -> FeatureSelectionResult:
         """Perform multi-stage feature selection with directional support and vectorization."""
 
         start_time = time.time()
@@ -628,6 +639,25 @@ class MultiStageFeatureSelector:
 
         # Clear cache at start of new selection
         self._clear_cache()
+        self._active_event_timestamps = None
+
+        # Align event timestamps to the provided data (before any windowing)
+        event_ts_series_full: Optional[pd.Series] = None
+        if event_timestamps is not None:
+            if isinstance(event_timestamps, pd.Series):
+                aligned = event_timestamps
+                if not aligned.index.equals(X.index):
+                    aligned = aligned.reindex(X.index)
+                if aligned.isna().any():
+                    raise ValueError("Event timestamps are missing for some samples after alignment.")
+                event_ts_series_full = pd.to_datetime(aligned)
+            else:
+                event_index = pd.Index(event_timestamps)
+                if len(event_index) != len(X.index):
+                    raise ValueError("Event timestamps length must match the number of samples.")
+                event_ts_series_full = pd.Series(pd.to_datetime(event_index), index=X.index)
+        elif isinstance(X.index, pd.DatetimeIndex):
+            event_ts_series_full = pd.Series(X.index, index=X.index)
 
         # Apply execution mode data windowing if configured
         X_processed = X.copy()
@@ -636,6 +666,14 @@ class MultiStageFeatureSelector:
             if len(X_processed) > window_days:
                 X_processed = X_processed.tail(window_days).copy()
                 tprint(f"📊 Applied execution mode window: using last {window_days} samples for feature selection")
+
+        if event_ts_series_full is not None:
+            event_ts_series = event_ts_series_full.reindex(X_processed.index)
+            if event_ts_series.isna().any():
+                raise ValueError("Event timestamps missing after applying execution mode window.")
+            self._active_event_timestamps = pd.to_datetime(event_ts_series)
+        elif isinstance(X_processed.index, pd.DatetimeIndex):
+            self._active_event_timestamps = pd.Series(X_processed.index, index=X_processed.index)
 
         # Apply execution mode stage targets if configured
         default_stage_targets = (
@@ -712,6 +750,26 @@ class MultiStageFeatureSelector:
             return ['short']
         else:  # 'both' or other
             return ['long', 'short']
+
+    def _get_event_timestamps_for_index(self, index: pd.Index) -> Optional[pd.Series]:
+        """Return aligned event timestamps for the provided index."""
+
+        event_ts = getattr(self, '_active_event_timestamps', None)
+        if event_ts is not None:
+            aligned = event_ts.reindex(index)
+            if aligned.isna().any():
+                self.logger.warning(
+                    "⚠️ Missing event timestamps after alignment; falling back to DataFrame index ordering."
+                )
+                if isinstance(index, pd.DatetimeIndex):
+                    return pd.Series(index, index=index)
+                return None
+            return aligned
+
+        if isinstance(index, pd.DatetimeIndex):
+            return pd.Series(index, index=index)
+
+        return None
 
     def _select_directional_features(self,
                                    X: pd.DataFrame,
@@ -1726,7 +1784,12 @@ class MultiStageFeatureSelector:
 
         # Cross-validation based selection using vectorized operations
         tprint("🔄 Performing vectorized cross-validation feature importance...")
-        cv_scores = self._cross_validate_feature_importance_optimized(X, y)
+        cv_event_timestamps = self._get_event_timestamps_for_index(X.index)
+        cv_scores = self._cross_validate_feature_importance_optimized(
+            X,
+            y,
+            event_timestamps=cv_event_timestamps,
+        )
         cv_scores_array = np.array([cv_scores.get(f, 0) for f in X.columns])
         tprint(f"✅ CV completed for {len(cv_scores)} features")
 
@@ -1811,30 +1874,98 @@ class MultiStageFeatureSelector:
         tprint(f"✅ Stage 3 completed: {len(selected_features)} features selected")
         return selected_features, scores
 
-    def _cross_validate_feature_importance_optimized(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, float]:
+    def _prepare_cv_splitter(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        event_timestamps: Optional[Union[pd.Series, pd.Index, np.ndarray, List[pd.Timestamp]]] = None,
+    ) -> Tuple[pd.DataFrame, pd.Series, Any]:
+        """Return time-ordered data and an appropriate cross-validation splitter."""
+
+        X_cv = X.copy()
+        y_cv = y.copy()
+        time_index: Optional[pd.DatetimeIndex] = None
+
+        if event_timestamps is not None:
+            if isinstance(event_timestamps, pd.Series):
+                aligned = event_timestamps
+                if not aligned.index.equals(X.index):
+                    aligned = aligned.reindex(X.index)
+                if aligned.isna().any():
+                    raise ValueError("Event timestamps missing for some samples during alignment.")
+                time_index = pd.DatetimeIndex(pd.to_datetime(aligned.values))
+            else:
+                event_index = pd.Index(event_timestamps)
+                if len(event_index) != len(X_cv):
+                    raise ValueError("Event timestamps length must match the number of samples.")
+                time_index = pd.DatetimeIndex(pd.to_datetime(event_index))
+        elif isinstance(X_cv.index, pd.DatetimeIndex):
+            time_index = pd.DatetimeIndex(X_cv.index)
+
+        if time_index is not None:
+            order = np.argsort(time_index.values)
+            if not np.array_equal(order, np.arange(len(time_index))):
+                X_cv = X_cv.iloc[order].copy()
+                y_cv = y_cv.iloc[order].copy()
+                time_index = time_index[order]
+            else:
+                X_cv = X_cv.copy()
+                y_cv = y_cv.copy()
+
+            X_cv.index = time_index
+            if isinstance(y_cv, pd.Series):
+                y_cv.index = time_index
+        else:
+            X_cv = X_cv.copy()
+            y_cv = y_cv.copy()
+
+        label_horizon = int(getattr(self.config, 'label_horizon_minutes', 0) or 0)
+        purge_config = self.config.purge_minutes if self.config.purge_minutes is not None else label_horizon
+        embargo_config = self.config.embargo_minutes if self.config.embargo_minutes is not None else label_horizon
+        purge_minutes = max(label_horizon, int(purge_config))
+        embargo_minutes = max(label_horizon, int(embargo_config))
+
+        if time_index is not None and PURGED_KFOLD_AVAILABLE:
+            purge_delta = pd.Timedelta(minutes=purge_minutes)
+            embargo_delta = pd.Timedelta(minutes=embargo_minutes)
+            cv = PurgedKFoldTime(
+                n_splits=self.config.cv_folds,
+                purge=purge_delta,
+                embargo=embargo_delta,
+            )
+        else:
+            if self._is_classification(y_cv):
+                cv = StratifiedKFold(n_splits=self.config.cv_folds, shuffle=False)
+            else:
+                cv = KFold(n_splits=self.config.cv_folds, shuffle=False)
+
+        return X_cv, y_cv, cv
+
+    def _cross_validate_feature_importance_optimized(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        event_timestamps: Optional[Union[pd.Series, pd.Index, np.ndarray, List[pd.Timestamp]]] = None,
+    ) -> Dict[str, float]:
         """Cross-validation feature importance using optimized models."""
         cv_scores = {}
 
         try:
-            # Use StratifiedKFold for classification, regular KFold for regression
-            if self._is_classification(y):
-                cv = StratifiedKFold(n_splits=self.config.cv_folds, shuffle=True, random_state=42)
-            else:
-                cv = self.config.cv_folds  # Let sklearn choose the CV strategy
+            X_cv, y_cv, cv = self._prepare_cv_splitter(X, y, event_timestamps)
 
-            for fold, (train_idx, val_idx) in enumerate(cv.split(X, y)):
-                X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
-                y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
+            for fold, (train_idx, val_idx) in enumerate(cv.split(X_cv, y_cv)):
+                X_train, X_val = X_cv.iloc[train_idx], X_cv.iloc[val_idx]
+                y_train, y_val = y_cv.iloc[train_idx], y_cv.iloc[val_idx]
 
                 # Train optimized model on fold
                 model = self._train_optimized_model(X_train, y_train)
 
                 # Get feature importance from this fold
                 if hasattr(model, 'feature_importances_'):
-                    fold_importance = dict(zip(X.columns, model.feature_importances_))
+                    fold_importance = dict(zip(X_cv.columns, model.feature_importances_))
                 else:
                     # Fallback to variance-based importance
-                    fold_importance = dict(zip(X.columns, X_train.var().values))
+                    fold_importance = dict(zip(X_cv.columns, X_train.var().values))
 
                 # Accumulate scores
                 for feature, importance in fold_importance.items():
@@ -1946,36 +2077,36 @@ class MultiStageFeatureSelector:
 
         return selected_features, scores
     
-    def _cross_validate_feature_importance(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, float]:
+    def _cross_validate_feature_importance(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        event_timestamps: Optional[Union[pd.Series, pd.Index, np.ndarray, List[pd.Timestamp]]] = None,
+    ) -> Dict[str, float]:
         """Cross-validate feature importance using multiple folds."""
-        
+
         cv_scores = {feature: 0.0 for feature in X.columns}
-        
-        # Use StratifiedKFold for classification, regular KFold for regression
-        if self._is_classification(y):
-            cv = StratifiedKFold(n_splits=self.config.cv_folds, shuffle=True, random_state=self.config.rf_random_state)
-        else:
-            from sklearn.model_selection import KFold
-            cv = KFold(n_splits=self.config.cv_folds, shuffle=True, random_state=self.config.rf_random_state)
-        
-        for fold, (train_idx, val_idx) in enumerate(cv.split(X, y)):
-            X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
-            y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
-            
+
+        X_cv, y_cv, cv = self._prepare_cv_splitter(X, y, event_timestamps)
+
+        for fold, (train_idx, val_idx) in enumerate(cv.split(X_cv, y_cv)):
+            X_train, X_val = X_cv.iloc[train_idx], X_cv.iloc[val_idx]
+            y_train, y_val = y_cv.iloc[train_idx], y_cv.iloc[val_idx]
+
             # Train model on fold
             model = self._train_random_forest(X_train, y_train)
-            
+
             # Get feature importance
-            fold_importance = dict(zip(X.columns, model.feature_importances_))
-            
+            fold_importance = dict(zip(X_cv.columns, model.feature_importances_))
+
             # Accumulate scores
             for feature, importance in fold_importance.items():
                 cv_scores[feature] += importance
-        
+
         # Average across folds
         for feature in cv_scores:
             cv_scores[feature] /= self.config.cv_folds
-        
+
         return cv_scores
     
     def _train_random_forest(self, X: pd.DataFrame, y: pd.Series):

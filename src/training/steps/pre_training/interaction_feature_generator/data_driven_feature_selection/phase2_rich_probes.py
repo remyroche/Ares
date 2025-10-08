@@ -46,7 +46,15 @@ except ImportError:
 
 # Import utilities
 try:
-    from src.utils.tprint import tprint, tprint_info, tprint_error, tprint_warning, tprint_success, tprint_performance
+    from src.utils.tprint import (
+        tprint,
+        tprint_info,
+        tprint_error,
+        tprint_warning,
+        tprint_success,
+        tprint_performance,
+        tprint_debug,
+    )
     TPRINT_AVAILABLE = True
 except ImportError:
     TPRINT_AVAILABLE = False
@@ -56,6 +64,7 @@ except ImportError:
     def tprint_warning(*args, **kwargs): print("WARNING:", *args, **kwargs)
     def tprint_success(*args, **kwargs): print("SUCCESS:", *args, **kwargs)
     def tprint_performance(*args, **kwargs): print("PERFORMANCE:", *args, **kwargs)
+    def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -81,6 +90,15 @@ class Phase2Result:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
+        tprint_debug(
+            "[Phase2Result] Serializing results",
+            {
+                'selected': len(self.selected_wrappers),
+                'rejected': len(self.rejected_wrappers),
+                'optimizations': self.n_optimized,
+            }
+        )
+
         return {
             'selected_wrappers': [w.to_dict() for w in self.selected_wrappers],
             'rejected_wrappers': [w.to_dict() for w in self.rejected_wrappers],
@@ -132,6 +150,34 @@ class Phase2RichProbes:
             'availability_tests_failed': 0,
             'hdi_tests_failed': 0
         }
+
+    # ------------------------------------------------------------------
+    # Logging helpers
+    # ------------------------------------------------------------------
+    def _log_info(self, message: str) -> None:
+        """Log informational message to both logger and tprint."""
+        self.logger.info(message)
+        tprint_info(f"[Phase2RichProbes] {message}")
+
+    def _log_debug(self, message: str) -> None:
+        """Log debug message to both logger and tprint."""
+        self.logger.debug(message)
+        tprint_debug(f"[Phase2RichProbes] {message}")
+
+    def _log_warning(self, message: str) -> None:
+        """Log warning message to both logger and tprint."""
+        self.logger.warning(message)
+        tprint_warning(f"[Phase2RichProbes] {message}")
+
+    def _log_error(self, message: str) -> None:
+        """Log error message to both logger and tprint."""
+        self.logger.error(message)
+        tprint_error(f"[Phase2RichProbes] {message}")
+
+    def _log_success(self, message: str) -> None:
+        """Log success message to both logger and tprint."""
+        self.logger.info(message)
+        tprint_success(f"[Phase2RichProbes] {message}")
     
     def run_phase2(self, wrappers: List[FeatureGeneratorWrapper], 
                   data: pd.DataFrame, target: np.ndarray) -> Phase2Result:
@@ -213,81 +259,97 @@ class Phase2RichProbes:
     
     def _group_wrappers_by_family(self, wrappers: List[FeatureGeneratorWrapper]) -> Dict[str, List[FeatureGeneratorWrapper]]:
         """Group wrappers by feature family."""
+        self._log_debug(f"Grouping {len(wrappers)} wrappers by family")
         families = {}
-        
+
         for wrapper in wrappers:
             family = wrapper.family
             if family not in families:
                 families[family] = []
             families[family].append(wrapper)
-        
+
+        summary = ", ".join(f"{family}({len(members)})" for family, members in families.items())
+        self._log_debug(f"Grouped wrappers into families: {summary if summary else 'none'}")
+
         return families
     
-    def _optimize_family(self, family: str, wrappers: List[FeatureGeneratorWrapper], 
+    def _optimize_family(self, family: str, wrappers: List[FeatureGeneratorWrapper],
                         data: pd.DataFrame, target: np.ndarray) -> Dict[str, Any]:
         """Optimize a family of feature generators using Bayesian lookback optimization."""
         try:
+            self._log_info(f"Optimizing family '{family}' with {len(wrappers)} wrappers")
             if self.lookback_optimizer is None:
                 # Fallback to simple optimization
+                self._log_warning(f"Lookback optimizer unavailable; using simple optimization for {family}")
                 return self._simple_family_optimization(family, wrappers, data, target)
-            
+
             # Prepare data for optimization
             market_data = {family: data}
             targets = {family: target}
             feature_names = {family: [w.name for w in wrappers]}
-            
+
             # Run Bayesian optimization
+            start_time = time.time()
             optimization_result = self.lookback_optimizer.optimize_lookbacks(
                 market_data, targets, feature_names
             )
-            
+            duration = time.time() - start_time
+            tprint_performance(f"[Phase2RichProbes] Bayesian optimization for {family} took {duration:.3f}s")
+
             if not optimization_result.success:
-                self.logger.warning(f"Bayesian optimization failed for {family}")
+                self._log_warning(f"Bayesian optimization reported failure for {family}; using simple fallback")
                 return self._simple_family_optimization(family, wrappers, data, target)
-            
+
             # Extract results for each wrapper
             optimized_wrappers = []
-            
+
             for wrapper in wrappers:
                 try:
                     # Get optimization result for this wrapper
                     wrapper_result = self._extract_wrapper_optimization_result(
                         wrapper, optimization_result, family
                     )
-                    
+
                     if wrapper_result:
+                        self._log_debug(f"Using Bayesian optimization result for wrapper {wrapper.name}")
                         optimized_wrappers.append(wrapper_result)
                     else:
                         # Fallback to simple optimization
+                        self._log_warning(f"No Bayesian result for {wrapper.name}; falling back to simple optimization")
                         simple_result = self._simple_wrapper_optimization(wrapper, data, target)
                         optimized_wrappers.append(simple_result)
-                        
+
                 except Exception as e:
-                    self.logger.warning(f"Failed to extract optimization result for {wrapper.name}: {e}")
+                    self._log_warning(f"Failed to extract optimization result for {wrapper.name}: {e}")
                     simple_result = self._simple_wrapper_optimization(wrapper, data, target)
                     optimized_wrappers.append(simple_result)
-            
+
             self.performance_metrics['bayesian_optimizations'] += 1
             self.performance_metrics['optimizations_completed'] += len(optimized_wrappers)
-            
+
+            self._log_success(
+                f"Completed Bayesian optimization for {family}; optimized {len(optimized_wrappers)} wrappers"
+            )
+
             return {
                 'family': family,
                 'optimization_success': True,
                 'optimized_wrappers': optimized_wrappers,
                 'optimization_result': optimization_result.to_dict()
             }
-            
+
         except Exception as e:
-            self.logger.warning(f"Family optimization failed for {family}: {e}")
+            self._log_warning(f"Family optimization failed for {family}: {e}")
             return self._simple_family_optimization(family, wrappers, data, target)
     
-    def _extract_wrapper_optimization_result(self, wrapper: FeatureGeneratorWrapper, 
+    def _extract_wrapper_optimization_result(self, wrapper: FeatureGeneratorWrapper,
                                            optimization_result: Any, family: str) -> Optional[FeatureGeneratorWrapper]:
         """Extract optimization result for a specific wrapper."""
         try:
+            self._log_debug(f"Extracting optimization result for {wrapper.name} in family {family}")
             # This would extract the specific optimization result for the wrapper
             # from the overall optimization result
-            
+
             # For now, use a simplified approach
             if hasattr(optimization_result, 'decisions') and family in optimization_result.decisions:
                 family_decisions = optimization_result.decisions[family]
@@ -306,44 +368,62 @@ class Phase2RichProbes:
                             if not stability_passed:
                                 wrapper.phase2_utility = 0.0
                                 self.performance_metrics['stability_tests_failed'] += 1
-                        
+                                self._log_warning(
+                                    f"Wrapper {wrapper.name} failed stability test; utility reset"
+                                )
+
                         # Check data availability
                         if self._check_data_availability(wrapper):
                             self.performance_metrics['availability_tests_failed'] += 1
                             wrapper.phase2_utility = 0.0
-                        
+                            self._log_warning(
+                                f"Wrapper {wrapper.name} failed data availability check; utility reset"
+                            )
+
                         # Check HDI width
                         if self._check_hdi_width(wrapper):
                             self.performance_metrics['hdi_tests_failed'] += 1
                             wrapper.phase2_utility = 0.0
-                        
+                            self._log_warning(
+                                f"Wrapper {wrapper.name} failed HDI width check; utility reset"
+                            )
+
+                        self._log_debug(
+                            f"Extracted Bayesian optimization metrics for {wrapper.name}: "
+                            f"utility={wrapper.phase2_utility:.4f}, uncertainty={wrapper.phase2_uncertainty:.4f}, "
+                            f"stability={wrapper.phase2_stability:.4f}"
+                        )
                         return wrapper
-            
+
             return None
-            
+
         except Exception as e:
-            self.logger.debug(f"Failed to extract optimization result for {wrapper.name}: {e}")
+            self._log_debug(f"Failed to extract optimization result for {wrapper.name}: {e}")
             return None
     
-    def _simple_family_optimization(self, family: str, wrappers: List[FeatureGeneratorWrapper], 
+    def _simple_family_optimization(self, family: str, wrappers: List[FeatureGeneratorWrapper],
                                   data: pd.DataFrame, target: np.ndarray) -> Dict[str, Any]:
         """Simple fallback optimization for a family."""
+        self._log_info(f"Running simple optimization for family '{family}' with {len(wrappers)} wrappers")
         optimized_wrappers = []
-        
+
         for wrapper in wrappers:
             try:
                 simple_result = self._simple_wrapper_optimization(wrapper, data, target)
                 optimized_wrappers.append(simple_result)
             except Exception as e:
-                self.logger.warning(f"Simple optimization failed for {wrapper.name}: {e}")
+                self._log_warning(f"Simple optimization failed for {wrapper.name}: {e}")
                 # Set default values
                 wrapper.phase2_utility = 0.0
                 wrapper.phase2_uncertainty = 1.0
                 wrapper.phase2_stability = 0.0
                 optimized_wrappers.append(wrapper)
-        
+
         self.performance_metrics['optimizations_completed'] += len(optimized_wrappers)
-        
+        self._log_success(
+            f"Simple optimization for {family} produced {len(optimized_wrappers)} wrappers"
+        )
+
         return {
             'family': family,
             'optimization_success': False,
@@ -351,22 +431,24 @@ class Phase2RichProbes:
             'optimization_result': None
         }
     
-    def _simple_wrapper_optimization(self, wrapper: FeatureGeneratorWrapper, 
+    def _simple_wrapper_optimization(self, wrapper: FeatureGeneratorWrapper,
                                    data: pd.DataFrame, target: np.ndarray) -> FeatureGeneratorWrapper:
         """Simple optimization for a single wrapper."""
         try:
+            self._log_debug(f"Simple optimization for wrapper {wrapper.name} (family {wrapper.family})")
             # Generate multiple proxy features with different lookbacks
             lookbacks = self._get_family_lookbacks(wrapper.family)
             utilities = []
             uncertainties = []
             stabilities = []
-            
+
             for lookback in lookbacks:
                 try:
                     # Generate feature with this lookback
                     if hasattr(wrapper.generator, 'generate'):
+                        self._log_debug(f"Generating feature for {wrapper.name} with lookback {lookback}")
                         result = wrapper.generator.generate(data, lookback=lookback)
-                        
+
                         if hasattr(result, 'data'):
                             feature = result.data.values
                         elif isinstance(result, pd.Series):
@@ -382,30 +464,40 @@ class Phase2RichProbes:
                         # Compute IC and stability
                         ic, ic_error = self._compute_ic_with_bootstrap(feature, target)
                         stability = self._compute_stability_score(feature, target)
-                        
+
                         utilities.append(ic)
                         uncertainties.append(ic_error)
                         stabilities.append(stability)
-                        
+                        self._log_debug(
+                            f"Lookback {lookback} for {wrapper.name}: IC={ic:.4f}, IC_err={ic_error:.4f}, stability={stability:.4f}"
+                        )
+
                 except Exception as e:
-                    self.logger.debug(f"Failed to generate feature for {wrapper.name} with lookback {lookback}: {e}")
+                    self._log_debug(
+                        f"Failed to generate feature for {wrapper.name} with lookback {lookback}: {e}"
+                    )
                     continue
-            
+
             if utilities:
                 # Use best utility
                 best_idx = np.argmax(utilities)
                 wrapper.phase2_utility = utilities[best_idx]
                 wrapper.phase2_uncertainty = uncertainties[best_idx]
                 wrapper.phase2_stability = stabilities[best_idx]
+                self._log_success(
+                    f"Wrapper {wrapper.name} best lookback produced utility={wrapper.phase2_utility:.4f}, "
+                    f"uncertainty={wrapper.phase2_uncertainty:.4f}, stability={wrapper.phase2_stability:.4f}"
+                )
             else:
                 wrapper.phase2_utility = 0.0
                 wrapper.phase2_uncertainty = 1.0
                 wrapper.phase2_stability = 0.0
-            
+                self._log_warning(f"Wrapper {wrapper.name} produced no valid utilities; defaulting to neutral values")
+
             return wrapper
-            
+
         except Exception as e:
-            self.logger.warning(f"Simple wrapper optimization failed for {wrapper.name}: {e}")
+            self._log_warning(f"Simple wrapper optimization failed for {wrapper.name}: {e}")
             wrapper.phase2_utility = 0.0
             wrapper.phase2_uncertainty = 1.0
             wrapper.phase2_stability = 0.0
@@ -440,72 +532,108 @@ class Phase2RichProbes:
         try:
             if not self.config.enable_stability_test:
                 return True
-            
+
             # This would implement the stability-under-shift test
             # For now, use a simplified version based on the stability score
-            
+
             if wrapper.phase2_stability is None:
+                self._log_warning(f"Wrapper {wrapper.name} lacks stability metric")
                 return False
-            
+
             # Check if stability is above threshold
-            return wrapper.phase2_stability >= self.config.stability_threshold
-            
+            passed = wrapper.phase2_stability >= self.config.stability_threshold
+            self._log_debug(
+                f"Stability check for {wrapper.name}: stability={wrapper.phase2_stability:.4f}, "
+                f"threshold={self.config.stability_threshold:.4f}, passed={passed}"
+            )
+            return passed
+
         except Exception as e:
-            self.logger.debug(f"Stability test failed for {wrapper.name}: {e}")
+            self._log_debug(f"Stability test encountered error for {wrapper.name}: {e}")
             return False
     
     def _check_data_availability(self, wrapper: FeatureGeneratorWrapper) -> bool:
         """Check data availability requirements for a wrapper."""
         try:
             if wrapper.family in self.config.book_dependent_families:
-                return wrapper.data_availability >= self.config.min_data_availability
+                availability_value = (
+                    wrapper.data_availability if wrapper.data_availability is not None else 0.0
+                )
+                available = availability_value >= self.config.min_data_availability
+                self._log_debug(
+                    f"Data availability for {wrapper.name}: availability={availability_value:.4f}, "
+                    f"threshold={self.config.min_data_availability:.4f}, meets_requirement={available}"
+                )
+                return available
+            self._log_debug(f"Data availability check skipped for {wrapper.name} (family {wrapper.family})")
             return True
-            
+
         except Exception as e:
-            self.logger.debug(f"Data availability check failed for {wrapper.name}: {e}")
+            self._log_debug(f"Data availability check failed for {wrapper.name}: {e}")
             return True
     
     def _check_hdi_width(self, wrapper: FeatureGeneratorWrapper) -> bool:
         """Check HDI width requirements for a wrapper."""
         try:
             if wrapper.phase2_uncertainty is None:
+                self._log_warning(f"Wrapper {wrapper.name} missing uncertainty estimate for HDI check")
                 return True
-            
+
             # Convert uncertainty to log-space HDI width
             hdi_width = 2 * wrapper.phase2_uncertainty  # Approximate 95% HDI
-            
-            return hdi_width <= self.config.max_hdi_width
-            
+
+            passes = hdi_width <= self.config.max_hdi_width
+            self._log_debug(
+                f"HDI width check for {wrapper.name}: width={hdi_width:.4f}, "
+                f"threshold={self.config.max_hdi_width:.4f}, passes={passes}"
+            )
+
+            return passes
+
         except Exception as e:
-            self.logger.debug(f"HDI width check failed for {wrapper.name}: {e}")
+            self._log_debug(f"HDI width check failed for {wrapper.name}: {e}")
             return True
     
     def _apply_phase2_gating(self, wrappers: List[FeatureGeneratorWrapper]) -> Tuple[List[FeatureGeneratorWrapper], List[FeatureGeneratorWrapper]]:
         """Apply Phase 2 gating decisions."""
+        self._log_info(f"Applying gating to {len(wrappers)} optimized wrappers")
         selected = []
         rejected = []
-        
+
         for wrapper in wrappers:
             # Check utility threshold
             if wrapper.phase2_utility is None or wrapper.phase2_utility <= self.config.min_utility_threshold:
                 rejected.append(wrapper)
+                self._log_debug(
+                    f"Rejecting {wrapper.name} due to utility {wrapper.phase2_utility} <= {self.config.min_utility_threshold}"
+                )
                 continue
-            
+
             # Check uncertainty threshold
             if wrapper.phase2_uncertainty is None or wrapper.phase2_uncertainty > 0.8:
                 rejected.append(wrapper)
+                self._log_debug(
+                    f"Rejecting {wrapper.name} due to uncertainty {wrapper.phase2_uncertainty} > 0.8"
+                )
                 continue
-            
+
             # Check stability threshold using configured tolerance for sign flips
             if (
                 wrapper.phase2_stability is None
                 or wrapper.phase2_stability < self.config.stability_threshold
             ):
                 rejected.append(wrapper)
+                self._log_debug(
+                    f"Rejecting {wrapper.name} due to stability {wrapper.phase2_stability} < {self.config.stability_threshold}"
+                )
                 continue
-            
+
             selected.append(wrapper)
-        
+            self._log_debug(f"Selected {wrapper.name} for Phase 2 output")
+
+        self._log_success(
+            f"Gating completed: selected {len(selected)} wrappers, rejected {len(rejected)} wrappers"
+        )
         return selected, rejected
     
     def _compute_ic_with_bootstrap(self, feature: np.ndarray, target: np.ndarray) -> Tuple[float, float]:
@@ -514,22 +642,27 @@ class Phase2RichProbes:
             # Remove NaN values
             valid_mask = np.isfinite(feature) & np.isfinite(target)
             if np.sum(valid_mask) < 10:
+                self._log_warning("Insufficient valid samples for IC computation; returning defaults")
                 return 0.0, 1.0
-            
+
             feature_clean = feature[valid_mask]
             target_clean = target[valid_mask]
-            
+
             # Compute correlation (IC)
             ic = np.corrcoef(feature_clean, target_clean)[0, 1]
-            
+
             if np.isnan(ic):
+                self._log_warning("Computed IC is NaN; returning defaults")
                 return 0.0, 1.0
-            
+
             # Block bootstrap for standard error
             n_samples = min(100, len(feature_clean) // 4)
             block_size = max(1, len(feature_clean) // 10)
             bootstrap_ics = []
-            
+            self._log_debug(
+                f"Starting bootstrap for IC computation with {n_samples} samples and block size {block_size}"
+            )
+
             for _ in range(n_samples):
                 # Block bootstrap
                 n_blocks = len(feature_clean) // block_size
@@ -553,16 +686,19 @@ class Phase2RichProbes:
                     boot_ic = np.corrcoef(f_boot, t_boot)[0, 1]
                     if not np.isnan(boot_ic):
                         bootstrap_ics.append(boot_ic)
-            
+
             if bootstrap_ics:
                 ic_error = np.std(bootstrap_ics)
             else:
                 ic_error = np.sqrt((1 - ic**2) / (len(feature_clean) - 2))
-            
+
+            self._log_debug(
+                f"Bootstrap IC computation result: IC={ic:.4f}, IC_error={ic_error:.4f}, samples={len(feature_clean)}"
+            )
             return float(ic), float(ic_error)
-            
+
         except Exception as e:
-            self.logger.debug(f"Failed to compute IC with bootstrap: {e}")
+            self._log_debug(f"Failed to compute IC with bootstrap: {e}")
             return 0.0, 1.0
     
     def _compute_stability_score(self, feature: np.ndarray, target: np.ndarray) -> float:
@@ -571,49 +707,56 @@ class Phase2RichProbes:
             # Remove NaN values
             valid_mask = np.isfinite(feature) & np.isfinite(target)
             if np.sum(valid_mask) < 20:
+                self._log_warning("Insufficient data for stability computation; returning default")
                 return 0.0
-            
+
             feature_clean = feature[valid_mask]
             target_clean = target[valid_mask]
-            
+
             # Split data into thirds
             n = len(feature_clean)
             third = n // 3
-            
+
             if third < 5:
+                self._log_warning("Too few observations per segment for stability computation; returning default")
                 return 0.0
-            
+
             # Oldest third
             old_feature = feature_clean[:third]
             old_target = target_clean[:third]
-            
+
             # Newest third
             new_feature = feature_clean[-third:]
             new_target = target_clean[-third:]
-            
+
             # Compute IC for each third
             if len(np.unique(old_feature)) > 1 and len(np.unique(old_target)) > 1:
                 old_ic = np.corrcoef(old_feature, old_target)[0, 1]
             else:
                 old_ic = 0.0
-            
+
             if len(np.unique(new_feature)) > 1 and len(np.unique(new_target)) > 1:
                 new_ic = np.corrcoef(new_feature, new_target)[0, 1]
             else:
                 new_ic = 0.0
-            
+
             # Stability score based on consistency
             if np.isnan(old_ic) or np.isnan(new_ic):
+                self._log_warning("Stability IC contains NaN; returning default")
                 return 0.0
-            
+
             # Higher stability if both ICs have same sign and similar magnitude
             if old_ic * new_ic > 0:  # Same sign
                 stability = 1.0 - abs(old_ic - new_ic) / (abs(old_ic) + abs(new_ic) + 1e-6)
             else:  # Different signs
                 stability = 0.0
-            
-            return max(0.0, min(1.0, stability))
-            
+
+            stability_score = max(0.0, min(1.0, stability))
+            self._log_debug(
+                f"Computed stability score: old_ic={old_ic:.4f}, new_ic={new_ic:.4f}, score={stability_score:.4f}"
+            )
+            return stability_score
+
         except Exception as e:
-            self.logger.debug(f"Failed to compute stability score: {e}")
+            self._log_debug(f"Failed to compute stability score: {e}")
             return 0.0

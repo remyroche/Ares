@@ -4,11 +4,12 @@ Base component class for market analysis pipeline components.
 
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from datetime import datetime
 import logging
 
 from src.training.common.component_result import ComponentError, ComponentResult
+from src.training.common.artifact_persistence import SaveReport
 from src.utils.logger import system_logger
 from .artifact_manager import ArtifactManager
 
@@ -85,7 +86,7 @@ class BaseMarketAnalysisComponent(ABC):
             timeframe=self.config.timeframe
         )
     
-    async def save_artifacts(self, artifacts: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    async def save_artifacts(self, artifacts: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> SaveReport:
         """
         Save artifacts using the artifact manager.
         
@@ -206,7 +207,7 @@ class BaseMarketAnalysisComponent(ABC):
         self.logger.info(f"Completed {self.__class__.__name__} execution in {duration:.2f}s")
         return duration
     
-    async def save_artifacts(self, artifacts: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    async def save_artifacts(self, artifacts: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> SaveReport:
         """
         Save artifacts using the centralized artifact manager.
         
@@ -215,7 +216,7 @@ class BaseMarketAnalysisComponent(ABC):
             metadata: Optional metadata to include
             
         Returns:
-            Dictionary mapping artifact names to file paths
+            SaveReport describing persisted artifacts
             
         Raises:
             Exception: If artifact saving fails
@@ -258,9 +259,13 @@ class BaseMarketAnalysisComponent(ABC):
             # Save artifacts if execution was successful
             if result.success and result.artifacts:
                 try:
-                    saved_files = await self.save_artifacts(result.artifacts, result.metadata)
-                    result.metadata['saved_files'] = saved_files
-                    self.logger.info(f"✅ Artifacts saved successfully: {list(saved_files.keys())}")
+                    save_report = await self.save_artifacts(result.artifacts, result.metadata)
+                    if result.metadata is None:
+                        result.metadata = {}
+                    result.metadata['artifact_save_report'] = asdict(save_report)
+                    self.logger.info(
+                        f"✅ Artifacts saved successfully: {list(save_report.paths.keys())} (correlation_id={save_report.correlation_id})"
+                    )
                 except Exception as e:
                     self.logger.error(f"❌ Failed to save artifacts: {e}")
                     # Clean up any partial artifacts

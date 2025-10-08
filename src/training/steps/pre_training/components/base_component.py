@@ -7,11 +7,12 @@ This module provides the base classes for all pre-training pipeline components.
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass
-from datetime import datetime
 import pandas as pd
 import numpy as np
+from pathlib import Path
 
 from src.training.common.component_result import ComponentError, ComponentResult as _BaseComponentResult
+from src.training.common.artifact_persistence import SaveReport, persist_artifacts
 from src.utils.logger import system_logger
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.version_manager import get_version_manager
@@ -139,7 +140,7 @@ class BasePreTrainingComponent(ABC):
         )
         raise NotImplementedError("Subclasses must implement execute")
 
-    async def save_artifacts(self, artifacts: Dict[str, Any], metadata: Dict[str, Any]) -> Dict[str, str]:
+    async def save_artifacts(self, artifacts: Dict[str, Any], metadata: Dict[str, Any]) -> SaveReport:
         """
         Save artifacts persistently.
         
@@ -148,7 +149,7 @@ class BasePreTrainingComponent(ABC):
             metadata: Metadata for the artifacts
             
         Returns:
-            Dictionary mapping artifact names to file paths
+            SaveReport describing the persisted artifacts
         """
         metadata = dict(metadata or {})
         metadata['run_metadata'] = dict(self._run_metadata)
@@ -157,39 +158,23 @@ class BasePreTrainingComponent(ABC):
             f"💾 Saving {len(artifacts)} artifacts for {self.__class__.__name__}",
             {'metadata_keys': list(metadata.keys())}
         )
-        saved_files = {}
+        component_name = self.__class__.__name__
+        base_artifact_dir = Path(self.artifact_manager.base_paths["artifacts"]) / component_name
 
-        for artifact_name, artifact_data in artifacts.items():
-            # Create artifact metadata
-            artifact_metadata = {
-                'component': self.__class__.__name__,
-                'timestamp': datetime.now().isoformat(),
-                'symbol': self.config.symbol,
-                'exchange': self.config.exchange,
-                'timeframe': self.config.timeframe,
-                **metadata
-            }
+        report = persist_artifacts(
+            component_name=component_name,
+            artifacts=artifacts,
+            metadata=metadata,
+            base_dir=base_artifact_dir,
+            logger=self.logger,
+        )
 
-            payload = {
-                'metadata': artifact_metadata,
-                'data': artifact_data,
-            }
+        tprint_success(
+            f"✅ Artifacts persisted for {component_name}",
+            {'correlation_id': report.correlation_id, 'artifact_count': len(artifacts)}
+        )
 
-            # Save artifact
-            file_path = self.artifact_manager.save_artifact(
-                data=payload,
-                base_name=artifact_name,
-                extension=".json"
-            )
-
-            saved_files[artifact_name] = file_path
-            self.logger.info(f"💾 Saved artifact {artifact_name} to {file_path}")
-            tprint_success(
-                f"✅ Artifact saved: {artifact_name}",
-                {'path': file_path}
-            )
-
-        return saved_files
+        return report
 
     def validate_config(self) -> bool:
         """Validate the component configuration."""

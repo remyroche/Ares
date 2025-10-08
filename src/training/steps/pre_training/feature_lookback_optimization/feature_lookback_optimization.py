@@ -420,12 +420,14 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                         'optimization_results': optimization_results,
                         'validated_schemas': validation_metadata
                     }))
-                    saved_files = await task
-                    log_success(f"💾 [FEATURE_LOOKBACK] Artifacts saved persistently: {list(saved_files.keys())}")
+                    save_report = await task
+                    log_success(
+                        f"💾 [FEATURE_LOOKBACK] Artifacts saved persistently (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}"
+                    )
                 except RuntimeError:
                     # No running event loop, use asyncio.run()
                     tprint("💾 Saving artifacts using asyncio.run")
-                    saved_files = asyncio.run(self.save_artifacts(artifacts, {
+                    save_report = asyncio.run(self.save_artifacts(artifacts, {
                         'optimization_status': 'completed',
                         'total_features_optimized': len(optimization_results.get('feature_results', {})),
                         'validation_summary': validation_summary.__dict__ if validation_summary else None,
@@ -433,7 +435,9 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                         'optimization_results': optimization_results,
                         'validated_schemas': validation_metadata
                     }))
-                    log_success(f"💾 [FEATURE_LOOKBACK] Artifacts saved persistently: {list(saved_files.keys())}")
+                    log_success(
+                        f"💾 [FEATURE_LOOKBACK] Artifacts saved persistently (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}"
+                    )
             except Exception as e:
                 log_warning(f"⚠️ [FEATURE_LOOKBACK] Failed to save artifacts persistently: {e}")
 

@@ -26,6 +26,7 @@ except ImportError:
     NUMPY_AVAILABLE = False
     np = None
 
+from src.training.common.artifact_persistence import SaveReport, persist_artifacts
 from src.utils.logger import system_logger
 
 
@@ -80,11 +81,11 @@ class ArtifactManager:
         return self.artifact_dir / filename
     
     async def save_artifacts(
-        self, 
-        component_name: str, 
+        self,
+        component_name: str,
         artifacts: Dict[str, Any],
         metadata: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, str]:
+    ) -> SaveReport:
         """
         Save artifacts with proper error handling and timestamps.
         
@@ -99,8 +100,6 @@ class ArtifactManager:
         Raises:
             Exception: If artifact saving fails
         """
-        saved_files = {}
-        
         try:
             # Add metadata to artifacts
             if metadata is None:
@@ -119,82 +118,23 @@ class ArtifactManager:
             # Merge metadata
             full_metadata = {**session_metadata, **metadata}
             
-            # Save each artifact
-            for artifact_name, artifact_data in artifacts.items():
-                try:
-                    file_path = await self._save_single_artifact(
-                        component_name, artifact_name, artifact_data, full_metadata
-                    )
-                    saved_files[artifact_name] = str(file_path)
-                    self.logger.info(f"✅ Saved {artifact_name} to {file_path}")
-                    
-                except Exception as e:
-                    self.logger.error(f"❌ Failed to save artifact {artifact_name}: {e}")
-                    raise Exception(f"Failed to save artifact {artifact_name}: {e}")
-            
-            # Save consolidated metadata file
-            metadata_path = self.get_artifact_path(component_name, "metadata", "json")
-            with open(metadata_path, 'w') as f:
-                json.dump(full_metadata, f, indent=2, default=self._json_serializer)
-            saved_files["metadata"] = str(metadata_path)
-            
-            self.logger.info(f"✅ All artifacts saved for {component_name}")
-            return saved_files
+            report = persist_artifacts(
+                component_name=component_name,
+                artifacts=artifacts,
+                metadata=full_metadata,
+                base_dir=self.artifact_dir,
+                logger=self.logger,
+                json_serializer=self._json_serializer,
+            )
+
+            self.logger.info(
+                f"✅ All artifacts saved for {component_name} (correlation_id={report.correlation_id})"
+            )
+            return report
             
         except Exception as e:
             self.logger.error(f"❌ Failed to save artifacts for {component_name}: {e}")
             raise Exception(f"Artifact saving failed for {component_name}: {e}")
-    
-    async def _save_single_artifact(
-        self, 
-        component_name: str, 
-        artifact_name: str, 
-        artifact_data: Any,
-        metadata: Dict[str, Any]
-    ) -> Path:
-        """
-        Save a single artifact with appropriate format.
-        
-        Args:
-            component_name: Name of the component
-            artifact_name: Name of the artifact
-            artifact_data: Data to save
-            metadata: Metadata to include
-            
-        Returns:
-            Path to the saved file
-        """
-        # Determine file format based on data type
-        if PANDAS_AVAILABLE and isinstance(artifact_data, pd.DataFrame):
-            file_path = self.get_artifact_path(component_name, artifact_name, "parquet")
-            artifact_data.to_parquet(file_path)
-            
-        elif isinstance(artifact_data, (list, dict)) and len(str(artifact_data)) > 1000:
-            # Large data structures - save as JSON
-            file_path = self.get_artifact_path(component_name, artifact_name, "json")
-            with open(file_path, 'w') as f:
-                json.dump(artifact_data, f, indent=2, default=self._json_serializer)
-                
-        elif NUMPY_AVAILABLE and isinstance(artifact_data, np.ndarray):
-            file_path = self.get_artifact_path(component_name, artifact_name, "npy")
-            np.save(file_path, artifact_data)
-            
-        elif isinstance(artifact_data, (str, int, float, bool)):
-            # Simple values - save as JSON
-            file_path = self.get_artifact_path(component_name, artifact_name, "json")
-            with open(file_path, 'w') as f:
-                json.dump({
-                    "value": artifact_data,
-                    "metadata": metadata
-                }, f, indent=2, default=self._json_serializer)
-                
-        else:
-            # Default to JSON
-            file_path = self.get_artifact_path(component_name, artifact_name, "json")
-            with open(file_path, 'w') as f:
-                json.dump(artifact_data, f, indent=2, default=self._json_serializer)
-        
-        return file_path
     
     def _json_serializer(self, obj: Any) -> Any:
         """

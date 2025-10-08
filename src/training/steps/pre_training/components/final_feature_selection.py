@@ -6,6 +6,7 @@ in the market analysis pipeline.
 """
 
 import asyncio
+import dataclasses
 import logging
 import os
 from pathlib import Path
@@ -14,6 +15,8 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from .base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+from src.training.common.artifact_persistence import SaveReport
+from src.training.common.component_result import ComponentError
 from .component_factory import register_component
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
@@ -393,31 +396,31 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 # Save artifacts persistently using the artifact manager
                 persistence_error: Optional[str] = None
                 artifacts_saved_persistently = False
-                saved_files: Dict[str, str] = {}
+                save_report: Optional[SaveReport] = None
                 failure_reason: Optional[str] = None
 
                 try:
-                    saved_files = await self.save_artifacts(artifacts, {
+                    save_report = await self.save_artifacts(artifacts, {
                         'component_type': 'final_feature_selection',
                         'symbol': symbol,
                         'exchange': exchange,
                         'timeframe': timeframe,
                         'validated_schemas': validation_metadata
                     })
-                    
-                    if saved_files:
+
+                    if save_report.paths:
                         artifacts_saved_persistently = True
                         log_success(
-                            f"💾 [FINAL_FEATURE_SELECTION] Artifacts saved persistently: {list(saved_files.keys())}"
+                            f"💾 [FINAL_FEATURE_SELECTION] Artifacts saved persistently (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}"
                         )
                         tprint(
                             "💾 [FinalFeatureSelection] Artifacts saved successfully: "
-                            f"{list(saved_files.keys())}"
+                            f"{list(save_report.paths.keys())}"
                         )
                     else:
                         log_error("❌ [FINAL_FEATURE_SELECTION] Artifact manager returned no file paths")
                         tprint("❌ [FinalFeatureSelection] Failed to persist artifacts: no file paths returned")
-                        
+
                 except Exception as e:
                     persistence_error = str(e)
                     failure_reason = f"Artifact saving failed: {e}"
@@ -447,7 +450,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                         'exchange': exchange,
                         'timeframe': timeframe,
                         'artifacts_saved_persistently': artifacts_saved_persistently,
-                        'artifact_persistence_paths': saved_files,
+                        'artifact_persistence_report': dataclasses.asdict(save_report) if save_report else {},
                         'validated_schemas': validation_metadata,
                         **({'artifact_persistence_error': persistence_error} if persistence_error else {})
                     }

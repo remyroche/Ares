@@ -564,7 +564,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             
             # Save artifacts persistently using the artifact manager
             try:
-                saved_files = await self.save_artifacts(artifacts, {
+                save_report = await self.save_artifacts(artifacts, {
                     'component_type': 'regime_models_training',
                     'execution_time': execution_time,
                     'training_time': training_results['training_time'],
@@ -573,7 +573,10 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                     'sample_count': X.shape[0],
                     'selected_feature_count': feature_selection_info.get('retained_feature_count', X.shape[1]) if feature_selection_info else X.shape[1]
                 })
-                tprint(f"💾 [REGIME_MODELS] Artifacts saved persistently: {list(saved_files.keys())}", color="green")
+                tprint(
+                    f"💾 [REGIME_MODELS] Artifacts saved persistently (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}",
+                    color="green"
+                )
             except Exception as e:
                 tprint(f"⚠️ [REGIME_MODELS] Failed to save artifacts persistently: {e}", color="yellow")
             

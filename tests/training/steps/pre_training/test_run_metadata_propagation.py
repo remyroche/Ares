@@ -2,32 +2,20 @@ import asyncio
 from datetime import datetime
 import sys
 import types
+from pathlib import Path
 from typing import Any, Dict
 
 import pandas as pd
 import pytest
 
+from src.training.common.artifact_persistence import SaveReport
+from src.training.steps.pre_training.components import base_component as base_component_module
 from src.training.steps.pre_training.components.base_component import (
     BasePreTrainingComponent,
     ComponentResult,
     ComponentConfig,
 )
 
-
-components_stub = types.ModuleType("components_stub")
-
-
-class _StubFactory:  # pragma: no cover - placeholder
-    @staticmethod
-    def create_component(*_args, **_kwargs):
-        raise NotImplementedError
-
-
-components_stub.ComponentFactory = _StubFactory
-components_stub.ComponentConfig = ComponentConfig
-components_stub.ComponentResult = ComponentResult
-components_stub.BasePreTrainingComponent = BasePreTrainingComponent
-sys.modules['src.training.steps.pre_training.components'] = components_stub
 
 from src.training.steps.pre_training.sub_pipeline import (
     PreTrainingSubPipeline,
@@ -44,12 +32,9 @@ def anyio_backend():
 
 
 class _StubArtifactManager:
-    def __init__(self) -> None:
+    def __init__(self, base_dir: Path) -> None:
         self.saved_payloads: list[Dict[str, Any]] = []
-
-    def save_artifact(self, data: Any, base_name: str, extension: str = ".json", **_: Any) -> str:
-        self.saved_payloads.append(data)
-        return f"/tmp/{base_name}{extension}"
+        self.base_paths = {"artifacts": base_dir}
 
 
 class _StubLabelerComponent(BasePreTrainingComponent):
@@ -91,12 +76,24 @@ def _simple_step(name: str, key: str) -> Any:
 
 
 @pytest.mark.anyio("asyncio")
-async def test_run_metadata_printed_and_persisted(monkeypatch, capfd):
-    stub_manager = _StubArtifactManager()
-    monkeypatch.setattr(
-        'src.training.steps.pre_training.components.base_component.get_artifact_manager',
-        lambda: stub_manager,
-    )
+async def test_run_metadata_printed_and_persisted(monkeypatch, capfd, tmp_path):
+    stub_manager = _StubArtifactManager(tmp_path)
+    monkeypatch.setattr(base_component_module, 'get_artifact_manager', lambda: stub_manager)
+
+    def _persist_artifacts(*, component_name, artifacts, metadata, base_dir, logger, **_):
+        stub_manager.saved_payloads.append({'metadata': dict(metadata or {})})
+        return SaveReport(
+            paths={
+                'artifact': str(base_dir / f"{component_name}_artifact.json"),
+                'metadata': str(base_dir / f"{component_name}_metadata.json"),
+            },
+            bytes={'artifact': 1, 'metadata': 1},
+            duration=0.0,
+            checksum={'artifact': 'abc', 'metadata': 'def'},
+            correlation_id='test-correlation',
+        )
+
+    monkeypatch.setattr(base_component_module, 'persist_artifacts', _persist_artifacts)
 
     run_metadata = {
         'git_sha': 'test-sha',
@@ -112,7 +109,7 @@ async def test_run_metadata_printed_and_persisted(monkeypatch, capfd):
     monkeypatch.setattr(
         PreTrainingSubPipeline,
         '_gather_run_metadata',
-        lambda self, cfg: dict(run_metadata),
+        lambda self, cfg, *args: dict(run_metadata),
     )
 
     monkeypatch.setattr(
@@ -139,6 +136,11 @@ async def test_run_metadata_printed_and_persisted(monkeypatch, capfd):
         PreTrainingSubPipeline,
         '_execute_final_feature_selection',
         _simple_step('final_feature_selection', 'final_feature_selection_result'),
+    )
+    monkeypatch.setattr(
+        PreTrainingSubPipeline,
+        '_prepare_interactive_training_input',
+        lambda self, pipeline_state: {},
     )
 
     pipeline = PreTrainingSubPipeline()

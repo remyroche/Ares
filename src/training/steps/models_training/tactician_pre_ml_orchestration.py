@@ -2,15 +2,21 @@
 Tactician Pre-ML Orchestration - 15m Timeframe Feature Engineering
 
 This orchestrator applies the complete pre-training pipeline for Tactician models:
-1. Applies differentiated horizon labeling + Optimizes feature lookback periods + Generates interactive features + Selects final features
-2. Uses 15m timeframe as the feature engineering cadence
-3. Uses the pipeline present in src/training/steps/MODELS_TRAINING/
+1. Entry timing labeling (local maxima/minima detection with enhanced quality scoring)
+2. Feature lookback optimization (per-regime/cluster, 15m timeframe)
+3. Interactive feature generation (interaction, polynomial, cross-timeframe features)
+4. Final feature selection (multi-stage: 120→100→80→60)
 
 TACTICIAN PRE-ML CONFIGURATION:
-- Timeframe: 15m (as specified for tactician_pre_ml_orchestration step)
-- Training Data: All market data (processed through the standard pre-training pipeline)
-- Output: Features optimized for Tactician model training
+- Timeframe: 15m (Tactician), 60m (Analyst)
+- Training Data: ALL market data (no longer filtered by Analyst green lights)
+- Entry Quality Scoring: Enhanced adaptive multi-factor scoring (7 components + interactions)
+- Output: Features optimized for Tactician model training on optimal entry timing
 
+KEY CHANGES:
+- Now trains on ALL data, not just Analyst green light periods
+- Uses enhanced entry quality scoring with regime adaptation
+- Identifies local maxima/minima across entire dataset
 """
 
 import numpy as np
@@ -84,6 +90,12 @@ class TacticianLabelingConfig:
     max_adverse_movement_pct: float = 0.5
     min_favorable_movement_pct: float = 0.2
 
+    # Enhanced entry quality scoring
+    entry_quality_scoring_method: str = "adaptive_multi_factor"  # linear_weighted, adaptive_multi_factor, information_ratio, expected_utility
+    enable_interaction_terms: bool = True
+    enable_penalty_system: bool = True
+    risk_aversion: float = 2.0  # For expected_utility method
+
     # Regime-aware settings
     enable_regime_adaptive_labeling: bool = True
     regime_specific_thresholds: Dict[str, Dict[str, float]] = field(default_factory=dict)
@@ -136,12 +148,12 @@ class TacticianPreMLConfig:
     # Data configuration
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
-    timeframe: str = "15m"  # TACTICIAN PRE-ML USES 15m TIMEFRAME
+    timeframe: str = "15m"  # TACTICIAN USES 15m TIMEFRAME (Analyst uses 60m)
     data_dir: str = "historical_data"
 
-    # Analyst signal filtering
-    analyst_confidence_threshold: float = 0.004  # 0.4% threshold for "green" signals
-    require_analyst_signals: bool = True
+    # Analyst signal filtering (DEPRECATED - now trains on ALL data)
+    analyst_confidence_threshold: float = 0.004  # 0.4% threshold for "green" signals (legacy)
+    require_analyst_signals: bool = False  # CHANGE: Now False - trains on ALL data
 
     # Differentiated labeling configuration
     labeling_config: TacticianLabelingConfig = field(default_factory=TacticianLabelingConfig)
@@ -207,59 +219,203 @@ class TacticianDifferentiatedLabeler:
     def __init__(self, config: TacticianLabelingConfig):
         self.config = config
         self.logger = system_logger.getChild('TacticianDifferentiatedLabeler')
+        
+        # Initialize enhanced quality scorer
+        self._initialize_quality_scorer()
+    
+    def _initialize_quality_scorer(self):
+        """Initialize the enhanced entry quality scorer based on configuration."""
+        try:
+            from .enhanced_entry_quality_scorer import (
+                create_enhanced_scorer,
+                ScoringMethod,
+                EnhancedScoringConfig
+            )
+            
+            # Map config string to ScoringMethod enum
+            scoring_method_map = {
+                'linear_weighted': ScoringMethod.LINEAR_WEIGHTED,
+                'adaptive_multi_factor': ScoringMethod.ADAPTIVE_MULTI_FACTOR,
+                'information_ratio': ScoringMethod.INFORMATION_RATIO,
+                'expected_utility': ScoringMethod.EXPECTED_UTILITY,
+            }
+            
+            method = scoring_method_map.get(
+                self.config.entry_quality_scoring_method,
+                ScoringMethod.ADAPTIVE_MULTI_FACTOR
+            )
+            
+            # Create scorer configuration (converting percent to decimal)
+            scorer_config = EnhancedScoringConfig(
+                scoring_method=method,
+                max_adverse_movement_decimal=self.config.max_adverse_movement_pct / 100.0,  # Convert % to decimal
+                min_favorable_movement_decimal=self.config.min_favorable_movement_pct / 100.0,  # Convert % to decimal
+                min_quality_threshold=self.config.entry_quality_threshold,
+                use_regime_adaptation=self.config.enable_regime_adaptive_labeling,
+                enable_interaction_terms=self.config.enable_interaction_terms,
+                enable_penalty_system=self.config.enable_penalty_system,
+                risk_aversion=self.config.risk_aversion,
+            )
+            
+            self.quality_scorer = create_enhanced_scorer(
+                method=method,
+                **{k: v for k, v in scorer_config.__dict__.items() if k != 'scoring_method'}
+            )
+            
+            tprint_success(f"✅ Enhanced quality scorer initialized: {method.value}")
+            
+        except ImportError as e:
+            tprint_warning(f"⚠️ Enhanced quality scorer not available, using fallback: {e}")
+            self.quality_scorer = None
 
     def create_entry_timing_labels(
         self,
         data: pd.DataFrame,
-        analyst_signals: pd.Series,
+        analyst_signals: Optional[pd.Series] = None,
         regime_assignments: Optional[pd.Series] = None
     ) -> Tuple[pd.Series, Dict[str, float]]:
-        """Generate entry timing labels constrained to Analyst green light periods."""
-        tprint_info("🎯 Creating tactician entry timing labels from Analyst signals")
-
-        if not isinstance(analyst_signals, pd.Series):
-            analyst_signals = pd.Series(analyst_signals, index=data.index)
-
-        analyst_signals = analyst_signals.reindex(data.index).fillna(0.0)
+        """
+        Generate entry timing labels for all data (not constrained to Analyst signals).
+        
+        CHANGE: Now trains on ALL data, not just Analyst green light periods.
+        """
+        tprint_info("🎯 Creating tactician entry timing labels for ALL market data")
 
         if regime_assignments is not None:
             regime_assignments = regime_assignments.reindex(data.index)
 
         labels = pd.Series(0.0, index=data.index, dtype=float)
-
-        green_periods = self._find_green_periods(analyst_signals)
-        tprint_info(f"📊 Found {len(green_periods)} Analyst green light periods")
-
-        if len(green_periods) == 0:
-            tprint_warning("⚠️ No green light periods identified; returning empty labels")
-            return labels, {}
+        
+        # CHANGE: Process ALL data, not just Analyst green light periods
+        # Create sliding windows across entire dataset
+        tprint_info(f"📊 Processing {len(data)} candles for entry opportunities")
 
         entry_points: List[pd.Timestamp] = []
-
-        for period in green_periods:
-            period_slice = data.iloc[period['start']:period['end']]
-            period_labels = self._find_optimal_entries_in_period(
-                period_slice,
-                regime_assignments,
+        
+        # Scan entire dataset with sliding window
+        window_size = self.config.max_entry_window_minutes
+        
+        for i in range(len(data) - window_size):
+            # Current potential entry point
+            entry_idx = i
+            entry_index = data.index[entry_idx]
+            
+            # Future window for quality assessment
+            future_window = data.iloc[entry_idx + 1:entry_idx + 1 + window_size]
+            
+            if future_window.empty:
+                continue
+            
+            # Calculate entry quality score
+            score = self._calculate_entry_quality_score(
+                data.iloc[entry_idx],
+                future_window,
+                entry_index,
+                regime_assignments
             )
+            
+            # Store score if above threshold
+            if score > self.config.entry_quality_threshold:
+                labels.loc[entry_index] = score
+                entry_points.append(entry_index)
+        
+        # Apply peak detection to identify local maxima
+        if len(entry_points) > 0:
+            labels = self._apply_peak_filtering(labels)
+            entry_points = labels.index[labels > 0].tolist()
 
-            labels.loc[period_slice.index] = period_labels
-            entry_points.extend(period_slice.index[period_labels > 0].tolist())
-
-        quality_metrics = self._calculate_labeling_quality_metrics(
+        quality_metrics = self._calculate_labeling_quality_metrics_all_data(
             data,
             labels,
-            entry_points,
-            green_periods
+            entry_points
         )
 
         tprint_success(
-            "✅ Entry labeling completed ("
+            "✅ Entry labeling completed on ALL data ("
             f"{int((labels > 0).sum())} optimal entries, quality={quality_metrics.get('overall_quality', 0):.3f})"
         )
 
         return labels, quality_metrics
 
+    def _apply_peak_filtering(self, labels: pd.Series) -> pd.Series:
+        """
+        Apply peak detection to filter entry labels to local maxima.
+        This prevents too many entries by selecting only the best quality peaks.
+        """
+        # Get non-zero labels
+        non_zero_mask = labels > 0
+        if non_zero_mask.sum() == 0:
+            return labels
+        
+        # Extract scores
+        scores = labels[non_zero_mask].values
+        indices = labels[non_zero_mask].index
+        
+        # Apply peak detection
+        from scipy.signal import find_peaks
+        
+        peaks, properties = find_peaks(
+            scores,
+            height=self.config.entry_quality_threshold,
+            distance=max(1, self.config.min_entry_window_minutes)
+        )
+        
+        # Create filtered labels
+        filtered_labels = pd.Series(0.0, index=labels.index, dtype=float)
+        
+        if len(peaks) > 0:
+            peak_indices = [indices[p] for p in peaks if p < len(indices)]
+            peak_scores = [scores[p] for p in peaks if p < len(scores)]
+            
+            for idx, score in zip(peak_indices, peak_scores):
+                filtered_labels.loc[idx] = score
+        
+        # If no peaks found but we have high-quality entries, keep the best
+        if filtered_labels.sum() == 0 and len(scores) > 0:
+            best_idx = np.argmax(scores)
+            if best_idx < len(indices):
+                filtered_labels.loc[indices[best_idx]] = scores[best_idx]
+        
+        return filtered_labels
+
+    def _calculate_labeling_quality_metrics_all_data(
+        self,
+        data: pd.DataFrame,
+        labels: pd.Series,
+        entry_points: List[Any]
+    ) -> Dict[str, float]:
+        """
+        Calculate quality metrics for labeling across all data.
+        """
+        total_samples = len(data)
+        labeled_samples = int((labels > 0).sum())
+        
+        metrics: Dict[str, float] = {
+            'labeling_coverage': labeled_samples / total_samples if total_samples else 0.0,
+            'entry_density': labeled_samples / total_samples if total_samples else 0.0,
+        }
+        
+        positive_scores = labels[labels > 0]
+        if not positive_scores.empty:
+            metrics['avg_entry_quality'] = float(positive_scores.mean())
+            metrics['min_entry_quality'] = float(positive_scores.min())
+            metrics['max_entry_quality'] = float(positive_scores.max())
+            std_value = float(positive_scores.std())
+            if np.isnan(std_value):
+                std_value = 0.0
+            metrics['entry_quality_std'] = std_value
+        else:
+            metrics['avg_entry_quality'] = 0.0
+            metrics['entry_quality_std'] = 0.0
+        
+        # Overall quality score
+        metrics['overall_quality'] = (
+            metrics.get('entry_density', 0.0) * 0.3 +
+            metrics.get('avg_entry_quality', 0.0) * 0.7
+        )
+        
+        return metrics
+    
     def _find_green_periods(self, analyst_signals: pd.Series) -> List[Dict[str, int]]:
         """Identify contiguous stretches of Analyst green lights."""
         periods: List[Dict[str, int]] = []
@@ -342,10 +498,37 @@ class TacticianDifferentiatedLabeler:
         index_label: Any,
         regime_assignments: Optional[pd.Series]
     ) -> float:
-        """Estimate entry quality favouring minimal adverse movement."""
+        """
+        Calculate entry quality score using enhanced scoring system.
+        
+        CHANGE: Now uses EnhancedEntryQualityScorer with adaptive multi-factor scoring.
+        """
         if future_data.empty:
             return 0.0
-
+        
+        # Use enhanced scorer if available
+        if self.quality_scorer is not None:
+            # Determine regime
+            regime = None
+            if regime_assignments is not None and self.config.enable_regime_adaptive_labeling:
+                if index_label in regime_assignments.index:
+                    regime_value = regime_assignments.loc[index_label]
+                    regime = f"regime_{regime_value}"
+            
+            # Build market context (can be expanded with more features)
+            market_context = {}
+            
+            # Calculate quality using enhanced scorer
+            quality_score = self.quality_scorer.calculate_entry_quality(
+                entry_point=entry_point,
+                future_data=future_data,
+                regime=regime,
+                market_context=market_context
+            )
+            
+            return quality_score
+        
+        # Fallback to old method if enhanced scorer not available
         regime_params = self._get_regime_parameters(index_label, regime_assignments)
 
         entry_price = entry_point['close']
@@ -566,7 +749,8 @@ class Tactician5mEntryOptimizer:
     def _find_optimal_5m_entries_in_green_period(
         self,
         green_period: Dict[str, Any],
-        data_5m: pd.DataFrame
+        data_5m: pd.DataFrame,
+        data_15m: Optional[pd.DataFrame] = None
     ) -> List[Dict[str, Any]]:
         """Find optimal 5m entry points within Analyst green period using ML models."""
         tprint_info(f"🎯 Finding optimal 5m entries in green period: {green_period['start_time']} to {green_period['end_time']}")
@@ -976,10 +1160,15 @@ class TacticianPreMLOrchestrator:
         analyst_predictions: Optional[pd.DataFrame],
         regime_assignments: Optional[pd.DataFrame]
     ) -> Optional[Dict[str, Any]]:
-        """Create precomputed entry label artifacts from Analyst signals."""
-        green_series = self._extract_green_light_series(analyst_predictions, prepared_data.index)
-        if green_series is None:
-            return None
+        """
+        Create precomputed entry label artifacts.
+        
+        CHANGE: No longer requires Analyst signals - creates labels from all data.
+        """
+        # Extract analyst signals if available (legacy support)
+        green_series = None
+        if analyst_predictions is not None and not analyst_predictions.empty:
+            green_series = self._extract_green_light_series(analyst_predictions, prepared_data.index)
 
         regime_series = self._extract_regime_series(regime_assignments)
 
@@ -987,17 +1176,18 @@ class TacticianPreMLOrchestrator:
         entry_labels: Optional[pd.Series] = None
         quality_metrics: Dict[str, Any] = {}
 
+        # CHANGE: Generate labels from all data (analyst signals optional)
         if self.config.entry_labeling_strategy == EntryLabelingStrategy.RULE_BASED:
             entry_labels, quality_metrics = self.rule_based_labeler.create_entry_timing_labels(
                 prepared_data,
-                green_series,
-                regime_series
+                analyst_signals=green_series,  # Can be None now
+                regime_assignments=regime_series
             )
         else:
             rule_labels, rule_metrics = self.rule_based_labeler.create_entry_timing_labels(
                 prepared_data,
-                green_series,
-                regime_series
+                analyst_signals=green_series,  # Can be None now
+                regime_assignments=regime_series
             )
 
             if (
@@ -1123,16 +1313,18 @@ class TacticianPreMLOrchestrator:
         """
         Prepare training data for Tactician pre-ML orchestration.
 
+        CHANGE: Now uses ALL data without filtering.
+
         Args:
             training_data: Input DataFrame (15m timeframe)
-            analyst_predictions: Analyst ensemble predictions (for reference only)
+            analyst_predictions: Analyst ensemble predictions (optional, not used for filtering)
 
         Returns:
-            Prepared DataFrame for 15m timeframe processing
+            ALL training data for 15m timeframe processing (no filtering)
         """
-        tprint_info(f"🔍 Preparing training data for {self.config.timeframe} timeframe processing...")
+        tprint_info(f"🔍 Preparing ALL training data for {self.config.timeframe} timeframe processing...")
         tprint_info(f"📊 Input data shape: {training_data.shape}")
-        tprint_info(f"📊 Timeframe: {self.config.timeframe}")
+        tprint_info(f"📊 Timeframe: {self.config.timeframe} (Analyst: 60m)")
 
         expected_minutes: Optional[float] = None
         if isinstance(self.config.timeframe, str) and self.config.timeframe.endswith('m'):
@@ -1219,6 +1411,7 @@ class TacticianPreMLOrchestrator:
         **kwargs
     ) -> TacticianPreMLResult:
         """Orchestrate feature engineering per regime with regime-specific optimization."""
+        start_time = tprint_timer()
         tprint_info("🏷️ Starting per-regime feature engineering orchestration...")
 
         result = TacticianPreMLResult()
@@ -1387,9 +1580,11 @@ class TacticianPreMLOrchestrator:
         """
         Execute the complete pre-ML orchestration for Tactician models with per-regime optimization.
 
+        CHANGE: Now trains on ALL data, not filtered by Analyst signals.
+
         Args:
             training_data: Input DataFrame with market data (15m timeframe)
-            analyst_predictions: Analyst ensemble predictions for filtering
+            analyst_predictions: Optional Analyst predictions (legacy - no longer required)
             regime_assignments: Optional regime assignments for per-regime optimization
             regime_data_splitting_result: Complete payload from regime data splitting stage
             **kwargs: Additional parameters
@@ -1446,24 +1641,19 @@ class TacticianPreMLOrchestrator:
 
             tprint_success(f"✅ Data preparation completed ({result.filter_ratio:.2%} retained)")
 
-            # Entry label preparation
+            # Entry label preparation (no longer requires Analyst signals)
             entry_label_bundle: Optional[Dict[str, Any]] = None
-            if analyst_predictions is not None and not analyst_predictions.empty:
-                tprint_info("🎯 Generating entry label bundle from Analyst signals...")
-                result.phase = OrchestrationPhase.ENTRY_LABELING
-                entry_label_bundle = self._create_entry_label_artifacts(
-                    prepared_data,
-                    analyst_predictions,
-                    regime_assignments
-                )
-                if entry_label_bundle is None and self.config.require_analyst_signals:
-                    raise ValueError(
-                        "Failed to generate entry labels despite Analyst signals being required"
-                    )
-            elif self.config.require_analyst_signals:
-                raise ValueError("Analyst predictions are required for Tactician pre-ML orchestration")
-            else:
-                tprint_warning("⚠️ Analyst predictions missing; skipping entry label bundle generation")
+            tprint_info("🎯 Generating entry labels from ALL market data...")
+            result.phase = OrchestrationPhase.ENTRY_LABELING
+            
+            entry_label_bundle = self._create_entry_label_artifacts(
+                prepared_data,
+                analyst_predictions,  # Optional now
+                regime_assignments
+            )
+            
+            if entry_label_bundle is None:
+                tprint_warning("⚠️ Failed to generate entry labels - continuing with fallback")
 
             if entry_label_bundle is not None:
                 result.entry_labeling_result = entry_label_bundle['artifacts']

@@ -14,7 +14,14 @@ import numpy as np
 from src.utils.logger import system_logger
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.version_manager import get_version_manager
-from src.utils.tprint import tprint, tprint_error, tprint_warning, tprint_success, tprint_debug
+from src.utils.tprint import (
+    tprint,
+    tprint_error,
+    tprint_warning,
+    tprint_success,
+    tprint_debug,
+    tprint_info,
+)
 
 logger = system_logger.getChild('PreTrainingComponent')
 
@@ -32,10 +39,22 @@ class ComponentConfig:
     monitoring_enabled: bool = True
     fast_mode: bool = False
     custom_params: Dict[str, Any] = None
-    
+
     def __post_init__(self):
         if self.custom_params is None:
             self.custom_params = {}
+        tprint_debug(
+            "🛠️ ComponentConfig initialized",
+            {
+                'symbol': self.symbol,
+                'exchange': self.exchange,
+                'timeframe': self.timeframe,
+                'force_rerun': self.force_rerun,
+                'validation_enabled': self.validation_enabled,
+                'monitoring_enabled': self.monitoring_enabled,
+                'fast_mode': self.fast_mode
+            }
+        )
 
 @dataclass
 class ComponentResult:
@@ -45,12 +64,22 @@ class ComponentResult:
     metadata: Dict[str, Any] = None
     error_message: Optional[str] = None
     execution_time: float = 0.0
-    
+
     def __post_init__(self):
         if self.artifacts is None:
             self.artifacts = {}
         if self.metadata is None:
             self.metadata = {}
+        tprint_debug(
+            "📦 ComponentResult initialized",
+            {
+                'success': self.success,
+                'artifacts_keys': list(self.artifacts.keys()),
+                'metadata_keys': list(self.metadata.keys()),
+                'error_message': self.error_message,
+                'execution_time': self.execution_time
+            }
+        )
 
 class BasePreTrainingComponent(ABC):
     """
@@ -65,17 +94,32 @@ class BasePreTrainingComponent(ABC):
         self.logger = logger.getChild(self.__class__.__name__)
         self.artifact_manager = get_artifact_manager()
         self.version_manager = get_version_manager()
-    
+        tprint_success(
+            f"🚀 Initialized {self.__class__.__name__}",
+            {
+                'symbol': self.config.symbol,
+                'exchange': self.config.exchange,
+                'timeframe': self.config.timeframe
+            }
+        )
+
     @abstractmethod
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
-        pass
-    
+        tprint_debug(
+            f"🧩 get_required_artifacts called on base class {self.__class__.__name__}"
+        )
+        raise NotImplementedError("Subclasses must implement get_required_artifacts")
+
     @abstractmethod
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """Execute the component."""
-        pass
-    
+        tprint_debug(
+            f"⚙️ execute called on base class {self.__class__.__name__}",
+            {'data_type': type(data).__name__}
+        )
+        raise NotImplementedError("Subclasses must implement execute")
+
     async def save_artifacts(self, artifacts: Dict[str, Any], metadata: Dict[str, Any]) -> Dict[str, str]:
         """
         Save artifacts persistently.
@@ -87,6 +131,10 @@ class BasePreTrainingComponent(ABC):
         Returns:
             Dictionary mapping artifact names to file paths
         """
+        tprint_info(
+            f"💾 Saving {len(artifacts)} artifacts for {self.__class__.__name__}",
+            {'metadata_keys': list(metadata.keys())}
+        )
         saved_files = {}
 
         for artifact_name, artifact_data in artifacts.items():
@@ -109,9 +157,13 @@ class BasePreTrainingComponent(ABC):
 
             saved_files[artifact_name] = file_path
             self.logger.info(f"💾 Saved artifact {artifact_name} to {file_path}")
+            tprint_success(
+                f"✅ Artifact saved: {artifact_name}",
+                {'path': file_path}
+            )
 
         return saved_files
-    
+
     def validate_config(self) -> bool:
         """Validate the component configuration."""
         if not self.config.symbol:
@@ -120,12 +172,29 @@ class BasePreTrainingComponent(ABC):
             raise ValueError("Exchange is required")
         if not self.config.timeframe:
             raise ValueError("Timeframe is required")
+        tprint_success(
+            f"✅ Configuration validated for {self.__class__.__name__}",
+            {
+                'symbol': self.config.symbol,
+                'exchange': self.config.exchange,
+                'timeframe': self.config.timeframe
+            }
+        )
         return True
-    
+
     def get_status(self) -> Dict[str, Any]:
         """Get the current status of the component."""
-        return {
+        status = {
             'component_name': self.__class__.__name__,
             'config': self.config,
             'required_artifacts': self.get_required_artifacts()
         }
+        tprint_info(
+            f"📊 Status requested for {self.__class__.__name__}",
+            {
+                'required_artifacts': status['required_artifacts'],
+                'symbol': self.config.symbol,
+                'exchange': self.config.exchange
+            }
+        )
+        return status

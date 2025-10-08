@@ -35,6 +35,10 @@ from src.training.steps.pre_training.validation.schemas import (
     schema_metadata,
     validate_engineered_features,
 )
+from src.training.steps.pre_training.validation.data_contracts import (
+    DataContractValidationError,
+    validate_feature_artifact,
+)
 
 # Import common operations and utilities
 try:
@@ -432,6 +436,24 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
                 }
             )
 
+        except DataContractValidationError as contract_error:
+            execution_time = time.time() - start_time
+            error_message = str(contract_error)
+            tprint_error(f"❌ {error_message}")
+            self.logger.error(f"Interactive feature generation contract error: {error_message}")
+            return ComponentResult(
+                success=False,
+                error_message=error_message,
+                artifacts={},
+                execution_time=execution_time,
+                metadata={
+                    'data_contract_error': {
+                        'context': contract_error.context,
+                        'issues': contract_error.errors,
+                    }
+                }
+            )
+
         except Exception as e:
             execution_time = time.time() - start_time
             error_message = f"Interactive feature generation failed: {str(e)}"
@@ -724,6 +746,16 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
             'performance_metrics': getattr(result, 'performance_metrics', {}),
             'artifacts': getattr(result, 'artifacts', {}),
         }
+
+        try:
+            artifacts['interactive_feature_generation_result'] = validate_feature_artifact(
+                artifacts['interactive_feature_generation_result'],
+                context='interactive_feature_generation_component.artifacts',
+            )
+        except DataContractValidationError as contract_error:
+            tprint_error(f"❌ Interactive feature generation artifact invalid: {contract_error}")
+            raise
+
         artifacts.setdefault('validated_schemas', validation_metadata)
 
         # Create output files list (for backward compatibility)

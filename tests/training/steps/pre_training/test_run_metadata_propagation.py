@@ -3,32 +3,20 @@ from datetime import datetime
 import logging
 import sys
 import types
+from pathlib import Path
 from typing import Any, Dict
 
 import pandas as pd
 import pytest
 
+from src.training.common.artifact_persistence import SaveReport
+from src.training.steps.pre_training.components import base_component as base_component_module
 from src.training.steps.pre_training.components.base_component import (
     BasePreTrainingComponent,
     ComponentResult,
     ComponentConfig,
 )
 
-
-components_stub = types.ModuleType("components_stub")
-
-
-class _StubFactory:  # pragma: no cover - placeholder
-    @staticmethod
-    def create_component(*_args, **_kwargs):
-        raise NotImplementedError
-
-
-components_stub.ComponentFactory = _StubFactory
-components_stub.ComponentConfig = ComponentConfig
-components_stub.ComponentResult = ComponentResult
-components_stub.BasePreTrainingComponent = BasePreTrainingComponent
-sys.modules['src.training.steps.pre_training.components'] = components_stub
 
 from src.training.steps.pre_training.sub_pipeline import (
     PreTrainingSubPipeline,
@@ -45,12 +33,9 @@ def anyio_backend():
 
 
 class _StubArtifactManager:
-    def __init__(self) -> None:
+    def __init__(self, base_dir: Path) -> None:
         self.saved_payloads: list[Dict[str, Any]] = []
-
-    def save_artifact(self, data: Any, base_name: str, extension: str = ".json", **_: Any) -> str:
-        self.saved_payloads.append(data)
-        return f"/tmp/{base_name}{extension}"
+        self.base_paths = {"artifacts": base_dir}
 
 
 class _StubLabelerComponent(BasePreTrainingComponent):
@@ -98,6 +83,24 @@ async def test_run_metadata_printed_and_persisted(monkeypatch, caplog):
         'src.training.steps.pre_training.components.base_component.get_artifact_manager',
         lambda: stub_manager,
     )
+async def test_run_metadata_printed_and_persisted(monkeypatch, capfd, tmp_path):
+    stub_manager = _StubArtifactManager(tmp_path)
+    monkeypatch.setattr(base_component_module, 'get_artifact_manager', lambda: stub_manager)
+
+    def _persist_artifacts(*, component_name, artifacts, metadata, base_dir, logger, **_):
+        stub_manager.saved_payloads.append({'metadata': dict(metadata or {})})
+        return SaveReport(
+            paths={
+                'artifact': str(base_dir / f"{component_name}_artifact.json"),
+                'metadata': str(base_dir / f"{component_name}_metadata.json"),
+            },
+            bytes={'artifact': 1, 'metadata': 1},
+            duration=0.0,
+            checksum={'artifact': 'abc', 'metadata': 'def'},
+            correlation_id='test-correlation',
+        )
+
+    monkeypatch.setattr(base_component_module, 'persist_artifacts', _persist_artifacts)
 
     run_metadata = {
         'run_id': 'test-run-id',

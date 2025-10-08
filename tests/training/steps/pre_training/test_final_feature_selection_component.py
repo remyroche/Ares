@@ -4,6 +4,8 @@ import types
 
 import pytest
 
+from src.training.common.artifact_persistence import SaveReport
+
 
 pytestmark = pytest.mark.anyio
 
@@ -85,6 +87,15 @@ def component(monkeypatch):
         "src.training.steps.pre_training.final_feature_selection_step"
     ] = final_step_stub
 
+    sys.modules.pop("src.training.steps.pre_training.components", None)
+    sys.modules.pop("src.training.steps.pre_training.components.final_feature_selection", None)
+
+    mh_stub = types.ModuleType("multi_horizon_profit_labeler_stub")
+    sys.modules.setdefault(
+        "src.training.steps.pre_training.multi_horizon_profit_labeler",
+        mh_stub,
+    )
+
     import src.training.steps.pre_training.multi_horizon_profit_labeler as mh_module
 
     if not hasattr(mh_module, "create_multi_horizon_labeler"):
@@ -101,6 +112,10 @@ def component(monkeypatch):
             lambda *args, **kwargs: None,
             raising=False,
         )
+
+    from src.training.steps.pre_training.components import component_factory as component_factory_module
+
+    component_factory_module._registry._components.pop('final_feature_selection', None)
 
     from src.training.steps.pre_training.components import final_feature_selection as component_module
 
@@ -138,7 +153,16 @@ def _patch_async_method(monkeypatch, instance, method_name, async_fn):
 
 async def test_execute_successful_persistence(monkeypatch, component):
     async def _save_artifacts(self, artifacts, metadata):
-        return {"final_feature_selection_result": "path/to/result.json"}
+        return SaveReport(
+            paths={
+                "final_feature_selection_result": "path/to/result.json",
+                "metadata": "path/to/metadata.json",
+            },
+            bytes={"final_feature_selection_result": 128, "metadata": 64},
+            duration=0.05,
+            checksum={"final_feature_selection_result": "abc123", "metadata": "def456"},
+            correlation_id="test-correlation",
+        )
 
     _patch_async_method(monkeypatch, component, "save_artifacts", _save_artifacts)
 
@@ -146,14 +170,15 @@ async def test_execute_successful_persistence(monkeypatch, component):
 
     assert result.success is True
     assert result.metadata["artifacts_saved_persistently"] is True
-    assert result.metadata["artifact_persistence_paths"] == {
-        "final_feature_selection_result": "path/to/result.json"
+    assert result.metadata["artifact_persistence_report"]["paths"] == {
+        "final_feature_selection_result": "path/to/result.json",
+        "metadata": "path/to/metadata.json",
     }
 
 
 async def test_execute_failure_when_persistence_missing(monkeypatch, component, caplog):
     async def _save_artifacts(self, artifacts, metadata):
-        return {}
+        return SaveReport(paths={}, bytes={}, duration=0.0, checksum={}, correlation_id="missing")
 
     _patch_async_method(monkeypatch, component, "save_artifacts", _save_artifacts)
 
@@ -163,4 +188,4 @@ async def test_execute_failure_when_persistence_missing(monkeypatch, component, 
 
     assert result.success is False
     assert result.metadata["artifacts_saved_persistently"] is False
-    assert "Artifacts were not saved persistently" in caplog.text
+    assert "Artifacts were not persisted" in caplog.text

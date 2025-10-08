@@ -465,7 +465,7 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             
             # Save artifacts persistently using the artifact manager
             try:
-                saved_files = await self.save_artifacts(artifacts, {
+                save_report = await self.save_artifacts(artifacts, {
                     'symbol': self.config.symbol,
                     'exchange': self.config.exchange,
                     'timeframe': self.config.timeframe,
@@ -473,7 +473,10 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     'execution_time': self.metrics.processing_time_seconds,
                     'data_quality_score': self.metrics.data_quality_score
                 })
-                tprint(f"💾 [REGIME_DATA_SPLITTING] Artifacts saved persistently: {list(saved_files.keys())}", color="green")
+                tprint(
+                    f"💾 [REGIME_DATA_SPLITTING] Artifacts saved persistently (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}",
+                    color="green"
+                )
             except Exception as e:
                 tprint(f"⚠️ [REGIME_DATA_SPLITTING] Failed to save artifacts persistently: {e}", color="yellow")
             

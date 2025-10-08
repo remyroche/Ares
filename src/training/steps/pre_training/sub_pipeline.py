@@ -12,6 +12,8 @@ that were moved from market_analysis:
 Each step can receive a timeframe parameter, with default 15m.
 """
 
+from __future__ import annotations
+
 from typing import Any, Dict, List, Optional, Tuple, TypedDict
 from datetime import datetime
 from enum import Enum
@@ -34,6 +36,65 @@ DEFAULT_STEP_TIME_BUDGETS: Dict[str, float] = {
     'final_feature_selection': 600.0,
 }
 
+
+@dataclass(frozen=True)
+class StepSpec:
+    """Specification describing an executable pre-training step."""
+
+    name: str
+    component_key: str
+    executor_method: str
+    display_name: str
+    description: str
+    order: int
+    enabled: bool = True
+    include_in_default_sequence: bool = True
+
+
+STEP_REGISTRY: Dict[str, StepSpec] = {
+    'multi_horizon_profit_labeler': StepSpec(
+        name='multi_horizon_profit_labeler',
+        component_key='multi_horizon_profit_labeler',
+        executor_method='_execute_multi_horizon_profit_labeler',
+        display_name='Multi-horizon labeling',
+        description='Apply multi-horizon profit labeling to market data.',
+        order=10,
+    ),
+    'feature_lookback_optimization': StepSpec(
+        name='feature_lookback_optimization',
+        component_key='feature_lookback_optimization',
+        executor_method='_execute_feature_lookback_optimization',
+        display_name='Feature optimization',
+        description='Optimize feature lookback periods using modular optimization.',
+        order=20,
+    ),
+    'optimized_lookback_generation': StepSpec(
+        name='optimized_lookback_generation',
+        component_key='optimized_lookback_generation',
+        executor_method='_execute_optimized_lookback_generation',
+        display_name='Optimized lookback generation',
+        description='Generate optimized lookback matrices with hardware acceleration.',
+        order=30,
+        include_in_default_sequence=False,
+    ),
+    'interactive_feature_generation': StepSpec(
+        name='interactive_feature_generation',
+        component_key='interactive_feature_generation',
+        executor_method='_execute_interactive_feature_generation',
+        display_name='Interactive feature generation',
+        description='Produce interactive roadmap features with analyst oversight.',
+        order=40,
+    ),
+    'final_feature_selection': StepSpec(
+        name='final_feature_selection',
+        component_key='final_feature_selection',
+        executor_method='_execute_final_feature_selection',
+        display_name='Final feature selection',
+        description='Perform the staged final feature selection.',
+        order=50,
+    ),
+}
+
 try:  # pragma: no cover - platform specific import
     import resource
 except ImportError:  # pragma: no cover
@@ -54,6 +115,12 @@ from .logging_utils import (
 from .components import ComponentFactory, ComponentConfig
 from .metrics_sink import MetricsSink, MetricsSinkConfig
 from src.training.config.data_locator import DataLocator, DataLocatorConfig
+from src.training.steps.pre_training.validation.data_contracts import (
+    DataContractValidationError,
+    validate_feature_artifact,
+    validate_multi_horizon_labeling_result,
+    validate_selection_artifact,
+)
 
 logger = system_logger.getChild('PreTrainingSubPipeline')
 
@@ -82,6 +149,7 @@ class LoggingConfig:
 @dataclass
 class SubPipelineConfig:
     """Configuration for sub-pipeline execution."""
+
     mode: ExecutionMode = ExecutionMode.FULL
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
@@ -114,6 +182,7 @@ class SubPipelineConfig:
     generated_dir_key: str = "market_analysis"
     outcomes_dir_key: str = "multi_horizon_outcomes"
     final_feature_selection_dir_key: str = "final_feature_selection"
+    _path_view: Optional[LocatorPaths] = field(default=None, init=False, repr=False)
     """
     Metrics capture configuration.
 
@@ -122,6 +191,59 @@ class SubPipelineConfig:
         metrics_output_format: ``csv``
         metrics_prometheus_enabled: ``False``
     """
+
+    def attach_locator(self, locator: DataLocator) -> None:
+        """Attach a :class:`DataLocator` instance to the configuration."""
+
+        self.data_locator = locator
+        self._path_view = LocatorPaths(locator)
+
+    def _ensure_paths(self) -> LocatorPaths:
+        if self.data_locator is None:
+            self.attach_locator(DataLocator(self.data_locator_config))
+        elif self._path_view is None or self._path_view.locator is not self.data_locator:
+            self._path_view = LocatorPaths(self.data_locator)
+        return self._path_view
+
+    @property
+    def paths(self) -> LocatorPaths:
+        return self._ensure_paths()
+
+    @property
+    def data(self) -> _LocatorCategoryView:
+        return self.paths.data
+
+    @property
+    def cache(self) -> _LocatorCategoryView:
+        return self.paths.cache
+
+    @property
+    def artifacts(self) -> _LocatorCategoryView:
+        return self.paths.artifacts
+
+    @property
+    def generated(self) -> _LocatorCategoryView:
+        return self.paths.generated
+
+    @property
+    def config_paths(self) -> _LocatorCategoryView:
+        return self.paths.config
+
+    @property
+    def config_files(self) -> _LocatorCategoryView:
+        """Alias for backwards compatibility with callers expecting ``config``."""
+
+        return self.paths.config
+
+    @property
+    def config_root(self) -> Path:
+        return self.paths.config.root
+
+    @property
+    def config(self) -> _LocatorCategoryView:
+        """Expose configuration files via ``config`` attribute for convenience."""
+
+        return self.paths.config
 
 @dataclass
 class SubPipelineFailure:
@@ -204,6 +326,30 @@ class PreTrainingSubPipeline:
         self.logger = logger.getChild('PreTrainingSubPipeline')
         self.event_logger = PreTrainingEventLogger(configure_pre_training_logging())
         self.results: List[SubPipelineResult] = []
+
+    @staticmethod
+    def _get_step_spec(step_name: str) -> Optional[StepSpec]:
+        """Return the registry specification for a step."""
+        return STEP_REGISTRY.get(step_name)
+
+    def _get_ordered_step_specs(
+        self,
+        *,
+        include_disabled: bool = False,
+        sequence_only: bool = False,
+    ) -> List[StepSpec]:
+        """Return registry specs ordered by execution priority."""
+
+        specs = [
+            spec
+            for spec in STEP_REGISTRY.values()
+            if include_disabled or spec.enabled
+        ]
+
+        if sequence_only:
+            specs = [spec for spec in specs if spec.include_in_default_sequence]
+
+        return sorted(specs, key=lambda spec: (spec.order, spec.name))
         self._current_pipeline_state: Dict[str, Any] = {}
         self._metrics_sink: Optional[MetricsSink] = None
         self._run_metadata: Dict[str, Any] = {}
@@ -258,6 +404,29 @@ class PreTrainingSubPipeline:
             raw_exception=exception,
         )
         return failure
+
+    def _handle_contract_error(
+        self,
+        result: SubPipelineResult,
+        step_name: str,
+        error: DataContractValidationError,
+    ) -> SubPipelineResult:
+        """Convert a data contract validation error into a structured failure."""
+
+        result.status = SubPipelineStatus.FAILED
+        result.success = False
+        result.error_message = str(error)
+        result.error_code = f"{self._default_step_error_code(step_name)}_CONTRACT"
+        result.failure = self._create_failure(
+            step_name,
+            result.error_code,
+            result.error_message,
+            context={
+                'contract_context': error.context,
+                'contract_issues': error.errors,
+            },
+        )
+        return result
 
     def _resolve_failure_from_result(
         self,
@@ -401,14 +570,26 @@ class PreTrainingSubPipeline:
         merged['run_metadata'] = dict(self._run_metadata)
         return merged
 
+    def _emit_effective_configuration(self, config: SubPipelineConfig) -> None:
+        """Log the resolved filesystem configuration for operator visibility."""
+
+        locator = self._data_locator or self._resolve_data_locator(config)
+        config.attach_locator(locator)
+        summary = config.paths.summary()
+        summary_json = json.dumps(summary, indent=2, sort_keys=True)
+
+        self.logger.info('📁 Effective filesystem configuration:\n%s', summary_json)
+        tprint(f"📁 Effective filesystem configuration:\n{summary_json}")
+
     def _resolve_data_locator(self, config: SubPipelineConfig) -> DataLocator:
         """Return a data locator instance for the current run."""
 
-        if config.data_locator is not None:
+        if isinstance(config.data_locator, DataLocator):
+            config.attach_locator(config.data_locator)
             return config.data_locator
 
         locator = DataLocator(config.data_locator_config)
-        config.data_locator = locator
+        config.attach_locator(locator)
         return locator
 
     async def execute_pipeline(self, config: SubPipelineConfig) -> PipelineResultDict:
@@ -451,16 +632,22 @@ class PreTrainingSubPipeline:
 
         start_time = datetime.now()
 
+        self._data_locator = self._resolve_data_locator(config)
+        self._emit_effective_configuration(config)
+
         metrics_sink = self._create_metrics_sink(config)
         self._metrics_sink = metrics_sink
         step_metric_records: List[Dict[str, Any]] = []
 
         self._data_locator = self._resolve_data_locator(config)
 
+        sequence_specs = self._get_ordered_step_specs(sequence_only=True)
+        sequence_step_count = len(sequence_specs)
+
         results = {
             'success': False,
             'execution_time': 0.0,
-            'total_steps': 4,
+            'total_steps': sequence_step_count,
             'completed_steps': 0,
             'results': {},
             'error_message': None,
@@ -774,7 +961,7 @@ class PreTrainingSubPipeline:
             end_time = datetime.now()
             results['success'] = True
             results['execution_time'] = (end_time - start_time).total_seconds()
-            results['completed_steps'] = 4
+            results['completed_steps'] = sequence_step_count
 
             end_metadata = dict(self._run_metadata)
             end_metadata['end_time_utc'] = datetime.utcnow().isoformat() + 'Z'
@@ -857,13 +1044,23 @@ class PreTrainingSubPipeline:
             output_path = Path(config.metrics_output_path)
         elif config.metrics_output_path is None:
             extension = 'jsonl' if config.metrics_output_format.lower() == 'jsonl' else 'csv'
-            output_path = Path('artifacts') / f'pre_training_metrics.{extension}'
+            locator = self._data_locator or self._resolve_data_locator(config)
+            base_dir = locator.artifacts_path(
+                config.artifacts_dir_key,
+                ensure_exists=True,
+            )
+            output_path = base_dir / f'pre_training_metrics.{extension}'
 
         if output_path is None and not config.metrics_prometheus_enabled:
             return None
 
         if output_path is None:
-            output_path = Path('artifacts') / f'pre_training_metrics.{config.metrics_output_format.lower()}'
+            locator = self._data_locator or self._resolve_data_locator(config)
+            base_dir = locator.artifacts_path(
+                config.artifacts_dir_key,
+                ensure_exists=True,
+            )
+            output_path = base_dir / f'pre_training_metrics.{config.metrics_output_format.lower()}'
 
         sink_config = MetricsSinkConfig(
             output_path=output_path,
@@ -1023,6 +1220,9 @@ class PreTrainingSubPipeline:
             'interactive_feature_generation',
             'final_feature_selection',
         ):
+        tprint("📈 Step duration summary:")
+        for spec in self._get_ordered_step_specs(sequence_only=True):
+            step_name = spec.name
             metrics = step_metrics.get(step_name)
             if not metrics:
                 continue
@@ -1043,13 +1243,10 @@ class PreTrainingSubPipeline:
 
     @staticmethod
     def _get_step_display_name(step_name: str) -> str:
-        display_names = {
-            'multi_horizon_profit_labeler': 'Multi-horizon labeling',
-            'feature_lookback_optimization': 'Feature optimization',
-            'interactive_feature_generation': 'Interactive feature generation',
-            'final_feature_selection': 'Final feature selection',
-        }
-        return display_names.get(step_name, step_name)
+        spec = STEP_REGISTRY.get(step_name)
+        if spec is not None:
+            return spec.display_name
+        return step_name
 
     def _emit_pipeline_metrics(
         self,
@@ -1590,6 +1787,19 @@ class PreTrainingSubPipeline:
                 self._default_step_error_code('multi_horizon_profit_labeler'),
             )
             if component_result.success:
+                try:
+                    artifacts = component_result.artifacts or {}
+                    if 'multi_horizon_labeling_result' in artifacts:
+                        validated_contract = validate_multi_horizon_labeling_result(
+                            artifacts['multi_horizon_labeling_result'],
+                            context='sub_pipeline.multi_horizon_profit_labeler',
+                        )
+                        artifacts['multi_horizon_labeling_result'] = validated_contract
+                        result.artifacts = artifacts
+                except DataContractValidationError as contract_error:
+                    tprint_error(f"❌ {contract_error}")
+                    return self._handle_contract_error(result, 'multi_horizon_profit_labeler', contract_error)
+
                 quality_metrics, quality_alerts = self._analyze_component_quality(
                     'multi_horizon_profit_labeler',
                     result.artifacts,
@@ -1853,6 +2063,20 @@ class PreTrainingSubPipeline:
                 self._default_step_error_code('interactive_feature_generation'),
             )
             if component_result.success:
+                try:
+                    artifacts = component_result.artifacts or {}
+                    feature_payload = artifacts.get('interactive_feature_generation_result')
+                    if feature_payload:
+                        validated_features = validate_feature_artifact(
+                            feature_payload,
+                            context='sub_pipeline.interactive_feature_generation',
+                        )
+                        artifacts['interactive_feature_generation_result'] = validated_features
+                        result.artifacts = artifacts
+                except DataContractValidationError as contract_error:
+                    tprint_error(f"❌ {contract_error}")
+                    return self._handle_contract_error(result, 'interactive_feature_generation', contract_error)
+
                 quality_metrics, quality_alerts = self._analyze_component_quality(
                     'interactive_feature_generation',
                     result.artifacts,
@@ -2085,6 +2309,20 @@ class PreTrainingSubPipeline:
                 self._default_step_error_code('final_feature_selection'),
             )
             if component_result.success:
+                try:
+                    artifacts = component_result.artifacts or {}
+                    selection_payload = artifacts.get('final_feature_selection_result')
+                    if selection_payload and 'final_features' in selection_payload:
+                        validated_selection = validate_selection_artifact(
+                            selection_payload,
+                            context='sub_pipeline.final_feature_selection',
+                        )
+                        artifacts['final_feature_selection_result'] = validated_selection
+                        result.artifacts = artifacts
+                except DataContractValidationError as contract_error:
+                    tprint_error(f"❌ {contract_error}")
+                    return self._handle_contract_error(result, 'final_feature_selection', contract_error)
+
                 quality_metrics, quality_alerts = self._analyze_component_quality(
                     'final_feature_selection',
                     result.artifacts,
@@ -2159,12 +2397,7 @@ class PreTrainingSubPipeline:
 
     def get_available_sub_pipelines(self) -> List[str]:
         """Get list of available sub-pipelines for pre-training stage."""
-        return [
-            'multi_horizon_profit_labeler',
-            'feature_lookback_optimization', 
-            'interactive_feature_generation',
-            'final_feature_selection'
-        ]
+        return [spec.name for spec in self._get_ordered_step_specs()]
 
     async def execute_sub_pipeline(self, sub_pipeline_name: str, config: SubPipelineConfig) -> SubPipelineResult:
         """Execute a specific sub-pipeline."""
@@ -2184,11 +2417,36 @@ class PreTrainingSubPipeline:
         else:
             self.logger.error(f"❌ Unknown sub-pipeline requested: {sub_pipeline_name}")
             self.logger.info(f"📋 Available sub-pipelines: {self.get_available_sub_pipelines()}")
+        spec = self._get_step_spec(sub_pipeline_name)
+        if spec is None:
+            tprint_error(f"❌ Unknown sub-pipeline requested: {sub_pipeline_name}")
+            tprint(f"📋 Available sub-pipelines: {self.get_available_sub_pipelines()}")
             raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
+
+        if not spec.enabled:
+            message = (
+                f"Sub-pipeline '{sub_pipeline_name}' is currently disabled. "
+                f"Reason: {getattr(spec, 'description', 'temporarily unavailable')}"
+            )
+            tprint_warning(f"⚠️ {message}")
+            self.logger.warning(message)
+            raise ValueError(message)
+
+        executor = getattr(self, spec.executor_method, None)
+        if executor is None:
+            message = (
+                f"Sub-pipeline '{sub_pipeline_name}' is registered but missing executor "
+                f"'{spec.executor_method}'."
+            )
+            tprint_error(f"❌ {message}")
+            self.logger.error(message)
+            raise RuntimeError(message)
+
+        return await executor(config, self._run_metadata)
 
     async def execute_sub_pipeline_with_next(self, sub_pipeline_name: str, config: SubPipelineConfig) -> SubPipelineResult:
         """Execute a specific sub-pipeline and automatically trigger subsequent sub-pipelines."""
-        # For pre-training, we execute all 4 steps in sequence
+        # For pre-training, execute the default enabled steps in sequence
         available_steps = self.get_available_sub_pipelines()
         
         try:
@@ -2244,3 +2502,57 @@ async def execute_pre_training_pipeline(config: SubPipelineConfig) -> Dict[str, 
     """
     pipeline = PreTrainingSubPipeline()
     return await pipeline.execute_pipeline(config)
+class _LocatorCategoryView:
+    """Attribute-access helper that proxies lookups to a :class:`DataLocator`."""
+
+    def __init__(self, locator: DataLocator, category: str) -> None:
+        self._locator = locator
+        self._category = category
+
+    @property
+    def root(self) -> Path:
+        return getattr(self._locator, f"base_{self._category}_dir")
+
+    def path(
+        self,
+        key: Optional[str] = None,
+        *,
+        default: Optional[str] = None,
+        ensure_exists: bool = False,
+    ) -> Path:
+        resolver = getattr(self._locator, f"{self._category}_path")
+        return resolver(key, default=default, ensure_exists=ensure_exists)
+
+    def __getattr__(self, item: str) -> Path:
+        if item == "root":
+            return self.root
+        return self.path(item)
+
+    def __getitem__(self, item: str) -> Path:
+        return self.path(item)
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"LocatorCategoryView(category={self._category!r}, root={self.root!s})"
+
+
+class LocatorPaths:
+    """Collection of category views backed by a :class:`DataLocator`."""
+
+    def __init__(self, locator: DataLocator) -> None:
+        self._locator = locator
+        self.data = _LocatorCategoryView(locator, "data")
+        self.cache = _LocatorCategoryView(locator, "cache")
+        self.artifacts = _LocatorCategoryView(locator, "artifacts")
+        self.generated = _LocatorCategoryView(locator, "generated")
+        self.config = _LocatorCategoryView(locator, "config")
+
+    @property
+    def locator(self) -> DataLocator:
+        return self._locator
+
+    def summary(self) -> Dict[str, Dict[str, str]]:
+        return self._locator.resolved_paths()
+
+    def __repr__(self) -> str:  # pragma: no cover - debug helper
+        return f"LocatorPaths(locator={self._locator!r})"
+

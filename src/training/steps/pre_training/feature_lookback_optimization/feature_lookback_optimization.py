@@ -24,8 +24,9 @@ from src.training.steps.pre_training.column_naming import (
     strip_namespace)
 from src.training.steps.pre_training.artifacts.manifest import (
     ArtifactManifest,
-    DataLocator
+    DataLocator,
 )
+from src.training.config.data_locator import DataLocator as PipelineDataLocator
 
 # Import numpy for type checking
 from .dependency_manager import get_dependency
@@ -246,6 +247,12 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         """
         pipeline_state = dict(pipeline_state or {})
 
+        locator = pipeline_state.get('data_locator')
+        if isinstance(locator, DataLocator):
+            self.core_optimizer.set_data_locator(locator)
+        else:
+            self.core_optimizer.set_data_locator(None)
+
         tprint("🚀 Starting modular feature lookback optimization execution...")
         start_time = self.performance_monitor.start_operation("execute")
 
@@ -413,12 +420,14 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                         'optimization_results': optimization_results,
                         'validated_schemas': validation_metadata
                     }))
-                    saved_files = await task
-                    log_success(f"💾 [FEATURE_LOOKBACK] Artifacts saved persistently: {list(saved_files.keys())}")
+                    save_report = await task
+                    log_success(
+                        f"💾 [FEATURE_LOOKBACK] Artifacts saved persistently (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}"
+                    )
                 except RuntimeError:
                     # No running event loop, use asyncio.run()
                     tprint("💾 Saving artifacts using asyncio.run")
-                    saved_files = asyncio.run(self.save_artifacts(artifacts, {
+                    save_report = asyncio.run(self.save_artifacts(artifacts, {
                         'optimization_status': 'completed',
                         'total_features_optimized': len(optimization_results.get('feature_results', {})),
                         'validation_summary': validation_summary.__dict__ if validation_summary else None,
@@ -426,7 +435,9 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                         'optimization_results': optimization_results,
                         'validated_schemas': validation_metadata
                     }))
-                    log_success(f"💾 [FEATURE_LOOKBACK] Artifacts saved persistently: {list(saved_files.keys())}")
+                    log_success(
+                        f"💾 [FEATURE_LOOKBACK] Artifacts saved persistently (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}"
+                    )
             except Exception as e:
                 log_warning(f"⚠️ [FEATURE_LOOKBACK] Failed to save artifacts persistently: {e}")
 
@@ -443,7 +454,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                     'optimization_results': optimization_results,
                     'artifacts_saved_persistently': True,
                     'pipeline_type': 'differentiated_long_short',
-                    'validated_schemas': validation_metadata
+                    'validated_schemas': validation_metadata,
                     'feature_cache_metrics': dict(self.cache_metrics),
                     'feature_cache_key': self._current_cache_key,
                     'feature_cache_force_refresh': self._force_cache_refresh,
@@ -596,8 +607,28 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             ):
                 _register_candidate(base_dir)
 
-            # Fallback to the default cache directory in the project root
-            _register_candidate(Path('data_cache'))
+            # Fallback to a locator-resolved cache directory when available
+            locator_candidate = pipeline_state.get('data_locator')
+            if isinstance(locator_candidate, (DataLocator, PipelineDataLocator)):
+                cache_key = pipeline_state.get('cache_dir_key') or getattr(self.config, 'cache_dir_key', None)
+                try:
+                    default_cache_dir = locator_candidate.cache_path(cache_key, ensure_exists=True)
+                except Exception:
+                    default_cache_dir = locator_candidate.cache_path(ensure_exists=True)
+
+                primary = default_cache_dir if isinstance(default_cache_dir, Path) else Path(default_cache_dir)
+                primary = primary.expanduser()
+                if not primary.is_absolute():
+                    primary = Path.cwd() / primary
+                self.logger.warning(
+                    "⚠️ Using locator-provided regime cache directory: %s",
+                    primary,
+                )
+                candidate_dirs.insert(0, primary)
+                if primary.name.lower() != 'nas_tas_clustering':
+                    candidate_dirs.insert(1, primary / 'nas_tas_clustering')
+            else:
+                _register_candidate(Path('data_cache'))
 
             # Remove duplicates while preserving order
             seen_paths = set()

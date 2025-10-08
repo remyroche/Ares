@@ -35,6 +35,7 @@ This directory contains a comprehensive validation framework for the pre-trainin
 | `VALIDATION_IMPLEMENTATION_SUMMARY.md` | Detailed implementation summary |
 | `IMPLEMENTATION_CHECKLIST.md` | Implementation status and deployment checklist |
 | `README_VALIDATION_FRAMEWORK.md` | This file - framework overview |
+| [`docs/pre_training_data_contracts.md`](../../../../docs/pre_training_data_contracts.md) | Data contract reference for step boundaries |
 
 ### Example Files
 

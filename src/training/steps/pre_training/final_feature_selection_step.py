@@ -9,7 +9,7 @@ that runs at the end of the market analysis pipeline.
 import json
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, TYPE_CHECKING
 import logging
 from pathlib import Path
 import asyncio
@@ -20,14 +20,15 @@ from src.training.steps.pre_training.standardized_labeling_interface import (
 )
 from src.training.steps.pre_training.artifacts.manifest import (
     ArtifactManifest,
-    DataLocator,
+    DataLocator as ArtifactDataLocator,
 )
 
 # Import the final feature selection pipeline
-from .final_feature_selection_pipeline import (
-    MultiStageFeatureSelector, FeatureSelectionConfig,
-    run_final_feature_selection, get_final_features
-)
+if TYPE_CHECKING:
+    from .final_feature_selection_pipeline import (
+        FeatureSelectionConfig,
+        MultiStageFeatureSelector,
+    )
 
 # Import system utilities
 from src.utils.logger import get_logger
@@ -41,6 +42,11 @@ from src.utils.tprint import (
     tprint_warning,
 )
 from src.training.config.data_locator import DataLocator
+from src.training.steps.pre_training.validation.data_contracts import (
+    DataContractValidationError,
+    validate_selection_artifact,
+)
+from src.training.config.data_locator import DataLocator as PipelineDataLocator
 
 class FinalFeatureSelectionStep:
     """Final feature selection step for market analysis pipeline."""
@@ -99,15 +105,19 @@ class FinalFeatureSelectionStep:
 
         # Resolve locator-aware output directories
         locator_candidate = self.config.get('data_locator')
-        self.data_locator: Optional[DataLocator] = locator_candidate if isinstance(locator_candidate, DataLocator) else None
+        self.data_locator: Optional[PipelineDataLocator] = (
+            locator_candidate if isinstance(locator_candidate, PipelineDataLocator) else None
+        )
 
         self.output_directory_key = self.config.get('output_directory_key', 'market_analysis')
         configured_output_dir = self.config.get('output_directory')
+        locator = self.data_locator
+
         if configured_output_dir:
             output_directory = str(Path(configured_output_dir).expanduser())
             Path(output_directory).mkdir(parents=True, exist_ok=True)
-        elif self.data_locator:
-            output_directory = str(self.data_locator.generated_path(self.output_directory_key, ensure_exists=True))
+        elif locator:
+            output_directory = str(locator.generated_path(self.output_directory_key, ensure_exists=True))
         else:
             fallback_output_dir = Path('generated') / 'market_analysis'
             fallback_output_dir.mkdir(parents=True, exist_ok=True)
@@ -118,10 +128,10 @@ class FinalFeatureSelectionStep:
         if configured_final_dir:
             final_features_dir = Path(configured_final_dir).expanduser()
             final_features_dir.mkdir(parents=True, exist_ok=True)
-        elif self.data_locator:
-            final_features_dir = self.data_locator.generated_path(self.final_features_dir_key, ensure_exists=True)
+        elif locator:
+            final_features_dir = locator.generated_path(self.final_features_dir_key, ensure_exists=True)
         else:
-            final_features_dir = Path('generated/market_analysis') / 'final_feature_selection'
+            final_features_dir = (Path('generated') / 'market_analysis' / 'final_feature_selection')
             final_features_dir.mkdir(parents=True, exist_ok=True)
         self.final_features_dir = final_features_dir
 
@@ -132,6 +142,25 @@ class FinalFeatureSelectionStep:
             'stage_targets': [95, 75, 65],
             'priority_categories': ['momentum', 'volatility', 'microstructure']
         })
+
+        self._pipeline_import_error: Optional[BaseException] = None
+        try:
+            from .final_feature_selection_pipeline import FeatureSelectionConfig as _FeatureSelectionConfig
+            self._pipeline_available = True
+        except Exception as exc:  # pragma: no cover - fallback path
+            self._pipeline_available = False
+            self._pipeline_import_error = exc
+            self.logger.warning(
+                "⚠️ Falling back to minimal feature selection configuration due to import failure: %s",
+                exc,
+            )
+
+            class _FeatureSelectionConfig:  # type: ignore[redefined-outer-name]
+                def __init__(self, **kwargs: Any) -> None:
+                    for key, value in kwargs.items():
+                        setattr(self, key, value)
+
+        FeatureSelectionConfig = _FeatureSelectionConfig
 
         self.feature_config = FeatureSelectionConfig(
             initial_features=self.config.get('initial_features', 120),
@@ -267,7 +296,7 @@ class FinalFeatureSelectionStep:
 
         manifest = ArtifactManifest()
         artifact_base_name = 'market_analysis_multi_horizon_profit_labeler_outcome'
-        logical_name = DataLocator.build_logical_name(
+        logical_name = ArtifactDataLocator.build_logical_name(
             artifact_base_name,
             symbol=symbol,
             exchange=exchange,
@@ -667,15 +696,40 @@ class FinalFeatureSelectionStep:
         # Run feature selection in a thread pool to avoid blocking
         loop = asyncio.get_event_loop()
         selection_result = await loop.run_in_executor(
-            None, 
-            self._run_selection_sync, 
+            None,
+            self._run_selection_sync,
             X, y
         )
-        
+
+        selection_payload = {
+            'final_features': list(getattr(selection_result, 'final_features', []) or []),
+            'stage_1_features': list(getattr(selection_result, 'stage_1_features', []) or []),
+            'stage_2_features': list(getattr(selection_result, 'stage_2_features', []) or []),
+            'stage_3_features': list(getattr(selection_result, 'stage_3_features', []) or []),
+            'feature_counts': dict(getattr(selection_result, 'feature_counts', {})),
+            'stage_scores': {
+                'stage_1': dict(getattr(selection_result, 'stage_1_scores', {})),
+                'stage_2': dict(getattr(selection_result, 'stage_2_scores', {})),
+                'stage_3': dict(getattr(selection_result, 'stage_3_scores', {})),
+                'final': dict(getattr(selection_result, 'final_scores', {})),
+            },
+            'selection_time': getattr(selection_result, 'selection_time', None),
+            'is_unsupervised': getattr(selection_result, 'is_unsupervised', None),
+        }
+
+        try:
+            validate_selection_artifact(
+                selection_payload,
+                context='final_feature_selection_step.selection_result',
+            )
+        except DataContractValidationError as contract_error:
+            tprint_error(f"❌ Selection result failed validation: {contract_error}")
+            raise
+
         tprint("✅ Multi-stage feature selection completed")
         tprint(f"   📊 Final features: {len(selection_result.final_features)}")
         tprint(f"   ⏱️ Selection time: {selection_result.selection_time:.3f} seconds")
-        
+
         return selection_result
     
     def _run_selection_sync(self, X: pd.DataFrame, y: Optional[pd.Series]) -> Any:
@@ -683,6 +737,11 @@ class FinalFeatureSelectionStep:
 
         tprint("⚙️ Executing synchronous selection pipeline")
         # Create feature selector
+        if not getattr(self, "_pipeline_available", False):
+            raise RuntimeError("Feature selection pipeline is unavailable") from self._pipeline_import_error
+
+        from .final_feature_selection_pipeline import MultiStageFeatureSelector
+
         selector = MultiStageFeatureSelector(self.feature_config)
 
         # Run selection
@@ -894,7 +953,7 @@ async def run_final_feature_selection_step(symbol: str,
 
     runtime_config: Dict[str, Any] = dict(config or {})
     locator = runtime_config.get('data_locator')
-    if data_dir is None and isinstance(locator, DataLocator):
+    if data_dir is None and isinstance(locator, PipelineDataLocator):
         data_dir_key = runtime_config.get('data_dir_key', 'market_data')
         data_dir = str(locator.data_path(data_dir_key))
 

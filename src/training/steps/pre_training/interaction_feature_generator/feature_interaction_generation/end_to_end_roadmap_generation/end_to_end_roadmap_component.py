@@ -261,7 +261,7 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
             
             # Save artifacts persistently using the artifact manager
             try:
-                saved_files = await self.save_artifacts(artifacts, {
+                save_report = await self.save_artifacts(artifacts, {
                     'symbol': self.config.symbol,
                     'exchange': self.config.exchange,
                     'timeframe': self.config.timeframe,
@@ -271,7 +271,10 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
                     'final_report': final_report,
                     'execution_time': time.time() - self.start_time
                 })
-                tprint(f"💾 [ROADMAP_GEN] Artifacts saved persistently: {list(saved_files.keys())}", color="green")
+                tprint(
+                    f"💾 [ROADMAP_GEN] Artifacts saved persistently (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}",
+                    color="green"
+                )
             except Exception as e:
                 tprint(f"⚠️ [ROADMAP_GEN] Failed to save artifacts persistently: {e}", color="yellow")
             

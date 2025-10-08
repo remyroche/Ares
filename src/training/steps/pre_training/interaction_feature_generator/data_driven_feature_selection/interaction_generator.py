@@ -16,7 +16,7 @@ import logging
 import time
 import traceback
 from typing import Dict, List, Optional, Tuple, Union, Any
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 from itertools import combinations
@@ -60,6 +60,14 @@ class InteractionFeature:
     utility: float = 0.0
     stability: float = 0.0
     cost: float = 0.0
+
+    def __post_init__(self) -> None:
+        """Emit creation details for observability."""
+        tprint_info(
+            f"🧩 InteractionFeature created: {self.name} "
+            f"[{self.parent1} {self.interaction_type} {self.parent2}] "
+            f"utility={self.utility:.4f}, stability={self.stability:.4f}"
+        )
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -87,6 +95,14 @@ class InteractionResult:
     # Performance metrics
     matrix_ops_used: int = 0
     vectorized_ops: int = 0
+
+    def __post_init__(self) -> None:
+        """Log summary of the interaction generation run."""
+        tprint_success(
+            f"📦 InteractionResult prepared | parents={len(self.parent_features)} "
+            f"generated={self.n_interactions_generated} selected={self.n_interactions_selected} "
+            f"time={self.execution_time:.3f}s"
+        )
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -109,7 +125,7 @@ class InteractionFeatureGenerator:
         self.config = config
         self.matrix_ops = matrix_ops
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
-        
+
         # Performance tracking
         self.performance_metrics = {
             'matrix_ops_used': 0,
@@ -117,6 +133,32 @@ class InteractionFeatureGenerator:
             'interactions_generated': 0,
             'interactions_evaluated': 0
         }
+
+        tprint_info(
+            f"🛠️ InteractionFeatureGenerator initialized | "
+            f"max_interactions={self.config.max_interactions}, "
+            f"utility_threshold={self.config.interaction_utility_threshold:.4f}, "
+            f"require_both_parents={self.config.require_both_parents}"
+        )
+
+    # ------------------------------------------------------------------
+    # Logging helpers
+    # ------------------------------------------------------------------
+    def _log_debug(self, message: str) -> None:
+        self.logger.debug(message)
+        tprint_info(f"🔍 {message}")
+
+    def _log_warning(self, message: str) -> None:
+        self.logger.warning(message)
+        tprint_warning(message)
+
+    def _log_error(self, message: str) -> None:
+        self.logger.error(message)
+        tprint_error(message)
+
+    def _log_performance(self, message: str) -> None:
+        self.logger.info(message)
+        tprint_performance(message)
     
     def generate_interactions(self, selected_wrappers: List[FeatureGeneratorWrapper], 
                             data: pd.DataFrame, target: np.ndarray) -> InteractionResult:
@@ -168,9 +210,9 @@ class InteractionFeatureGenerator:
             
         except Exception as e:
             execution_time = time.time() - start_time
-            self.logger.error(f"Interaction generation failed: {e}")
-            self.logger.error(f"Error details: {traceback.format_exc()}")
-            
+            self._log_error(f"Interaction generation failed: {e}")
+            self._log_error(f"Error details: {traceback.format_exc()}")
+
             # Return empty result
             return InteractionResult(
                 selected_interactions=[],
@@ -188,16 +230,19 @@ class InteractionFeatureGenerator:
         for wrapper in selected_wrappers:
             # Check utility threshold
             if wrapper.phase2_utility is None or wrapper.phase2_utility < self.config.min_parent_utility:
+                self._log_warning(
+                    f"Parent feature {wrapper.name} excluded (utility={wrapper.phase2_utility})"
+                )
                 continue
-            
+
             # Check if both parents required
             if self.config.require_both_parents:
                 # For now, assume all features can be parents
                 # In practice, you might have specific parent requirements
                 pass
-            
+
             filtered.append(wrapper)
-        
+
         tprint_info(f"📊 Filtered to {len(filtered)} parent features (min utility: {self.config.min_parent_utility})")
         return filtered
     
@@ -213,11 +258,15 @@ class InteractionFeatureGenerator:
                 feature_values = self._generate_feature_values(wrapper, data)
                 if feature_values is not None and len(feature_values) > 10:
                     parent_values[wrapper.name] = feature_values
+                    self._log_debug(f"Cached parent values for {wrapper.name} (n={len(feature_values)})")
+                else:
+                    self._log_warning(f"Insufficient values for parent {wrapper.name}, skipping")
             except Exception as e:
-                self.logger.debug(f"Failed to generate values for {wrapper.name}: {e}")
+                self._log_debug(f"Failed to generate values for {wrapper.name}: {e}")
                 continue
-        
+
         if len(parent_values) < 2:
+            self._log_warning("Not enough parent features with valid values to generate interactions")
             return interactions
         
         # Generate all pairwise combinations
@@ -243,11 +292,13 @@ class InteractionFeatureGenerator:
                             self.performance_metrics['interactions_generated'] += 1
                             
                     except Exception as e:
-                        self.logger.debug(f"Failed to create {interaction_type} interaction between {parent1} and {parent2}: {e}")
+                        self._log_debug(
+                            f"Failed to create {interaction_type} interaction between {parent1} and {parent2}: {e}"
+                        )
                         continue
-                        
+
             except Exception as e:
-                self.logger.debug(f"Failed to process interaction between {parent1} and {parent2}: {e}")
+                self._log_debug(f"Failed to process interaction between {parent1} and {parent2}: {e}")
                 continue
         
         tprint_info(f"📊 Generated {len(interactions)} potential interactions")
@@ -258,7 +309,7 @@ class InteractionFeatureGenerator:
         try:
             if hasattr(wrapper.generator, 'generate'):
                 result = wrapper.generator.generate(data, lookback=20)  # Use default lookback
-                
+
                 if hasattr(result, 'data'):
                     return result.data.values
                 elif isinstance(result, pd.Series):
@@ -266,12 +317,14 @@ class InteractionFeatureGenerator:
                 elif isinstance(result, np.ndarray):
                     return result
                 else:
+                    self._log_warning(f"Unsupported return type from generator for {wrapper.name}; skipping")
                     return None
             else:
+                self._log_warning(f"Wrapper {wrapper.name} lacks a generate method; skipping")
                 return None
-                
+
         except Exception as e:
-            self.logger.debug(f"Failed to generate values for {wrapper.name}: {e}")
+            self._log_debug(f"Failed to generate values for {wrapper.name}: {e}")
             return None
     
     def _check_parent_correlation(self, parent1_values: np.ndarray, parent2_values: np.ndarray) -> bool:
@@ -295,15 +348,23 @@ class InteractionFeatureGenerator:
             
             # Compute correlation
             correlation = np.corrcoef(p1_clean, p2_clean)[0, 1]
-            
+
             if np.isnan(correlation):
+                self._log_warning("Correlation computation produced NaN; skipping pair")
                 return True  # Invalid correlation, skip
-            
-            # Check if correlation is too high
-            return abs(correlation) > self.config.max_correlation
-            
+
+            correlation_abs = abs(correlation)
+            if correlation_abs > self.config.max_correlation:
+                self._log_warning(
+                    f"Parents correlation {correlation:.4f} exceeds max {self.config.max_correlation}"
+                )
+                return True
+
+            self._log_debug(f"Parents correlation {correlation:.4f} within acceptable bounds")
+            return False
+
         except Exception as e:
-            self.logger.debug(f"Failed to check parent correlation: {e}")
+            self._log_debug(f"Failed to check parent correlation: {e}")
             return True  # Skip on error
     
     def _create_interaction(self, parent1: str, parent2: str, interaction_type: str,
@@ -351,12 +412,17 @@ class InteractionFeatureGenerator:
                 stability=stability,
                 cost=1.0  # Simple cost model
             )
-            
+
             self.performance_metrics['interactions_evaluated'] += 1
+            self._log_performance(
+                f"Evaluated interaction {interaction_name} | utility={utility:.4f}, stability={stability:.4f}"
+            )
             return interaction
-            
+
         except Exception as e:
-            self.logger.debug(f"Failed to create interaction {interaction_type} between {parent1} and {parent2}: {e}")
+            self._log_debug(
+                f"Failed to create interaction {interaction_type} between {parent1} and {parent2}: {e}"
+            )
             return None
     
     def _compute_interaction_values(self, parent1_values: np.ndarray, parent2_values: np.ndarray, 
@@ -378,38 +444,44 @@ class InteractionFeatureGenerator:
                 return None
                 
         except Exception as e:
-            self.logger.debug(f"Failed to compute {interaction_type} interaction values: {e}")
+            self._log_debug(f"Failed to compute {interaction_type} interaction values: {e}")
             return None
     
     def _compute_interaction_utility(self, interaction_values: np.ndarray, target: np.ndarray) -> float:
         """Compute utility (IC) for interaction feature."""
         try:
             if len(interaction_values) < 10 or len(target) < 10:
+                self._log_warning("Insufficient data to compute interaction utility")
                 return 0.0
-            
+
             # Compute correlation (IC)
             ic = np.corrcoef(interaction_values, target)[0, 1]
-            
+
             if np.isnan(ic):
+                self._log_warning("Interaction utility computation produced NaN; defaulting to 0.0")
                 return 0.0
-            
-            return float(ic)
-            
+
+            ic_value = float(ic)
+            self._log_performance(f"Computed interaction utility: {ic_value:.4f}")
+            return ic_value
+
         except Exception as e:
-            self.logger.debug(f"Failed to compute interaction utility: {e}")
+            self._log_debug(f"Failed to compute interaction utility: {e}")
             return 0.0
-    
+
     def _compute_interaction_stability(self, interaction_values: np.ndarray, target: np.ndarray) -> float:
         """Compute stability score for interaction feature."""
         try:
             if len(interaction_values) < 20 or len(target) < 20:
+                self._log_warning("Insufficient data to compute interaction stability")
                 return 0.0
-            
+
             # Split data into thirds
             n = len(interaction_values)
             third = n // 3
-            
+
             if third < 5:
+                self._log_warning("Not enough samples per segment for stability computation")
                 return 0.0
             
             # Oldest third
@@ -433,23 +505,28 @@ class InteractionFeatureGenerator:
             
             # Stability score based on consistency
             if np.isnan(old_ic) or np.isnan(new_ic):
+                self._log_warning("Stability computation produced NaN values; defaulting to 0.0")
                 return 0.0
-            
+
             # Higher stability if both ICs have same sign and similar magnitude
             if old_ic * new_ic > 0:  # Same sign
                 stability = 1.0 - abs(old_ic - new_ic) / (abs(old_ic) + abs(new_ic) + 1e-6)
             else:  # Different signs
                 stability = 0.0
+                self._log_warning("Stability penalized due to inconsistent IC signs")
             
-            return max(0.0, min(1.0, stability))
-            
+            stability_score = max(0.0, min(1.0, stability))
+            self._log_performance(f"Computed interaction stability: {stability_score:.4f}")
+            return stability_score
+
         except Exception as e:
-            self.logger.debug(f"Failed to compute interaction stability: {e}")
+            self._log_debug(f"Failed to compute interaction stability: {e}")
             return 0.0
     
     def _select_best_interactions(self, interactions: List[InteractionFeature]) -> Tuple[List[InteractionFeature], List[InteractionFeature]]:
         """Select the best interactions based on utility and constraints."""
         if not interactions:
+            self._log_warning("No interactions available for selection")
             return [], []
         
         # Filter by utility threshold
@@ -466,5 +543,8 @@ class InteractionFeatureGenerator:
         rejected = sorted_interactions[self.config.max_interactions:]
         
         tprint_info(f"📊 Selected {len(selected)} interactions from {len(interactions)} candidates")
-        
+
+        if rejected:
+            self._log_warning(f"Rejected {len(rejected)} interactions due to budget constraints")
+
         return selected, rejected

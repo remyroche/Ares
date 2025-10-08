@@ -40,6 +40,12 @@ class FinalFeatureSelectionStep:
         self.config = config or {}
         self.logger = get_logger("FinalFeatureSelectionStep")
 
+        tprint("🧠 Initializing FinalFeatureSelectionStep")
+        if self.config:
+            tprint(f"   ⚙️ Provided configuration keys: {sorted(self.config.keys())}")
+        else:
+            tprint("   ⚙️ No custom configuration supplied, using defaults")
+
         # Model-specific feature count profiles
         self.model_profiles = {
             'AdvancedMambaHybrid': {
@@ -93,6 +99,9 @@ class FinalFeatureSelectionStep:
         self.logger.info("🚀 FinalFeatureSelectionStep initialized")
         self.logger.info(f"🎯 Model Type: {model_type}")
         self.logger.info(f"📊 Target Features: {profile['target_features']} (range: {profile['min_features']}-{profile['max_features']})")
+        tprint("✅ FinalFeatureSelectionStep initialization complete")
+        tprint(f"   🎯 Model Type: {model_type}")
+        tprint(f"   📊 Feature targets: {profile['stage_targets']}")
     
     @log_all_calls
     @handles_errors(Exception, fallback=False)
@@ -182,6 +191,7 @@ class FinalFeatureSelectionStep:
         """Load target data from standardized format from multi_horizon_profit_labeler."""
         try:
             self.logger.info("🎯 Loading target data from standardized format")
+            tprint("🔍 Attempting to load standardized target data artifacts")
 
             # First try to load from outcomes directory (most recent results)
             outcomes_dir = Path("outcomes")
@@ -251,6 +261,7 @@ class FinalFeatureSelectionStep:
 
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to load target data from standardized format: {e}")
+            tprint_warning(f"⚠️ Standardized target data loading failed: {e}")
             # Fallback to original method
             return await self._load_target_data(symbol, exchange, timeframe, data_dir)
 
@@ -298,8 +309,10 @@ class FinalFeatureSelectionStep:
 
     async def _load_feature_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
         """Load feature data from previous pipeline steps."""
-        
+
         try:
+            tprint("📥 Loading feature data for final selection")
+            tprint(f"   📊 Context: symbol={symbol}, exchange={exchange}, timeframe={timeframe}")
             # Try different possible file locations and formats
             possible_files = [
                 f"{symbol.lower()}_{timeframe}_features.parquet",
@@ -314,6 +327,7 @@ class FinalFeatureSelectionStep:
                 file_path = data_path / filename
                 if file_path.exists():
                     self.logger.info(f"📂 Loading feature data from: {file_path}")
+                    tprint_success(f"   📂 Found feature file: {file_path.name}")
                     data = pd.read_parquet(file_path)
 
                     # 🔧 INTEGRATE DATA CLEANING UTILITY
@@ -345,29 +359,36 @@ class FinalFeatureSelectionStep:
                         self.logger.warning(f"⚠️ Data cleaning utility not available for final feature selection: {e}")
                     except Exception as e:
                         self.logger.warning(f"⚠️ Data cleaning failed for final feature selection, proceeding with original data: {e}")
+                        tprint_warning(f"   ⚠️ Data cleaning issues encountered: {e}")
 
                     self.logger.info(f"✅ Loaded {len(data)} samples with {len(data.columns)} features")
+                    tprint_success(f"   ✅ Loaded feature data with shape {data.shape}")
                     return data
             
             # If no specific feature file found, try to load from matrix operations
             matrix_file = data_path / f"{symbol.lower()}_{timeframe}_matrix_operations.parquet"
             if matrix_file.exists():
                 self.logger.info(f"📂 Loading matrix operations data from: {matrix_file}")
+                tprint_info(f"   📂 Falling back to matrix operations file: {matrix_file.name}")
                 data = pd.read_parquet(matrix_file)
                 self.logger.info(f"✅ Loaded {len(data)} samples with {len(data.columns)} features from matrix operations")
+                tprint_success(f"   ✅ Loaded matrix operations data with shape {data.shape}")
                 return data
-            
+
             self.logger.warning("⚠️ No feature data files found")
+            tprint_warning("❌ No feature data files located for final selection")
             return None
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to load feature data: {e}")
+            tprint_error(f"❌ Feature data loading failed: {e}")
             return None
     
     async def _load_target_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.Series]:
         """Load target data if available."""
-        
+
         try:
+            tprint("📥 Attempting fallback target data load")
             # Try to load target data from labeling step
             possible_target_files = [
                 f"{symbol.lower()}_{timeframe}_labels.parquet",
@@ -381,6 +402,7 @@ class FinalFeatureSelectionStep:
                 file_path = data_path / filename
                 if file_path.exists():
                     self.logger.info(f"📂 Loading target data from: {file_path}")
+                    tprint_success(f"   📂 Found target file: {file_path.name}")
                     data = pd.read_parquet(file_path)
                     
                     # Try to find target column
@@ -395,13 +417,16 @@ class FinalFeatureSelectionStep:
                     if target_col:
                         target_data = data[target_col]
                         self.logger.info(f"✅ Loaded target data: {target_col} with {len(target_data)} samples")
+                        tprint_success(f"   ✅ Loaded target column '{target_col}' with {len(target_data)} samples")
                         return target_data
-            
+
             self.logger.info("ℹ️ No target data found - will perform unsupervised feature selection")
+            tprint_warning("⚠️ No target data located, defaulting to unsupervised selection")
             return None
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to load target data: {e}")
+            tprint_warning(f"⚠️ Target data loading encountered an error: {e}")
             return None
     
     def _prepare_data(self, feature_data: pd.DataFrame, target_data: Optional[pd.Series]) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
@@ -490,21 +515,25 @@ class FinalFeatureSelectionStep:
     
     def _run_selection_sync(self, X: pd.DataFrame, y: Optional[pd.Series]) -> Any:
         """Synchronous feature selection (to be run in thread pool)."""
-        
+
+        tprint("⚙️ Executing synchronous selection pipeline")
         # Create feature selector
         selector = MultiStageFeatureSelector(self.feature_config)
-        
+
         # Run selection
         if y is not None:
+            tprint("   🎯 Using supervised selector with provided target")
             result = selector.select_features(X, y)
         else:
             # For unsupervised selection, create a dummy target
             # This is a simplified approach - in practice, you might want to use
             # different unsupervised feature selection methods
+            tprint("   🧪 No target provided, creating proxy target for unsupervised run")
             dummy_target = X.iloc[:, 0]  # Use first feature as proxy target
             result = selector.select_features(X, dummy_target)
             result.is_unsupervised = True
-        
+
+        tprint("   ✅ Synchronous selection complete")
         return result
     
     async def _save_selection_results(self, selection_result: Any, symbol: str, exchange: str,
@@ -632,6 +661,10 @@ async def run_final_feature_selection_step(symbol: str,
                                          data_dir: str = 'historical_data',
                                          config: Optional[Dict[str, Any]] = None) -> bool:
     """Run the final feature selection step."""
-    
+
+    tprint("🚀 Invoking run_final_feature_selection_step helper")
+    tprint(f"   📊 Parameters: symbol={symbol}, exchange={exchange}, timeframe={timeframe}, data_dir={data_dir}")
     step = FinalFeatureSelectionStep(config)
+    tprint("🔄 Delegating execution to FinalFeatureSelectionStep instance")
     return await step.execute_final_feature_selection(symbol, exchange, timeframe, data_dir)
+

@@ -210,10 +210,10 @@ class BasePreTrainingComponent(ABC):
         )
 
         self._log_success(
-            "✅ Artifacts persisted",
-            event='component_artifacts_persisted',
-            artifact_names=list(report.paths.keys()),
+            f"✅ Artifacts persisted for {component_name}",
             correlation_id=report.correlation_id,
+            artifact_count=len(artifacts),
+            event='component_artifacts_persisted',
             duration=report.duration,
         )
 

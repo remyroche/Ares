@@ -558,6 +558,9 @@ class PreTrainingSubPipeline:
             'config_hash': _config_hash(),
             'data_snapshot_id': _data_snapshot_id(),
             'rng_seed': _rng_seed(),
+            'symbol': config.symbol,
+            'timeframe': config.timeframe,
+            'mode': config.mode.value,
             'host_name': socket.gethostname(),
             'start_time_utc': start_timestamp,
             'end_time_utc': None,
@@ -579,7 +582,16 @@ class PreTrainingSubPipeline:
         summary_json = json.dumps(summary, indent=2, sort_keys=True)
 
         self.logger.info('📁 Effective filesystem configuration:\n%s', summary_json)
-        tprint(f"📁 Effective filesystem configuration:\n{summary_json}")
+        self.event_logger.info(
+            "Effective filesystem configuration resolved",
+            context={
+                'run_id': self._run_metadata.get('run_id'),
+                'step': 'pipeline.configuration',
+                'symbol': config.symbol,
+                'timeframe': config.timeframe,
+                'configuration': summary,
+            },
+        )
 
     def _resolve_data_locator(self, config: SubPipelineConfig) -> DataLocator:
         """Return a data locator instance for the current run."""
@@ -1214,13 +1226,6 @@ class PreTrainingSubPipeline:
         if not step_metrics:
             return
 
-        for step_name in (
-            'multi_horizon_profit_labeler',
-            'feature_lookback_optimization',
-            'interactive_feature_generation',
-            'final_feature_selection',
-        ):
-        tprint("📈 Step duration summary:")
         for spec in self._get_ordered_step_specs(sequence_only=True):
             step_name = spec.name
             metrics = step_metrics.get(step_name)
@@ -1240,6 +1245,19 @@ class PreTrainingSubPipeline:
                 budget_text += ')'
             message = f"   {status_icon} {label}: {duration:.2f}s{budget_text}"
             self.logger.info(message)
+            self.event_logger.info(
+                "Step duration summary",
+                context={
+                    'run_id': self._run_metadata.get('run_id'),
+                    'step': f'pipeline.summary.{step_name}',
+                    'symbol': self._run_metadata.get('symbol'),
+                    'timeframe': self._run_metadata.get('timeframe'),
+                    'duration_seconds': duration,
+                    'budget_seconds': budget,
+                    'over_budget': over_budget,
+                    'over_budget_seconds': over_budget_seconds,
+                },
+            )
 
     @staticmethod
     def _get_step_display_name(step_name: str) -> str:
@@ -1797,7 +1815,16 @@ class PreTrainingSubPipeline:
                         artifacts['multi_horizon_labeling_result'] = validated_contract
                         result.artifacts = artifacts
                 except DataContractValidationError as contract_error:
-                    tprint_error(f"❌ {contract_error}")
+                    self.event_logger.error(
+                        "Contract validation error",
+                        context={
+                            'run_id': self._run_metadata.get('run_id'),
+                            'step': 'multi_horizon_profit_labeler.validation',
+                            'symbol': self._run_metadata.get('symbol'),
+                            'timeframe': self._run_metadata.get('timeframe'),
+                            'error': str(contract_error),
+                        },
+                    )
                     return self._handle_contract_error(result, 'multi_horizon_profit_labeler', contract_error)
 
                 quality_metrics, quality_alerts = self._analyze_component_quality(
@@ -2074,7 +2101,16 @@ class PreTrainingSubPipeline:
                         artifacts['interactive_feature_generation_result'] = validated_features
                         result.artifacts = artifacts
                 except DataContractValidationError as contract_error:
-                    tprint_error(f"❌ {contract_error}")
+                    self.event_logger.error(
+                        "Contract validation error",
+                        context={
+                            'run_id': self._run_metadata.get('run_id'),
+                            'step': 'interactive_feature_generation.validation',
+                            'symbol': self._run_metadata.get('symbol'),
+                            'timeframe': self._run_metadata.get('timeframe'),
+                            'error': str(contract_error),
+                        },
+                    )
                     return self._handle_contract_error(result, 'interactive_feature_generation', contract_error)
 
                 quality_metrics, quality_alerts = self._analyze_component_quality(
@@ -2320,7 +2356,16 @@ class PreTrainingSubPipeline:
                         artifacts['final_feature_selection_result'] = validated_selection
                         result.artifacts = artifacts
                 except DataContractValidationError as contract_error:
-                    tprint_error(f"❌ {contract_error}")
+                    self.event_logger.error(
+                        "Contract validation error",
+                        context={
+                            'run_id': self._run_metadata.get('run_id'),
+                            'step': 'final_feature_selection.validation',
+                            'symbol': self._run_metadata.get('symbol'),
+                            'timeframe': self._run_metadata.get('timeframe'),
+                            'error': str(contract_error),
+                        },
+                    )
                     return self._handle_contract_error(result, 'final_feature_selection', contract_error)
 
                 quality_metrics, quality_alerts = self._analyze_component_quality(
@@ -2404,21 +2449,51 @@ class PreTrainingSubPipeline:
         if not self._run_metadata:
             self._run_metadata = self._gather_run_metadata(config)
 
+        if sub_pipeline_name == 'multi_horizon_profit_labeler':
+            return await self._execute_multi_horizon_profit_labeler(config, self._run_metadata)
+        elif sub_pipeline_name == 'feature_lookback_optimization':
+            return await self._execute_feature_lookback_optimization(config, self._run_metadata)
+        elif sub_pipeline_name == 'optimized_lookback_generation':
+            return await self._execute_optimized_lookback_generation(config, self._run_metadata)
+        elif sub_pipeline_name == 'interactive_feature_generation':
+            return await self._execute_interactive_feature_generation(config, self._run_metadata)
+        elif sub_pipeline_name == 'final_feature_selection':
+            return await self._execute_final_feature_selection(config, self._run_metadata)
+
         spec = self._get_step_spec(sub_pipeline_name)
         if spec is None:
+            available = self.get_available_sub_pipelines()
             self.logger.error(f"❌ Unknown sub-pipeline requested: {sub_pipeline_name}")
-            self.logger.info(f"📋 Available sub-pipelines: {self.get_available_sub_pipelines()}")
-            tprint_error(f"❌ Unknown sub-pipeline requested: {sub_pipeline_name}")
-            tprint(f"📋 Available sub-pipelines: {self.get_available_sub_pipelines()}")
-            raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
+            self.logger.info(f"📋 Available sub-pipelines: {available}")
+            self.event_logger.error(
+                "Unknown sub-pipeline requested",
+                context={
+                    'run_id': self._run_metadata.get('run_id'),
+                    'step': 'pipeline.dispatch',
+                    'symbol': config.symbol,
+                    'timeframe': config.timeframe,
+                    'requested_sub_pipeline': sub_pipeline_name,
+                    'available_sub_pipelines': available,
+                },
+            )
 
         if not spec.enabled:
             message = (
                 f"Sub-pipeline '{sub_pipeline_name}' is currently disabled. "
                 f"Reason: {getattr(spec, 'description', 'temporarily unavailable')}"
             )
-            tprint_warning(f"⚠️ {message}")
             self.logger.warning(message)
+            self.event_logger.warning(
+                message,
+                context={
+                    'run_id': self._run_metadata.get('run_id'),
+                    'step': 'pipeline.dispatch',
+                    'symbol': config.symbol,
+                    'timeframe': config.timeframe,
+                    'requested_sub_pipeline': sub_pipeline_name,
+                    'status': 'disabled',
+                },
+            )
             raise ValueError(message)
 
         executor = getattr(self, spec.executor_method, None)
@@ -2428,8 +2503,18 @@ class PreTrainingSubPipeline:
                 f"'{spec.executor_method}'. Implement the executor or disable the step in "
                 "STEP_REGISTRY."
             )
-            tprint_error(f"❌ {message}")
             self.logger.error(message)
+            self.event_logger.error(
+                message,
+                context={
+                    'run_id': self._run_metadata.get('run_id'),
+                    'step': 'pipeline.dispatch',
+                    'symbol': config.symbol,
+                    'timeframe': config.timeframe,
+                    'requested_sub_pipeline': sub_pipeline_name,
+                    'missing_executor': spec.executor_method,
+                },
+            )
             raise RuntimeError(message)
 
         return await executor(config, self._run_metadata)

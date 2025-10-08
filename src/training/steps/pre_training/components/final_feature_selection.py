@@ -5,9 +5,7 @@ This component performs multi-stage feature selection (120→100→80→60) as t
 in the market analysis pipeline.
 """
 
-import asyncio
 import dataclasses
-import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -18,15 +16,21 @@ from .base_component import BasePreTrainingComponent, ComponentConfig, Component
 from src.training.common.artifact_persistence import SaveReport
 from src.training.common.component_result import ComponentError
 from .component_factory import register_component
-from src.utils.logger import system_logger
-from ..logging_utils import PreTrainingEventLogger, configure_pre_training_logging
 from ...market_analysis.logging_standards import (
-    get_logger, log_info, log_warning, log_error, log_success, log_debug,
-    LoggingContext, log_step_progress, log_data_info, log_validation_result
+    get_logger,
+    log_info,
+    log_warning,
+    log_error,
+    log_success,
+    log_debug,
+    LoggingContext,
+    log_step_progress,
+    log_data_info,
+    log_validation_result,
 )
 
 # Import optimized process engine
-from ...market_analysis.optimized_process_engines import OptimizedFeatureSelectionEngine, ProcessType
+from ...market_analysis.optimized_process_engines import OptimizedFeatureSelectionEngine
 from ..validation.schemas import (
     SchemaValidationException,
     schema_metadata,
@@ -38,64 +42,6 @@ from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
 from src.utils.hardware.adaptive_optimization_engine import AdaptiveOptimizationEngine
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
 from src.training.config.data_locator import DataLocator
-
-
-component_logger = system_logger.getChild('FinalFeatureSelectionComponent')
-component_event_logger = PreTrainingEventLogger(configure_pre_training_logging())
-
-
-def _prepare_context(args: tuple[Any, ...], kwargs: Dict[str, Any]) -> Dict[str, Any]:
-    context: Dict[str, Any] = {}
-    if args:
-        extra = args[0]
-        if isinstance(extra, dict):
-            context.update(extra)
-    for key, value in kwargs.items():
-        if key != 'color':
-            context[key] = value
-    context.setdefault('step', 'component.final_feature_selection')
-    context.setdefault('component', 'FinalFeatureSelection')
-    return context
-
-
-def _log_event(level: str, message: str, *args: Any, **kwargs: Any) -> None:
-    context = _prepare_context(args, kwargs)
-    if level == 'warning':
-        component_logger.warning(message)
-        component_event_logger.warning(message, context=context)
-    elif level == 'error':
-        component_logger.error(message)
-        component_event_logger.error(message, context=context)
-    elif level == 'debug':
-        component_logger.debug(message)
-        component_event_logger.info(message, context=context)
-    else:
-        component_logger.info(message)
-        component_event_logger.info(message, context=context)
-
-
-def tprint(message: str, *args: Any, **kwargs: Any) -> None:
-    _log_event('info', message, *args, **kwargs)
-
-
-def tprint_info(message: str, *args: Any, **kwargs: Any) -> None:
-    _log_event('info', message, *args, **kwargs)
-
-
-def tprint_warning(message: str, *args: Any, **kwargs: Any) -> None:
-    _log_event('warning', message, *args, **kwargs)
-
-
-def tprint_error(message: str, *args: Any, **kwargs: Any) -> None:
-    _log_event('error', message, *args, **kwargs)
-
-
-def tprint_success(message: str, *args: Any, **kwargs: Any) -> None:
-    _log_event('info', message, *args, **kwargs, status='success')
-
-
-def tprint_debug(message: str, *args: Any, **kwargs: Any) -> None:
-    _log_event('debug', message, *args, **kwargs)
 
 
 CONFIG_ROOT_ENV = "ARES_CONFIG_ROOT"
@@ -125,22 +71,34 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
         self.logger = get_logger('FinalFeatureSelectionComponent')
 
         # Initialize hardware optimization tools
-        tprint("🔧 [FinalFeatureSelection] Initializing hardware optimization tools...")
+        self._log_info(
+            "🔧 [FinalFeatureSelection] Initializing hardware optimization tools...",
+            event='final_feature_selection.initialization',
+        )
         self.memory_optimizer = get_m1_memory_optimizer(memory_limit_gb=8.0)
         self.adaptive_engine = AdaptiveOptimizationEngine()
         self.hardware_manager = UnifiedHardwareManager()
 
         # Initialize optimized process engine with hardware acceleration
-        tprint("🔧 [FinalFeatureSelection] Initializing optimized feature selection engine...")
+        self._log_info(
+            "🔧 [FinalFeatureSelection] Initializing optimized feature selection engine...",
+            event='final_feature_selection.initialization',
+        )
         self.optimized_engine = OptimizedFeatureSelectionEngine(
             use_hardware_accel=True,
             cache_size=1000
         )
-        tprint("✅ [FinalFeatureSelection] Hardware optimization tools and feature selection engine initialized")
+        self._log_success(
+            "✅ [FinalFeatureSelection] Hardware optimization tools and feature selection engine initialized",
+            event='final_feature_selection.initialization',
+        )
 
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
-        tprint("📦 [FinalFeatureSelection] Reporting required artifacts: final_feature_selection_result")
+        self._log_info(
+            "📦 [FinalFeatureSelection] Reporting required artifacts: final_feature_selection_result",
+            event='final_feature_selection.requirements',
+        )
         return ['final_feature_selection_result']
 
     def _load_model_specific_config(self, model_type: str) -> Dict[str, Any]:
@@ -153,8 +111,11 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             log_debug(
                 f"Resolving feature selection config for '{model_type}' via {config_path}"
             )
-            tprint(
-                f"🧩 [FinalFeatureSelection] Loading model-specific config for '{model_type}' from {config_path}"
+            self._log_info(
+                f"🧩 [FinalFeatureSelection] Loading model-specific config for '{model_type}' from {config_path}",
+                event='final_feature_selection.load_config',
+                model_type=model_type,
+                config_path=str(config_path),
             )
             if config_path.exists():
                 with open(config_path, 'r') as f:
@@ -170,8 +131,10 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                         log_success(
                             f"Loaded feature selection profile '{model_type}' from {config_path}"
                         )
-                        tprint(
-                            f"✅ [FinalFeatureSelection] Loaded profile '{model_type}' from YAML configuration"
+                        self._log_success(
+                            f"✅ [FinalFeatureSelection] Loaded profile '{model_type}' from YAML configuration",
+                            event='final_feature_selection.load_config',
+                            model_type=model_type,
                         )
 
                         # Map YAML config to expected format
@@ -204,8 +167,10 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 f"Could not load model-specific config for {model_type}, using defaults. "
                 f"Searched path: {config_path}"
             )
-            tprint(
-                f"⚠️ [FinalFeatureSelection] Using default configuration for '{model_type}'"
+            self._log_warning(
+                f"⚠️ [FinalFeatureSelection] Using default configuration for '{model_type}'",
+                event='final_feature_selection.load_config',
+                model_type=model_type,
             )
             return {
                 'target_features': 80,
@@ -220,8 +185,11 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 f"Error loading model-specific config for {model_type}: {e}. "
                 f"Searched path: {FEATURE_SELECTION_CONFIG_PATH}"
             )
-            tprint(
-                f"❌ [FinalFeatureSelection] Error loading config for '{model_type}': {e}. Using defaults."
+            self._log_error(
+                f"❌ [FinalFeatureSelection] Error loading config for '{model_type}': {e}. Using defaults.",
+                event='final_feature_selection.load_config',
+                model_type=model_type,
+                error=str(e),
             )
             return {
                 'target_features': 80,
@@ -243,7 +211,10 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             ComponentResult with feature selection results
         """
         log_info('🎯 Starting Final Feature Selection')
-        tprint('🚀 [FinalFeatureSelection] Starting execute routine')
+        self._log_info(
+            '🚀 [FinalFeatureSelection] Starting execute routine',
+            event='final_feature_selection.execute',
+        )
         validation_metadata: Dict[str, Dict[str, Optional[Dict[str, str]]]] = {
             'inputs': {},
             'outputs': {},
@@ -278,14 +249,20 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             if memory_pressure > 0.75:
                 log_warning(f'🧠 High memory pressure detected ({memory_pressure:.2f}), applying memory optimizations')
                 self.memory_optimizer._apply_memory_optimizations()
-                tprint(
-                    f"🧠 [FinalFeatureSelection] High memory pressure detected ({memory_pressure:.2f}); optimizations applied"
+                self._log_warning(
+                    f"🧠 [FinalFeatureSelection] High memory pressure detected ({memory_pressure:.2f}); optimizations applied",
+                    event='final_feature_selection.memory_optimization',
+                    memory_pressure=memory_pressure,
                 )
 
             # Get optimal hardware configuration for feature selection
             hardware_config = self.hardware_manager.get_optimal_config('feature_selection')
             log_debug(f'📊 Hardware configuration: {hardware_config}')
-            tprint(f'🛠️ [FinalFeatureSelection] Hardware configuration resolved: {hardware_config}')
+            self._log_info(
+                f'🛠️ [FinalFeatureSelection] Hardware configuration resolved: {hardware_config}',
+                event='final_feature_selection.hardware',
+                hardware_config=hardware_config,
+            )
 
             # Adapt optimization strategy based on current conditions
             adaptive_strategy = self.adaptive_engine.get_optimal_strategy('feature_selection', {
@@ -293,7 +270,11 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 'hardware_config': hardware_config
             })
             log_debug(f'🎯 Adaptive strategy: {adaptive_strategy}')
-            tprint(f'🎯 [FinalFeatureSelection] Adaptive strategy selected: {adaptive_strategy}')
+            self._log_info(
+                f'🎯 [FinalFeatureSelection] Adaptive strategy selected: {adaptive_strategy}',
+                event='final_feature_selection.strategy',
+                adaptive_strategy=adaptive_strategy,
+            )
 
             # Import the final feature selection step
             from ..final_feature_selection_step import run_final_feature_selection_step
@@ -349,9 +330,14 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             if output_directory_override is None:
                 output_directory_override = pipeline_state.get('generated_dir')
 
-            tprint(
+            self._log_info(
                 "📥 [FinalFeatureSelection] Resolved execution context "
-                f"symbol={symbol}, exchange={exchange}, timeframe={timeframe}, data_dir={data_dir}"
+                f"symbol={symbol}, exchange={exchange}, timeframe={timeframe}, data_dir={data_dir}",
+                event='final_feature_selection.context',
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                data_dir=data_dir,
             )
 
             # Resolve the model profile for feature selection from config or pipeline state
@@ -365,9 +351,11 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
 
             # Load model-specific configuration with hardware optimizations
             final_feature_selection_config = self._load_model_specific_config(model_type)
-            tprint(
+            self._log_info(
                 "🧾 [FinalFeatureSelection] Final feature selection config prepared: "
-                f"{final_feature_selection_config}"
+                f"{final_feature_selection_config}",
+                event='final_feature_selection.config_ready',
+                model_type=model_type,
             )
 
             if model_type != 'default':
@@ -387,7 +375,10 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
 
             # Execute final feature selection with hardware optimization
             log_info(f'🚀 Executing feature selection with hardware optimizations...')
-            tprint('🚀 [FinalFeatureSelection] Executing feature selection step')
+            self._log_info(
+                '🚀 [FinalFeatureSelection] Executing feature selection step',
+                event='final_feature_selection.execute',
+            )
             runtime_config = dict(final_feature_selection_config)
             runtime_config['data_dir_key'] = data_dir_key
             runtime_config['final_features_dir_key'] = final_features_dir_key
@@ -442,14 +433,19 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
 
                 log_success(f'✅ Final feature selection completed successfully with hardware optimizations')
                 log_info(f'📊 Performance metrics: {performance_metrics}')
-                tprint(
+                self._log_success(
                     "✅ [FinalFeatureSelection] Feature selection succeeded with metrics "
-                    f"{performance_metrics}"
+                    f"{performance_metrics}",
+                    event='final_feature_selection.result',
+                    metrics=performance_metrics,
                 )
 
                 # Clean up memory after processing
                 self.memory_optimizer._light_memory_cleanup()
-                tprint('🧹 [FinalFeatureSelection] Performed post-execution memory cleanup')
+                self._log_info(
+                    '🧹 [FinalFeatureSelection] Performed post-execution memory cleanup',
+                    event='final_feature_selection.cleanup',
+                )
 
                 # Save artifacts persistently using the artifact manager
                 persistence_error: Optional[str] = None
@@ -471,19 +467,28 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                         log_success(
                             f"💾 [FINAL_FEATURE_SELECTION] Artifacts saved persistently (correlation_id={save_report.correlation_id}): {list(save_report.paths.keys())}"
                         )
-                        tprint(
-                            "💾 [FinalFeatureSelection] Artifacts saved successfully: "
-                            f"{list(save_report.paths.keys())}"
+                        self._log_success(
+                            "💾 [FinalFeatureSelection] Artifacts saved successfully",
+                            event='final_feature_selection.artifacts',
+                            artifact_keys=list(save_report.paths.keys()),
+                            correlation_id=save_report.correlation_id,
                         )
                     else:
                         log_error("❌ [FINAL_FEATURE_SELECTION] Artifact manager returned no file paths")
-                        tprint("❌ [FinalFeatureSelection] Failed to persist artifacts: no file paths returned")
+                        self._log_error(
+                            "❌ [FinalFeatureSelection] Failed to persist artifacts: no file paths returned",
+                            event='final_feature_selection.artifacts',
+                        )
 
                 except Exception as e:
                     persistence_error = str(e)
                     failure_reason = f"Artifact saving failed: {e}"
                     log_warning(f"⚠️ [FINAL_FEATURE_SELECTION] Exception while saving artifacts persistently: {e}")
-                    tprint(f"⚠️ [FinalFeatureSelection] Artifact save error: {e}")
+                    self._log_warning(
+                        f"⚠️ [FinalFeatureSelection] Artifact save error: {e}",
+                        event='final_feature_selection.artifacts',
+                        error=str(e),
+                    )
 
                 component_success = success and artifacts_saved_persistently
 
@@ -515,11 +520,18 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 )
             else:
                 log_error('Final feature selection failed')
-                tprint('❌ [FinalFeatureSelection] Feature selection execution returned failure')
+                self._log_error(
+                    '❌ [FinalFeatureSelection] Feature selection execution returned failure',
+                    event='final_feature_selection.result',
+                )
 
                 # Clean up memory even on failure
                 self.memory_optimizer._light_memory_cleanup()
-                tprint('🧹 [FinalFeatureSelection] Memory cleanup performed after failure')
+                self._log_info(
+                    '🧹 [FinalFeatureSelection] Memory cleanup performed after failure',
+                    event='final_feature_selection.cleanup',
+                    status='post_failure',
+                )
 
                 failure_message = "Final feature selection execution failed"
                 return ComponentResult(
@@ -542,7 +554,11 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
         except SchemaValidationException as schema_error:
             error_message = str(schema_error)
             log_error(f'Final feature selection schema validation failed: {error_message}')
-            tprint(f'❌ [FinalFeatureSelection] Schema validation error: {error_message}')
+            self._log_error(
+                f'❌ [FinalFeatureSelection] Schema validation error: {error_message}',
+                event='final_feature_selection.validation',
+                error=error_message,
+            )
             return ComponentResult(
                 success=False,
                 artifacts={},
@@ -561,14 +577,26 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
 
         except Exception as e:
             log_error(f'Final feature selection failed with exception: {e}')
-            tprint(f'❌ [FinalFeatureSelection] Exception during execution: {e}')
+            self._log_error(
+                f'❌ [FinalFeatureSelection] Exception during execution: {e}',
+                event='final_feature_selection.result',
+                error=str(e),
+            )
 
             # Clean up memory on exception
             try:
                 self.memory_optimizer._light_memory_cleanup()
-                tprint('🧹 [FinalFeatureSelection] Memory cleanup performed after exception')
+                self._log_info(
+                    '🧹 [FinalFeatureSelection] Memory cleanup performed after exception',
+                    event='final_feature_selection.cleanup',
+                    status='post_exception',
+                )
             except Exception as cleanup_error:
-                tprint(f'⚠️ [FinalFeatureSelection] Memory cleanup failed (non-critical): {cleanup_error}')
+                self._log_warning(
+                    f'⚠️ [FinalFeatureSelection] Memory cleanup failed (non-critical): {cleanup_error}',
+                    event='final_feature_selection.cleanup',
+                    error=str(cleanup_error),
+                )
 
             failure_message = str(e)
             return ComponentResult(
@@ -592,10 +620,22 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
         """Clean up hardware optimization resources."""
         try:
             log_info('🧹 Cleaning up hardware optimization resources...')
-            tprint('🧹 [FinalFeatureSelection] Cleanup initiated')
+            self._log_info(
+                '🧹 [FinalFeatureSelection] Cleanup initiated',
+                event='final_feature_selection.cleanup',
+                phase='start',
+            )
             self.memory_optimizer._light_memory_cleanup()
             log_info('✅ Hardware optimization resources cleaned up')
-            tprint('✅ [FinalFeatureSelection] Cleanup completed')
+            self._log_success(
+                '✅ [FinalFeatureSelection] Cleanup completed',
+                event='final_feature_selection.cleanup',
+                phase='complete',
+            )
         except Exception as e:
             log_warning(f'⚠️ Error during hardware cleanup: {e}')
-            tprint(f'⚠️ [FinalFeatureSelection] Cleanup encountered an error: {e}')
+            self._log_warning(
+                f'⚠️ [FinalFeatureSelection] Cleanup encountered an error: {e}',
+                event='final_feature_selection.cleanup',
+                error=str(e),
+            )

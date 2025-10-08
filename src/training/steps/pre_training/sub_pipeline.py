@@ -21,6 +21,13 @@ import pandas as pd
 import numpy as np
 import json
 
+DEFAULT_STEP_TIME_BUDGETS: Dict[str, float] = {
+    'multi_horizon_profit_labeler': 600.0,
+    'feature_lookback_optimization': 900.0,
+    'interactive_feature_generation': 1200.0,
+    'final_feature_selection': 600.0,
+}
+
 try:  # pragma: no cover - platform specific import
     import resource
 except ImportError:  # pragma: no cover
@@ -93,6 +100,7 @@ class SubPipelineConfig:
     metrics_output_path: Optional[str] = None
     metrics_output_format: str = "csv"
     metrics_prometheus_enabled: bool = False
+    step_time_budgets: Dict[str, float] = field(default_factory=lambda: DEFAULT_STEP_TIME_BUDGETS.copy())
     """
     Metrics capture configuration.
 
@@ -164,6 +172,9 @@ class PreTrainingSubPipeline:
             'completed_steps': 0,
             'results': {},
             'error_message': None,
+            'metrics': {
+                'steps': {},
+            },
         }
 
         try:
@@ -171,6 +182,7 @@ class PreTrainingSubPipeline:
             tprint("🎯 Step 1: Multi-Horizon Profit Labeler")
             self.logger.info('🎯 Step 1: Multi-Horizon Profit Labeler')
             mh_result = await self._execute_multi_horizon_profit_labeler(config)
+            self._capture_step_timing_metrics('multi_horizon_profit_labeler', mh_result, config, results)
             if mh_result.success:
                 results['completed_steps'] += 1
             self._record_step_metrics('multi_horizon_profit_labeler', mh_result, results, metrics_sink, step_metric_records)
@@ -178,6 +190,7 @@ class PreTrainingSubPipeline:
                 tprint(f"❌ Multi-horizon profit labeling failed: {mh_result.error_message}")
                 self.logger.error(f'❌ Multi-horizon profit labeling failed: {mh_result.error_message}')
                 results['error_message'] = mh_result.error_message
+                self._log_step_timing_summary(results)
                 return self._finalize_results(results, start_time, metrics_sink, step_metric_records)
 
             tprint(f"✅ Multi-horizon profit labeling completed for {config.symbol}")
@@ -192,16 +205,19 @@ class PreTrainingSubPipeline:
                 else:
                     tprint_error("❌ Multi-horizon labeling artifact validation failed: labeled_data is empty or invalid")
                     results['error_message'] = "Multi-horizon labeling artifact validation failed"
+                    self._log_step_timing_summary(results)
                     return self._finalize_results(results, start_time, metrics_sink, step_metric_records)
             else:
                 tprint_error("❌ Multi-horizon labeling artifact validation failed: missing 'multi_horizon_labeling_result'")
                 results['error_message'] = "Missing multi_horizon_labeling_result artifact"
+                self._log_step_timing_summary(results)
                 return self._finalize_results(results, start_time, metrics_sink, step_metric_records)
 
             # Step 2: Feature Lookback Optimization
             tprint("⚙️ Step 2: Feature Lookback Optimization")
             self.logger.info('⚙️ Step 2: Feature Lookback Optimization')
             flo_result = await self._execute_feature_lookback_optimization(config)
+            self._capture_step_timing_metrics('feature_lookback_optimization', flo_result, config, results)
             if flo_result.success:
                 results['completed_steps'] += 1
             self._record_step_metrics('feature_lookback_optimization', flo_result, results, metrics_sink, step_metric_records)
@@ -209,6 +225,7 @@ class PreTrainingSubPipeline:
                 tprint(f"❌ Feature lookback optimization failed: {flo_result.error_message}")
                 self.logger.error(f'❌ Feature lookback optimization failed: {flo_result.error_message}')
                 results['error_message'] = flo_result.error_message
+                self._log_step_timing_summary(results)
                 return self._finalize_results(results, start_time, metrics_sink, step_metric_records)
 
             tprint(f"✅ Feature lookback optimization completed for {config.symbol}")
@@ -228,6 +245,7 @@ class PreTrainingSubPipeline:
             tprint("🔧 Step 3: Interactive Feature Generation")
             self.logger.info('🔧 Step 3: Interactive Feature Generation')
             interactive_result = await self._execute_interactive_feature_generation(config)
+            self._capture_step_timing_metrics('interactive_feature_generation', interactive_result, config, results)
             if interactive_result.success:
                 results['completed_steps'] += 1
             self._record_step_metrics('interactive_feature_generation', interactive_result, results, metrics_sink, step_metric_records)
@@ -235,6 +253,7 @@ class PreTrainingSubPipeline:
                 tprint(f"❌ Interactive feature generation failed: {interactive_result.error_message}")
                 self.logger.error(f'❌ Interactive feature generation failed: {interactive_result.error_message}')
                 results['error_message'] = interactive_result.error_message
+                self._log_step_timing_summary(results)
                 return self._finalize_results(results, start_time, metrics_sink, step_metric_records)
 
             tprint(f"✅ Interactive feature generation completed for {config.symbol}")
@@ -254,6 +273,7 @@ class PreTrainingSubPipeline:
             tprint("🎯 Step 4: Final Feature Selection")
             self.logger.info('🎯 Step 4: Final Feature Selection')
             ffs_result = await self._execute_final_feature_selection(config)
+            self._capture_step_timing_metrics('final_feature_selection', ffs_result, config, results)
             if ffs_result.success:
                 results['completed_steps'] += 1
             self._record_step_metrics('final_feature_selection', ffs_result, results, metrics_sink, step_metric_records)
@@ -261,6 +281,7 @@ class PreTrainingSubPipeline:
                 tprint(f"❌ Final feature selection failed: {ffs_result.error_message}")
                 self.logger.error(f'❌ Final feature selection failed: {ffs_result.error_message}')
                 results['error_message'] = ffs_result.error_message
+                self._log_step_timing_summary(results)
                 return self._finalize_results(results, start_time, metrics_sink, step_metric_records)
 
             tprint(f"✅ Final feature selection completed for {config.symbol}")
@@ -290,6 +311,7 @@ class PreTrainingSubPipeline:
             tprint(f"   ⚙️ Feature optimization: ✅ Complete")
             tprint(f"   🔧 Roadmap features: ✅ Complete")
             tprint(f"   🎯 Final selection: ✅ Complete")
+            self._log_step_timing_summary(results)
 
             self.logger.info(f'🎉 Pre-Training Sub-Pipeline completed successfully in {results["execution_time"]:.2f}s')
 
@@ -379,6 +401,99 @@ class PreTrainingSubPipeline:
         step_metric_records.append(record)
         metrics_sink.write(record)
 
+    def _capture_step_timing_metrics(
+        self,
+        step_name: str,
+        result: SubPipelineResult,
+        config: SubPipelineConfig,
+        pipeline_results: Dict[str, Any],
+    ) -> None:
+        duration = result.duration_seconds or 0.0
+        budget = self._get_step_budget(config, step_name)
+        over_budget_seconds = 0.0
+        over_budget = False
+
+        if budget is not None and duration > budget:
+            over_budget = True
+            over_budget_seconds = duration - budget
+            warning_message = (
+                f"⚠️ Step '{step_name}' duration {duration:.2f}s exceeded budget {budget:.2f}s by {over_budget_seconds:.2f}s"
+            )
+            tprint_warning(warning_message)
+            self.logger.warning(warning_message)
+
+        result.metadata.setdefault('timing', {})
+        result.metadata['timing'].update(
+            {
+                'duration_seconds': duration,
+                'budget_seconds': budget,
+                'over_budget_seconds': over_budget_seconds,
+                'over_budget': over_budget,
+            }
+        )
+        if over_budget:
+            result.metadata.setdefault('timing_alerts', []).append(
+                {
+                    'message': warning_message,
+                    'over_budget_seconds': over_budget_seconds,
+                }
+            )
+
+        pipeline_results.setdefault('metrics', {}).setdefault('steps', {})[step_name] = {
+            'duration_seconds': duration,
+            'budget_seconds': budget,
+            'over_budget_seconds': over_budget_seconds,
+            'over_budget': over_budget,
+        }
+
+    @staticmethod
+    def _get_step_budget(config: SubPipelineConfig, step_name: str) -> Optional[float]:
+        budgets = config.step_time_budgets or {}
+        if step_name in budgets:
+            return budgets[step_name]
+        return DEFAULT_STEP_TIME_BUDGETS.get(step_name)
+
+    def _log_step_timing_summary(self, pipeline_results: Dict[str, Any]) -> None:
+        step_metrics = pipeline_results.get('metrics', {}).get('steps', {})
+        if not step_metrics:
+            return
+
+        tprint("📈 Step duration summary:")
+        for step_name in (
+            'multi_horizon_profit_labeler',
+            'feature_lookback_optimization',
+            'interactive_feature_generation',
+            'final_feature_selection',
+        ):
+            metrics = step_metrics.get(step_name)
+            if not metrics:
+                continue
+            label = self._get_step_display_name(step_name)
+            duration = metrics.get('duration_seconds') or 0.0
+            budget = metrics.get('budget_seconds')
+            over_budget = metrics.get('over_budget')
+            over_budget_seconds = metrics.get('over_budget_seconds') or 0.0
+            status_icon = '⚠️' if over_budget else '✅'
+            budget_text = ''
+            if budget is not None:
+                budget_text = f" (budget {budget:.2f}s"
+                if over_budget:
+                    budget_text += f", over by {over_budget_seconds:.2f}s"
+                budget_text += ')'
+            message = f"   {status_icon} {label}: {duration:.2f}s{budget_text}"
+            tprint(message)
+            self.logger.info(message)
+
+    @staticmethod
+    def _get_step_display_name(step_name: str) -> str:
+        display_names = {
+            'multi_horizon_profit_labeler': 'Multi-horizon labeling',
+            'feature_lookback_optimization': 'Feature optimization',
+            'interactive_feature_generation': 'Interactive feature generation',
+            'final_feature_selection': 'Final feature selection',
+        }
+        return display_names.get(step_name, step_name)
+
     def _emit_pipeline_metrics(
         self,
         metrics_sink: MetricsSink,
@@ -443,6 +558,7 @@ class PreTrainingSubPipeline:
     ) -> PipelineResultDict:
         end_time = end_time or datetime.now()
         results['execution_time'] = (end_time - start_time).total_seconds()
+        results.setdefault('metrics', {})['total_execution_time'] = results['execution_time']
         if metrics_sink is not None:
             self._emit_pipeline_metrics(metrics_sink, step_metric_records, results)
         return results

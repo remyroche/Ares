@@ -21,6 +21,35 @@ from sklearn.linear_model import Ridge
 import warnings
 warnings.filterwarnings('ignore')
 
+# Import tprint utilities for structured logging while remaining compatible with
+# environments where the enhanced printer is unavailable.
+try:
+    from src.utils.tprint import (
+        tprint,
+        tprint_debug,
+        tprint_info,
+        tprint_warning,
+        tprint_error,
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:  # pragma: no cover - fallback for isolated test execution
+    TPRINT_AVAILABLE = False
+
+    def tprint(*args, **kwargs):  # type: ignore
+        print(*args, **kwargs)
+
+    def tprint_debug(*args, **kwargs):  # type: ignore
+        print("DEBUG:", *args, **kwargs)
+
+    def tprint_info(*args, **kwargs):  # type: ignore
+        print("INFO:", *args, **kwargs)
+
+    def tprint_warning(*args, **kwargs):  # type: ignore
+        print("WARNING:", *args, **kwargs)
+
+    def tprint_error(*args, **kwargs):  # type: ignore
+        print("ERROR:", *args, **kwargs)
+
 from .staleness_curve import StalenessCurveCalculator
 from .config import ScoringConfig, SessionConfig
 
@@ -49,6 +78,13 @@ class UncertaintyEstimator:
         self.n_bootstrap = n_bootstrap
         self.block_size = block_size
         self.logger = logging.getLogger(__name__)
+        tprint_debug(
+            "Initialized UncertaintyEstimator",
+            {
+                "n_bootstrap": self.n_bootstrap,
+                "block_size": self.block_size,
+            },
+        )
     
     def estimate_wild_bootstrap_se(self, 
                                  feature: pd.Series, 
@@ -66,26 +102,43 @@ class UncertaintyEstimator:
             Wild bootstrap standard error
         """
         if len(feature) < 10:
+            tprint_warning(
+                "[UncertaintyEstimator] Insufficient samples for wild bootstrap; using default.",
+                {"length": len(feature)},
+            )
             return 1.0
-        
+
         # Align data
         aligned_data = pd.DataFrame({
             'feature': feature,
             'target': target
         }).dropna()
-        
+
         if len(aligned_data) < 10:
+            tprint_warning(
+                "[UncertaintyEstimator] Insufficient aligned samples for wild bootstrap; using default.",
+                {"length": len(aligned_data)},
+            )
             return 1.0
-        
+
         feature_vals = aligned_data['feature'].values
         target_vals = aligned_data['target'].values
-        
+
         # Calculate original IC
         original_ic = np.corrcoef(feature_vals, target_vals)[0, 1]
-        
+
         # Wild bootstrap with Rademacher weights
         bootstrap_ics = []
-        
+
+        tprint_debug(
+            "[UncertaintyEstimator] Starting wild bootstrap estimation",
+            {
+                "samples": len(feature_vals),
+                "regime_segments": bool(regime_segments),
+                "original_ic": float(original_ic) if not np.isnan(original_ic) else None,
+            },
+        )
+
         for _ in range(self.n_bootstrap):
             # Generate Rademacher weights
             weights = np.random.choice([-1, 1], size=len(feature_vals))
@@ -109,9 +162,18 @@ class UncertaintyEstimator:
                 continue
         
         if not bootstrap_ics:
+            tprint_warning(
+                "[UncertaintyEstimator] Wild bootstrap produced no valid samples; using default.",
+                {"iterations": self.n_bootstrap},
+            )
             return 1.0
-        
-        return np.std(bootstrap_ics)
+
+        se = float(np.std(bootstrap_ics))
+        tprint_debug(
+            "[UncertaintyEstimator] Wild bootstrap SE computed",
+            {"se": se, "valid_iterations": len(bootstrap_ics)},
+        )
+        return se
     
     def estimate_stationary_bootstrap_se(self, 
                                        feature: pd.Series, 
@@ -129,6 +191,10 @@ class UncertaintyEstimator:
             Stationary bootstrap standard error
         """
         if len(feature) < 20:
+            tprint_warning(
+                "[UncertaintyEstimator] Insufficient samples for stationary bootstrap; using default.",
+                {"length": len(feature)},
+            )
             return 1.0
         
         # Align data
@@ -138,6 +204,10 @@ class UncertaintyEstimator:
         }).dropna()
         
         if len(aligned_data) < 20:
+            tprint_warning(
+                "[UncertaintyEstimator] Insufficient aligned samples for stationary bootstrap; using default.",
+                {"length": len(aligned_data)},
+            )
             return 1.0
         
         feature_vals = aligned_data['feature'].values
@@ -146,13 +216,22 @@ class UncertaintyEstimator:
         # Auto-determine block size if not provided
         if block_size is None:
             block_size = max(5, int(np.sqrt(len(feature_vals))))
-        
+
         # Calculate original IC
         original_ic = np.corrcoef(feature_vals, target_vals)[0, 1]
-        
+
         # Stationary block bootstrap
         bootstrap_ics = []
-        
+
+        tprint_debug(
+            "[UncertaintyEstimator] Starting stationary bootstrap estimation",
+            {
+                "samples": len(feature_vals),
+                "block_size": block_size,
+                "original_ic": float(original_ic) if not np.isnan(original_ic) else None,
+            },
+        )
+
         for _ in range(self.n_bootstrap):
             # Generate bootstrap sample
             bootstrap_feature, bootstrap_target = self._stationary_bootstrap(
@@ -168,9 +247,18 @@ class UncertaintyEstimator:
                 continue
         
         if not bootstrap_ics:
+            tprint_warning(
+                "[UncertaintyEstimator] Stationary bootstrap produced no valid samples; using default.",
+                {"iterations": self.n_bootstrap},
+            )
             return 1.0
-        
-        return np.std(bootstrap_ics)
+
+        se = float(np.std(bootstrap_ics))
+        tprint_debug(
+            "[UncertaintyEstimator] Stationary bootstrap SE computed",
+            {"se": se, "valid_iterations": len(bootstrap_ics)},
+        )
+        return se
     
     def _apply_regime_aware_weights(self, 
                                   feature_vals: np.ndarray,
@@ -213,9 +301,10 @@ class CostEstimator:
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-    
-    def estimate_cpu_cost(self, 
-                         lookback: int, 
+        tprint_debug("Initialized CostEstimator")
+
+    def estimate_cpu_cost(self,
+                         lookback: int,
                          family: str,
                          feature_type: str = 'htf') -> float:
         """
@@ -248,15 +337,34 @@ class CostEstimator:
         base_cost = base_costs.get(feature_type, 0.01)
         multiplier = family_multipliers.get(family, 1.0)
         
-        return base_cost * lookback * multiplier
-    
-    def estimate_memory_cost(self, 
-                           lookback: int, 
+        estimated_cost = float(base_cost * lookback * multiplier)
+        tprint_debug(
+            "[CostEstimator] Estimated CPU cost",
+            {
+                "lookback": lookback,
+                "family": family,
+                "feature_type": feature_type,
+                "cost_ms": estimated_cost,
+            },
+        )
+        return estimated_cost
+
+    def estimate_memory_cost(self,
+                           lookback: int,
                            family: str) -> float:
         """Estimate memory cost in MB."""
         # Simplified memory estimation
         base_memory = 0.001  # MB per minute
-        return base_memory * lookback
+        estimated_memory = float(base_memory * lookback)
+        tprint_debug(
+            "[CostEstimator] Estimated memory cost",
+            {
+                "lookback": lookback,
+                "family": family,
+                "memory_mb": estimated_memory,
+            },
+        )
+        return estimated_memory
 
 
 class StalenessCalculator:
@@ -265,6 +373,7 @@ class StalenessCalculator:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.curve_calculator = StalenessCurveCalculator()
+        tprint_debug("Initialized StalenessCalculator")
 
     def calculate_staleness(self,
                           lookback: int,
@@ -281,11 +390,24 @@ class StalenessCalculator:
         Returns:
             Staleness score (0-1, higher = more stale)
         """
+        tprint_debug(
+            "[StalenessCalculator] Calculating staleness",
+            {
+                "lookback": lookback,
+                "family": family,
+                "base_timeframe": base_timeframe,
+            },
+        )
+
         summary = self.curve_calculator.get_summary(
             feature_name=f"family::{family}",
             family=family,
             lookback=lookback,
             base_timeframe=base_timeframe,
+        )
+        tprint_debug(
+            "[StalenessCalculator] Staleness summary retrieved",
+            {"at_base": summary.at_base},
         )
         return summary.at_base
 
@@ -308,8 +430,18 @@ class MetaLearner:
         # Performance history
         self.performance_history = []
         self.penalty_history = []
-    
-    def update_penalties(self, 
+        tprint_info(
+            "Initialized MetaLearner",
+            {
+                "lambda_unc": self.lambda_unc,
+                "lambda_cost": self.lambda_cost,
+                "lambda_stale": self.lambda_stale,
+                "learning_rate": self.learning_rate,
+                "adaptation_range": self.adaptation_range,
+            },
+        )
+
+    def update_penalties(self,
                         recent_performance: List[Dict[str, Any]],
                         market_state: Dict[str, Any]) -> Dict[str, float]:
         """
@@ -323,17 +455,39 @@ class MetaLearner:
             Updated penalty parameters
         """
         if not recent_performance:
+            tprint_warning(
+                "[MetaLearner] No recent performance provided; retaining current penalties.",
+                self._get_current_penalties(),
+            )
             return self._get_current_penalties()
-        
+
         # Analyze recent performance
         avg_ic = np.mean([p.get('ic_oos', 0) for p in recent_performance])
         avg_uncertainty = np.mean([p.get('se_wild_bootstrap', 1) for p in recent_performance])
         avg_cost = np.mean([p.get('cpu_p95', 0) for p in recent_performance])
         avg_staleness = np.mean([p.get('staleness', 0) for p in recent_performance])
-        
+
+        tprint_debug(
+            "[MetaLearner] Aggregated recent performance",
+            {
+                "avg_ic": float(avg_ic),
+                "avg_uncertainty": float(avg_uncertainty),
+                "avg_cost": float(avg_cost),
+                "avg_staleness": float(avg_staleness),
+            },
+        )
+
         # Market state adjustments
         vol_level = market_state.get('volatility_level', 0.5)
         news_proximity = market_state.get('news_proximity', 0.0)
+
+        tprint_debug(
+            "[MetaLearner] Market state inputs",
+            {
+                "volatility_level": vol_level,
+                "news_proximity": news_proximity,
+            },
+        )
         
         # Adjust penalties based on performance and market state
         if avg_ic < 0.05:  # Low IC, increase uncertainty penalty
@@ -357,7 +511,13 @@ class MetaLearner:
         
         self.penalty_history.append(self._get_current_penalties())
 
-        return self._get_current_penalties()
+        updated_penalties = self._get_current_penalties()
+        tprint_info(
+            "[MetaLearner] Updated penalties",
+            updated_penalties,
+        )
+
+        return updated_penalties
 
     def _get_current_penalties(self) -> Dict[str, float]:
         """Get current penalty parameters."""
@@ -377,6 +537,10 @@ class MetaLearner:
             self.lambda_stale = float(penalties['lambda_stale'])
 
         self.penalty_history.append(self._get_current_penalties())
+        tprint_info(
+            "[MetaLearner] Penalties set externally",
+            self._get_current_penalties(),
+        )
 
 
 class AdaptiveScoringSystem:
@@ -399,6 +563,15 @@ class AdaptiveScoringSystem:
         self.meta_learner.lambda_unc = scoring_config.lambda_unc
         self.meta_learner.lambda_cost = scoring_config.lambda_cost
         self.meta_learner.lambda_stale = scoring_config.lambda_stale
+        tprint_info(
+            "Initialized AdaptiveScoringSystem",
+            {
+                "lambda_unc": self.lambda_unc,
+                "lambda_cost": self.lambda_cost,
+                "lambda_stale": self.lambda_stale,
+                "meta_learning_range": scoring_config.meta_learning_range,
+            },
+        )
     
     def score_feature_candidate(self, 
                               feature: pd.Series,
@@ -428,11 +601,31 @@ class AdaptiveScoringSystem:
         }).dropna()
         
         if len(aligned_data) < 10:
-            return self._create_empty_result(feature.name if hasattr(feature, 'name') else 'unknown', 
+            tprint_warning(
+                "[AdaptiveScoringSystem] Not enough aligned samples to score feature; returning empty result.",
+                {
+                    "feature": feature.name if hasattr(feature, 'name') else 'unknown',
+                    "lookback": lookback,
+                    "regime": regime,
+                    "length": len(aligned_data),
+                },
+            )
+            return self._create_empty_result(feature.name if hasattr(feature, 'name') else 'unknown',
                                            lookback, regime)
-        
+
         feature_vals = aligned_data['feature'].values
         target_vals = aligned_data['target'].values
+
+        tprint_info(
+            "[AdaptiveScoringSystem] Scoring feature candidate",
+            {
+                "feature": feature.name if hasattr(feature, 'name') else 'unknown',
+                "lookback": lookback,
+                "family": family,
+                "regime": regime,
+                "samples": len(aligned_data),
+            },
+        )
         
         # Calculate IC
         ic_oos = np.corrcoef(feature_vals, target_vals)[0, 1]
@@ -467,10 +660,23 @@ class AdaptiveScoringSystem:
         utility_score = self._calculate_utility_score(
             ic_oos, se_wild_bootstrap, cpu_p95, staleness, penalties
         )
-        
+
         # Calculate regime weight
         regime_weight = self._calculate_regime_weight(regime, regime_segments)
-        
+
+        tprint_debug(
+            "[AdaptiveScoringSystem] Computed scoring components",
+            {
+                "ic_oos": float(ic_oos),
+                "se_wild": float(se_wild_bootstrap),
+                "cpu_p95": float(cpu_p95),
+                "staleness": float(staleness),
+                "utility_score": float(utility_score),
+                "fold_pass_rate": float(fold_pass_rate),
+                "regime_weight": float(regime_weight),
+            },
+        )
+
         return ScoringResult(
             feature_name=feature.name if hasattr(feature, 'name') else 'unknown',
             lookback=lookback,
@@ -524,10 +730,24 @@ class AdaptiveScoringSystem:
                                staleness: float,
                                penalties: Dict[str, float]) -> float:
         """Calculate utility score with penalties."""
-        return (ic_oos -
-                penalties['lambda_unc'] * se_wild_bootstrap -
-                penalties['lambda_cost'] * cpu_p95 -
-                penalties['lambda_stale'] * staleness)
+        utility = (
+            ic_oos -
+            penalties['lambda_unc'] * se_wild_bootstrap -
+            penalties['lambda_cost'] * cpu_p95 -
+            penalties['lambda_stale'] * staleness
+        )
+        tprint_debug(
+            "[AdaptiveScoringSystem] Utility score computed",
+            {
+                "ic_oos": float(ic_oos),
+                "se_wild_bootstrap": float(se_wild_bootstrap),
+                "cpu_p95": float(cpu_p95),
+                "staleness": float(staleness),
+                "penalties": penalties,
+                "utility": float(utility),
+            },
+        )
+        return utility
 
     def calculate_utility_score(self,
                                 ic_oos: float,
@@ -536,13 +756,21 @@ class AdaptiveScoringSystem:
                                 staleness: float) -> float:
         """Public helper to calculate utility using current adaptive penalties."""
         penalties = self.get_current_penalties()
-        return self._calculate_utility_score(
+        utility = self._calculate_utility_score(
             ic_oos=ic_oos,
             se_wild_bootstrap=se_wild_bootstrap,
             cpu_p95=cpu_p95,
             staleness=staleness,
             penalties=penalties,
         )
+        tprint_info(
+            "[AdaptiveScoringSystem] Calculated utility score with current penalties",
+            {
+                "utility": float(utility),
+                "penalties": penalties,
+            },
+        )
+        return utility
     
     def _calculate_regime_weight(self, 
                                regime: str, 
@@ -586,6 +814,13 @@ class AdaptiveScoringSystem:
                            recent_performance: List[Dict[str, Any]],
                            market_state: Dict[str, Any]):
         """Update meta-learning with recent performance."""
+        tprint_info(
+            "[AdaptiveScoringSystem] Updating meta learning",
+            {
+                "recent_samples": len(recent_performance),
+                "market_state": market_state,
+            },
+        )
         self.meta_learner.update_penalties(recent_performance, market_state)
 
     def apply_penalty_parameters(self, penalty_parameters: Dict[str, float]):
@@ -598,7 +833,16 @@ class AdaptiveScoringSystem:
             "Adaptive scoring penalties updated from monitoring system: %s",
             penalty_parameters,
         )
+        tprint_info(
+            "[AdaptiveScoringSystem] Penalty parameters applied",
+            penalty_parameters,
+        )
 
     def get_current_penalties(self) -> Dict[str, float]:
         """Get current penalty parameters."""
-        return self.meta_learner._get_current_penalties()
+        penalties = self.meta_learner._get_current_penalties()
+        tprint_debug(
+            "[AdaptiveScoringSystem] Retrieved current penalties",
+            penalties,
+        )
+        return penalties

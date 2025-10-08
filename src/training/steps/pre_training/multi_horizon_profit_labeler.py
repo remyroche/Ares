@@ -9,6 +9,7 @@ import asyncio
 import copy
 import numpy as np
 import pandas as pd
+from pandas.api.types import is_numeric_dtype
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 from dataclasses import dataclass, asdict
@@ -1228,7 +1229,7 @@ class MultiHorizonProfitLabeler:
 
             distribution = {}
             for col in labels_df.columns:
-                if labels_df[col].dtype in [np.number, 'int64', 'float64']:
+                if is_numeric_dtype(labels_df[col]):
                     values = labels_df[col].dropna()
                     if len(values) > 0:
                         distribution[col] = {

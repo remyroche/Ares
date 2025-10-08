@@ -237,3 +237,24 @@ async def test_component_metadata_records_outcome_save_failure(monkeypatch):
     assert result.success is True
     assert result.metadata.get("artifacts_saved") is False
     assert result.metadata.get("artifact_save_error") == "disk full"
+
+
+def test_calculate_target_distribution_includes_numeric_columns():
+    """Numeric label columns should populate distribution statistics."""
+
+    labeler = MultiHorizonProfitLabeler(MultiHorizonConfig(min_data_points=10))
+    labels_df = pd.DataFrame(
+        {
+            "numeric_float": pd.Series([0.1, 0.2, np.nan, -0.1, 0.0], dtype=float),
+            "numeric_int": pd.Series([1, 2, 3, 4, np.nan]),
+            "non_numeric": pd.Series(["a", "b", "c", None, "d"]),
+        }
+    )
+
+    distribution = labeler._calculate_target_distribution(labels_df)
+
+    assert "numeric_float" in distribution
+    assert "numeric_int" in distribution
+    assert "non_numeric" not in distribution
+    for metrics in (distribution["numeric_float"], distribution["numeric_int"]):
+        assert set(metrics) >= {"mean", "std", "min", "max", "non_null_count", "class_balance"}

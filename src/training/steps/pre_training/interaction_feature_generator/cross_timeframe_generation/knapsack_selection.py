@@ -204,7 +204,8 @@ class CorrelationCalculator:
                         # Fallback to regular correlation
                         log_warning(
                             self.logger,
-                            f"Partial correlation fallback to Pearson for feature pair ({i}, {j}): {exc}",
+                            f"Partial correlation fallback to Pearson for feature pair ({i}, {j})",
+                            exc_info=True,
                         )
                         partial_corr[i, j] = corr_matrix[i, j]
                         partial_corr[j, i] = corr_matrix[i, j]

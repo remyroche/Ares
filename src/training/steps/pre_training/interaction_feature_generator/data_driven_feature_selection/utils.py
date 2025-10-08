@@ -51,6 +51,51 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _log(message: str, level: str = "info") -> None:
+    """Centralized logging helper that routes messages through tprint."""
+    prefix_map = {
+        "info": "📊",
+        "debug": "🔍",
+        "warning": "⚠️",
+        "error": "❌",
+        "success": "✅",
+    }
+
+    prefix = prefix_map.get(level, "🔍")
+    formatted_message = f"{prefix} [FeatureSelection] {message}"
+
+    if level == "info":
+        tprint_info(formatted_message)
+    elif level == "warning":
+        tprint_warning(formatted_message)
+    elif level == "error":
+        tprint_error(formatted_message)
+    elif level == "success":
+        tprint_success(formatted_message)
+    else:
+        tprint(formatted_message)
+
+
+def _log_info(message: str) -> None:
+    _log(message, level="info")
+
+
+def _log_debug(message: str) -> None:
+    _log(message, level="debug")
+
+
+def _log_warning(message: str) -> None:
+    _log(message, level="warning")
+
+
+def _log_error(message: str) -> None:
+    _log(message, level="error")
+
+
+def _log_success(message: str) -> None:
+    _log(message, level="success")
+
+
 @dataclass
 class FeatureGeneratorWrapper:
     """Wrapper for feature generators with metadata and evaluation capabilities."""
@@ -93,6 +138,10 @@ class FeatureGeneratorWrapper:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
+        _log_debug(
+            f"Serializing wrapper '{self.name}' with total_cost={self.total_cost:.2f}ms "
+            f"and estimated_utility={self.estimated_utility:.4f}"
+        )
         return {
             'name': self.name,
             'family': self.family,
@@ -129,13 +178,16 @@ class CostEstimator:
         self.hardware_processor = hardware_processor
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
     
-    def estimate_generator_cost(self, wrapper: FeatureGeneratorWrapper, 
+    def estimate_generator_cost(self, wrapper: FeatureGeneratorWrapper,
                               data_shape: Tuple[int, int]) -> FeatureGeneratorWrapper:
         """Estimate costs for a feature generator wrapper."""
         try:
+            _log_info(
+                f"Estimating costs for wrapper '{wrapper.name}' with data_shape={data_shape}"
+            )
             # Estimate compute cost based on generator type and data size
             compute_cost = self._estimate_compute_cost(wrapper, data_shape)
-            
+
             # Estimate memory cost
             memory_cost = self._estimate_memory_cost(wrapper, data_shape)
             
@@ -150,10 +202,16 @@ class CostEstimator:
             wrapper.estimated_memory_cost_mb = memory_cost
             wrapper.estimated_latency_cost_ms = latency_cost
             wrapper.total_cost = total_cost
-            
+
+            _log_success(
+                f"Cost estimation complete for '{wrapper.name}': compute={compute_cost:.2f}ms, "
+                f"memory={memory_cost:.2f}MB, latency={latency_cost:.2f}ms, total={total_cost:.2f}"
+            )
+
             return wrapper
-            
+
         except Exception as e:
+            _log_warning(f"Falling back to default cost estimates for '{wrapper.name}': {e}")
             self.logger.warning(f"Failed to estimate cost for {wrapper.name}: {e}")
             # Set default costs
             wrapper.estimated_compute_cost_ms = 10.0
@@ -187,10 +245,10 @@ class CostEstimator:
         }
         
         base_cost = base_costs.get(wrapper.category, 1.0)
-        
+
         # Scale by data size (logarithmic scaling)
         size_factor = np.log(1 + n_rows / 1000) * np.log(1 + n_cols / 10)
-        
+
         # Scale by complexity
         complexity_factors = {
             'simple': 1.0,
@@ -198,18 +256,24 @@ class CostEstimator:
             'complex': 2.0,
             'very_complex': 3.0
         }
-        
+
         complexity = self._assess_complexity(wrapper)
         complexity_factor = complexity_factors.get(complexity, 1.5)
-        
+
         # Apply hardware acceleration if available
         if self.hardware_processor:
             acceleration_factor = 0.3  # 70% reduction with hardware acceleration
         else:
             acceleration_factor = 1.0
-        
+
         total_cost = base_cost * size_factor * complexity_factor * acceleration_factor
-        
+
+        _log_debug(
+            f"Computed cost for '{wrapper.name}': base={base_cost:.2f}, size_factor={size_factor:.3f}, "
+            f"complexity={complexity}({complexity_factor:.2f}), acceleration_factor={acceleration_factor:.2f}, "
+            f"result={total_cost:.2f}ms"
+        )
+
         return max(0.1, total_cost)  # Minimum 0.1ms
     
     def _estimate_memory_cost(self, wrapper: FeatureGeneratorWrapper, 
@@ -252,7 +316,12 @@ class CostEstimator:
         complexity_factor = complexity_factors.get(complexity, 1.5)
         
         total_memory = base_mb * size_factor * complexity_factor
-        
+
+        _log_debug(
+            f"Estimated memory for '{wrapper.name}': base={base_mb:.3f}MB, size_factor={size_factor:.3f}, "
+            f"complexity={complexity}({complexity_factor:.2f}) -> {total_memory:.3f}MB"
+        )
+
         return max(0.01, total_memory)  # Minimum 0.01 MB
     
     def _estimate_latency_cost(self, wrapper: FeatureGeneratorWrapper, 
@@ -274,32 +343,40 @@ class CostEstimator:
             io_latency = 0.0
         
         total_latency = compute_cost + network_latency + io_latency
-        
+
+        _log_debug(
+            f"Estimated latency for '{wrapper.name}': compute={compute_cost:.2f}ms, "
+            f"network_latency={network_latency:.2f}ms, io_latency={io_latency:.2f}ms -> {total_latency:.2f}ms"
+        )
+
         return max(0.1, total_latency)  # Minimum 0.1ms
-    
+
     def _assess_complexity(self, wrapper: FeatureGeneratorWrapper) -> str:
         """Assess the computational complexity of a feature generator."""
         name = wrapper.name.lower()
         category = wrapper.category.lower()
-        
+
+        complexity = 'simple'
+
         # Very complex features
         if any(term in name for term in ['autoencoder', 'deep', 'neural', 'transformer']):
-            return 'very_complex'
-        
+            complexity = 'very_complex'
         # Complex features
-        if category in ['regime', 'representation_learning', 'microstructure']:
-            return 'complex'
-        if any(term in name for term in ['hmm', 'kalman', 'particle', 'monte_carlo']):
-            return 'complex'
-        
+        elif category in ['regime', 'representation_learning', 'microstructure']:
+            complexity = 'complex'
+        elif any(term in name for term in ['hmm', 'kalman', 'particle', 'monte_carlo']):
+            complexity = 'complex'
         # Medium complexity features
-        if category in ['order_flow', 'entropy', 'acceleration']:
-            return 'medium'
-        if any(term in name for term in ['fourier', 'wavelet', 'spectral', 'correlation']):
-            return 'medium'
-        
-        # Simple features
-        return 'simple'
+        elif category in ['order_flow', 'entropy', 'acceleration']:
+            complexity = 'medium'
+        elif any(term in name for term in ['fourier', 'wavelet', 'spectral', 'correlation']):
+            complexity = 'medium'
+
+        _log_debug(
+            f"Complexity assessed for '{wrapper.name}' (category={wrapper.category}) -> {complexity}"
+        )
+
+        return complexity
 
 
 class UtilityEstimator:
@@ -408,36 +485,54 @@ class UtilityEstimator:
             wrapper.phase2_stability = 0.0
             return wrapper
     
-    def _generate_cheap_proxy(self, wrapper: FeatureGeneratorWrapper, 
+    def _generate_cheap_proxy(self, wrapper: FeatureGeneratorWrapper,
                             data: pd.DataFrame) -> Optional[np.ndarray]:
         """Generate a cheap proxy feature for Phase 1 evaluation."""
         try:
+            _log_info(f"Generating cheap proxy for '{wrapper.name}' with minimal lookback")
             # Use the generator with minimal parameters
             if hasattr(wrapper.generator, 'generate'):
                 result = wrapper.generator.generate(data, lookback=10)  # Minimal lookback
                 if hasattr(result, 'data'):
-                    return result.data.values
+                    proxy = result.data.values
+                    _log_success(
+                        f"Cheap proxy generated for '{wrapper.name}' (length={len(proxy)})"
+                    )
+                    return proxy
                 elif isinstance(result, pd.Series):
-                    return result.values
+                    proxy = result.values
+                    _log_success(
+                        f"Cheap proxy generated for '{wrapper.name}' (length={len(proxy)})"
+                    )
+                    return proxy
                 elif isinstance(result, np.ndarray):
-                    return result
+                    proxy = result
+                    _log_success(
+                        f"Cheap proxy generated for '{wrapper.name}' (length={len(proxy)})"
+                    )
+                    return proxy
                 else:
                     return None
             else:
                 return None
-                
+
         except Exception as e:
+            _log_warning(f"Failed to generate cheap proxy for '{wrapper.name}': {e}")
             self.logger.debug(f"Failed to generate cheap proxy for {wrapper.name}: {e}")
             return None
-    
-    def _generate_rich_proxies(self, wrapper: FeatureGeneratorWrapper, 
+
+    def _generate_rich_proxies(self, wrapper: FeatureGeneratorWrapper,
                              data: pd.DataFrame) -> List[np.ndarray]:
         """Generate rich proxy features for Phase 2 evaluation."""
         proxies = []
-        
+
         # Try different lookbacks
         lookbacks = [5, 10, 15, 20, 25]
-        
+
+        _log_info(
+            f"Generating rich proxies for '{wrapper.name}' using lookbacks={lookbacks}"
+        )
+
         for lookback in lookbacks:
             try:
                 if hasattr(wrapper.generator, 'generate'):
@@ -450,16 +545,26 @@ class UtilityEstimator:
                         proxy = result
                     else:
                         continue
-                    
+
                     if len(proxy) > 10:
                         proxies.append(proxy)
-                        
+                        _log_debug(
+                            f"Rich proxy accepted for '{wrapper.name}' at lookback={lookback} (length={len(proxy)})"
+                        )
+
             except Exception as e:
+                _log_warning(
+                    f"Failed to generate rich proxy for '{wrapper.name}' with lookback={lookback}: {e}"
+                )
                 self.logger.debug(f"Failed to generate rich proxy for {wrapper.name} with lookback {lookback}: {e}")
                 continue
-        
+
+        _log_info(
+            f"Generated {len(proxies)} rich proxies for '{wrapper.name}'"
+        )
+
         return proxies
-    
+
     def _compute_ic_with_bootstrap(self, feature: np.ndarray, target: np.ndarray) -> Tuple[float, float]:
         """Compute IC with block bootstrap standard errors."""
         try:
@@ -470,13 +575,18 @@ class UtilityEstimator:
             
             feature_clean = feature[valid_mask]
             target_clean = target[valid_mask]
-            
+
+            _log_debug(
+                f"Computing IC with bootstrap for proxy (n={len(feature_clean)})"
+            )
+
             # Compute correlation (IC)
             ic = np.corrcoef(feature_clean, target_clean)[0, 1]
-            
+
             if np.isnan(ic):
+                _log_warning("IC computation returned NaN, defaulting to neutral values")
                 return 0.0, 1.0
-            
+
             # Simple bootstrap for standard error
             n_samples = min(100, len(feature_clean) // 4)
             bootstrap_ics = []
@@ -490,15 +600,20 @@ class UtilityEstimator:
                     boot_ic = np.corrcoef(f_boot, t_boot)[0, 1]
                     if not np.isnan(boot_ic):
                         bootstrap_ics.append(boot_ic)
-            
+
             if bootstrap_ics:
                 ic_error = np.std(bootstrap_ics)
             else:
                 ic_error = np.sqrt((1 - ic**2) / (len(feature_clean) - 2))
-            
+
+            _log_debug(
+                f"Bootstrap IC results: ic={ic:.4f}, error={ic_error:.4f}, samples={len(bootstrap_ics)}"
+            )
+
             return float(ic), float(ic_error)
-            
+
         except Exception as e:
+            _log_error(f"Failed to compute IC with bootstrap: {e}")
             self.logger.debug(f"Failed to compute IC with bootstrap: {e}")
             return 0.0, 1.0
     
@@ -556,22 +671,24 @@ class UtilityEstimator:
 def create_feature_generator_wrappers(feature_bank: Optional[FeatureBank] = None) -> List[FeatureGeneratorWrapper]:
     """Create feature generator wrappers from the feature bank."""
     if not FEATURE_BANK_AVAILABLE:
-        tprint_warning("Feature bank not available, returning empty list")
+        _log_warning("Feature bank not available, returning empty list")
         return []
-    
+
     if feature_bank is None:
         try:
             feature_bank = get_global_feature_bank()
+            _log_success("Loaded global feature bank for wrapper creation")
         except Exception as e:
-            tprint_error(f"Failed to get global feature bank: {e}")
+            _log_error(f"Failed to get global feature bank: {e}")
             return []
-    
+
     wrappers = []
-    
+
     try:
+        _log_info("Creating feature generator wrappers from registry entries")
         # Get all generators from the feature bank
         all_generators = feature_bank.registry.get_all()
-        
+
         for generator in all_generators:
             try:
                 # Create wrapper
@@ -585,53 +702,80 @@ def create_feature_generator_wrappers(feature_bank: Optional[FeatureBank] = None
                     requires_tick_data=_requires_tick_data(generator),
                     requires_volume_data=_requires_volume_data(generator)
                 )
-                
+
                 wrappers.append(wrapper)
-                
+                _log_debug(
+                    f"Wrapper created for generator '{generator.config.name}' in family '{wrapper.family}'"
+                )
+
             except Exception as e:
+                _log_warning(
+                    f"Failed to create wrapper for generator '{generator.config.name}': {e}"
+                )
                 logger.warning(f"Failed to create wrapper for generator {generator.config.name}: {e}")
                 continue
-        
-        tprint_success(f"Created {len(wrappers)} feature generator wrappers")
-        
+
+        _log_success(f"Created {len(wrappers)} feature generator wrappers")
+
     except Exception as e:
-        tprint_error(f"Failed to create feature generator wrappers: {e}")
-    
+        _log_error(f"Failed to create feature generator wrappers: {e}")
+
     return wrappers
 
 
 def _requires_book_data(generator: Any) -> bool:
     """Check if generator requires book data."""
     name = generator.config.name.lower()
-    return any(term in name for term in ['bid', 'ask', 'book', 'orderbook', 'depth'])
+    requires = any(term in name for term in ['bid', 'ask', 'book', 'orderbook', 'depth'])
+    if requires:
+        _log_debug(f"Generator '{generator.config.name}' requires book data")
+    return requires
 
 
 def _requires_tick_data(generator: Any) -> bool:
     """Check if generator requires tick data."""
     name = generator.config.name.lower()
-    return any(term in name for term in ['tick', 'trade', 'microstructure'])
+    requires = any(term in name for term in ['tick', 'trade', 'microstructure'])
+    if requires:
+        _log_debug(f"Generator '{generator.config.name}' requires tick data")
+    return requires
 
 
 def _requires_volume_data(generator: Any) -> bool:
     """Check if generator requires volume data."""
     name = generator.config.name.lower()
-    return any(term in name for term in ['volume', 'vol', 'obv', 'vwap'])
+    requires = any(term in name for term in ['volume', 'vol', 'obv', 'vwap'])
+    if requires:
+        _log_debug(f"Generator '{generator.config.name}' requires volume data")
+    return requires
 
 
-def filter_wrappers_by_availability(wrappers: List[FeatureGeneratorWrapper], 
+def filter_wrappers_by_availability(wrappers: List[FeatureGeneratorWrapper],
                                   data_availability: Dict[str, float]) -> List[FeatureGeneratorWrapper]:
     """Filter wrappers based on data availability."""
+    _log_info(
+        f"Filtering {len(wrappers)} wrappers using data availability: {data_availability}"
+    )
     filtered = []
-    
+
     for wrapper in wrappers:
         # Check data availability requirements
         if wrapper.requires_book_data and data_availability.get('book_data', 0.0) < 0.95:
+            _log_warning(
+                f"Wrapper '{wrapper.name}' removed: insufficient book data availability"
+            )
             continue
         if wrapper.requires_tick_data and data_availability.get('tick_data', 0.0) < 0.95:
+            _log_warning(
+                f"Wrapper '{wrapper.name}' removed: insufficient tick data availability"
+            )
             continue
         if wrapper.requires_volume_data and data_availability.get('volume_data', 0.0) < 0.8:
+            _log_warning(
+                f"Wrapper '{wrapper.name}' removed: insufficient volume data availability"
+            )
             continue
-        
+
         # Update data availability
         if wrapper.requires_book_data:
             wrapper.data_availability = data_availability.get('book_data', 0.0)
@@ -641,48 +785,72 @@ def filter_wrappers_by_availability(wrappers: List[FeatureGeneratorWrapper],
             wrapper.data_availability = data_availability.get('volume_data', 0.0)
         else:
             wrapper.data_availability = 1.0
-        
+
         filtered.append(wrapper)
-    
+        _log_debug(
+            f"Wrapper '{wrapper.name}' retained with availability={wrapper.data_availability:.2f}"
+        )
+
+    _log_info(f"{len(filtered)} wrappers remain after availability filtering")
+
     return filtered
 
 
-def compute_feature_correlations(features: pd.DataFrame, 
+def compute_feature_correlations(features: pd.DataFrame,
                                threshold: float = 0.9) -> Dict[str, List[str]]:
     """Compute highly correlated feature pairs."""
+    _log_info(
+        f"Computing feature correlations for {len(features.columns)} features with threshold={threshold}"
+        if not features.empty else "No features available for correlation analysis"
+    )
     correlations = {}
-    
+
     if features.empty or len(features.columns) < 2:
+        _log_warning("Insufficient features provided for correlation computation")
         return correlations
-    
+
     # Compute correlation matrix
     corr_matrix = features.corr().abs()
-    
+
     # Find highly correlated pairs
+    pair_count = 0
     for i, col1 in enumerate(corr_matrix.columns):
         for j, col2 in enumerate(corr_matrix.columns):
             if i < j and corr_matrix.loc[col1, col2] > threshold:
                 if col1 not in correlations:
                     correlations[col1] = []
                 correlations[col1].append(col2)
-    
+                pair_count += 1
+
+    _log_info(f"Identified {pair_count} highly correlated feature pairs")
+
     return correlations
 
 
-def apply_diversification_penalty(wrappers: List[FeatureGeneratorWrapper], 
+def apply_diversification_penalty(wrappers: List[FeatureGeneratorWrapper],
                                 correlations: Dict[str, List[str]],
                                 penalty: float = 0.15) -> List[FeatureGeneratorWrapper]:
     """Apply diversification penalty to highly correlated features."""
+    _log_info(
+        f"Applying diversification penalty (penalty={penalty}) to {len(wrappers)} wrappers"
+    )
+    adjusted_wrappers = 0
     for wrapper in wrappers:
         if wrapper.name in correlations:
             # Apply penalty for each correlated feature
             n_correlated = len(correlations[wrapper.name])
             penalty_factor = 1.0 - (penalty * n_correlated)
-            
+
             # Apply penalty to utilities
             if wrapper.phase1_utility is not None:
                 wrapper.phase1_utility *= penalty_factor
             if wrapper.phase2_utility is not None:
                 wrapper.phase2_utility *= penalty_factor
-    
+            adjusted_wrappers += 1
+            _log_debug(
+                f"Applied diversification penalty to '{wrapper.name}' with factor={penalty_factor:.2f}"
+            )
+
+    _log_info(f"Diversification penalty applied to {adjusted_wrappers} wrappers")
+
     return wrappers

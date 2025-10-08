@@ -1,3 +1,4 @@
+import inspect
 import sys
 import types
 from typing import Dict
@@ -208,3 +209,22 @@ def test_prepare_interactive_training_input_uses_batches():
     assert 'data_batches' in training_input
     assert len(training_input['data_batches']) == 2
     pd.testing.assert_frame_equal(training_input['data'], market_data)
+
+
+def test_available_sub_pipelines_reflect_registry():
+    sub_pipeline_module = _load_pre_training_sub_pipeline_module()
+    pipeline = sub_pipeline_module.PreTrainingSubPipeline()
+
+    available = pipeline.get_available_sub_pipelines()
+    expected = [
+        spec.name
+        for spec in pipeline._get_ordered_step_specs()  # type: ignore[attr-defined]
+    ]
+
+    assert available == expected
+
+    for step_name in available:
+        spec = sub_pipeline_module.STEP_REGISTRY[step_name]
+        executor = getattr(pipeline, spec.executor_method, None)
+        assert executor is not None, f"Missing executor for {step_name}"
+        assert inspect.iscoroutinefunction(executor), f"Executor {spec.executor_method} must be async"

@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from pathlib import Path
+
 import pytest
 
 from src.training.config.data_locator import DataLocator, DataLocatorConfig
@@ -38,3 +40,21 @@ def test_data_locator_allows_custom_mapping(tmp_path: Path) -> None:
 
     target = locator.artifacts_path("multi_horizon_outcomes", ensure_exists=True)
     assert target.exists()
+
+
+def test_data_locator_resolves_config_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config_root = tmp_path / "configs"
+    config_root.mkdir()
+    config_file = config_root / "multi_horizon_labeling_config.yaml"
+    config_file.write_text("multi_horizon_labeling: {}\n", encoding="utf-8")
+
+    monkeypatch.setenv("ARES_CONFIG_DIR", str(config_root))
+
+    locator = DataLocator(root=tmp_path)
+
+    assert locator.base_config_dir == config_root.resolve()
+    assert locator.config_path("multi_horizon_labeling") == config_file.resolve()
+
+    summary = locator.resolved_paths()
+    assert summary["config"]["root"] == str(config_root.resolve())
+    assert summary["config"]["multi_horizon_labeling"].endswith("multi_horizon_labeling_config.yaml")

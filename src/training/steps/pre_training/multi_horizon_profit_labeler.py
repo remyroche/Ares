@@ -123,27 +123,55 @@ class MultiHorizonConfig:
     fairness_config: ValidationFairnessConfig = None
 
 
-def validate_and_prepare_dataframe(df: pd.DataFrame, name: str = "DataFrame") -> pd.DataFrame:
+def validate_and_prepare_dataframe(
+    df: pd.DataFrame,
+    name: str = "DataFrame",
+    duplicate_threshold: Optional[float] = None,
+    metrics: Optional[Dict[str, Any]] = None,
+) -> pd.DataFrame:
     """
     Validate and prepare a DataFrame for processing.
-    
+
     Args:
         df: DataFrame to validate and prepare
         name: Name of the DataFrame for logging
-        
+        duplicate_threshold: Optional threshold for duplicate index share
+        metrics: Optional dict that will be populated with quality metrics
+
     Returns:
         Cleaned and validated DataFrame
     """
     if df is None or df.empty:
         tprint_warning(f"⚠️ {name} is empty or None")
         return df
-    
+
+    quality_metrics = metrics if metrics is not None else {}
+    quality_metrics['row_count'] = len(df)
+
     # Check for duplicate indices
     if df.index.has_duplicates:
         dup_count = df.index.duplicated().sum()
-        tprint_warning(f"⚠️ {name} has {dup_count} duplicate indices, removing duplicates (keeping first)")
-        df = df[~df.index.duplicated(keep='first')]
-    
+        duplicate_share = float(dup_count / len(df)) if len(df) else 0.0
+        quality_metrics['duplicate_count'] = int(dup_count)
+        quality_metrics['duplicate_index_share'] = duplicate_share
+        threshold = duplicate_threshold if duplicate_threshold is not None else 0.0
+
+        if duplicate_threshold is None or duplicate_share > threshold:
+            tprint_warning(
+                f"⚠️ {name} has {dup_count} duplicate indices ({duplicate_share:.2%}), removing duplicates (keeping first)"
+            )
+            df = df[~df.index.duplicated(keep='first')]
+            quality_metrics['deduplicated'] = True
+        else:
+            tprint_info(
+                f"ℹ️ {name} has {dup_count} duplicate indices ({duplicate_share:.2%}) within threshold {threshold:.2%}; retaining duplicates"
+            )
+            quality_metrics['deduplicated'] = False
+    else:
+        quality_metrics['duplicate_count'] = 0
+        quality_metrics['duplicate_index_share'] = 0.0
+        quality_metrics['deduplicated'] = False
+
     # Ensure index is sorted
     if not df.index.is_monotonic_increasing:
         tprint_info(f"📊 Sorting {name} by index")
@@ -165,6 +193,7 @@ class MultiHorizonProfitLabeler:
         """Initialize multi-horizon profit labeler."""
         self.config = config or MultiHorizonConfig()
         self.logger = logging.getLogger('MultiHorizonProfitLabeler')
+        self.quality_thresholds: Dict[str, float] = {}
 
         # Initialize the volatility-aware labeler
         if self.config.enable_enhanced_labels:
@@ -221,7 +250,8 @@ class MultiHorizonProfitLabeler:
         exchange: str,
         timeframe: str,
         data_dir: str = "historical_data",
-        regime_data: Optional[Dict[str, Any]] = None
+        regime_data: Optional[Dict[str, Any]] = None,
+        quality_thresholds: Optional[Dict[str, float]] = None,
     ) -> Dict[str, Any]:
         """
         Execute multi-horizon profit labeling.
@@ -239,6 +269,10 @@ class MultiHorizonProfitLabeler:
         try:
             tprint_info(f"🏷️ Starting multi-horizon profit labeling for {symbol} on {exchange}")
             tprint_info(f"⏰ Timeframe: {timeframe}")
+
+            thresholds = quality_thresholds or self.quality_thresholds or {}
+            if quality_thresholds is not None:
+                self.quality_thresholds = thresholds
 
             # Load market data
             tprint_info("📊 Loading market data...")
@@ -274,7 +308,12 @@ class MultiHorizonProfitLabeler:
             tprint_success("✅ Report generation completed")
 
             # Map target columns to expected names for feature lookback optimization compatibility
-            mapped_labels = self._map_target_columns_for_feature_optimization(balanced_labeling_result.labels)
+            mapping_metrics: Dict[str, Any] = {}
+            mapped_labels = self._map_target_columns_for_feature_optimization(
+                balanced_labeling_result.labels,
+                duplicate_threshold=thresholds.get('duplicate_index'),
+                quality_metrics=mapping_metrics,
+            )
 
             # Create properly structured artifacts that feature lookback optimization expects
             # The feature lookback optimization expects 'labeled_data' or 'labels' keys
@@ -354,6 +393,15 @@ class MultiHorizonProfitLabeler:
                     }
                 }
             }
+
+            mh_metadata = artifacts['multi_horizon_labeling_result'].setdefault('metadata', {})
+            if thresholds:
+                mh_metadata.setdefault('quality_thresholds', thresholds)
+            if mapping_metrics:
+                mh_metadata.setdefault('quality_metrics', {})['mapping'] = mapping_metrics.get(
+                    'labels_df for mapping',
+                    mapping_metrics,
+                )
 
             tprint_success(f"✅ Comprehensive artifacts structure created with {len(artifacts)} main sections")
 
@@ -958,7 +1006,12 @@ class MultiHorizonProfitLabeler:
             tprint_warning(f"⚠️ Error extracting regime assignments: {e}")
             return None
 
-    def _map_target_columns_for_feature_optimization(self, labels_df: pd.DataFrame) -> pd.DataFrame:
+    def _map_target_columns_for_feature_optimization(
+        self,
+        labels_df: pd.DataFrame,
+        duplicate_threshold: Optional[float] = None,
+        quality_metrics: Optional[Dict[str, Any]] = None,
+    ) -> pd.DataFrame:
         """
         Map target column names to expected names for feature lookback optimization compatibility.
 
@@ -975,7 +1028,15 @@ class MultiHorizonProfitLabeler:
                 return labels_df
 
             # Validate and prepare the DataFrame
-            labels_df = validate_and_prepare_dataframe(labels_df, "labels_df for mapping")
+            metrics_entry: Dict[str, Any] = {}
+            if quality_metrics is not None:
+                metrics_entry = quality_metrics.setdefault('labels_df for mapping', {})
+            labels_df = validate_and_prepare_dataframe(
+                labels_df,
+                "labels_df for mapping",
+                duplicate_threshold=duplicate_threshold,
+                metrics=metrics_entry,
+            )
             mapped_df = labels_df.copy()
             tprint_info(f"🔄 Mapping {len(labels_df.columns)} target columns for feature optimization compatibility")
 
@@ -1497,6 +1558,7 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
         """Initialize the multi-horizon profit labeler component."""
         super().__init__(config)
         self.labeler = None
+        self.quality_thresholds: Dict[str, float] = {}
 
         # Create configuration from component config
         mh_config = MultiHorizonConfig()
@@ -1506,8 +1568,13 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
             for key, value in config.custom_params.items():
                 if hasattr(mh_config, key):
                     setattr(mh_config, key, value)
+            thresholds = config.custom_params.get('quality_thresholds')
+            if isinstance(thresholds, dict):
+                self.quality_thresholds = thresholds
 
         self.labeler = MultiHorizonProfitLabeler(mh_config)
+        if self.quality_thresholds:
+            self.labeler.quality_thresholds = self.quality_thresholds
 
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
@@ -1540,7 +1607,8 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                 exchange=exchange,
                 timeframe=timeframe,
                 data_dir=data_dir,
-                regime_data=regime_data
+                regime_data=regime_data,
+                quality_thresholds=self.quality_thresholds or pipeline_state.get('quality_thresholds')
             )
 
             # Save artifacts persistently for other components to use

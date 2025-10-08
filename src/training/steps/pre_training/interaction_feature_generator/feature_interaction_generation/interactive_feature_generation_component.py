@@ -17,7 +17,7 @@ Key Features:
 import asyncio
 import time
 import logging
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Iterable
 from dataclasses import dataclass, field
 from enum import Enum
 import pandas as pd
@@ -124,7 +124,10 @@ from ...column_naming import (
 
 # Import the optimized orchestrator
 from .optimized_interaction_orchestrator import (
-    OptimizedInteractionOrchestrator, OptimizedInteractionConfig, OptimizedInteractionResult
+    OptimizedInteractionOrchestrator,
+    OptimizedInteractionConfig,
+    OptimizedInteractionResult,
+    PipelineStage,
 )
 
 # Import sub_pipeline components for compatibility
@@ -136,8 +139,19 @@ except ImportError:
         "Component subsystem not available; using lightweight stubs for tests"
     )
 
+    @dataclass
     class ComponentResult:  # type: ignore
-        pass
+        success: bool
+        artifacts: Dict[str, Any] = None
+        metadata: Dict[str, Any] = None
+        error_message: Optional[str] = None
+        execution_time: float = 0.0
+
+        def __post_init__(self):
+            if self.artifacts is None:
+                self.artifacts = {}
+            if self.metadata is None:
+                self.metadata = {}
 
     class BaseComponent:  # type: ignore
         def __init__(self, *args, **kwargs):
@@ -192,14 +206,18 @@ class InteractiveFeatureGenerationConfig:
     # Validation configuration
     enable_validation: bool = True
     validation_threshold: float = 0.02
-    
+
     # Logging configuration
     verbose_logging: bool = True
     log_performance: bool = True
-    
+
     # Integration configuration
     integrate_with_ares_launcher: bool = True
     maintain_backward_compatibility: bool = True
+
+    # Market data streaming configuration
+    market_data_batch_size: Optional[int] = None
+    market_data_window_days: Optional[int] = None
 
 
 @dataclass
@@ -280,14 +298,16 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
             enable_validation=self.config.enable_validation,
             validation_threshold=self.config.validation_threshold,
             verbose_logging=self.config.verbose_logging,
-            log_performance=self.config.log_performance
+            log_performance=self.config.log_performance,
+            market_data_batch_size=self.config.market_data_batch_size,
+            market_data_window_days=self.config.market_data_window_days,
         )
         
         self.orchestrator = OptimizedInteractionOrchestrator(orchestrator_config)
         tprint_debug("✅ Optimized interaction orchestrator initialized")
     
-    async def execute(self, 
-                     training_input: Dict[str, Any], 
+    async def execute(self,
+                     training_input: Dict[str, Any],
                      pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
         Execute the interactive feature generation component.
@@ -301,24 +321,37 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
         """
         start_time = time.time()
         tprint_success("🚀 Starting interactive feature generation")
-        
+
         try:
+            training_input = self._ensure_training_input(training_input, pipeline_state)
+
             # Validate inputs
             self._validate_inputs(training_input, pipeline_state)
-            
+
             # Extract data
             data = training_input.get('data')
-            if data is None:
-                raise ValueError("No data provided in training input")
-            
-            tprint_info(f"📊 Processing data: {data.shape[0]} rows, {data.shape[1]} columns")
-            
+            if data is not None:
+                tprint_info(f"📊 Processing data: {data.shape[0]} rows, {data.shape[1]} columns")
+
             # Update orchestrator config with pipeline state
             self._update_orchestrator_config(pipeline_state)
-            
+
             # Execute feature generation
             tprint_info("🔧 Executing optimized interaction feature generation...")
             result = await self.orchestrator.generate_features(training_input, pipeline_state)
+            data_batches = list(self._iter_data_batches(training_input))
+            if data_batches:
+                tprint_info(
+                    f"🔧 Executing optimized interaction feature generation in {len(data_batches)} batches"
+                )
+                result = await self._execute_chunked_generation(
+                    training_input,
+                    pipeline_state,
+                    data_batches,
+                )
+            else:
+                tprint_info("🔧 Executing optimized interaction feature generation...")
+                result = await self.orchestrator.generate_features(training_input, pipeline_state)
 
             if not result.success:
                 raise RuntimeError(f"Feature generation failed: {result.error_message}")
@@ -356,31 +389,205 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
     def _validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> None:
         """Validate input data and pipeline state."""
         tprint_debug("🔍 Validating inputs...")
-        
+
         if not training_input:
             raise ValueError("No training input provided")
-        
+
         if not pipeline_state:
             raise ValueError("No pipeline state provided")
-        
+
         # Check for required data
         data = training_input.get('data')
-        if data is None:
+        data_batches = training_input.get('data_batches')
+
+        validation_frame = data
+        if validation_frame is None and data_batches:
+            validation_frame = next(
+                (batch for batch in data_batches if isinstance(batch, pd.DataFrame) and not batch.empty),
+                None
+            )
+
+        if validation_frame is None:
             raise ValueError("No data provided in training input")
-        
-        if not isinstance(data, pd.DataFrame):
+
+        if not isinstance(validation_frame, pd.DataFrame):
             raise ValueError("Data must be a pandas DataFrame")
-        
-        if len(data) < 100:
-            raise ValueError(f"Insufficient data: {len(data)} < 100 rows")
-        
+
+        if len(validation_frame) < 100:
+            raise ValueError(f"Insufficient data: {len(validation_frame)} < 100 rows")
+
         # Check required columns
         required_columns = ['open', 'high', 'low', 'close', 'volume']
-        missing_columns = set(required_columns) - set(data.columns)
+        missing_columns = set(required_columns) - set(validation_frame.columns)
         if missing_columns:
             raise ValueError(f"Missing required columns: {missing_columns}")
-        
+
         tprint_debug("✅ Input validation passed")
+
+    def _ensure_training_input(
+        self,
+        training_input: Optional[Dict[str, Any]],
+        pipeline_state: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Ensure a training input dictionary exists by inspecting pipeline state if needed."""
+
+        if training_input:
+            return training_input
+
+        mh_result = pipeline_state.get('multi_horizon_labeling_result', {})
+        market_data_batches = mh_result.get('market_data_batches')
+        market_data = mh_result.get('market_data')
+
+        if market_data is None and market_data_batches:
+            market_data = pd.concat(market_data_batches, axis=0).sort_index()
+
+        if market_data is None:
+            raise ValueError("No market data available to construct training input")
+
+        labels_df = mh_result.get('labeled_data') or mh_result.get('labels')
+        targets: Dict[str, pd.Series] = {}
+        if isinstance(labels_df, pd.DataFrame):
+            targets = {column: labels_df[column] for column in labels_df.columns}
+
+        resolved_input: Dict[str, Any] = {
+            'data': market_data,
+            'targets': targets,
+        }
+
+        if market_data_batches:
+            resolved_input['data_batches'] = list(market_data_batches)
+
+        return resolved_input
+
+    def _iter_data_batches(self, training_input: Dict[str, Any]) -> Iterable[pd.DataFrame]:
+        """Yield data batches when provided in the training input."""
+
+        batches = training_input.get('data_batches') or []
+        for batch in batches:
+            if isinstance(batch, pd.DataFrame) and not batch.empty:
+                yield batch
+
+    async def _execute_chunked_generation(
+        self,
+        training_input: Dict[str, Any],
+        pipeline_state: Dict[str, Any],
+        data_batches: List[pd.DataFrame],
+    ) -> OptimizedInteractionResult:
+        """Execute the orchestrator on multiple data batches and merge the results."""
+
+        chunk_results: List[OptimizedInteractionResult] = []
+        total_execution_time = 0.0
+        max_memory = 0.0
+        max_cpu = 0.0
+        max_gpu = 0.0
+
+        targets = training_input.get('targets', {})
+        base_input = {
+            key: value
+            for key, value in training_input.items()
+            if key not in {'data', 'data_batches', 'targets'}
+        }
+
+        for batch in data_batches:
+            chunk_input = dict(base_input)
+            chunk_input['data'] = batch
+            if targets:
+                chunk_input['targets'] = self._slice_targets(targets, batch.index)
+
+            chunk_result = await self.orchestrator.generate_features(chunk_input, pipeline_state)
+            if not chunk_result.success:
+                return chunk_result
+
+            chunk_results.append(chunk_result)
+            total_execution_time += chunk_result.execution_time
+            max_memory = max(max_memory, chunk_result.memory_usage_mb)
+            max_cpu = max(max_cpu, chunk_result.cpu_usage_percent)
+            max_gpu = max(max_gpu, chunk_result.gpu_usage_percent)
+
+        return self._merge_chunk_results(
+            chunk_results,
+            total_execution_time,
+            max_memory,
+            max_cpu,
+            max_gpu,
+        )
+
+    def _slice_targets(
+        self,
+        targets: Dict[str, pd.Series],
+        index: pd.Index
+    ) -> Dict[str, pd.Series]:
+        """Slice target series to match a batch index."""
+
+        sliced: Dict[str, pd.Series] = {}
+        for name, series in targets.items():
+            if isinstance(series, pd.Series):
+                sliced[name] = series.reindex(index)
+        return sliced
+
+    def _merge_chunk_results(
+        self,
+        chunk_results: List[OptimizedInteractionResult],
+        total_execution_time: float,
+        max_memory: float,
+        max_cpu: float,
+        max_gpu: float,
+    ) -> OptimizedInteractionResult:
+        """Merge chunk-level results into a single optimized interaction result."""
+
+        combined_features = self._concat_frames([result.features for result in chunk_results])
+        combined_interactions = self._concat_frames([
+            result.interaction_features for result in chunk_results
+        ])
+        combined_cross_timeframe = self._concat_frames([
+            result.cross_timeframe_features for result in chunk_results
+        ])
+
+        feature_names = chunk_results[-1].feature_names if chunk_results else []
+        if not feature_names and not combined_features.empty:
+            feature_names = list(combined_features.columns)
+
+        selected_features = chunk_results[-1].selected_features if chunk_results else []
+
+        stage_results: Dict[PipelineStage, Dict[str, Any]] = {}
+        artifacts: Dict[str, Any] = {'chunk_results': []}
+        for result in chunk_results:
+            if result.stage_results:
+                stage_results.update(result.stage_results)
+            artifacts['chunk_results'].append(result.artifacts)
+
+        performance_metrics: Dict[str, Any] = {}
+        if chunk_results:
+            performance_metrics = dict(getattr(chunk_results[-1], 'performance_metrics', {}) or {})
+
+        return OptimizedInteractionResult(
+            features=combined_features,
+            feature_names=feature_names,
+            selected_features=selected_features,
+            interaction_features=combined_interactions,
+            cross_timeframe_features=combined_cross_timeframe,
+            execution_time=total_execution_time,
+            success=True,
+            error_message=None,
+            memory_usage_mb=max_memory,
+            cpu_usage_percent=max_cpu,
+            gpu_usage_percent=max_gpu,
+            stage_results=stage_results,
+            artifacts=artifacts,
+            performance_metrics=performance_metrics,
+        )
+
+    @staticmethod
+    def _concat_frames(frames: Iterable[pd.DataFrame]) -> pd.DataFrame:
+        """Concatenate a collection of dataframes while preserving index order."""
+
+        valid_frames = [frame for frame in frames if isinstance(frame, pd.DataFrame) and not frame.empty]
+        if not valid_frames:
+            return pd.DataFrame()
+
+        combined = pd.concat(valid_frames, axis=0, sort=False)
+        combined = combined[~combined.index.duplicated(keep='first')]
+        return combined.sort_index()
     
     def _update_orchestrator_config(self, pipeline_state: Dict[str, Any]) -> None:
         """Update orchestrator configuration with pipeline state."""
@@ -447,22 +654,14 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
                 'interaction_features': result.interaction_features,
                 'cross_timeframe_features': result.cross_timeframe_features,
                 'execution_time': result.execution_time,
-                'memory_usage_mb': result.memory_usage_mb,
+                'memory_usage_mb': getattr(result, 'memory_usage_mb', 0.0),
                 'success': result.success,
                 'error_message': result.error_message
             },
-            'stage_results': result.stage_results,
-            'performance_metrics': result.performance_metrics,
-            'artifacts': result.artifacts
+            'stage_results': getattr(result, 'stage_results', {}),
+            'performance_metrics': getattr(result, 'performance_metrics', {}),
+            'artifacts': getattr(result, 'artifacts', {}),
         }
-        
-        # Create output files list (for backward compatibility)
-        output_files = []
-        if result.success:
-            # Add feature files to output list
-            output_files.append(f"features_{self.config.symbol}_{self.config.timeframe}.parquet")
-            output_files.append(f"interactions_{self.config.symbol}_{self.config.timeframe}.parquet")
-            output_files.append(f"cross_timeframe_{self.config.symbol}_{self.config.timeframe}.parquet")
         
         # Create metadata
         metadata = {
@@ -475,11 +674,18 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
             'interaction_features': len(result.interaction_features.columns),
             'cross_timeframe_features': len(result.cross_timeframe_features.columns),
             'execution_time': result.execution_time,
-            'memory_usage_mb': result.memory_usage_mb,
+            'memory_usage_mb': getattr(result, 'memory_usage_mb', 0.0),
             'matrix_ops_available': MATRIX_OPS_AVAILABLE,
             'ml_common_available': ML_COMMON_AVAILABLE,
             'data_utils_available': DATA_UTILS_AVAILABLE
         }
+
+        if result.success:
+            metadata['output_files'] = [
+                f"features_{self.config.symbol}_{self.config.timeframe}.parquet",
+                f"interactions_{self.config.symbol}_{self.config.timeframe}.parquet",
+                f"cross_timeframe_{self.config.symbol}_{self.config.timeframe}.parquet",
+            ]
         
         tprint_debug("✅ Result conversion completed")
         
@@ -488,7 +694,6 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
             error_message=result.error_message,
             artifacts=artifacts,
             execution_time=execution_time,
-            output_files=output_files,
             metadata=metadata
         )
     

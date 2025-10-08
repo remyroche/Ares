@@ -8,6 +8,7 @@ Each component is responsible for a specific part of the analysis process.
 from .base_component import (
     BaseMarketAnalysisComponent,
     ComponentConfig,
+    ComponentError,
     ComponentResult
 )
 from .component_factory import ComponentFactory
@@ -37,6 +38,7 @@ __all__ = [
     'BaseMarketAnalysisComponent',
     'ComponentConfig',
     'ComponentResult',
+    'ComponentError',
     'ComponentFactory',
     'ArtifactManager',
     'SRParameterOptimizationComponent',

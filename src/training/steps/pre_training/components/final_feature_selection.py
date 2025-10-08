@@ -239,6 +239,10 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 self.memory_optimizer._light_memory_cleanup()
                 
                 # Save artifacts persistently using the artifact manager
+                persistence_error: Optional[str] = None
+                artifacts_saved_persistently = False
+                saved_files: Dict[str, str] = {}
+
                 try:
                     saved_files = await self.save_artifacts(artifacts, {
                         'component_type': 'final_feature_selection',
@@ -246,12 +250,29 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                         'exchange': exchange,
                         'timeframe': timeframe
                     })
-                    log_success(f"💾 [FINAL_FEATURE_SELECTION] Artifacts saved persistently: {list(saved_files.keys())}")
                 except Exception as e:
-                    log_warning(f"⚠️ [FINAL_FEATURE_SELECTION] Failed to save artifacts persistently: {e}")
-                
+                    persistence_error = str(e)
+                    log_warning(f"⚠️ [FINAL_FEATURE_SELECTION] Exception while saving artifacts persistently: {e}")
+
+                if saved_files:
+                    artifacts_saved_persistently = True
+                    log_success(
+                        f"💾 [FINAL_FEATURE_SELECTION] Artifacts saved persistently: {list(saved_files.keys())}"
+                    )
+                else:
+                    failure_reason = (
+                        persistence_error
+                        or "artifact manager returned no file paths"
+                    )
+                    log_error(
+                        "❌ [FINAL_FEATURE_SELECTION] Artifacts were not saved persistently: "
+                        f"{failure_reason}"
+                    )
+
+                component_success = success and artifacts_saved_persistently
+
                 return ComponentResult(
-                    success=True,
+                    success=component_success,
                     artifacts=artifacts,
                     error_message=None,
                     execution_time=0.0,
@@ -260,7 +281,9 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                         'symbol': symbol,
                         'exchange': exchange,
                         'timeframe': timeframe,
-                        'artifacts_saved_persistently': True
+                        'artifacts_saved_persistently': artifacts_saved_persistently,
+                        'artifact_persistence_paths': saved_files,
+                        **({'artifact_persistence_error': persistence_error} if persistence_error else {})
                     }
                 )
             else:

@@ -102,6 +102,7 @@ class FeatureSelectionResult:
     budgeted_result: Optional[BudgetedSelectionResult] = None
     interaction_result: Optional[InteractionResult] = None
     final_result: Optional[FinalSelectionResult] = None
+    split_metadata: Dict[str, np.ndarray] = field(default_factory=dict)
     
     # Final selections
     selected_features: List[str] = field(default_factory=list)
@@ -143,7 +144,11 @@ class FeatureSelectionResult:
             'matrix_ops_used': self.matrix_ops_used,
             'hardware_accelerated_ops': self.hardware_accelerated_ops,
             'memory_efficient_ops': self.memory_efficient_ops,
-            'bayesian_optimizations': self.bayesian_optimizations
+            'bayesian_optimizations': self.bayesian_optimizations,
+            'split_metadata': {
+                key: indices.tolist()
+                for key, indices in self.split_metadata.items()
+            }
         }
 
 
@@ -259,10 +264,22 @@ class DataDrivenFeatureSelector:
         try:
             _log_info("🚀 Starting Data-Driven Feature Selection", self.logger)
             _log_info(f"📊 Data shape: {data.shape}, Target length: {len(target)}", self.logger)
-            
+
             # Initialize result
             result = FeatureSelectionResult()
-            
+
+            try:
+                split_metadata = FinalModelSelection.build_default_split_metadata(len(data))
+            except ValueError as exc:
+                _log_error(f"❌ Unable to derive split metadata: {exc}", self.logger)
+                raise
+
+            result.split_metadata = {key: value.copy() for key, value in split_metadata.items()}
+            _log_info(
+                "🧮 Derived default train/val/test splits for feature selection",
+                self.logger
+            )
+
             # Step 1: Create feature generator wrappers
             _log_info("🔧 Step 1: Creating feature generator wrappers...", self.logger)
             wrappers = await self._create_feature_wrappers()
@@ -325,12 +342,19 @@ class DataDrivenFeatureSelector:
             # Step 6: Final Model Selection
             _log_info("🎯 Step 6: Final Model Selection", self.logger)
             final_result = self.final_selection.select_final_features(
-                budgeted_result.selected_wrappers, 
+                budgeted_result.selected_wrappers,
                 interaction_result.selected_interactions,
-                data, target
+                data,
+                target,
+                split_metadata=split_metadata
             )
             result.final_result = final_result
-            
+            if final_result.split_metadata:
+                result.split_metadata = {
+                    key: value.copy()
+                    for key, value in final_result.split_metadata.items()
+                }
+
             # Compile final results
             result.selected_features = [w.name for w in budgeted_result.selected_wrappers]
             result.selected_interactions = interaction_result.selected_interactions

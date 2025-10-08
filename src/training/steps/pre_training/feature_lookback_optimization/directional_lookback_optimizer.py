@@ -108,9 +108,10 @@ class DirectionalFeatureResult:
     
     # Metadata
     optimization_metadata: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary format."""
+        tprint(f"📦 Converting DirectionalFeatureResult for {self.feature_name} ({self.direction}) to dict")
         return {
             'feature_name': self.feature_name,
             'direction': self.direction,
@@ -157,11 +158,12 @@ class DirectionalOptimizationResult:
     # Metadata
     config_used: Optional[DirectionalLookbackConfig] = None
     optimization_metadata: Dict[str, Any] = field(default_factory=dict)
-    
+
     def get_all_selected_features(self) -> Dict[str, DirectionalFeatureResult]:
         """Get all selected features from both directions and consolidated."""
+        tprint("📦 Aggregating all selected directional features into a single dictionary")
         all_features = {}
-        
+
         for feature_name in self.selected_long_features:
             if feature_name in self.long_features:
                 all_features[f"{feature_name}_long"] = self.long_features[feature_name]
@@ -175,9 +177,10 @@ class DirectionalOptimizationResult:
             all_features[f"{feature_name}_consolidated"] = feature_result
         
         return all_features
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary format."""
+        tprint("🧾 Converting DirectionalOptimizationResult to dictionary representation")
         return {
             'long_features': {k: v.to_dict() for k, v in self.long_features.items()},
             'short_features': {k: v.to_dict() for k, v in self.short_features.items()},
@@ -245,7 +248,7 @@ class DirectionalLookbackOptimizer:
         Returns:
             DirectionalOptimizationResult with optimized features
         """
-        tprint("🚀 Starting directional feature lookback optimization...")
+        tprint("🚀 Starting directional feature lookback optimization (method call logged)")
         start_time = time.time()
         
         # Split data by direction
@@ -853,6 +856,7 @@ class DirectionalLookbackOptimizer:
     
     def get_optimization_summary(self) -> Dict[str, Any]:
         """Get summary of all optimization runs."""
+        tprint("🧾 Generating optimization summary for directional lookback runs")
         if not self.optimization_history:
             return {"message": "No optimization runs completed yet"}
         
@@ -896,6 +900,7 @@ def optimize_features_directional(data: pd.DataFrame,
     Returns:
         DirectionalOptimizationResult with optimized features
     """
+    tprint("🚀 optimize_features_directional convenience function invoked")
     optimizer = DirectionalLookbackOptimizer(config=config)
     return optimizer.optimize_features_directional(
         data=data,

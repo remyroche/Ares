@@ -3469,22 +3469,36 @@ class CoreOptimizer:
                 mi = self._calculate_mutual_information_robust(bootstrap_features, bootstrap_returns)
                 mi_samples.append(mi)
             
-            mean_mi = np.mean(mi_samples)
-            std_mi = np.std(mi_samples)
-            
+            mi_array = np.asarray(mi_samples)
+            mean_mi = float(np.mean(mi_array))
+            std_mi = float(np.std(mi_array))
+            median_mi = float(np.median(mi_array))
+            mad_mi = float(np.median(np.abs(mi_array - median_mi)))
+            mad_over_median = float(safe_divide(mad_mi, np.abs(median_mi))) if median_mi != 0 else 0.0
+
             # Objective function: mean_MI - 0.5 × std_MI (variance penalty)
             objective = mean_mi - 0.5 * std_mi
-            
+
             return {
                 'mean_mi': mean_mi,
                 'std_mi': std_mi,
+                'median_mi': median_mi,
+                'mad_mi': mad_mi,
+                'mad_over_median': mad_over_median,
                 'objective': objective,
                 'samples': mi_samples
             }
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Bootstrap validation failed: {e}")
-            return {'mean_mi': 0.0, 'std_mi': 0.0, 'objective': 0.0}
+            return {
+                'mean_mi': 0.0,
+                'std_mi': 0.0,
+                'median_mi': 0.0,
+                'mad_mi': 0.0,
+                'mad_over_median': 0.0,
+                'objective': 0.0
+            }
 
     def _parallel_refinement(self, top_horizons: List[Tuple[int, float]], data: pd.DataFrame, 
                            feature_name: str, forward_returns: Dict[int, np.ndarray], 
@@ -3698,6 +3712,8 @@ class CoreOptimizer:
             
             # Step 4: Vectorized coarse search with early termination
             coarse_results = []
+            horizon_bootstrap_cache: Dict[int, Dict[str, float]] = {}
+            unstable_horizons: Dict[int, float] = {}
             
             # Use vectorized feature generation for all coarse horizons
             vectorized_features = self._vectorized_feature_generation(data, feature_name, coarse_horizons)
@@ -3771,6 +3787,53 @@ class CoreOptimizer:
             # Step 5: Pick top 3 horizons
             coarse_results.sort(key=lambda x: x[1], reverse=True)
             top_3_horizons = [(horizon, mi) for horizon, mi in coarse_results[:3]]
+            original_top_3 = list(top_3_horizons)
+            stability_threshold = 0.15
+            screened_top_horizons: List[Tuple[int, float]] = []
+
+            for horizon, mi in coarse_results:
+                if len(screened_top_horizons) >= 3:
+                    break
+
+                try:
+                    horizon_key = int(horizon)
+
+                    feature_values = vectorized_features.get(horizon_key)
+                    if feature_values is None or len(feature_values) == 0:
+                        feature_values = self._cached_feature_calculation(data, feature_name, horizon_key)
+                        if feature_values is None or len(feature_values) == 0:
+                            continue
+
+                    train_feature = feature_values[:train_end_idx] if len(feature_values) >= train_end_idx else feature_values
+                    train_returns = forward_returns.get(horizon_key, np.array([]))
+
+                    if len(train_returns) == 0:
+                        continue
+
+                    min_length = min(len(train_feature), len(train_returns))
+                    if min_length < 20:
+                        continue
+
+                    stats = self._bootstrap_mi_validation(
+                        np.asarray(train_feature[:min_length]),
+                        np.asarray(train_returns[:min_length]),
+                        n_resamples=10
+                    )
+
+                    horizon_bootstrap_cache[horizon_key] = stats
+                    mad_ratio = stats.get('mad_over_median', 0.0)
+
+                    if mad_ratio > stability_threshold:
+                        unstable_horizons[horizon_key] = mad_ratio
+                        continue
+
+                    screened_top_horizons.append((horizon_key, mi))
+
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Stability screening failed for horizon {horizon_key}: {e}")
+                    continue
+
+            refinement_candidates = screened_top_horizons
             
             # Early stopping check
             best_coarse_mi = coarse_results[0][1]
@@ -3795,57 +3858,90 @@ class CoreOptimizer:
                 )
             
             # Step 6: Parallel refinement around top horizons
-            refined_results = self._parallel_refinement(
-                top_3_horizons, data, feature_name, forward_returns, 
-                train_end_idx, min_lookback, max_lookback
-            )
+            refined_results: List[Tuple[int, float]] = []
+            if refinement_candidates:
+                refined_results = self._parallel_refinement(
+                    refinement_candidates, data, feature_name, forward_returns,
+                    train_end_idx, min_lookback, max_lookback
+                )
             
             # Combine coarse and refined results
             all_candidates = coarse_results + refined_results
             
             # Step 7: Memory-efficient batch bootstrap validation
-            bootstrap_results = []
+            bootstrap_results: List[Dict[str, Any]] = []
             batch_size = 3  # Process in small batches to manage memory
-            
+
             for i in range(0, min(10, len(all_candidates)), batch_size):
                 batch = all_candidates[i:i+batch_size]
-                
+
                 for horizon, mi in batch:
                     try:
+                        horizon_key = int(horizon)
+
                         # Use cached feature calculation
-                        feature_values = self._cached_feature_calculation(data, feature_name, horizon)
-                        
+                        feature_values = self._cached_feature_calculation(data, feature_name, horizon_key)
+
                         if feature_values is None or len(feature_values) == 0:
                             continue
-                        
+
                         train_feature = feature_values[:train_end_idx] if len(feature_values) >= train_end_idx else feature_values
-                        train_returns = forward_returns.get(horizon, np.array([]))
-                        
+                        train_returns = forward_returns.get(horizon_key, np.array([]))
+
                         if len(train_returns) == 0:
                             continue
-                        
+
                         min_length = min(len(train_feature), len(train_returns))
                         if min_length < 20:  # Need sufficient data for bootstrap
-                            bootstrap_results.append((horizon, mi, 0.0, 0.0, mi))  # Use raw MI
+                            stability_penalty = 1.0 if horizon_key in unstable_horizons else 0.0
+                            bootstrap_results.append({
+                                'horizon': horizon_key,
+                                'mean_mi': mi,
+                                'std_mi': 0.0,
+                                'median_mi': 0.0,
+                                'mad_mi': 0.0,
+                                'mad_over_median': 0.0,
+                                'objective': mi - stability_penalty,
+                                'original_mi': mi,
+                                'adjusted_mi': mi * (0.1 if horizon_key in unstable_horizons else 1.0),
+                                'is_unstable': horizon_key in unstable_horizons,
+                                'stability_guardrail_penalty': stability_penalty
+                            })
                             continue
-                        
-                        # Bootstrap validation (with reduced samples: 10 instead of 20)
-                        bootstrap_stats = self._bootstrap_mi_validation(
-                            train_feature[:min_length], 
-                            train_returns[:min_length],
-                            n_resamples=10  # 50% reduction from 20 to 10
-                        )
-                        
-                        bootstrap_results.append((
-                            horizon, 
-                            bootstrap_stats['mean_mi'], 
-                            bootstrap_stats['std_mi'], 
-                            bootstrap_stats['objective'],
-                            mi  # Keep original MI for comparison
-                        ))
-                        
+
+                        stats = horizon_bootstrap_cache.get(horizon_key)
+                        if stats is None:
+                            stats = self._bootstrap_mi_validation(
+                                train_feature[:min_length],
+                                train_returns[:min_length],
+                                n_resamples=10  # 50% reduction from 20 to 10
+                            )
+                            horizon_bootstrap_cache[horizon_key] = stats
+
+                        mad_ratio = stats.get('mad_over_median', 0.0)
+                        if mad_ratio > stability_threshold:
+                            unstable_horizons[horizon_key] = mad_ratio
+
+                        stability_penalty = 1.0 if horizon_key in unstable_horizons else 0.0
+                        adjusted_mi = mi * (0.1 if horizon_key in unstable_horizons else 1.0)
+                        objective = stats['objective'] - stability_penalty
+
+                        bootstrap_results.append({
+                            'horizon': horizon_key,
+                            'mean_mi': stats['mean_mi'],
+                            'std_mi': stats['std_mi'],
+                            'median_mi': stats.get('median_mi', 0.0),
+                            'mad_mi': stats.get('mad_mi', 0.0),
+                            'mad_over_median': mad_ratio,
+                            'objective': objective,
+                            'original_mi': mi,
+                            'adjusted_mi': adjusted_mi,
+                            'is_unstable': horizon_key in unstable_horizons,
+                            'stability_guardrail_penalty': stability_penalty
+                        })
+
                     except Exception as e:
-                        self.logger.warning(f"⚠️ Bootstrap failed for horizon {horizon}: {e}")
+                        self.logger.warning(f"⚠️ Bootstrap failed for horizon {horizon_key}: {e}")
                         continue
                 
                 # Memory cleanup after each batch
@@ -3853,61 +3949,72 @@ class CoreOptimizer:
             
             # Step 8: Time stability check (validation split)
             if bootstrap_results:
-                best_candidates = sorted(bootstrap_results, key=lambda x: x[3], reverse=True)[:3]  # Top 3 by objective
-                
-                stability_results = []
-                for horizon, mean_mi, std_mi, objective, original_mi in best_candidates:
+                best_candidates = sorted(bootstrap_results, key=lambda x: x['objective'], reverse=True)[:3]  # Top 3 by objective
+
+                stability_results: List[Dict[str, Any]] = []
+                for candidate in best_candidates:
+                    horizon = candidate['horizon']
                     try:
                         # Use cached feature calculation
                         feature_values = self._cached_feature_calculation(data, feature_name, horizon)
-                        
+
                         if feature_values is None or len(feature_values) == 0:
                             continue
-                        
+
                         # Test on validation split
                         val_feature = feature_values[val_start_idx:] if len(feature_values) > val_start_idx else np.array([])
                         val_returns = forward_returns.get(horizon, np.array([]))
-                        
+
+                        candidate_with_val = candidate.copy()
+
                         if len(val_feature) == 0 or len(val_returns) == 0:
-                            stability_results.append((horizon, mean_mi, std_mi, objective, original_mi, 0.0))
+                            candidate_with_val['val_mi'] = 0.0
+                            stability_results.append(candidate_with_val)
                             continue
-                        
+
                         min_length = min(len(val_feature), len(val_returns))
                         if min_length < 10:
-                            stability_results.append((horizon, mean_mi, std_mi, objective, original_mi, 0.0))
+                            candidate_with_val['val_mi'] = 0.0
+                            stability_results.append(candidate_with_val)
                             continue
-                        
+
                         # Calculate MI on validation split
                         val_mi = self._calculate_mutual_information_robust(
-                            val_feature[:min_length], 
+                            val_feature[:min_length],
                             val_returns[:min_length]
                         )
-                        
-                        stability_results.append((horizon, mean_mi, std_mi, objective, original_mi, val_mi))
-                        
+
+                        candidate_with_val['val_mi'] = val_mi
+                        stability_results.append(candidate_with_val)
+
                     except Exception as e:
                         self.logger.warning(f"⚠️ Stability check failed for horizon {horizon}: {e}")
                         continue
-                
+
                 # Prefer horizons that don't collapse OOS (validation MI > 0.5 * train MI)
-                final_results = []
-                for horizon, mean_mi, std_mi, objective, original_mi, val_mi in stability_results:
+                final_results: List[Dict[str, Any]] = []
+                for candidate in stability_results:
                     stability_penalty = 0.0
-                    if mean_mi > 0 and val_mi < 0.5 * mean_mi:
+                    if candidate['mean_mi'] > 0 and candidate['val_mi'] < 0.5 * candidate['mean_mi']:
                         stability_penalty = 0.1  # Penalize poor OOS performance
-                    
-                    final_score = objective - stability_penalty
-                    final_results.append((horizon, final_score, mean_mi, std_mi, val_mi, original_mi))
-                
+
+                    final_score = candidate['objective'] - stability_penalty
+                    enriched_candidate = candidate.copy()
+                    enriched_candidate['final_score'] = final_score
+                    enriched_candidate['validation_penalty'] = stability_penalty
+                    final_results.append(enriched_candidate)
+
                 # Select best horizon
                 if final_results:
-                    final_results.sort(key=lambda x: x[1], reverse=True)
-                    best_horizon, best_score, best_mean_mi, best_std_mi, best_val_mi, best_original_mi = final_results[0]
-                    
+                    final_results.sort(key=lambda x: x['final_score'], reverse=True)
+                    best_candidate = final_results[0]
+                    best_horizon = best_candidate['horizon']
+                    best_score = best_candidate['final_score']
+
                     # Log cache performance
                     cache_hit_rate = self.cache_hits / (self.cache_hits + self.cache_misses) if (self.cache_hits + self.cache_misses) > 0 else 0
                     self.logger.info(f'✅ {feature_name}: best_lookback={best_horizon}, score={best_score:.6f} (cache_hit_rate={cache_hit_rate:.2%})')
-                    
+
                     return OptimizationResult(
                         best_lookback_period=best_horizon,
                         best_score=best_score,
@@ -3921,11 +4028,23 @@ class CoreOptimizer:
                             'coarse_horizons': len(coarse_results),
                             'refined_horizons': len(refined_results),
                             'bootstrap_samples': 10,  # Updated to reflect 50% reduction
-                            'mean_mi': best_mean_mi,
-                            'std_mi': best_std_mi,
-                            'val_mi': best_val_mi,
-                            'original_mi': best_original_mi,
-                            'top_3_coarse': top_3_horizons,
+                            'mean_mi': best_candidate['mean_mi'],
+                            'std_mi': best_candidate['std_mi'],
+                            'median_mi': best_candidate.get('median_mi', 0.0),
+                            'mad_mi': best_candidate.get('mad_mi', 0.0),
+                            'mad_over_median': best_candidate.get('mad_over_median', 0.0),
+                            'stability_ratio': best_candidate.get('mad_over_median', 0.0),
+                            'stability_guardrail_penalty': best_candidate.get('stability_guardrail_penalty', 0.0),
+                            'is_unstable_candidate': best_candidate.get('is_unstable', False),
+                            'stability_guardrail_triggered': bool(best_candidate.get('is_unstable', False)),
+                            'validation_penalty': best_candidate.get('validation_penalty', 0.0),
+                            'val_mi': best_candidate.get('val_mi', 0.0),
+                            'original_mi': best_candidate.get('original_mi', 0.0),
+                            'adjusted_mi': best_candidate.get('adjusted_mi', 0.0),
+                            'top_3_coarse': original_top_3,
+                            'screened_top_horizons': list(refinement_candidates),
+                            'unstable_horizons': dict(unstable_horizons),
+                            'stability_threshold': stability_threshold,
                             'stability_check': True,
                             'cache_hit_rate': cache_hit_rate,
                             'vectorized_ops': MATRIX_OPS_AVAILABLE
@@ -3934,8 +4053,11 @@ class CoreOptimizer:
             
             # Fallback to best coarse result
             best_horizon, best_mi = coarse_results[0]
+            best_stats = horizon_bootstrap_cache.get(best_horizon, {})
+            best_ratio = best_stats.get('mad_over_median', unstable_horizons.get(best_horizon, 0.0))
+            guardrail_penalty = 1.0 if best_horizon in unstable_horizons else 0.0
             self.logger.info(f'✅ {feature_name}: best_lookback={best_horizon}, score={best_mi:.6f}')
-            
+
             return OptimizationResult(
                 best_lookback_period=best_horizon,
                 best_score=best_mi,
@@ -3948,7 +4070,17 @@ class CoreOptimizer:
                     'target_column': target_column,
                     'coarse_horizons': len(coarse_results),
                     'refined_horizons': 0,
-                    'fallback': True
+                    'fallback': True,
+                    'median_mi': best_stats.get('median_mi', 0.0),
+                    'mad_mi': best_stats.get('mad_mi', 0.0),
+                    'mad_over_median': best_ratio,
+                    'stability_ratio': best_ratio,
+                    'stability_guardrail_penalty': guardrail_penalty,
+                    'stability_guardrail_triggered': best_horizon in unstable_horizons,
+                    'stability_threshold': stability_threshold,
+                    'unstable_horizons': dict(unstable_horizons),
+                    'screened_top_horizons': list(refinement_candidates),
+                    'top_3_coarse': original_top_3
                 }
             )
             

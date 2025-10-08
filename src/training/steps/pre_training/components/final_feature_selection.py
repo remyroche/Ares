@@ -239,16 +239,15 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 self.memory_optimizer._light_memory_cleanup()
                 
                 # Save artifacts persistently using the artifact manager
-                try:
-                    saved_files = await self.save_artifacts(artifacts, {
-                        'component_type': 'final_feature_selection',
-                        'symbol': symbol,
-                        'exchange': exchange,
-                        'timeframe': timeframe
-                    })
-                    log_success(f"💾 [FINAL_FEATURE_SELECTION] Artifacts saved persistently: {list(saved_files.keys())}")
-                except Exception as e:
-                    log_warning(f"⚠️ [FINAL_FEATURE_SELECTION] Failed to save artifacts persistently: {e}")
+                saved_files = await self.save_artifacts(artifacts, {
+                    'component_type': 'final_feature_selection',
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe
+                })
+                log_success(
+                    f"💾 [FINAL_FEATURE_SELECTION] Artifacts saved persistently: {list(saved_files.keys())}"
+                )
                 
                 return ComponentResult(
                     success=True,
@@ -260,7 +259,8 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                         'symbol': symbol,
                         'exchange': exchange,
                         'timeframe': timeframe,
-                        'artifacts_saved_persistently': True
+                        'artifacts_saved_persistently': True,
+                        'saved_artifact_paths': saved_files
                     }
                 )
             else:

@@ -69,6 +69,13 @@ class StalenessCurveCalculator:
         self.default_base_timeframe = default_base_timeframe
         self._cache: Dict[Tuple[str, str, int, int], StalenessCurve] = {}
 
+        init_msg = (
+            "🧮 [STALENESS] Initialised calculator with "
+            f"default base timeframe={self.default_base_timeframe}"
+        )
+        self.logger.debug(init_msg)
+        tprint_debug(init_msg)
+
     def calculate_staleness_curve(
         self,
         feature_name: str,
@@ -81,7 +88,22 @@ class StalenessCurveCalculator:
         base_tf = base_timeframe or self.default_base_timeframe
         cache_key = (feature_name, family, lookback, base_tf)
 
+        start_msg = (
+            "🧮 [STALENESS] Calculating curve for "
+            f"feature={feature_name}, family={family}, lookback={lookback}, "
+            f"base_tf={base_tf}"
+        )
+        self.logger.debug(start_msg)
+        tprint_debug(start_msg)
+
         if cache_key in self._cache:
+            cache_msg = (
+                "♻️ [STALENESS] Returning cached curve for "
+                f"feature={feature_name}, family={family}, "
+                f"lookback={lookback}, base_tf={base_tf}"
+            )
+            self.logger.debug(cache_msg)
+            tprint_success(cache_msg)
             return self._cache[cache_key]
 
         curve_params = self._get_curve_params(family, lookback)
@@ -92,6 +114,13 @@ class StalenessCurveCalculator:
                 lag_minutes, curve_params, base_tf
             )
             staleness_values[lag_minutes] = staleness
+
+            point_msg = (
+                "📈 [STALENESS] Computed value at lag="
+                f"{lag_minutes} -> {staleness:.6f}"
+            )
+            self.logger.debug(point_msg)
+            tprint_debug(point_msg)
 
         summary = self._summarise_curve(staleness_values, base_tf, family, lookback)
 
@@ -104,6 +133,14 @@ class StalenessCurveCalculator:
         )
 
         self._cache[cache_key] = curve
+
+        complete_msg = (
+            "✅ [STALENESS] Generated curve for "
+            f"feature={feature_name} with {len(staleness_values)} points"
+        )
+        self.logger.debug(complete_msg)
+        tprint_success(complete_msg)
+
         return curve
 
     def get_summary(
@@ -151,17 +188,51 @@ class StalenessCurveCalculator:
         if curve_type == "exponential":
             tau = curve_params["tau"]
             delta_t = lag_minutes
-            return float(1 - np.exp(-delta_t / tau))
+            value = float(1 - np.exp(-delta_t / tau))
+            debug_msg = (
+                "🧪 [STALENESS] Exponential curve computation: "
+                f"lag={lag_minutes}, tau={tau}, value={value:.6f}"
+            )
+            logging.getLogger(__name__).debug(debug_msg)
+            tprint_debug(debug_msg)
+            return value
 
         if curve_type == "step":
             session_reset = curve_params.get("session_reset", False)
             if session_reset:
                 if lag_minutes <= 30:
+                    logging.getLogger(__name__).debug(
+                        "🧪 [STALENESS] Step curve within session reset: lag<=30"
+                    )
+                    tprint_debug(
+                        "🧪 [STALENESS] Step curve within session reset: lag<=30"
+                    )
                     return 0.0
-                return float(min(1.0, (lag_minutes - 30) / 60))
-            return float(min(1.0, lag_minutes / max(base_timeframe * 24, 1)))
+                value = float(min(1.0, (lag_minutes - 30) / 60))
+                debug_msg = (
+                    "🧪 [STALENESS] Step curve (session reset) computation: "
+                    f"lag={lag_minutes}, value={value:.6f}"
+                )
+                logging.getLogger(__name__).debug(debug_msg)
+                tprint_debug(debug_msg)
+                return value
+            value = float(min(1.0, lag_minutes / max(base_timeframe * 24, 1)))
+            debug_msg = (
+                "🧪 [STALENESS] Step curve computation: "
+                f"lag={lag_minutes}, base_tf={base_timeframe}, value={value:.6f}"
+            )
+            logging.getLogger(__name__).debug(debug_msg)
+            tprint_debug(debug_msg)
+            return value
 
-        return float(min(1.0, lag_minutes / max(base_timeframe * 24, 1)))
+        value = float(min(1.0, lag_minutes / max(base_timeframe * 24, 1)))
+        debug_msg = (
+            "🧪 [STALENESS] Default curve computation: "
+            f"lag={lag_minutes}, base_tf={base_timeframe}, value={value:.6f}"
+        )
+        logging.getLogger(__name__).debug(debug_msg)
+        tprint_debug(debug_msg)
+        return value
 
     def _summarise_curve(
         self,
@@ -188,11 +259,21 @@ class StalenessCurveCalculator:
             "lookback": lookback,
         }
 
-        return StalenessSummary(
+        summary = StalenessSummary(
             average=average,
             minimum=minimum,
             at_base=at_base,
             maximum=maximum,
             metadata=metadata,
         )
+
+        summary_msg = (
+            "📊 [STALENESS] Summary computed -> "
+            f"avg={average:.6f}, min={minimum:.6f}, base={at_base:.6f}, max={maximum:.6f}, "
+            f"base_tf={base_timeframe}, family={family}, lookback={lookback}"
+        )
+        logging.getLogger(__name__).debug(summary_msg)
+        tprint_success(summary_msg)
+
+        return summary
 

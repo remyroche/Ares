@@ -108,6 +108,22 @@ def _load_pre_training_sub_pipeline_module():
     return module
 
 
+def test_available_steps_match_registry():
+    module = _load_pre_training_sub_pipeline_module()
+    pipeline = module.PreTrainingSubPipeline()
+
+    available_steps = pipeline.get_available_sub_pipelines()
+    expected_specs = pipeline._get_ordered_step_specs()  # type: ignore[attr-defined]
+    expected_steps = [spec.name for spec in expected_specs]
+
+    assert available_steps == expected_steps
+
+    for step_name in available_steps:
+        spec = module.STEP_REGISTRY[step_name]
+        executor = getattr(pipeline, spec.executor_method, None)
+        assert callable(executor), f"Executor '{spec.executor_method}' missing for step '{step_name}'"
+
+
 def test_component_quality_alerts_triggered(caplog):
     sub_pipeline_module = _load_pre_training_sub_pipeline_module()
     pipeline = sub_pipeline_module.PreTrainingSubPipeline()

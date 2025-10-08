@@ -276,6 +276,7 @@ class ComponentFactory:
     registry: ComponentRegistry = _registry
 
     _initialized: bool = False
+    _aliases_registered: bool = False
     ENTRY_POINT_GROUP = "ares.pre_training.components"
     EXTRA_MODULES_ENV = "ARES_PRETRAIN_COMPONENT_MODULES"
     EXTRA_MODULES_FILE = (
@@ -290,6 +291,13 @@ class ComponentFactory:
         "src.training.steps.pre_training.components.multi_horizon_component",
         "src.training.steps.pre_training.components.pid_based_feature_generation_registration",
     )
+    DEFAULT_ALIASES = {
+        # Tactician orchestrator specific aliases to provide clearer diagnostics
+        "tactician_feature_optimization": "feature_lookback_optimization",
+        "tactician_pid_generation": "pid_based_feature_generation",
+        "tactician_horizon_labeling": "multi_horizon_profit_labeler",
+        "tactician_feature_selection": "final_feature_selection",
+    }
 
     @classmethod
     def create_component(
@@ -408,7 +416,65 @@ class ComponentFactory:
             cls._import_module(module_path)
 
         cls.registry.load_entry_points(cls.ENTRY_POINT_GROUP)
+
+        cls._register_default_aliases()
+
         cls._initialized = True
+        cls._aliases_registered = True
+
+    @classmethod
+    def register_alias(cls, alias: str, target: str) -> None:
+        """Register an alias that points at an existing component registration."""
+
+        cls._ensure_initialized()
+        cls._register_alias(alias, target)
+
+    @classmethod
+    def _register_default_aliases(cls) -> None:
+        """Register built-in aliases used by higher-level orchestrators."""
+
+        if cls._aliases_registered:
+            return
+
+        for alias, target in cls.DEFAULT_ALIASES.items():
+            cls._register_alias(alias, target)
+
+    @classmethod
+    def _register_alias(cls, alias: str, target: str) -> None:
+        """Internal helper to register or update a component alias."""
+
+        if not target:
+            _log_warning(
+                f"⚠️ [PRE_TRAINING_FACTORY] Cannot register alias '{alias}' without a target",
+                event="component_factory_alias_missing_target",
+                alias=alias,
+            )
+            return
+
+        registration = cls.registry.get(target)
+        if registration is None:
+            _log_warning(
+                f"⚠️ [PRE_TRAINING_FACTORY] Alias target '{target}' not registered; '{alias}' marked unavailable",
+                event="component_factory_alias_missing_target",
+                alias=alias,
+                target=target,
+            )
+            cls.registry.mark_unavailable(
+                alias,
+                error=f"Alias target '{target}' not registered",
+                source="component_factory.alias",
+            )
+            return
+
+        cls.registry.register(
+            alias,
+            registration.component_class,
+            available=registration.available,
+            error=registration.error,
+            extras=registration.extras,
+            source=registration.source,
+            override=True,
+        )
 
     @classmethod
     def _import_module(cls, module_path: str) -> None:

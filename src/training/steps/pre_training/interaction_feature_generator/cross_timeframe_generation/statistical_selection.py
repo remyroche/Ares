@@ -27,6 +27,39 @@ warnings.filterwarnings('ignore')
 
 from .config import SelectionConfig
 
+# Import tprint for enhanced logging
+try:
+    from src.utils.tprint import (
+        tprint,
+        tprint_info,
+        tprint_success,
+        tprint_warning,
+        tprint_error,
+        tprint_debug,
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:
+    TPRINT_AVAILABLE = False
+
+    def tprint(*args, **kwargs):
+        print(*args, **kwargs)
+
+    def tprint_info(*args, **kwargs):
+        print("INFO:", *args, **kwargs)
+
+    def tprint_success(*args, **kwargs):
+        print("SUCCESS:", *args, **kwargs)
+
+    def tprint_warning(*args, **kwargs):
+        print("WARNING:", *args, **kwargs)
+
+    def tprint_error(*args, **kwargs):
+        print("ERROR:", *args, **kwargs)
+
+    def tprint_debug(*args, **kwargs):
+        print("DEBUG:", *args, **kwargs)
+
+
 # Try to import Group LASSO
 try:
     from sklearn.linear_model import Lasso
@@ -60,7 +93,7 @@ class StabilitySelector:
         self.n_resamples = config.stability_resamples
         self.block_size = None  # Will be determined automatically
     
-    def select_features(self, 
+    def select_features(self,
                        features: pd.DataFrame,
                        targets: pd.Series,
                        base_features: Optional[List[str]] = None) -> Dict[str, float]:
@@ -76,26 +109,37 @@ class StabilitySelector:
             Dictionary of selection frequencies
         """
         self.logger.info("Starting stability selection")
-        
+        tprint_info(
+            "🧮 Running stability selection",
+            f"features={len(features.columns)}",
+            f"samples={len(features)}",
+        )
+
         # Determine block size
         if self.block_size is None:
             self.block_size = max(10, int(np.sqrt(len(features))))
-        
+            tprint_debug(f"   → Using block size: {self.block_size}")
+
         # Perform stability selection
         selection_frequencies = {}
-        
+
         for feature_name in features.columns:
             try:
                 frequency = self._calculate_selection_frequency(
                     features, targets, feature_name, base_features
                 )
                 selection_frequencies[feature_name] = frequency
-                
+
             except Exception as e:
                 self.logger.warning(f"Failed to calculate frequency for {feature_name}: {e}")
+                tprint_warning(f"⚠️ Stability frequency failed for {feature_name}: {e}")
                 selection_frequencies[feature_name] = 0.0
-        
+
         self.logger.info(f"Stability selection completed: {len(selection_frequencies)} features evaluated")
+        tprint_success(
+            "✅ Stability selection completed",
+            f"evaluated={len(selection_frequencies)}",
+        )
         return selection_frequencies
     
     def _calculate_selection_frequency(self, 
@@ -187,7 +231,7 @@ class PermutationTester:
         self.config = config
         self.logger = logging.getLogger(__name__)
     
-    def calculate_p_values(self, 
+    def calculate_p_values(self,
                           features: pd.DataFrame,
                           targets: pd.Series,
                           base_features: Optional[List[str]] = None) -> Dict[str, float]:
@@ -203,9 +247,14 @@ class PermutationTester:
             Dictionary of p-values
         """
         self.logger.info("Starting permutation testing")
-        
+        tprint_info(
+            "🔁 Running permutation importance",
+            f"features={len(features.columns)}",
+            f"samples={len(features)}",
+        )
+
         p_values = {}
-        
+
         for feature_name in features.columns:
             try:
                 p_value = self._calculate_permutation_p_value(
@@ -215,9 +264,14 @@ class PermutationTester:
                 
             except Exception as e:
                 self.logger.warning(f"Failed to calculate p-value for {feature_name}: {e}")
+                tprint_warning(f"⚠️ Permutation test failed for {feature_name}: {e}")
                 p_values[feature_name] = 1.0
-        
+
         self.logger.info(f"Permutation testing completed: {len(p_values)} features tested")
+        tprint_success(
+            "✅ Permutation importance completed",
+            f"tested={len(p_values)}",
+        )
         return p_values
     
     def _calculate_permutation_p_value(self, 
@@ -272,16 +326,23 @@ class FDRController:
     def control_fdr(self, p_values: Dict[str, float]) -> Dict[str, float]:
         """
         Control FDR using Benjamini-Hochberg procedure.
-        
+
         Args:
             p_values: Dictionary of p-values
-            
+
         Returns:
             Dictionary of FDR-corrected p-values
         """
         if not p_values:
+            tprint_warning("⚠️ FDR control skipped - no p-values provided")
             return {}
-        
+
+        tprint_info(
+            "📉 Applying FDR control",
+            f"features={len(p_values)}",
+            f"target_q={self.fdr_q}",
+        )
+
         # Convert to arrays
         feature_names = list(p_values.keys())
         p_vals = np.array(list(p_values.values()))
@@ -308,7 +369,11 @@ class FDRController:
         fdr_corrected_dict = {}
         for i, idx in enumerate(sorted_indices):
             fdr_corrected_dict[feature_names[idx]] = fdr_corrected[i]
-        
+
+        tprint_success(
+            "✅ FDR control complete",
+            f"features={len(fdr_corrected_dict)}",
+        )
         return fdr_corrected_dict
 
 
@@ -321,7 +386,7 @@ class ConditionalICTester:
         
         self.min_conditional_ic = config.min_conditional_ic
     
-    def calculate_conditional_ics(self, 
+    def calculate_conditional_ics(self,
                                 features: pd.DataFrame,
                                 targets: pd.Series,
                                 base_features: List[str]) -> Dict[str, float]:
@@ -337,9 +402,14 @@ class ConditionalICTester:
             Dictionary of conditional ICs
         """
         self.logger.info("Starting conditional IC testing")
-        
+        tprint_info(
+            "📐 Calculating conditional ICs",
+            f"features={len(features.columns)}",
+            f"base_features={len(base_features) if base_features else 0}",
+        )
+
         conditional_ics = {}
-        
+
         for feature_name in features.columns:
             try:
                 conditional_ic = self._calculate_conditional_ic(
@@ -349,9 +419,14 @@ class ConditionalICTester:
                 
             except Exception as e:
                 self.logger.warning(f"Failed to calculate conditional IC for {feature_name}: {e}")
+                tprint_warning(f"⚠️ Conditional IC failed for {feature_name}: {e}")
                 conditional_ics[feature_name] = 0.0
-        
+
         self.logger.info(f"Conditional IC testing completed: {len(conditional_ics)} features tested")
+        tprint_success(
+            "✅ Conditional ICs calculated",
+            f"tested={len(conditional_ics)}",
+        )
         return conditional_ics
     
     def _calculate_conditional_ic(self, 
@@ -424,7 +499,7 @@ class GroupLASSOSelector:
         self.config = config
         self.logger = logging.getLogger(__name__)
     
-    def select_features(self, 
+    def select_features(self,
                       features: pd.DataFrame,
                       targets: pd.Series,
                       feature_groups: Dict[str, List[str]]) -> Dict[str, List[str]]:
@@ -440,11 +515,17 @@ class GroupLASSOSelector:
             Dictionary of selected groups
         """
         self.logger.info("Starting Group LASSO selection")
-        
+        tprint_info(
+            "🧩 Running group selection",
+            f"groups={len(feature_groups)}",
+            f"features={len(features.columns)}",
+        )
+
         if not GROUP_LASSO_AVAILABLE:
             self.logger.warning("Group LASSO not available, using standard LASSO")
+            tprint_warning("⚠️ Group LASSO package unavailable - falling back to standard LASSO")
             return self._fallback_lasso_selection(features, targets, feature_groups)
-        
+
         try:
             # Standardize features
             scaler = StandardScaler()
@@ -463,12 +544,17 @@ class GroupLASSOSelector:
             for group_name, group_features in feature_groups.items():
                 if group_name in selected_groups:
                     selected_feature_groups[group_name] = group_features
-            
+
             self.logger.info(f"Group LASSO selection completed: {len(selected_feature_groups)} groups selected")
+            tprint_success(
+                "✅ Group selection complete",
+                f"selected_groups={len(selected_feature_groups)}",
+            )
             return selected_feature_groups
-            
+
         except Exception as e:
             self.logger.warning(f"Group LASSO failed: {e}, using fallback")
+            tprint_warning(f"⚠️ Group LASSO failed ({e}), using fallback LASSO")
             return self._fallback_lasso_selection(features, targets, feature_groups)
     
     def _create_group_matrix(self, 
@@ -555,7 +641,7 @@ class StatisticalSelection:
         self.conditional_ic_tester = ConditionalICTester(config)
         self.group_lasso_selector = GroupLASSOSelector(config)
     
-    def select_final_features(self, 
+    def select_final_features(self,
                             materialized_htfs: Dict[str, Any],
                             interactions: List[Any],
                             targets: Optional[pd.Series] = None) -> CrossTimeframeStatisticalSelectionResult:
@@ -571,14 +657,25 @@ class StatisticalSelection:
             Selection result with selected features
         """
         self.logger.info("Starting statistical selection")
-        
+        tprint_info(
+            "🚀 Starting statistical selection",
+            f"htfs={len(materialized_htfs)}",
+            f"interactions={len(interactions)}",
+            f"targets_provided={targets is not None}",
+        )
+
         # Prepare feature matrix
         feature_matrix, feature_names = self._prepare_feature_matrix(
             materialized_htfs, interactions
         )
-        
+
+        tprint_debug(
+            f"   → Prepared feature matrix with {len(feature_names)} features and {len(feature_matrix)} rows"
+        )
+
         if feature_matrix.empty or targets is None:
             self.logger.warning("No features or targets available for selection")
+            tprint_warning("⚠️ Statistical selection skipped - missing features or targets")
             return CrossTimeframeStatisticalSelectionResult(
                 selected_features=[],
                 selection_frequencies={},
@@ -592,25 +689,36 @@ class StatisticalSelection:
         
         # Identify base features
         base_features = self._identify_base_features(materialized_htfs)
-        
+        tprint_debug(f"   → Identified {len(base_features)} base features for conditional tests")
+
         # Stability selection
         selection_frequencies = self.stability_selector.select_features(
             feature_matrix, targets, base_features
         )
-        
+        tprint_info("   → Stability selection computed", f"features={len(selection_frequencies)}")
+
         # Permutation testing
         p_values = self.permutation_tester.calculate_p_values(
             feature_matrix, targets, base_features
         )
-        
+        tprint_info("   → Permutation testing complete", f"features={len(p_values)}")
+
         # FDR control
         fdr_corrected_p_values = self.fdr_controller.control_fdr(p_values)
-        
+        tprint_info(
+            "   → FDR control applied",
+            f"features={len(fdr_corrected_p_values)}",
+        )
+
         # Conditional IC testing
         conditional_ics = self.conditional_ic_tester.calculate_conditional_ics(
             feature_matrix, targets, base_features
         )
-        
+        tprint_info(
+            "   → Conditional ICs calculated",
+            f"features={len(conditional_ics)}",
+        )
+
         # Group LASSO (if enabled)
         group_lasso_groups = {}
         if self.config.get('enable_group_lasso', False):
@@ -618,7 +726,11 @@ class StatisticalSelection:
             group_lasso_groups = self.group_lasso_selector.select_features(
                 feature_matrix, targets, feature_groups
             )
-        
+            tprint_info(
+                "   → Group LASSO processed",
+                f"groups={len(group_lasso_groups)}",
+            )
+
         # Apply selection criteria
         selected_features = self._apply_selection_criteria(
             feature_names,
@@ -626,7 +738,11 @@ class StatisticalSelection:
             fdr_corrected_p_values,
             conditional_ics
         )
-        
+        tprint_success(
+            "🏁 Final feature selection complete",
+            f"selected_features={len(selected_features)}",
+        )
+
         # Create selection result
         result = CrossTimeframeStatisticalSelectionResult(
             selected_features=selected_features,
@@ -643,8 +759,13 @@ class StatisticalSelection:
                 'conditional_ic_threshold': self.config.min_conditional_ic
             }
         )
-        
+
         self.logger.info(f"Statistical selection completed: {len(selected_features)} features selected")
+        tprint_success(
+            "✅ Statistical selection completed",
+            f"selected={len(selected_features)}",
+            f"evaluated={len(feature_names)}",
+        )
         return result
     
     def _prepare_feature_matrix(self, 
@@ -753,7 +874,7 @@ class StatisticalSelection:
     
     def get_selection_summary(self, result: CrossTimeframeStatisticalSelectionResult) -> Dict[str, Any]:
         """Get summary of selection results."""
-        return {
+        summary = {
             'total_selected': len(result.selected_features),
             'selection_frequencies': result.selection_frequencies,
             'fdr_corrected_p_values': result.fdr_corrected_p_values,
@@ -762,3 +883,9 @@ class StatisticalSelection:
             'selection_method': result.selection_method,
             'metadata': result.metadata
         }
+        tprint_info(
+            "📝 Selection summary",
+            f"total_selected={summary['total_selected']}",
+            f"method={summary['selection_method']}",
+        )
+        return summary

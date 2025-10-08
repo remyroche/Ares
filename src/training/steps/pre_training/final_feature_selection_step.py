@@ -72,7 +72,7 @@ class FinalFeatureSelectionStep:
         # Drift monitoring configuration
         self.enable_drift_monitoring = self.config.get('enable_drift_monitoring', True)
         self.drift_thresholds = {
-            'max_kl_divergence': self.config.get('max_kl_divergence', 0.5),
+            'max_kl_divergence': self.config.get('max_kl_divergence', 0.15),  # ENHANCED: Stricter threshold
             'max_mean_shift': self.config.get('max_mean_shift', 2.0),
             'max_vif': self.config.get('max_vif', 10.0)
         }
@@ -81,6 +81,16 @@ class FinalFeatureSelectionStep:
         self.enable_bootstrap_validation = self.config.get('enable_bootstrap_validation', True)
         self.bootstrap_iterations = self.config.get('bootstrap_iterations', 10)
         self.stability_threshold = self.config.get('stability_threshold', 0.6)
+        
+        # ENHANCEMENTS: Economic interpretability and robustness
+        self.preserve_economic_themes = self.config.get('preserve_economic_themes', True)
+        self.min_features_per_theme = self.config.get('min_features_per_theme', 1)
+        self.track_ic_over_time = self.config.get('track_ic_over_time', True)
+        self.ic_window_size = self.config.get('ic_window_size', 100)
+        self.min_ic_threshold = self.config.get('min_ic_threshold', 0.02)
+        self.min_ic_t_stat = self.config.get('min_ic_t_stat', 2.0)
+        self.validate_with_factor_portfolio = self.config.get('validate_with_factor_portfolio', True)
+        self.min_factor_sharpe = self.config.get('min_factor_sharpe', 0.3)
         
         if self.enable_drift_monitoring:
             tprint(f"   🔍 Drift monitoring: Enabled (KL threshold={self.drift_thresholds['max_kl_divergence']})")

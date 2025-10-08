@@ -157,6 +157,9 @@ class CoreOptimizer:
         self.feature_cache = {}
         self.cache_hits = 0
         self.cache_misses = 0
+
+        # Track lag metadata for generated features
+        self.feature_lag_metadata: Dict[str, Dict[int, Dict[str, Any]]] = {}
         
         # Shared forward returns matrix cache (reused across all features)
         self.shared_forward_returns = {}
@@ -3616,8 +3619,8 @@ class CoreOptimizer:
                 'objective': 0.0
             }
 
-    def _parallel_refinement(self, top_horizons: List[Tuple[int, float]], data: pd.DataFrame, 
-                           feature_name: str, forward_returns: Dict[int, np.ndarray], 
+    def _parallel_refinement(self, top_horizons: List[Tuple[int, float]], data: pd.DataFrame,
+                           feature_name: str, forward_returns: Dict[int, np.ndarray],
                            train_end_idx: int, min_lookback: int, max_lookback: int) -> List[Tuple[int, float]]:
         """
         Parallel refinement of top horizons using ThreadPoolExecutor.
@@ -3692,9 +3695,9 @@ class CoreOptimizer:
         # Use ThreadPoolExecutor for parallel processing
         final_results = []
         with ThreadPoolExecutor(max_workers=min(4, len(top_horizons))) as executor:
-            future_to_horizon = {executor.submit(refine_single_horizon, horizon_mi): horizon_mi 
+            future_to_horizon = {executor.submit(refine_single_horizon, horizon_mi): horizon_mi
                                for horizon_mi in top_horizons}
-            
+
             for future in as_completed(future_to_horizon):
                 try:
                     result = future.result()
@@ -3703,14 +3706,53 @@ class CoreOptimizer:
                     horizon_mi = future_to_horizon[future]
                     self.logger.warning(f"⚠️ Failed to refine horizon {horizon_mi[0]}: {e}")
                     final_results.append(horizon_mi)  # Fallback to original
-        
+
         return final_results
 
-    def _vectorized_feature_generation(self, data: pd.DataFrame, feature_name: str, 
+    @staticmethod
+    def _apply_minimum_lag(values: Union[pd.Series, np.ndarray]) -> np.ndarray:
+        """Shift feature values by one period to enforce a minimum lag of 1."""
+        if values is None:
+            return np.array([], dtype=float)
+
+        arr = np.asarray(values, dtype=float)
+        if arr.size == 0:
+            return arr.astype(float)
+
+        lagged = np.empty_like(arr, dtype=float)
+        lagged[:] = np.nan
+        lagged[1:] = arr[:-1]
+        return lagged
+
+    def _assert_lag_requirements(self, feature_name: str, horizon: int, values: np.ndarray) -> None:
+        """Validate that feature arrays satisfy minimum lag requirements and record metadata."""
+        if values is None:
+            raise ValueError(f"Feature '{feature_name}' produced no values for horizon {horizon}")
+
+        arr = np.asarray(values, dtype=float)
+        if arr.size == 0:
+            raise ValueError(f"Feature '{feature_name}' produced empty array for horizon {horizon}")
+
+        required_lag = 1
+        leading_window = arr[:required_lag]
+        if not np.isnan(leading_window).all():
+            raise ValueError(
+                f"Feature '{feature_name}' (horizon={horizon}) exposes contemporaneous values; "
+                "expected leading NaNs after enforcing lag."
+            )
+
+        feature_meta = self.feature_lag_metadata.setdefault(feature_name, {})
+        feature_meta[horizon] = {
+            'max_lag': max(required_lag, int(horizon)),
+            'required_lag': required_lag,
+            'has_leading_nulls': True,
+        }
+
+    def _vectorized_feature_generation(self, data: pd.DataFrame, feature_name: str,
                                      horizons: List[int]) -> Dict[int, np.ndarray]:
         """
         Vectorized feature generation for multiple horizons using numpy operations.
-        
+
         Args:
             data: Input data
             feature_name: Feature to generate
@@ -3733,30 +3775,36 @@ class CoreOptimizer:
             for horizon in horizons:
                 if horizon <= 0 or horizon >= len(close_prices):
                     continue
-                
+
                 # Vectorized feature generation based on feature type
                 if 'returns' in feature_name.lower():
                     # Simple returns: (price[t] - price[t-horizon]) / price[t-horizon]
                     shifted_prices = np.roll(close_prices, horizon)
                     returns = (close_prices - shifted_prices) / np.maximum(shifted_prices, 1e-8)
                     returns[:horizon] = np.nan  # Remove invalid values
-                    results[horizon] = returns
-                    
+                    lagged = self._apply_minimum_lag(returns)
+                    self._assert_lag_requirements(feature_name, horizon, lagged)
+                    results[horizon] = lagged
+
                 elif 'momentum' in feature_name.lower():
                     # Momentum: price[t] - price[t-horizon]
                     shifted_prices = np.roll(close_prices, horizon)
                     momentum = close_prices - shifted_prices
                     momentum[:horizon] = np.nan
-                    results[horizon] = momentum
-                    
+                    lagged = self._apply_minimum_lag(momentum)
+                    self._assert_lag_requirements(feature_name, horizon, lagged)
+                    results[horizon] = lagged
+
                 elif 'sma' in feature_name.lower() or 'moving_average' in feature_name.lower():
                     # Simple Moving Average
                     if horizon <= len(close_prices):
                         sma = np.full_like(close_prices, np.nan)
                         for i in range(horizon, len(close_prices)):
                             sma[i] = np.mean(close_prices[i-horizon:i])
-                        results[horizon] = sma
-                        
+                        lagged = self._apply_minimum_lag(sma)
+                        self._assert_lag_requirements(feature_name, horizon, lagged)
+                        results[horizon] = lagged
+
                 elif 'ema' in feature_name.lower() or 'exponential' in feature_name.lower():
                     # Exponential Moving Average
                     alpha = 2.0 / (horizon + 1)
@@ -3765,8 +3813,10 @@ class CoreOptimizer:
                         ema[0] = close_prices[0]
                         for i in range(1, len(close_prices)):
                             ema[i] = alpha * close_prices[i] + (1 - alpha) * ema[i-1]
-                    results[horizon] = ema
-                    
+                    lagged = self._apply_minimum_lag(ema)
+                    self._assert_lag_requirements(feature_name, horizon, lagged)
+                    results[horizon] = lagged
+
                 elif 'volatility' in feature_name.lower():
                     # Rolling volatility (standard deviation of returns)
                     if horizon < len(close_prices):
@@ -3774,14 +3824,18 @@ class CoreOptimizer:
                         volatility = np.full_like(close_prices, np.nan)
                         for i in range(horizon, len(returns)):
                             volatility[i] = np.std(returns[i-horizon:i])
-                        results[horizon] = volatility
-                        
+                        lagged = self._apply_minimum_lag(volatility)
+                        self._assert_lag_requirements(feature_name, horizon, lagged)
+                        results[horizon] = lagged
+
                 else:
                     # Fallback to individual calculation
                     try:
                         feature_values = self._cached_feature_calculation(data, feature_name, horizon)
                         if feature_values is not None:
-                            results[horizon] = feature_values
+                            lagged = self._apply_minimum_lag(feature_values)
+                            self._assert_lag_requirements(feature_name, horizon, lagged)
+                            results[horizon] = lagged
                     except Exception:
                         continue
             

@@ -386,6 +386,7 @@ class VolatilityAwareMultiHorizonLabeler:
             quality_scores={},
             config_used=self.config
         )
+        result.target_shifts = {}
         
         try:
             # Step 1: Event-based bar construction (with caching)
@@ -539,6 +540,15 @@ class VolatilityAwareMultiHorizonLabeler:
             result.normalization_factors = self._build_normalization_factors(
                 vol_result, filtered_result
             )
+            result.target_shifts = getattr(
+                filtered_result,
+                'target_shifts',
+                getattr(target_result, 'target_shifts', {})
+            )
+            result.target_parameters = getattr(
+                filtered_result,
+                'target_parameters',
+                getattr(target_result, 'target_parameters', {})
             result.execution_timing = deepcopy(
                 getattr(
                     filtered_result,
@@ -767,6 +777,7 @@ class VolatilityAwareMultiHorizonLabeler:
                 'selected_targets',
                 'target_bands',
                 'target_parameters',
+                'target_shifts',
                 'target_quality_scores',
                 'target_correlations',
                 'diversity_score',
@@ -1232,7 +1243,7 @@ class VolatilityAwareMultiHorizonLabeler:
     
     def _create_empty_result(self) -> LabelingResult:
         """Create empty result when processing fails."""
-        return LabelingResult(
+        empty_result = LabelingResult(
             labels=pd.DataFrame(),
             confidence_scores=pd.DataFrame(),
             eligibility_masks=pd.DataFrame(),
@@ -1244,6 +1255,8 @@ class VolatilityAwareMultiHorizonLabeler:
             config_used=self.config,
             processing_time=0.0
         )
+        empty_result.target_shifts = {}
+        return empty_result
     
     def get_performance_summary(self) -> Dict[str, Any]:
         """Get performance monitoring summary."""

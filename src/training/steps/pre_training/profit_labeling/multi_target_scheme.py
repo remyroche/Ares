@@ -177,11 +177,12 @@ class TargetSelectionResult:
     sigma_payoffs: pd.DataFrame = field(default_factory=pd.DataFrame)
     training_labels: pd.DataFrame = field(default_factory=pd.DataFrame)
     raw_payoffs: pd.DataFrame = field(default_factory=pd.DataFrame)
-    
+
     # Target information
     selected_targets: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     target_bands: Dict[str, TargetBand] = field(default_factory=dict)
     target_parameters: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    target_shifts: Dict[str, int] = field(default_factory=dict)
     smoothing_settings: Dict[str, Dict[str, float]] = field(default_factory=dict)
     
     # Quality metrics
@@ -305,6 +306,8 @@ class MultiTargetScheme:
                     candidate['horizon_context'] = {'horizon': candidate['horizon']}
                 candidate.setdefault('parameters', {})
                 candidate['parameters']['horizon'] = candidate['horizon']
+                candidate['target_shift'] = max(1, int(candidate.get('target_shift', 1)))
+                candidate['parameters']['target_shift'] = candidate['target_shift']
 
             self._apply_smoothing_parameters(candidate_targets)
 
@@ -357,7 +360,12 @@ class MultiTargetScheme:
                     **(info.get('parameters', {})),
                     'horizon': info.get('horizon'),
                     'horizon_context': info.get('horizon_context'),
+                    'target_shift': info.get('target_shift', 1),
                 }
+                for name, info in selected_targets.items()
+            }
+            result.target_shifts = {
+                name: int(info.get('target_shift', 1))
                 for name, info in selected_targets.items()
             }
             result.smoothing_settings = self._extract_smoothing_settings(result.target_parameters)
@@ -477,10 +485,12 @@ class MultiTargetScheme:
                         'k_up': k,
                         'k_down': k * asymmetry,
                         'target_name': f"{band.value}_k{k:.2f}_a{asymmetry:.2f}",
+                        'target_shift': 1,
                         'parameters': {
                             'k_up': k,
                             'k_down': k * asymmetry,
-                            'band': band.value
+                            'band': band.value,
+                            'target_shift': 1,
                         }
                     }
                     candidates.append(candidate)

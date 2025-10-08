@@ -628,7 +628,28 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 if primary.name.lower() != 'nas_tas_clustering':
                     candidate_dirs.insert(1, primary / 'nas_tas_clustering')
             else:
-                _register_candidate(Path('data_cache'))
+                default_locator = PipelineDataLocator()
+                cache_key = (
+                    pipeline_state.get('cache_dir_key')
+                    or getattr(self.config, 'cache_dir_key', None)
+                    or 'default'
+                )
+                try:
+                    primary = default_locator.cache_path(cache_key, ensure_exists=True)
+                except Exception:
+                    primary = default_locator.cache_path(ensure_exists=True)
+
+                primary = primary.expanduser()
+                if not primary.is_absolute():
+                    primary = Path.cwd() / primary
+
+                self.logger.warning(
+                    "⚠️ Using default locator cache directory: %s",
+                    primary,
+                )
+                candidate_dirs.insert(0, primary)
+                if primary.name.lower() != 'nas_tas_clustering':
+                    candidate_dirs.insert(1, primary / 'nas_tas_clustering')
 
             # Remove duplicates while preserving order
             seen_paths = set()

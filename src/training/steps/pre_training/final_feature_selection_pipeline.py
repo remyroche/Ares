@@ -585,14 +585,23 @@ class MultiStageFeatureSelector:
         """Get cache statistics."""
         total_requests = self._cache_hits + self._cache_misses
         hit_rate = self._cache_hits / total_requests if total_requests > 0 else 0.0
-        
-        return {
+
+        stats = {
             'cache_size': len(self._cache),
             'cache_hits': self._cache_hits,
             'cache_misses': self._cache_misses,
             'hit_rate': hit_rate,
             'computation_cache_size': len(self._computation_cache)
         }
+
+        tprint(
+            (
+                "💾 Cache stats — size: {cache_size}, hits: {cache_hits}, misses: {cache_misses}, hit rate: {hit_rate:.2%},"
+                " computation cache: {computation_cache_size}"
+            ).format(**stats)
+        )
+
+        return stats
     
     def select_features(self,
                        X: pd.DataFrame,
@@ -701,16 +710,22 @@ class MultiStageFeatureSelector:
         """Select features separately for each direction."""
 
         self.logger.info(f"🎯 Selecting directional features for: {directions}")
+        tprint(f"🎯 Directional selection activated for: {directions}")
 
         # Process each direction separately
         for direction in directions:
             self.logger.info(f"🔄 Processing {direction} direction features")
+            tprint(f"🔄 Processing direction: {direction}")
 
             # Filter features for this direction
             direction_features = self._filter_direction_features(X, direction)
 
             if len(direction_features.columns) < stage_targets[-1]:
                 self.logger.warning(f"⚠️ {direction} direction has only {len(direction_features.columns)} features, less than target {stage_targets[-1]}")
+                tprint(
+                    f"⚠️ {direction.capitalize()} direction insufficient features: {len(direction_features.columns)} available,"
+                    f" requires {stage_targets[-1]}"
+                )
                 if direction == 'long':
                     self.long_results = self._handle_insufficient_features(direction_features, y)
                 else:
@@ -748,6 +763,7 @@ class MultiStageFeatureSelector:
         """Compile results from directional feature selection."""
 
         combined_result = FeatureSelectionResult()
+        tprint("📦 Compiling directional selection results")
 
         if 'long' in directions and hasattr(self, 'long_results'):
             # Combine long and short features
@@ -776,6 +792,11 @@ class MultiStageFeatureSelector:
         self.logger.info(f"📊 Long features: {len(long_features) if 'long' in directions else 0}")
         self.logger.info(f"📊 Short features: {len(short_features) if 'short' in directions else 0}")
         self.logger.info(f"📊 Total unique features: {len(combined_features)}")
+        directional_summary = (
+            f"✅ Directional selection complete — long: {len(long_features) if 'long' in directions else 0},"
+            f" short: {len(short_features) if 'short' in directions else 0}, total: {len(combined_features)}"
+        )
+        tprint(directional_summary)
 
         return combined_result
 
@@ -785,28 +806,37 @@ class MultiStageFeatureSelector:
         # Validate inputs
         if len(X.columns) < stage_targets[-1]:  # Check against final target
             self.logger.warning(f"⚠️ Input has only {len(X.columns)} features, less than target {stage_targets[-1]}")
+            tprint(
+                f"⚠️ Unified selection skipped — only {len(X.columns)} features available,"
+                f" need at least {stage_targets[-1]}"
+            )
             return self._handle_insufficient_features(X, y)
 
         # Stage 0: Initial feature preparation
         self.logger.info("📊 Stage 0: Initial feature preparation")
+        tprint("📊 Stage 0 — preparing initial features")
         prepared_features = self._prepare_initial_features(X, y, feature_names)
 
         # Stage 1: Initial → Stage 1 target features
         stage_1_target = stage_targets[1] if len(stage_targets) > 1 else 100
         self.logger.info(f"📊 Stage 1: Reducing to {stage_1_target} features")
+        tprint(f"🚀 Stage 1 target: {stage_1_target} features")
         stage_1_features, stage_1_scores = self._stage_1_selection(prepared_features, y, target_count=stage_1_target)
 
         # Stage 2: Stage 1 → Stage 2 target features
         stage_2_target = stage_targets[2] if len(stage_targets) > 2 else 80
         self.logger.info(f"📊 Stage 2: Reducing to {stage_2_target} features")
+        tprint(f"🚀 Stage 2 target: {stage_2_target} features")
         stage_2_features, stage_2_scores = self._stage_2_selection(prepared_features[stage_1_features], y, target_count=stage_2_target)
 
         # Stage 3: Stage 2 → Stage 3 target features
         stage_3_target = stage_targets[3] if len(stage_targets) > 3 else 60
         self.logger.info(f"📊 Stage 3: Reducing to {stage_3_target} features")
+        tprint(f"🚀 Stage 3 target: {stage_3_target} features")
         stage_3_features, stage_3_scores = self._stage_3_selection(prepared_features[stage_1_features][stage_2_features], y, target_count=stage_3_target)
 
         # Compile final results
+        tprint("📦 Compiling multi-stage selection results")
         self._compile_results(
             prepared_features, y, stage_1_features, stage_2_features, stage_3_features,
             stage_1_scores, stage_2_scores, stage_3_scores
@@ -814,6 +844,7 @@ class MultiStageFeatureSelector:
 
         # Save results
         if self.config.save_analysis:
+            tprint("💾 Saving feature selection analysis")
             self._save_analysis()
 
         return self.results
@@ -1219,6 +1250,8 @@ class MultiStageFeatureSelector:
         if not LIGHTGBM_AVAILABLE:
             raise ImportError("LightGBM not available")
 
+        tprint(f"🚀 Training LightGBM model on {X.shape[0]} samples × {X.shape[1]} features")
+
         # Determine if classification or regression
         if self._is_classification(y):
             objective = 'binary' if len(y.unique()) == 2 else 'multiclass'
@@ -1227,14 +1260,17 @@ class MultiStageFeatureSelector:
             params['num_class'] = len(y.unique()) if objective == 'multiclass' else 1
 
             model = lgb.LGBMClassifier(**params)
+            tprint(f"🎯 LightGBM classification objective: {objective}")
         else:
             params = self.config.lightgbm_params.copy()
             params['objective'] = 'regression'
 
             model = lgb.LGBMRegressor(**params)
+            tprint("🎯 LightGBM regression objective")
 
         # Train model
         model.fit(X, y)
+        tprint("✅ LightGBM training complete")
 
         return model
 
@@ -1243,12 +1279,15 @@ class MultiStageFeatureSelector:
         try:
             if LIGHTGBM_AVAILABLE and len(X.columns) > 50:
                 self.logger.info("🚀 Using LightGBM for faster training")
+                tprint(f"🚀 Optimized training — selecting LightGBM (features: {len(X.columns)})")
                 return self._train_lightgbm_model(X, y)
             else:
                 self.logger.info("📊 Using RandomForest (LightGBM not available or dataset too small)")
+                tprint("📊 Optimized training — selecting RandomForest")
                 return self._train_random_forest(X, y)
         except Exception as e:
             self.logger.warning(f"⚠️ LightGBM training failed, falling back to RandomForest: {e}")
+            tprint(f"⚠️ LightGBM training failed ({e}), falling back to RandomForest")
             return self._train_random_forest(X, y)
 
     def _calculate_adaptive_importance_threshold(self, importance_scores: Dict[str, float]) -> float:
@@ -1473,10 +1512,12 @@ class MultiStageFeatureSelector:
         """Select features for a single chunk."""
         # Use a simplified version of the selection process for chunks
         if len(X_chunk.columns) < 10:
+            tprint(f"📦 Chunk small ({len(X_chunk.columns)} features), selecting all")
             return X_chunk.columns.tolist()
 
         # Train model and get importance
         try:
+            tprint(f"🚀 Training chunk model for {len(X_chunk.columns)} features")
             model = self._train_optimized_model(X_chunk, y)
             if hasattr(model, 'feature_importances_'):
                 importance = dict(zip(X_chunk.columns, model.feature_importances_))
@@ -1489,14 +1530,19 @@ class MultiStageFeatureSelector:
             target_count = min(len(X_chunk.columns) // 2, self.config.target_features // 4)  # Conservative selection
             selected = [f for f, _ in sorted_features[:target_count]]
 
+            tprint(f"✅ Chunk selection complete — {len(selected)} features retained")
+
             return selected
 
         except Exception as e:
             self.logger.warning(f"⚠️ Chunk selection failed: {e}")
+            tprint(f"⚠️ Chunk selection failed ({e}), falling back to variance selection")
             # Fallback to simple variance-based selection
             variances = X_chunk.var().sort_values(ascending=False)
             target_count = min(len(X_chunk.columns) // 2, 10)
-            return variances.head(target_count).index.tolist()
+            fallback_features = variances.head(target_count).index.tolist()
+            tprint(f"✅ Variance fallback selected {len(fallback_features)} features")
+            return fallback_features
     
     def _stage_1_selection(self, X: pd.DataFrame, y: pd.Series, target_count: Optional[int] = None) -> Tuple[List[str], Dict[str, float]]:
         """Stage 1: Initial → target features using vectorized operations and optimized model selection."""
@@ -1797,47 +1843,57 @@ class MultiStageFeatureSelector:
     
     def _shap_based_selection(self, X: pd.DataFrame, y: pd.Series, target_count: int) -> Tuple[List[str], Dict[str, float]]:
         """SHAP-based feature selection."""
-        
+
         # Sample data for SHAP analysis
         sample_size = min(self.config.shap_sample_size, len(X))
         sample_indices = np.random.choice(len(X), sample_size, replace=False)
         X_sample = X.iloc[sample_indices]
         y_sample = y.iloc[sample_indices]
-        
+        tprint(f"🔮 SHAP analysis on sample of {sample_size} observations")
+
         # Train model
         rf_model = self._train_random_forest(X_sample, y_sample)
-        
+        tprint("🌳 RandomForest trained for SHAP analysis")
+
         # Calculate SHAP values
         explainer = shap.TreeExplainer(rf_model)
         shap_values = explainer.shap_values(X_sample)
-        
+        tprint("✨ SHAP values computed")
+
         # Calculate mean absolute SHAP values
         if isinstance(shap_values, list):  # Classification
             shap_importance = np.mean(np.abs(shap_values), axis=(0, 1))
         else:  # Regression
             shap_importance = np.mean(np.abs(shap_values), axis=0)
-        
+
         # Create feature importance dictionary
         shap_importance_dict = dict(zip(X.columns, shap_importance))
-        
+
         # Select top features
         sorted_features = sorted(shap_importance_dict.items(), key=lambda x: x[1], reverse=True)
         selected_features = [f[0] for f in sorted_features[:target_count]]
-        
+        tprint(f"✅ SHAP selected top {len(selected_features)} features")
+
         # Calculate scores
         scores = {
             'shap_importance_score': np.mean(shap_importance),
             'shap_variance': np.var(shap_importance),
             'selection_confidence': len(selected_features) / len(X.columns)
         }
-        
+
+        tprint(
+            f"📊 SHAP scores — mean importance: {scores['shap_importance_score']:.6f},"
+            f" variance: {scores['shap_variance']:.6f}"
+        )
+
         return selected_features, scores
-    
+
     def _enhanced_rf_selection(self, X: pd.DataFrame, y: pd.Series, target_count: int) -> Tuple[List[str], Dict[str, float]]:
         """Enhanced RandomForest selection with multiple criteria."""
-        
+
         # Train multiple RandomForest models with different parameters
         models = []
+        tprint("🌳 Starting enhanced RandomForest ensemble selection")
         for n_est in [50, 100, 150]:
             model = RandomForestRegressor(
                 n_estimators=n_est,
@@ -1847,27 +1903,35 @@ class MultiStageFeatureSelector:
             )
             model.fit(X, y)
             models.append(model)
-        
+            tprint(f"✅ Trained RandomForest with {n_est} trees")
+
         # Average feature importance across models
         avg_importance = np.zeros(len(X.columns))
         for model in models:
             avg_importance += model.feature_importances_
         avg_importance /= len(models)
-        
+        tprint("📊 Averaged feature importance across ensemble")
+
         # Create feature importance dictionary
         importance_dict = dict(zip(X.columns, avg_importance))
-        
+
         # Select top features
         sorted_features = sorted(importance_dict.items(), key=lambda x: x[1], reverse=True)
         selected_features = [f[0] for f in sorted_features[:target_count]]
-        
+        tprint(f"🏆 Enhanced RF selected {len(selected_features)} features")
+
         # Calculate scores
         scores = {
             'enhanced_rf_score': np.mean(avg_importance),
             'model_agreement': 1 - np.std(avg_importance) / np.mean(avg_importance),
             'selection_quality': len(selected_features) / len(X.columns)
         }
-        
+
+        tprint(
+            f"📈 Enhanced RF scores — mean: {scores['enhanced_rf_score']:.6f},"
+            f" agreement: {scores['model_agreement']:.6f}"
+        )
+
         return selected_features, scores
     
     def _cross_validate_feature_importance(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, float]:
@@ -1904,7 +1968,7 @@ class MultiStageFeatureSelector:
     
     def _train_random_forest(self, X: pd.DataFrame, y: pd.Series):
         """Train RandomForest model."""
-        
+
         if self._is_classification(y):
             model = RandomForestClassifier(
                 n_estimators=self.config.rf_n_estimators,
@@ -1912,6 +1976,7 @@ class MultiStageFeatureSelector:
                 min_samples_split=self.config.rf_min_samples_split,
                 random_state=self.config.rf_random_state
             )
+            tprint(f"🌳 Training RandomForestClassifier with {self.config.rf_n_estimators} trees")
         else:
             model = RandomForestRegressor(
                 n_estimators=self.config.rf_n_estimators,
@@ -1919,8 +1984,10 @@ class MultiStageFeatureSelector:
                 min_samples_split=self.config.rf_min_samples_split,
                 random_state=self.config.rf_random_state
             )
-        
+            tprint(f"🌳 Training RandomForestRegressor with {self.config.rf_n_estimators} trees")
+
         model.fit(X, y)
+        tprint("✅ RandomForest training complete")
         return model
     
     def _is_classification(self, y: pd.Series) -> bool:
@@ -2093,14 +2160,16 @@ class MultiStageFeatureSelector:
             self.logger.error(f"❌ Failed to save analysis: {e}")
 
 # Convenience functions
-def run_final_feature_selection(X: pd.DataFrame, 
+def run_final_feature_selection(X: pd.DataFrame,
                                y: pd.Series,
                                config: Optional[FeatureSelectionConfig] = None) -> FeatureSelectionResult:
     """Run final feature selection pipeline."""
+    tprint("🚀 Running final feature selection helper")
     selector = MultiStageFeatureSelector(config)
+    tprint("📊 Executing multi-stage selector")
     return selector.select_features(X, y)
 
-def get_final_features(X: pd.DataFrame, 
+def get_final_features(X: pd.DataFrame,
                       y: pd.Series,
                       target_count: int = 60,
                       config: Optional[FeatureSelectionConfig] = None) -> List[str]:
@@ -2108,6 +2177,8 @@ def get_final_features(X: pd.DataFrame,
     if config is None:
         config = FeatureSelectionConfig()
         config.stage_3_target = target_count
-    
+        tprint(f"🎯 Configuring stage 3 target for final features: {target_count}")
+
     result = run_final_feature_selection(X, y, config)
+    tprint(f"✅ Final feature count: {len(result.final_features)}")
     return result.final_features

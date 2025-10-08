@@ -22,6 +22,8 @@ from sklearn.linear_model import LinearRegression
 from scipy import stats
 from scipy.stats import bootstrap
 import warnings
+
+from src.utils.tprint import tprint
 warnings.filterwarnings('ignore')
 
 from .config import EvaluationConfig
@@ -93,9 +95,13 @@ class WalkForwardValidator:
         
         # Create walk-forward splits
         splits = self._create_walk_forward_splits(features, targets)
-        
+        tprint(
+            f"📆 Generated {len(splits)} walk-forward splits for evaluation",
+            "INFO"
+        )
+
         fold_results = []
-        
+
         for i, (train_idx, test_idx) in enumerate(splits):
             try:
                 # Get train/test data
@@ -124,40 +130,56 @@ class WalkForwardValidator:
                 )
                 
                 fold_results.append(fold_result)
-                
+
             except Exception as e:
                 self.logger.warning(f"Walk-forward fold {i} failed: {e}")
+                tprint(f"⚠️ Walk-forward fold {i} failed: {e}", "WARNING")
                 continue
-        
+
         self.logger.info(f"Walk-forward validation completed: {len(fold_results)} folds")
+        tprint(
+            f"✅ Walk-forward validation complete with {len(fold_results)} successful folds",
+            "SUCCESS"
+        )
         return fold_results
-    
-    def _create_walk_forward_splits(self, 
+
+    def _create_walk_forward_splits(self,
                                    features: pd.DataFrame,
                                    targets: pd.Series) -> List[Tuple[np.ndarray, np.ndarray]]:
         """Create walk-forward splits."""
         # Use TimeSeriesSplit with custom parameters
         tscv = TimeSeriesSplit(n_splits=self.n_folds)
         splits = list(tscv.split(features))
-        
+
+        tprint(
+            f"🔀 Created {len(splits)} walk-forward splits (folds={self.n_folds})",
+            "DEBUG"
+        )
+
         return splits
-    
-    def _apply_purging_embargo(self, 
+
+    def _apply_purging_embargo(self,
                               train_features: pd.DataFrame,
                               train_targets: pd.Series,
                               test_start: datetime) -> Tuple[pd.DataFrame, pd.Series]:
         """Apply purging and embargo to training data."""
         # Calculate embargo period
         embargo_end = test_start - timedelta(minutes=self.embargo_minutes)
-        
+
         # Filter training data
         train_mask = train_features.index < embargo_end
         purged_train_features = train_features[train_mask]
         purged_train_targets = train_targets[train_mask]
-        
+
+        tprint(
+            "🧹 Applied purging & embargo: "
+            f"kept {len(purged_train_features)} of {len(train_features)} rows (embargo {self.embargo_minutes}m)",
+            "DEBUG"
+        )
+
         return purged_train_features, purged_train_targets
-    
-    def _train_model(self, 
+
+    def _train_model(self,
                     train_features: pd.DataFrame,
                     train_targets: pd.Series) -> Any:
         """Train a model on training data."""
@@ -165,16 +187,24 @@ class WalkForwardValidator:
         # In practice, you'd use more sophisticated models
         model = LinearRegression()
         model.fit(train_features, train_targets)
+        tprint(
+            f"🎓 Trained linear regression on {len(train_features)} samples with {train_features.shape[1]} features",
+            "INFO"
+        )
         return model
-    
-    def _make_predictions(self, 
+
+    def _make_predictions(self,
                          model: Any,
                          test_features: pd.DataFrame) -> pd.Series:
         """Make predictions on test data."""
         predictions = model.predict(test_features)
+        tprint(
+            f"🧮 Generated predictions for {len(test_features)} test samples",
+            "DEBUG"
+        )
         return pd.Series(predictions, index=test_features.index)
-    
-    def _calculate_fold_metrics(self, 
+
+    def _calculate_fold_metrics(self,
                               predictions: pd.Series,
                               test_targets: pd.Series,
                               train_idx: np.ndarray,
@@ -239,10 +269,17 @@ class WalkForwardValidator:
             metadata={'fold': fold_number, 'n_samples': len(aligned_data)}
         )
 
+        tprint(
+            "📊 Fold metrics "
+            f"(fold={fold_number}): IC={ic:.4f}, MSE={mse:.4f}, MAE={mae:.4f}, R2={r2:.4f}, "
+            f"Sharpe={sharpe:.4f}, MaxDD={max_drawdown:.4f}",
+            "INFO"
+        )
+
 
 class BootstrapEvaluator:
     """Implements wild bootstrap evaluation."""
-    
+
     def __init__(self, config: EvaluationConfig):
         self.config = config
         self.logger = logging.getLogger(__name__)
@@ -273,12 +310,12 @@ class BootstrapEvaluator:
         
         if not metric_values:
             return 0.0, 0.0, 0.0
-        
+
         metric_array = np.array(metric_values)
-        
+
         # Calculate mean
         mean_value = np.mean(metric_array)
-        
+
         # Calculate confidence interval using bootstrap
         try:
             # Use scipy bootstrap
@@ -299,7 +336,13 @@ class BootstrapEvaluator:
             std_error = np.std(metric_array) / np.sqrt(len(metric_array))
             ci_lower = mean_value - 1.96 * std_error
             ci_upper = mean_value + 1.96 * std_error
-        
+
+        tprint(
+            f"🎯 Bootstrap CI for {metric}: mean={mean_value:.4f}, "
+            f"CI=({ci_lower:.4f}, {ci_upper:.4f}) from {len(metric_array)} folds",
+            "INFO"
+        )
+
         return mean_value, ci_lower, ci_upper
 
 
@@ -345,7 +388,13 @@ class SPATester:
         
         # Decision
         reject_null = p_value < 0.05
-        
+
+        tprint(
+            "🧪 SPA test completed: "
+            f"stat={spa_statistic:.4f}, p_value={p_value:.4f}, reject_null={reject_null}",
+            "INFO"
+        )
+
         return {
             'spa_statistic': spa_statistic,
             'p_value': p_value,
@@ -364,40 +413,50 @@ class SPATester:
         
         if len(excess_ics) == 0:
             return 0.0
-        
+
         # Standardize
         mean_excess = np.mean(excess_ics)
         std_excess = np.std(excess_ics)
-        
+
         if std_excess == 0:
             return 0.0
-        
+
         standardized_excess = excess_ics / std_excess
-        
+
         # SPA statistic is the maximum of standardized excess returns
         spa_statistic = np.max(standardized_excess)
-        
+
+        tprint(
+            f"🧮 Calculated SPA statistic={spa_statistic:.4f} (mean_excess={mean_excess:.4f}, std={std_excess:.4f})",
+            "DEBUG"
+        )
+
         return spa_statistic
-    
-    def _calculate_spa_p_value(self, 
+
+    def _calculate_spa_p_value(self,
                              ic_values: np.ndarray,
                              benchmark_ic: float,
                              spa_statistic: float) -> float:
         """Calculate SPA p-value using bootstrap."""
         n_bootstrap = 1000
         bootstrap_stats = []
-        
+
         for _ in range(n_bootstrap):
             # Bootstrap sample
             bootstrap_ics = np.random.choice(ic_values, size=len(ic_values), replace=True)
-            
+
             # Calculate bootstrap SPA statistic
             bootstrap_spa = self._calculate_spa_statistic(bootstrap_ics, benchmark_ic)
             bootstrap_stats.append(bootstrap_spa)
-        
+
         # Calculate p-value
         p_value = np.mean(np.array(bootstrap_stats) >= spa_statistic)
-        
+
+        tprint(
+            f"📈 SPA bootstrap completed with {n_bootstrap} samples; p_value={p_value:.4f}",
+            "DEBUG"
+        )
+
         return p_value
 
 
@@ -465,7 +524,17 @@ class RegimeEvaluator:
                     summary_results[regime_type][f'{metric_name}_mean'] = 0.0
                     summary_results[regime_type][f'{metric_name}_std'] = 0.0
                     summary_results[regime_type][f'{metric_name}_count'] = 0
-        
+
+            tprint(
+                f"📊 Regime '{regime_type}' metrics computed with {summary_results[regime_type].get('ic_count', 0)} folds",
+                "INFO"
+            )
+
+        tprint(
+            f"🗂️ Regime evaluation completed for {len(summary_results)} regimes",
+            "SUCCESS"
+        )
+
         return summary_results
 
 
@@ -502,12 +571,16 @@ class AblationEvaluator:
         # Baseline (all features)
         baseline_ic = self._calculate_group_ic(features, targets, list(features.columns))
         ablation_results['baseline'] = {'ic': baseline_ic, 'n_features': len(features.columns)}
-        
+        tprint(
+            f"🧪 Ablation baseline IC={baseline_ic:.4f} across {len(features.columns)} features",
+            "INFO"
+        )
+
         # Ablate each group
         for group_name, group_features in feature_groups.items():
             # Remove group features
             remaining_features = [f for f in features.columns if f not in group_features]
-            
+
             if remaining_features:
                 ablated_ic = self._calculate_group_ic(features, targets, remaining_features)
                 ablation_results[f'without_{group_name}'] = {
@@ -515,8 +588,17 @@ class AblationEvaluator:
                     'n_features': len(remaining_features),
                     'removed_features': group_features
                 }
-        
+                tprint(
+                    "🧪 Ablation result "
+                    f"without '{group_name}': IC={ablated_ic:.4f} ({len(remaining_features)} features)",
+                    "DEBUG"
+                )
+
         self.logger.info(f"Ablation study completed: {len(ablation_results)} configurations")
+        tprint(
+            f"✅ Ablation study completed with {len(ablation_results)} configurations",
+            "SUCCESS"
+        )
         return ablation_results
     
     def _calculate_group_ic(self, 
@@ -531,7 +613,7 @@ class AblationEvaluator:
             # Use simple correlation as IC proxy
             # In practice, you'd train a model and calculate IC
             group_features = features[feature_list]
-            
+
             # Calculate average correlation
             correlations = []
             for feature_name in feature_list:
@@ -539,14 +621,23 @@ class AblationEvaluator:
                     corr = group_features[feature_name].corr(targets)
                     if not pd.isna(corr):
                         correlations.append(corr)
-            
+
             if correlations:
+                tprint(
+                    f"📐 Group IC calculated for {len(correlations)} features: mean={np.mean(correlations):.4f}",
+                    "DEBUG"
+                )
                 return np.mean(correlations)
             else:
+                tprint(
+                    "📐 Group IC calculation yielded no valid correlations",
+                    "WARNING"
+                )
                 return 0.0
-                
+
         except Exception as e:
             self.logger.warning(f"Failed to calculate group IC: {e}")
+            tprint(f"⚠️ Failed to calculate group IC: {e}", "WARNING")
             return 0.0
 
 
@@ -583,10 +674,15 @@ class WalkForwardEvaluation:
                     feature_data[interaction_name] = series
 
         if not feature_data:
+            tprint("ℹ️ No feature data available to build matrix", "INFO")
             return pd.DataFrame()
 
         feature_matrix = pd.DataFrame(feature_data)
         feature_matrix = feature_matrix.dropna()
+        tprint(
+            f"🧱 Prepared feature matrix with shape {feature_matrix.shape}",
+            "INFO"
+        )
         return feature_matrix
 
     def _create_default_result(self,
@@ -603,6 +699,11 @@ class WalkForwardEvaluation:
 
         if extra_metadata:
             metadata.update(extra_metadata)
+
+        tprint(
+            f"ℹ️ Returning default evaluation result due to: {reason}",
+            "WARNING"
+        )
 
         return EvaluationResult(
             overall_ic=0.0,
@@ -635,15 +736,18 @@ class WalkForwardEvaluation:
             Evaluation result
         """
         self.logger.info("Starting walk-forward evaluation")
+        tprint("🚀 Starting walk-forward evaluation", "INFO")
 
         if not final_features:
             self.logger.warning("No final features provided for evaluation")
+            tprint("⚠️ No final features provided for evaluation", "WARNING")
             return self._create_default_result('no_features_provided')
 
         feature_matrix = self._prepare_feature_matrix(materialized_htfs, interactions)
 
         if feature_matrix.empty:
             self.logger.warning("Constructed feature matrix is empty; skipping evaluation")
+            tprint("⚠️ Feature matrix empty after preparation", "WARNING")
             return self._create_default_result('empty_feature_matrix')
 
         available_features = [f for f in final_features if f in feature_matrix.columns]
@@ -654,6 +758,10 @@ class WalkForwardEvaluation:
                 "Missing features from materialized data: %s",
                 missing_features
             )
+            tprint(
+                f"⚠️ Missing {len(missing_features)} features from materialized data",
+                "WARNING"
+            )
 
         if not available_features:
             return self._create_default_result(
@@ -662,10 +770,18 @@ class WalkForwardEvaluation:
             )
 
         feature_matrix = feature_matrix.loc[:, available_features]
+        tprint(
+            f"🧱 Using {len(available_features)} available features for evaluation",
+            "INFO"
+        )
 
         aligned_index = feature_matrix.index.intersection(targets.index)
         if aligned_index.empty:
             self.logger.warning("No overlapping timestamps between features and targets")
+            tprint(
+                "⚠️ No overlapping timestamps between features and targets",
+                "WARNING"
+            )
             return self._create_default_result('no_overlapping_timestamps')
 
         feature_matrix = feature_matrix.loc[aligned_index]
@@ -676,6 +792,10 @@ class WalkForwardEvaluation:
 
         if feature_matrix.empty:
             self.logger.warning("Feature matrix empty after alignment and NaN removal")
+            tprint(
+                "⚠️ Feature matrix empty after alignment and NaN filtering",
+                "WARNING"
+            )
             return self._create_default_result(
                 'empty_after_alignment',
                 {'missing_features': missing_features}
@@ -686,29 +806,54 @@ class WalkForwardEvaluation:
             feature_matrix, aligned_targets, regime_segments
         )
 
+        tprint(
+            f"📆 Obtained {len(fold_results)} fold results from walk-forward validation",
+            "INFO"
+        )
+
         # Calculate overall metrics
         overall_ic, overall_ic_std, overall_ic_ci = self.bootstrap_evaluator.calculate_confidence_intervals(
             fold_results, 'ic'
         )
-        
+        tprint(
+            f"📈 Overall IC={overall_ic:.4f} (std={overall_ic_std:.4f}, CI=({overall_ic_ci[0]:.4f}, {overall_ic_ci[1]:.4f}))",
+            "INFO"
+        )
+
         # Regime-aware evaluation
         regime_results = {}
         if regime_segments:
             regime_results = self.regime_evaluator.evaluate_by_regime(
                 fold_results, regime_segments
             )
-        
+
+        tprint(
+            f"🗂️ Regime results computed: {len(regime_results)} regimes",
+            "DEBUG"
+        )
+
         # Ablation study
         feature_groups = self._create_ablation_groups(available_features)
         ablation_results = self.ablation_evaluator.perform_ablation_study(
             feature_matrix, aligned_targets, feature_groups
         )
-        
+
+        tprint(
+            f"🧪 Ablation produced {len(ablation_results)} configurations",
+            "DEBUG"
+        )
+
         # SPA test
         spa_test_result = {}
         if self.config.spa_test:
             spa_test_result = self.spa_tester.test_spa(fold_results)
-        
+
+        if spa_test_result:
+            tprint(
+                f"🧪 SPA test p-value={spa_test_result.get('p_value', 0.0):.4f}",
+                "INFO"
+            )
+
         # Create evaluation result
         result = EvaluationResult(
             overall_ic=overall_ic,
@@ -725,10 +870,14 @@ class WalkForwardEvaluation:
                 'embargo_minutes': self.config.embargo_minutes
             }
         )
-        
+
         self.logger.info(f"Walk-forward evaluation completed: IC={overall_ic:.4f}")
+        tprint(
+            f"✅ Walk-forward evaluation completed successfully (IC={overall_ic:.4f})",
+            "SUCCESS"
+        )
         return result
-    
+
     def _create_ablation_groups(self, final_features: List[str]) -> Dict[str, List[str]]:
         """Create feature groups for ablation study."""
         groups = {
@@ -736,7 +885,7 @@ class WalkForwardEvaluation:
             'base_features': [],
             'interactions': []
         }
-        
+
         for feature_name in final_features:
             if 'htf' in feature_name.lower():
                 groups['htf_features'].append(feature_name)
@@ -744,14 +893,24 @@ class WalkForwardEvaluation:
                 groups['interactions'].append(feature_name)
             else:
                 groups['base_features'].append(feature_name)
-        
+
         # Remove empty groups
         groups = {k: v for k, v in groups.items() if v}
-        
+
+        tprint(
+            "🧪 Ablation groups prepared: "
+            + ", ".join(f"{k}={len(v)}" for k, v in groups.items()),
+            "DEBUG"
+        )
+
         return groups
-    
+
     def _fold_to_dict(self, fold: WalkForwardFold) -> Dict[str, Any]:
         """Convert WalkForwardFold to dictionary."""
+        tprint(
+            f"🗂️ Serializing fold (IC={fold.ic:.4f}, samples={fold.metadata.get('n_samples', 'n/a')})",
+            "DEBUG"
+        )
         return {
             'train_start': fold.train_start.isoformat(),
             'train_end': fold.train_end.isoformat(),
@@ -768,6 +927,10 @@ class WalkForwardEvaluation:
     
     def get_evaluation_summary(self, result: EvaluationResult) -> Dict[str, Any]:
         """Get summary of evaluation results."""
+        tprint(
+            f"🧾 Generating evaluation summary for {len(result.walk_forward_results)} folds",
+            "INFO"
+        )
         return {
             'overall_ic': result.overall_ic,
             'overall_ic_ci': result.overall_ic_ci,

@@ -16,8 +16,10 @@ from enum import Enum
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from .column_naming import (
     ColumnNamespace,
+    ensure_namespace,
     filter_namespace_columns,
     find_nonconforming_columns,
+    standardize_namespace_frame,
     validate_dataframe_names,
 )
 
@@ -302,7 +304,16 @@ class StandardizedLabelingInterface:
             quality_scores = multi_horizon_result.get('quality_scores', {})
             confidence_scores = multi_horizon_result.get('confidence_scores', pd.DataFrame())
             eligibility_masks = multi_horizon_result.get('eligibility_masks', pd.DataFrame())
-            
+
+            labeled_data = standardize_namespace_frame(labeled_data, ColumnNamespace.TARGET)
+            confidence_scores = standardize_namespace_frame(confidence_scores, ColumnNamespace.TARGET)
+            eligibility_masks = standardize_namespace_frame(eligibility_masks, ColumnNamespace.TARGET)
+
+            if target_columns:
+                target_columns = [ensure_namespace(col, ColumnNamespace.TARGET) for col in target_columns]
+            else:
+                target_columns = filter_namespace_columns(labeled_data.columns, ColumnNamespace.TARGET)
+
             # Create metadata
             metadata = LabelingMetadata(
                 source_component='multi_horizon_profit_labeler',
@@ -373,6 +384,15 @@ class StandardizedLabelingInterface:
             quality_scores = standardized_output.get('quality_scores', {})
             confidence_scores = standardized_output.get('confidence_scores', pd.DataFrame())
             eligibility_masks = standardized_output.get('eligibility_masks', pd.DataFrame())
+
+            labels = standardize_namespace_frame(labels, ColumnNamespace.TARGET)
+            confidence_scores = standardize_namespace_frame(confidence_scores, ColumnNamespace.TARGET)
+            eligibility_masks = standardize_namespace_frame(eligibility_masks, ColumnNamespace.TARGET)
+
+            if target_columns:
+                target_columns = [ensure_namespace(col, ColumnNamespace.TARGET) for col in target_columns]
+            else:
+                target_columns = filter_namespace_columns(labels.columns, ColumnNamespace.TARGET)
 
             assert_labels_sigma_scaled(labels)
 

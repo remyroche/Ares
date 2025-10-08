@@ -12,6 +12,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+from .contracts import (
+    PipelineState,
+    FinalSelectionArtifacts,
+    validate_final_selection_artifacts,
+)
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 from ...market_analysis.logging_standards import (
@@ -160,7 +165,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 'priority_categories': ['momentum', 'volatility', 'microstructure']
             }
 
-    async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
+    async def execute(self, data: Any, pipeline_state: PipelineState) -> ComponentResult:
         """
         Execute final feature selection.
 
@@ -326,7 +331,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                         'exchange': exchange,
                         'timeframe': timeframe
                     })
-                    
+
                     if saved_files:
                         artifacts_saved_persistently = True
                         log_success(
@@ -339,26 +344,30 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     else:
                         log_error("❌ [FINAL_FEATURE_SELECTION] Artifact manager returned no file paths")
                         tprint("❌ [FinalFeatureSelection] Failed to persist artifacts: no file paths returned")
-                        
+
                 except Exception as e:
                     persistence_error = str(e)
                     log_warning(f"⚠️ [FINAL_FEATURE_SELECTION] Exception while saving artifacts persistently: {e}")
+                    log_error(f"❌ [FINAL_FEATURE_SELECTION] Artifact save failure: {e}")
                     tprint(f"⚠️ [FinalFeatureSelection] Artifact save error: {e}")
 
                 component_success = success and artifacts_saved_persistently
 
+                typed_artifacts: FinalSelectionArtifacts = validate_final_selection_artifacts(artifacts)
+
+                error_text = persistence_error if not component_success and persistence_error else None
+
                 return ComponentResult(
                     success=component_success,
-                    artifacts=artifacts,
-                    error_message=None,
+                    artifacts=typed_artifacts,
+                    error_message=error_text,
                     execution_time=0.0,
                     metadata={
                         'component_type': 'final_feature_selection',
                         'symbol': symbol,
                         'exchange': exchange,
                         'timeframe': timeframe,
-                        'artifacts_saved_persistently': artifacts_saved_persistently,
-                        'artifact_persistence_paths': saved_files,
+                        **({'artifacts_saved_persistently': True, 'artifact_persistence_paths': saved_files} if artifacts_saved_persistently else {}),
                         **({'artifact_persistence_error': persistence_error} if persistence_error else {})
                     }
                 )
@@ -370,9 +379,22 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 self.memory_optimizer._light_memory_cleanup()
                 tprint('🧹 [FinalFeatureSelection] Memory cleanup performed after failure')
 
+                failure_artifacts = validate_final_selection_artifacts({
+                    'final_feature_selection_result': {
+                        'symbol': symbol,
+                        'exchange': exchange,
+                        'timeframe': timeframe,
+                        'data_dir': data_dir,
+                        'success': False,
+                        'stage_reduction': {},
+                        'hardware_performance': {},
+                        'error': 'Final feature selection execution failed',
+                    }
+                })
+
                 return ComponentResult(
                     success=False,
-                    artifacts={},
+                    artifacts=failure_artifacts,
                     error_message="Final feature selection execution failed",
                     execution_time=0.0,
                     metadata={
@@ -395,9 +417,22 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             except Exception as cleanup_error:
                 tprint(f'⚠️ [FinalFeatureSelection] Memory cleanup failed (non-critical): {cleanup_error}')
 
+            failure_artifacts = validate_final_selection_artifacts({
+                'final_feature_selection_result': {
+                    'symbol': symbol if 'symbol' in locals() else 'unknown',
+                    'exchange': exchange if 'exchange' in locals() else 'unknown',
+                    'timeframe': timeframe if 'timeframe' in locals() else 'unknown',
+                    'data_dir': data_dir if 'data_dir' in locals() else 'unknown',
+                    'success': False,
+                    'stage_reduction': {},
+                    'hardware_performance': {},
+                    'error': str(e),
+                }
+            })
+
             return ComponentResult(
                 success=False,
-                artifacts={},
+                artifacts=failure_artifacts,
                 error_message=str(e),
                 execution_time=0.0,
                 metadata={

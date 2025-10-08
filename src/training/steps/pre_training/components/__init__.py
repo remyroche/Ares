@@ -5,11 +5,23 @@ This package contains all the components for the pre-training pipeline stage.
 """
 
 from .base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+from .contracts import (
+    PipelineState,
+    MultiHorizonArtifacts,
+    FeatureLookbackArtifacts,
+    InteractiveFeatureArtifacts,
+    FinalSelectionArtifacts,
+)
 
 __all__ = [
     'BasePreTrainingComponent',
     'ComponentConfig',
     'ComponentResult',
+    'PipelineState',
+    'MultiHorizonArtifacts',
+    'FeatureLookbackArtifacts',
+    'InteractiveFeatureArtifacts',
+    'FinalSelectionArtifacts',
     'ComponentFactory',
     'FeatureLookbackOptimizationComponent',
     'FinalFeatureSelectionComponent'

@@ -9,6 +9,7 @@ from src.training.steps.pre_training.components.base_component import (
     BasePreTrainingComponent,
     ComponentResult,
 )
+from src.training.steps.pre_training.components.contracts import PipelineState
 
 
 class _StubComponent(BasePreTrainingComponent):
@@ -17,7 +18,7 @@ class _StubComponent(BasePreTrainingComponent):
     def get_required_artifacts(self):
         return ["test_artifact"]
 
-    async def execute(self, data, pipeline_state):
+    async def execute(self, data, pipeline_state: PipelineState):
         return ComponentResult(success=True)
 
 
@@ -129,7 +130,7 @@ def test_final_feature_selection_fails_when_artifact_save_fails(monkeypatch):
 
     monkeypatch.setattr(component.artifact_manager, "save_artifact", _fail)
 
-    result = asyncio.run(component.execute(data={}, pipeline_state={}))
+    result = asyncio.run(component.execute(data={}, pipeline_state=PipelineState()))
 
     assert result.success is False
     assert result.error_message == "artifact persistence failure"

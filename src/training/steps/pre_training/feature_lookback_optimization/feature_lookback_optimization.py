@@ -83,6 +83,11 @@ from .error_handling.error_handler import StandardizedErrorHandler, ErrorSeverit
 from .performance.monitor import PerformanceMonitor, MetricType, MetricLevel
 
 from ..components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+from ..components.contracts import (
+    PipelineState,
+    FeatureLookbackArtifacts,
+    validate_feature_lookback_artifacts,
+)
 
 # Import optimized process engine
 from ...market_analysis.optimized_process_engines import OptimizedFeatureLookbackEngine, ProcessType
@@ -202,7 +207,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         tprint(f"✅ Required artifacts: {artifacts}")
         return artifacts
 
-    async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
+    async def execute(self, data: Any, pipeline_state: PipelineState) -> ComponentResult:
         """
         Execute the feature lookback optimization.
 
@@ -404,12 +409,12 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             )
             return None
 
-    def _align_data_with_regime_assignments(self, market_data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> pd.DataFrame:
+    def _align_data_with_regime_assignments(self, market_data: pd.DataFrame, pipeline_state: PipelineState) -> pd.DataFrame:
         """Align market data with regime assignments to ensure consistency with clustering step."""
         try:
             symbol = pipeline_state.get('symbol', 'ETHUSDT').lower()
 
-            pipeline_custom_params = pipeline_state.get('custom_params', {}) if isinstance(pipeline_state, dict) else {}
+            pipeline_custom_params = dict(pipeline_state.custom_params)
             config_custom_params = getattr(self.config, 'custom_params', {}) or {}
 
             candidate_dirs: List[Path] = []
@@ -841,7 +846,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
     async def _perform_feature_optimization(
         self,
         data: pd.DataFrame,
-        pipeline_state: Dict[str, Any]
+        pipeline_state: PipelineState
     ) -> Dict[str, Any]:
         """Perform feature optimization using the core optimizer."""
         tprint("⚙️ Starting feature optimization orchestration")
@@ -1089,11 +1094,11 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 error_rate=1.0
             )
 
-    def _create_artifacts(self, optimization_results: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+    def _create_artifacts(self, optimization_results: Dict[str, Any], pipeline_state: PipelineState) -> FeatureLookbackArtifacts:
         """Create artifacts from optimization results."""
         tprint("🗄️ Creating feature lookback optimization artifacts")
         try:
-            artifacts = {}
+            artifacts: Dict[str, Any] = {}
 
             # Create optimization summary artifact
             summary = {
@@ -1115,7 +1120,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             }
 
             tprint("✅ Artifact creation complete")
-            return artifacts
+            return validate_feature_lookback_artifacts(artifacts)
 
         except Exception as e:
             self.error_handler.handle_error(
@@ -1124,7 +1129,10 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 return_value={}
             )
             tprint("❌ Artifact creation failed due to an error")
-            return {}
+            return validate_feature_lookback_artifacts({
+                'feature_lookback_optimization_result': {},
+                'feature_lookback_optimization_summary': {},
+            })
 
     def _select_optimal_target_column(self, data: pd.DataFrame, direction: str = None) -> str:
         """

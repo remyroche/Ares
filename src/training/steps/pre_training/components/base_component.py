@@ -5,8 +5,8 @@ This module provides the base classes for all pre-training pipeline components.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
-from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Mapping
+from dataclasses import dataclass, field
 from datetime import datetime
 import pandas as pd
 import numpy as np
@@ -21,6 +21,12 @@ from src.utils.tprint import (
     tprint_success,
     tprint_debug,
     tprint_info,
+)
+
+from .contracts import (
+    ComponentArtifacts,
+    PipelineState,
+    validate_component_artifacts,
 )
 
 logger = system_logger.getChild('PreTrainingComponent')
@@ -60,16 +66,14 @@ class ComponentConfig:
 class ComponentResult:
     """Result of component execution."""
     success: bool
-    artifacts: Dict[str, Any] = None
-    metadata: Dict[str, Any] = None
+    artifacts: ComponentArtifacts = field(default_factory=dict)
+    metadata: Dict[str, Any] = field(default_factory=dict)
     error_message: Optional[str] = None
     execution_time: float = 0.0
 
     def __post_init__(self):
-        if self.artifacts is None:
-            self.artifacts = {}
-        if self.metadata is None:
-            self.metadata = {}
+        validate_component_artifacts(self.artifacts)
+        self.metadata = dict(self.metadata or {})
         tprint_debug(
             "📦 ComponentResult initialized",
             {
@@ -117,7 +121,7 @@ class BasePreTrainingComponent(ABC):
         raise NotImplementedError("Subclasses must implement get_required_artifacts")
 
     @abstractmethod
-    async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
+    async def execute(self, data: Any, pipeline_state: PipelineState) -> ComponentResult:
         """Execute the component."""
         tprint_debug(
             f"⚙️ execute called on base class {self.__class__.__name__}",
@@ -125,10 +129,10 @@ class BasePreTrainingComponent(ABC):
         )
         raise NotImplementedError("Subclasses must implement execute")
 
-    async def save_artifacts(self, artifacts: Dict[str, Any], metadata: Dict[str, Any]) -> Dict[str, str]:
+    async def save_artifacts(self, artifacts: Mapping[str, Any], metadata: Mapping[str, Any]) -> Dict[str, str]:
         """
         Save artifacts persistently.
-        
+
         Args:
             artifacts: Artifacts to save
             metadata: Metadata for the artifacts
@@ -145,7 +149,7 @@ class BasePreTrainingComponent(ABC):
         )
         saved_files = {}
 
-        for artifact_name, artifact_data in artifacts.items():
+        for artifact_name, artifact_data in dict(artifacts).items():
             # Create artifact metadata
             artifact_metadata = {
                 'component': self.__class__.__name__,

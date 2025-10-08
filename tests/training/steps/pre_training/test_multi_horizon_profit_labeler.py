@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.training.steps.pre_training.components.contracts import PipelineState
 from src.training.steps.pre_training.multi_horizon_profit_labeler import (
     MultiHorizonConfig,
     MultiHorizonProfitLabeler,
@@ -231,7 +232,7 @@ async def test_component_metadata_records_outcome_save_failure(monkeypatch):
 
     result = await component.execute(
         None,
-        {"symbol": "ETHUSDT", "exchange": "binance", "timeframe": "1h"},
+        PipelineState(symbol="ETHUSDT", exchange="binance", timeframe="1h"),
     )
 
     assert result.success is True

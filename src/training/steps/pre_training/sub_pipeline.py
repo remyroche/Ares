@@ -12,7 +12,7 @@ that were moved from market_analysis:
 Each step can receive a timeframe parameter, with default 15m.
 """
 
-from typing import Any, Dict, List, Optional, Tuple, TypedDict
+from typing import Any, Dict, List, Optional, Tuple, TypedDict, Mapping, Union
 from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass, field
@@ -52,7 +52,22 @@ from src.utils.version_manager import get_version_manager
 from src.utils.tprint import tprint, tprint_error, tprint_warning
 
 # Import component system
-from .components import ComponentFactory, ComponentConfig
+from .components import (
+    ComponentFactory,
+    ComponentConfig,
+    PipelineState,
+    MultiHorizonArtifacts,
+    FeatureLookbackArtifacts,
+    InteractiveFeatureArtifacts,
+    FinalSelectionArtifacts,
+)
+from .components.contracts import (
+    pipeline_state_from_mapping,
+    validate_multi_horizon_artifacts,
+    validate_feature_lookback_artifacts,
+    validate_interactive_artifacts,
+    validate_final_selection_artifacts,
+)
 from .metrics_sink import MetricsSink, MetricsSinkConfig
 
 logger = system_logger.getChild('PreTrainingSubPipeline')
@@ -142,7 +157,7 @@ class PreTrainingSubPipeline:
         """Initialize the pre-training sub-pipeline."""
         self.logger = logger.getChild('PreTrainingSubPipeline')
         self.results: List[SubPipelineResult] = []
-        self._current_pipeline_state: Dict[str, Any] = {}
+        self._current_pipeline_state: Optional[PipelineState] = None
         self._metrics_sink: Optional[MetricsSink] = None
         self._run_metadata: Dict[str, Any] = {}
 
@@ -250,6 +265,9 @@ class PreTrainingSubPipeline:
         self._metrics_sink = metrics_sink
         step_metric_records: List[Dict[str, Any]] = []
 
+        if self._current_pipeline_state is None:
+            self._current_pipeline_state = self._build_initial_pipeline_state(config)
+
         results = {
             'success': False,
             'execution_time': 0.0,
@@ -281,12 +299,13 @@ class PreTrainingSubPipeline:
             tprint(f"✅ Multi-horizon profit labeling completed for {config.symbol}")
 
             # Validate artifacts before updating state
-            if 'multi_horizon_labeling_result' in mh_result.artifacts:
-                labeled_data = mh_result.artifacts.get('multi_horizon_labeling_result', {}).get('labeled_data', pd.DataFrame())
+            if self._current_pipeline_state and 'multi_horizon_labeling_result' in mh_result.artifacts:
+                mh_artifacts: MultiHorizonArtifacts = validate_multi_horizon_artifacts(dict(mh_result.artifacts))
+                labeled_data = mh_artifacts.get('multi_horizon_labeling_result', {}).get('labeled_data', pd.DataFrame())
                 if isinstance(labeled_data, pd.DataFrame) and not labeled_data.empty:
                     tprint(f"   → Labels generated: {len(labeled_data.columns)} columns")
-                    results['results']['multi_horizon_profit_labeler'] = mh_result.artifacts
-                    self._current_pipeline_state.update(mh_result.artifacts)
+                    results['results']['multi_horizon_profit_labeler'] = dict(mh_artifacts)
+                    self._current_pipeline_state = self._current_pipeline_state.with_multi_horizon(mh_artifacts)
                 else:
                     tprint_error("❌ Multi-horizon labeling artifact validation failed: labeled_data is empty or invalid")
                     results['error_message'] = "Multi-horizon labeling artifact validation failed"
@@ -316,15 +335,15 @@ class PreTrainingSubPipeline:
             tprint(f"✅ Feature lookback optimization completed for {config.symbol}")
 
             # Validate artifacts before updating state
-            if 'feature_lookback_optimization_result' in flo_result.artifacts:
-                optimized_features = flo_result.artifacts.get('feature_lookback_optimization_result', {}).get('optimized_features', {})
+            if self._current_pipeline_state and 'feature_lookback_optimization_result' in flo_result.artifacts:
+                flo_artifacts: FeatureLookbackArtifacts = validate_feature_lookback_artifacts(dict(flo_result.artifacts))
+                optimized_features = flo_artifacts.get('feature_lookback_optimization_result', {}).get('optimized_features', {})
                 tprint(f"   → Features optimized: {len(optimized_features)}")
-                results['results']['feature_lookback_optimization'] = flo_result.artifacts
-                self._current_pipeline_state.update(flo_result.artifacts)
+                results['results']['feature_lookback_optimization'] = dict(flo_artifacts)
+                self._current_pipeline_state = self._current_pipeline_state.with_feature_lookback(flo_artifacts)
             else:
                 tprint_warning("⚠️ Feature lookback optimization completed but artifact structure unexpected")
-                results['results']['feature_lookback_optimization'] = flo_result.artifacts
-                self._current_pipeline_state.update(flo_result.artifacts)
+                results['results']['feature_lookback_optimization'] = dict(flo_result.artifacts)
 
             # Step 3: Interactive Feature Generation
             tprint("🔧 Step 3: Interactive Feature Generation")
@@ -344,15 +363,15 @@ class PreTrainingSubPipeline:
             tprint(f"✅ Interactive feature generation completed for {config.symbol}")
 
             # Validate artifacts before updating state
-            if 'interactive_feature_generation_result' in interactive_result.artifacts:
-                features = interactive_result.artifacts.get('interactive_feature_generation_result', {}).get('features', {})
+            if self._current_pipeline_state and 'interactive_feature_generation_result' in interactive_result.artifacts:
+                interactive_artifacts: InteractiveFeatureArtifacts = validate_interactive_artifacts(dict(interactive_result.artifacts))
+                features = interactive_artifacts.get('interactive_feature_generation_result', {}).get('features', {})
                 tprint(f"   → Features generated: {len(features)}")
-                results['results']['interactive_feature_generation'] = interactive_result.artifacts
-                self._current_pipeline_state.update(interactive_result.artifacts)
+                results['results']['interactive_feature_generation'] = dict(interactive_artifacts)
+                self._current_pipeline_state = self._current_pipeline_state.with_interactive(interactive_artifacts)
             else:
                 tprint_warning("⚠️ Interactive feature generation completed but artifact structure unexpected")
-                results['results']['interactive_feature_generation'] = interactive_result.artifacts
-                self._current_pipeline_state.update(interactive_result.artifacts)
+                results['results']['interactive_feature_generation'] = dict(interactive_result.artifacts)
 
             # Step 4: Final Feature Selection
             tprint("🎯 Step 4: Final Feature Selection")
@@ -372,15 +391,15 @@ class PreTrainingSubPipeline:
             tprint(f"✅ Final feature selection completed for {config.symbol}")
 
             # Validate artifacts before updating state
-            if 'final_feature_selection_result' in ffs_result.artifacts:
-                selected_features = ffs_result.artifacts.get('final_feature_selection_result', {}).get('selected_features', [])
+            if self._current_pipeline_state and 'final_feature_selection_result' in ffs_result.artifacts:
+                final_artifacts: FinalSelectionArtifacts = validate_final_selection_artifacts(dict(ffs_result.artifacts))
+                selected_features = final_artifacts.get('final_feature_selection_result', {}).get('selected_features', [])
                 tprint(f"   → Final features: {len(selected_features)}")
-                results['results']['final_feature_selection'] = ffs_result.artifacts
-                self._current_pipeline_state.update(ffs_result.artifacts)
+                results['results']['final_feature_selection'] = dict(final_artifacts)
+                self._current_pipeline_state = self._current_pipeline_state.with_final_selection(final_artifacts)
             else:
                 tprint_warning("⚠️ Final feature selection completed but artifact structure unexpected")
-                results['results']['final_feature_selection'] = ffs_result.artifacts
-                self._current_pipeline_state.update(ffs_result.artifacts)
+                results['results']['final_feature_selection'] = dict(ffs_result.artifacts)
 
             # Success
             end_time = datetime.now()
@@ -402,7 +421,7 @@ class PreTrainingSubPipeline:
             tprint(f"   ⚙️ Feature optimization: ✅ Complete")
             tprint(f"   🔧 Roadmap features: ✅ Complete")
             tprint(f"   🎯 Final selection: ✅ Complete")
-            tprint(f"🎉 Pre-Training Sub-Pipeline completed successfully in {results["execution_time"]:.2f}s")
+            tprint(f"🎉 Pre-Training Sub-Pipeline completed successfully in {results['execution_time']:.2f}s")
             tprint(f"🧾 Run metadata summary:\n{completion_block}")
             tprint(results)
 
@@ -756,7 +775,11 @@ class PreTrainingSubPipeline:
         # On Linux ru_maxrss is reported in kilobytes.
         return max_rss / 1024.0
 
-    async def execute(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(
+        self,
+        training_input: Dict[str, Any],
+        pipeline_state: Union[PipelineState, Mapping[str, Any], None],
+    ) -> Dict[str, Any]:
         """
         Execute the pre-training pipeline with backward compatible interface.
 
@@ -767,48 +790,54 @@ class PreTrainingSubPipeline:
         Returns:
             Dictionary containing execution results
         """
+        state = self._coerce_pipeline_state_input(pipeline_state)
+        self._current_pipeline_state = state
+
         # Extract configuration from pipeline state
         config = SubPipelineConfig(
-            symbol=pipeline_state.get('symbol', 'ETHUSDT'),
-            exchange=pipeline_state.get('exchange', 'binance'),
-            timeframe=pipeline_state.get('timeframe', '1h'),  # Default 1h for pre-training (analyst)
-            data_dir=pipeline_state.get('data_dir', 'historical_data'),
+            symbol=state.symbol,
+            exchange=state.exchange,
+            timeframe=state.timeframe,
+            data_dir=state.data_dir,
             mode=ExecutionMode.FULL,  # Default to full mode
-            custom_params=pipeline_state.get('custom_params', {})
+            custom_params=dict(state.custom_params)
         )
+
+        if state.quality_thresholds:
+            config.label_imbalance_warning_threshold = float(state.quality_thresholds.get('label_imbalance', config.label_imbalance_warning_threshold))
+            config.nan_rate_warning_threshold = float(state.quality_thresholds.get('nan_rate', config.nan_rate_warning_threshold))
+            config.duplicate_index_warning_threshold = float(state.quality_thresholds.get('duplicate_index', config.duplicate_index_warning_threshold))
 
         # Execute the pipeline
         return await self.execute_pipeline(config)
 
-    def _prepare_component_pipeline_state(self, config: SubPipelineConfig) -> Dict[str, Any]:
+    def _prepare_component_pipeline_state(self, config: SubPipelineConfig) -> PipelineState:
         """Construct the pipeline state passed to individual components."""
-        pipeline_state: Dict[str, Any] = {
-            'symbol': config.symbol,
-            'exchange': config.exchange,
-            'timeframe': config.timeframe,
-            'data_dir': config.data_dir,
-            'custom_params': self._build_component_custom_params(config),
-            'quality_thresholds': self._get_quality_thresholds(config),
-        }
+        if self._current_pipeline_state is None:
+            self._current_pipeline_state = self._build_initial_pipeline_state(config)
 
-        regime_cache_path = config.custom_params.get('regime_cache_path') if config.custom_params else None
-        if not regime_cache_path:
-            data_cache_dir = config.custom_params.get('data_cache_dir') if config.custom_params else None
-            if data_cache_dir:
-                regime_cache_path = str((Path(data_cache_dir).expanduser() / 'nas_tas_clustering').resolve(strict=False))
+        state = self._current_pipeline_state.copy_with(
+            symbol=config.symbol,
+            exchange=config.exchange,
+            timeframe=config.timeframe,
+            data_dir=config.data_dir,
+        )
 
-        if regime_cache_path:
-            pipeline_state['regime_cache_path'] = regime_cache_path
+        state = state.with_custom_params(self._build_component_custom_params(config))
+        state = state.with_quality_thresholds(self._get_quality_thresholds(config))
 
-        regime_split = config.custom_params.get('regime_data_splitting_result')
-        if regime_split is None:
-            regime_split = self._current_pipeline_state.get('regime_data_splitting_result')
+        regime_cache_path = self._resolve_regime_cache_path(config)
+        state = state.copy_with(regime_cache_path=regime_cache_path)
 
+        regime_split = config.custom_params.get('regime_data_splitting_result') if config.custom_params else None
         if regime_split is not None:
-            pipeline_state['regime_data_splitting_result'] = regime_split
-            self._current_pipeline_state['regime_data_splitting_result'] = regime_split
+            state = state.with_regime_split(regime_split)
 
-        return pipeline_state
+        model_type = config.custom_params.get('model_type') if config.custom_params else state.model_type
+        state = state.copy_with(model_type=model_type)
+
+        self._current_pipeline_state = state
+        return state.copy()
 
     def _get_quality_thresholds(self, config: SubPipelineConfig) -> Dict[str, float]:
         """Return the data quality thresholds configured for the pipeline."""
@@ -817,6 +846,45 @@ class PreTrainingSubPipeline:
             'nan_rate': float(config.nan_rate_warning_threshold),
             'duplicate_index': float(config.duplicate_index_warning_threshold),
         }
+
+    def _resolve_regime_cache_path(self, config: SubPipelineConfig) -> Optional[str]:
+        custom_params = config.custom_params or {}
+        regime_cache_path = custom_params.get('regime_cache_path')
+        if regime_cache_path:
+            return str(regime_cache_path)
+        data_cache_dir = custom_params.get('data_cache_dir')
+        if data_cache_dir:
+            return str((Path(data_cache_dir).expanduser() / 'nas_tas_clustering').resolve(strict=False))
+        return None
+
+    def _build_initial_pipeline_state(self, config: SubPipelineConfig) -> PipelineState:
+        return PipelineState(
+            symbol=config.symbol,
+            exchange=config.exchange,
+            timeframe=config.timeframe,
+            data_dir=config.data_dir,
+            custom_params=self._build_component_custom_params(config),
+            quality_thresholds=self._get_quality_thresholds(config),
+            regime_cache_path=self._resolve_regime_cache_path(config),
+            regime_data_splitting_result=(
+                config.custom_params.get('regime_data_splitting_result') if config.custom_params else None
+            ),
+            model_type=(config.custom_params.get('model_type') if config.custom_params else None),
+        )
+
+    def _coerce_pipeline_state_input(
+        self,
+        pipeline_state: Union[PipelineState, Mapping[str, Any], None],
+    ) -> PipelineState:
+        if pipeline_state is None:
+            return PipelineState()
+        if isinstance(pipeline_state, PipelineState):
+            return pipeline_state
+        if isinstance(pipeline_state, Mapping):
+            return pipeline_state_from_mapping(pipeline_state)
+        raise TypeError(
+            f"Unsupported pipeline_state type: {type(pipeline_state).__name__}"
+        )
 
     def _build_component_custom_params(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Augment component custom parameters with quality thresholds."""

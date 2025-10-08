@@ -15,6 +15,7 @@ from src.utils.tprint import (
 
 # Import base component classes
 from .base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+from .contracts import PipelineState
 
 # Import pre-training components
 from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
@@ -69,7 +70,7 @@ class MultiHorizonComponentWrapper(BasePreTrainingComponent):
         )
         return ['multi_horizon_labeling_result', 'labeling_report']
 
-    async def execute(self, data, pipeline_state: Dict[str, Any]) -> 'ComponentResult':
+    async def execute(self, data, pipeline_state: PipelineState) -> 'ComponentResult':
         """Execute multi-horizon labeling as a component."""
         try:
             tprint(

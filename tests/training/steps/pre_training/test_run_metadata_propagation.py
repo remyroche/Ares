@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime
+import importlib
 import sys
 import types
 from typing import Any, Dict
@@ -12,9 +13,21 @@ from src.training.steps.pre_training.components.base_component import (
     ComponentResult,
     ComponentConfig,
 )
+from src.training.steps.pre_training.components.contracts import (
+    PipelineState,
+    MultiHorizonArtifacts,
+    FeatureLookbackArtifacts,
+    InteractiveFeatureArtifacts,
+    FinalSelectionArtifacts,
+)
 
+
+_original_components_module = importlib.import_module('src.training.steps.pre_training.components')
 
 components_stub = types.ModuleType("components_stub")
+components_stub.__path__ = getattr(_original_components_module, '__path__', [])  # type: ignore[attr-defined]
+components_stub.__spec__ = getattr(_original_components_module, '__spec__', None)
+components_stub.__file__ = getattr(_original_components_module, '__file__', None)
 
 
 class _StubFactory:  # pragma: no cover - placeholder
@@ -27,7 +40,28 @@ components_stub.ComponentFactory = _StubFactory
 components_stub.ComponentConfig = ComponentConfig
 components_stub.ComponentResult = ComponentResult
 components_stub.BasePreTrainingComponent = BasePreTrainingComponent
+components_stub.PipelineState = PipelineState
+components_stub.MultiHorizonArtifacts = MultiHorizonArtifacts
+components_stub.FeatureLookbackArtifacts = FeatureLookbackArtifacts
+components_stub.InteractiveFeatureArtifacts = InteractiveFeatureArtifacts
+components_stub.FinalSelectionArtifacts = FinalSelectionArtifacts
+
+
+def _delegate_attr(name: str):
+    if _original_components_module is not None and hasattr(_original_components_module, name):
+        return getattr(_original_components_module, name)
+    raise AttributeError(name)
+
+
+components_stub.__getattr__ = _delegate_attr  # type: ignore[attr-defined]
 sys.modules['src.training.steps.pre_training.components'] = components_stub
+
+
+def teardown_module(module):
+    if _original_components_module is not None:
+        sys.modules['src.training.steps.pre_training.components'] = _original_components_module
+    else:
+        sys.modules.pop('src.training.steps.pre_training.components', None)
 
 from src.training.steps.pre_training.sub_pipeline import (
     PreTrainingSubPipeline,
@@ -56,7 +90,7 @@ class _StubLabelerComponent(BasePreTrainingComponent):
     def get_required_artifacts(self) -> list[str]:
         return ['multi_horizon_labeling_result']
 
-    async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
+    async def execute(self, data: Any, pipeline_state: PipelineState) -> ComponentResult:
         df = pd.DataFrame({'close': [1, 2, 3]})
         artifacts = {
             'multi_horizon_labeling_result': {

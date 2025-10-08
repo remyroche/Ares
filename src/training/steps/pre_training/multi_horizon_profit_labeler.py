@@ -10,7 +10,7 @@ import copy
 import numpy as np
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Mapping
 from datetime import datetime
 from dataclasses import dataclass, asdict
 import logging
@@ -55,8 +55,24 @@ try:
 except ImportError:
     BALANCING_SYSTEM_AVAILABLE = False
 
+
+def _is_non_empty_dataframe(value: Any) -> bool:
+    """Return True when *value* is a non-empty pandas DataFrame."""
+
+    return isinstance(value, pd.DataFrame) and not value.empty
+
 # Import base component
-from src.training.steps.pre_training.components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+from src.training.steps.pre_training.components.base_component import (
+    BasePreTrainingComponent,
+    ComponentConfig,
+    ComponentResult,
+)
+from src.training.steps.pre_training.components.contracts import (
+    PipelineState,
+    MultiHorizonArtifacts,
+    validate_multi_horizon_artifacts,
+    pipeline_state_from_mapping,
+)
 
 
 @dataclass
@@ -320,9 +336,10 @@ class MultiHorizonProfitLabeler:
         
         # Subtract cost from raw returns before normalization was applied
         # This is an approximation - ideally we'd adjust before sigma normalization
-        if 'sigma_payoffs' in dir(labeling_result) and not labeling_result.sigma_payoffs.empty:
+        sigma_payoffs = getattr(labeling_result, "sigma_payoffs", None)
+        if _is_non_empty_dataframe(sigma_payoffs):
             # We have access to sigma payoffs, adjust those
-            adjusted_sigma = labeling_result.sigma_payoffs - roundtrip_cost
+            adjusted_sigma = sigma_payoffs - roundtrip_cost
             
             # Update normalization factors
             if labeling_result.normalization_factors:
@@ -354,7 +371,7 @@ class MultiHorizonProfitLabeler:
             labels=adjusted_labels,
             confidence_scores=labeling_result.confidence_scores,
             eligibility_masks=labeling_result.eligibility_masks,
-            sigma_payoffs=adjusted_sigma if 'adjusted_sigma' in locals() else labeling_result.sigma_payoffs,
+            sigma_payoffs=adjusted_sigma if 'adjusted_sigma' in locals() else sigma_payoffs,
             training_labels=adjusted_labels.copy(),
             normalization_factors=updated_factors,
             quality_scores=labeling_result.quality_scores,
@@ -853,8 +870,9 @@ class MultiHorizonProfitLabeler:
             )
 
             balanced_result.smoothing_settings = getattr(labeling_result, 'smoothing_settings', {})
-            if not labeling_result.sigma_payoffs.empty:
-                balanced_result.sigma_payoffs = labeling_result.sigma_payoffs.reindex(y_balanced.index)
+            sigma_payoffs = getattr(labeling_result, "sigma_payoffs", None)
+            if _is_non_empty_dataframe(sigma_payoffs):
+                balanced_result.sigma_payoffs = sigma_payoffs.reindex(y_balanced.index)
 
             if balanced_result.normalization_factors:
                 normalization_factors = copy.deepcopy(balanced_result.normalization_factors)
@@ -1760,7 +1778,7 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
         """Get list of required artifacts this component must produce."""
         return ['multi_horizon_labeling_result', 'labeling_report']
 
-    async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
+    async def execute(self, data: Any, pipeline_state: PipelineState | Mapping[str, Any]) -> ComponentResult:
         """
         Execute multi-horizon profit labeling as a component.
 
@@ -1771,15 +1789,29 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
         Returns:
             ComponentResult with labeling results
         """
+        symbol = "unknown_symbol"
+        exchange = "unknown_exchange"
+        timeframe = "unknown_timeframe"
+
         try:
+            resolved_state: PipelineState
+            if isinstance(pipeline_state, PipelineState):
+                resolved_state = pipeline_state
+            elif isinstance(pipeline_state, Mapping):
+                resolved_state = pipeline_state_from_mapping(pipeline_state)
+            else:
+                raise TypeError(
+                    "pipeline_state must be a PipelineState or mapping-compatible object"
+                )
+
             # Extract parameters from pipeline state
-            symbol = pipeline_state.get('symbol', 'ETHUSDT')
-            exchange = pipeline_state.get('exchange', 'binance')
-            timeframe = pipeline_state.get('timeframe', '1h')  # Updated to 1h for analyst
-            data_dir = pipeline_state.get('data_dir', 'historical_data')
+            symbol = resolved_state.symbol
+            exchange = resolved_state.exchange
+            timeframe = resolved_state.timeframe
+            data_dir = resolved_state.data_dir
 
             # Extract regime data from pipeline state if available
-            regime_data = pipeline_state.get('regime_data_splitting_result')
+            regime_data = resolved_state.regime_data_splitting_result
 
             # Execute labeling with regime data if available
             labeling_result = await self.labeler.execute_labeling(
@@ -1788,7 +1820,7 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                 timeframe=timeframe,
                 data_dir=data_dir,
                 regime_data=regime_data,
-                quality_thresholds=self.quality_thresholds or pipeline_state.get('quality_thresholds')
+                quality_thresholds=self.quality_thresholds or resolved_state.quality_thresholds
             )
 
             # Save artifacts persistently for other components to use
@@ -1828,9 +1860,11 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                 tprint_warning(f"⚠️ Failed to save outcome: {e}")
                 artifact_save_error = str(e)
 
+            artifacts: MultiHorizonArtifacts = validate_multi_horizon_artifacts(labeling_result)
+
             return ComponentResult(
                 success=True,
-                artifacts=labeling_result,
+                artifacts=artifacts,
                 metadata={
                     'component_type': 'multi_horizon_profit_labeler',
                     'symbol': symbol,
@@ -1843,16 +1877,49 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
 
         except Exception as e:
             tprint_error(f"❌ Multi-horizon profit labeler component failed: {e}")
-            return ComponentResult(
-                success=False,
-                artifacts={
-                    'multi_horizon_labeling_result': {},
-                    'labeling_report': {
-                        'status': 'failed',
+            error_artifacts: MultiHorizonArtifacts = validate_multi_horizon_artifacts({
+                'multi_horizon_labeling_result': {
+                    'labeled_data': {},
+                    'labels': {},
+                    'confidence_scores': {},
+                    'eligibility_masks': {},
+                    'sigma_payoffs': {},
+                    'quality_scores': {},
+                    'horizon_weights': {},
+                    'target_columns': [],
+                    'normalization_factors': {},
+                    'method': 'multi_horizon_profit_labeling',
+                    'balancing_applied': False,
+                    'sample_weights': None,
+                    'validation_results': {'is_valid': False, 'issues': [str(e)]},
+                    'smoothing_settings': {},
+                    'metadata': {
+                        'symbol': symbol,
+                        'exchange': exchange,
+                        'timeframe': timeframe,
+                        'regime_aware': False,
+                        'processing_time': 0.0,
+                        'n_samples': 0,
+                        'n_targets': 0,
+                        'n_horizons': 0,
+                        'target_distribution': {},
+                        'quality_summary': {},
+                        'downstream_ready': False,
+                        'forward_return_smoothing': {},
                         'error': str(e),
-                        'timestamp': datetime.now().isoformat()
                     }
                 },
+                'labeling_report': {
+                    'status': 'failed',
+                    'error': str(e),
+                    'timestamp': datetime.now().isoformat()
+                },
+                'standardized_output': {},
+            })
+
+            return ComponentResult(
+                success=False,
+                artifacts=error_artifacts,
                 error_message=str(e),
                 metadata={'component_type': 'multi_horizon_profit_labeler'}
             )

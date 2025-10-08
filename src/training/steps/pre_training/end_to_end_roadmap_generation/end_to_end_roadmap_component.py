@@ -54,7 +54,7 @@ from src.end_to_end_roadmap import (
 )
 
 # Import utilities
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.training.steps.pre_training.standardized_labeling_interface import assert_labels_sigma_scaled
 
 # Import logger
@@ -123,6 +123,7 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
     
     def _create_system_config(self) -> SystemConfig:
         """Create system configuration based on component config."""
+        tprint_info("⚙️ Creating system configuration for end-to-end roadmap component")
         return SystemConfig(
             # Feature budgets (from roadmap spec)
             feature_budget_pre=120,
@@ -321,6 +322,7 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
     
     async def _load_and_validate_market_data(self, data: Any) -> Any:
         """Load and validate market data with strict validation that fails fast."""
+        tprint_info("📥 Loading and validating market data for roadmap generation")
         try:
             # Enhanced data handling - try to get data from multiple sources
             processed_data = await self._enhanced_data_handling(data)
@@ -406,24 +408,31 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
                 raise ValueError(f"CRITICAL: After data type cleanup, only {processed_data.shape[1]} columns remain")
             
             self.logger.info(f"✅ Data validation passed: {len(processed_data)} rows, {len(processed_data.columns)} numeric columns")
+            tprint_success(
+                f"✅ Market data validated: {len(processed_data)} rows, {len(processed_data.columns)} numeric columns"
+            )
             return processed_data.copy()
-            
+
         except Exception as e:
             self.logger.error(f"❌ Data validation failed: {e}")
+            tprint_error(f"❌ Market data validation failed: {e}")
             raise
-    
+
     async def _enhanced_data_handling(self, data: Any) -> Optional[pd.DataFrame]:
         """Enhanced data handling to get data from multiple sources."""
+        tprint_info("🔍 Attempting enhanced data handling for roadmap generation")
         try:
             # Try direct data first
             if data is not None:
                 if isinstance(data, pd.DataFrame) and not data.empty:
                     self.logger.info("✅ Using direct DataFrame data for roadmap generation")
+                    tprint_success("✅ Using direct DataFrame data for roadmap generation")
                     return data
                 elif hasattr(data, 'to_dataframe'):
                     df = data.to_dataframe()
                     if not df.empty:
                         self.logger.info("✅ Converted data to DataFrame for roadmap generation")
+                        tprint_success("✅ Converted input data to DataFrame for roadmap generation")
                         return df
             
             # Try to get data from pipeline state
@@ -436,18 +445,22 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
                         if pipeline_data is not None:
                             if isinstance(pipeline_data, pd.DataFrame) and not pipeline_data.empty:
                                 self.logger.info(f"✅ Using data from pipeline state key: {key}")
+                                tprint_success(f"✅ Using pipeline state data from key '{key}'")
                                 return pipeline_data
                             elif hasattr(pipeline_data, 'to_dataframe'):
                                 df = pipeline_data.to_dataframe()
                                 if not df.empty:
                                     self.logger.info(f"✅ Converted pipeline data from key: {key}")
+                                    tprint_success(f"✅ Converted pipeline data from key '{key}' to DataFrame")
                                     return df
             
             self.logger.error("❌ No valid data found for roadmap generation")
+            tprint_warning("⚠️ No valid data sources found for roadmap generation")
             return None
-            
+
         except Exception as e:
             self.logger.error(f"Enhanced data handling failed: {e}")
+            tprint_error(f"❌ Enhanced data handling failed: {e}")
             return None
     
     async def _get_target_variable(self, pipeline_state: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -572,6 +585,7 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
     
     def _extract_targets_for_roadmap(self, target_data: Dict[str, Any]) -> Optional[Dict[int, pd.Series]]:
         """Extract targets in format expected by roadmap system."""
+        tprint_info("🎯 Extracting targets for roadmap system integration")
         try:
             targets = target_data.get('targets', {})
             
@@ -581,17 +595,23 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
                 for i, (target_type, target_values) in enumerate(targets.items(), 1):
                     if hasattr(target_values, '__len__') and not isinstance(target_values, str):
                         roadmap_targets[i] = pd.Series(target_values)
-                
-                return roadmap_targets if roadmap_targets else None
+
+                if roadmap_targets:
+                    tprint_success(f"✅ Extracted {len(roadmap_targets)} roadmap target horizons")
+                    return roadmap_targets
+                tprint_warning("⚠️ No valid targets found while extracting roadmap horizons")
+                return None
             else:
                 # Single target case
                 if hasattr(targets, '__len__') and not isinstance(targets, str):
+                    tprint_success("✅ Extracted single roadmap target horizon")
                     return {1: pd.Series(targets)}
-            
+
             return None
-            
+
         except Exception as e:
             self.logger.warning(f"Failed to extract targets for roadmap: {e}")
+            tprint_warning(f"⚠️ Failed to extract targets for roadmap: {e}")
             return None
     
     def _select_best_target_with_weights(self, labels: pd.DataFrame, weights: Dict[str, float], target_columns: List[str]) -> Optional[str]:
@@ -637,6 +657,7 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
     
     async def _validate_generation_results(self, roadmap_result: SystemResult) -> Dict[str, Any]:
         """Validate roadmap generation results."""
+        tprint_info("🧪 Validating roadmap generation results")
         issues = []
         recommendations = []
         
@@ -673,7 +694,7 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
         
         quality_score = min(1.0, base_quality_score + diversity_bonus)
         
-        return {
+        validation_summary = {
             'is_valid': len(issues) == 0,
             'issues': issues,
             'quality_score': quality_score,
@@ -685,12 +706,25 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
                 'feature_diversity': feature_diversity
             }
         }
-    
+
+        if validation_summary['is_valid']:
+            tprint_success(
+                f"✅ Validation passed with quality score {validation_summary['quality_score']:.3f}"
+            )
+        else:
+            tprint_warning(
+                f"⚠️ Validation detected {len(validation_summary['issues'])} issues; quality score {validation_summary['quality_score']:.3f}"
+            )
+
+        return validation_summary
+
     def _calculate_data_quality_score(self, data: Any) -> float:
         """Calculate data quality score."""
+        tprint_info("📐 Calculating data quality score for roadmap data")
         if not PANDAS_AVAILABLE or not isinstance(data, pd.DataFrame):
+            tprint_warning("⚠️ Data quality score defaults to 0.0 (pandas unavailable or invalid data type)")
             return 0.0
-        
+
         try:
             score = 1.0
             
@@ -706,10 +740,13 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
                 if col in data.columns and data[col].dtype == 'object':
                     score *= 0.5
             
-            return max(0.0, score)
-            
+            final_score = max(0.0, score)
+            tprint_success(f"✅ Data quality score computed: {final_score:.3f}")
+            return final_score
+
         except Exception as e:
             self.logger.warning(f"Quality score calculation failed: {e}")
+            tprint_warning(f"⚠️ Failed to compute data quality score: {e}")
             return 0.0
     
     async def _create_comprehensive_artifacts(
@@ -719,7 +756,8 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
         market_data: Any
     ) -> Dict[str, Any]:
         """Create comprehensive artifacts."""
-        return {
+        tprint_info("🧰 Creating comprehensive roadmap artifacts")
+        artifacts = {
             'end_to_end_roadmap_result': {
                 # Roadmap results
                 'features': roadmap_result.features,
@@ -759,16 +797,19 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
                 }
             }
         }
-    
+
+        tprint_success("✅ Comprehensive roadmap artifacts prepared")
+        return artifacts
+
     def _generate_final_report(
-        self, 
-        artifacts: Dict[str, Any], 
+        self,
+        artifacts: Dict[str, Any],
         validation_result: Dict[str, Any],
         roadmap_result: SystemResult
     ) -> Dict[str, Any]:
         """Generate comprehensive final report."""
-        
-        return {
+        tprint_info("📄 Generating final roadmap report")
+        final_report = {
             'execution_summary': {
                 'total_time': time.time() - self.start_time if self.start_time else 0,
                 'success': roadmap_result.success,
@@ -790,10 +831,14 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
             },
             'recommendations': validation_result['recommendations']
         }
-    
+
+        tprint_success("✅ Final roadmap report generated")
+        return final_report
+
     def _generate_failure_report(self, error_message: str) -> Dict[str, Any]:
         """Generate failure report."""
-        return {
+        tprint_warning("⚠️ Generating failure report for roadmap component")
+        failure_report = {
             'execution_summary': {
                 'total_time': time.time() - self.start_time if self.start_time else 0,
                 'success': False,
@@ -812,14 +857,19 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
                 "Ensure required dependencies are available"
             ]
         }
-    
+
+        tprint_info("📋 Failure report prepared for roadmap component")
+        return failure_report
+
     def _report_checkpoint(self, step: str, status: str, details: Dict[str, Any]):
         """Report progress at key checkpoints."""
+        tprint_info(f"⏱️ Checkpoint [{step}] status: {status}")
         self.logger.info(f"📊 [{step}] {status} - {details}")
-    
+
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics."""
-        return {
+        tprint_info("📈 Gathering performance metrics for roadmap component")
+        metrics = {
             'generation_status': self.generation_status.value,
             'execution_time': time.time() - self.start_time if self.start_time else 0.0,
             'system_status': self.roadmap_system.get_system_status(),
@@ -828,3 +878,6 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
                 'pandas_available': PANDAS_AVAILABLE
             }
         }
+
+        tprint_success("✅ Performance metrics collected")
+        return metrics

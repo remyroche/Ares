@@ -4,10 +4,14 @@ Component Factory for Pre-Training Pipeline Components.
 This factory manages the creation and registration of all pre-training pipeline components.
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, Type, Any, Optional, List
-from src.utils.tprint import (tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer)
+from typing import Dict, Type, Any, Optional
+from src.utils.tprint import (
+    tprint,
+    tprint_debug,
+    tprint_info,
+    tprint_warning,
+    tprint_error,
+)
 
 # Import base component classes
 from .base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
@@ -34,15 +38,6 @@ try:
 except ImportError as e:
     OPTIMIZED_LOOKBACK_AVAILABLE = False
     tprint_warning(f"⚠️ Optimized lookback component not available: {e}")
-
-# Import interactive feature generation component
-try:
-    from ..interaction_feature_generator.feature_interaction_generation.interactive_feature_generation_component import InteractiveFeatureGenerationComponent
-    INTERACTIVE_COMPONENT_AVAILABLE = True
-    tprint_debug("✅ Interactive feature generation component loaded successfully")
-except ImportError as e:
-    INTERACTIVE_COMPONENT_AVAILABLE = False
-    tprint_warning(f"⚠️ Interactive feature generation component not available: {e}")
 
 # Import multi-horizon profit labeler
 try:
@@ -188,9 +183,7 @@ class ComponentFactory:
             component_class: Component class
         """
         if not issubclass(component_class, BasePreTrainingComponent):
-            raise ValueError(
-                f"Component class must inherit from BasePreTrainingComponent"
-            )
+            raise ValueError("Component class must inherit from BasePreTrainingComponent")
 
         self._components[name] = component_class
         tprint(

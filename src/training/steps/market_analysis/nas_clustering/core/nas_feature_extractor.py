@@ -36,8 +36,10 @@ print("🔍 [NAS_FEATURE_EXTRACTOR] ✓ PyTorch neural network module imported s
 # Import existing feature selection framework
 print("🔍 [NAS_FEATURE_EXTRACTOR] Attempting to import feature selection framework...")
 try:
-    from src.utils.feature_selection.framework import (
-        select_features, run_comprehensive_feature_selection,
+    from src.feature_selection.core.framework import (
+        select_features, run_comprehensive_feature_selection
+    )
+    from src.feature_selection.methods import (
         MRMRSelector, ElasticNetStabilitySelector, RecursiveFeatureEliminator
     )
     FEATURE_SELECTION_AVAILABLE = True

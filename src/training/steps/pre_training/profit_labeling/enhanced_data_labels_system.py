@@ -46,7 +46,29 @@ from src.utils.common_operations import (
     safe_divide, safe_log, safe_sqrt, safe_power, safe_mean, safe_std,
     validate_finite, validate_positive, validate_range, safe_correlation
 )
+from src.utils.common_utilities import (
+    safe_dataframe_operation, validate_dataframe_columns, safe_convert_dtypes,
+    analyze_nan_values_detailed, validate_dataframe_integrity
+)
 from src.utils.math_validation import MathValidation
+
+# Import hardware optimization utilities
+from src.utils.hardware.m1_gpu_utils import M1GPUManager
+from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
+
+# Import data utilities
+from src.utils.data.unified_data_utils import UnifiedDataUtils
+
+# Import matrix operations
+from src.utils.matrix_operations import UnifiedMatrixOperations
+
+# Import ML common utilities
+from src.utils.ml_common.validation.cross_validation import CrossValidator
+from src.utils.lookahead_bias_detector import LookaheadBiasDetector, get_global_detector
+
+# Import serialization utilities
+from src.utils.serialization_utils import UniversalSerializer
 
 # Import existing components
 from .enhanced_label_definitions import (
@@ -185,12 +207,32 @@ class EnhancedDataLabelsSystem:
         
         # Initialize components
         self._initialize_components()
-        
+
+        # Initialize hardware optimization managers
+        self.hardware_managers = {
+            'gpu': M1GPUManager() if self._is_gpu_available() else None,
+            'memory': M1MemoryOptimizer(),
+            'cpu': M1CPUOptimizer()
+        }
+
+        # Initialize data utilities
+        self.data_utils = UnifiedDataUtils()
+
+        # Initialize matrix operations
+        self.matrix_ops = UnifiedMatrixOperations()
+
+        # Initialize ML common utilities
+        self.cross_validator = CrossValidator()
+        self.lookahead_detector = get_global_detector()
+
+        # Initialize serialization utilities
+        self.serializer = UniversalSerializer()
+
         # State tracking
         self.label_history: List[Dict[str, Any]] = []
         self.data_quality_history: List[Dict[str, Any]] = []
         self.stability_history: List[Dict[str, Any]] = []
-        
+
         # Cache for performance
         self.cache: Dict[str, Any] = {}
         self.cache_timestamps: Dict[str, datetime] = {}
@@ -199,7 +241,16 @@ class EnhancedDataLabelsSystem:
         tprint_info("   → Trading-aware label definitions")
         tprint_info("   → Comprehensive data cleaning")
         tprint_info("   → Label stability monitoring")
+        tprint_info("   → Hardware optimization enabled")
         tprint_info("   → Full infrastructure integration")
+
+    def _is_gpu_available(self) -> bool:
+        """Check if GPU acceleration is available."""
+        try:
+            return self.hardware_managers['gpu'].is_available() if self.hardware_managers['gpu'] else False
+        except Exception as e:
+            tprint_warning(f"⚠️ Error checking GPU availability: {e}")
+            return False
     
     def _initialize_components(self):
         """Initialize all system components."""
@@ -264,7 +315,8 @@ class EnhancedDataLabelsSystem:
             cache_key = self._generate_cache_key(market_data, regime_data, portfolio_state)
             if not force_recompute and self._is_cache_valid(cache_key):
                 tprint_info("📋 Using cached results")
-                return self.cache[cache_key]
+                # Use deserializer to retrieve cached data
+                return self.serializer.deserialize(self.cache[cache_key])
             
             # Step 1: Data Quality Assessment and Cleaning
             tprint_info("🧹 Step 1: Data quality assessment and cleaning")
@@ -319,9 +371,10 @@ class EnhancedDataLabelsSystem:
                 'cache_key': cache_key
             }
             
-            # Store in cache
+            # Store in cache using serialization utilities
             if self.config.enable_caching:
-                self.cache[cache_key] = result
+                # Use serializer for efficient caching
+                self.cache[cache_key] = self.serializer.serialize(result, compression='auto')
                 self.cache_timestamps[cache_key] = datetime.now()
             
             # Update history
@@ -342,23 +395,82 @@ class EnhancedDataLabelsSystem:
         """Assess data quality and apply comprehensive cleaning."""
         try:
             tprint_info("🔍 Assessing data quality...")
-            
-            # Comprehensive data quality assessment
-            quality_assessment = self.data_quality.calculate_data_quality_score(market_data)
-            
-            # Enhanced data cleaning
-            cleaned_data, cleaning_report = self.data_quality.enhanced_automated_data_cleaning(
-                market_data, {
-                    'missing_value_strategy': 'advanced_imputation',
-                    'outlier_method': 'advanced_detection',
-                    'correlation_threshold': 0.95,
-                    'drift_adaptation': True,
-                    'feature_stability_check': True
+
+            # Validate DataFrame integrity using common utilities
+            if not validate_dataframe_integrity(market_data):
+                tprint_warning("⚠️ DataFrame integrity validation failed")
+
+            # Validate required columns
+            required_cols = ['open', 'high', 'low', 'close', 'volume']
+            if not validate_dataframe_columns(market_data, required_cols):
+                tprint_error("❌ Required columns missing from market data")
+                return {
+                    'original_data': market_data,
+                    'cleaned_data': market_data,
+                    'quality_level': DataQualityLevel.CRITICAL,
+                    'quality_score': 0.0,
+                    'error': 'Missing required columns'
                 }
-            )
+
+            # Comprehensive data quality assessment with hardware optimization
+            if self.hardware_managers['memory'].is_memory_efficient(market_data):
+                # Use memory-optimized processing
+                quality_assessment = self.hardware_managers['memory'].optimized_data_quality_check(
+                    market_data, self.data_quality
+                )
+            else:
+                quality_assessment = self.data_quality.calculate_data_quality_score(market_data)
             
-            # Additional trading-specific cleaning
-            cleaned_data = self._apply_trading_specific_cleaning(cleaned_data)
+            # Enhanced data cleaning with hardware optimization and matrix operations
+            tprint_info("🔧 Applying enhanced data cleaning with matrix operations...")
+
+            if self.hardware_managers['cpu'].should_use_optimization(cleaned_data):
+                tprint_info("⚡ Using CPU-optimized data cleaning with matrix operations")
+                # Use CPU-optimized cleaning
+                cleaned_data, cleaning_report = self.hardware_managers['cpu'].optimized_data_cleaning(
+                    market_data, self.data_quality, {
+                        'missing_value_strategy': 'advanced_imputation',
+                        'outlier_method': 'advanced_detection',
+                        'correlation_threshold': 0.95,
+                        'drift_adaptation': True,
+                        'feature_stability_check': True,
+                        'use_matrix_operations': True
+                    }
+                )
+            else:
+                tprint_info("🔄 Using standard data cleaning with matrix operations")
+                cleaned_data, cleaning_report = self.data_quality.enhanced_automated_data_cleaning(
+                    market_data, {
+                        'missing_value_strategy': 'advanced_imputation',
+                        'outlier_method': 'advanced_detection',
+                        'correlation_threshold': 0.95,
+                        'drift_adaptation': True,
+                        'feature_stability_check': True,
+                        'use_matrix_operations': True
+                    }
+                )
+
+            # Additional matrix-based feature correlation analysis
+            tprint_info("📊 Performing matrix-based feature correlation analysis...")
+            numeric_cols = cleaned_data.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) > 1:
+                feature_matrix = cleaned_data[numeric_cols].values
+                # Use matrix operations for correlation calculation
+                correlation_matrix = self.matrix_ops.calculate_pairwise_similarities(
+                    feature_matrix.T, method='cosine'
+                )
+                # Detect highly correlated features using matrix operations
+                # Find correlations above threshold (excluding diagonal)
+                correlation_flat = correlation_matrix[np.triu_indices_from(correlation_matrix, k=1)]
+                high_corr_count = np.sum(correlation_flat > 0.95)
+                tprint_info(f"📈 Found {high_corr_count} highly correlated feature pairs")
+            else:
+                tprint_warning("⚠️ Insufficient numeric columns for correlation analysis")
+
+            # Additional trading-specific cleaning using common utilities
+            cleaned_data = safe_dataframe_operation(
+                cleaned_data, self._apply_trading_specific_cleaning
+            )
             
             # Determine quality level
             quality_score = quality_assessment['overall_score']
@@ -401,41 +513,80 @@ class EnhancedDataLabelsSystem:
             }
     
     def _apply_trading_specific_cleaning(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply trading-specific data cleaning rules."""
+        """Apply trading-specific data cleaning rules using common utilities."""
         try:
-            cleaned = data.copy()
-            
-            # Remove bars with missing OHLCV data
+            cleaned = safe_dataframe_operation(data.copy, lambda x: x.copy())
+
+            # Remove bars with missing OHLCV data using common utilities
             required_cols = ['open', 'high', 'low', 'close', 'volume']
-            missing_mask = cleaned[required_cols].isnull().any(axis=1)
-            cleaned = cleaned[~missing_mask]
-            
-            # Remove bars with zero or negative prices
-            price_cols = ['open', 'high', 'low', 'close']
-            invalid_price_mask = (cleaned[price_cols] <= 0).any(axis=1)
-            cleaned = cleaned[~invalid_price_mask]
-            
-            # Remove bars with zero volume
-            if 'volume' in cleaned.columns:
-                zero_volume_mask = cleaned['volume'] <= 0
-                cleaned = cleaned[~zero_volume_mask]
-            
-            # Remove bars with extreme price changes (likely data errors)
-            if len(cleaned) > 1:
-                price_changes = cleaned['close'].pct_change().abs()
-                extreme_change_mask = price_changes > 0.5  # 50% change
-                cleaned = cleaned[~extreme_change_mask]
-            
-            # Ensure proper timestamp alignment
-            if isinstance(cleaned.index, pd.DatetimeIndex):
-                # Remove duplicate timestamps
-                cleaned = cleaned[~cleaned.index.duplicated(keep='first')]
-                
-                # Sort by timestamp
-                cleaned = cleaned.sort_index()
-            
+            if validate_dataframe_columns(cleaned, required_cols):
+                missing_mask = cleaned[required_cols].isnull().any(axis=1)
+                cleaned = cleaned[~missing_mask]
+
+                # Remove bars with zero or negative prices using safe operations
+                price_cols = ['open', 'high', 'low', 'close']
+                if validate_dataframe_columns(cleaned, price_cols):
+                    # Use safe operations for price validation
+                    invalid_price_mask = safe_dataframe_operation(
+                        cleaned[price_cols], lambda x: (x <= 0).any(axis=1)
+                    )
+                    if not invalid_price_mask.empty:
+                        cleaned = cleaned[~invalid_price_mask]
+
+                # Remove bars with zero volume using safe operations
+                if 'volume' in cleaned.columns:
+                    zero_volume_mask = safe_dataframe_operation(
+                        cleaned['volume'], lambda x: x <= 0
+                    )
+                    if not zero_volume_mask.empty:
+                        cleaned = cleaned[~zero_volume_mask]
+
+                # Remove bars with extreme price changes (likely data errors) using matrix operations
+                if len(cleaned) > 1:
+                    price_changes = safe_dataframe_operation(
+                        cleaned['close'].pct_change(), lambda x: x.abs()
+                    )
+                    if not price_changes.empty:
+                        tprint_info("🔍 Detecting extreme price changes using matrix operations...")
+
+                        # Use matrix operations for efficient extreme value detection
+                        price_changes_matrix = price_changes.values.reshape(1, -1)
+                        # Apply matrix-based outlier detection using statistical methods
+                        mean_val = np.mean(price_changes_matrix)
+                        std_val = np.std(price_changes_matrix)
+
+                        # Use z-score based detection
+                        z_scores = (price_changes_matrix - mean_val) / (std_val + 1e-8)
+                        extreme_change_mask = np.abs(z_scores) > 2.0  # 2-sigma rule
+                        extreme_change_mask = extreme_change_mask.flatten()
+
+                        extreme_change_mask = pd.Series(extreme_change_mask, index=price_changes.index)
+                        extreme_count = extreme_change_mask.sum()
+
+                        if extreme_count > 0:
+                            cleaned = cleaned[~extreme_change_mask]
+                            tprint_info(f"🚫 Removed {extreme_count} bars with extreme price changes")
+                        else:
+                            tprint_info("✅ No extreme price changes detected")
+
+                # Ensure proper timestamp alignment using data utilities
+                if isinstance(cleaned.index, pd.DatetimeIndex) and len(cleaned) > 0:
+                    # Remove duplicate timestamps using common utilities
+                    duplicate_mask = safe_dataframe_operation(
+                        cleaned.index, lambda x: x.duplicated(keep='first')
+                    )
+                    if not duplicate_mask.empty:
+                        cleaned = cleaned[~duplicate_mask]
+
+                    # Sort by timestamp using data utilities
+                    cleaned = safe_dataframe_operation(
+                        cleaned, lambda x: x.sort_index()
+                    )
+            else:
+                tprint_error("❌ Required price/volume columns missing for trading-specific cleaning")
+
             return cleaned
-            
+
         except Exception as e:
             tprint_warning(f"⚠️ Trading-specific cleaning failed: {e}")
             return data
@@ -481,6 +632,18 @@ class EnhancedDataLabelsSystem:
             tactician_labels = self.label_definitions.generate_risk_aware_labels(
                 tactician_labels, market_data, portfolio_state
             )
+
+            # Check for lookahead bias using ML common utilities
+            lookahead_check = self.lookahead_detector.detect_lookahead_bias(
+                market_data, analyst_labels, window_size=10
+            )
+            if lookahead_check['bias_detected']:
+                tprint_warning(f"⚠️ Lookahead bias detected: {lookahead_check['severity']}")
+
+            # Validate label quality using cross-validation utilities
+            label_quality = self.cross_validator.validate_labels_cross_validation(
+                market_data[['close']], analyst_labels, cv_folds=3
+            )
             
             # Create comprehensive labels DataFrame
             labels_df = pd.DataFrame({
@@ -502,7 +665,10 @@ class EnhancedDataLabelsSystem:
                 'realized_turnover': capacity_diagnostics.get('realized_turnover', 0.0),
                 'capacity_score': capacity_diagnostics.get('capacity_score', 1.0),
                 'capacity_utilization': capacity_diagnostics.get('capacity_utilization', 0.0),
-                'capacity_violations': capacity_diagnostics.get('violations_flagged', False)
+                'capacity_violations': capacity_diagnostics.get('violations_flagged', False),
+                'lookahead_bias_detected': lookahead_check.get('bias_detected', False),
+                'lookahead_bias_severity': lookahead_check.get('severity', 'none'),
+                'label_quality_score': label_quality.get('overall_score', 0.5)
             }
 
             result = {
@@ -713,39 +879,61 @@ class EnhancedDataLabelsSystem:
             }
     
     def _check_autocorrelation(self, labels: pd.DataFrame) -> Dict[str, Any]:
-        """Check for autocorrelation in labels."""
+        """Check for autocorrelation in labels using matrix operations."""
         try:
+            tprint_info("🔍 Checking autocorrelation using matrix operations...")
             autocorr_scores = []
             autocorr_details = {}
-            
+
             for col in ['analyst_label', 'tactician_label']:
                 if col in labels.columns:
                     series = labels[col].dropna()
                     if len(series) > 10:
-                        # Check multiple lags
+                        tprint_info(f"📊 Computing autocorrelation for {col}...")
+
+                        # Convert series to matrix for efficient computation
+                        values = series.values.reshape(-1, 1)
+
+                        # Check multiple lags using matrix operations
                         lags = [1, 2, 3, 5]
                         lag_scores = []
-                        
+
                         for lag in lags:
                             if len(series) > lag:
-                                autocorr = series.autocorr(lag=lag)
-                                if not pd.isna(autocorr):
-                                    lag_scores.append(abs(autocorr))
-                        
+                                # Use matrix operations for autocorrelation calculation
+                                shifted_values = np.roll(values, lag, axis=0)
+                                # Remove the first lag elements where shift occurred
+                                valid_values = values[lag:]
+                                valid_shifted = shifted_values[lag:]
+
+                                if len(valid_values) > 10:
+                                    # Compute correlation using matrix operations
+                                    correlation_matrix = self.matrix_ops.calculate_pairwise_similarities(
+                                        valid_values, method='cosine'
+                                    )
+                                    # Extract correlation coefficient (diagonal element)
+                                    autocorr = correlation_matrix[0, 0] if correlation_matrix.shape[0] > 0 else 0.0
+
+                                    if not pd.isna(autocorr):
+                                        lag_scores.append(abs(autocorr))
+
                         if lag_scores:
                             avg_autocorr = np.mean(lag_scores)
                             autocorr_scores.append(1.0 - avg_autocorr)  # Lower autocorr = better
                             autocorr_details[f'{col}_avg_autocorr'] = avg_autocorr
-            
+                            tprint_info(f"   → {col} autocorrelation: {avg_autocorr:.3f}")
+
             overall_autocorr = np.mean(autocorr_scores) if autocorr_scores else 1.0
-            
+
+            tprint_success(f"✅ Autocorrelation analysis completed: {overall_autocorr:.3f}")
             return {
                 'autocorr_score': overall_autocorr,
                 'autocorr_details': autocorr_details,
                 'is_high_autocorr': overall_autocorr < 0.7
             }
-            
+
         except Exception as e:
+            tprint_error(f"❌ Autocorrelation check failed: {e}")
             return {
                 'autocorr_score': 0.5,
                 'autocorr_details': {},
@@ -763,9 +951,17 @@ class EnhancedDataLabelsSystem:
         try:
             tprint_info("⚖️ Applying balancing and weighting...")
             
-            # Prepare features (use price and volume data)
+            # Prepare features (use price and volume data) with matrix optimization
             feature_cols = ['open', 'high', 'low', 'close', 'volume']
             X = market_data[feature_cols].copy()
+
+            # Optimize feature matrix for memory and performance
+            tprint_info("🔧 Optimizing feature matrix for memory efficiency...")
+            if len(X) > 0:
+                feature_matrix = X.values
+                optimized_matrix = self.matrix_ops.optimize_array(feature_matrix, dtype=np.float32)
+                X = pd.DataFrame(optimized_matrix, index=X.index, columns=X.columns)
+                tprint_success(f"✅ Feature matrix optimized: {feature_matrix.shape} → {optimized_matrix.shape}")
             
             # Use analyst labels as primary target
             y = labels['analyst_label']
@@ -858,7 +1054,7 @@ class EnhancedDataLabelsSystem:
             else:
                 quality_grade = 'F'
             
-            # Generate recommendations
+            # Generate recommendations with matrix-based analysis
             recommendations = []
             if data_quality_score < 0.7:
                 recommendations.append("Improve data quality - address missing values and outliers")
@@ -868,6 +1064,38 @@ class EnhancedDataLabelsSystem:
                 recommendations.append("Improve class balance - consider different balancing strategies")
             if capacity_score < self.config.min_capacity_score:
                 recommendations.append("Capacity violations detected - revisit turnover and holding limits")
+
+            # Add matrix-based dimensionality analysis
+            if len(balanced_result['X']) > 0 and len(balanced_result['X'].columns) > 2:
+                tprint_info("📊 Performing matrix-based dimensionality analysis...")
+                feature_matrix = balanced_result['X'].values
+
+                try:
+                    # Use matrix operations for dimensionality analysis
+                    # Compute covariance matrix
+                    cov_matrix = self.matrix_ops.compute_covariance(feature_matrix)
+
+                    # Perform SVD for dimensionality assessment
+                    U, s, Vt = self.matrix_ops.matrix_decomposition(cov_matrix, method='svd')
+
+                    # Analyze explained variance ratio
+                    explained_variance_ratio = s / np.sum(s)
+                    cumulative_variance = np.cumsum(explained_variance_ratio)
+
+                    # Find number of components needed for 95% variance
+                    n_components_95 = np.where(cumulative_variance >= 0.95)[0][0] + 1
+
+                    tprint_info(f"📈 Dimensionality analysis: {n_components_95}/{len(s)} components explain 95% variance")
+
+                    # Add recommendations based on dimensionality analysis
+                    if n_components_95 < len(s) * 0.5:
+                        recommendations.append(f"Consider dimensionality reduction: {n_components_95} components explain 95% variance")
+                    elif n_components_95 > len(s) * 0.8:
+                        recommendations.append("High-dimensional data detected - consider feature selection")
+
+                except Exception as e:
+                    tprint_warning(f"⚠️ Dimensionality analysis failed: {e}")
+                    recommendations.append("Dimensionality analysis unavailable - check data quality")
 
             result = {
                 'overall_score': overall_score,

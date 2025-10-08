@@ -20,7 +20,7 @@ from scipy import stats
 from scipy.signal import find_peaks
 from scipy.stats import skew, kurtosis, jarque_bera
 
-from ..core.feature_generator import (
+from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
 # Optimization utilities
 try:
@@ -29,11 +29,6 @@ try:
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
-    FeatureGenerator, 
-    FeatureConfig, 
-    FeatureCategory,
-    VectorizedFeatureGenerator
-)
 from ..base_calculations import (
     BaseCalculator,
     BaseCalculationType,

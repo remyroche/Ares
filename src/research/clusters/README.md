@@ -20,7 +20,7 @@ The framework first discovers regimes (market behavioral patterns), then validat
 ## 🔬 Research Approach
 
 ### Integration with Existing Feature Engineering
-- **Uses features from** `src/feature_engineering/feature_generators.py`
+- **Uses features from** `src/feature_engineering_roadmap/feature_generators.py`
 - **Leverages** cross-timeframe analysis and microstructure proxies
 - **Discovers** implicit dimensions from existing comprehensive feature set
 - **Maintains** compatibility with current optimization systems
@@ -65,7 +65,7 @@ Many Features → Statistical Dimensionality Analysis → Market Dimensions → 
 ```
 
 **Detailed Pipeline Steps:**
-1. **Comprehensive Feature Generation**: Use ALL available features from `src/feature_engineering/` (100+ features)
+1. **Comprehensive Feature Generation**: Use ALL available features from `src/feature_engineering_roadmap/` (100+ features)
 2. **Statistical Dimensionality Analysis**: PCA, FA, ICA with statistical tests (KMO, Bartlett, etc.)
 3. **Market Dimension Discovery**: Group features into market dimensions (liquidity, momentum, etc.)
 4. **Economic Relevance Analysis**: Determine which dimensions influence price action (NEW STEP)
@@ -710,7 +710,7 @@ This framework is part of the larger trading system and follows the same licensi
 This framework integrates with:
 
 - **Existing HMM Systems**: `src/training/steps/market_analysis/components/hmm_*`
-- **Feature Engineering**: `src/feature_engineering/`
+- **Feature Engineering**: `src/feature_engineering_roadmap/`
 - **Data Management**: `src/utils/data/`
 - **Logging System**: `src/utils/logger`
 

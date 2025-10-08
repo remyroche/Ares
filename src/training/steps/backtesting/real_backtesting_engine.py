@@ -27,13 +27,25 @@ from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
 from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 from src.utils.ml_common.vectorized_backtesting import VectorizedBacktestEngine, VectorizedBacktestConfig
-from src.utils.ml_common.cvlsa import CVLSAValidator
 from src.utils.ml_common.optimization import HyperparameterOptimizer
+
+# Optional CVLSA support
+try:
+    from src.utils.ml_common.cvlsa import CVLSAValidator
+except ImportError:
+    CVLSAValidator = None
 from src.utils.common_ml.backtesting.backtesting_engine import BacktestingEngine, BacktestingConfig
 from src.utils.common_ml.backtesting.monte_carlo_engine import MonteCarloEngine, MonteCarloConfig
 from src.utils.common_ml.backtesting.ab_testing_engine import ABTestingEngine, ABTestConfig
 from src.utils.common_operations import safe_json_dump, safe_json_load, ensure_directory
-from src.utils.math_validation import safe_divide, safe_log, safe_sqrt, validate_finite
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, validate_finite, validate_numeric_array,
+    safe_mean, safe_std, safe_correlation, validate_positive, validate_range
+)
+from src.utils.tprint import (
+    tprint, tprint_info, tprint_error, tprint_warning, tprint_success,
+    tprint_performance, tprint_progress, tprint_timer, tprint_exception
+)
 from src.core.decorators import handles_errors, traced, log_execution_time
 
 logger = logging.getLogger(__name__)
@@ -77,7 +89,7 @@ class RealBacktestingEngine:
         self.matrix_ops = get_unified_matrix_operations()
         
         # Initialize ML utilities
-        self.cv_validator = CVLSAValidator() if config.validation.enable_cv_validation else None
+        self.cv_validator = CVLSAValidator() if (CVLSAValidator and config.validation.enable_cv_validation) else None
         self.hpo_optimizer = HyperparameterOptimizer() if config.validation.enable_hpo else None
         
         # Initialize backtesting engines
@@ -92,19 +104,35 @@ class RealBacktestingEngine:
         self.equity_curve = []
         
     async def load_market_data(self) -> pd.DataFrame:
-        """Load real market data using klines_parquet."""
-        self.logger.info(f"📊 Loading market data for {self.config.data.symbol} on {self.config.data.exchange}")
+        """Load real market data using klines_parquet with validation."""
+        tprint_info(f"Loading market data for {self.config.data.symbol} on {self.config.data.exchange}")
+        
+        start_time = time.perf_counter()
         
         try:
-            # Parse date range
+            # Parse date range with validation
             start_date = None
             end_date = None
             if self.config.data.start_date:
-                start_date = datetime.strptime(self.config.data.start_date, '%Y-%m-%d')
+                try:
+                    start_date = datetime.strptime(self.config.data.start_date, '%Y-%m-%d')
+                except ValueError as e:
+                    tprint_error(f"Invalid start_date format: {self.config.data.start_date}")
+                    raise ValueError(f"start_date must be in YYYY-MM-DD format: {e}")
+            
             if self.config.data.end_date:
-                end_date = datetime.strptime(self.config.data.end_date, '%Y-%m-%d')
+                try:
+                    end_date = datetime.strptime(self.config.data.end_date, '%Y-%m-%d')
+                except ValueError as e:
+                    tprint_error(f"Invalid end_date format: {self.config.data.end_date}")
+                    raise ValueError(f"end_date must be in YYYY-MM-DD format: {e}")
+            
+            # Validate date range
+            if start_date and end_date and start_date >= end_date:
+                raise ValueError(f"start_date ({start_date}) must be before end_date ({end_date})")
             
             # Load data with memory optimization
+            tprint_info(f"Loading data from {start_date or 'beginning'} to {end_date or 'now'}")
             if self.memory_optimizer:
                 with self.memory_optimizer.optimize_for_workload("data_loading"):
                     data = self.klines_manager.read_data(
@@ -123,46 +151,162 @@ class RealBacktestingEngine:
                     end_date=end_date
                 )
             
+            # Validate loaded data
             if data is None or data.empty:
+                tprint_error(f"No data found for {self.config.data.symbol} on {self.config.data.exchange}")
                 raise ValueError(f"No data found for {self.config.data.symbol} on {self.config.data.exchange}")
             
-            self.logger.info(f"✅ Loaded {len(data)} rows of market data")
+            # Validate required columns
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                tprint_error(f"Missing required columns: {missing_columns}")
+                raise ValueError(f"Missing required columns: {missing_columns}")
+            
+            # Validate data quality
+            self._validate_data_quality(data)
+            
+            elapsed = time.perf_counter() - start_time
+            tprint_success(f"Loaded {len(data)} rows of market data in {elapsed:.2f}s")
+            tprint_info(f"Date range: {data.index[0]} to {data.index[-1]}")
+            tprint_info(f"Memory usage: {data.memory_usage(deep=True).sum() / 1024**2:.2f} MB")
+            
             return data
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to load market data: {e}")
+            tprint_exception(e, "Failed to load market data")
             raise
     
+    def _validate_data_quality(self, data: pd.DataFrame) -> None:
+        """Validate data quality and detect issues."""
+        tprint_info("Validating data quality...")
+        
+        issues = []
+        
+        # Check for NaN values
+        nan_counts = data[['open', 'high', 'low', 'close', 'volume']].isna().sum()
+        if nan_counts.any():
+            for col, count in nan_counts.items():
+                if count > 0:
+                    pct = (count / len(data)) * 100
+                    issues.append(f"{col}: {count} NaN values ({pct:.2f}%)")
+        
+        # Check for infinite values
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            inf_count = np.isinf(data[col]).sum()
+            if inf_count > 0:
+                pct = (inf_count / len(data)) * 100
+                issues.append(f"{col}: {inf_count} infinite values ({pct:.2f}%)")
+        
+        # Check for zero/negative prices
+        price_cols = ['open', 'high', 'low', 'close']
+        for col in price_cols:
+            zero_or_neg = (data[col] <= 0).sum()
+            if zero_or_neg > 0:
+                pct = (zero_or_neg / len(data)) * 100
+                issues.append(f"{col}: {zero_or_neg} zero/negative values ({pct:.2f}%)")
+        
+        # Check for OHLC consistency
+        invalid_ohlc = ((data['high'] < data['low']) | 
+                       (data['high'] < data['close']) | 
+                       (data['high'] < data['open']) |
+                       (data['low'] > data['close']) |
+                       (data['low'] > data['open'])).sum()
+        if invalid_ohlc > 0:
+            pct = (invalid_ohlc / len(data)) * 100
+            issues.append(f"OHLC: {invalid_ohlc} inconsistent bars ({pct:.2f}%)")
+        
+        # Check for gaps in time series
+        if isinstance(data.index, pd.DatetimeIndex):
+            time_diffs = data.index.to_series().diff()
+            expected_diff = time_diffs.mode()[0] if len(time_diffs) > 1 else None
+            if expected_diff:
+                gaps = (time_diffs > expected_diff * 1.5).sum()
+                if gaps > 0:
+                    pct = (gaps / len(data)) * 100
+                    issues.append(f"Time series: {gaps} gaps detected ({pct:.2f}%)")
+        
+        # Check for duplicate timestamps
+        if isinstance(data.index, pd.DatetimeIndex):
+            duplicates = data.index.duplicated().sum()
+            if duplicates > 0:
+                pct = (duplicates / len(data)) * 100
+                issues.append(f"Duplicates: {duplicates} duplicate timestamps ({pct:.2f}%)")
+        
+        # Report issues
+        if issues:
+            tprint_warning(f"Data quality issues detected ({len(issues)} issues):")
+            for issue in issues:
+                tprint_warning(f"  - {issue}")
+            
+            # Raise error if critical issues
+            critical_threshold = 0.05  # 5% threshold
+            if any('(' in issue and float(issue.split('(')[-1].split('%')[0]) > critical_threshold * 100 for issue in issues):
+                raise ValueError(f"Critical data quality issues detected. Data may be unreliable.")
+        else:
+            tprint_success("Data quality validation passed")
+    
     def calculate_technical_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Calculate technical indicators using matrix operations."""
-        self.logger.info("📈 Calculating technical indicators")
+        """Calculate technical indicators using matrix operations with validation."""
+        tprint_info("Calculating technical indicators")
+        start_time = time.perf_counter()
         
         try:
+            # Validate input data
+            if data is None or data.empty:
+                raise ValueError("Cannot calculate indicators on empty DataFrame")
+            
+            # Validate sufficient data points
+            min_required_bars = 200  # For SMA 200
+            if len(data) < min_required_bars:
+                tprint_warning(f"Data has only {len(data)} bars, need at least {min_required_bars} for all indicators")
+                tprint_warning("Some indicators may have excessive NaN values at the start")
+            
+            # Create a copy to avoid data leakage
+            data = data.copy()
+            
             # Use matrix operations for efficient calculation
             if self.matrix_ops:
-                # Calculate moving averages
-                data['sma_20'] = self.matrix_ops.rolling_mean(data['close'].values, 20)
-                data['sma_50'] = self.matrix_ops.rolling_mean(data['close'].values, 50)
-                data['sma_200'] = self.matrix_ops.rolling_mean(data['close'].values, 200)
+                tprint_info("Using hardware-optimized matrix operations")
+                
+                # Validate close prices before calculations
+                try:
+                    validate_numeric_array(data['close'].values, 'close prices')
+                except ValueError as e:
+                    tprint_error(f"Invalid close prices: {e}")
+                    # Clean data before proceeding
+                    data['close'] = data['close'].replace([np.inf, -np.inf], np.nan).ffill().bfill()
+                
+                # Calculate moving averages with validation
+                for window in [20, 50, 200]:
+                    if len(data) >= window:
+                        data[f'sma_{window}'] = self.matrix_ops.rolling_mean(data['close'].values, window)
+                    else:
+                        tprint_warning(f"Skipping SMA_{window}: insufficient data ({len(data)} < {window})")
+                        data[f'sma_{window}'] = np.nan
                 
                 # Calculate RSI
                 delta = data['close'].diff()
                 gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
                 loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-                rs = gain / loss
+                # Safe division to avoid divide by zero
+                rs = gain / loss.replace(0, np.nan)
                 data['rsi'] = 100 - (100 / (1 + rs))
+                data['rsi'] = data['rsi'].clip(0, 100)  # Ensure valid range
                 
                 # Calculate Bollinger Bands
                 data['bb_middle'] = self.matrix_ops.rolling_mean(data['close'].values, 20)
                 bb_std = self.matrix_ops.rolling_std(data['close'].values, 20)
+                # Validate std is positive
+                bb_std = np.maximum(bb_std, 1e-10)  # Avoid zero std
                 data['bb_upper'] = data['bb_middle'] + (bb_std * 2)
                 data['bb_lower'] = data['bb_middle'] - (bb_std * 2)
                 
                 # Calculate MACD
-                ema_12 = data['close'].ewm(span=12).mean()
-                ema_26 = data['close'].ewm(span=26).mean()
+                ema_12 = data['close'].ewm(span=12, adjust=False).mean()
+                ema_26 = data['close'].ewm(span=26, adjust=False).mean()
                 data['macd'] = ema_12 - ema_26
-                data['macd_signal'] = data['macd'].ewm(span=9).mean()
+                data['macd_signal'] = data['macd'].ewm(span=9, adjust=False).mean()
                 data['macd_histogram'] = data['macd'] - data['macd_signal']
                 
                 # Calculate ATR
@@ -172,8 +316,11 @@ class RealBacktestingEngine:
                 ranges = pd.concat([high_low, high_close, low_close], axis=1)
                 true_range = ranges.max(axis=1)
                 data['atr'] = true_range.rolling(window=14).mean()
+                # Ensure ATR is positive
+                data['atr'] = data['atr'].clip(lower=0)
                 
             else:
+                tprint_warning("Matrix operations not available, using standard pandas")
                 # Fallback to standard pandas operations
                 data['sma_20'] = data['close'].rolling(window=20).mean()
                 data['sma_50'] = data['close'].rolling(window=50).mean()
@@ -181,12 +328,23 @@ class RealBacktestingEngine:
                 data['atr'] = self._calculate_atr(data)
 
             # Volatility features for trailing TP simulations
+            tprint_info("Calculating volatility features")
             returns = data['close'].pct_change().fillna(0)
+            # Clip extreme returns to prevent outlier influence
+            returns = returns.clip(lower=-0.5, upper=0.5)
+            
             data['realized_volatility'] = returns.rolling(window=20).std().fillna(0) * np.sqrt(252)
             long_term_vol = data['realized_volatility'].rolling(window=100).mean()
             vol_std = data['realized_volatility'].rolling(window=100).std()
-            data['volatility_zscore'] = ((data['realized_volatility'] - long_term_vol) / vol_std)
+            # Safe division for volatility z-score
+            data['volatility_zscore'] = safe_divide(
+                data['realized_volatility'] - long_term_vol,
+                vol_std,
+                default=0.0
+            )
             data['volatility_zscore'] = data['volatility_zscore'].replace([np.inf, -np.inf], 0).fillna(0)
+            data['volatility_zscore'] = data['volatility_zscore'].clip(-5, 5)  # Clip extreme z-scores
+            
             data['volatility_bucket'] = pd.cut(
                 data['realized_volatility'],
                 bins=[-np.inf, 0.01, 0.03, np.inf],
@@ -194,14 +352,36 @@ class RealBacktestingEngine:
             )
             data['volatility_bucket'] = data['volatility_bucket'].astype(str).replace('nan', 'normal')
 
-            # Clean up NaN values
-            data = data.fillna(method='bfill').fillna(method='ffill')
+            # WARNING: Forward-fill and backward-fill can cause data leakage
+            # Only fill initial NaN values from indicator warmup period
+            indicator_cols = [col for col in data.columns if col not in ['open', 'high', 'low', 'close', 'volume']]
             
-            self.logger.info(f"✅ Calculated technical indicators: {len(data.columns)} columns")
+            # Count NaN values before filling
+            nan_before = data[indicator_cols].isna().sum().sum()
+            
+            # Use forward-fill only (no back-fill to avoid lookahead bias)
+            data[indicator_cols] = data[indicator_cols].ffill()
+            
+            # Fill remaining NaN at the start with the first valid value
+            data[indicator_cols] = data[indicator_cols].bfill()
+            
+            nan_after = data[indicator_cols].isna().sum().sum()
+            if nan_after > 0:
+                tprint_warning(f"Still have {nan_after} NaN values after filling")
+                # Fill any remaining with 0 or median
+                for col in indicator_cols:
+                    if data[col].isna().any():
+                        median_val = data[col].median()
+                        data[col] = data[col].fillna(median_val if not np.isnan(median_val) else 0)
+            
+            elapsed = time.perf_counter() - start_time
+            tprint_success(f"Calculated {len(indicator_cols)} technical indicators in {elapsed:.2f}s")
+            tprint_info(f"Total columns: {len(data.columns)}, NaN filled: {nan_before} -> {nan_after}")
+            
             return data
             
         except Exception as e:
-            self.logger.error(f"❌ Failed to calculate technical indicators: {e}")
+            tprint_exception(e, "Failed to calculate technical indicators")
             raise
     
     def generate_trading_signals(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -311,9 +491,21 @@ class RealBacktestingEngine:
 
     async def execute_backtest(self, data: pd.DataFrame, signals: pd.DataFrame) -> Dict[str, Any]:
         """Execute the actual backtest with trailing TP simulations."""
-        self.logger.info("🚀 Executing backtest")
-
+        tprint_info("🚀 Executing backtest")
+        start_time = time.perf_counter()
+        
+        # Memory optimization context
+        if self.memory_optimizer:
+            with self.memory_optimizer.optimize_for_workload("ml_training"):
+                return await self._execute_backtest_core(data, signals, start_time)
+        else:
+            return await self._execute_backtest_core(data, signals, start_time)
+    
+    async def _execute_backtest_core(self, data: pd.DataFrame, signals: pd.DataFrame, start_time: float) -> Dict[str, Any]:
+        """Core backtest execution logic with memory management."""
         try:
+            # Force garbage collection before starting
+            gc.collect()
             scenario_configs = self._get_volatility_scenarios()
             base_scenario_name = 'normal' if 'normal' in scenario_configs else next(iter(scenario_configs.keys()), 'base')
             base_config = scenario_configs.get(base_scenario_name, {})
@@ -338,21 +530,30 @@ class RealBacktestingEngine:
 
             persisted_path = self._persist_regime_performance(regime_performance)
             if persisted_path:
-                self.logger.info(f"💾 Saved per-regime performance metrics to {persisted_path}")
+                tprint_success(f"💾 Saved per-regime performance metrics to {persisted_path}")
 
             remaining_scenarios = {k: v for k, v in scenario_configs.items() if k != base_scenario_name}
-            trial_results = self.simulate_trailing_tp_trials(data, signals, remaining_scenarios)
+            
+            # Run additional scenario trials with progress tracking
+            if remaining_scenarios:
+                tprint_info(f"Running {len(remaining_scenarios)} additional scenario trials")
+                trial_results = self.simulate_trailing_tp_trials(data, signals, remaining_scenarios)
+            else:
+                trial_results = []
 
             if trial_results:
                 self.performance_metrics['trailing_tp_trials'] = {
                     trial['scenario']: trial['metrics'] for trial in trial_results
                 }
-
-            self.logger.info(
-                "✅ Backtest completed: %d exit trades, %.2f%% return (scenario=%s)",
-                base_metrics.get('total_trades', 0),
-                base_metrics.get('total_return', 0.0) * 100,
-                base_scenario_name,
+                tprint_info(f"Completed {len(trial_results)} scenario trials")
+            
+            # Clean up memory
+            gc.collect()
+            
+            elapsed = time.perf_counter() - start_time
+            tprint_success(
+                f"✅ Backtest completed in {elapsed:.2f}s: {base_metrics.get('total_trades', 0)} trades, "
+                f"{base_metrics.get('total_return', 0.0) * 100:.2f}% return (scenario={base_scenario_name})"
             )
 
             return {
@@ -362,11 +563,12 @@ class RealBacktestingEngine:
                 'regime_performance': regime_performance,
                 'trailing_tp_trials': trial_results,
                 'final_portfolio_value': self.equity_curve[-1] if self.equity_curve else 0.0,
-                'total_trades': self.performance_metrics.get('total_trades', 0)
+                'total_trades': self.performance_metrics.get('total_trades', 0),
+                'execution_time_seconds': elapsed
             }
 
         except Exception as e:
-            self.logger.error(f"❌ Backtest execution failed: {e}")
+            tprint_exception(e, "Backtest execution failed")
             raise
 
     def _get_trailing_tp_settings(self) -> Dict[str, Any]:
@@ -766,75 +968,141 @@ class RealBacktestingEngine:
         trade_profits: Optional[List[float]] = None,
         latency_metrics: Optional[Dict[str, float]] = None,
     ) -> Dict[str, Any]:
-        """Calculate comprehensive performance metrics."""
+        """Calculate comprehensive performance metrics with safe math validation."""
+        tprint_info("Calculating performance metrics")
+        start_time = time.perf_counter()
+        
         try:
             if len(equity_curve) < 2:
+                tprint_warning("Equity curve too short to calculate metrics")
                 return {}
 
             equity_series = pd.Series(equity_curve)
             returns = equity_series.pct_change().dropna()
 
-            total_return_raw = (equity_curve[-1] - equity_curve[0]) / equity_curve[0]
-            volatility = returns.std() * np.sqrt(252)
+            # Validate equity curve values
+            try:
+                validate_numeric_array(np.array(equity_curve), 'equity_curve')
+            except ValueError as e:
+                tprint_error(f"Invalid equity curve: {e}")
+                return {}
+
+            # Safe calculation of total return
+            initial_capital = validate_positive(equity_curve[0], 'initial_capital')
+            final_value = equity_curve[-1]
+            total_return_raw = safe_divide(
+                final_value - initial_capital,
+                initial_capital,
+                default=0.0
+            )
+            
+            # Safe volatility calculation
+            volatility = safe_std(returns.values, default=0.0) * np.sqrt(252)
+            volatility = max(volatility, 1e-10)  # Avoid zero volatility
+            
+            # Calculate turnover metrics
             turnover_metrics = self._calculate_turnover_metrics(trade_log, equity_curve)
 
+            # Adjusted return after costs
             total_return = total_return_raw - turnover_metrics['market_impact_cost']
-            annualized_return = (1 + total_return) ** (252 / len(equity_curve)) - 1
-            sharpe_ratio = annualized_return / volatility if volatility > 0 else 0
-
+            
+            # Safe annualized return calculation
+            if total_return < -1:
+                annualized_return = -1.0  # Cap at -100%
+            else:
+                try:
+                    annualized_return = (1 + total_return) ** safe_divide(252, len(equity_curve), default=1) - 1
+                except (OverflowError, ValueError):
+                    annualized_return = 0.0
+            
+            # Safe Sharpe ratio
+            sharpe_ratio = safe_divide(annualized_return, volatility, default=0.0)
+            
+            # Safe drawdown calculation
             peak = equity_series.expanding().max()
-            drawdown = (equity_series - peak) / peak
-            max_drawdown = drawdown.min()
+            drawdown = safe_divide(equity_series - peak, peak, default=0.0)
+            max_drawdown = float(drawdown.min())
+            
+            # Validate max drawdown range
+            max_drawdown = validate_range(max_drawdown, min_val=-1.0, max_val=0.0, name='max_drawdown')
 
+            # Extract realized profits
             realized_profits = trade_profits
             if realized_profits is None:
                 realized_profits = [float(t.get('profit', 0.0)) for t in trade_log if t.get('action') == 'SELL']
 
             winning_trades = [p for p in realized_profits if p > 0]
             losing_trades = [p for p in realized_profits if p < 0]
+            flat_trades = [p for p in realized_profits if p == 0]
             total_trades = len(realized_profits)
-            win_rate = len(winning_trades) / total_trades if total_trades else 0.0
+            
+            # Safe win rate calculation
+            win_rate = safe_divide(len(winning_trades), total_trades, default=0.0)
 
+            # Safe profit factor calculation
             gross_profit = sum(winning_trades)
             gross_loss = abs(sum(losing_trades))
-            profit_factor = gross_profit / gross_loss if gross_loss > 0 else gross_profit
+            profit_factor = safe_divide(gross_profit, gross_loss, default=0.0 if gross_loss > 0 else gross_profit)
 
-            avg_win = np.mean(winning_trades) if winning_trades else 0.0
-            avg_loss = np.mean(losing_trades) if losing_trades else 0.0
+            # Safe average calculations
+            avg_win = safe_mean(np.array(winning_trades), default=0.0)
+            avg_loss = safe_mean(np.array(losing_trades), default=0.0)
 
-            risk_reward_ratio = float(np.mean(risk_reward_values)) if risk_reward_values else 0.0
+            # Safe risk-reward ratio
+            risk_reward_ratio = safe_mean(np.array(risk_reward_values), default=0.0) if risk_reward_values else 0.0
+            
+            # Additional risk metrics
+            downside_returns = returns[returns < 0]
+            downside_deviation = safe_std(downside_returns.values, default=0.0) * np.sqrt(252)
+            sortino_ratio = safe_divide(annualized_return, downside_deviation, default=0.0)
+            
+            # Calmar ratio (return / max drawdown)
+            calmar_ratio = safe_divide(annualized_return, abs(max_drawdown), default=0.0)
+            
+            # Maximum consecutive wins/losses
+            consecutive_wins = self._calculate_max_consecutive_wins(realized_profits)
+            consecutive_losses = self._calculate_max_consecutive_losses(realized_profits)
 
             metrics = {
-                'total_return': total_return,
-                'annualized_return': annualized_return,
-                'volatility': volatility,
-                'sharpe_ratio': sharpe_ratio,
-                'max_drawdown': max_drawdown,
-                'win_rate': win_rate,
-                'profit_factor': profit_factor,
-                'total_trades': total_trades,
-                'winning_trades': len(winning_trades),
-                'losing_trades': len(losing_trades),
-                'avg_win': avg_win,
-                'avg_loss': avg_loss,
-                'risk_reward_ratio': risk_reward_ratio,
-                'turnover': turnover_metrics['turnover'],
-                'average_holding_period_days': turnover_metrics['average_holding_period_days'],
-                'capacity_utilization': turnover_metrics['capacity_utilization'],
-                'capacity_limit': turnover_metrics['capacity_limit'],
-                'market_impact_cost': turnover_metrics['market_impact_cost'],
-                'raw_total_return': total_return_raw,
+                'total_return': float(validate_finite(total_return, 'total_return')),
+                'annualized_return': float(validate_finite(annualized_return, 'annualized_return')),
+                'volatility': float(validate_finite(volatility, 'volatility')),
+                'sharpe_ratio': float(validate_finite(sharpe_ratio, 'sharpe_ratio')),
+                'sortino_ratio': float(validate_finite(sortino_ratio, 'sortino_ratio')),
+                'calmar_ratio': float(validate_finite(calmar_ratio, 'calmar_ratio')),
+                'max_drawdown': float(max_drawdown),
+                'win_rate': float(win_rate),
+                'profit_factor': float(validate_finite(profit_factor, 'profit_factor')),
+                'total_trades': int(total_trades),
+                'winning_trades': int(len(winning_trades)),
+                'losing_trades': int(len(losing_trades)),
+                'flat_trades': int(len(flat_trades)),
+                'avg_win': float(validate_finite(avg_win, 'avg_win')),
+                'avg_loss': float(validate_finite(avg_loss, 'avg_loss')),
+                'max_consecutive_wins': int(consecutive_wins),
+                'max_consecutive_losses': int(consecutive_losses),
+                'risk_reward_ratio': float(validate_finite(risk_reward_ratio, 'risk_reward_ratio')),
+                'turnover': float(validate_finite(turnover_metrics['turnover'], 'turnover')),
+                'average_holding_period_days': float(turnover_metrics['average_holding_period_days']),
+                'capacity_utilization': float(turnover_metrics['capacity_utilization']),
+                'capacity_limit': float(turnover_metrics['capacity_limit']),
+                'market_impact_cost': float(turnover_metrics['market_impact_cost']),
+                'raw_total_return': float(validate_finite(total_return_raw, 'raw_total_return')),
             }
 
             if latency_metrics:
                 metrics['latency_metrics'] = {
-                    key: float(value) for key, value in latency_metrics.items()
+                    key: float(validate_finite(value, key)) for key, value in latency_metrics.items()
                 }
+            
+            elapsed = time.perf_counter() - start_time
+            tprint_success(f"Performance metrics calculated in {elapsed:.3f}s")
+            tprint_info(f"Total Return: {metrics['total_return']*100:.2f}%, Sharpe: {metrics['sharpe_ratio']:.2f}, Max DD: {metrics['max_drawdown']*100:.2f}%")
 
             return metrics
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to calculate performance metrics: {e}")
+            tprint_exception(e, "Failed to calculate performance metrics")
             return {}
 
     def _calculate_turnover_metrics(

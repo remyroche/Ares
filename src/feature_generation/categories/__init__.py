@@ -91,12 +91,9 @@ from .interaction import (
     FeatureRatioGenerator,
     PolynomialFeatureGenerator,
     CorrelationInteractionGenerator,
-    # Enhanced interaction generators
-    RegimeDependentFeatureGenerator,
-    CointegrationResidualGenerator,
-    StructuralRatioGenerator,
-    PairwiseInteractionGenerator,
     create_default_interaction_generators
+    # Note: RegimeDependentFeatureGenerator and other enhanced generators
+    # are not currently implemented - removed from imports to prevent errors
 )
 from .cross_timeframe import (
     CrossTimeframeFeatureGenerator,
@@ -254,11 +251,9 @@ __all__ = [
     "FeatureRatioGenerator",
     "PolynomialFeatureGenerator",
     "CorrelationInteractionGenerator",
-    "RegimeDependentFeatureGenerator",
-    "CointegrationResidualGenerator",
-    "StructuralRatioGenerator",
-    "PairwiseInteractionGenerator",
     "create_default_interaction_generators",
+    # Note: RegimeDependentFeatureGenerator, CointegrationResidualGenerator,
+    # StructuralRatioGenerator, PairwiseInteractionGenerator are not implemented yet
     
     # Other categories
     "create_returns_generators",

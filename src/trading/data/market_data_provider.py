@@ -78,7 +78,7 @@ class MarketDataProvider:
         """Initialize exchange client."""
         try:
             # Use existing exchange factory
-            from exchange.factory import ExchangeFactory
+            from exchanges.factory import ExchangeFactory
             
             self.exchange_client = ExchangeFactory.get_exchange(self.exchange.value)
             if self.exchange_client:

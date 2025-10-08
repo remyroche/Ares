@@ -579,8 +579,7 @@ def safe_divide(numerator, denominator, default=0.0):
 # Import the multi-horizon labeler
 from ..pre_training.multi_horizon_profit_labeler import (
     MultiHorizonProfitLabeler, 
-    MultiHorizonConfig,
-    apply_multi_horizon_labeling
+    MultiHorizonConfig
 )
 
 # Import optimization components
@@ -979,7 +978,7 @@ class MultiHorizonSubPipelineAdapter:
                         labeled_data = None
                     else:
                         # Call directly to get better error information
-                        self.logger.info('🔄 Calling apply_multi_horizon_labeling...')
+                        self.logger.info('🔄 Applying multi-horizon labeling...')
                         
                         # Try calling the labeler directly to bypass potential issues
                         self.logger.info('🔧 Creating labeler...')
@@ -1024,7 +1023,7 @@ class MultiHorizonSubPipelineAdapter:
 
                             self.logger.info(f'📊 Filtered data dynamic labeling completed: {labeled_data.shape}')
                 except Exception as e:
-                    self.logger.error(f'❌ apply_multi_horizon_labeling failed: {e}')
+                    self.logger.error(f'❌ Multi-horizon labeling failed: {e}')
                     self.logger.error(f'❌ Traceback: {traceback.format_exc()}')
                     labeled_data = None
                 

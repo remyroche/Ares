@@ -28,15 +28,13 @@ from datetime import datetime
 import contextlib
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from scipy.optimize import minimize
-from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonConfig, apply_multi_horizon_labeling
+from src.training.steps.pre_training.multi_horizon_profit_labeler import MultiHorizonConfig, MultiHorizonProfitLabeler
 import warnings
 
 # Import the triple barrier labeling module
 from ..pre_training.multi_horizon_profit_labeler import (
     MultiHorizonProfitLabeler,
-    MultiHorizonConfig,
-    create_multi_horizon_labeler,
-    apply_multi_horizon_labeling
+    MultiHorizonConfig
 )
 
 @dataclass
@@ -541,7 +539,9 @@ class RegimeAwareTripleBarrierOptimizer:
         
         if not self.regime_parameters:
             self.logger.warning('⚠️ No optimized parameters available, using default labeling')
-            return apply_multi_horizon_labeling(data, regime_aware=True, regime_column=regime_column)
+            config = MultiHorizonConfig()
+            labeler = MultiHorizonProfitLabeler(config)
+            return labeler.label(data)
         
         if regime_column not in data.columns:
             self.logger.error(f'❌ Regime column "{regime_column}" not found in data')

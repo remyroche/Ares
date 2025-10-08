@@ -1,0 +1,73 @@
+{
+  "stage": "pre_training",
+  "sub_pipeline": "analyst_profit_labeler",
+  "timestamp": "2025-10-08T20:03:18.381667",
+  "status": "failed",
+  "output_files": [],
+  "metadata": {
+    "run_metadata": {
+      "run_id": "b20c93baf07f49ffb89d095dac55d971",
+      "git_sha": "252e643d2f1a2c4f8dd5fdb2b0bc04327fa45cfd",
+      "config_hash": "18b3e4c097ee341d4e07e51cf844a86e53a140222500ad416214d5eef941b564",
+      "data_snapshot_id": "unknown",
+      "rng_seed": null,
+      "symbol": "ETHUSDT",
+      "timeframe": "60m",
+      "mode": "light",
+      "host_name": "MacBook-Air-de-Remy.local",
+      "start_time_utc": "2025-10-08T18:03:18.283901Z",
+      "end_time_utc": null,
+      "duration_seconds": null
+    }
+  },
+  "artifacts": {},
+  "config": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "60m",
+    "mode": "light",
+    "intensity_percentage": 0.5,
+    "training_mode_config": {
+      "name": "light",
+      "description": "Development mode - Minimal data with all features/models",
+      "lookback_days": 20,
+      "lookback_years": 0,
+      "intensity_percentage": 0.025,
+      "computational_intensity": "minimal",
+      "estimated_duration_minutes": 10,
+      "max_trials": 10,
+      "n_trials": 5,
+      "monte_carlo_samples": 100,
+      "ab_test_rounds": 2,
+      "optuna_trials": 10,
+      "optuna_timeout": 300,
+      "batch_size": 512,
+      "epochs": 10,
+      "early_stopping_patience": 5,
+      "cross_validation_folds": 2,
+      "enable_parallelization": false,
+      "enable_caching": true,
+      "enable_advanced_features": true,
+      "enable_ensemble_training": true,
+      "enable_multi_timeframe_training": true,
+      "enable_adaptive_training": true
+    }
+  },
+  "next_stage_requirements": {
+    "required_files": [
+      "labels.parquet",
+      "features.parquet"
+    ],
+    "required_artifacts": [
+      "feature_metadata"
+    ],
+    "data_dependencies": [],
+    "next_stage": "model_training",
+    "sub_pipelines": [
+      "multi_horizon_profit_labeler",
+      "feature_lookback_optimization",
+      "interactive_feature_generation",
+      "final_feature_selection"
+    ]
+  }
+}

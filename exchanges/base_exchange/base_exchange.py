@@ -4,7 +4,8 @@ from datetime import datetime
 
 from src.interfaces.base_interfaces import IExchangeClient, MarketData
 
-from typing import Any
+from typing import Any, Dict, List, Optional
+import asyncio
 import logging
 import time
 

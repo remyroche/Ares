@@ -15,7 +15,7 @@ from typing import Dict, Any, List
 from src.utils.tprint import tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_progress, tprint_performance, tprint_timer
 
 # Import meta-feature generator
-from src.feature_engineering.ensemble_meta_features import EnsembleMetaFeatureGenerator
+from src.feature_engineering_roadmap.ensemble_meta_features import EnsembleMetaFeatureGenerator
 
 class VolatileRegimeEnsemble(BaseEnsemble):
     """

@@ -211,13 +211,13 @@ class DependencyManager:
             version = importlib.metadata.version(package_name)
             tprint(f"✅ Retrieved version for {package_name}: {version}")
             return version
-        except:
+        except (ImportError, AttributeError, ModuleNotFoundError):
             try:
                 import pkg_resources
                 version = pkg_resources.get_distribution(package_name).version
                 tprint(f"✅ Retrieved version for {package_name} via pkg_resources: {version}")
                 return version
-            except:
+            except (ImportError, AttributeError, ModuleNotFoundError, pkg_resources.DistributionNotFound):
                 tprint(f"⚠️ Could not determine version for {package_name}")
                 return None
 

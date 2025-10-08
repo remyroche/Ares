@@ -518,7 +518,7 @@ class RegimeSegmentation:
         r1_var = r1.rolling(20).var()
         
         # Fill NaN values with forward fill
-        r1_var = r1_var.fillna(method='ffill').fillna(0)
+        r1_var = r1_var.ffill().fillna(0)
         
         return r1_var
     

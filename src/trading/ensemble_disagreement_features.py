@@ -11,7 +11,7 @@ from typing import Dict, List, Tuple, Any, Optional, Union
 import logging
 
 # Import meta-feature generator from feature engineering
-from src.feature_engineering.ensemble_meta_features import EnsembleMetaFeatureGenerator
+from src.feature_engineering_roadmap.ensemble_meta_features import EnsembleMetaFeatureGenerator
 
 class TradingDisagreementAnalyzer:
     """

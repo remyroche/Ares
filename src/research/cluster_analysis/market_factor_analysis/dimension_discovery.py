@@ -32,8 +32,8 @@ from src.utils.logger import system_logger
 
 # Import feature engineering components
 try:
-    from src.feature_engineering.feature_generators import FeatureGenerators
-    from src.feature_engineering.optimized_feature_orchestrator import OptimizedFeatureOrchestrator
+    from src.feature_engineering_roadmap.feature_generators import FeatureGenerators
+    from src.feature_engineering_roadmap.optimized_feature_orchestrator import OptimizedFeatureOrchestrator
     from .comprehensive_feature_integration import ComprehensiveFeatureGenerator
     FEATURE_ENGINEERING_AVAILABLE = True
 except ImportError as e:

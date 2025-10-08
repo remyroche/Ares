@@ -26,6 +26,43 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence
 
+# Import core utilities
+try:
+    from ...utils.tprint import tprint, tprint_debug, tprint_error, tprint_info, tprint_warning
+    from ...utils.common_operations import (
+        safe_file_exists, ensure_directory, safe_json_dump, safe_json_load,
+        validate_positive, timed_operation, format_bytes
+    )
+    from ...utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+    # Import matrix operations for batch processing
+    from ...utils.matrix_operations import (
+        batch_matrix_multiply, optimize_dataframe, get_batch_matrix_processor,
+        matrix_correlation_analysis, get_vectorized_processing_core
+    )
+    MATRIX_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    # Fallback imports if utils are not available
+    MATRIX_OPERATIONS_AVAILABLE = False
+    def tprint(*args, **kwargs): pass
+    def tprint_debug(*args, **kwargs): pass
+    def tprint_error(*args, **kwargs): pass
+    def tprint_info(*args, **kwargs): pass
+    def tprint_warning(*args, **kwargs): pass
+    def safe_file_exists(path): return Path(path).exists() if isinstance(path, (str, Path)) else False
+    def ensure_directory(path): Path(path).mkdir(parents=True, exist_ok=True) if isinstance(path, (str, Path)) else None
+    def safe_json_dump(data, file_path, **kwargs): None
+    def safe_json_load(file_path, default=None): return default
+    def validate_positive(value, name="value"): return value if value > 0 else 0.0
+    def timed_operation(func): return func
+    def format_bytes(bytes_value): return f"{bytes_value}B"
+    def get_m1_memory_optimizer(): return None
+    # Matrix operations fallbacks
+    def batch_matrix_multiply(*args, **kwargs): return None
+    def optimize_dataframe(df): return df
+    def get_batch_matrix_processor(): return None
+    def matrix_correlation_analysis(*args, **kwargs): return {}
+    def get_vectorized_processing_core(): return None
+
 __all__ = [
     "TemporalLintError",
     "TemporalLintViolation",
@@ -70,6 +107,7 @@ _ALLOW_SHIFT_COMMENT = "temporal-lint: allow-shift"
 _ALLOW_CLOSED_COMMENT = "temporal-lint: allow-closed"
 
 
+@timed_operation
 def lint_for_temporal_leakage(file_path: Path | str) -> List[str]:
     """Inspect *file_path* and return temporal leakage violations.
 
@@ -83,22 +121,41 @@ def lint_for_temporal_leakage(file_path: Path | str) -> List[str]:
     """
 
     path = Path(file_path)
-    if not path.exists():  # pragma: no cover - defensive guard for callers
+    if not safe_file_exists(path):
+        tprint_error(f"Cannot lint missing file: {path}")
         raise FileNotFoundError(f"Cannot lint missing file: {path}")
 
-    source = path.read_text(encoding="utf-8")
+    try:
+        source = path.read_text(encoding="utf-8")
+        file_size = len(source.encode('utf-8'))
+        tprint_debug(f"Linting file: {path} ({format_bytes(file_size)})")
+    except Exception as e:
+        tprint_error(f"Failed to read file {path}: {e}")
+        raise TemporalLintError(f"Failed to read {path}: {e}") from e
+
     lines = source.splitlines()
 
     try:
         tree = ast.parse(source, filename=str(path))
     except SyntaxError as exc:  # pragma: no cover - treat invalid syntax as fatal
+        tprint_error(f"Failed to parse {path}: {exc}")
         raise TemporalLintError(f"Failed to parse {path}: {exc}") from exc
 
     visitor = _TemporalLintVisitor(path=path, lines=lines)
     visitor.visit(tree)
-    return [violation.format() for violation in visitor.violations]
+
+    violations = [violation.format() for violation in visitor.violations]
+    if violations:
+        tprint_warning(f"Found {len(violations)} temporal leakage violations in {path}")
+        for violation in violations:
+            tprint_warning(f"  - {violation}")
+    else:
+        tprint_debug(f"No temporal leakage violations found in {path}")
+
+    return violations
 
 
+@timed_operation
 def run_temporal_linting(
     paths: Optional[Sequence[str | Path]] = None,
     *,
@@ -116,26 +173,173 @@ def run_temporal_linting(
         Mapping of file path to violation messages. Empty when clean.
     """
 
+    tprint_info("Starting temporal linting across codebase")
+    memory_optimizer = get_m1_memory_optimizer()
+
     candidate_files = _collect_candidate_files(paths)
+    tprint_info(f"Found {len(candidate_files)} candidate files for linting")
+
+    # Initialize matrix operations for batch processing if available
+    batch_processor = get_batch_matrix_processor() if MATRIX_OPERATIONS_AVAILABLE else None
+    vectorized_core = get_vectorized_processing_core() if MATRIX_OPERATIONS_AVAILABLE else None
+
+    if MATRIX_OPERATIONS_AVAILABLE:
+        tprint_debug("Matrix operations available for batch processing")
+    else:
+        tprint_debug("Matrix operations not available, using standard processing")
+
     violations: Dict[str, List[str]] = {}
 
-    for file_path in candidate_files:
-        try:
-            file_violations = lint_for_temporal_leakage(file_path)
-        except TemporalLintError as exc:
-            file_violations = [str(exc)]
+    # Process files in batches for better performance
+    batch_size = 10  # Process 10 files at a time
+    file_batches = [candidate_files[i:i + batch_size] for i in range(0, len(candidate_files), batch_size)]
 
-        if file_violations:
+    tprint_debug(f"Processing {len(candidate_files)} files in {len(file_batches)} batches")
+
+    for batch_idx, file_batch in enumerate(file_batches):
+        tprint_debug(f"Processing batch {batch_idx + 1}/{len(file_batches)} ({len(file_batch)} files)")
+
+        for file_path in file_batch:
+            try:
+                file_violations = lint_for_temporal_leakage(file_path)
+                # Optimize memory after processing large files
+                if memory_optimizer and hasattr(memory_optimizer, "cleanup_memory"):
+                    memory_optimizer.cleanup_memory()
+            except TemporalLintError as exc:
+                file_violations = [str(exc)]
+                tprint_error(f"Temporal linting error in {file_path}: {exc}")
             violations[str(file_path)] = file_violations
 
-    if violations and raise_on_violation:
-        message_lines = ["Temporal leakage violations detected:"]
-        for path, file_violations in sorted(violations.items()):
-            message_lines.append(path)
-            message_lines.extend(f"  - {msg}" for msg in file_violations)
-        raise TemporalLintError("\n".join(message_lines))
+        total_violations = sum(len(v) for v in violations.values())
+        if violations:
+            if raise_on_violation:
+                tprint_error(f"Temporal leakage violations detected in {len(violations)} files ({total_violations} total)")
+                message_lines = ["Temporal leakage violations detected:"]
+                for path, file_violations in sorted(violations.items()):
+                    message_lines.append(path)
+                    message_lines.extend(f"  - {msg}" for msg in file_violations)
+            raise TemporalLintError("\n".join(message_lines))
+        else:
+            tprint_warning(f"Found {total_violations} temporal leakage violations in {len(violations)} files")
+    else:
+        tprint_info("No temporal leakage violations detected")
+
+    tprint_info(f"Temporal linting completed: {total_violations} violations in {len(violations)} files")
+
+    # Use vectorized core for final optimization if available
+    if vectorized_core and hasattr(vectorized_core, 'optimize_processing'):
+        try:
+            vectorized_core.optimize_processing()
+            tprint_debug("Applied final processing optimization")
+        except Exception as e:
+            tprint_debug(f"Final optimization failed: {e}")
 
     return violations
+
+
+@timed_operation
+def analyze_temporal_patterns_batch(file_paths: List[Path | str]) -> Dict[str, Any]:
+    """Analyze temporal leakage patterns across multiple files using batch processing.
+
+    Args:
+        file_paths: List of file paths to analyze
+
+    Returns:
+        Dictionary containing aggregated temporal pattern analysis
+    """
+    tprint_info(f"Starting batch temporal pattern analysis for {len(file_paths)} files")
+
+    if not MATRIX_OPERATIONS_AVAILABLE:
+        tprint_warning("Matrix operations not available for batch analysis")
+        return {}
+
+    batch_processor = get_batch_matrix_processor()
+    if not batch_processor:
+        tprint_warning("Batch matrix processor not available")
+        return {}
+
+    # Collect violation data for correlation analysis
+    violation_matrices = []
+    file_sizes = []
+    violation_counts = []
+
+    for file_path in file_paths:
+        try:
+            path = Path(file_path)
+            if not path.exists():
+                continue
+
+            # Get file size and basic metrics
+            file_size = path.stat().st_size
+            file_sizes.append(file_size)
+
+            # Lint file and collect violations
+            violations = lint_for_temporal_leakage(path)
+            violation_counts.append(len(violations))
+
+            # Create violation matrix (binary indicators for different violation types)
+            violation_types = set()
+            for violation in violations:
+                # Extract violation type from message (simplified)
+                if 'center=True' in violation:
+                    violation_types.add('center_rolling')
+                elif 'shift(-' in violation:
+                    violation_types.add('negative_shift')
+                elif 'closed=' in violation:
+                    violation_types.add('missing_closed')
+                else:
+                    violation_types.add('other')
+
+            # Create binary vector for this file
+            violation_vector = [1 if vt in violation_types else 0 for vt in ['center_rolling', 'negative_shift', 'missing_closed', 'other']]
+            violation_matrices.append(violation_vector)
+
+        except Exception as e:
+            tprint_debug(f"Batch analysis failed for {file_path}: {e}")
+            continue
+
+    if not violation_matrices:
+        tprint_warning("No valid files for batch analysis")
+        return {}
+
+    try:
+        # Use matrix operations for correlation analysis
+        import numpy as np
+        violation_array = np.array(violation_matrices)
+
+        # Compute correlation matrix between violation types
+        if violation_array.shape[0] > 1 and violation_array.shape[1] > 1:
+            corr_matrix = safe_correlation_matrix(pd.DataFrame(violation_array))
+            if corr_matrix is not None:
+                correlation_analysis = matrix_correlation_analysis(
+                    violation_array, method='correlation'
+                )
+            else:
+                correlation_analysis = {}
+        else:
+            correlation_analysis = {}
+
+        results = {
+            'total_files_analyzed': len(violation_matrices),
+            'violation_type_distribution': {
+                'center_rolling': sum(v[0] for v in violation_matrices),
+                'negative_shift': sum(v[1] for v in violation_matrices),
+                'missing_closed': sum(v[2] for v in violation_matrices),
+                'other': sum(v[3] for v in violation_matrices)
+            },
+            'average_violations_per_file': np.mean(violation_counts) if violation_counts else 0,
+            'total_file_size_bytes': sum(file_sizes),
+            'correlation_analysis': correlation_analysis,
+            'violation_matrix_shape': violation_array.shape if 'violation_array' in locals() else None
+        }
+
+        tprint_info(f"Batch analysis completed: {results['total_files_analyzed']} files, "
+                   f"{sum(results['violation_type_distribution'].values())} total violations")
+        return results
+
+    except Exception as e:
+        tprint_error(f"Batch temporal analysis aggregation failed: {e}")
+        return {}
 
 
 # ---------------------------------------------------------------------------

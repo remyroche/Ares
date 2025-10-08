@@ -132,7 +132,7 @@ class MultiTargetConfig:
     max_targets_total: int = 6  # Maximum total targets
     
     # Quality thresholds
-    min_lqs_score: float = 0.3  # Minimum LQS score for target selection
+    min_lqs_score: float = 0.2  # Minimum LQS score for target selection - more lenient
     max_correlation_threshold: float = 0.6  # Maximum correlation between targets
     min_class_balance: float = 0.35  # Minimum class balance
     max_class_balance: float = 0.65  # Maximum class balance

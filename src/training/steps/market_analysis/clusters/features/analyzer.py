@@ -41,7 +41,7 @@ try:
     from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
     from src.utils.ml_common.validation.unified_cv import perform_cross_validation as unified_perform_cv
     from src.utils.ml_common.evaluation.unified_evaluator import UnifiedEvaluator
-    from src.utils.ml_common.feature_selection import FeatureSelectionFramework
+    from src.feature_selection.core import get_feature_selection_framework
     ML_COMMON_AVAILABLE = True
 except ImportError:
     ML_COMMON_AVAILABLE = False

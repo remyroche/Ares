@@ -20,8 +20,7 @@ from scipy import stats
 from scipy.signal import find_peaks
 from scipy.ndimage import uniform_filter1d
 
-from ..core.feature_generator import (
-
+from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 # Optimization utilities
 try:
     from ..utils.vectorization_optimizer import get_vectorization_optimizer
@@ -29,11 +28,6 @@ try:
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
-    FeatureGenerator, 
-    FeatureConfig, 
-    FeatureCategory,
-    VectorizedFeatureGenerator
-)
 from ..base_calculations import (
     BaseCalculator,
     BaseCalculationType,

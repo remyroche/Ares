@@ -11,8 +11,8 @@ Thank you for the clarification! I've refined the ML enhancements to focus **pur
 - ❌ **Regime change prediction** - Focus is on finding regimes, not predicting transitions
 
 ### **2. Redundant Feature Engineering**
-- ❌ **Time series features** (lags, rolling stats) - Use existing `feature_engineering/`
-- ❌ **Financial domain features** (technical indicators) - Use existing `feature_engineering/`
+- ❌ **Time series features** (lags, rolling stats) - Use existing `feature_engineering_roadmap/`
+- ❌ **Financial domain features** (technical indicators) - Use existing `feature_engineering_roadmap/`
 - ❌ **Polynomial features** - Adds noise without regime value
 
 ### **3. Temporal Methods Assessment**
@@ -21,7 +21,7 @@ Thank you for the clarification! I've refined the ML enhancements to focus **pur
 **Why LSTM/Transformers are irrelevant:**
 - Regimes are **structural patterns**, not temporal sequences
 - We want **"what makes this period different"** not **"what comes next"**
-- Your existing `feature_engineering/` already handles temporal aspects as input features
+- Your existing `feature_engineering_roadmap/` already handles temporal aspects as input features
 - Adding temporal modeling creates false boundaries based on time rather than market structure
 
 ## ✅ **Core ML Enhancements (Focused)**
@@ -64,7 +64,7 @@ regime_labels = clustering_results['best_result']['labels']
 ```python
 from src.research.clusters.core_regime_discovery import discover_market_regimes_core
 
-# Your existing features from feature_engineering/
+# Your existing features from feature_engineering_roadmap/
 features = your_feature_engineering_pipeline(market_data)
 
 # Discover regimes using ML
@@ -150,7 +150,7 @@ else:
 ## 🚀 **Key Benefits of Refined Approach**
 
 ### **1. Focused & Efficient**
-- **No redundancy** with your existing `feature_engineering/`
+- **No redundancy** with your existing `feature_engineering_roadmap/`
 - **Pure regime discovery** without prediction complexity
 - **Fast execution** - no temporal modeling overhead
 
@@ -221,4 +221,4 @@ The refined ML enhancement is now **focused, efficient, and practical**:
 
 **The core question answered**: *"Should I train separate ML models for different market regimes, and if so, what are those regimes?"*
 
-Your existing `feature_engineering/` + refined ML regime discovery = **optimal regime-based trading strategy** 🎯📊🤖
+Your existing `feature_engineering_roadmap/` + refined ML regime discovery = **optimal regime-based trading strategy** 🎯📊🤖

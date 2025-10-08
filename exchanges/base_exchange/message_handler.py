@@ -56,10 +56,10 @@ class ExchangeMessage:
 @dataclass
 class OrderMessage(ExchangeMessage):
     """Order-specific message"""
-    symbol: str
-    side: str
-    order_type: str
-    quantity: float
+    symbol: str = ""
+    side: str = ""
+    order_type: str = ""
+    quantity: float = 0.0
     price: Optional[float] = None
     exchange_specific_params: Dict[str, Any] = field(default_factory=dict)
 
@@ -67,8 +67,8 @@ class OrderMessage(ExchangeMessage):
 @dataclass
 class DataRequestMessage(ExchangeMessage):
     """Data request message"""
-    data_type: str
-    symbol: str
+    data_type: str = ""
+    symbol: str = ""
     interval: Optional[str] = None
     limit: Optional[int] = None
     start_time: Optional[datetime] = None

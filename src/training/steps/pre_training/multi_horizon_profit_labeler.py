@@ -24,6 +24,37 @@ from pandas.api.types import is_numeric_dtype
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.logger import system_logger
+from src.utils.common_operations import (
+    validate_dataframe_columns,
+    safe_dataframe_operation,
+    validate_positive,
+    validate_range,
+    safe_int,
+    safe_float,
+    get_dataframe_info,
+    create_data_quality_report,
+    ensure_directory,
+    safe_json_dump,
+    safe_json_load,
+    format_bytes,
+    timed_operation,
+    memory_checkpoint,
+    optimize_memory,
+    check_disk_space,
+    safe_divide,
+    safe_mean,
+    safe_std,
+    safe_correlation
+)
+from src.utils.matrix_operations import (
+    get_unified_matrix_operations,
+    get_vectorized_processing_core,
+    get_enhanced_matrix_operations,
+    optimize_dataframe,
+    safe_correlation_matrix,
+    compute_trading_indicators,
+    get_hardware_performance_report
+)
 from src.training.config.data_locator import DataLocator as PipelineDataLocator
 from src.training.steps.pre_training.artifacts.manifest import (
     ArtifactManifest,
@@ -565,6 +596,13 @@ class MultiHorizonProfitLabeler:
         self.quality_thresholds: Dict[str, float] = {}
         self._settings = get_pre_training_settings()
         self.pipeline_data_locator: Optional[PipelineDataLocator] = self.config.data_locator
+
+        # Initialize matrix operations for enhanced data processing
+        self.matrix_ops = get_unified_matrix_operations()
+        self.vectorized_core = get_vectorized_processing_core()
+        self.enhanced_matrix_ops = get_enhanced_matrix_operations()
+
+        tprint_info(f"🧮 Matrix operations initialized: {self.matrix_ops.__class__.__name__}")
 
         # Initialize the volatility-aware labeler
         if self.config.enable_enhanced_labels:

@@ -17,9 +17,7 @@ Key Components:
 # Import core multi-horizon components (NEW SYSTEM)
 from ..pre_training.multi_horizon_profit_labeler import (
     MultiHorizonProfitLabeler,
-    MultiHorizonConfig,
-    create_multi_horizon_labeler,
-    apply_multi_horizon_labeling
+    MultiHorizonConfig
 )
 
 # Import sub-pipeline adapter
@@ -39,9 +37,7 @@ from .gradient_flow_analysis import (
 try:
     from ..pre_training.multi_horizon_profit_labeler import (
         MultiHorizonProfitLabeler,
-        MultiHorizonConfig,
-        create_multi_horizon_labeler,
-        apply_multi_horizon_labeling
+        MultiHorizonConfig
     )
     LEGACY_TRIPLE_BARRIER_AVAILABLE = True
 except ImportError:
@@ -77,19 +73,9 @@ from .enhanced_market_analysis_with_triple_barrier import (
     quick_triple_barrier_analysis
 )
 
-# Import PID-based feature generation
-from ..pre_training.pid_based_feature_generation import (
-    PIDBasedFeatureOrchestrator,
-    OrchestratorConfig,
-    InteractionFeatureGenerator,
-    InteractionConfig,
-    CrossTimeframeFeatureGenerator,
-    CrossTimeframeConfig,
-    OptimizedLookbackIntegration,
-    FeatureSelectionMechanism,
-    FeatureSelectionConfig,
-    SelectionStrategy
-)
+# Import Interactive Feature Generation (replaces legacy PID-based system)
+# Deferred import to avoid circular dependency - import when needed instead of at module level
+InteractiveFeatureGenerationComponent = None  # Lazy-loaded when needed
 
 # Hardware optimizations are now integrated into the main triple_barrier_labeling module
 
@@ -105,7 +91,7 @@ COMPONENTS = [
     "regime_aware_triple_barrier_optimizer", 
     "triple_barrier_validator",
     "enhanced_market_analysis_with_triple_barrier",
-    "pid_based_feature_generation"
+    "interactive_feature_generation"
 ]
 
 # Convenience function to get module information
@@ -129,8 +115,8 @@ def get_module_info():
             "Seamless pipeline integration",
             "Transaction cost modeling",
             "Binary and ternary classification support",
-            "PID-based feature generation with interaction, polynomial, and cross-timeframe features",
-            "Optimized lookback period integration",
+            "Interactive feature generation with optimized lookbacks and cross-timeframe coverage",
+            "Data-driven Bayesian lookback optimization",
             "Matrix operations for hardware-optimized computations"
         ]
     }
@@ -246,8 +232,6 @@ __all__ = [
     # Core multi-horizon components (NEW SYSTEM)
     "MultiHorizonProfitLabeler",
     "MultiHorizonConfig", 
-    "create_multi_horizon_labeler",
-    "apply_multi_horizon_labeling",
     
     # Sub-pipeline integration
     "MultiHorizonSubPipelineAdapter",
@@ -261,8 +245,6 @@ __all__ = [
     # Legacy triple barrier components (DEPRECATED - for backward compatibility only)
     "MultiHorizonProfitLabeler",
     "MultiHorizonConfig",
-    "create_multi_horizon_labeler",
-    "apply_multi_horizon_labeling",
     "MarketAnalysisTripleBarrierLabeling",
     
     # Regime-aware optimizer
@@ -285,17 +267,8 @@ __all__ = [
     "run_enhanced_market_analysis_with_triple_barrier",
     "quick_triple_barrier_analysis",
     
-    # PID-based feature generation
-    "PIDBasedFeatureOrchestrator",
-    "OrchestratorConfig",
-    "InteractionFeatureGenerator",
-    "InteractionConfig",
-    "CrossTimeframeFeatureGenerator",
-    "CrossTimeframeConfig",
-    "OptimizedLookbackIntegration",
-    "FeatureSelectionMechanism",
-    "FeatureSelectionConfig",
-    "SelectionStrategy",
+    # Interactive feature generation (replaces legacy PID system)
+    "InteractiveFeatureGenerationComponent",
     
     # Utility functions
     "get_module_info",

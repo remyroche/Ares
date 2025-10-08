@@ -30,9 +30,7 @@ import contextlib
 # Import the triple barrier components
 from ..pre_training.multi_horizon_profit_labeler import (
     MultiHorizonProfitLabeler,
-    MultiHorizonConfig,
-    create_multi_horizon_labeler,
-    apply_multi_horizon_labeling
+    MultiHorizonConfig
 )
 from .regime_aware_triple_barrier_optimizer import (
     RegimeAwareTripleBarrierOptimizer,

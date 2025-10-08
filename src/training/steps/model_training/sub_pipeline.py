@@ -42,6 +42,8 @@ try:
         safe_read_parquet,
         safe_to_parquet,
         safe_json_dump,
+        cleanup_m1_optimizers,
+        get_current_datetime
     )
     COMMON_IO_AVAILABLE = True
 except ImportError:
@@ -50,6 +52,8 @@ except ImportError:
     safe_read_parquet = None
     safe_to_parquet = None
     safe_json_dump = None
+    cleanup_m1_optimizers = None
+    get_current_datetime = None
 
 # Import orchestration and training steps
 try:
@@ -153,7 +157,10 @@ class SubPipelineConfig:
     exchange: str = "binance"
     analyst_timeframe: str = "60m"  # Analyst uses 60m
     tactician_timeframe: str = "15m"  # Tactician uses 15m
+    timeframe: Optional[str] = None  # Generic timeframe (used if analyst_timeframe/tactician_timeframe not explicitly set)
     data_dir: str = "historical_data"
+    start_date: Optional[str] = None  # Optional date filtering
+    end_date: Optional[str] = None    # Optional date filtering
     
     # Training configuration
     train_analyst: bool = True
@@ -166,6 +173,8 @@ class SubPipelineConfig:
     parallel_processing: bool = True
     max_workers: int = 4
     validation_enabled: bool = True
+    monitoring_enabled: bool = True  # Hardware monitoring
+    single_stage_only: bool = False   # Pipeline chaining control
     
     # Output configuration
     output_directory: str = "generated/model_training"
@@ -173,6 +182,14 @@ class SubPipelineConfig:
     
     # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
+
+    # Direction control for trading (inherited from main pipeline config)
+    enable_long_positions: bool = True
+    enable_short_positions: bool = True
+    
+    # Additional compatibility parameters
+    use_existing_data: bool = False  # Use pre-existing data artifacts
+    logging: Optional[Any] = None     # Logging configuration (optional)
 
 
 @dataclass
@@ -212,7 +229,9 @@ class ModelTrainingSubPipeline:
             
         if ANALYST_TRAINING_AVAILABLE:
             analyst_training_config = AnalystTrainingPipelineConfig(
-                train_ensemble_models=False
+                train_ensemble_models=False,
+                enable_long_positions=config.enable_long_positions,
+                enable_short_positions=config.enable_short_positions
             )
             self.analyst_training = AnalystTrainingPipeline(analyst_training_config)
         else:
@@ -232,7 +251,9 @@ class ModelTrainingSubPipeline:
 
         if TACTICIAN_TRAINING_AVAILABLE:
             tactician_training_config = TacticianTrainingPipelineConfig(
-                train_ensemble_models=False
+                train_ensemble_models=False,
+                enable_long_positions=config.enable_long_positions,
+                enable_short_positions=config.enable_short_positions
             )
             self.tactician_training = TacticianTrainingPipeline(tactician_training_config)
         else:
@@ -891,6 +912,10 @@ class ModelTrainingSubPipeline:
                 'training_summary': getattr(training_result, 'training_summary', None),
                 'metrics': training_result.base_training_metrics,
                 'ensemble_available': getattr(training_result, 'ensemble_models', None) is not None,
+                'direction_settings': {
+                    'enable_long_positions': config.enable_long_positions,
+                    'enable_short_positions': config.enable_short_positions,
+                }
             }
 
             if result.success:
@@ -998,6 +1023,10 @@ class ModelTrainingSubPipeline:
             result.metadata = {
                 'samples_used': ensemble_result.get('samples_used'),
                 'feature_integration_complete': ensemble_result.get('feature_integration_complete', False),
+                'direction_settings': {
+                    'enable_long_positions': config.enable_long_positions,
+                    'enable_short_positions': config.enable_short_positions,
+                }
             }
 
             result.output_files = self._save_step_artifacts(
@@ -1239,7 +1268,11 @@ class ModelTrainingSubPipeline:
             }
             result.metadata = {
                 'training_summary': getattr(training_result, 'training_summary', None),
-                'metrics': training_result.base_training_metrics
+                'metrics': training_result.base_training_metrics,
+                'direction_settings': {
+                    'enable_long_positions': config.enable_long_positions,
+                    'enable_short_positions': config.enable_short_positions,
+                }
             }
 
             if result.success:
@@ -1368,6 +1401,10 @@ class ModelTrainingSubPipeline:
             result.metadata = {
                 'samples_used': ensemble_result.get('samples_used'),
                 'feature_integration_complete': ensemble_result.get('feature_integration_complete', False),
+                'direction_settings': {
+                    'enable_long_positions': config.enable_long_positions,
+                    'enable_short_positions': config.enable_short_positions,
+                }
             }
 
             result.output_files = self._save_step_artifacts(

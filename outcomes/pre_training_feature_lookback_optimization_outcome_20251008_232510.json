@@ -1,0 +1,1145 @@
+{
+  "stage": "pre_training",
+  "sub_pipeline": "feature_lookback_optimization",
+  "timestamp": "2025-10-08T23:25:10.436357",
+  "status": "completed",
+  "output_files": [],
+  "metadata": {
+    "optimization_status": "completed",
+    "total_features_optimized": 32,
+    "validation_summary": {
+      "total_rules": 6,
+      "passed": 5,
+      "failed": 0,
+      "warnings": 1,
+      "skipped": 0,
+      "critical_failures": 0,
+      "overall_status": "ValidationStatus.PASSED",
+      "quality_score": 0.9166666666666666,
+      "recommendations": [
+        "CRITICAL: Found 17 non-finite values"
+      ]
+    },
+    "performance_metrics": {
+      "monitoring_duration_seconds": 6.929406,
+      "total_operations": 1,
+      "error_count": 0,
+      "warning_count": 0,
+      "avg_memory_usage_mb": 945.4583333333334,
+      "avg_cpu_usage_percent": 0.0,
+      "peak_memory_usage_mb": 960.078125,
+      "operation_statistics": {
+        "execute": {
+          "count": 1,
+          "total_time": 6.765023,
+          "avg_time": 6.765023,
+          "min_time": 6.765023,
+          "max_time": 6.765023
+        }
+      },
+      "quality_metrics": {
+        "data_quality_score": 0.9166666666666666,
+        "validation_score": 1.0,
+        "optimization_score": 0.0
+      },
+      "resource_metrics": {
+        "peak_memory_mb": 960.078125,
+        "avg_cpu_percent": 0.0,
+        "disk_io_operations": 0,
+        "network_io_bytes": 0
+      },
+      "cache_metrics": {
+        "hits": 0,
+        "misses": 1,
+        "writes": 0,
+        "force_refreshes": 0
+      }
+    },
+    "optimization_results": {
+      "feature_results": {
+        "long_pipeline": {
+          "symbol": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "interval": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "day": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "close_return": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "close_log_return": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_return": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_log_return": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "price_range": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "price_range_pct": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "body_size": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "body_size_pct": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "hour": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "day_of_week": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "is_weekend": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "analyst_target": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "analyst_confidence": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "long"
+          }
+        },
+        "short_pipeline": {
+          "symbol": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "short"
+          },
+          "interval": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "short"
+          },
+          "day": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "short"
+          },
+          "close_return": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "short"
+          },
+          "close_log_return": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "short"
+          },
+          "volume_return": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "short"
+          },
+          "volume_log_return": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "short"
+          },
+          "price_range": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "short"
+          },
+          "price_range_pct": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "short"
+          },
+          "body_size": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "short"
+          },
+          "body_size_pct": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "short"
+          },
+          "hour": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "short"
+          },
+          "day_of_week": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "short"
+          },
+          "is_weekend": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "short"
+          },
+          "analyst_target": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "short"
+          },
+          "analyst_confidence": {
+            "best_lookback_period": 5,
+            "best_score": 0.0,
+            "target_column": "analyst_target",
+            "direction": "short"
+          }
+        },
+        "long_target": "analyst_target",
+        "short_target": "analyst_target"
+      },
+      "total_features": 32,
+      "optimization_method": "coarse_to_refine_directional",
+      "feature_lag_metadata": {}
+    },
+    "artifacts_saved_persistently": true,
+    "pipeline_type": "differentiated_long_short",
+    "validated_schemas": {
+      "inputs": {
+        "market_data": {
+          "name": "Raw OHLCV Frame",
+          "version": "1.0",
+          "description": "Normalized OHLCV input with datetime index and float OHLCV columns."
+        },
+        "labeled_targets": {
+          "rows": 25038,
+          "columns": 2,
+          "has_target_columns": true,
+          "has_confidence_columns": true
+        }
+      },
+      "outputs": {
+        "optimization_frame": {
+          "name": "Engineered Feature Frame",
+          "version": "1.0",
+          "description": "Feature matrix with datetime index and numeric feature columns."
+        }
+      },
+      "derived": {}
+    },
+    "feature_cache_metrics": {
+      "hits": 0,
+      "misses": 1,
+      "writes": 0,
+      "force_refreshes": 0
+    },
+    "feature_cache_key": "ethusdt__1h__2024.09__76bd4647e36ff0ecfb433fccfba0f9e9a2e70859c25f63a82afdece55af35927",
+    "feature_cache_force_refresh": false,
+    "run_metadata": {
+      "run_id": "6739ebab73c54f3d965e90890765ea7a",
+      "git_sha": "252e643d2f1a2c4f8dd5fdb2b0bc04327fa45cfd",
+      "config_hash": "e2c4d7b42acd0c00de864b5f1849bfc7b5b4ac6cafe7d72696feaa36c77f16f4",
+      "data_snapshot_id": "unknown",
+      "rng_seed": null,
+      "symbol": "ETHUSDT",
+      "timeframe": "1h",
+      "mode": "light",
+      "host_name": "MacBook-Air-de-Remy.local",
+      "start_time_utc": "2025-10-08T21:25:03.266897Z",
+      "end_time_utc": null,
+      "duration_seconds": null
+    },
+    "quality_thresholds": {
+      "label_imbalance": 0.75,
+      "nan_rate": 0.05,
+      "duplicate_index": 0.02
+    }
+  },
+  "artifacts": {
+    "feature_lookback_optimization_summary": {
+      "timestamp": "2025-10-08T23:25:10.298103",
+      "symbol": "ETHUSDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "optimization_results": {
+        "feature_results": {
+          "long_pipeline": {
+            "symbol": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "interval": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "day": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "close_return": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "close_log_return": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "volume_return": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "volume_log_return": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "price_range": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "price_range_pct": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "body_size": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "body_size_pct": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "hour": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "day_of_week": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "is_weekend": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "analyst_target": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "analyst_confidence": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            }
+          },
+          "short_pipeline": {
+            "symbol": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "interval": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "day": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "close_return": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "close_log_return": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "volume_return": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "volume_log_return": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "price_range": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "price_range_pct": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "body_size": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "body_size_pct": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "hour": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "day_of_week": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "is_weekend": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "analyst_target": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "analyst_confidence": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            }
+          },
+          "long_target": "analyst_target",
+          "short_target": "analyst_target"
+        },
+        "total_features": 32,
+        "optimization_method": "coarse_to_refine_directional",
+        "feature_lag_metadata": {}
+      },
+      "hypothesis_report": {
+        "hypothesis_breakdown": {
+          "horizons": 0,
+          "features": 0,
+          "lookbacks": 0
+        },
+        "total_hypotheses": 0,
+        "raw_p_values": {
+          "horizons": {},
+          "features": {},
+          "lookbacks": {}
+        },
+        "adjusted_p_values": {
+          "horizons": {},
+          "features": {},
+          "lookbacks": {}
+        },
+        "significant_counts": {
+          "before": {
+            "horizons": 0,
+            "features": 0,
+            "lookbacks": 0,
+            "total": 0
+          },
+          "after": {
+            "horizons": 0,
+            "features": 0,
+            "lookbacks": 0,
+            "total": 0
+          }
+        },
+        "warning": ""
+      },
+      "horizon_p_values": {},
+      "feature_p_values": {},
+      "lookback_p_values": {},
+      "adjusted_p_values": {
+        "horizons": {},
+        "features": {},
+        "lookbacks": {}
+      }
+    },
+    "feature_lookback_optimization_result": {
+      "optimization_results": {
+        "feature_results": {
+          "long_pipeline": {
+            "symbol": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "interval": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "day": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "close_return": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "close_log_return": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "volume_return": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "volume_log_return": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "price_range": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "price_range_pct": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "body_size": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "body_size_pct": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "hour": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "day_of_week": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "is_weekend": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "analyst_target": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            },
+            "analyst_confidence": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "long"
+            }
+          },
+          "short_pipeline": {
+            "symbol": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "interval": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "day": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "close_return": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "close_log_return": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "volume_return": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "volume_log_return": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "price_range": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "price_range_pct": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "body_size": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "body_size_pct": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "hour": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "day_of_week": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "is_weekend": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "analyst_target": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            },
+            "analyst_confidence": {
+              "best_lookback_period": 5,
+              "best_score": 0.0,
+              "target_column": "analyst_target",
+              "direction": "short"
+            }
+          },
+          "long_target": "analyst_target",
+          "short_target": "analyst_target"
+        },
+        "total_features": 32,
+        "optimization_method": "coarse_to_refine_directional",
+        "feature_lag_metadata": {}
+      },
+      "summary": {
+        "timestamp": "2025-10-08T23:25:10.298103",
+        "symbol": "ETHUSDT",
+        "exchange": "binance",
+        "timeframe": "1h",
+        "optimization_results": {
+          "feature_results": {
+            "long_pipeline": {
+              "symbol": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "long"
+              },
+              "interval": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "long"
+              },
+              "day": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "long"
+              },
+              "close_return": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "long"
+              },
+              "close_log_return": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "long"
+              },
+              "volume_return": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "long"
+              },
+              "volume_log_return": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "long"
+              },
+              "price_range": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "long"
+              },
+              "price_range_pct": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "long"
+              },
+              "body_size": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "long"
+              },
+              "body_size_pct": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "long"
+              },
+              "hour": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "long"
+              },
+              "day_of_week": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "long"
+              },
+              "is_weekend": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "long"
+              },
+              "analyst_target": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "long"
+              },
+              "analyst_confidence": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "long"
+              }
+            },
+            "short_pipeline": {
+              "symbol": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "short"
+              },
+              "interval": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "short"
+              },
+              "day": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "short"
+              },
+              "close_return": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "short"
+              },
+              "close_log_return": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "short"
+              },
+              "volume_return": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "short"
+              },
+              "volume_log_return": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "short"
+              },
+              "price_range": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "short"
+              },
+              "price_range_pct": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "short"
+              },
+              "body_size": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "short"
+              },
+              "body_size_pct": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "short"
+              },
+              "hour": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "short"
+              },
+              "day_of_week": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "short"
+              },
+              "is_weekend": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "short"
+              },
+              "analyst_target": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "short"
+              },
+              "analyst_confidence": {
+                "best_lookback_period": 5,
+                "best_score": 0.0,
+                "target_column": "analyst_target",
+                "direction": "short"
+              }
+            },
+            "long_target": "analyst_target",
+            "short_target": "analyst_target"
+          },
+          "total_features": 32,
+          "optimization_method": "coarse_to_refine_directional",
+          "feature_lag_metadata": {}
+        },
+        "hypothesis_report": {
+          "hypothesis_breakdown": {
+            "horizons": 0,
+            "features": 0,
+            "lookbacks": 0
+          },
+          "total_hypotheses": 0,
+          "raw_p_values": {
+            "horizons": {},
+            "features": {},
+            "lookbacks": {}
+          },
+          "adjusted_p_values": {
+            "horizons": {},
+            "features": {},
+            "lookbacks": {}
+          },
+          "significant_counts": {
+            "before": {
+              "horizons": 0,
+              "features": 0,
+              "lookbacks": 0,
+              "total": 0
+            },
+            "after": {
+              "horizons": 0,
+              "features": 0,
+              "lookbacks": 0,
+              "total": 0
+            }
+          },
+          "warning": ""
+        },
+        "horizon_p_values": {},
+        "feature_p_values": {},
+        "lookback_p_values": {},
+        "adjusted_p_values": {
+          "horizons": {},
+          "features": {},
+          "lookbacks": {}
+        }
+      },
+      "component_type": "feature_lookback_optimization",
+      "timestamp": "2025-10-08T23:25:10.301894",
+      "hypothesis_report": {
+        "hypothesis_breakdown": {
+          "horizons": 0,
+          "features": 0,
+          "lookbacks": 0
+        },
+        "total_hypotheses": 0,
+        "raw_p_values": {
+          "horizons": {},
+          "features": {},
+          "lookbacks": {}
+        },
+        "adjusted_p_values": {
+          "horizons": {},
+          "features": {},
+          "lookbacks": {}
+        },
+        "significant_counts": {
+          "before": {
+            "horizons": 0,
+            "features": 0,
+            "lookbacks": 0,
+            "total": 0
+          },
+          "after": {
+            "horizons": 0,
+            "features": 0,
+            "lookbacks": 0,
+            "total": 0
+          }
+        },
+        "warning": ""
+      },
+      "horizon_p_values": {},
+      "feature_p_values": {},
+      "lookback_p_values": {},
+      "adjusted_p_values": {
+        "horizons": {},
+        "features": {},
+        "lookbacks": {}
+      }
+    },
+    "validated_schemas": {
+      "inputs": {
+        "market_data": {
+          "name": "Raw OHLCV Frame",
+          "version": "1.0",
+          "description": "Normalized OHLCV input with datetime index and float OHLCV columns."
+        },
+        "labeled_targets": {
+          "rows": 25038,
+          "columns": 2,
+          "has_target_columns": true,
+          "has_confidence_columns": true
+        }
+      },
+      "outputs": {
+        "optimization_frame": {
+          "name": "Engineered Feature Frame",
+          "version": "1.0",
+          "description": "Feature matrix with datetime index and numeric feature columns."
+        }
+      },
+      "derived": {}
+    }
+  },
+  "config": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "1h",
+    "mode": "light",
+    "intensity_percentage": 0.5,
+    "training_mode_config": {
+      "name": "light",
+      "description": "Development mode - Minimal data with all features/models",
+      "lookback_days": 20,
+      "lookback_years": 0,
+      "intensity_percentage": 0.025,
+      "computational_intensity": "minimal",
+      "estimated_duration_minutes": 10,
+      "max_trials": 10,
+      "n_trials": 5,
+      "monte_carlo_samples": 100,
+      "ab_test_rounds": 2,
+      "optuna_trials": 10,
+      "optuna_timeout": 300,
+      "batch_size": 512,
+      "epochs": 10,
+      "early_stopping_patience": 5,
+      "cross_validation_folds": 2,
+      "enable_parallelization": false,
+      "enable_caching": true,
+      "enable_advanced_features": true,
+      "enable_ensemble_training": true,
+      "enable_multi_timeframe_training": true,
+      "enable_adaptive_training": true
+    },
+    "direction_type": "both"
+  },
+  "next_stage_requirements": {
+    "required_files": [
+      "labels.parquet",
+      "features.parquet"
+    ],
+    "required_artifacts": [
+      "feature_metadata"
+    ],
+    "data_dependencies": [],
+    "next_stage": "model_training",
+    "sub_pipelines": [
+      "multi_horizon_profit_labeler",
+      "feature_lookback_optimization",
+      "interactive_feature_generation",
+      "final_feature_selection"
+    ]
+  }
+}

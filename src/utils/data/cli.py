@@ -67,7 +67,7 @@ async def download_standardized_command(args):
 
     # Import required modules
     import pandas as pd
-    from exchange.binance import BinanceExchange
+    from exchanges.binance import BinanceExchange
 
     try:
         # Initialize exchange

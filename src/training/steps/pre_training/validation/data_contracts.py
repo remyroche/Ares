@@ -6,6 +6,45 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 import pandas as pd
 
+# Import core utilities
+try:
+    from ...utils.tprint import tprint, tprint_debug, tprint_error, tprint_info, tprint_warning
+    from ...utils.common_operations import (
+        validate_dataframe, validate_positive, validate_range, safe_divide,
+        timed_operation, format_bytes, get_dataframe_info, calculate_data_quality_metrics
+    )
+    from ...utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+    # Import matrix operations for feature correlation analysis
+    from ...utils.matrix_operations import (
+        safe_correlation_matrix, matrix_correlation_analysis, optimize_dataframe,
+        get_unified_matrix_operations, get_vectorized_processing_core, batch_matrix_multiply
+    )
+    MATRIX_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    # Fallback imports if utils are not available
+    MATRIX_OPERATIONS_AVAILABLE = False
+    def tprint(*args, **kwargs): pass
+    def tprint_debug(*args, **kwargs): pass
+    def tprint_error(*args, **kwargs): pass
+    def tprint_info(*args, **kwargs): pass
+    def tprint_warning(*args, **kwargs): pass
+    def validate_dataframe(df): return isinstance(df, pd.DataFrame) and not df.empty
+    def validate_positive(value, name="value"): return value if value > 0 else 0.0
+    def validate_range(value, min_val=None, max_val=None, name="value"): return value
+    def safe_divide(a, b, default=0.0): return a / b if b != 0 else default
+    def timed_operation(func): return func
+    def format_bytes(bytes_value): return f"{bytes_value}B"
+    def get_dataframe_info(df): return {}
+    def calculate_data_quality_metrics(df): return {}
+    def get_m1_memory_optimizer(): return None
+    # Matrix operations fallbacks
+    def safe_correlation_matrix(df): return df.corr() if hasattr(df, 'corr') else None
+    def matrix_correlation_analysis(*args, **kwargs): return {}
+    def optimize_dataframe(df): return df
+    def get_unified_matrix_operations(): return None
+    def get_vectorized_processing_core(): return None
+    def batch_matrix_multiply(*args, **kwargs): return None
+
 try:
     from pydantic import (
         BaseModel,
@@ -292,6 +331,7 @@ def _wrap_pandera_error(context: str, error: SchemaValidationException) -> DataC
     return DataContractValidationError(context, [str(error)])
 
 
+@timed_operation
 def validate_multi_horizon_labeling_result(
     payload: Mapping[str, Any],
     *,
@@ -299,16 +339,55 @@ def validate_multi_horizon_labeling_result(
 ) -> Dict[str, Any]:
     """Validate the multi-horizon labeling artifact structure and contents."""
 
+    tprint_info(f"Validating multi-horizon labeling result for {context}")
+
     target_shifts = _extract_target_shifts(payload)
+    tprint_debug(f"Extracted target shifts: {target_shifts}")
+
+    # Validate payload structure
+    if not isinstance(payload, Mapping):
+        tprint_error(f"Payload must be a mapping, got {type(payload)}")
+        raise DataContractValidationError(context, ["Payload must be a mapping"])
+
+    # Check data quality metrics
+    memory_optimizer = get_m1_memory_optimizer()
+    if memory_optimizer:
+        memory_optimizer.start_monitoring()
+
+    # Initialize matrix operations for correlation analysis
+    matrix_ops = get_unified_matrix_operations() if MATRIX_OPERATIONS_AVAILABLE else None
+    vectorized_core = get_vectorized_processing_core() if MATRIX_OPERATIONS_AVAILABLE else None
+
+    tprint_debug(f"Matrix operations available for data contracts: {MATRIX_OPERATIONS_AVAILABLE}")
 
     try:
         model = LabeledDataSchema.model_validate({**payload, "context": context})
     except ValidationError as err:
+        tprint_error(f"Pydantic validation failed for {context}")
         raise DataContractValidationError(context, _format_pydantic_errors(err)) from err
 
     validated_payload = dict(model.model_dump(exclude={"context"}))
+    tprint_debug(f"Validated payload structure for {context}")
 
     try:
+        # Validate labeled data with quality checks and correlation analysis
+        if validate_dataframe(model.labeled_data):
+            quality_metrics = calculate_data_quality_metrics(model.labeled_data)
+            tprint_debug(f"Labeled data quality: {quality_metrics}")
+
+            # Use matrix operations for correlation analysis if available
+            if matrix_ops and len(model.labeled_data.columns) > 1:
+                try:
+                    corr_matrix = safe_correlation_matrix(model.labeled_data)
+                    if corr_matrix is not None:
+                        correlation_analysis = matrix_correlation_analysis(
+                            model.labeled_data.values, method='correlation'
+                        )
+                        tprint_debug(f"Feature correlation analysis completed for {len(model.labeled_data.columns)} features")
+                        validated_payload["correlation_analysis"] = correlation_analysis
+                except Exception as e:
+                    tprint_debug(f"Correlation analysis failed: {e}")
+
         validated_payload["labeled_data"] = validate_labeled_dataset(
             model.labeled_data,
             context=f"{context}.labeled_data",
@@ -317,6 +396,7 @@ def validate_multi_horizon_labeling_result(
             model.labels,
             context=f"{context}.labels",
         )
+
         if model.confidence_scores is not None:
             validated_payload["confidence_scores"] = validate_engineered_features(
                 model.confidence_scores,
@@ -329,11 +409,13 @@ def validate_multi_horizon_labeling_result(
                 feature_metadata=payload.get("confidence_scores_metadata")
                 or payload.get("feature_metadata"),
             )
+
         if model.market_data is not None:
             validated_payload["market_data"] = validate_raw_ohlcv(
                 model.market_data,
                 context=f"{context}.market_data",
             )
+
         if model.market_data_batches is not None:
             validated_batches = []
             for idx, batch in enumerate(model.market_data_batches):
@@ -345,6 +427,7 @@ def validate_multi_horizon_labeling_result(
                         )
                     )
                 else:
+                    tprint_error(f"Invalid batch type at index {idx}: {type(batch)}")
                     raise DataContractValidationError(
                         context,
                         [
@@ -352,12 +435,16 @@ def validate_multi_horizon_labeling_result(
                         ],
                     )
             validated_payload["market_data_batches"] = validated_batches
+
+        tprint_info(f"Successfully validated multi-horizon labeling result for {context}")
     except SchemaValidationException as schema_error:
+        tprint_error(f"Schema validation failed for {context}: {schema_error}")
         raise _wrap_pandera_error(context, schema_error) from schema_error
 
     return validated_payload
 
 
+@timed_operation
 def validate_feature_artifact(
     payload: Mapping[str, Any],
     *,
@@ -365,19 +452,54 @@ def validate_feature_artifact(
 ) -> Dict[str, Any]:
     """Validate the interactive feature generation artifact."""
 
+    tprint_info(f"Validating feature artifact for {context}")
+
     target_shifts = _extract_target_shifts(payload)
     feature_metadata = payload.get("feature_metadata")
     interaction_metadata = payload.get("interaction_feature_metadata")
     cross_timeframe_metadata = payload.get("cross_timeframe_feature_metadata")
 
+    tprint_debug(f"Feature metadata keys: {list(feature_metadata.keys()) if feature_metadata else 'None'}")
+
+    # Validate payload structure
+    if not isinstance(payload, Mapping):
+        tprint_error(f"Payload must be a mapping, got {type(payload)}")
+        raise DataContractValidationError(context, ["Payload must be a mapping"])
+
     try:
         model = FeaturesSchema.model_validate({**payload, "context": context})
     except ValidationError as err:
+        tprint_error(f"Pydantic validation failed for {context}")
         raise DataContractValidationError(context, _format_pydantic_errors(err)) from err
 
     validated_payload = dict(model.model_dump(exclude={"context"}))
+    tprint_debug(f"Validated feature payload structure for {context}")
 
     try:
+        # Validate main features with quality checks and correlation analysis
+        if validate_dataframe(model.features):
+            quality_metrics = calculate_data_quality_metrics(model.features)
+            tprint_debug(f"Features quality: {quality_metrics}")
+            info = get_dataframe_info(model.features)
+            tprint_debug(f"Features info: shape={info.get('shape', 'unknown')}, memory={format_bytes(info.get('memory_usage', 0))}")
+
+            # Use matrix operations for feature correlation analysis
+            if matrix_ops and len(model.features.columns) > 1:
+                try:
+                    # Optimize DataFrame using vectorized core first
+                    if vectorized_core:
+                        model.features = optimize_dataframe(model.features)
+
+                    corr_matrix = safe_correlation_matrix(model.features)
+                    if corr_matrix is not None:
+                        correlation_analysis = matrix_correlation_analysis(
+                            model.features.values, method='correlation'
+                        )
+                        tprint_debug(f"Feature correlation analysis completed for {len(model.features.columns)} features")
+                        validated_payload["feature_correlation_analysis"] = correlation_analysis
+                except Exception as e:
+                    tprint_debug(f"Feature correlation analysis failed: {e}")
+
         validated_payload["features"] = validate_engineered_features(
             model.features,
             context=f"{context}.features",
@@ -388,6 +510,7 @@ def validate_feature_artifact(
             target_shifts=target_shifts,
             feature_metadata=feature_metadata,
         )
+
         if model.interaction_features is not None:
             validated_payload["interaction_features"] = validate_engineered_features(
                 model.interaction_features,
@@ -399,6 +522,7 @@ def validate_feature_artifact(
                 target_shifts=target_shifts,
                 feature_metadata=interaction_metadata,
             )
+
         if model.cross_timeframe_features is not None:
             validated_payload["cross_timeframe_features"] = validate_engineered_features(
                 model.cross_timeframe_features,
@@ -410,7 +534,10 @@ def validate_feature_artifact(
                 target_shifts=target_shifts,
                 feature_metadata=cross_timeframe_metadata,
             )
+
+        tprint_info(f"Successfully validated feature artifact for {context}")
     except SchemaValidationException as schema_error:
+        tprint_error(f"Schema validation failed for {context}: {schema_error}")
         raise _wrap_pandera_error(context, schema_error) from schema_error
 
     return validated_payload

@@ -840,7 +840,7 @@ This framework integrates seamlessly with:
 
 - **Multi-Horizon Profit Labeler**: `src/training/steps/market_analysis/multi_horizon_profit_labeler.py`
 - **HMM Clustering Research**: `src/research/clusters/`
-- **Feature Engineering**: `src/feature_engineering/`
+- **Feature Engineering**: `src/feature_engineering_roadmap/`
 - **Training Pipeline**: `src/training/steps/`
 - **Logging System**: `src/utils/logger`
 

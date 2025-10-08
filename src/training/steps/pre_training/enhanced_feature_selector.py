@@ -28,6 +28,27 @@ import pandas as pd
 from scipy import stats
 
 from src.utils.logger import system_logger
+from src.utils.tprint import (
+    tprint,
+    tprint_info,
+    tprint_warning,
+    tprint_error,
+    tprint_success,
+    tprint_debug,
+)
+from src.utils.common_operations import (
+    safe_dataframe_operation,
+    safe_merge_dataframes,
+    safe_fillna,
+    create_empty_dataframe,
+    validate_dataframe_columns,
+)
+from src.utils.math_validation import (
+    safe_correlation,
+    safe_mean,
+    safe_std,
+    validate_finite,
+)
 
 
 class EconomicTheme(Enum):
@@ -63,6 +84,10 @@ class FeatureSelectionConfig:
     
     # Feature importance
     importance_method: str = "mutual_info"  # 'mutual_info', 'correlation', 'model_based'
+    importance_percentile: float = 50.0  # Percentile threshold for feature selection
+    
+    # Data requirements
+    min_samples_for_selection: int = 100  # Minimum samples required
     
     # Validation
     validate_with_factor_portfolio: bool = True
@@ -141,6 +166,13 @@ class EnhancedFeatureSelector:
         """
         self.config = config or FeatureSelectionConfig()
         self.logger = logger or system_logger.getChild('EnhancedFeatureSelector')
+
+        tprint_info("🔧 Initializing EnhancedFeatureSelector...")
+        tprint_debug(f"📊 Bootstrap folds: {self.config.n_bootstrap_folds}")
+        tprint_debug(f"🎯 Min selection frequency: {self.config.min_selection_frequency}")
+        tprint_debug(f"📈 Importance method: {self.config.importance_method}")
+        tprint_debug(f"🏷️ Preserve economic themes: {'Enabled' if self.config.preserve_economic_themes else 'Disabled'}")
+        tprint_success("✅ EnhancedFeatureSelector initialized")
     
     def select_features(
         self,
@@ -151,23 +183,28 @@ class EnhancedFeatureSelector:
     ) -> SelectionResult:
         """
         Select robust features using bootstrap validation.
-        
+
         Args:
             features: DataFrame with features
             labels: Target labels
             feature_themes: Optional mapping of feature names to economic themes
             target_n_features: Target number of features to select
-        
+
         Returns:
             SelectionResult with selection results
         """
+        tprint_info(f"🚀 Starting feature selection with {features.shape[1]} features and {len(labels)} labels")
+
         # Align data
         common_idx = features.index.intersection(labels.index)
         features_aligned = features.loc[common_idx]
         labels_aligned = labels.loc[common_idx]
-        
-        if len(common_idx) < 100:
-            self.logger.warning(f"Insufficient data for selection: {len(common_idx)} samples")
+
+        tprint_debug(f"📊 Aligned data: {features_aligned.shape[0]} samples, {features_aligned.shape[1]} features")
+
+        # Validate input data
+        if not validate_dataframe_columns(features_aligned, features.columns.tolist()):
+            tprint_warning("⚠️ Feature DataFrame validation failed")
             return SelectionResult(
                 selected_features=[],
                 feature_info=[],
@@ -176,11 +213,25 @@ class EnhancedFeatureSelector:
                 theme_distribution={}
             )
         
+        if len(common_idx) < self.config.min_samples_for_selection:
+            tprint_warning(f"⚠️ Insufficient data for selection: {len(common_idx)} samples (minimum: {self.config.min_samples_for_selection})")
+            return SelectionResult(
+                selected_features=[],
+                feature_info=[],
+                selection_frequencies={},
+                bootstrap_iterations=0,
+                theme_distribution={}
+            )
+
+        tprint_info("🔍 Inferring feature themes...")
         # Infer themes if not provided
         if feature_themes is None:
             feature_themes = self._infer_feature_themes(features_aligned.columns)
-        
+
+        tprint_debug(f"🏷️ Found {len(set(feature_themes.values()))} economic themes")
+
         # Bootstrap feature selection
+        tprint_info(f"🔄 Running bootstrap selection with {self.config.n_bootstrap_folds} folds...")
         selection_frequencies = self._bootstrap_selection(
             features=features_aligned,
             labels=labels_aligned,
@@ -192,9 +243,11 @@ class EnhancedFeatureSelector:
             feat for feat, freq in selection_frequencies.items()
             if freq >= self.config.min_selection_frequency
         ]
-        
+
+        tprint_info(f"✅ Bootstrap selection complete. Found {len(stable_features)}/{len(selection_frequencies)} stable features")
+
         if not stable_features:
-            self.logger.warning("No stable features found")
+            tprint_warning("⚠️ No stable features found after bootstrap selection")
             return SelectionResult(
                 selected_features=[],
                 feature_info=[],
@@ -204,6 +257,7 @@ class EnhancedFeatureSelector:
             )
         
         # Compute feature information
+        tprint_info("📊 Computing feature information and statistics...")
         feature_info_list = []
         for feat in stable_features:
             info = self._compute_feature_info(
@@ -217,15 +271,20 @@ class EnhancedFeatureSelector:
         
         # Sort by importance
         feature_info_list.sort(key=lambda x: x.importance, reverse=True)
-        
+
+        tprint_debug(f"📈 Features sorted by importance (top 3): {[f.name for f in feature_info_list[:3]]}")
+
         # Select top features
         if target_n_features:
             selected_info = feature_info_list[:target_n_features]
+            tprint_info(f"🎯 Selected top {len(selected_info)} features by importance")
         else:
             selected_info = feature_info_list
-        
+            tprint_info(f"🎯 Using all {len(selected_info)} features")
+
         # Ensure economic theme diversity
         if self.config.preserve_economic_themes:
+            tprint_info("🏷️ Ensuring economic theme diversity...")
             selected_info = self._ensure_theme_diversity(
                 feature_info_list=selected_info,
                 all_features=feature_info_list,
@@ -233,31 +292,36 @@ class EnhancedFeatureSelector:
             )
         
         selected_features = [info.name for info in selected_info]
-        
+
         # Compute theme distribution
         theme_distribution = {}
         for info in selected_info:
             theme_name = info.economic_theme.value
             theme_distribution[theme_name] = theme_distribution.get(theme_name, 0) + 1
-        
+
+        tprint_info(f"🏷️ Final theme distribution: {theme_distribution}")
+
         # Validate with factor portfolio
         factor_sharpe = None
         validation_passed = True
-        
+
         if self.config.validate_with_factor_portfolio:
+            tprint_info("📊 Validating selected features with factor portfolio...")
             factor_sharpe = self._validate_factor_portfolio(
                 features=features_aligned[selected_features],
                 labels=labels_aligned
             )
-            
+
             if factor_sharpe is not None:
                 validation_passed = factor_sharpe >= self.config.min_factor_sharpe
-                
-                if not validation_passed:
-                    self.logger.warning(
-                        f"Factor portfolio validation failed: Sharpe={factor_sharpe:.3f} "
-                        f"(threshold: {self.config.min_factor_sharpe})"
-                    )
+
+                if validation_passed:
+                    tprint_success(f"✅ Factor portfolio validation passed: Sharpe={factor_sharpe:.3f}")
+                else:
+                    tprint_warning(f"⚠️ Factor portfolio validation failed: Sharpe={factor_sharpe:.3f} (threshold: {self.config.min_factor_sharpe})")
+            else:
+                tprint_warning("⚠️ Factor portfolio validation returned None")
+                validation_passed = False
         
         result = SelectionResult(
             selected_features=selected_features,
@@ -268,12 +332,12 @@ class EnhancedFeatureSelector:
             factor_portfolio_sharpe=factor_sharpe,
             validation_passed=validation_passed
         )
-        
-        self.logger.info(
-            f"Feature selection complete: {len(selected_features)} features selected, "
-            f"validation_passed={validation_passed}"
-        )
-        
+
+        tprint_success(f"✅ Feature selection complete: {len(selected_features)} features selected")
+        tprint_info(f"📈 Validation passed: {validation_passed}")
+        if factor_sharpe is not None:
+            tprint_info(f"📊 Factor Sharpe: {factor_sharpe:.3f}")
+
         return result
     
     def _bootstrap_selection(
@@ -284,31 +348,35 @@ class EnhancedFeatureSelector:
     ) -> Dict[str, float]:
         """
         Perform bootstrap feature selection.
-        
+
         Args:
             features: Feature DataFrame
             labels: Label series
             n_folds: Number of bootstrap folds
-        
+
         Returns:
             Dictionary mapping feature names to selection frequencies
         """
         feature_counts = {col: 0 for col in features.columns}
-        
+        tprint_debug(f"🔄 Starting bootstrap selection with {n_folds} folds")
+
         for fold in range(n_folds):
+            if fold % max(1, n_folds // 10) == 0:  # Progress logging every 10%
+                tprint_debug(f"📊 Bootstrap fold {fold + 1}/{n_folds}")
+
             # Bootstrap sample
             sample_size = int(len(features) * 0.8)
             sample_idx = np.random.choice(len(features), size=sample_size, replace=True)
-            
+
             features_sample = features.iloc[sample_idx]
             labels_sample = labels.iloc[sample_idx]
-            
+
             # Compute importance on sample
             importances = self._compute_importances(features_sample, labels_sample)
-            
-            # Select top 50% features
-            threshold = np.percentile(list(importances.values()), 50)
-            
+
+            # Select top features by percentile
+            threshold = np.percentile(list(importances.values()), 100 - self.config.importance_percentile)
+
             for feat, importance in importances.items():
                 if importance >= threshold:
                     feature_counts[feat] += 1
@@ -318,7 +386,9 @@ class EnhancedFeatureSelector:
             feat: count / n_folds
             for feat, count in feature_counts.items()
         }
-        
+
+        tprint_debug(f"✅ Bootstrap selection complete. Mean frequency: {np.mean(list(frequencies.values())):.3f}")
+
         return frequencies
     
     def _compute_importances(
@@ -328,14 +398,16 @@ class EnhancedFeatureSelector:
     ) -> Dict[str, float]:
         """
         Compute feature importances.
-        
+
         Args:
             features: Feature DataFrame
             labels: Label series
-        
+
         Returns:
             Dictionary mapping feature names to importance scores
         """
+        tprint_debug(f"🔢 Computing importances using method: {self.config.importance_method}")
+
         if self.config.importance_method == "mutual_info":
             return self._compute_mutual_info_importance(features, labels)
         elif self.config.importance_method == "correlation":
@@ -355,6 +427,7 @@ class EnhancedFeatureSelector:
             from sklearn.feature_selection import mutual_info_regression
         except ImportError:
             self.logger.warning("sklearn not available, using correlation")
+            tprint_warning("⚠️ sklearn not available for mutual information, falling back to correlation")
             return self._compute_correlation_importance(features, labels)
         
         # Align and clean
@@ -362,6 +435,8 @@ class EnhancedFeatureSelector:
         y = labels.fillna(0).values
         
         if len(X) < 50:
+            tprint_warning(f"⚠️ Insufficient samples for MI computation: {len(X)} < 50, returning zero importance")
+            self.logger.warning(f"Insufficient samples for MI computation: {len(X)}")
             return {col: 0.0 for col in features.columns}
         
         try:
@@ -375,6 +450,7 @@ class EnhancedFeatureSelector:
             }
         except Exception as e:
             self.logger.warning(f"MI computation failed: {e}, using correlation")
+            tprint_warning(f"⚠️ Mutual information computation failed: {e}, falling back to correlation")
             importances = self._compute_correlation_importance(features, labels)
         
         return importances
@@ -384,16 +460,54 @@ class EnhancedFeatureSelector:
         features: pd.DataFrame,
         labels: pd.Series
     ) -> Dict[str, float]:
-        """Compute correlation-based importance."""
+        """Compute correlation-based importance using optimized matrix operations."""
         importances = {}
-        
-        for col in features.columns:
+
+        # Use unified matrix operations for batch correlation computation
+        try:
+            from src.utils.matrix_operations import get_unified_matrix_operations
+            matrix_ops = get_unified_matrix_operations()
+
+            # Convert to arrays for matrix operations
+            feature_array = features.values
+            label_array = labels.values.reshape(-1, 1)
+
+            tprint_debug(f"🔢 Computing correlations using unified matrix operations: {feature_array.shape}")
+
+            # Use batch correlation if available
             try:
-                corr = features[col].corr(labels)
-                importances[col] = abs(float(corr)) if not np.isnan(corr) else 0.0
-            except Exception:
-                importances[col] = 0.0
-        
+                corr_results = matrix_ops.batch_correlation(feature_array, label_array[:, 0])
+                for i, col in enumerate(features.columns):
+                    importances[col] = abs(float(corr_results[i])) if not np.isnan(corr_results[i]) else 0.0
+            except Exception as e:
+                tprint_debug(f"⚠️ Batch correlation failed: {e}, using column-wise correlation")
+                # Fallback to column-wise within matrix ops
+                for i, col in enumerate(features.columns):
+                    try:
+                        corr = matrix_ops.safe_correlation(feature_array[:, i], label_array[:, 0])
+                        importances[col] = abs(float(corr)) if not np.isnan(corr) else 0.0
+                    except Exception as e:
+                        tprint_debug(f"⚠️ Correlation computation failed for {col}: {e}")
+                        importances[col] = 0.0
+
+        except ImportError:
+            # Fallback to individual correlations
+            tprint_warning("⚠️ Matrix operations not available, using numpy fallback")
+            for col in features.columns:
+                try:
+                    feature_vals = features[col].values
+                    label_vals = labels.values
+                    # Remove NaNs
+                    mask = ~(np.isnan(feature_vals) | np.isnan(label_vals))
+                    if mask.sum() > 0:
+                        corr = np.corrcoef(feature_vals[mask], label_vals[mask])[0, 1]
+                        importances[col] = abs(float(corr)) if not np.isnan(corr) else 0.0
+                    else:
+                        importances[col] = 0.0
+                except Exception as e:
+                    tprint_warning(f"⚠️ Correlation computation failed for {col}: {e}")
+                    importances[col] = 0.0
+
         return importances
     
     def _compute_model_based_importance(
@@ -403,26 +517,33 @@ class EnhancedFeatureSelector:
     ) -> Dict[str, float]:
         """Compute model-based importance using simple linear model."""
         from sklearn.linear_model import Ridge
-        
+
         X = features.fillna(0).values
         y = labels.fillna(0).values
-        
+
         if len(X) < 50:
+            tprint_warning(f"⚠️ Insufficient data for model-based importance: {len(X)} samples < 50")
+            self.logger.warning(f"Insufficient data for model-based importance: {len(X)}")
             return {col: 0.0 for col in features.columns}
-        
+
         try:
+            tprint_debug(f"🏗️ Training Ridge model for importance: {X.shape}")
+
             model = Ridge(alpha=1.0, random_state=42)
             model.fit(X, y)
-            
+
             # Use absolute coefficients as importance
             importances = {
                 col: abs(float(coef))
                 for col, coef in zip(features.columns, model.coef_)
             }
+
+            tprint_debug(f"✅ Model-based importance computed. Top feature: {max(importances, key=importances.get)}")
+
         except Exception as e:
-            self.logger.warning(f"Model-based importance failed: {e}, using correlation")
+            tprint_warning(f"⚠️ Model-based importance failed: {e}, using correlation")
             importances = self._compute_correlation_importance(features, labels)
-        
+
         return importances
     
     def _compute_feature_info(
@@ -464,7 +585,8 @@ class EnhancedFeatureSelector:
                     ic, _ = stats.spearmanr(feat_window, label_window, nan_policy='omit')
                     if not np.isnan(ic):
                         ics.append(ic)
-                except Exception:
+                except Exception as e:
+                    tprint_debug(f"⚠️ IC computation failed for window at position {i}: {e}")
                     continue
             
             if ics:
@@ -480,7 +602,8 @@ class EnhancedFeatureSelector:
             try:
                 ic, _ = stats.spearmanr(feature, labels, nan_policy='omit')
                 ic_mean = float(ic) if not np.isnan(ic) else 0.0
-            except Exception:
+            except Exception as e:
+                tprint_debug(f"⚠️ Single IC computation failed for {feature_name}: {e}")
                 ic_mean = 0.0
             
             ic_std = 0.0
@@ -587,44 +710,78 @@ class EnhancedFeatureSelector:
     ) -> Optional[float]:
         """
         Validate features by constructing a factor portfolio.
-        
+
         Args:
             features: Selected features
             labels: Target labels
-        
+
         Returns:
             Sharpe ratio of factor portfolio, or None if validation fails
         """
         try:
-            # Weight features by their correlation with labels
+            tprint_debug(f"📊 Validating factor portfolio with {features.shape[1]} features")
+
+            # Weight features by their correlation with labels using matrix operations
             weights = {}
-            for col in features.columns:
-                corr = features[col].corr(labels)
-                if not np.isnan(corr):
-                    weights[col] = abs(corr)
-            
+            try:
+                from src.utils.matrix_operations import safe_correlation
+
+                feature_array = features.values
+                label_array = labels.values
+
+                for i, col in enumerate(features.columns):
+                    corr = safe_correlation(feature_array[:, i], label_array)
+                    if not np.isnan(corr):
+                        weights[col] = abs(corr)
+
+            except ImportError:
+                # Fallback to pandas correlation
+                for col in features.columns:
+                    corr = features[col].corr(labels)
+                    if not np.isnan(corr):
+                        weights[col] = abs(corr)
+
             if not weights:
+                tprint_warning("⚠️ No valid correlations found for factor portfolio")
                 return None
-            
+
             # Normalize weights
             total_weight = sum(weights.values())
             weights = {k: v / total_weight for k, v in weights.items()}
-            
-            # Construct factor portfolio
-            factor_returns = sum(
-                features[col] * weight
-                for col, weight in weights.items()
-            )
-            
+
+            tprint_debug(f"⚖️ Portfolio weights computed for {len(weights)} features")
+
+            # Construct factor portfolio using matrix operations
+            try:
+                from src.utils.matrix_operations import safe_matrix_multiply
+
+                # Convert weights to array for matrix multiplication
+                weight_array = np.array([weights.get(col, 0) for col in features.columns])
+                feature_array = features.values
+
+                # Matrix multiply features by weights
+                factor_returns = safe_matrix_multiply(feature_array, weight_array.reshape(-1, 1)).flatten()
+
+            except ImportError:
+                # Fallback to pandas operations
+                factor_returns = sum(
+                    features[col] * weight
+                    for col, weight in weights.items()
+                )
+
             # Compute Sharpe ratio
             if factor_returns.std() < 1e-8:
+                tprint_warning("⚠️ Factor returns have zero standard deviation")
                 return 0.0
-            
+
             sharpe = factor_returns.mean() / factor_returns.std() * np.sqrt(252)
+            tprint_debug(f"📈 Factor portfolio Sharpe ratio: {sharpe:.3f}")
+
             return float(sharpe)
         
         except Exception as e:
             self.logger.warning(f"Factor portfolio validation failed: {e}")
+            tprint_warning(f"⚠️ Factor portfolio validation failed: {e}")
             return None
 
 

@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Optional, Union
 
-from ..core.feature_generator import (
+from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig
 
 # Optimization utilities
 try:
@@ -18,11 +18,6 @@ try:
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
-    FeatureGenerator, 
-    FeatureConfig, 
-    FeatureCategory,
-    VectorizedFeatureGenerator
-)
 from ..base_calculations import (
     BaseCalculator,
     BaseCalculationType,
@@ -33,7 +28,7 @@ from ..base_calculations import (
 class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for return-based features."""
     
-    def __init__(self, config: Optional[FeatureConfig] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)

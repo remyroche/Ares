@@ -6,11 +6,12 @@ separate from HPO (Hyperparameter Optimization). This is used for optimizing
 final system parameters after model training is complete.
 
 Key Features:
-- System-wide parameter optimization using Optuna
-- Categorized parameter optimization (confidence, position sizing, leverage, etc.)
-- Integration with calibration results
-- Comprehensive evaluation and validation
-- Automatic parameter updates
+- System-wide parameter optimization using enhanced BayesianTPEOptimizer
+- Categorized parameter optimization with cross-validation support
+- Hardware-accelerated optimization (M1 GPU/CPU optimization)
+- Parallel evaluation with matrix operations
+- Comprehensive validation and leakage detection
+- Automatic parameter updates with proper error handling
 """
 
 import json
@@ -20,19 +21,115 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, Tuple
-from pathlib import Path
+from dataclasses import dataclass
 import optuna
 import numpy as np
+import pandas as pd
 import logging
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+import multiprocessing as mp
+
+# Artifact and version management
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.artifact_pickup_utils import get_artifact_pickup_utils
 from src.utils.version_manager import get_version_manager
+
+# Optimization utilities
 from src.utils.nonlinear_optimization_helpers import (
     NonLinearConfig, NonLinearParameterSampler, apply_nonlinear_scoring,
     create_enhanced_search_space, convert_parameters_to_original_space
 )
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer, OptimizationConfig
+)
+
+# ML utilities
+from src.utils.ml_common.cv_utils import TimeSeriesSplitValidator
+from src.utils.ml_common.oof_generator import OOFGenerator
+from src.utils.ml_common.data_leakage_detector import DataLeakageDetector
+
+# Math and validation utilities
+from src.utils.math_validation import (
+    validate_probability, validate_positive, validate_range,
+    safe_divide, safe_log, check_for_nans, check_for_infs
+)
+
+# Common operations
+from src.utils.common_operations import (
+    calculate_sharpe_ratio, calculate_sortino_ratio, calculate_max_drawdown,
+    calculate_win_rate, calculate_profit_factor
+)
+from src.utils.common_utilities import ensure_list, ensure_array, flatten_dict
+
+# Output utilities
+from src.utils.tprint import tprint
+
+# Hardware optimization
+try:
+    from src.utils.hardware.m1_gpu_utils import M1GPUAccelerator
+    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+    from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
+    from src.utils.matrix_operations.hardware_integration import HardwareOptimizedMatrixProcessor
+    from src.utils.matrix_operations.batch_operations import BatchMatrixProcessor
+    M1_HARDWARE_AVAILABLE = True
+except ImportError:
+    M1_HARDWARE_AVAILABLE = False
+    tprint("⚠️  M1 hardware optimization not available", "warning")
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class EvaluationMetrics:
+    """Container for evaluation metrics with proper validation"""
+    sharpe_ratio: float = 0.0
+    sortino_ratio: float = 0.0
+    max_drawdown: float = 0.0
+    win_rate: float = 0.0
+    profit_factor: float = 0.0
+    total_return: float = 0.0
+    n_trades: int = 0
+    avg_trade_duration: float = 0.0
+    confidence_score: float = 0.0
+    cv_mean: float = 0.0
+    cv_std: float = 0.0
+    
+    def to_score(self, weights: Optional[Dict[str, float]] = None) -> float:
+        """Convert metrics to single optimization score"""
+        if weights is None:
+            weights = {
+                'sharpe_ratio': 0.25,
+                'sortino_ratio': 0.20,
+                'max_drawdown': 0.15,
+                'win_rate': 0.15,
+                'profit_factor': 0.15,
+                'total_return': 0.10
+            }
+        
+        # Validate and normalize components
+        sharpe_normalized = np.clip(validate_positive(self.sharpe_ratio, 0) / 3.0, 0, 1)
+        sortino_normalized = np.clip(validate_positive(self.sortino_ratio, 0) / 4.0, 0, 1)
+        dd_penalty = 1 - np.clip(abs(self.max_drawdown), 0, 1)
+        win_rate_normalized = validate_probability(self.win_rate)
+        pf_normalized = np.clip(validate_positive(self.profit_factor, 0) / 3.0, 0, 1)
+        return_normalized = np.clip(self.total_return / 0.5, 0, 1)
+        
+        # Combined score
+        score = (
+            weights.get('sharpe_ratio', 0.25) * sharpe_normalized +
+            weights.get('sortino_ratio', 0.20) * sortino_normalized +
+            weights.get('max_drawdown', 0.15) * dd_penalty +
+            weights.get('win_rate', 0.15) * win_rate_normalized +
+            weights.get('profit_factor', 0.15) * pf_normalized +
+            weights.get('total_return', 0.10) * return_normalized
+        )
+        
+        # Apply CV stability penalty if available
+        if self.cv_std > 0:
+            stability_penalty = min(0.2, self.cv_std * 0.5)
+            score = max(0, score - stability_penalty)
+        
+        return validate_range(score, 0, 1, default=0)
 
 
 class FinalParametersOptimizer:
@@ -44,9 +141,11 @@ class FinalParametersOptimizer:
     """
     
     def __init__(self, config: Dict[str, Any], nonlinear_config: Optional[NonLinearConfig] = None):
-        """Initialize the final parameters optimizer."""
+        """Initialize the enhanced final parameters optimizer with hardware acceleration and CV support."""
         self.config = config
         self.logger = logger.getChild('FinalParametersOptimizer')
+        
+        tprint("🚀 Initializing Enhanced Final Parameters Optimizer", "header")
         
         # Non-linear optimization configuration
         self.nonlinear_config = nonlinear_config or NonLinearConfig()
@@ -77,19 +176,59 @@ class FinalParametersOptimizer:
         self.timeout = config.get('timeout', 300)
         self.study_name = config.get('study_name', 'final_parameters_optimization')
         self.use_nonlinear_optimization = config.get('use_nonlinear_optimization', True)
+        self.use_cv = config.get('use_cross_validation', True)
+        self.cv_folds = config.get('cv_folds', 5)
+        self.enable_parallel = config.get('enable_parallel_evaluation', True)
+        self.max_workers = config.get('max_workers', max(1, mp.cpu_count() - 1))
+        self.early_stopping_patience = config.get('early_stopping_patience', 10)
+        self.early_stopping_threshold = config.get('early_stopping_threshold', 0.001)
 
-        self.logger.info("🚀 Final Parameters Optimizer initialized")
-        self.logger.info(f"📊 Optimization categories: {len(self.categories)}")
-        self.logger.info(f"🔧 Number of trials: {self.n_trials}")
-        self.logger.info(f"⏱️ Timeout: {self.timeout}s")
-        self.logger.info(f"📝 Study name: {self.study_name}")
-        self.logger.info(f"🎯 Categories to optimize: {', '.join(self.categories)}")
-        self.logger.info(f"🚀 Non-linear optimization: {self.use_nonlinear_optimization}")
+        tprint(f"📊 Optimization categories: {len(self.categories)}", "info")
+        tprint(f"🔧 Number of trials: {self.n_trials}", "info")
+        tprint(f"⏱️  Timeout: {self.timeout}s", "info")
+        tprint(f"📝 Study name: {self.study_name}", "info")
+        tprint(f"🔄 Cross-validation: {self.use_cv} ({self.cv_folds} folds)", "info")
+        tprint(f"⚡ Parallel evaluation: {self.enable_parallel} ({self.max_workers} workers)", "info")
+        tprint(f"🛑 Early stopping: patience={self.early_stopping_patience}, threshold={self.early_stopping_threshold}", "info")
+        
         if self.use_nonlinear_optimization:
-            self.logger.info(f"   • Log sampling: {self.nonlinear_config.use_log_sampling}")
-            self.logger.info(f"   • Fractional powers: {self.nonlinear_config.use_fractional_powers}")
-            self.logger.info(f"   • Sigmoid transforms: {self.nonlinear_config.use_sigmoid_transforms}")
-            self.logger.info(f"   • Adaptive transforms: {self.nonlinear_config.use_adaptive_transforms}")
+            tprint(f"🚀 Non-linear optimization enabled:", "info")
+            tprint(f"   • Log sampling: {self.nonlinear_config.use_log_sampling}", "info")
+            tprint(f"   • Fractional powers: {self.nonlinear_config.use_fractional_powers}", "info")
+            tprint(f"   • Sigmoid transforms: {self.nonlinear_config.use_sigmoid_transforms}", "info")
+            tprint(f"   • Adaptive transforms: {self.nonlinear_config.use_adaptive_transforms}", "info")
+
+        # Initialize cross-validation utilities
+        if self.use_cv:
+            self.cv_validator = TimeSeriesSplitValidator(
+                n_splits=self.cv_folds,
+                test_size=1.0 / self.cv_folds,
+                embargo_pct=config.get('embargo_pct', 0.01)
+            )
+            self.oof_generator = OOFGenerator()
+            self.leakage_detector = DataLeakageDetector()
+            tprint("✅ CV utilities initialized", "success")
+        
+        # Initialize BayesianTPEOptimizer for each category
+        self.tpe_optimizers = {}
+        self._init_tpe_optimizers()
+        
+        # Initialize hardware optimization if available
+        self.hardware_enabled = M1_HARDWARE_AVAILABLE and config.get('enable_hardware_optimization', True)
+        if self.hardware_enabled:
+            self._init_hardware_optimization()
+        else:
+            self.gpu_accelerator = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+            self.matrix_processor = None
+            self.batch_processor = None
+            tprint("ℹ️  Hardware optimization disabled", "info")
+        
+        # Parameter evaluation cache
+        self.evaluation_cache = {}
+        self.cache_hits = 0
+        self.cache_misses = 0
 
         # Load per-regime performance statistics for objective adjustments
         self.regime_performance_path: Optional[str] = None
@@ -97,13 +236,365 @@ class FinalParametersOptimizer:
         self.regime_performance_modifier = self._calculate_regime_performance_modifier()
         if self.regime_performance_stats:
             location = self.regime_performance_path or 'unknown location'
-            self.logger.info(f"📊 Loaded per-regime performance stats from {location}")
-            self.logger.info(f"   • Regime performance modifier: {self.regime_performance_modifier:.4f}")
+            tprint(f"📊 Loaded per-regime performance stats from {location}", "info")
+            tprint(f"   • Regime performance modifier: {self.regime_performance_modifier:.4f}", "info")
     
         # Initialize artifact and version managers
         self.artifact_manager = get_artifact_manager()
         self.pickup_utils = get_artifact_pickup_utils()
         self.version_manager = get_version_manager()
+        
+        tprint("✅ Final Parameters Optimizer initialization complete", "success")
+    
+    def _init_tpe_optimizers(self):
+        """Initialize BayesianTPEOptimizer instances for optimization"""
+        try:
+            tprint("🔧 Initializing Bayesian TPE Optimizers", "info")
+            
+            # Create optimizer config
+            opt_config = OptimizationConfig(
+                n_trials=self.n_trials,
+                timeout=self.timeout,
+                direction='maximize',
+                enable_staged_optimization=True,
+                coarse_grid_trials=min(25, self.n_trials // 4),
+                fine_grid_trials=min(25, self.n_trials // 4),
+                tpe_trials=max(20, self.n_trials // 2),
+                early_stopping_patience=self.early_stopping_patience,
+                early_stopping_threshold=self.early_stopping_threshold,
+                enable_hardware_optimization=self.hardware_enabled,
+                enable_batch_processing=self.enable_parallel,
+                batch_size=self.max_workers
+            )
+            
+            # Create optimizer instance (will be shared across categories)
+            self.bayesian_optimizer = BayesianTPEOptimizer(opt_config)
+            tprint(f"✅ Bayesian TPE Optimizer initialized", "success")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize TPE optimizers: {e}")
+            tprint(f"⚠️  TPE optimizer initialization failed: {e}", "warning")
+            self.bayesian_optimizer = None
+    
+    def _init_hardware_optimization(self):
+        """Initialize hardware optimization components"""
+        try:
+            tprint("⚡ Initializing M1 hardware optimization", "info")
+            
+            # Initialize M1 accelerators
+            self.gpu_accelerator = M1GPUAccelerator()
+            self.memory_optimizer = M1MemoryOptimizer()
+            self.cpu_optimizer = M1CPUOptimizer()
+            
+            # Initialize matrix operations
+            self.matrix_processor = HardwareOptimizedMatrixProcessor()
+            self.batch_processor = BatchMatrixProcessor(
+                chunk_size_mb=self.config.get('chunk_size_mb', 128),
+                enable_gpu=True,
+                enable_parallel=True,
+                max_workers=self.max_workers
+            )
+            
+            # Optimize memory
+            self.memory_optimizer.optimize_memory_for_ml()
+            
+            tprint("✅ Hardware optimization initialized", "success")
+            tprint(f"   • GPU: {'Available' if self.gpu_accelerator.is_available() else 'Not available'}", "info")
+            tprint(f"   • Memory optimized: {self.memory_optimizer.is_optimized}", "info")
+            tprint(f"   • Matrix operations: Hardware-accelerated", "info")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize hardware optimization: {e}")
+            tprint(f"⚠️  Hardware optimization init failed: {e}", "warning")
+            self.gpu_accelerator = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+            self.matrix_processor = None
+            self.batch_processor = None
+    
+    def simulate_trading(self, params: Dict[str, Any], 
+                        signals: np.ndarray, 
+                        returns: np.ndarray,
+                        confidences: Optional[np.ndarray] = None) -> EvaluationMetrics:
+        """
+        Simulate trading with given parameters using validated metrics
+        
+        Args:
+            params: Trading parameters
+            signals: Trading signals (1=long, -1=short, 0=neutral)
+            returns: Forward returns
+            confidences: Optional confidence scores
+            
+        Returns:
+            EvaluationMetrics object
+        """
+        try:
+            # Validate inputs
+            if len(signals) != len(returns):
+                tprint(f"⚠️  Signals/returns length mismatch: {len(signals)} vs {len(returns)}", "warning")
+                return EvaluationMetrics()
+            
+            # Apply confidence threshold with validation
+            confidence_threshold = validate_probability(
+                params.get('confidence_threshold', 0.6), default=0.6
+            )
+            
+            if confidences is not None:
+                confidences = ensure_array(confidences)
+                valid_conf = validate_probability(confidences)
+                mask = valid_conf >= confidence_threshold
+                signals = signals[mask]
+                returns = returns[mask]
+                confidences = confidences[mask]
+            
+            if len(signals) == 0:
+                tprint("⚠️  No signals after confidence filtering", "warning")
+                return EvaluationMetrics()
+            
+            # Calculate position sizing with validation
+            base_position_size = validate_positive(
+                params.get('base_position_size', 0.01), default=0.01
+            )
+            base_position_size = validate_range(base_position_size, 0.001, 0.2, default=0.01)
+            
+            # Calculate trade returns
+            trade_returns = signals * returns * base_position_size
+            
+            # Remove invalid values
+            valid_mask = ~(check_for_nans(trade_returns) | check_for_infs(trade_returns))
+            trade_returns = trade_returns[valid_mask]
+            
+            if len(trade_returns) == 0:
+                tprint("⚠️  No valid trade returns", "warning")
+                return EvaluationMetrics()
+            
+            # Calculate metrics using common_operations utilities
+            sharpe = calculate_sharpe_ratio(trade_returns)
+            sortino = calculate_sortino_ratio(trade_returns)
+            max_dd = calculate_max_drawdown(np.cumsum(trade_returns))
+            win_rate = calculate_win_rate(trade_returns)
+            profit_factor = calculate_profit_factor(trade_returns)
+            total_return = float(np.sum(trade_returns))
+            
+            # Validate all metrics
+            sharpe = validate_positive(sharpe, default=0.0) if not check_for_nans(sharpe) else 0.0
+            sortino = validate_positive(sortino, default=0.0) if not check_for_nans(sortino) else 0.0
+            max_dd = float(max_dd) if not check_for_nans(max_dd) else 0.0
+            win_rate = validate_probability(win_rate) if not check_for_nans(win_rate) else 0.0
+            profit_factor = validate_positive(profit_factor, default=0.0) if not check_for_nans(profit_factor) else 0.0
+            
+            metrics = EvaluationMetrics(
+                sharpe_ratio=sharpe,
+                sortino_ratio=sortino,
+                max_drawdown=max_dd,
+                win_rate=win_rate,
+                profit_factor=profit_factor,
+                total_return=total_return,
+                n_trades=int(len(trade_returns)),
+                avg_trade_duration=0.0,  # Would need timestamps
+                confidence_score=float(np.mean(confidences)) if confidences is not None else 0.0
+            )
+            
+            return metrics
+            
+        except Exception as e:
+            self.logger.error(f"Error in trading simulation: {e}")
+            tprint(f"❌ Trading simulation failed: {e}", "error")
+            return EvaluationMetrics()
+    
+    def evaluate_with_cv(self, params: Dict[str, Any], data: Dict[str, Any],
+                         evaluation_func: callable, category: str) -> Tuple[float, Dict[str, Any]]:
+        """
+        Evaluate parameters using cross-validation
+        
+        Args:
+            params: Parameters to evaluate
+            data: Data dictionary containing features, targets, etc.
+            evaluation_func: Function that evaluates params on a data split
+            category: Parameter category being evaluated
+            
+        Returns:
+            Tuple of (mean_score, cv_results_dict)
+        """
+        try:
+            # Check for data leakage if enabled
+            if self.use_cv and 'features' in data and 'targets' in data:
+                X = ensure_array(data['features'])
+                y = ensure_array(data['targets'])
+                
+                leakage_results = self.leakage_detector.detect_leakage(X, y)
+                if leakage_results.get('has_leakage', False):
+                    leakage_score = leakage_results.get('leakage_score', 0)
+                    tprint(f"⚠️  Data leakage detected in {category}: {leakage_score:.4f}", "warning")
+            
+            # Get CV splits
+            X = data.get('features', pd.DataFrame())
+            y = data.get('targets', pd.Series())
+            
+            if isinstance(X, np.ndarray):
+                X = pd.DataFrame(X)
+            if isinstance(y, np.ndarray):
+                y = pd.Series(y)
+            
+            if X.empty or y.empty or len(X) < self.cv_folds * 100:
+                tprint(f"ℹ️  Insufficient data for CV in {category}, using single evaluation", "info")
+                return evaluation_func(params, data), {}
+            
+            cv_scores = []
+            cv_metrics = []
+            fold_results = []
+            
+            for fold_idx, (train_idx, val_idx) in enumerate(
+                self.cv_validator.split(X, y), 1
+            ):
+                try:
+                    # Create fold data
+                    fold_data = {
+                        'train': {
+                            'features': X.iloc[train_idx],
+                            'targets': y.iloc[train_idx],
+                        },
+                        'val': {
+                            'features': X.iloc[val_idx],
+                            'targets': y.iloc[val_idx],
+                        }
+                    }
+                    # Copy other data keys
+                    for key, value in data.items():
+                        if key not in ['features', 'targets']:
+                            fold_data[key] = value
+                    
+                    # Evaluate on this fold
+                    fold_score, fold_metrics = evaluation_func(params, fold_data)
+                    
+                    # Validate score
+                    if check_for_nans(fold_score) or check_for_infs(fold_score):
+                        tprint(f"⚠️  Invalid score in fold {fold_idx} for {category}, skipping", "warning")
+                        continue
+                    
+                    cv_scores.append(fold_score)
+                    cv_metrics.append(fold_metrics)
+                    fold_results.append({
+                        'fold': fold_idx,
+                        'score': fold_score,
+                        'metrics': fold_metrics,
+                        'train_size': len(train_idx),
+                        'val_size': len(val_idx)
+                    })
+                    
+                except Exception as e:
+                    tprint(f"⚠️  Error in fold {fold_idx} for {category}: {e}", "warning")
+                    continue
+            
+            if not cv_scores:
+                tprint(f"❌ No valid CV scores for {category}, falling back to single evaluation", "error")
+                return evaluation_func(params, data), {}
+            
+            # Calculate mean and std
+            mean_score = float(np.mean(cv_scores))
+            std_score = float(np.std(cv_scores))
+            
+            # Penalize high variance (unstable parameters)
+            stability_penalty = std_score * 0.1
+            adjusted_score = max(0.0, mean_score - stability_penalty)
+            
+            cv_results = {
+                'mean_score': mean_score,
+                'std_score': std_score,
+                'adjusted_score': adjusted_score,
+                'cv_scores': cv_scores,
+                'fold_results': fold_results,
+                'n_folds': len(cv_scores)
+            }
+            
+            tprint(f"   CV results for {category}: {mean_score:.4f} ± {std_score:.4f}", "info")
+            
+            return adjusted_score, cv_results
+            
+        except Exception as e:
+            self.logger.error(f"Error in CV evaluation for {category}: {e}")
+            tprint(f"❌ CV evaluation failed for {category}: {e}", "error")
+            return evaluation_func(params, data), {}
+    
+    def calculate_combined_confidence(self, analyst_conf: np.ndarray, 
+                                     tactician_conf: np.ndarray,
+                                     params: Dict[str, Any]) -> np.ndarray:
+        """
+        Calculate combined confidence using multiple methods with validation
+        
+        Args:
+            analyst_conf: Analyst confidence array
+            tactician_conf: Tactician confidence array
+            params: Parameters including weights and combination method
+            
+        Returns:
+            Combined confidence array
+        """
+        try:
+            # Validate inputs
+            analyst_conf = ensure_array(analyst_conf)
+            tactician_conf = ensure_array(tactician_conf)
+            
+            if len(analyst_conf) != len(tactician_conf):
+                tprint(f"⚠️  Confidence length mismatch: {len(analyst_conf)} vs {len(tactician_conf)}", "warning")
+                min_len = min(len(analyst_conf), len(tactician_conf))
+                analyst_conf = analyst_conf[:min_len]
+                tactician_conf = tactician_conf[:min_len]
+            
+            # Validate confidence values
+            analyst_conf = validate_probability(analyst_conf)
+            tactician_conf = validate_probability(tactician_conf)
+            
+            # Get weights and validate
+            tactician_weight = validate_probability(params.get('tactician_confidence_weight', 0.6))
+            analyst_weight = validate_probability(params.get('analyst_confidence_weight', 0.4))
+            
+            # Normalize weights to sum to 1
+            total_weight = tactician_weight + analyst_weight
+            if total_weight > 0:
+                tactician_weight = tactician_weight / total_weight
+                analyst_weight = analyst_weight / total_weight
+            else:
+                tactician_weight, analyst_weight = 0.6, 0.4
+            
+            # Get combination method
+            method = params.get('confidence_combination_method', 'weighted_average')
+            
+            # Calculate combined confidence based on method
+            if method == 'multiplicative':
+                # Multiplicative: (tact^w_t) * (analyst^w_a)
+                combined = (
+                    np.power(np.maximum(tactician_conf, 0.001), tactician_weight) * 
+                    np.power(np.maximum(analyst_conf, 0.001), analyst_weight)
+                )
+            elif method == 'logarithmic':
+                # Logarithmic: exp(w_t * log(tact) + w_a * log(analyst))
+                log_combined = (
+                    tactician_weight * safe_log(np.maximum(tactician_conf, 0.001)) +
+                    analyst_weight * safe_log(np.maximum(analyst_conf, 0.001))
+                )
+                combined = np.exp(log_combined)
+            elif method == 'harmonic':
+                # Harmonic mean: 1 / (w_t/tact + w_a/analyst)
+                combined = safe_divide(
+                    np.ones_like(tactician_conf),
+                    safe_divide(tactician_weight, np.maximum(tactician_conf, 0.001)) +
+                    safe_divide(analyst_weight, np.maximum(analyst_conf, 0.001)),
+                    default=0.5
+                )
+            else:  # weighted_average
+                combined = tactician_conf * tactician_weight + analyst_conf * analyst_weight
+            
+            # Validate and clip to [0, 1]
+            combined = validate_probability(combined)
+            
+            return combined
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating combined confidence: {e}")
+            tprint(f"❌ Combined confidence calculation failed: {e}", "error")
+            # Fallback to simple average
+            return (analyst_conf + tactician_conf) / 2.0
 
 
 class AsymmetricParametersOptimizer(FinalParametersOptimizer):
@@ -965,7 +1456,7 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
     async def _optimize_category(self, category: str, calibration_results: Dict[str, Any], 
                                previous_results: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Enhanced optimization for a specific category with coarse/fine grid + Optuna TPE.
+        Enhanced optimization using BayesianTPEOptimizer with hardware acceleration.
         
         Args:
             category: Parameter category to optimize
@@ -976,113 +1467,181 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
             Dict containing optimization results for the category
         """
         try:
-            self.logger.info(f"🔍 Analyzing search space for category: {category}")
+            tprint(f"🔍 Optimizing category: {category}", "header")
             
             # Use enhanced search space if non-linear optimization is enabled
             if self.use_nonlinear_optimization and category in self.enhanced_search_spaces:
                 search_space = self.enhanced_search_spaces[category]
-                self.logger.info(f"🚀 Using enhanced non-linear search space for {category}")
+                tprint(f"🚀 Using enhanced non-linear search space for {category}", "info")
             else:
                 search_space = self.default_search_spaces.get(category, {})
-                self.logger.info(f"📊 Using standard search space for {category}")
+                tprint(f"📊 Using standard search space for {category}", "info")
             
             if not search_space:
-                self.logger.warning(f"⚠️ No search space found for category: {category}")
+                tprint(f"⚠️  No search space found for category: {category}", "warning")
                 return {}
             
-            self.logger.info(f"📊 Search space parameters: {len(search_space)}")
-            for param_name, param_config in search_space.items():
-                if self.use_nonlinear_optimization and 'transform_type' in param_config:
-                    transform_type = param_config['transform_type']
-                    self.logger.debug(f"   • {param_name}: {param_config['type']} [{param_config.get('min', 'N/A')}-{param_config.get('max', 'N/A')}] (transform: {transform_type})")
-                else:
-                    self.logger.debug(f"   • {param_name}: {param_config['type']} [{param_config.get('min', 'N/A')}-{param_config.get('max', 'N/A')}]")
+            tprint(f"📊 Search space: {len(search_space)} parameters", "info")
             
-            # Stage 1: Coarse Grid Search
-            self.logger.info(f"🎯 Stage 1: Coarse grid search for {category}")
-            coarse_start = time.time()
-            coarse_result = await self._coarse_grid_search(category, search_space, calibration_results)
-            coarse_time = time.time() - coarse_start
+            # Convert search space to BayesianTPEOptimizer format
+            converted_search_space = self._convert_search_space_format(search_space)
             
-            if not coarse_result or coarse_result.get('best_score', 0) <= 0:
-                self.logger.warning(f"⚠️ Coarse grid search failed for {category}, using default parameters")
-                return self._create_fallback_result(category)
-            
-            self.logger.info(f"✅ Coarse grid completed in {coarse_time:.2f}s - Best score: {coarse_result['best_score']:.4f}")
-            
-            # Stage 2: Fine Grid Search around best coarse parameters
-            self.logger.info(f"🎯 Stage 2: Fine grid search for {category}")
-            fine_start = time.time()
-            fine_result = await self._fine_grid_search(category, search_space, coarse_result['best_params'], calibration_results)
-            fine_time = time.time() - fine_start
-            
-            if not fine_result or fine_result.get('best_score', 0) <= coarse_result['best_score']:
-                self.logger.info(f"ℹ️ Fine grid search did not improve results, using coarse grid results")
-                best_params = coarse_result['best_params']
-                best_score = coarse_result['best_score']
-                grid_stage = 'coarse'
+            # Use BayesianTPEOptimizer if available, fallback to manual optimization
+            if self.bayesian_optimizer:
+                result = await self._optimize_with_bayesian_tpe(
+                    category, converted_search_space, calibration_results, previous_results
+                )
             else:
-                self.logger.info(f"✅ Fine grid completed in {fine_time:.2f}s - Best score: {fine_result['best_score']:.4f}")
-                best_params = fine_result['best_params']
-                best_score = fine_result['best_score']
-                grid_stage = 'fine'
+                tprint(f"⚠️  BayesianTPEOptimizer not available, using fallback", "warning")
+                result = await self._optimize_with_fallback(
+                    category, search_space, calibration_results
+                )
             
-            # Stage 3: Optuna TPE Optimization around best grid parameters
-            self.logger.info(f"🎯 Stage 3: Optuna TPE optimization for {category}")
-            optuna_start = time.time()
-            optuna_result = await self._optuna_tpe_optimization(category, search_space, best_params, calibration_results)
-            optuna_time = time.time() - optuna_start
-            
-            if optuna_result and optuna_result.get('best_score', 0) > best_score:
-                self.logger.info(f"✅ Optuna TPE completed in {optuna_time:.2f}s - Best score: {optuna_result['best_score']:.4f}")
-                final_params = optuna_result['best_params']
-                final_score = optuna_result['best_score']
-                final_stage = 'optuna'
-            else:
-                self.logger.info(f"ℹ️ Optuna TPE did not improve results, using grid search results")
-                final_params = best_params
-                final_score = best_score
-                final_stage = grid_stage
-            
-            total_time = coarse_time + fine_time + optuna_time
-            
-            self.logger.info(f"🏆 Final parameters for {category}:")
-            for param, value in final_params.items():
-                self.logger.info(f"   • {param}: {value}")
-            self.logger.info(f"📈 Final objective value: {final_score:.4f}")
-            self.logger.info(f"⏱️ Total optimization time: {total_time:.2f}s")
-            self.logger.info(f"🎯 Best stage: {final_stage}")
-            
-            result = {
-                'best_params': final_params,
-                'best_value': final_score,
-                'optimization_method': 'coarse_fine_optuna',
-                'coarse_result': coarse_result,
-                'fine_result': fine_result,
-                'optuna_result': optuna_result,
-                'best_stage': final_stage,
-                'coarse_time': coarse_time,
-                'fine_time': fine_time,
-                'optuna_time': optuna_time,
-                'total_time': total_time,
-                'convergence_analysis': {
-                    'coarse_score': coarse_result.get('best_score', 0),
-                    'fine_score': fine_result.get('best_score', 0) if fine_result else 0,
-                    'optuna_score': optuna_result.get('best_score', 0) if optuna_result else 0,
-                    'final_score': final_score
-                }
-            }
-            
-            if self.use_nonlinear_optimization:
-                result['enhancement_methods_used'] = self._get_used_enhancement_methods(search_space)
-                result['nonlinear_optimization'] = True
+            if result and 'best_params' in result:
+                tprint(f"✅ {category} optimization complete", "success")
+                tprint(f"   Best score: {result.get('best_value', 0):.4f}", "info")
+                tprint(f"   Time: {result.get('optimization_time', 0):.2f}s", "info")
+                
+                # Log cache statistics
+                if self.evaluation_cache:
+                    cache_rate = self.cache_hits / (self.cache_hits + self.cache_misses) if (self.cache_hits + self.cache_misses) > 0 else 0
+                    tprint(f"   Cache hit rate: {cache_rate:.1%} ({self.cache_hits}/{self.cache_hits + self.cache_misses})", "info")
             
             return result
             
         except Exception as e:
             self.logger.error(f"❌ Error optimizing category {category}: {e}")
-            self.logger.exception("Full traceback:")
+            tprint(f"❌ Optimization failed for {category}: {e}", "error")
             return {}
+    
+    def _convert_search_space_format(self, search_space: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Convert search space to BayesianTPEOptimizer format
+        
+        Args:
+            search_space: Original search space dictionary
+            
+        Returns:
+            Converted search space for BayesianTPEOptimizer
+        """
+        converted = {}
+        for param_name, param_config in search_space.items():
+            if param_config['type'] in ['float', 'int']:
+                # For numeric parameters, use (min, max) tuple
+                converted[param_name] = (param_config['min'], param_config['max'])
+            elif param_config['type'] == 'categorical':
+                # For categorical, use list of choices
+                converted[param_name] = param_config['choices']
+            elif param_config['type'] == 'bool':
+                # For boolean, use list of choices
+                converted[param_name] = [True, False]
+        return converted
+    
+    async def _optimize_with_bayesian_tpe(self, category: str, search_space: Dict[str, Any],
+                                         calibration_results: Dict[str, Any],
+                                         previous_results: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Optimize using BayesianTPEOptimizer with staged optimization and early stopping
+        
+        Args:
+            category: Parameter category
+            search_space: Converted search space
+            calibration_results: Calibration results
+            previous_results: Previous optimization results
+            
+        Returns:
+            Optimization results dictionary
+        """
+        try:
+            tprint(f"🎯 Starting Bayesian TPE optimization for {category}", "info")
+            
+            # Define objective function for this category
+            def objective(params: Dict[str, Any]) -> float:
+                """Objective function for optimization"""
+                # Check cache first
+                cache_key = f"{category}_{str(sorted(params.items()))}"
+                if cache_key in self.evaluation_cache:
+                    self.cache_hits += 1
+                    return self.evaluation_cache[cache_key]
+                
+                self.cache_misses += 1
+                
+                # Evaluate configuration
+                score = self._evaluate_configuration(category, params, calibration_results)
+                
+                # Cache result
+                self.evaluation_cache[cache_key] = score
+                
+                return score
+            
+            # Run optimization
+            start_time = time.time()
+            optimization_results = self.bayesian_optimizer.optimize(
+                objective=objective,
+                search_space=search_space
+            )
+            optimization_time = time.time() - start_time
+            
+            # Extract results
+            best_params = optimization_results.get('best_params', {})
+            best_value = optimization_results.get('best_value', 0.0)
+            
+            tprint(f"   Completed {optimization_results.get('n_trials', 0)} trials", "info")
+            tprint(f"   Stages: Coarse={optimization_results.get('stages', {}).get('coarse_grid', 0)}, "
+                  f"Fine={optimization_results.get('stages', {}).get('fine_grid', 0)}, "
+                  f"TPE={optimization_results.get('stages', {}).get('tpe', 0)}", "info")
+            
+            result = {
+                'best_params': best_params,
+                'best_value': best_value,
+                'optimization_method': 'bayesian_tpe',
+                'optimization_time': optimization_time,
+                'n_trials': optimization_results.get('n_trials', 0),
+                'stages': optimization_results.get('stages', {}),
+                'history': optimization_results.get('history', []),
+                'hardware_accelerated': self.hardware_enabled
+            }
+            
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"BayesianTPE optimization failed for {category}: {e}")
+            tprint(f"❌ BayesianTPE failed for {category}: {e}", "error")
+            return {}
+    
+    async def _optimize_with_fallback(self, category: str, search_space: Dict[str, Dict[str, Any]],
+                                     calibration_results: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Fallback optimization when BayesianTPEOptimizer is not available
+        
+        Args:
+            category: Parameter category
+            search_space: Original search space
+            calibration_results: Calibration results
+            
+        Returns:
+            Optimization results dictionary
+        """
+        try:
+            tprint(f"🔄 Using fallback optimization for {category}", "info")
+            
+            # Use simple grid search as fallback
+            coarse_result = await self._coarse_grid_search(category, search_space, calibration_results)
+            
+            if not coarse_result:
+                return self._create_fallback_result(category)
+            
+            return {
+                'best_params': coarse_result.get('best_params', {}),
+                'best_value': coarse_result.get('best_score', 0.0),
+                'optimization_method': 'fallback_grid',
+                'n_combinations': coarse_result.get('n_combinations', 0)
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Fallback optimization failed for {category}: {e}")
+            tprint(f"❌ Fallback failed for {category}: {e}", "error")
+            return self._create_fallback_result(category)
     
     def _objective_function(self, trial: optuna.Trial, category: str, 
                           search_space: Dict[str, Dict[str, Any]], 
@@ -1223,107 +1782,163 @@ class AsymmetricParametersOptimizer(FinalParametersOptimizer):
     
     def _evaluate_confidence_params(self, params: Dict[str, Any], 
                                   calibration_results: Dict[str, Any]) -> float:
-        """Evaluate confidence threshold parameters with optimal confidence calculation."""
+        """
+        Evaluate confidence threshold parameters using proper simulation and CV
+        
+        Args:
+            params: Confidence parameters to evaluate
+            calibration_results: Calibration results with confidence data
+            
+        Returns:
+            Evaluation score
+        """
+        try:
+            # Extract confidence data from calibration results
+            analyst_conf = calibration_results.get('analyst_confidence', np.array([]))
+            tactician_conf = calibration_results.get('tactician_confidence', np.array([]))
+            returns = calibration_results.get('returns', np.array([]))
+            
+            # If we have actual confidence data, use simulation-based evaluation
+            if len(analyst_conf) > 0 and len(tactician_conf) > 0 and len(returns) > 0:
+                return self._evaluate_confidence_with_simulation(params, analyst_conf, tactician_conf, returns)
+            
+            # Otherwise, fall back to heuristic evaluation
+            return self._evaluate_confidence_heuristic(params, calibration_results)
+            
+        except Exception as e:
+            self.logger.error(f"Error evaluating confidence params: {e}")
+            tprint(f"❌ Confidence evaluation error: {e}", "error")
+            return 0.0
+    
+    def _evaluate_confidence_with_simulation(self, params: Dict[str, Any],
+                                            analyst_conf: np.ndarray,
+                                            tactician_conf: np.ndarray,
+                                            returns: np.ndarray) -> float:
+        """
+        Evaluate confidence parameters using actual trading simulation
+        
+        Args:
+            params: Confidence parameters
+            analyst_conf: Analyst confidence array
+            tactician_conf: Tactician confidence array
+            returns: Returns array
+            
+        Returns:
+            Evaluation score based on simulated trading
+        """
+        try:
+            # Ensure arrays are same length
+            min_len = min(len(analyst_conf), len(tactician_conf), len(returns))
+            analyst_conf = ensure_array(analyst_conf)[:min_len]
+            tactician_conf = ensure_array(tactician_conf)[:min_len]
+            returns = ensure_array(returns)[:min_len]
+            
+            # Calculate combined confidence
+            combined_conf = self.calculate_combined_confidence(analyst_conf, tactician_conf, params)
+            
+            # Generate signals based on confidence threshold
+            threshold = validate_probability(params.get('analyst_confidence_threshold', 0.6))
+            signals = np.where(combined_conf >= threshold, 1, 0)
+            
+            # Simulate trading with CV if enabled and sufficient data
+            if self.use_cv and len(signals) >= self.cv_folds * 100:
+                # Prepare data for CV
+                data = {
+                    'features': pd.DataFrame({
+                        'combined_conf': combined_conf,
+                        'analyst_conf': analyst_conf,
+                        'tactician_conf': tactician_conf
+                    }),
+                    'targets': pd.Series(returns),
+                    'signals': signals,
+                    'returns': returns,
+                    'confidences': combined_conf
+                }
+                
+                # Define evaluation function for a single fold
+                def eval_fold(fold_params: Dict[str, Any], fold_data: Dict[str, Any]) -> Tuple[float, Dict[str, Any]]:
+                    if 'val' in fold_data:
+                        fold_signals = fold_data['val']['features']['combined_conf'].values >= threshold
+                        fold_returns = fold_data['val']['targets'].values
+                        fold_confidences = fold_data['val']['features']['combined_conf'].values
+                    else:
+                        fold_signals = fold_data['signals']
+                        fold_returns = fold_data['returns']
+                        fold_confidences = fold_data['confidences']
+                    
+                    metrics = self.simulate_trading(fold_params, fold_signals, fold_returns, fold_confidences)
+                    score = metrics.to_score()
+                    return score, metrics.__dict__
+                
+                # Evaluate with CV
+                cv_score, cv_results = self.evaluate_with_cv(params, data, eval_fold, 'confidence')
+                
+                return cv_score
+            else:
+                # Single evaluation without CV
+                metrics = self.simulate_trading(params, signals, returns, combined_conf)
+                score = metrics.to_score()
+                
+                return score
+                
+        except Exception as e:
+            self.logger.error(f"Error in confidence simulation: {e}")
+            tprint(f"❌ Confidence simulation error: {e}", "error")
+            return 0.0
+    
+    def _evaluate_confidence_heuristic(self, params: Dict[str, Any],
+                                      calibration_results: Dict[str, Any]) -> float:
+        """
+        Fallback heuristic evaluation when simulation data is unavailable
+        
+        Args:
+            params: Confidence parameters
+            calibration_results: Calibration results
+            
+        Returns:
+            Heuristic score
+        """
         score = 0.0
         
-        # Base entry threshold evaluation
+        # Base entry threshold evaluation with validation
         if 'base_entry_threshold' in params:
-            threshold = params['base_entry_threshold']
-            if 0.6 <= threshold <= 0.8:
+            threshold = validate_probability(params['base_entry_threshold'])
+            if validate_range(threshold, 0.6, 0.8):
                 score += 0.3
-            elif 0.5 <= threshold <= 0.9:
+            elif validate_range(threshold, 0.5, 0.9):
                 score += 0.2
-            else:
-                score += 0.1
         
-        # Enhanced confidence evaluation with optimal calculation
+        # Threshold relationship validation
         if 'analyst_confidence_threshold' in params and 'tactician_confidence_threshold' in params:
-            analyst_thresh = params['analyst_confidence_threshold']
-            tactician_thresh = params['tactician_confidence_threshold']
+            analyst_thresh = validate_probability(params['analyst_confidence_threshold'])
+            tactician_thresh = validate_probability(params['tactician_confidence_threshold'])
             
-            # Basic threshold validation
+            # Tactician should have higher threshold
             if tactician_thresh > analyst_thresh:
                 score += 0.2
-            if 0.1 <= tactician_thresh - analyst_thresh <= 0.2:
+            
+            # Reasonable separation
+            diff = tactician_thresh - analyst_thresh
+            if validate_range(diff, 0.1, 0.2):
                 score += 0.1
-            
-            # Extract confidence weights from parameters if available
-            tactician_weight = params.get('tactician_confidence_weight', 0.6)
-            analyst_weight = params.get('analyst_confidence_weight', 0.4)
-            
-            # Validate weight constraints
-            if 0.1 <= tactician_weight <= 0.9 and 0.1 <= analyst_weight <= 0.9:
-                score += 0.1
-                if abs(tactician_weight + analyst_weight - 1.0) < 0.1:
-                    score += 0.1  # Bonus for weights that sum close to 1.0
-            
-            # Extract exit confidence parameters
-            exit_threshold = params.get('exit_confidence_threshold', 0.5)
-            tactician_exit_weight = params.get('tactician_exit_confidence_weight', 0.6)
-            analyst_exit_weight = params.get('analyst_exit_confidence_weight', 0.4)
-            exit_combination_method = params.get('exit_confidence_combination_method', 'multiplicative')
-            
-            # Validate exit confidence parameters
-            if 0.3 <= exit_threshold <= 0.7:
-                score += 0.1
-            if 0.2 <= tactician_exit_weight <= 0.8 and 0.2 <= analyst_exit_weight <= 0.8:
-                score += 0.1
-                if abs(tactician_exit_weight + analyst_exit_weight - 1.0) < 0.1:
-                    score += 0.1  # Bonus for exit weights that sum close to 1.0
-            
-            # Bonus for advanced exit combination methods
-            if exit_combination_method in ['multiplicative', 'logarithmic']:
-                score += 0.1
-            
-            # Update calibration results with parameter weights
-            enhanced_calibration = calibration_results.copy()
-            enhanced_calibration.update({
-                'tactician_confidence_weight': tactician_weight,
-                'analyst_confidence_weight': analyst_weight,
-                'confidence_combination_method': params.get('confidence_combination_method', 'weighted_average'),
-                # Exit-specific parameters
-                'exit_confidence_threshold': exit_threshold,
-                'tactician_exit_confidence_weight': tactician_exit_weight,
-                'analyst_exit_confidence_weight': analyst_exit_weight,
-                'exit_confidence_combination_method': exit_combination_method
-            })
-            
-            # Calculate optimal confidence using multiplicative and logarithmic operations
-            optimal_confidence = self._calculate_optimal_confidence(
-                analyst_thresh, tactician_thresh, enhanced_calibration
-            )
-            
-            if optimal_confidence is not None:
-                # Score based on optimal confidence quality
-                if optimal_confidence > 0.8:
-                    score += 0.3
-                elif optimal_confidence > 0.6:
-                    score += 0.2
-                else:
-                    score += 0.1
-                
-                # Additional score for confidence stability
-                confidence_stability = self._evaluate_confidence_stability(
-                    analyst_thresh, tactician_thresh, enhanced_calibration
-                )
-                score += confidence_stability * 0.2
-                
-                # Score based on combination method effectiveness
-                combination_method = params.get('confidence_combination_method', 'weighted_average')
-                if combination_method in ['multiplicative', 'logarithmic']:
-                    score += 0.1  # Bonus for advanced methods
-                
-                # Evaluate exit confidence calculation using existing backtesting framework
-                exit_confidence_score = self._evaluate_exit_confidence_calculation(
-                    analyst_thresh, tactician_thresh, enhanced_calibration
-                )
-                score += exit_confidence_score * 0.2  # Weight exit confidence evaluation
-                
-                # Additional evaluation using the existing backtesting framework
-                backtesting_score = self._evaluate_using_existing_backtesting_framework(
-                    enhanced_calibration, params
-                )
-                score += backtesting_score * 0.1  # Weight backtesting evaluation
+        
+        # Weight validation
+        tactician_weight = validate_probability(params.get('tactician_confidence_weight', 0.6))
+        analyst_weight = validate_probability(params.get('analyst_confidence_weight', 0.4))
+        
+        # Check if weights sum to approximately 1
+        if abs(tactician_weight + analyst_weight - 1.0) < 0.1:
+            score += 0.2
+        
+        # Exit confidence validation
+        exit_threshold = validate_probability(params.get('exit_confidence_threshold', 0.5))
+        if validate_range(exit_threshold, 0.3, 0.7):
+            score += 0.1
+        
+        # Bonus for advanced combination methods
+        method = params.get('confidence_combination_method', 'weighted_average')
+        if method in ['multiplicative', 'logarithmic', 'harmonic']:
+            score += 0.1
         
         return score
     

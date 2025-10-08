@@ -126,13 +126,11 @@ try:
     from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
         BayesianTPEOptimizer, OptimizationConfig
     )
-    from src.utils.ml_common.cross_validation import PurgedKFold
-    from src.utils.ml_common.feature_selection import FeatureSelector
-    from src.utils.ml_common.data_leakage import DataLeakageDetector
-    from src.utils.ml_common.lookahead_bias import LookaheadBiasDetector
-    from src.utils.ml_common.hyperparameter_optimization import HPOptimizer
-    from src.utils.ml_common.model_validation import ModelValidator
-    from src.utils.ml_common.out_of_fold import OutOfFoldPredictor
+    from src.utils.purged_kfold import PurgedKFoldTime as PurgedKFold
+    from src.feature_selection import select_features as FeatureSelector
+    from src.utils.ml_common.validation.data_leakage_detector import DataLeakageDetector
+    from src.utils.ml_common.utils.lookahead_protection import LookaheadBiasDetector
+    # Note: HPOptimizer, ModelValidator, and OutOfFoldPredictor may need to be implemented or imported from elsewhere
     ML_COMMON_AVAILABLE = True
     tprint_success("✅ ML common utilities loaded successfully")
 except ImportError as e:
@@ -141,13 +139,12 @@ except ImportError as e:
 
 # Import data utilities
 try:
-    from src.utils.data.data_loader import DataLoader
-    from src.utils.data.data_validation import DataValidator
-    from src.utils.kline_parquet import KlineParquetLoader
+    from src.utils.data.real_data_loader import DataLoader
+    from src.utils.data.validation.validators import DataValidator
+    from src.utils.data.klines_parquet import KlineParquetLoader
     from src.utils.serialization_utils import save_pickle, load_pickle
-    from src.utils.data.data_preprocessing import DataPreprocessor
-    from src.utils.data.feature_engineering import FeatureEngineer
-    from src.utils.data.time_series_utils import TimeSeriesProcessor
+    from src.utils.data.feature_engineer import FeatureEngineer
+    # Note: DataPreprocessor and TimeSeriesProcessor may need to be implemented or imported from elsewhere
     DATA_UTILS_AVAILABLE = True
     tprint_success("✅ Data utilities loaded successfully")
 except ImportError as e:

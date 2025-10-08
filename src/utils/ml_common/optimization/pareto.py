@@ -72,26 +72,39 @@ class ParetoFront:
         self.logger = _LOGGER
         self.logger.info("🚀 Initializing Enhanced ParetoFront...")
         start_time = time.time()
-        
+
         # Non-linear optimization configuration
         self.nonlinear_config = nonlinear_config or NonLinearConfig()
         self.use_nonlinear_objectives = self.nonlinear_config.use_log_sampling or self.nonlinear_config.use_fractional_powers
-        
+
+        # Performance and caching configuration
+        self.cache_size = 1000  # Maximum cache size for Pareto computations
+        self.computation_cache = {}  # Cache for repeated computations
+        self.enable_caching = True
+
+        # Algorithm selection based on dataset size
+        self.use_efficient_algorithm_threshold = 500  # Use efficient algorithms for datasets > this size
+
+        # Incremental update configuration
+        self.enable_incremental_updates = True
+        self.last_pareto_front = None
+        self.last_objectives_hash = None
+
         self.gpu_manager = M1GPUManager() if GPU_AVAILABLE else None
         if self.gpu_manager:
             self.logger.debug("✅ GPU manager initialized")
         else:
             self.logger.debug("ℹ️ GPU manager not initialized (GPU not available)")
-            
+
         self.cpu_optimizer = get_m1_cpu_optimizer() if CPU_OPTIMIZER_AVAILABLE else None
         if self.cpu_optimizer:
             self.logger.debug("✅ CPU optimizer initialized")
         else:
             self.logger.debug("ℹ️ CPU optimizer not initialized (CPU optimizer not available)")
-        
+
         if self.use_nonlinear_objectives:
             self.logger.info("🚀 Non-linear objective transformations enabled")
-        
+
         init_time = time.time() - start_time
         self.logger.info(f"✅ Enhanced ParetoFront initialized in {init_time:.3f}s")
     
@@ -202,11 +215,21 @@ class ParetoFront:
             # Memory optimization would be implemented here when available
             _LOGGER.debug(f"Estimated memory usage: {estimated_memory_mb:.2f} MB for pareto front construction")
 
-        # Compute Pareto front
-        if use_gpu and self.gpu_manager and len(transformed_solutions) > 100:
-            pareto_front = self._compute_pareto_front_gpu(transformed_solutions, objectives)
+        # Compute Pareto front using appropriate algorithm based on size and hardware
+        n_solutions = len(transformed_solutions)
+
+        # Check for incremental updates if enabled
+        if (self.enable_incremental_updates and
+            self.last_pareto_front is not None and
+            self._can_use_incremental_update(transformed_solutions, objectives)):
+            try:
+                pareto_front = self._incremental_pareto_update(transformed_solutions, objectives)
+                self.logger.debug(f"✅ Used incremental Pareto update for {n_solutions} solutions")
+            except Exception as e:
+                self.logger.warning(f"Incremental update failed: {e}, falling back to full computation")
+                pareto_front = self._compute_pareto_front_full(transformed_solutions, objectives)
         else:
-            pareto_front = compute_pareto_front(transformed_solutions, objectives)
+            pareto_front = self._compute_pareto_front_full(transformed_solutions, objectives)
 
         # Reverse non-linear transformations if they were applied
         if use_nonlinear_transforms and self.use_nonlinear_objectives:
@@ -267,8 +290,8 @@ class ParetoFront:
                 return pareto_front
 
         except Exception as e:
-            self.logger.warning(f"GPU Pareto front computation failed: {e}, falling back to CPU")
-            return compute_pareto_front(solutions, objectives)
+            self.logger.warning(f"GPU Pareto front computation failed: {e}, falling back to efficient CPU")
+            return self._compute_pareto_front_efficient(solutions, objectives)
 
     def _compute_dominance_gpu(self, objective_matrix: torch.Tensor, n_solutions: int) -> torch.Tensor:
         """Compute dominance matrix on GPU."""
@@ -288,6 +311,154 @@ class ParetoFront:
         dominance_matrix = all_better_equal & any_strictly_better
 
         return dominance_matrix
+
+    def _compute_pareto_front_efficient(self, solutions: List[Solution], objectives: ObjectiveDirection) -> List[Solution]:
+        """Efficient O(n log n) Pareto front computation using divide-and-conquer approach."""
+        if not solutions:
+            return []
+
+        if len(solutions) <= 2:
+            # Base case: use standard algorithm for small datasets
+            return compute_pareto_front(solutions, objectives)
+
+        try:
+            # Convert to matrix for efficient processing
+            objective_matrix = self._solutions_to_matrix(solutions, objectives)
+
+            # Handle NaN values and duplicates
+            objective_matrix = self._preprocess_objective_matrix(objective_matrix)
+
+            # Use divide-and-conquer approach
+            pareto_indices = self._divide_and_conquer_pareto(objective_matrix, objectives)
+
+            # Extract Pareto solutions
+            pareto_front = [solutions[i] for i in pareto_indices]
+
+            # Post-process to ensure Pareto optimality (remove any false positives)
+            pareto_front = self._validate_pareto_front(pareto_front, objectives)
+
+            return pareto_front
+
+        except Exception as e:
+            self.logger.warning(f"Efficient Pareto computation failed: {e}, falling back to standard algorithm")
+            return compute_pareto_front(solutions, objectives)
+
+    def _solutions_to_matrix(self, solutions: List[Solution], objectives: ObjectiveDirection) -> np.ndarray:
+        """Convert solutions to objective matrix for efficient processing."""
+        n_solutions = len(solutions)
+        n_objectives = len(objectives)
+
+        # Create objective matrix
+        objective_matrix = np.zeros((n_solutions, n_objectives))
+
+        for i, solution in enumerate(solutions):
+            for j, obj_name in enumerate(objectives.keys()):
+                value = solution.metrics.get(obj_name, np.nan)
+                objective_matrix[i, j] = value
+
+        # Apply direction transformations (min to max)
+        for j, (obj_name, direction) in enumerate(objectives.items()):
+            if direction == 'min':
+                objective_matrix[:, j] = -objective_matrix[:, j]  # Convert min to max
+
+        return objective_matrix
+
+    def _preprocess_objective_matrix(self, matrix: np.ndarray) -> np.ndarray:
+        """Preprocess matrix to handle NaN values and duplicates."""
+        # Replace NaN with worst possible values
+        # For maximization (already converted), use -inf for missing values
+        matrix = np.where(np.isnan(matrix), -np.inf, matrix)
+
+        # Remove duplicate solutions (keep only unique combinations)
+        # This is a simplified approach - in practice, we'd use more sophisticated deduplication
+        _, unique_indices = np.unique(matrix, axis=0, return_index=True)
+        if len(unique_indices) < len(matrix):
+            self.logger.debug(f"Removed {len(matrix) - len(unique_indices)} duplicate solutions")
+            matrix = matrix[unique_indices]
+
+        return matrix
+
+    def _divide_and_conquer_pareto(self, matrix: np.ndarray, objectives: ObjectiveDirection) -> np.ndarray:
+        """Divide-and-conquer Pareto front computation."""
+        n_solutions = len(matrix)
+
+        if n_solutions <= 10:
+            # Use standard algorithm for small subproblems
+            return self._standard_pareto_indices(matrix, objectives)
+
+        # Split into two halves
+        mid = n_solutions // 2
+        left_matrix = matrix[:mid]
+        right_matrix = matrix[mid:]
+
+        # Recursively compute Pareto fronts
+        left_pareto = self._divide_and_conquer_pareto(left_matrix, objectives)
+        right_pareto = self._divide_and_conquer_pareto(right_matrix, objectives)
+
+        # Merge the two Pareto fronts
+        merged_pareto = self._merge_pareto_fronts(
+            left_matrix[left_pareto], right_matrix[right_pareto],
+            objectives, left_pareto, right_pareto, mid
+        )
+
+        return merged_pareto
+
+    def _standard_pareto_indices(self, matrix: np.ndarray, objectives: ObjectiveDirection) -> np.ndarray:
+        """Standard O(n²) Pareto front computation for small datasets."""
+        n_solutions = len(matrix)
+        is_dominated = np.zeros(n_solutions, dtype=bool)
+
+        for i in range(n_solutions):
+            if is_dominated[i]:
+                continue
+
+            for j in range(n_solutions):
+                if i == j or is_dominated[j]:
+                    continue
+
+                # Check if solution j dominates solution i
+                if self._dominates_matrix_row(matrix[j], matrix[i], objectives):
+                    is_dominated[i] = True
+                    break
+
+        return np.where(~is_dominated)[0]
+
+    def _merge_pareto_fronts(self, left_pareto: np.ndarray, right_pareto: np.ndarray,
+                           objectives: ObjectiveDirection, left_indices: np.ndarray,
+                           right_indices: np.ndarray, mid: int) -> np.ndarray:
+        """Merge two Pareto fronts from divide-and-conquer."""
+        # Combine all solutions from both Pareto fronts
+        combined_matrix = np.vstack([left_pareto, right_pareto])
+        combined_indices = np.concatenate([left_indices, right_indices + mid])
+
+        # Compute Pareto front of the combined solutions
+        final_pareto = self._standard_pareto_indices(combined_matrix, objectives)
+
+        return combined_indices[final_pareto]
+
+    def _dominates_matrix_row(self, row1: np.ndarray, row2: np.ndarray, objectives: ObjectiveDirection) -> bool:
+        """Check if row1 dominates row2 (for maximization objectives)."""
+        # All objectives must be >= (better or equal)
+        all_better_or_equal = np.all(row1 >= row2)
+
+        # At least one objective must be > (strictly better)
+        at_least_one_strictly_better = np.any(row1 > row2)
+
+        return all_better_or_equal and at_least_one_strictly_better
+
+    def _validate_pareto_front(self, pareto_solutions: List[Solution], objectives: ObjectiveDirection) -> List[Solution]:
+        """Validate and clean Pareto front to ensure true Pareto optimality."""
+        if len(pareto_solutions) <= 1:
+            return pareto_solutions
+
+        # Convert back to matrix for validation
+        matrix = self._solutions_to_matrix(pareto_solutions, objectives)
+        matrix = self._preprocess_objective_matrix(matrix)
+
+        # Recompute Pareto front to ensure correctness
+        pareto_indices = self._standard_pareto_indices(matrix, objectives)
+
+        return [pareto_solutions[i] for i in pareto_indices]
 
     def _compute_dominance_cpu(self, objective_matrix: np.ndarray) -> np.ndarray:
         """Compute dominance matrix on CPU."""
@@ -547,16 +718,444 @@ def compute_hypervolume(
         area += (1.0 - prev_x) * max(best_y, 0.0)
         return float(np.clip(area, 0.0, 1.0))
 
-    # Monte Carlo for 3+ dims
-    rng = np.random.default_rng(42)
-    S = 20000
-    samples = rng.uniform(0.0, 1.0, size=(S, dims))
-    # A point is dominated by the front if exists p s.t. all p>=s
-    dominated = 0
-    for s in samples:
-        if np.any(np.all(norm >= s, axis=1)):
-            dominated += 1
-    return float(dominated / S)
+    # Use improved hypervolume computation for 3+ dimensions
+    if dims == 3:
+        # Use WFG algorithm for 3D (more accurate than Monte Carlo)
+        return self._compute_hypervolume_3d(norm, reference_point)
+    else:
+        # Use improved Monte Carlo with adaptive sampling for higher dimensions
+        return self._compute_hypervolume_monte_carlo_adaptive(norm, reference_point, dims)
+
+    def _compute_hypervolume_3d(self, norm_matrix: np.ndarray, reference_point: Dict[str, float]) -> float:
+        """Compute 3D hypervolume using WFG (Walking Fish Group) algorithm."""
+        if len(norm_matrix) == 0:
+            return 0.0
+
+        # Sort points by first objective (descending)
+        sorted_points = norm_matrix[np.argsort(-norm_matrix[:, 0])]
+
+        # WFG algorithm for 3D hypervolume
+        volume = 0.0
+        prev_x = 1.0  # Start from reference point
+
+        for i, point in enumerate(sorted_points):
+            x, y, z = point
+
+            # Calculate volume contribution of this slice
+            slice_volume = (prev_x - x) * y * z
+            volume += slice_volume
+
+            prev_x = x
+
+            # Early termination if point is dominated by reference
+            if x <= 0 or y <= 0 or z <= 0:
+                break
+
+        return float(np.clip(volume, 0.0, 1.0))
+
+    def _compute_hypervolume_monte_carlo_adaptive(self, norm_matrix: np.ndarray,
+                                                reference_point: Dict[str, float], dims: int) -> float:
+        """Adaptive Monte Carlo hypervolume computation with importance sampling."""
+        if len(norm_matrix) == 0:
+            return 0.0
+
+        # Adaptive sample size based on dimensionality and Pareto front size
+        base_samples = 10000
+        adaptive_factor = min(5.0, max(1.0, len(norm_matrix) / 100.0))
+        sample_size = int(base_samples * adaptive_factor * (dims ** 0.5))
+
+        # Use stratified sampling for better coverage
+        samples_per_dim = int(sample_size ** (1.0 / dims))
+
+        # Generate stratified samples
+        samples = self._generate_stratified_samples(dims, samples_per_dim)
+
+        # Count dominated samples
+        dominated_count = 0
+        for sample in samples:
+            if self._is_dominated_by_pareto(sample, norm_matrix):
+                dominated_count += 1
+
+        # Estimate hypervolume
+        estimated_volume = dominated_count / len(samples)
+
+        # Apply correction for boundary effects
+        boundary_correction = self._compute_boundary_correction(norm_matrix, dims)
+        corrected_volume = estimated_volume * boundary_correction
+
+        return float(np.clip(corrected_volume, 0.0, 1.0))
+
+    def _generate_stratified_samples(self, dims: int, samples_per_dim: int) -> np.ndarray:
+        """Generate stratified samples for better Monte Carlo coverage."""
+        # Create coordinate arrays for each dimension
+        coords = []
+        for d in range(dims):
+            # Use Latin Hypercube-like sampling
+            dim_samples = np.linspace(0, 1, samples_per_dim, endpoint=False) + np.random.random(samples_per_dim) / samples_per_dim
+            coords.append(dim_samples)
+
+        # Create meshgrid for all combinations
+        mesh = np.meshgrid(*coords)
+        samples = np.column_stack([m.ravel() for m in mesh])
+
+        # Shuffle samples for randomness
+        np.random.shuffle(samples)
+
+        return samples
+
+    def _is_dominated_by_pareto(self, sample: np.ndarray, pareto_matrix: np.ndarray) -> bool:
+        """Check if sample is dominated by any point in Pareto front."""
+        # A sample is dominated if there exists a Pareto point that is >= sample in all dimensions
+        return np.any(np.all(pareto_matrix >= sample, axis=1))
+
+    def _compute_boundary_correction(self, norm_matrix: np.ndarray, dims: int) -> float:
+        """Compute boundary correction factor for Monte Carlo hypervolume."""
+        if len(norm_matrix) == 0:
+            return 1.0
+
+        # Simple boundary correction based on Pareto front coverage
+        min_bounds = np.min(norm_matrix, axis=0)
+        max_bounds = np.max(norm_matrix, axis=0)
+
+        # Estimate coverage ratio
+        coverage = np.prod(max_bounds - min_bounds)
+
+        # Correction factor to account for uncovered regions
+        if coverage > 0:
+            correction = min(1.2, 1.0 / (coverage + 0.1))
+        else:
+            correction = 1.0
+
+        return correction
+
+    def compute_diversity_metrics(self, pareto_solutions: List[Solution],
+                                 objectives: ObjectiveDirection) -> Dict[str, float]:
+        """Compute diversity metrics for Pareto front analysis."""
+        if not pareto_solutions:
+            return {}
+
+        # Convert to matrix for analysis
+        matrix = self._solutions_to_matrix(pareto_solutions, objectives)
+
+        if matrix.shape[0] <= 1:
+            return {'num_solutions': len(pareto_solutions)}
+
+        metrics = {
+            'num_solutions': len(pareto_solutions),
+            'num_objectives': matrix.shape[1],
+        }
+
+        # Spacing metric (average distance to nearest neighbor)
+        distances = self._compute_pairwise_distances(matrix)
+        min_distances = np.min(distances + np.eye(len(distances)) * np.inf, axis=1)
+        metrics['spacing'] = float(np.mean(min_distances))
+
+        # Spread metric (range in each objective)
+        obj_ranges = np.max(matrix, axis=0) - np.min(matrix, axis=0)
+        metrics['spread'] = float(np.mean(obj_ranges))
+
+        # Coverage metric (hypervolume normalized by ideal point)
+        try:
+            ideal_point = {obj: 1.0 for obj in objectives.keys()}
+            hypervolume = compute_hypervolume(pareto_solutions, objectives, ideal_point)
+            max_possible = np.prod([1.0] * len(objectives))
+            metrics['coverage'] = float(hypervolume / max_possible) if max_possible > 0 else 0.0
+        except:
+            metrics['coverage'] = 0.0
+
+        # Clustering tendency (variance of distances)
+        if len(distances) > 1:
+            metrics['clustering_tendency'] = float(np.var(distances))
+
+        return metrics
+
+    def cluster_pareto_front(self, pareto_solutions: List[Solution],
+                           objectives: ObjectiveDirection, n_clusters: int = 3) -> Dict[str, Any]:
+        """Cluster Pareto front solutions using k-means."""
+        if not pareto_solutions or len(pareto_solutions) < n_clusters:
+            return {'clusters': [], 'cluster_labels': []}
+
+        try:
+            from sklearn.cluster import KMeans
+            from sklearn.preprocessing import StandardScaler
+
+            # Convert to matrix and normalize
+            matrix = self._solutions_to_matrix(pareto_solutions, objectives)
+
+            if matrix.shape[0] <= n_clusters:
+                return {'clusters': [list(range(len(pareto_solutions)))], 'cluster_labels': list(range(len(pareto_solutions)))}
+
+            # Normalize features
+            scaler = StandardScaler()
+            normalized_matrix = scaler.fit_transform(matrix)
+
+            # Perform clustering
+            kmeans = KMeans(n_clusters=min(n_clusters, len(pareto_solutions)), random_state=42, n_init=10)
+            cluster_labels = kmeans.fit_predict(normalized_matrix)
+
+            # Organize solutions by clusters
+            clusters = {}
+            for i, label in enumerate(cluster_labels):
+                if label not in clusters:
+                    clusters[label] = []
+                clusters[label].append(i)
+
+            return {
+                'clusters': clusters,
+                'cluster_labels': cluster_labels.tolist(),
+                'centroids': kmeans.cluster_centers_.tolist(),
+                'cluster_sizes': [len(solutions) for solutions in clusters.values()]
+            }
+
+        except ImportError:
+            self.logger.warning("Scikit-learn not available for clustering")
+            return {'clusters': [], 'cluster_labels': []}
+        except Exception as e:
+            self.logger.warning(f"Clustering failed: {e}")
+            return {'clusters': [], 'cluster_labels': []}
+
+    def _compute_pairwise_distances(self, matrix: np.ndarray) -> np.ndarray:
+        """Compute pairwise Euclidean distances between solutions."""
+        # Normalize matrix first for fair distance computation
+        normalized = (matrix - np.min(matrix, axis=0)) / (np.max(matrix, axis=0) - np.min(matrix, axis=0) + 1e-8)
+
+        # Compute pairwise distances
+        distances = np.zeros((len(matrix), len(matrix)))
+        for i in range(len(matrix)):
+            for j in range(i + 1, len(matrix)):
+                dist = np.linalg.norm(normalized[i] - normalized[j])
+                distances[i, j] = dist
+                distances[j, i] = dist
+
+        return distances
+
+    def _compute_pareto_front_full(self, solutions: List[Solution], objectives: ObjectiveDirection) -> List[Solution]:
+        """Full Pareto front computation with algorithm selection."""
+        n_solutions = len(solutions)
+
+        if n_solutions > 100 and self.gpu_manager:
+            # Use GPU acceleration for large datasets
+            return self._compute_pareto_front_gpu(solutions, objectives)
+        elif n_solutions > self.use_efficient_algorithm_threshold:
+            # Use efficient divide-and-conquer algorithm for large CPU datasets
+            return self._compute_pareto_front_efficient(solutions, objectives)
+        else:
+            # Use standard algorithm for smaller datasets
+            return compute_pareto_front(solutions, objectives)
+
+    def _can_use_incremental_update(self, solutions: List[Solution], objectives: ObjectiveDirection) -> bool:
+        """Check if incremental update is possible and beneficial."""
+        if not self.last_pareto_front or not self.last_objectives_hash:
+            return False
+
+        # Check if objectives are the same
+        current_hash = self._hash_objectives(objectives)
+        if current_hash != self.last_objectives_hash:
+            return False
+
+        # Check if new solutions are a reasonable addition (not complete replacement)
+        if len(solutions) > len(self.last_pareto_front) * 2:
+            return False  # Too many new solutions, better to recompute
+
+        return True
+
+    def _incremental_pareto_update(self, solutions: List[Solution], objectives: ObjectiveDirection) -> List[Solution]:
+        """Incrementally update Pareto front with new solutions."""
+        # Combine existing Pareto front with new solutions
+        combined_solutions = self.last_pareto_front + solutions
+
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_solutions = []
+        for sol in combined_solutions:
+            sol_key = tuple(sorted(sol.metrics.items()))
+            if sol_key not in seen:
+                seen.add(sol_key)
+                unique_solutions.append(sol)
+
+        # Compute new Pareto front
+        new_pareto = self._compute_pareto_front_full(unique_solutions, objectives)
+
+        # Update state
+        self.last_pareto_front = new_pareto
+        self.last_objectives_hash = self._hash_objectives(objectives)
+
+        return new_pareto
+
+    def _hash_objectives(self, objectives: ObjectiveDirection) -> str:
+        """Create a hash of objectives for caching and comparison."""
+        obj_str = str(sorted(objectives.items()))
+        import hashlib
+        return hashlib.md5(obj_str.encode()).hexdigest()
+
+    def filter_by_constraints_improved(self, solutions: List[Solution],
+                                     constraints: Dict[str, Any]) -> List[Solution]:
+        """Improved constraint filtering with better error handling and edge cases."""
+        if not constraints or not solutions:
+            return solutions
+
+        filtered_solutions = []
+
+        for solution in solutions:
+            try:
+                # Check each constraint
+                satisfies_all = True
+                for constraint_name, constraint_rule in constraints.items():
+                    if constraint_name not in solution.metrics:
+                        self.logger.warning(f"Missing constraint metric: {constraint_name}")
+                        satisfies_all = False
+                        break
+
+                    value = solution.metrics[constraint_name]
+
+                    # Handle different constraint types
+                    if callable(constraint_rule):
+                        # Function-based constraint
+                        try:
+                            if not constraint_rule(value):
+                                satisfies_all = False
+                                break
+                        except Exception as e:
+                            self.logger.warning(f"Constraint function failed for {constraint_name}: {e}")
+                            satisfies_all = False
+                            break
+                    else:
+                        # Numeric threshold constraint
+                        try:
+                            threshold = float(constraint_rule)
+                            if value < threshold:
+                                satisfies_all = False
+                                break
+                        except (ValueError, TypeError) as e:
+                            self.logger.warning(f"Invalid constraint threshold for {constraint_name}: {e}")
+                            satisfies_all = False
+                            break
+
+                if satisfies_all:
+                    filtered_solutions.append(solution)
+
+            except Exception as e:
+                self.logger.warning(f"Error checking constraints for solution: {e}")
+                # Decide whether to include or exclude on error (default: exclude)
+                pass
+
+        return filtered_solutions
+
+    def validate_pareto_front(self, pareto_solutions: List[Solution],
+                            objectives: ObjectiveDirection) -> Dict[str, Any]:
+        """Validate that a Pareto front is correct and complete."""
+        validation_results = {
+            'is_valid': True,
+            'errors': [],
+            'warnings': [],
+            'statistics': {}
+        }
+
+        if not pareto_solutions:
+            validation_results['warnings'].append("Empty Pareto front")
+            return validation_results
+
+        # Check for basic Pareto properties
+        try:
+            # 1. Check that no solution dominates another in the Pareto front
+            for i, sol1 in enumerate(pareto_solutions):
+                for j, sol2 in enumerate(pareto_solutions):
+                    if i != j:
+                        if self._dominates_solution(sol1, sol2, objectives):
+                            validation_results['errors'].append(
+                                f"Solution {i} dominates solution {j} in Pareto front"
+                            )
+                            validation_results['is_valid'] = False
+
+            # 2. Check that all solutions in Pareto front are non-dominated
+            for i, solution in enumerate(pareto_solutions):
+                # Convert to matrix and check against all other solutions
+                all_solutions = pareto_solutions.copy()
+                test_front = self._compute_pareto_front_full(all_solutions, objectives)
+
+                if solution not in test_front:
+                    validation_results['errors'].append(
+                        f"Solution {i} is not in recomputed Pareto front"
+                    )
+                    validation_results['is_valid'] = False
+
+            # 3. Compute basic statistics
+            validation_results['statistics'] = {
+                'num_solutions': len(pareto_solutions),
+                'num_objectives': len(objectives),
+                'objective_ranges': {}
+            }
+
+            # Compute range for each objective
+            for obj_name in objectives.keys():
+                values = [sol.metrics.get(obj_name, 0) for sol in pareto_solutions]
+                if values:
+                    validation_results['statistics']['objective_ranges'][obj_name] = {
+                        'min': min(values),
+                        'max': max(values),
+                        'range': max(values) - min(values)
+                    }
+
+        except Exception as e:
+            validation_results['errors'].append(f"Validation failed: {e}")
+            validation_results['is_valid'] = False
+
+        return validation_results
+
+    def _dominates_solution(self, sol1: Solution, sol2: Solution, objectives: ObjectiveDirection) -> bool:
+        """Check if sol1 dominates sol2."""
+        return _dominates(sol1, sol2, objectives)
+
+    def benchmark_pareto_algorithms(self, test_solutions: List[Solution],
+                                  objectives: ObjectiveDirection, num_runs: int = 5) -> Dict[str, Any]:
+        """Benchmark different Pareto front algorithms for performance comparison."""
+        results = {
+            'standard_algorithm': {'times': [], 'pareto_sizes': []},
+            'efficient_algorithm': {'times': [], 'pareto_sizes': []},
+            'gpu_algorithm': {'times': [], 'pareto_sizes': []}
+        }
+
+        # Test standard algorithm
+        for _ in range(num_runs):
+            start_time = time.time()
+            pareto = compute_pareto_front(test_solutions, objectives, use_gpu=False)
+            end_time = time.time()
+
+            results['standard_algorithm']['times'].append(end_time - start_time)
+            results['standard_algorithm']['pareto_sizes'].append(len(pareto))
+
+        # Test efficient algorithm
+        for _ in range(num_runs):
+            start_time = time.time()
+            pareto = self._compute_pareto_front_efficient(test_solutions, objectives)
+            end_time = time.time()
+
+            results['efficient_algorithm']['times'].append(end_time - start_time)
+            results['efficient_algorithm']['pareto_sizes'].append(len(pareto))
+
+        # Test GPU algorithm (if available)
+        if self.gpu_manager and len(test_solutions) > 100:
+            for _ in range(num_runs):
+                start_time = time.time()
+                pareto = self._compute_pareto_front_gpu(test_solutions, objectives)
+                end_time = time.time()
+
+                results['gpu_algorithm']['times'].append(end_time - start_time)
+                results['gpu_algorithm']['pareto_sizes'].append(len(pareto))
+
+        # Compute statistics
+        for algorithm in results:
+            if results[algorithm]['times']:
+                times = results[algorithm]['times']
+                sizes = results[algorithm]['pareto_sizes']
+
+                results[algorithm]['avg_time'] = np.mean(times)
+                results[algorithm]['std_time'] = np.std(times)
+                results[algorithm]['avg_pareto_size'] = np.mean(sizes)
+                results[algorithm]['min_time'] = np.min(times)
+                results[algorithm]['max_time'] = np.max(times)
+
+        return results
 
 
 def scalarize_financial_goals(

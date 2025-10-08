@@ -19,8 +19,8 @@ from itertools import product
 # Import existing components
 import sys
 sys.path.append('src/training/steps/pre_training/interaction_feature_generator/feature_interaction_generation')
-from feature_engineering.feature_registry import FeatureRegistry
-from feature_engineering.transforms import TransformRouter, create_default_transform_config
+from feature_engineering_roadmap.feature_registry import FeatureRegistry
+from feature_engineering_roadmap.transforms import TransformRouter, create_default_transform_config
 from .htf_utils import (
     build_htf_family_catalog,
     format_transform_suffix,

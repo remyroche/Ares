@@ -98,6 +98,10 @@ class AnalystTrainingPipelineConfig:
     train_base_models: bool = True
     train_ensemble_models: bool = True
 
+    # Direction control for training
+    enable_long_positions: bool = True
+    enable_short_positions: bool = True
+
     # Output configuration
     output_directory: str = "generated/analyst_training_pipeline"
     save_models: bool = True

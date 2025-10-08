@@ -4,20 +4,32 @@ Pre-Training Sub-Pipeline - Feature Engineering Steps
 This module provides the pre-training sub-pipeline with the 4 feature engineering steps
 that were moved from market_analysis:
 
-1. multi_horizon_profit_labeler - Apply multi-horizon profit labeling
+1. analyst_profit_labeler OR tactician_entry_labeler - Role-specific profit labeling (automatic selection based on timeframe)
 2. feature_lookback_optimization - Optimize feature lookback periods
 3. interactive_feature_generation - End-to-end interactive feature generation with comprehensive approach
 4. final_feature_selection - Final multi-stage feature selection (120→100→80→60)
 
-Each step can receive a timeframe parameter. Unless explicitly provided the timeframe is
-resolved from runtime overrides, then the global primary timeframe configuration, and
-finally falls back to ``'15m'``. Analyst orchestrations automatically elevate to ``'60m'``
-to align with their higher granularity requirements.
+TIMEFRAME RESOLUTION:
+====================
+
+Each step can receive a timeframe parameter. The resolution follows a strict priority order:
+
+1. Explicit parameter (passed directly to the step)
+2. Custom parameters 'timeframe' key
+3. Pipeline overrides 'timeframe' key
+4. Global primary timeframe configuration (from universal_timeframe_config)
+5. Default fallback: '15m'
+
+Analyst orchestrations automatically elevate to '60m' to align with their higher
+granularity requirements for strategic decision-making.
+
+The resolution logic is centralized in SubPipelineConfig.resolve_timeframe() method
+to ensure consistency across all steps and prevent scattered timeframe logic.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple, TypedDict
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple, TypedDict
 from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass, field
@@ -31,6 +43,39 @@ import hashlib
 import os
 import traceback
 import uuid
+import time
+
+# Import core utilities for enhanced functionality
+from src.utils.common_operations import (
+    safe_json_load, safe_json_dump, ensure_directory, safe_file_exists,
+    validate_dataframe, validate_dataframe_columns, safe_dataframe_operation,
+    safe_merge_dataframes, safe_drop_columns, safe_rename_columns,
+    calculate_data_quality_metrics, get_dataframe_info, optimize_dataframe_dtypes,
+    safe_rolling, safe_groupby_operation, safe_apply_function, safe_filter_dataframe,
+    safe_correlation, safe_float, safe_int, validate_finite, validate_positive,
+    safe_divide, safe_mean, safe_std, format_bytes, timed_operation,
+    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+    memory_checkpoint, gpu_context, optimize_memory, get_memory_usage
+)
+from src.utils.tprint import tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success
+
+# Import additional hardware optimization tools for caching and memory monitoring
+from src.utils.hardware.unified_hardware_manager import (
+    get_unified_hardware_manager,
+    HardwareConfig,
+    WorkloadType,
+    OptimizationLevel
+)
+try:
+    from src.utils.math_validation import safe_math_operation
+except ImportError:
+    # Fallback if math_validation doesn't have the expected functions
+    def safe_math_operation(func, *args, **kwargs):
+        """Fallback safe math operation."""
+        try:
+            return func(*args, **kwargs)
+        except Exception:
+            return None
 
 DEFAULT_STEP_TIME_BUDGETS: Dict[str, float] = {
     'multi_horizon_profit_labeler': 600.0,
@@ -217,11 +262,223 @@ from src.training.steps.pre_training.validation.data_contracts import (
     validate_multi_horizon_labeling_result,
     validate_selection_artifact,
 )
+from src.training.steps.pre_training.validation.schemas import (
+    validate_raw_ohlcv,
+    validate_engineered_features,
+    SchemaValidationException,
+)
 from .settings import get_pre_training_settings
 from src.training.common.component_result import ComponentError
 from src.utils.ml_common.config.universal_timeframe_config import get_primary_timeframe
 
 logger = system_logger.getChild('PreTrainingSubPipeline')
+
+
+class ValidationCache:
+    """Cache system for expensive validation operations."""
+
+    def __init__(self, max_size: int = 1000, ttl_seconds: int = 3600):
+        self.max_size = max_size
+        self.ttl_seconds = ttl_seconds
+        self.cache: Dict[str, Dict[str, Any]] = {}
+        self.access_times: Dict[str, float] = {}
+
+    def _make_key(self, operation: str, df_hash: str, context: str = "") -> str:
+        """Generate a unique cache key for the validation operation."""
+        key_components = [operation, df_hash]
+        if context:
+            key_components.append(context)
+        return hashlib.md5("|".join(key_components).encode()).hexdigest()
+
+    def _get_dataframe_hash(self, df: pd.DataFrame) -> str:
+        """Generate a hash of the DataFrame for caching purposes."""
+        try:
+            # Use shape, columns, and sample of data for hashing
+            sample = df.head(1000) if len(df) > 1000 else df
+            hash_input = f"{df.shape}|{list(df.columns)}|{sample.to_string()}"
+            return hashlib.md5(hash_input.encode()).hexdigest()
+        except Exception:
+            # Fallback to basic shape-based hash
+            return hashlib.md5(f"{df.shape}|{list(df.columns)}".encode()).hexdigest()
+
+    def get(self, operation: str, df: pd.DataFrame, context: str = "") -> Optional[Any]:
+        """Retrieve cached validation result."""
+        df_hash = self._get_dataframe_hash(df)
+        cache_key = self._make_key(operation, df_hash, context)
+
+        # Check if key exists and hasn't expired
+        if cache_key in self.cache:
+            cached_item = self.cache[cache_key]
+            if time.time() - cached_item['timestamp'] < self.ttl_seconds:
+                self.access_times[cache_key] = time.time()
+                logger.debug(f"🗂️ Cache hit for {operation} validation")
+                return cached_item['result']
+
+        return None
+
+    def put(self, operation: str, df: pd.DataFrame, result: Any, context: str = "") -> None:
+        """Store validation result in cache."""
+        df_hash = self._get_dataframe_hash(df)
+        cache_key = self._make_key(operation, df_hash, context)
+
+        # Implement LRU eviction if cache is full
+        if len(self.cache) >= self.max_size and cache_key not in self.cache:
+            # Remove oldest accessed item
+            oldest_key = min(self.access_times.keys(), key=lambda k: self.access_times[k])
+            del self.cache[oldest_key]
+            del self.access_times[oldest_key]
+
+        # Store the result
+        self.cache[cache_key] = {
+            'result': result,
+            'timestamp': time.time()
+        }
+        self.access_times[cache_key] = time.time()
+
+        logger.debug(f"🗂️ Cached {operation} validation result")
+
+    def clear(self) -> None:
+        """Clear all cached validation results."""
+        self.cache.clear()
+        self.access_times.clear()
+        logger.info("🗂️ Validation cache cleared")
+
+    def stats(self) -> Dict[str, Any]:
+        """Get cache statistics."""
+        return {
+            'size': len(self.cache),
+            'max_size': self.max_size,
+            'hit_ratio': self._calculate_hit_ratio()
+        }
+
+    def _calculate_hit_ratio(self) -> float:
+        """Calculate cache hit ratio (simplified)."""
+        # This would need more sophisticated tracking in a real implementation
+        return 0.0
+
+
+class MemoryAwareValidationManager:
+    """Manager for memory-aware validation operations with hardware optimization."""
+
+    def __init__(self):
+        self.memory_optimizer = get_m1_memory_optimizer()
+        self.hardware_manager = get_unified_hardware_manager()
+        self.validation_cache = ValidationCache()
+        self.memory_checkpoints: List[str] = []
+
+    def start_validation_session(self, component_name: str) -> str:
+        """Start a validation session with memory monitoring."""
+        session_id = f"{component_name}_{uuid.uuid4().hex[:8]}"
+
+        # Configure hardware for intensive validation workload
+        hardware_config = HardwareConfig(
+            memory_optimization_level=OptimizationLevel.AGGRESSIVE,
+            enable_memory_pooling=True,
+            enable_predictive_allocation=True,
+            intensive_thresholds={
+                'memory_usage': 95.0,  # Allow high memory usage for validation
+                'cpu_usage': 90.0
+            }
+        )
+
+        # Initialize hardware manager for validation workload
+        self.hardware_manager.config = hardware_config
+        self.hardware_manager.initialize()
+
+        # Start memory monitoring
+        self.memory_optimizer.start_monitoring()
+
+        # Create memory checkpoint
+        checkpoint_id = f"validation_{session_id}"
+        self.memory_checkpoints.append(checkpoint_id)
+
+        logger.info(f"🧠 Started memory-aware validation session: {session_id}")
+        return session_id
+
+    def end_validation_session(self, session_id: str) -> Dict[str, Any]:
+        """End validation session and return memory statistics."""
+        # Stop memory monitoring
+        self.memory_optimizer.stop_monitoring()
+
+        # Get memory statistics
+        memory_stats = self.memory_optimizer.get_memory_stats()
+        cache_stats = self.validation_cache.stats()
+
+        # Clear hardware optimizations
+        self.hardware_manager.shutdown()
+
+        logger.info(f"🧠 Ended validation session {session_id}")
+
+        return {
+            'session_id': session_id,
+            'memory_stats': memory_stats,
+            'cache_stats': cache_stats,
+            'memory_checkpoints_used': len(self.memory_checkpoints)
+        }
+
+    def validate_with_memory_monitoring(
+        self,
+        operation: str,
+        df: pd.DataFrame,
+        validation_func: Callable,
+        context: str = ""
+    ) -> Any:
+        """Perform validation with memory monitoring and caching."""
+
+        # Check cache first
+        cached_result = self.validation_cache.get(operation, df, context)
+        if cached_result is not None:
+            return cached_result
+
+        # Create memory checkpoint for this validation
+        with memory_checkpoint(f"validation_{operation}"):
+            # Get initial memory state
+            initial_memory = get_memory_usage()
+
+            try:
+                # Perform validation
+                result = validation_func(df)
+
+                # Store in cache
+                self.validation_cache.put(operation, df, result, context)
+
+                # Log memory usage (simplified for now)
+                final_memory = get_memory_usage()
+                memory_used = final_memory - initial_memory
+
+                if memory_used > 100 * 1024 * 1024:  # Log if > 100MB used
+                    logger.info(f"🧠 Validation {operation} used {memory_used / 1024 / 1024:.1f} MB")
+
+                return result
+
+            except Exception as e:
+                logger.error(f"❌ Validation {operation} failed: {e}")
+                raise
+
+    def optimize_dataframe_for_validation(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for validation operations."""
+        with memory_checkpoint("dataframe_optimization"):
+            optimized_df = self.memory_optimizer.optimize_dataframe_memory(df)
+
+            # Apply additional optimizations for validation
+            if hasattr(optimized_df, 'memory_usage'):
+                initial_memory = optimized_df.memory_usage(deep=True).sum()
+
+                # Convert to more memory-efficient dtypes where safe
+                for col in optimized_df.select_dtypes(include=['float64']):
+                    if optimized_df[col].isna().sum() == 0:  # No missing values
+                        try:
+                            optimized_df[col] = optimized_df[col].astype('float32')
+                        except (ValueError, TypeError):
+                            pass  # Keep original dtype if conversion fails
+
+                final_memory = optimized_df.memory_usage(deep=True).sum()
+                saved_memory = initial_memory - final_memory
+
+                if saved_memory > 0:
+                    logger.debug(f"🧠 DataFrame optimized for validation: {saved_memory / 1024 / 1024:.1f} MB saved")
+
+            return optimized_df
 
 
 class UnexpectedArtifactKeyError(RuntimeError):
@@ -394,6 +651,10 @@ class SubPipelineConfig:
     data_dir: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+    
+    # Direction control for trading (used by labeling components)
+    enable_long_positions: bool = True
+    enable_short_positions: bool = True
     force_rerun: bool = False
     parallel_processing: bool = True
     max_workers: int = 4
@@ -404,6 +665,11 @@ class SubPipelineConfig:
     custom_params: Dict[str, Any] = field(default_factory=dict)
     random_seed: Optional[int] = None
     pipeline: Dict[str, Any] = field(default_factory=dict)
+
+    # Direction control for trading (inherited from main pipeline config)
+    enable_long_positions: bool = True
+    enable_short_positions: bool = True
+
     label_imbalance_warning_threshold: float = 0.75
     nan_rate_warning_threshold: float = 0.05
     duplicate_index_warning_threshold: float = 0.02
@@ -420,6 +686,7 @@ class SubPipelineConfig:
     artifacts_dir_key: str = "default"
     generated_dir_key: str = "market_analysis"
     outcomes_dir_key: str = "multi_horizon_outcomes"
+    use_existing_data: bool = False
     final_feature_selection_dir_key: str = "final_feature_selection"
     _path_view: Optional[LocatorPaths] = field(default=None, init=False, repr=False)
     """
@@ -463,19 +730,42 @@ class SubPipelineConfig:
         custom_params: Optional[Mapping[str, Any]] = None,
         pipeline_overrides: Optional[Mapping[str, Any]] = None,
     ) -> str:
+        """
+        Resolve timeframe using priority-based fallback system.
+
+        Priority order (highest to lowest):
+        1. Explicit parameter (passed directly to step)
+        2. Custom parameters 'timeframe' key
+        3. Pipeline overrides 'timeframe' key
+        4. Global primary timeframe configuration
+        5. Default fallback: '15m'
+
+        Special case: Analyst runs are automatically elevated to '60m'
+        for strategic decision-making compatibility.
+
+        Args:
+            explicit: Timeframe explicitly passed to the step
+            custom_params: Custom parameters dictionary (may contain 'timeframe')
+            pipeline_overrides: Pipeline-level overrides (may contain 'timeframe')
+
+        Returns:
+            Resolved timeframe string (e.g., '15m', '60m', '1h')
+        """
         custom_map = dict(custom_params) if isinstance(custom_params, Mapping) else {}
         pipeline_map = dict(pipeline_overrides) if isinstance(pipeline_overrides, Mapping) else {}
 
+        # Priority-based candidate selection
         candidates = (
             explicit,
             custom_map.get('timeframe'),
             pipeline_map.get('timeframe'),
             get_primary_timeframe(),
-            '15m',
+            '15m',  # Final fallback
         )
 
         timeframe = next((str(candidate) for candidate in candidates if candidate), '15m')
 
+        # Analyst elevation: Strategic runs need higher granularity
         if cls._is_analyst_run(custom_map, pipeline_map):
             timeframe = '60m'
 
@@ -658,6 +948,7 @@ class PreTrainingSubPipeline:
     def __init__(self):
         """Initialize the pre-training sub-pipeline."""
         self.logger = logger.getChild('PreTrainingSubPipeline')
+        tprint("🚀 Initialized PreTrainingSubPipeline")
         self.event_logger = PreTrainingEventLogger(configure_pre_training_logging())
         self.results: List[SubPipelineResult] = []
         self._current_pipeline_state: Dict[str, Any] = {}
@@ -665,11 +956,34 @@ class PreTrainingSubPipeline:
         self._run_metadata: Dict[str, Any] = {}
         self._data_locator: Optional[DataLocator] = None
         self._seeded_rngs: Optional[SeededRNGs] = None
+        # Artifact chain: stores artifacts from each step for the next step
+        self._artifact_chain: Dict[str, Any] = {}
         self._active_seed: Optional[int] = None
         self._settings = get_pre_training_settings()
         self._missing_components: Set[str] = set()
 
+        # Initialize memory-aware validation manager
+        self.validation_manager = MemoryAwareValidationManager()
+
         self._refresh_component_registry()
+
+    def _store_artifacts_in_chain(self, step_name: str, artifacts: Any) -> None:
+        """Store artifacts from a completed step for use by subsequent steps."""
+        if artifacts is not None:
+            self._artifact_chain[step_name] = artifacts
+            self.logger.info(f"📦 Stored artifacts from {step_name} in chain")
+            tprint(f"📦 Artifact chain updated: {step_name}")
+    
+    def _get_artifacts_from_chain(self, step_name: str) -> Any:
+        """Retrieve artifacts from a previous step."""
+        artifacts = self._artifact_chain.get(step_name)
+        if artifacts:
+            self.logger.info(f"📥 Retrieved artifacts from {step_name}")
+        return artifacts
+    
+    def _get_all_previous_artifacts(self) -> Dict[str, Any]:
+        """Get all artifacts from previous steps."""
+        return dict(self._artifact_chain)
 
     @staticmethod
     def _get_step_spec(step_name: str) -> Optional[StepSpec]:
@@ -1335,7 +1649,7 @@ class PreTrainingSubPipeline:
 
     async def execute_pipeline(self, config: SubPipelineConfig) -> PipelineResultDict:
         """
-        Execute the complete pre-training pipeline.
+        Execute the complete pre-training pipeline with comprehensive logging.
 
         Args:
             config: Configuration for pipeline execution
@@ -1343,6 +1657,9 @@ class PreTrainingSubPipeline:
         Returns:
             PipelineResultDict containing execution results with typed fields
         """
+        tprint("🚀 Starting pre-training pipeline execution")
+        tprint_info(f"📋 Pipeline configuration: {len(config.enabled_steps)} enabled steps, symbol: {config.symbol}")
+
         seed = self._resolve_random_seed(config)
         config.random_seed = seed
         if config.custom_params is None:
@@ -1350,6 +1667,8 @@ class PreTrainingSubPipeline:
         config.custom_params.setdefault('random_seed', seed)
         self._seeded_rngs = set_global_seed(seed)
         self._active_seed = seed
+
+        tprint_info(f"🎲 Random seed resolved: {seed}")
 
         run_metadata = self._gather_run_metadata(config, seed)
         self._run_metadata = dict(run_metadata)
@@ -1361,6 +1680,10 @@ class PreTrainingSubPipeline:
             self._current_pipeline_state['seeded_rngs'] = self._seeded_rngs
             self._current_pipeline_state['numpy_rng'] = self._seeded_rngs.numpy
             self._current_pipeline_state['python_rng'] = self._seeded_rngs.python
+
+        # Log pipeline execution start
+        tprint(f"🚀 Starting pre-training pipeline execution for {config.symbol}_{config.exchange}_{config.timeframe}")
+        tprint_debug(f"📋 Pipeline metadata: {metadata_block}")
 
         metadata_block = json.dumps(self._run_metadata, indent=2, sort_keys=True)
 
@@ -1394,6 +1717,27 @@ class PreTrainingSubPipeline:
         sequence_step_count = len(sequence_specs)
         continue_on_error = self._should_continue_on_error(config)
         step_failures: List[Tuple[str, SubPipelineFailure, SubPipelineResult]] = []
+
+        # Check if we're running a specific component independently
+        # If so, only run the steps that are needed for that component
+        independent_component = self._get_independent_component_name(config)
+        if independent_component:
+            self.logger.info(f"🔄 Running independent component: {independent_component}")
+            # Filter sequence specs to only include the independent component
+            sequence_specs = [spec for spec in sequence_specs if spec.name == independent_component]
+            sequence_step_count = len(sequence_specs)
+            results['total_steps'] = sequence_step_count
+            # Set flag to indicate we're running independently to prevent dependent steps
+            config.custom_params['independent_component_execution'] = True
+        else:
+            # When running the full pipeline, also check for use_existing_data flag
+            # If using existing data, skip steps that require downloading new data
+            use_existing_data = config.custom_params.get('use_existing_data', False)
+            if use_existing_data:
+                self.logger.info("📁 Using existing data mode - skipping download-dependent steps")
+                # Skip multi_horizon_profit_labeler since it may require downloads
+                # But keep other steps that can work with existing data
+                pass
 
         results = {
             'success': False,
@@ -1463,23 +1807,25 @@ class PreTrainingSubPipeline:
                         step_metric_records,
                         config,
                     )
-                self.event_logger.warning(
-                    "Continue-on-error enabled; proceeding after multi_horizon_profit_labeler failure",
-                    context=self._build_event_context(
-                        'multi_horizon_profit_labeler',
-                        config=config,
-                        rows_in=mh_context.rows_in,
-                        rows_out=mh_context.rows_out,
-                        duration_ms=mh_duration_ms,
-                        extra={
-                            'error_code': failure.error_code,
-                            'continue_on_error': True,
-                        },
-                    ),
-                )
-                self.logger.warning(
-                    "Continue-on-error enabled; proceeding after multi_horizon_profit_labeler failure",
-                )
+                else:
+                    # Only log continue-on-error warning if actually continuing
+                    self.event_logger.warning(
+                        "Continue-on-error enabled; proceeding after multi_horizon_profit_labeler failure",
+                        context=self._build_event_context(
+                            'multi_horizon_profit_labeler',
+                            config=config,
+                            rows_in=mh_context.rows_in,
+                            rows_out=mh_context.rows_out,
+                            duration_ms=mh_duration_ms,
+                            extra={
+                                'error_code': failure.error_code,
+                                'continue_on_error': True,
+                            },
+                        ),
+                    )
+                    self.logger.warning(
+                        "Continue-on-error enabled; proceeding after multi_horizon_profit_labeler failure",
+                    )
             if mh_result.success:
                 # Validate artifacts before updating state
                 if 'multi_horizon_labeling_result' in mh_result.artifacts:
@@ -1561,14 +1907,57 @@ class PreTrainingSubPipeline:
                         step_metric_records,
                         config,
                     )
-
-        end_time: Optional[datetime] = None
+        except ImportError as e:
+            message = f"Missing dependencies: {str(e)}"
+            failure = self._create_failure(
+                'pipeline',
+                f"{self._default_step_error_code('pipeline')}_IMPORT",
+                message,
+                exception=e,
+            )
+            self.logger.error(f"❌ Pre-Training Sub-Pipeline failed: [{failure.error_code}] {message}")
+            self.event_logger.error(message, context={'error_code': failure.error_code, 'run_id': run_id})
+            return self._apply_failure_to_results(results, failure, start_time, metrics_sink, step_metric_records, config)
+        except FileNotFoundError as e:
+            message = f"Missing files: {str(e)}"
+            failure = self._create_failure(
+                'pipeline',
+                f"{self._default_step_error_code('pipeline')}_MISSING_FILE",
+                message,
+                exception=e,
+            )
+            self.logger.error(f"❌ Pre-Training Sub-Pipeline failed: [{failure.error_code}] {message}")
+            self.event_logger.error(message, context={'error_code': failure.error_code, 'run_id': run_id})
+            return self._apply_failure_to_results(results, failure, start_time, metrics_sink, step_metric_records, config)
+        except MemoryError as e:
+            message = f"Memory error: {str(e)}"
+            failure = self._create_failure(
+                'pipeline',
+                f"{self._default_step_error_code('pipeline')}_MEMORY",
+                message,
+                exception=e,
+            )
+            self.logger.error(f"❌ Pre-Training Sub-Pipeline failed: [{failure.error_code}] {message}")
+            self.event_logger.error(message, context={'error_code': failure.error_code, 'run_id': run_id})
+            return self._apply_failure_to_results(results, failure, start_time, metrics_sink, step_metric_records, config)
+        except Exception as e:
+            message = f"Unexpected error: {str(e)}"
+            failure = self._create_failure(
+                'pipeline',
+                f"{self._default_step_error_code('pipeline')}_ERROR",
+                message,
+                exception=e,
+            )
+            self.logger.error(f"❌ Pre-Training Sub-Pipeline failed: [{failure.error_code}] {message}")
+            self.event_logger.error(message, context={'error_code': failure.error_code, 'run_id': run_id})
+            return self._apply_failure_to_results(results, failure, start_time, metrics_sink, step_metric_records, config)
 
         try:
             if not sequence_specs:
                 message = (
                     'No pre-training steps are enabled in STEP_REGISTRY. '
                     'Enable at least one step or adjust the configuration.'
+                )
             # Step 2: Feature Lookback Optimization
             flo_context = StepLogContext(
                 run_id=run_id,
@@ -1654,23 +2043,25 @@ class PreTrainingSubPipeline:
                         step_metric_records,
                         config,
                     )
-                self.event_logger.warning(
-                    "Continue-on-error enabled; proceeding after feature_lookback_optimization failure",
-                    context=self._build_event_context(
-                        'feature_lookback_optimization',
-                        config=config,
-                        rows_in=flo_context.rows_in,
-                        rows_out=flo_context.rows_out,
-                        duration_ms=flo_duration_ms,
-                        extra={
-                            'error_code': failure.error_code,
-                            'continue_on_error': True,
-                        },
-                    ),
-                )
-                self.logger.warning(
-                    "Continue-on-error enabled; proceeding after feature_lookback_optimization failure",
-                )
+                else:
+                    # Only log continue-on-error warning if actually continuing
+                    self.event_logger.warning(
+                        "Continue-on-error enabled; proceeding after feature_lookback_optimization failure",
+                        context=self._build_event_context(
+                            'feature_lookback_optimization',
+                            config=config,
+                            rows_in=flo_context.rows_in,
+                            rows_out=flo_context.rows_out,
+                            duration_ms=flo_duration_ms,
+                            extra={
+                                'error_code': failure.error_code,
+                                'continue_on_error': True,
+                            },
+                        ),
+                    )
+                    self.logger.warning(
+                        "Continue-on-error enabled; proceeding after feature_lookback_optimization failure",
+                    )
             if flo_result.success:
                 # Validate artifacts before updating state
                 if 'feature_lookback_optimization_result' in flo_result.artifacts:
@@ -1726,25 +2117,54 @@ class PreTrainingSubPipeline:
                 )
 
             # Step 3: Interactive Feature Generation
-            interactive_context = StepLogContext(
-                run_id=run_id,
-                step='interactive_feature_generation',
-                symbol=config.symbol,
-                timeframe=config.timeframe,
-            )
-            self.event_logger.step_begin(interactive_context)
-            self.logger.info('🔧 Step 3: Interactive Feature Generation')
-            interactive_result = await self._execute_interactive_feature_generation(config, self._run_metadata)
+            # Skip interactive feature generation when running components independently
+            running_independently = config.custom_params.get('independent_component_execution', False)
+            if running_independently:
+                self.logger.info('🔄 Skipping interactive feature generation when running independently')
+                # Create a mock successful result to maintain pipeline flow
+                interactive_result = SubPipelineResult(
+                    sub_pipeline_name='interactive_feature_generation',
+                    status=SubPipelineStatus.COMPLETED,
+                    start_time=datetime.now(),
+                    end_time=datetime.now(),
+                    duration_seconds=0.0,
+                    success=True,
+                    artifacts={'interactive_feature_generation_result': {}},
+                    output_files=[],
+                    error_message=None,
+                    error_code=None,
+                    metadata={'skipped': 'independent_execution'}
+                )
+                # Create context for logging
+                interactive_context = StepLogContext(
+                    run_id=run_id,
+                    step='interactive_feature_generation',
+                    symbol=config.symbol,
+                    timeframe=config.timeframe,
+                )
+                rows_in, rows_out = 0, 0
+                interactive_duration_ms = 0.0
+            else:
+                interactive_context = StepLogContext(
+                    run_id=run_id,
+                    step='interactive_feature_generation',
+                    symbol=config.symbol,
+                    timeframe=config.timeframe,
+                )
+                self.event_logger.step_begin(interactive_context)
+                self.logger.info('🔧 Step 3: Interactive Feature Generation')
+                interactive_result = await self._execute_interactive_feature_generation(config, self._run_metadata)
+                rows_in, rows_out = self._resolve_row_counts(interactive_result)
+                interactive_duration_ms = self._result_duration_ms(interactive_result)
+
             self._capture_step_timing_metrics('interactive_feature_generation', interactive_result, config, results)
-            rows_in, rows_out = self._resolve_row_counts(interactive_result)
             interactive_context.rows_in = rows_in
             interactive_context.rows_out = rows_out
             if interactive_result.success:
                 results['completed_steps'] += 1
             self._record_step_metrics('interactive_feature_generation', interactive_result, results, metrics_sink, step_metric_records)
-            interactive_duration_ms = self._result_duration_ms(interactive_result)
             self._extend_pipeline_collections(results, interactive_result)
-            if not interactive_result.success:
+            if not interactive_result.success and not running_independently:
                 failure = self._resolve_failure_from_result(
                     'interactive_feature_generation',
                     interactive_result,
@@ -1782,6 +2202,7 @@ class PreTrainingSubPipeline:
                     start_time=start_time,
                     step_index=index,
                     total_steps=sequence_step_count,
+                )
             interactive_artifacts = interactive_result.artifacts or {}
 
             # Validate artifacts before updating state
@@ -1937,23 +2358,25 @@ class PreTrainingSubPipeline:
                         step_metric_records,
                         config,
                     )
-                self.event_logger.warning(
-                    "Continue-on-error enabled; proceeding after final_feature_selection failure",
-                    context=self._build_event_context(
-                        'final_feature_selection',
-                        config=config,
-                        rows_in=ffs_context.rows_in,
-                        rows_out=ffs_context.rows_out,
-                        duration_ms=ffs_duration_ms,
-                        extra={
-                            'error_code': failure.error_code,
-                            'continue_on_error': True,
-                        },
-                    ),
-                )
-                self.logger.warning(
-                    "Continue-on-error enabled; proceeding after final_feature_selection failure",
-                )
+                else:
+                    # Only log continue-on-error warning if actually continuing
+                    self.event_logger.warning(
+                        "Continue-on-error enabled; proceeding after final_feature_selection failure",
+                        context=self._build_event_context(
+                            'final_feature_selection',
+                            config=config,
+                            rows_in=ffs_context.rows_in,
+                            rows_out=ffs_context.rows_out,
+                            duration_ms=ffs_duration_ms,
+                            extra={
+                                'error_code': failure.error_code,
+                                'continue_on_error': True,
+                            },
+                        ),
+                    )
+                    self.logger.warning(
+                        "Continue-on-error enabled; proceeding after final_feature_selection failure",
+                    )
             if ffs_result.success:
                 # Validate artifacts before updating state
                 if 'final_feature_selection_result' in ffs_result.artifacts:
@@ -1992,6 +2415,11 @@ class PreTrainingSubPipeline:
             results['execution_time'] = (end_time - start_time).total_seconds()
             results['completed_steps'] = sequence_step_count
 
+            # End memory-aware validation session and collect statistics
+            memory_stats = self.validation_manager.end_validation_session(validation_session_id)
+            results['memory_stats'] = memory_stats
+            results['metrics']['memory_stats'] = memory_stats
+
             end_metadata = dict(self._run_metadata)
             end_metadata['end_time_utc'] = datetime.utcnow().isoformat() + 'Z'
             end_metadata['duration_seconds'] = results['execution_time']
@@ -1999,6 +2427,12 @@ class PreTrainingSubPipeline:
 
             completion_block = json.dumps(self._run_metadata, indent=2, sort_keys=True)
             pipeline_duration_ms = results['execution_time'] * 1000.0
+            # Enhanced success logging with tprint
+            tprint_success(f"🎉 Pre-Training Sub-Pipeline execution completed successfully for {config.symbol}")
+            tprint(f"⏱️ Total execution time: {results['execution_time']:.2f} seconds")
+            tprint(f"📊 Steps completed: {pipeline_results.get('completed_steps', 0)}/{pipeline_results.get('total_steps', 0)}")
+            tprint(f"💾 Artifacts generated: {len(results.get('results', {}))}")
+
             self.logger.info(
                 f'🎉 Pre-Training Sub-Pipeline execution completed successfully for {config.symbol}'
             )
@@ -2078,7 +2512,10 @@ class PreTrainingSubPipeline:
             metrics_dir_setting = self._settings.metrics.output_dir
             if metrics_dir_setting is not None:
                 base_dir = metrics_dir_setting.resolved
-                base_dir.mkdir(parents=True, exist_ok=True)
+                # Use common utility for directory creation with error handling
+                if not ensure_directory(base_dir):
+                    tprint_error(f"Failed to create base directory: {base_dir}")
+                    raise ValueError(f"Cannot create base directory: {base_dir}")
                 filename = self._settings.metrics.filename
                 if Path(filename).suffix:
                     metrics_filename = filename
@@ -2094,6 +2531,7 @@ class PreTrainingSubPipeline:
                 output_path = base_dir / f'pre_training_metrics.{extension}'
 
         if output_path is None and not config.metrics_prometheus_enabled:
+            self.logger.warning("No metrics output path configured and Prometheus metrics disabled. Metrics will not be collected.")
             return None
 
         if output_path is None:
@@ -2479,7 +2917,7 @@ class PreTrainingSubPipeline:
         pipeline_state: Mapping[str, Any],
     ) -> Dict[str, Any]:
         """
-        Execute the pre-training pipeline with backward compatible interface.
+        Execute the pre-training pipeline with backward compatible interface and enhanced logging.
 
         Args:
             training_input: Input data for the pipeline
@@ -2488,12 +2926,16 @@ class PreTrainingSubPipeline:
         Returns:
             Dictionary containing execution results
         """
+        tprint("🔄 Executing pre-training pipeline with backward compatible interface")
+        tprint_info(f"📥 Pipeline input keys: {list(training_input.keys())}")
+
         # Extract configuration from pipeline state
         locator = pipeline_state.get('data_locator')
         data_dir_key = pipeline_state.get('data_dir_key', 'market_data')
         data_dir = pipeline_state.get('data_dir')
         if data_dir is None and isinstance(locator, DataLocator):
             data_dir = str(locator.data_path(data_dir_key))
+            tprint_info(f"📁 Resolved data directory: {data_dir}")
 
         custom_params_source = pipeline_state.get('custom_params')
         custom_params = dict(custom_params_source) if isinstance(custom_params_source, Mapping) else {}
@@ -2589,6 +3031,7 @@ class PreTrainingSubPipeline:
             'quality_thresholds': self._get_quality_thresholds(config),
             'market_data_batch_size': config.market_data_batch_size,
             'market_data_window_days': config.market_data_window_days,
+            'independent_component_execution': True,  # Flag to indicate we're running a component independently
         })
 
         pipeline_state.update({k: v for k, v in self._current_pipeline_state.items() if k not in pipeline_state})
@@ -2597,6 +3040,11 @@ class PreTrainingSubPipeline:
             pipeline_state['python_rng'] = self._seeded_rngs.python
             pipeline_state['numpy_rng'] = self._seeded_rngs.numpy
             pipeline_state['seeded_rngs'] = self._seeded_rngs
+        
+        # Add artifacts from previous steps for artifact chaining
+        if self._artifact_chain:
+            pipeline_state['previous_artifacts'] = self._get_all_previous_artifacts()
+            self.logger.info(f"📦 Added {len(self._artifact_chain)} previous artifacts to pipeline state")
 
         regime_cache_path = config.custom_params.get('regime_cache_path') if config.custom_params else None
         if not regime_cache_path:
@@ -2638,6 +3086,11 @@ class PreTrainingSubPipeline:
             params.setdefault('market_data_batch_size', config.market_data_batch_size)
         if config.market_data_window_days is not None:
             params.setdefault('market_data_window_days', config.market_data_window_days)
+
+        # Add direction settings from main pipeline config
+        params.setdefault('enable_long_positions', config.enable_long_positions)
+        params.setdefault('enable_short_positions', config.enable_short_positions)
+
         return params
 
     def _prepare_interactive_training_input(
@@ -2650,21 +3103,45 @@ class PreTrainingSubPipeline:
         if mh_result is None:
             mh_result = self._current_pipeline_state.get('multi_horizon_labeling_result', {})
 
-        if not mh_result:
+        # Check if we're running a component that doesn't require multi-horizon labeling results
+        # This allows components like analyst_profit_labeler to run independently
+        running_independent_component = pipeline_state.get('independent_component_execution', False)
+
+        if not mh_result and not running_independent_component:
             raise ValueError("Multi-horizon labeling result is required for interactive feature generation")
 
-        market_data_batches = mh_result.get('market_data_batches')
-        market_data = mh_result.get('market_data')
+        market_data_batches = mh_result.get('market_data_batches') if mh_result else None
+        market_data = mh_result.get('market_data') if mh_result else None
 
         if market_data is None and market_data_batches:
             market_data = pd.concat(market_data_batches, axis=0).sort_index()
 
-        if market_data is None:
+        # If running independently and market_data is still None, try to load it from pipeline state
+        if market_data is None and running_independent_component:
+            market_data = pipeline_state.get('market_data')
+            if market_data is None:
+                # Try to load from data locator if available
+                data_locator = pipeline_state.get('data_locator')
+                if data_locator:
+                    symbol = pipeline_state.get('symbol')
+                    exchange = pipeline_state.get('exchange')
+                    timeframe = pipeline_state.get('timeframe')
+                    if symbol and exchange and timeframe:
+                        try:
+                            market_data = data_locator.load_klines(
+                                symbol=symbol,
+                                exchange=exchange,
+                                timeframe=timeframe
+                            )
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Could not load market data from data locator: {e}")
+
+        if market_data is None and not running_independent_component:
             raise ValueError("Market data is missing from multi-horizon labeling result")
 
-        labels_df = mh_result.get('labeled_data')
+        labels_df = mh_result.get('labeled_data') if mh_result else None
         if labels_df is None or (isinstance(labels_df, pd.DataFrame) and labels_df.empty):
-            labels_df = mh_result.get('labels')
+            labels_df = mh_result.get('labels') if mh_result else None
         targets: Dict[str, pd.Series] = {}
         if isinstance(labels_df, pd.DataFrame):
             targets = {column: labels_df[column] for column in labels_df.columns}
@@ -2684,8 +3161,8 @@ class PreTrainingSubPipeline:
         if env_seed is not None:
             try:
                 return int(env_seed)
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as e:
+                self.logger.warning(f"Invalid ARES_RANDOM_SEED value '{env_seed}': {e}. Using default seed.")
         custom_params = config.custom_params or {}
         for key in ('rng_seed', 'seed', 'random_seed'):
             if key in custom_params and custom_params[key] is not None:
@@ -2735,24 +3212,85 @@ class PreTrainingSubPipeline:
                 metrics[dataset_name] = visited_frames[df_id]
                 return
 
-            dataset_metrics, dataset_alerts = self._compute_dataframe_quality_metrics(
-                component_name,
-                dataset_name,
-                df,
-                thresholds,
-            )
+            # Validate DataFrame schema before computing metrics with memory monitoring
+            try:
+                # Optimize DataFrame for validation
+                optimized_df = self.validation_manager.optimize_dataframe_for_validation(df)
+
+                if dataset_name.lower().endswith(('ohlcv', 'price', 'market_data')):
+                    # Validate as OHLCV data with caching and memory monitoring
+                    def validate_ohlcv_func(dataframe):
+                        return validate_raw_ohlcv(dataframe, context=f'quality_metrics.{dataset_name}')
+
+                    validated_df = self.validation_manager.validate_with_memory_monitoring(
+                        f"ohlcv_validation_{dataset_name}",
+                        optimized_df,
+                        validate_ohlcv_func,
+                        context=f'quality_metrics.{dataset_name}'
+                    )
+                else:
+                    # Validate as engineered features with caching and memory monitoring
+                    def validate_features_func(dataframe):
+                        return validate_engineered_features(dataframe, context=f'quality_metrics.{dataset_name}')
+
+                    validated_df = self.validation_manager.validate_with_memory_monitoring(
+                        f"features_validation_{dataset_name}",
+                        optimized_df,
+                        validate_features_func,
+                        context=f'quality_metrics.{dataset_name}'
+                    )
+
+                # Use validated dataframe for metrics computation
+                dataset_metrics, dataset_alerts = self._compute_dataframe_quality_metrics(
+                    component_name,
+                    dataset_name,
+                    validated_df,
+                    thresholds,
+                )
+            except SchemaValidationException as e:
+                # Log validation error but continue with original dataframe
+                log_warning(f"⚠️ Schema validation failed for {dataset_name}: {e}")
+                dataset_metrics, dataset_alerts = self._compute_dataframe_quality_metrics(
+                    component_name,
+                    dataset_name,
+                    df,
+                    thresholds,
+                )
+            except Exception as e:
+                # Handle unexpected validation errors
+                log_warning(f"⚠️ Unexpected error during validation for {dataset_name}: {e}")
+                dataset_metrics, dataset_alerts = self._compute_dataframe_quality_metrics(
+                    component_name,
+                    dataset_name,
+                    df,
+                    thresholds,
+                )
+
             visited_frames[df_id] = dataset_metrics
             metrics[dataset_name] = dataset_metrics
             for alert in dataset_alerts:
                 log_warning(alert)
 
-        def traverse(prefix: str, value: Any) -> None:
+        def traverse(prefix: str, value: Any, visited: Optional[Set[int]] = None) -> None:
+            if visited is None:
+                visited = set()
+
+            # Cycle detection: prevent infinite recursion on circular references
+            value_id = id(value)
+            if value_id in visited:
+                log_warning(f"⚠️ Circular reference detected in artifacts at {prefix}, skipping")
+                return
+
             if isinstance(value, pd.DataFrame):
                 handle_dataframe(prefix, value)
             elif isinstance(value, dict):
-                for key, nested_value in value.items():
-                    nested_prefix = f"{prefix}.{key}" if prefix else key
-                    traverse(nested_prefix, nested_value)
+                visited.add(value_id)
+                try:
+                    for key, nested_value in value.items():
+                        nested_prefix = f"{prefix}.{key}" if prefix else key
+                        traverse(nested_prefix, nested_value, visited)
+                finally:
+                    visited.discard(value_id)  # Clean up to avoid memory leaks
 
         traverse('', artifacts)
         return metrics, alerts
@@ -2783,7 +3321,9 @@ class PreTrainingSubPipeline:
         dataset_metrics['duplicate_index_share'] = duplicate_share
         if duplicate_share > thresholds['duplicate_index'] > 0:
             alerts.append(
-                f"⚠️ [{component_name}] {dataset_name} duplicate index share {duplicate_share:.2%} exceeds threshold {thresholds['duplicate_index']:.2%}"
+                f"⚠️ [{component_name}] {dataset_name} duplicate index share {duplicate_share:.2%} exceeds threshold {thresholds['duplicate_index']:.2%}."
+                f" Remediation: Remove or deduplicate data points. Check for data merging issues, "
+                f"time synchronization problems, or incorrect data aggregation logic."
             )
 
         column_metrics: Dict[str, Any] = {}
@@ -2809,7 +3349,9 @@ class PreTrainingSubPipeline:
                 max_dominant_column = str(column)
             if dominant_share >= thresholds['label_imbalance'] > 0:
                 alerts.append(
-                    f"⚠️ [{component_name}] {dataset_name}.{column} dominant label share {dominant_share:.2%} exceeds threshold {thresholds['label_imbalance']:.2%}"
+                    f"⚠️ [{component_name}] {dataset_name}.{column} dominant label share {dominant_share:.2%} exceeds threshold {thresholds['label_imbalance']:.2%}."
+                    f" Remediation: Consider data augmentation, class balancing techniques (SMOTE, undersampling), "
+                    f"or adjusting class weights in model training. This may indicate sampling bias in data collection."
                 )
 
         if column_metrics:
@@ -2827,6 +3369,9 @@ class PreTrainingSubPipeline:
         run_metadata: Dict[str, Any],
     ) -> SubPipelineResult:
         """Execute multi-horizon profit labeler with timeframe support."""
+        tprint("🎯 Starting multi-horizon profit labeler execution")
+        tprint_info(f"📊 Symbol: {config.symbol}, Exchange: {config.exchange}, Timeframe: {config.timeframe}")
+
         result = SubPipelineResult(
             sub_pipeline_name='multi_horizon_profit_labeler',
             status=SubPipelineStatus.RUNNING,
@@ -2839,6 +3384,7 @@ class PreTrainingSubPipeline:
             precomputed_result = custom_params.get('precomputed_labeling_result')
 
             if precomputed_result:
+                tprint_info('📥 Using precomputed entry labeling result for tactician pipeline')
                 self.logger.info('📥 Using precomputed entry labeling result for tactician pipeline')
                 try:
                     merged_artifacts = self._current_pipeline_state.merge_step_artifacts(
@@ -2901,8 +3447,28 @@ class PreTrainingSubPipeline:
 
             # Execute component
             pipeline_state = self._prepare_component_pipeline_state(config)
-            training_input = self._prepare_interactive_training_input(pipeline_state)
-            component_result = await component.execute(training_input, pipeline_state)
+            
+            # Load market data directly for labeling component
+            # multi_horizon_profit_labeler creates labels, it doesn't consume them
+            from src.utils.data.klines_parquet import KlinesParquetManager
+            
+            try:
+                klines_manager = KlinesParquetManager()
+                market_data = klines_manager.read_data(
+                    symbol=config.symbol,
+                    interval=config.timeframe,
+                    start_date=config.start_date,
+                    end_date=config.end_date
+                )
+                self.logger.info(f"✅ Loaded {len(market_data)} rows of market data for multi-horizon labeling")
+            except Exception as e:
+                self.logger.error(f"❌ Failed to load market data: {e}")
+                raise ValueError(f"Could not load market data for multi_horizon_profit_labeler: {e}") from e
+            
+            if market_data is None or market_data.empty:
+                raise ValueError("Market data is required for multi_horizon_profit_labeler but none was loaded")
+            
+            component_result = await component.execute(market_data, pipeline_state)
             component_result.metadata = self._merge_run_metadata(component_result.metadata)
             result.warnings = self._collect_component_warnings(component_result)
             result.errors = self._collect_component_errors(component_result)
@@ -3022,6 +3588,399 @@ class PreTrainingSubPipeline:
 
         return result
 
+    async def _execute_analyst_profit_labeler(
+        self,
+        config: SubPipelineConfig,
+        run_metadata: Dict[str, Any],
+    ) -> SubPipelineResult:
+        """Execute analyst profit labeler (60m timeframe, strategic labeling)."""
+        result = SubPipelineResult(
+            sub_pipeline_name='analyst_profit_labeler',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
+        result.error_code = self._default_step_error_code('analyst_profit_labeler')
+
+        try:
+            # Analyst runs are automatically promoted to 60m/1h timeframe
+            # Normalize timeframe format (60m -> 1h for data loading)
+            analyst_timeframe_config = '60m'  # For component config
+            analyst_timeframe_data = '1h'  # For data loading
+
+            # Convert config to component config with analyst-specific timeframe
+            component_config = ComponentConfig(
+                symbol=config.symbol,
+                exchange=config.exchange,
+                timeframe=analyst_timeframe_config,
+                data_dir=config.data_dir,
+                custom_params=self._build_component_custom_params(config)
+            )
+
+            # Create component using factory
+            component = ComponentFactory.create_component('analyst_profit_labeler', component_config)
+            if hasattr(component, 'set_run_metadata'):
+                component.set_run_metadata(run_metadata)
+
+            # Execute component
+            pipeline_state = self._prepare_component_pipeline_state(config)
+            
+            # Load market data directly for labeling component
+            # analyst_profit_labeler creates labels, it doesn't consume them
+            from src.utils.data.klines_parquet import KlinesParquetManager
+            
+            try:
+                klines_manager = KlinesParquetManager()
+                # Load all available data (don't filter by date initially)
+                market_data = klines_manager.read_data(
+                    symbol=config.symbol,
+                    interval=analyst_timeframe_data,
+                    start_date=None,
+                    end_date=None
+                )
+                if market_data is not None and not market_data.empty:
+                    self.logger.info(f"✅ Loaded {len(market_data)} rows of market data for analyst labeling")
+                    
+                    # Transform data to match expected OHLCV schema
+                    # Ensure datetime index
+                    if 'open_time' in market_data.columns and not isinstance(market_data.index, pd.DatetimeIndex):
+                        market_data = market_data.set_index('open_time')
+                        self.logger.info("📅 Set open_time as datetime index")
+                    elif not isinstance(market_data.index, pd.DatetimeIndex):
+                        # Try to convert index to datetime if it's not already
+                        try:
+                            market_data.index = pd.to_datetime(market_data.index)
+                            self.logger.info("📅 Converted index to datetime")
+                        except Exception as idx_error:
+                            self.logger.warning(f"⚠️ Could not convert index to datetime: {idx_error}")
+                    
+                    # Ensure required columns exist
+                    required_cols = ['open', 'high', 'low', 'close', 'volume']
+                    missing_cols = [col for col in required_cols if col not in market_data.columns]
+                    if missing_cols:
+                        raise ValueError(f"Missing required OHLCV columns: {missing_cols}")
+                    
+                    # Check for and handle null values in required columns
+                    null_counts = market_data[required_cols].isnull().sum()
+                    if null_counts.any():
+                        self.logger.warning(f"⚠️ Found null values in OHLCV columns: {null_counts[null_counts > 0].to_dict()}")
+                        # Drop rows with any null values in required columns
+                        original_len = len(market_data)
+                        market_data = market_data.dropna(subset=required_cols)
+                        self.logger.info(f"🧹 Cleaned data: {original_len} -> {len(market_data)} rows (removed {original_len - len(market_data)} rows with nulls)")
+                    
+                    # Ensure columns are float type (pandera expects Float)
+                    for col in required_cols:
+                        if market_data[col].dtype not in ['float32', 'float64']:
+                            market_data[col] = market_data[col].astype('float64')
+                            self.logger.info(f"🔄 Converted {col} to float64")
+                    
+                    # Select only required columns (and any extras that might be useful)
+                    # The schema has strict=False so extra columns are allowed
+                    self.logger.info(f"📊 Data has columns: {list(market_data.columns)}")
+                    self.logger.info(f"📊 Index type: {type(market_data.index)}")
+                    self.logger.info(f"📊 Data types: {market_data[required_cols].dtypes.to_dict()}")
+                    
+            except Exception as e:
+                self.logger.error(f"❌ Failed to load market data: {e}")
+                raise ValueError(f"Could not load market data for analyst_profit_labeler: {e}") from e
+            
+            if market_data is None or market_data.empty:
+                raise ValueError("Market data is required for analyst_profit_labeler but none was loaded")
+            
+            component_result = await component.execute(market_data, pipeline_state)
+            component_result.metadata = self._merge_run_metadata(component_result.metadata)
+            result.warnings = self._collect_component_warnings(component_result)
+            result.errors = self._collect_component_errors(component_result)
+
+            result.status = SubPipelineStatus.COMPLETED if component_result.success else SubPipelineStatus.FAILED
+            result.success = component_result.success
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            result.artifacts = component_result.artifacts
+            result.error_message = component_result.error_message
+            result.error_code = self._extract_component_error_code(
+                component_result,
+                self._default_step_error_code('analyst_profit_labeler'),
+            )
+
+            if component_result.success:
+                try:
+                    artifacts = component_result.artifacts or {}
+                    if 'multi_horizon_labeling_result' in artifacts:
+                        validated_contract = validate_multi_horizon_labeling_result(
+                            artifacts['multi_horizon_labeling_result'],
+                            context='sub_pipeline.analyst_profit_labeler',
+                        )
+                        artifacts['multi_horizon_labeling_result'] = validated_contract
+                        result.artifacts = artifacts
+                except DataContractValidationError as contract_error:
+                    self.event_logger.error(
+                        "Contract validation error",
+                        context={
+                            'run_id': self._run_metadata.get('run_id'),
+                            'step': 'analyst_profit_labeler.validation',
+                            'symbol': self._run_metadata.get('symbol'),
+                            'timeframe': self._run_metadata.get('timeframe'),
+                            'error': str(contract_error),
+                        },
+                    )
+                    return self._handle_contract_error(result, 'analyst_profit_labeler', contract_error)
+
+                quality_metrics, quality_alerts = self._analyze_component_quality(
+                    'analyst_profit_labeler',
+                    result.artifacts,
+                    config,
+                )
+                result.metadata = self._extend_with_quality_metadata(
+                    component_result.metadata,
+                    quality_metrics,
+                    quality_alerts,
+                    config,
+                )
+                if result.warnings:
+                    warnings_meta = result.metadata.setdefault('warnings', [])
+                    self._extend_messages(warnings_meta, result.warnings)
+            else:
+                result.metadata = self._merge_run_metadata(component_result.metadata or {
+                    'component_type': 'analyst_profit_labeler'
+                })
+                failure_context = {
+                    'component_metadata': component_result.metadata,
+                    'artifacts_keys': sorted((component_result.artifacts or {}).keys()),
+                }
+                result.failure = self._create_failure(
+                    'analyst_profit_labeler',
+                    result.error_code or self._default_step_error_code('analyst_profit_labeler'),
+                    result.error_message or 'Analyst profit labeler failed',
+                    context=failure_context,
+                )
+                if result.error_message:
+                    self._extend_messages(result.errors, [result.error_message])
+
+        except ImportError as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = f"Missing dependencies: {str(e)}"
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            self.logger.error(f"❌ Analyst profit labeler failed - missing dependencies: {e}")
+            result.metadata = self._merge_run_metadata(result.metadata)
+            result.error_code = f"{self._default_step_error_code('analyst_profit_labeler')}_IMPORT"
+            result.failure = self._create_failure(
+                'analyst_profit_labeler',
+                result.error_code,
+                result.error_message,
+                exception=e,
+            )
+            self._extend_messages(result.errors, [result.error_message])
+        except FileNotFoundError as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = f"Missing files: {str(e)}"
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            self.logger.error(f"❌ Analyst profit labeler failed - missing files: {e}")
+            result.metadata = self._merge_run_metadata(result.metadata)
+            result.error_code = f"{self._default_step_error_code('analyst_profit_labeler')}_MISSING_FILE"
+            result.failure = self._create_failure(
+                'analyst_profit_labeler',
+                result.error_code,
+                result.error_message,
+                exception=e,
+            )
+            self._extend_messages(result.errors, [result.error_message])
+        except Exception as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = f"Unexpected error: {str(e)}"
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            self.logger.error(f"❌ Analyst profit labeler failed - unexpected error: {e}")
+            result.metadata = self._merge_run_metadata(result.metadata)
+            result.error_code = f"{self._default_step_error_code('analyst_profit_labeler')}_UNEXPECTED"
+            result.failure = self._create_failure(
+                'analyst_profit_labeler',
+                result.error_code,
+                result.error_message,
+                exception=e,
+            )
+            self._extend_messages(result.errors, [result.error_message or str(e)])
+
+        # Store artifacts in chain for next steps (success or failure)
+        if result.artifacts:
+            self._store_artifacts_in_chain('analyst_profit_labeler', result.artifacts)
+        
+        return result
+
+    async def _execute_tactician_entry_labeler(
+        self,
+        config: SubPipelineConfig,
+        run_metadata: Dict[str, Any],
+    ) -> SubPipelineResult:
+        """Execute tactician entry labeler (15m timeframe, tactical labeling)."""
+        result = SubPipelineResult(
+            sub_pipeline_name='tactician_entry_labeler',
+            status=SubPipelineStatus.RUNNING,
+            start_time=datetime.now()
+        )
+        result.error_code = self._default_step_error_code('tactician_entry_labeler')
+
+        try:
+            # Tactician runs use 15m timeframe for entry timing
+            tactician_timeframe = '15m'
+
+            # Convert config to component config with tactician-specific timeframe
+            component_config = ComponentConfig(
+                symbol=config.symbol,
+                exchange=config.exchange,
+                timeframe=tactician_timeframe,
+                data_dir=config.data_dir,
+                custom_params=self._build_component_custom_params(config)
+            )
+
+            # Create component using factory
+            component = ComponentFactory.create_component('tactician_entry_labeler', component_config)
+            if hasattr(component, 'set_run_metadata'):
+                component.set_run_metadata(run_metadata)
+
+            # Execute component
+            pipeline_state = self._prepare_component_pipeline_state(config)
+            
+            # Load market data directly for labeling component
+            # tactician_entry_labeler creates labels, it doesn't consume them
+            from src.utils.data.klines_parquet import KlinesParquetManager
+            
+            try:
+                klines_manager = KlinesParquetManager()
+                market_data = klines_manager.read_data(
+                    symbol=config.symbol,
+                    interval=tactician_timeframe,
+                    start_date=config.start_date,
+                    end_date=config.end_date
+                )
+                self.logger.info(f"✅ Loaded {len(market_data)} rows of market data for tactician labeling")
+            except Exception as e:
+                self.logger.error(f"❌ Failed to load market data: {e}")
+                raise ValueError(f"Could not load market data for tactician_entry_labeler: {e}") from e
+            
+            if market_data is None or market_data.empty:
+                raise ValueError("Market data is required for tactician_entry_labeler but none was loaded")
+            
+            component_result = await component.execute(market_data, pipeline_state)
+            component_result.metadata = self._merge_run_metadata(component_result.metadata)
+            result.warnings = self._collect_component_warnings(component_result)
+            result.errors = self._collect_component_errors(component_result)
+
+            result.status = SubPipelineStatus.COMPLETED if component_result.success else SubPipelineStatus.FAILED
+            result.success = component_result.success
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            result.artifacts = component_result.artifacts
+            result.error_message = component_result.error_message
+            result.error_code = self._extract_component_error_code(
+                component_result,
+                self._default_step_error_code('tactician_entry_labeler'),
+            )
+
+            if component_result.success:
+                try:
+                    artifacts = component_result.artifacts or {}
+                    if 'multi_horizon_labeling_result' in artifacts:
+                        validated_contract = validate_multi_horizon_labeling_result(
+                            artifacts['multi_horizon_labeling_result'],
+                            context='sub_pipeline.tactician_entry_labeler',
+                        )
+                        artifacts['multi_horizon_labeling_result'] = validated_contract
+                        result.artifacts = artifacts
+                except DataContractValidationError as contract_error:
+                    self.event_logger.error(
+                        "Contract validation error",
+                        context={
+                            'run_id': self._run_metadata.get('run_id'),
+                            'step': 'tactician_entry_labeler.validation',
+                            'symbol': self._run_metadata.get('symbol'),
+                            'timeframe': self._run_metadata.get('timeframe'),
+                            'error': str(contract_error),
+                        },
+                    )
+                    return self._handle_contract_error(result, 'tactician_entry_labeler', contract_error)
+
+                quality_metrics, quality_alerts = self._analyze_component_quality(
+                    'tactician_entry_labeler',
+                    result.artifacts,
+                    config,
+                )
+                result.metadata = self._extend_with_quality_metadata(
+                    component_result.metadata,
+                    quality_metrics,
+                    quality_alerts,
+                    config,
+                )
+                if result.warnings:
+                    warnings_meta = result.metadata.setdefault('warnings', [])
+                    self._extend_messages(warnings_meta, result.warnings)
+            else:
+                result.metadata = self._merge_run_metadata(component_result.metadata or {
+                    'component_type': 'tactician_entry_labeler'
+                })
+                failure_context = {
+                    'component_metadata': component_result.metadata,
+                    'artifacts_keys': sorted((component_result.artifacts or {}).keys()),
+                }
+                result.failure = self._create_failure(
+                    'tactician_entry_labeler',
+                    result.error_code or self._default_step_error_code('tactician_entry_labeler'),
+                    result.error_message or 'Tactician entry labeler failed',
+                    context=failure_context,
+                )
+                if result.error_message:
+                    self._extend_messages(result.errors, [result.error_message])
+
+        except ImportError as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = f"Missing dependencies: {str(e)}"
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            self.logger.error(f"❌ Tactician entry labeler failed - missing dependencies: {e}")
+            result.metadata = self._merge_run_metadata(result.metadata)
+            result.error_code = f"{self._default_step_error_code('tactician_entry_labeler')}_IMPORT"
+            result.failure = self._create_failure(
+                'tactician_entry_labeler',
+                result.error_code,
+                result.error_message,
+                exception=e,
+            )
+            self._extend_messages(result.errors, [result.error_message])
+        except FileNotFoundError as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = f"Missing files: {str(e)}"
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            self.logger.error(f"❌ Tactician entry labeler failed - missing files: {e}")
+            result.metadata = self._merge_run_metadata(result.metadata)
+            result.error_code = f"{self._default_step_error_code('tactician_entry_labeler')}_MISSING_FILE"
+            result.failure = self._create_failure(
+                'tactician_entry_labeler',
+                result.error_code,
+                result.error_message,
+                exception=e,
+            )
+            self._extend_messages(result.errors, [result.error_message])
+        except Exception as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = f"Unexpected error: {str(e)}"
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            self.logger.error(f"❌ Tactician entry labeler failed - unexpected error: {e}")
+            result.metadata = self._merge_run_metadata(result.metadata)
+            result.error_code = f"{self._default_step_error_code('tactician_entry_labeler')}_UNEXPECTED"
+            result.failure = self._create_failure(
+                'tactician_entry_labeler',
+                result.error_code,
+                result.error_message,
+                exception=e,
+            )
+            self._extend_messages(result.errors, [result.error_message or str(e)])
+
+        return result
+
     async def _execute_feature_lookback_optimization(
         self,
         config: SubPipelineConfig,
@@ -3050,9 +4009,42 @@ class PreTrainingSubPipeline:
             if hasattr(component, 'set_run_metadata'):
                 component.set_run_metadata(run_metadata)
 
+            # Load market data for feature lookback optimization
+            from src.utils.data.klines_parquet import KlinesParquetManager
+            import pandas as pd
+            
+            # Normalize timeframe for data loading (60m -> 1h)
+            timeframe_map = {'60m': '1h', '1h': '1h', '4h': '4h', '1d': '1d', '15m': '15m', '5m': '5m', '1m': '1m'}
+            normalized_timeframe = timeframe_map.get(config.timeframe, config.timeframe)
+            
+            try:
+                klines_manager = KlinesParquetManager()
+                market_data = klines_manager.read_data(
+                    symbol=config.symbol,
+                    interval=normalized_timeframe,
+                    start_date=None,
+                    end_date=None
+                )
+                if market_data is not None and not market_data.empty:
+                    self.logger.info(f"✅ Loaded {len(market_data)} rows of market data for feature lookback optimization")
+                    # Basic data transformation
+                    if 'open_time' in market_data.columns and not isinstance(market_data.index, pd.DatetimeIndex):
+                        market_data = market_data.set_index('open_time')
+                    elif not isinstance(market_data.index, pd.DatetimeIndex):
+                        try:
+                            market_data.index = pd.to_datetime(market_data.index)
+                        except Exception:
+                            pass
+                else:
+                    self.logger.warning("⚠️ No market data loaded, will pass None to component")
+                    market_data = None
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not load market data: {e}, will pass None to component")
+                market_data = None
+
             # Execute component
             pipeline_state = self._prepare_component_pipeline_state(config)
-            component_result = await component.execute(None, pipeline_state)
+            component_result = await component.execute(market_data, pipeline_state)
             component_result.metadata = self._merge_run_metadata(component_result.metadata)
             result.warnings = self._collect_component_warnings(component_result)
             result.errors = self._collect_component_errors(component_result)
@@ -3152,6 +4144,10 @@ class PreTrainingSubPipeline:
             )
             self._extend_messages(result.errors, [result.error_message or str(e)])
 
+        # Store artifacts in chain for next steps (success or failure)
+        if result.artifacts:
+            self._store_artifacts_in_chain('feature_lookback_optimization', result.artifacts)
+        
         return result
 
     async def _execute_interactive_feature_generation(
@@ -3316,6 +4312,10 @@ class PreTrainingSubPipeline:
             )
             self._extend_messages(result.errors, [result.error_message or str(e)])
 
+        # Store artifacts in chain for next steps (success or failure)
+        if result.artifacts:
+            self._store_artifacts_in_chain('interactive_feature_generation', result.artifacts)
+        
         return result
 
     async def _execute_optimized_lookback_generation(
@@ -3324,6 +4324,9 @@ class PreTrainingSubPipeline:
         run_metadata: Dict[str, Any],
     ) -> SubPipelineResult:
         """Execute optimized lookback generation with matrix operations and hardware acceleration."""
+        tprint("🔧 Starting optimized lookback generation execution")
+        tprint_info(f"📊 Symbol: {config.symbol}, Exchange: {config.exchange}, Timeframe: {config.timeframe}")
+
         result = SubPipelineResult(
             sub_pipeline_name='optimized_lookback_generation',
             status=SubPipelineStatus.RUNNING,
@@ -3331,8 +4334,11 @@ class PreTrainingSubPipeline:
         )
         result.error_code = self._default_step_error_code('optimized_lookback_generation')
 
+        tprint_debug(f"🏗️ Component config prepared for optimized lookback generation")
+
         try:
             # Convert config to component config
+            tprint_debug("🔄 Converting pipeline config to component config")
             component_config = ComponentConfig(
                 symbol=config.symbol,
                 exchange=config.exchange,
@@ -3342,14 +4348,18 @@ class PreTrainingSubPipeline:
             )
 
             # Create component using factory
+            tprint_debug("🏭 Creating optimized lookback generation component")
             component = ComponentFactory.create_component('optimized_lookback_generation', component_config)
             if hasattr(component, 'set_run_metadata'):
                 component.set_run_metadata(run_metadata)
 
             # Execute component
+            tprint_info("⚡ Executing optimized lookback generation component")
             pipeline_state = self._prepare_component_pipeline_state(config)
             component_result = await component.execute(None, pipeline_state)
             component_result.metadata = self._merge_run_metadata(component_result.metadata)
+
+            tprint_success(f"✅ Optimized lookback generation completed successfully in {result.duration_seconds:.2f}s")
 
             result.status = SubPipelineStatus.COMPLETED if component_result.success else SubPipelineStatus.FAILED
             result.success = component_result.success
@@ -3448,6 +4458,9 @@ class PreTrainingSubPipeline:
         run_metadata: Dict[str, Any],
     ) -> SubPipelineResult:
         """Execute final feature selection with timeframe support."""
+        tprint("🎯 Starting final feature selection execution")
+        tprint_info(f"📊 Symbol: {config.symbol}, Exchange: {config.exchange}, Timeframe: {config.timeframe}")
+
         result = SubPipelineResult(
             sub_pipeline_name='final_feature_selection',
             status=SubPipelineStatus.RUNNING,
@@ -3587,6 +4600,10 @@ class PreTrainingSubPipeline:
             )
             self._extend_messages(result.errors, [result.error_message or str(e)])
 
+        # Store artifacts in chain for next steps (success or failure)
+        if result.artifacts:
+            self._store_artifacts_in_chain('final_feature_selection', result.artifacts)
+        
         return result
 
     def get_available_sub_pipelines(self) -> List[str]:
@@ -3599,6 +4616,23 @@ class PreTrainingSubPipeline:
             self._run_metadata = self._gather_run_metadata(config)
 
         self._refresh_component_registry()
+
+        # Handle multi_horizon_profit_labeler with intelligent substitution FIRST (before component check)
+        # This prevents errors from checking for a component that doesn't exist
+        if sub_pipeline_name == 'multi_horizon_profit_labeler':
+            # Get timeframe directly from config
+            timeframe = config.timeframe or '1h'  # Default to 1h if not specified
+            
+            if timeframe in ['60m', '1h', '4h', '1d']:
+                self.logger.info(f"🔄 Analyst mode detected (timeframe={timeframe}), substituting multi_horizon → analyst_profit_labeler")
+                return await self._execute_analyst_profit_labeler(config, self._run_metadata)
+            elif timeframe in ['1m', '5m', '15m', '30m']:
+                self.logger.info(f"🔄 Tactician mode detected (timeframe={timeframe}), substituting multi_horizon → tactician_entry_labeler")
+                return await self._execute_tactician_entry_labeler(config, self._run_metadata)
+            else:
+                # If timeframe doesn't match, default to analyst mode
+                self.logger.warning(f"⚠️ Unusual timeframe={timeframe}, multi_horizon_profit_labeler component removed - defaulting to analyst mode")
+                return await self._execute_analyst_profit_labeler(config, self._run_metadata)
 
         spec = STEP_REGISTRY.get(sub_pipeline_name)
         if spec and spec.component_key in self._missing_components:
@@ -3641,9 +4675,8 @@ class PreTrainingSubPipeline:
             )
             return result
 
-        if sub_pipeline_name == 'multi_horizon_profit_labeler':
-            return await self._execute_multi_horizon_profit_labeler(config, self._run_metadata)
-        elif sub_pipeline_name == 'feature_lookback_optimization':
+        # Direct sub-pipeline execution (multi_horizon_profit_labeler handled above via substitution)
+        if sub_pipeline_name == 'feature_lookback_optimization':
             return await self._execute_feature_lookback_optimization(config, self._run_metadata)
         elif sub_pipeline_name == 'optimized_lookback_generation':
             return await self._execute_optimized_lookback_generation(config, self._run_metadata)
@@ -3710,6 +4743,29 @@ class PreTrainingSubPipeline:
             raise RuntimeError(message)
 
         return await executor(config, self._run_metadata)
+
+    def _get_independent_component_name(self, config: SubPipelineConfig) -> Optional[str]:
+        """Get the name of the component being run independently, if any."""
+        # Check if we're running a specific component by looking at enabled sub-pipelines
+        # If only one sub-pipeline is enabled, we're likely running it independently
+        enabled_sub_pipelines = []
+        for stage, sub_pipelines in config.enabled_sub_pipelines.items():
+            if sub_pipelines:  # Only consider stages that have enabled sub-pipelines
+                enabled_sub_pipelines.extend(sub_pipelines)
+
+        if len(enabled_sub_pipelines) == 1:
+            return enabled_sub_pipelines[0]
+
+        # Check for component-specific flags in custom_params
+        component_flags = [
+            'analyst_profit_labeler', 'tactician_entry_labeler', 'multi_horizon_profit_labeler'
+        ]
+
+        for flag in component_flags:
+            if config.custom_params.get(flag, False):
+                return flag
+
+        return None
 
     async def execute_sub_pipeline_with_next(self, sub_pipeline_name: str, config: SubPipelineConfig) -> SubPipelineResult:
         """Execute a specific sub-pipeline and automatically trigger subsequent sub-pipelines."""

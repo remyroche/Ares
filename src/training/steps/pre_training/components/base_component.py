@@ -17,6 +17,20 @@ from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.logger import system_logger
 from src.utils.version_manager import get_version_manager
 from src.utils.tprint import tprint_success
+from src.utils.common_operations import safe_dataframe_operation, get_m1_memory_optimizer
+from src.utils.common_utilities import CommonUtilities
+from src.utils.math_validation import validate_finite
+from src.utils.serialization_utils import JSONSerializer, PickleSerializer
+from src.utils.data.klines_parquet import KlinesParquetManager
+from src.utils.hardware.m1_gpu_utils import M1GPUManager
+from src.utils.matrix_operations import (
+    get_unified_matrix_operations,
+    get_vectorized_processing_core,
+    get_batch_matrix_processor,
+    safe_matrix_multiply,
+    optimize_dataframe,
+    matrix_correlation_analysis
+)
 from ..logging_utils import PreTrainingEventLogger, configure_pre_training_logging
 from ..settings import get_pre_training_settings
 from .contracts import (
@@ -133,9 +147,25 @@ class BasePreTrainingComponent(ABC):
         self.artifact_manager = get_artifact_manager()
         self.version_manager = get_version_manager()
         self._run_metadata: Dict[str, Any] = {}
+
+        # Initialize core utility managers
+        self.common_utils = CommonUtilities()
+        self.memory_optimizer = get_m1_memory_optimizer()
+        self.gpu_manager = M1GPUManager()
+        self.data_manager = KlinesParquetManager()
+        self.json_serializer = JSONSerializer()
+        self.pickle_serializer = PickleSerializer()
+
+        # Initialize matrix operations managers
+        self.matrix_ops = get_unified_matrix_operations()
+        self.vectorized_core = get_vectorized_processing_core()
+        self.batch_processor = get_batch_matrix_processor()
+
         self._log_info(
-            f"🚀 Initialized {self.__class__.__name__}",
+            f"🚀 Initialized {self.__class__.__name__} with utility and matrix operation managers",
             event='component_initialized',
+            utility_managers=['common_utils', 'memory_optimizer', 'gpu_manager', 'data_manager'],
+            matrix_managers=['matrix_ops', 'vectorized_core', 'batch_processor']
         )
 
     def set_run_metadata(self, metadata: Optional[Dict[str, Any]]) -> None:
@@ -185,7 +215,11 @@ class BasePreTrainingComponent(ABC):
             f"🧩 get_required_artifacts called on base class {self.__class__.__name__}",
             event='component_get_required_artifacts',
         )
-        raise NotImplementedError("Subclasses must implement get_required_artifacts")
+        raise NotImplementedError(
+            f"Subclasses must implement get_required_artifacts method. "
+            f"Component '{self.__class__.__name__}' does not implement the required get_required_artifacts() method. "
+            f"Please implement this abstract method in your component class."
+        )
 
     @abstractmethod
     async def execute(self, data: Any, pipeline_state: PipelineState) -> ComponentResult:
@@ -195,7 +229,11 @@ class BasePreTrainingComponent(ABC):
             data_type=type(data).__name__,
             event='component_execute_called',
         )
-        raise NotImplementedError("Subclasses must implement execute")
+        raise NotImplementedError(
+            f"Subclasses must implement execute method. "
+            f"Component '{self.__class__.__name__}' does not implement the required execute() method. "
+            f"Please implement this abstract method in your component class."
+        )
 
     async def save_artifacts(
         self,
@@ -249,6 +287,83 @@ class BasePreTrainingComponent(ABC):
             event='component_config_validated',
         )
         return True
+
+    def safe_dataframe_operation(self, df: pd.DataFrame, operation, *args, **kwargs):
+        """Safely perform DataFrame operations with error handling."""
+        return safe_dataframe_operation(df, operation, *args, **kwargs)
+
+    def validate_finite_values(self, value, name: str = "value"):
+        """Validate that values are finite using math validation utilities."""
+        return validate_finite(value, name)
+
+    def serialize_data_json(self, data, filepath: str) -> bool:
+        """Serialize data to JSON format."""
+        return self.json_serializer.save(data, filepath)
+
+    def deserialize_data_json(self, filepath: str):
+        """Deserialize data from JSON format."""
+        return self.json_serializer.load(filepath)
+
+    def serialize_data_pickle(self, data, filepath: str) -> bool:
+        """Serialize data to pickle format."""
+        return self.pickle_serializer.save(data, filepath)
+
+    def deserialize_data_pickle(self, filepath: str):
+        """Deserialize data from pickle format."""
+        return self.pickle_serializer.load(filepath)
+
+    def get_memory_pressure(self) -> float:
+        """Get current memory pressure if available."""
+        if self.memory_optimizer:
+            return getattr(self.memory_optimizer, 'memory_pressure', 0.0)
+        return 0.0
+
+    def optimize_memory(self):
+        """Apply memory optimizations if available."""
+        if self.memory_optimizer:
+            self.memory_optimizer._apply_memory_optimizations()
+            self._log_info(
+                "🧠 Applied memory optimizations",
+                event='component_memory_optimized',
+                memory_pressure=self.get_memory_pressure()
+            )
+
+    def is_hardware_accelerated(self) -> bool:
+        """Check if hardware acceleration is available."""
+        return self.gpu_manager.is_m1 if self.gpu_manager else False
+
+    def load_klines_data(self, symbol: str, timeframe: str, start_date=None, end_date=None):
+        """Load klines data using the data manager."""
+        if self.data_manager:
+            return self.data_manager.load_symbol_data(
+                symbol, timeframe, start_date, end_date
+            )
+        return None
+
+    def safe_matrix_multiply(self, A, B):
+        """Safely perform matrix multiplication with error handling."""
+        return safe_matrix_multiply(A, B)
+
+    def optimize_dataframe_for_matrix_ops(self, df):
+        """Optimize DataFrame for matrix operations."""
+        return optimize_dataframe(df)
+
+    def compute_matrix_correlation_analysis(self, data):
+        """Compute matrix correlation analysis."""
+        return matrix_correlation_analysis(data)
+
+    def perform_vectorized_matrix_ops(self, data, operations):
+        """Perform vectorized matrix operations using the vectorized core."""
+        if self.vectorized_core:
+            return self.vectorized_core.optimize_dataframe_for_processing(data)
+        return data
+
+    def batch_matrix_operations(self, matrices_a, matrices_b, operation='multiply'):
+        """Perform batch matrix operations."""
+        if self.batch_processor:
+            if operation == 'multiply':
+                return self.batch_processor.batch_matrix_multiply(matrices_a, matrices_b)
+        return None
 
     def get_status(self) -> Dict[str, Any]:
         """Get the current status of the component."""

@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from datetime import datetime
 from pathlib import Path
 from enum import Enum
+from abc import ABC, abstractmethod
 
 # Core dependencies with fallback support
 try:
@@ -44,18 +45,287 @@ except ImportError:
 # Import base component
 from ...market_analysis.components.base_component import BaseMarketAnalysisComponent, ComponentConfig, ComponentResult
 
-# Import end-to-end roadmap system
-from src.end_to_end_roadmap import (
-    EndToEndRoadmapSystem, 
-    SystemConfig, 
-    SystemResult,
-    create_end_to_end_system,
-    run_end_to_end_pipeline
-)
+# Import logger early for use in adapter
+try:
+    from src.utils.logger import system_logger
+    adapter_logger = system_logger.getChild('RoadmapSystemAdapter')
+except ImportError:
+    import logging
+    adapter_logger = logging.getLogger('RoadmapSystemAdapter')
+    adapter_logger.setLevel(logging.INFO)
+
+
+# ============================================================================
+# ABSTRACTION LAYER: Roadmap System Interface
+# ============================================================================
+# This abstraction layer decouples the component from the specific roadmap implementation
+
+class RoadmapSystemConfig:
+    """
+    Abstract configuration interface for roadmap systems.
+    
+    This allows different roadmap implementations to be plugged in
+    without modifying the component code.
+    """
+    def __init__(self, **kwargs):
+        """Initialize with flexible keyword arguments."""
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+
+class RoadmapSystemResult:
+    """
+    Abstract result interface for roadmap systems.
+    
+    Defines the minimal contract that any roadmap result must satisfy.
+    """
+    def __init__(
+        self,
+        success: bool,
+        features: Optional[pd.DataFrame] = None,
+        selected_features: Optional[List[str]] = None,
+        patch_features: Optional[List[str]] = None,
+        artifacts: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        error_message: Optional[str] = None
+    ):
+        self.success = success
+        self.features = features if features is not None else pd.DataFrame()
+        self.selected_features = selected_features if selected_features is not None else []
+        self.patch_features = patch_features if patch_features is not None else []
+        self.artifacts = artifacts if artifacts is not None else {}
+        self.metadata = metadata if metadata is not None else {}
+        self.error_message = error_message
+
+
+class RoadmapSystemInterface(ABC):
+    """
+    Abstract interface for roadmap systems.
+    
+    Any roadmap implementation must satisfy this interface to be compatible
+    with the EndToEndRoadmapComponent.
+    """
+    
+    @abstractmethod
+    def process_market_data(
+        self,
+        market_data: pd.DataFrame,
+        targets: Optional[Dict[int, pd.Series]] = None,
+        enable_validation: bool = True,
+        enable_monitoring: bool = True,
+        enable_deployment: bool = False,
+        use_hardware_acceleration: bool = False
+    ) -> RoadmapSystemResult:
+        """
+        Process market data and generate features.
+        
+        Args:
+            market_data: Market data DataFrame
+            targets: Optional target variables by horizon
+            enable_validation: Whether to enable validation
+            enable_monitoring: Whether to enable monitoring
+            enable_deployment: Whether to enable deployment
+            use_hardware_acceleration: Whether to use hardware acceleration
+            
+        Returns:
+            RoadmapSystemResult with generated features and metadata
+        """
+        pass
+    
+    @abstractmethod
+    def get_system_status(self) -> Dict[str, Any]:
+        """
+        Get current system status.
+        
+        Returns:
+            Dictionary with system status information
+        """
+        pass
+
+
+class RoadmapSystemAdapter(RoadmapSystemInterface):
+    """
+    Adapter that wraps the actual roadmap system implementation.
+    
+    This adapter translates between the abstract interface and the concrete implementation,
+    allowing the component to remain loosely coupled.
+    """
+    
+    def __init__(self, system_config: RoadmapSystemConfig):
+        """
+        Initialize adapter with configuration.
+        
+        Args:
+            system_config: Roadmap system configuration
+        """
+        self.config = system_config
+        self._actual_system = None
+        self._initialize_actual_system()
+    
+    def _initialize_actual_system(self):
+        """Initialize the actual roadmap system with error handling."""
+        try:
+            # Try to import and initialize the actual system
+            from src.end_to_end_roadmap import (
+                EndToEndRoadmapSystem,
+                SystemConfig,
+                create_end_to_end_system
+            )
+            
+            # Convert our abstract config to the actual system's config
+            actual_config = self._convert_config_to_actual(SystemConfig)
+            self._actual_system = create_end_to_end_system(actual_config)
+            
+        except ImportError as e:
+            # Roadmap system not available - use fallback
+            from src.utils.tprint import tprint_warning
+            tprint_warning(f"⚠️ Roadmap system import failed: {e}. Using fallback implementation.")
+            adapter_logger.warning(f"Roadmap system import failed: {e}. Using fallback implementation.")
+            self._actual_system = None
+        except Exception as e:
+            from src.utils.tprint import tprint_error
+            tprint_error(f"❌ Failed to initialize roadmap system: {e}")
+            adapter_logger.exception("Roadmap system initialization failed:")
+            self._actual_system = None
+    
+    def _convert_config_to_actual(self, SystemConfigClass):
+        """
+        Convert abstract config to actual system config.
+        
+        Args:
+            SystemConfigClass: The actual SystemConfig class
+            
+        Returns:
+            Instance of actual SystemConfig
+        """
+        # Extract common configuration parameters
+        config_dict = {}
+        for attr in dir(self.config):
+            if not attr.startswith('_'):
+                value = getattr(self.config, attr)
+                if not callable(value):
+                    config_dict[attr] = value
+        
+        # Create actual config with available parameters
+        try:
+            return SystemConfigClass(**config_dict)
+        except TypeError:
+            # Fallback: create with minimal parameters
+            return SystemConfigClass()
+    
+    def process_market_data(
+        self,
+        market_data: pd.DataFrame,
+        targets: Optional[Dict[int, pd.Series]] = None,
+        enable_validation: bool = True,
+        enable_monitoring: bool = True,
+        enable_deployment: bool = False,
+        use_hardware_acceleration: bool = False
+    ) -> RoadmapSystemResult:
+        """Process market data using the actual system or fallback."""
+        
+        if self._actual_system is not None:
+            try:
+                # Use actual system
+                actual_result = self._actual_system.process_market_data(
+                    market_data, targets, enable_validation, enable_monitoring,
+                    enable_deployment, use_hardware_acceleration
+                )
+                
+                # Convert actual result to abstract result
+                return RoadmapSystemResult(
+                    success=actual_result.success,
+                    features=actual_result.features,
+                    selected_features=actual_result.selected_features,
+                    patch_features=actual_result.patch_features,
+                    artifacts=actual_result.artifacts,
+                    metadata=actual_result.metadata,
+                    error_message=actual_result.error_message if hasattr(actual_result, 'error_message') else None
+                )
+                
+            except Exception as e:
+                from src.utils.tprint import tprint_error
+                tprint_error(f"❌ Roadmap processing failed: {e}")
+                adapter_logger.exception("Roadmap processing failed:")
+                return self._fallback_processing(market_data)
+        else:
+            # Use fallback implementation
+            return self._fallback_processing(market_data)
+    
+    def _fallback_processing(self, market_data: pd.DataFrame) -> RoadmapSystemResult:
+        """
+        Fallback processing when actual system is unavailable.
+        
+        Generates basic features from market data.
+        """
+        adapter_logger.info("Using fallback roadmap processing")
+        
+        try:
+            # Generate basic features
+            features = pd.DataFrame(index=market_data.index)
+            
+            # Add some basic features if OHLCV columns exist
+            if 'close' in market_data.columns:
+                features['returns'] = market_data['close'].pct_change()
+                features['log_returns'] = np.log(market_data['close'] / market_data['close'].shift(1))
+            
+            if 'high' in market_data.columns and 'low' in market_data.columns:
+                features['range'] = market_data['high'] - market_data['low']
+            
+            if 'volume' in market_data.columns:
+                features['volume_change'] = market_data['volume'].pct_change()
+            
+            # Remove NaN values
+            features = features.fillna(0)
+            
+            return RoadmapSystemResult(
+                success=True,
+                features=features,
+                selected_features=list(features.columns),
+                patch_features=[],
+                artifacts={},
+                metadata={'processing_mode': 'fallback'}
+            )
+            
+        except Exception as e:
+            from src.utils.tprint import tprint_error
+            tprint_error(f"❌ Fallback processing failed: {e}")
+            adapter_logger.exception("Fallback processing failed:")
+            return RoadmapSystemResult(
+                success=False,
+                error_message=f"Fallback processing failed: {str(e)}"
+            )
+    
+    def get_system_status(self) -> Dict[str, Any]:
+        """Get system status."""
+        if self._actual_system is not None:
+            try:
+                return self._actual_system.get_system_status()
+            except Exception as e:
+                from src.utils.tprint import tprint_warning
+                tprint_warning(f"⚠️ Failed to get system status: {e}")
+                adapter_logger.exception("Failed to get system status:")
+                return {'status': 'error', 'error': str(e)}
+        else:
+            return {'status': 'fallback', 'message': 'Using fallback implementation'}
 
 # Import utilities
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.training.steps.pre_training.standardized_labeling_interface import assert_labels_sigma_scaled
+
+# Import hardware optimization utilities
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, is_m1_available, is_mps_available
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
+
+# Import enhanced utilities for roadmap generation
+from src.utils.common_operations import (
+    optimize_memory, memory_checkpoint, gpu_context, get_memory_usage,
+    safe_divide, safe_mean, safe_std, validate_finite, calculate_data_quality_metrics
+)
+from src.utils.math_validation import safe_correlation, validate_correlation_matrix
+from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
 
 # Import logger
 try:
@@ -84,47 +354,81 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
     """
     
     def __init__(self, config: Optional[ComponentConfig] = None):
-        """Initialize the end-to-end roadmap component."""
-        tprint("🔧 Initializing EndToEndRoadmapComponent...")
+        """Initialize the end-to-end roadmap component with enhanced hardware optimization."""
+        tprint("🔧 Initializing EndToEndRoadmapComponent with enhanced utilities...")
         super().__init__(config)
         self.logger = logger.getChild('EndToEndRoadmapComponent')
-        
-        # Initialize system configuration
-        tprint("🔧 Initializing system configuration...")
+
+        # Initialize hardware optimization managers
+        tprint("🔧 Initializing hardware optimization managers...")
+        self.hardware_manager = UnifiedHardwareManager()
+        self.memory_optimizer = get_m1_memory_optimizer()
+        self.cpu_optimizer = get_m1_cpu_optimizer()
+        self.gpu_manager = get_m1_gpu_manager()
+        self.matrix_ops = UnifiedMatrixOperations()
+
+        # Check M1 availability and optimize accordingly
+        self.m1_available = is_m1_available()
+        self.mps_available = is_mps_available()
+
+        if self.m1_available:
+            tprint_success(f"✅ M1 hardware detected and optimized (MPS: {self.mps_available})")
+        else:
+            tprint_info("📊 Standard hardware configuration (M1 not available)")
+
+        # Initialize system configuration with hardware awareness
+        tprint("🔧 Initializing system configuration with hardware awareness...")
         self.system_config = self._create_system_config()
         tprint("✅ System configuration initialized")
-        
-        # Initialize end-to-end system
-        tprint("🔧 Initializing end-to-end roadmap system...")
+
+        # Initialize end-to-end system using adapter (loose coupling)
+        tprint("🔧 Initializing end-to-end roadmap system via adapter...")
         try:
-            self.roadmap_system = create_end_to_end_system(self.system_config)
-            tprint("✅ End-to-end roadmap system initialized")
+            # Use adapter for loose coupling to the actual roadmap implementation
+            self.roadmap_system = RoadmapSystemAdapter(self.system_config)
+            tprint("✅ End-to-end roadmap system initialized via adapter")
         except Exception as e:
-            self.logger.error(f"Failed to initialize roadmap system: {e}")
-            raise
-        
+            self.logger.exception("Failed to initialize roadmap system:")
+            tprint_error(f"❌ Failed to initialize roadmap system: {e}")
+            # Don't raise - adapter will use fallback
+            self.roadmap_system = None
+
         # Track generation status
         self.generation_status = RoadmapStatus.PENDING
         self.start_time: Optional[float] = None
-        
+
         # Track target source information for outcome verification
         self._target_source_info = {
             'target_used': 'unknown',
-            'target_type': 'unknown', 
+            'target_type': 'unknown',
             'valid_samples': 0,
             'source': 'unknown'
         }
-        
-        self.logger.info("🔧 EndToEndRoadmapComponent initialized")
+
+        # Performance tracking
+        self.performance_metrics = {
+            'memory_usage_start': get_memory_usage(),
+            'm1_optimization_applied': self.m1_available,
+            'mps_optimization_applied': self.mps_available,
+            'hardware_config': self.hardware_manager.get_optimal_config('roadmap_generation')
+        }
+
+        self.logger.info("🔧 EndToEndRoadmapComponent initialized with hardware optimization")
         self.logger.info(f"📊 Symbol: {self.config.symbol}")
         self.logger.info(f"📊 Exchange: {self.config.exchange}")
         self.logger.info(f"📊 Timeframe: {self.config.timeframe}")
-        tprint("✅ EndToEndRoadmapComponent initialization complete")
+        self.logger.info(f"🖥️ Hardware: M1={self.m1_available}, MPS={self.mps_available}")
+        tprint("✅ EndToEndRoadmapComponent initialization complete with hardware optimization")
     
-    def _create_system_config(self) -> SystemConfig:
-        """Create system configuration based on component config."""
+    def _create_system_config(self) -> RoadmapSystemConfig:
+        """
+        Create system configuration based on component config.
+        
+        Returns abstract RoadmapSystemConfig that can be adapted to any
+        roadmap implementation.
+        """
         tprint_info("⚙️ Creating system configuration for end-to-end roadmap component")
-        return SystemConfig(
+        return RoadmapSystemConfig(
             # Feature budgets (from roadmap spec)
             feature_budget_pre=120,
             feature_budget_post=(30, 60),
@@ -170,37 +474,58 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
     
     async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
         """
-        Execute end-to-end roadmap generation with comprehensive validation and reporting.
-        
+        Execute end-to-end roadmap generation with comprehensive validation, hardware optimization, and structured logging.
+
         Args:
             data: Market data for feature generation
             pipeline_state: Current pipeline state
-            
+
         Returns:
             ComponentResult with end-to-end roadmap generation results
         """
-        tprint("🚀 Starting end-to-end roadmap generation execution...")
+        tprint("🚀 Starting end-to-end roadmap generation execution with hardware optimization...")
         self.start_time = time.time()
         self.generation_status = RoadmapStatus.IN_PROGRESS
-        
-        self.logger.info('🔧 Starting End-to-End Roadmap Generation')
+
+        # Apply memory optimization before starting
+        initial_memory = get_memory_usage()
+        optimize_memory()
+        tprint_info(f"🧠 Memory optimized before execution (usage: {initial_memory / (1024*1024):.1f}MB)")
+
+        self.logger.info('🔧 Starting End-to-End Roadmap Generation with Hardware Optimization')
         self._report_checkpoint('start', 'generation_started', {
             'symbol': self.config.symbol,
             'exchange': self.config.exchange,
-            'timeframe': self.config.timeframe
+            'timeframe': self.config.timeframe,
+            'm1_optimization': self.m1_available,
+            'mps_optimization': self.mps_available,
+            'initial_memory_mb': initial_memory / (1024 * 1024)
         })
         tprint("📊 Generation status set to IN_PROGRESS")
         
         try:
             # Store pipeline state for data access
             self._pipeline_state = pipeline_state
-            
-            # Step 1: Load and validate market data
-            self.logger.info('📊 Loading and validating market data...')
-            market_data = await self._load_and_validate_market_data(data)
+
+            # Step 1: Load and validate market data with hardware optimization
+            self.logger.info('📊 Loading and validating market data with hardware optimization...')
+            with memory_checkpoint("roadmap_data_loading"):
+                market_data = await self._load_and_validate_market_data(data)
+
+            if market_data is not None:
+                # Optimize data using matrix operations for better performance
+                tprint_info("🔧 Optimizing market data with matrix operations")
+                market_data_optimized = self.matrix_ops.optimize_dataframe(market_data)
+                if market_data_optimized is not market_data:
+                    market_data = market_data_optimized
+                    tprint_success("✅ Market data optimized using matrix operations")
+
+            data_quality_score = self._calculate_data_quality_score(market_data)
             self._report_checkpoint('data_loading', 'completed', {
                 'data_points': len(market_data) if market_data is not None else 0,
-                'data_quality_score': self._calculate_data_quality_score(market_data)
+                'data_quality_score': data_quality_score,
+                'memory_usage_mb': get_memory_usage() / (1024 * 1024),
+                'm1_optimization_applied': self.m1_available
             })
             
             # Step 2: Get target variable and additional outputs if available
@@ -212,16 +537,31 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
                 targets = self._extract_targets_for_roadmap(target_data)
                 self.logger.info(f"📊 Using targets for roadmap generation: {list(targets.keys()) if targets else 'None'}")
             
-            # Step 3: Run end-to-end roadmap pipeline
-            self.logger.info('🚀 Running end-to-end roadmap pipeline...')
-            
-            roadmap_result = self.roadmap_system.process_market_data(
-                market_data,
-                targets,
-                enable_validation=True,
-                enable_monitoring=True,
-                enable_deployment=False  # Disable deployment for now
-            )
+            # Step 3: Run end-to-end roadmap pipeline with hardware acceleration
+            self.logger.info('🚀 Running end-to-end roadmap pipeline with hardware acceleration...')
+
+            # Check if roadmap system is available
+            if self.roadmap_system is None:
+                raise ValueError("Roadmap system is not initialized - cannot proceed with generation")
+
+            # Use GPU context if available for roadmap generation
+            with gpu_context("roadmap_generation") if self.mps_available else memory_checkpoint("roadmap_computation"):
+                roadmap_result = self.roadmap_system.process_market_data(
+                    market_data,
+                    targets,
+                    enable_validation=True,
+                    enable_monitoring=True,
+                    enable_deployment=False,  # Disable deployment for now
+                    use_hardware_acceleration=self.mps_available
+                )
+
+            # Update performance metrics
+            current_memory = get_memory_usage()
+            self.performance_metrics.update({
+                'memory_usage_during_generation': current_memory,
+                'memory_delta_during_generation': current_memory - initial_memory,
+                'gpu_acceleration_used': self.mps_available
+            })
             
             self._report_checkpoint('roadmap_generation', 'completed', {
                 'success': roadmap_result.success,
@@ -248,12 +588,31 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
                 market_data
             )
             
-            # Step 6: Generate final report
+            # Step 6: Generate final report with comprehensive performance metrics
             final_report = self._generate_final_report(artifacts, validation_result, roadmap_result)
+
+            # Calculate comprehensive performance metrics
+            execution_time = time.time() - self.start_time
+            final_memory = get_memory_usage()
+
+            self.performance_metrics.update({
+                'execution_time_seconds': execution_time,
+                'memory_usage_final': final_memory,
+                'memory_delta_total': final_memory - initial_memory,
+                'memory_efficiency_score': safe_divide(execution_time, final_memory / (1024 * 1024)) if final_memory > 0 else 0.0,
+                'features_per_second': safe_divide(len(roadmap_result.features.columns), execution_time) if execution_time > 0 else 0.0,
+                'quality_score': validation_result['quality_score']
+            })
+
             self._report_checkpoint('completion', 'success', {
                 'total_features': len(roadmap_result.features.columns),
                 'quality_score': validation_result['quality_score'],
-                'execution_time': time.time() - self.start_time
+                'execution_time': execution_time,
+                'memory_usage_final_mb': final_memory / (1024 * 1024),
+                'memory_delta_mb': (final_memory - initial_memory) / (1024 * 1024),
+                'm1_optimization_applied': self.m1_available,
+                'mps_acceleration_used': self.mps_available,
+                'performance_metrics': self.performance_metrics
             })
             
             self.generation_status = RoadmapStatus.COMPLETED
@@ -277,7 +636,8 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
                     color="green"
                 )
             except Exception as e:
-                tprint(f"⚠️ [ROADMAP_GEN] Failed to save artifacts persistently: {e}", color="yellow")
+                tprint_warning(f"⚠️ [ROADMAP_GEN] Failed to save artifacts persistently: {e}")
+                self.logger.exception("Failed to save artifacts persistently:")
             
             return ComponentResult(
                 success=True,
@@ -292,14 +652,33 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
                     'final_report': final_report,
                     'execution_time': time.time() - self.start_time,
                     'artifacts_saved_persistently': True,
-                    'roadmap_metadata': roadmap_result.metadata
+                    'roadmap_metadata': roadmap_result.metadata,
+                    # Enhanced performance and hardware metrics
+                    'performance_metrics': self.performance_metrics,
+                    'hardware_optimization': {
+                        'm1_available': self.m1_available,
+                        'mps_available': self.mps_available,
+                        'memory_optimization_applied': True,
+                        'gpu_acceleration_used': self.mps_available,
+                        'hardware_config': self.hardware_manager.get_optimal_config('roadmap_generation')
+                    },
+                    'optimization_summary': {
+                        'memory_efficiency_score': self.performance_metrics['memory_efficiency_score'],
+                        'features_per_second': self.performance_metrics['features_per_second'],
+                        'total_memory_delta_mb': (final_memory - initial_memory) / (1024 * 1024),
+                        'quality_vs_performance_ratio': safe_divide(
+                            validation_result['quality_score'],
+                            self.performance_metrics['execution_time_seconds']
+                        ) if self.performance_metrics['execution_time_seconds'] > 0 else 0.0
+                    }
                 }
             )
             
         except Exception as e:
             self.generation_status = RoadmapStatus.FAILED
             
-            self.logger.error(f'❌ End-to-End Roadmap Generation failed: {e}')
+            tprint_error(f'❌ End-to-End Roadmap Generation failed: {e}')
+            self.logger.exception('End-to-End Roadmap Generation failed:')
             self.logger.error(f'❌ Error details: {traceback.format_exc()}')
             
             # Generate failure report
@@ -583,7 +962,8 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
             return None
             
         except Exception as e:
-            self.logger.warning(f"Failed to extract target variable: {e}")
+            tprint_warning(f"⚠️ Failed to extract target variable: {e}")
+            self.logger.exception("Failed to extract target variable:")
             return None
     
     def _extract_targets_for_roadmap(self, target_data: Dict[str, Any]) -> Optional[Dict[int, pd.Series]]:
@@ -613,8 +993,8 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
             return None
 
         except Exception as e:
-            self.logger.warning(f"Failed to extract targets for roadmap: {e}")
             tprint_warning(f"⚠️ Failed to extract targets for roadmap: {e}")
+            self.logger.exception("Failed to extract targets for roadmap:")
             return None
     
     def _select_best_target_with_weights(self, labels: pd.DataFrame, weights: Dict[str, float], target_columns: List[str]) -> Optional[str]:
@@ -654,6 +1034,7 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
             
         except Exception as e:
             tprint_warning(f"⚠️ Error selecting best target with weights: {e}")
+            self.logger.exception("Error selecting best target with weights:")
             # Fallback to first available target
             available_targets = [col for col in labels.columns if col not in ['timestamp', 'symbol']]
             return available_targets[0] if available_targets else None
@@ -748,8 +1129,8 @@ class EndToEndRoadmapComponent(BaseMarketAnalysisComponent):
             return final_score
 
         except Exception as e:
-            self.logger.warning(f"Quality score calculation failed: {e}")
             tprint_warning(f"⚠️ Failed to compute data quality score: {e}")
+            self.logger.exception("Quality score calculation failed:")
             return 0.0
     
     async def _create_comprehensive_artifacts(

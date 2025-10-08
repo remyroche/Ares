@@ -1,0 +1,1493 @@
+"""
+Hardware-Optimized Bayesian TPE (Tree-structured Parzen Estimator) Optimizer
+
+This module provides a staged Bayesian optimization interface using Optuna's TPE sampler
+with hardware acceleration and adaptive optimization:
+coarse grid -> fine grid -> TPE optimization for efficient hyperparameter search.
+"""
+
+import numpy as np
+import pandas as pd
+from typing import Dict, Any, Optional, Callable, Union, List, Tuple
+import logging
+import time
+from dataclasses import dataclass
+
+try:
+    import optuna
+    from optuna.samplers import TPESampler
+    OPTUNA_AVAILABLE = True
+except ImportError:
+    OPTUNA_AVAILABLE = False
+
+from ...common_operations import safe_divide
+from ..logger import get_logger
+from .grid_utils import build_coarse_grid_from_search_space, build_fine_grid_around_best
+from .pareto import Solution, ParetoFront, compute_pareto_front
+
+# Hardware optimization imports
+try:
+    from ...hardware.unified_hardware_manager import UnifiedHardwareManager, WorkloadType, OptimizationLevel
+    from ...matrix_operations.hardware_integration import HardwareOptimizedMatrixProcessor
+    from ...matrix_operations.batch_operations import BatchMatrixProcessor
+    HARDWARE_OPTIMIZATION_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"Hardware optimization not available: {e}")
+    HARDWARE_OPTIMIZATION_AVAILABLE = False
+    UnifiedHardwareManager = None
+    HardwareOptimizedMatrixProcessor = None
+    BatchMatrixProcessor = None
+
+
+@dataclass
+class OptimizationConfig:
+    """Configuration for hardware-optimized staged Bayesian TPE optimization."""
+
+    # Core optimization settings
+    n_trials: int = 100
+    timeout: Optional[float] = None
+
+    # TPE sampler settings
+    n_startup_trials: int = 10
+    n_ei_candidates: int = 24
+    multivariate: bool = True
+    group: bool = True
+    gamma: Callable[[int], int] = lambda t: min(int(np.ceil(0.15 * t)), 100)
+    seed: Optional[int] = None
+
+    # Optimization direction and metric
+    direction: str = 'maximize'
+    metric_name: str = 'objective'
+
+    # Staged optimization settings
+    enable_staged_optimization: bool = True
+    coarse_grid_points: int = 5
+    fine_grid_points: int = 5
+    coarse_grid_trials: int = 25  # 5x5 grid for 2D search space
+    fine_grid_trials: int = 25    # 5x5 grid for 2D search space
+    tpe_trials: int = 50         # Remaining trials for TPE
+
+    # Hardware optimization settings
+    enable_hardware_optimization: bool = True
+    workload_type: str = 'ml_training'
+    optimization_level: str = 'balanced'
+    enable_gpu_acceleration: bool = True
+    enable_batch_processing: bool = True
+    batch_size: int = 32
+    memory_limit_gb: float = 8.0
+
+    # Adaptive optimization settings
+    enable_adaptive_optimization: bool = True
+    performance_monitoring_interval: float = 1.0
+    auto_tune_batch_size: bool = True
+    adaptive_memory_management: bool = True
+
+    # Early stopping
+    early_stopping_patience: Optional[int] = None
+    early_stopping_threshold: Optional[float] = None
+
+    # Constraints
+    constraints: Optional[Dict[str, Any]] = None
+
+    def validate(self) -> None:
+        """Validate configuration parameters."""
+        if self.n_trials <= 0:
+            raise ValueError("n_trials must be positive")
+        if self.n_startup_trials >= self.n_trials:
+            raise ValueError("n_startup_trials must be less than n_trials")
+        if self.direction not in ['minimize', 'maximize']:
+            raise ValueError("direction must be 'minimize' or 'maximize'")
+        if self.coarse_grid_points <= 0:
+            raise ValueError("coarse_grid_points must be positive")
+        if self.fine_grid_points <= 0:
+            raise ValueError("fine_grid_points must be positive")
+        if self.coarse_grid_trials < 0:
+            raise ValueError("coarse_grid_trials must be non-negative")
+        if self.fine_grid_trials < 0:
+            raise ValueError("fine_grid_trials must be non-negative")
+        if self.tpe_trials < 0:
+            raise ValueError("tpe_trials must be non-negative")
+        if self.batch_size <= 0:
+            raise ValueError("batch_size must be positive")
+        if self.memory_limit_gb <= 0:
+            raise ValueError("memory_limit_gb must be positive")
+
+
+class BayesianTPEOptimizer:
+    """
+    Hardware-Optimized Bayesian TPE Optimizer using Optuna's Tree-structured Parzen Estimator.
+
+    This class provides a wrapper around Optuna's TPE sampler with hardware acceleration
+    and adaptive optimization for efficient hyperparameter optimization in ML pipelines.
+    """
+
+    def __init__(self, config: Optional[OptimizationConfig] = None, **kwargs):
+        """
+        Initialize hardware-optimized Bayesian TPE optimizer.
+
+        Args:
+            config: Optimization configuration
+            **kwargs: Additional configuration parameters
+        """
+        self.config = config or OptimizationConfig()
+        if kwargs:
+            for key, value in kwargs.items():
+                if hasattr(self.config, key):
+                    setattr(self.config, key, value)
+
+        self.config.validate()
+        self.logger = get_logger('BayesianTPEOptimizer')
+
+        if not OPTUNA_AVAILABLE:
+            raise ImportError(
+                "Optuna is required for BayesianTPEOptimizer. "
+                "Please install optuna: pip install optuna>=2.10.0"
+            )
+
+        # Hardware optimization components
+        self.hardware_manager = None
+        self.matrix_processor = None
+        self.batch_processor = None
+        self.performance_monitor = None
+
+        # Initialize hardware optimization if available
+        if HARDWARE_OPTIMIZATION_AVAILABLE and self.config.enable_hardware_optimization:
+            self._initialize_hardware_optimization()
+
+        # Optimization state
+        self.study = None
+        self.best_params = None
+        self.best_value = None
+        self.optimization_history = []
+        self.performance_metrics = []
+        
+        # Early stopping state
+        self.early_stopping_triggered = False
+        self.trials_without_improvement = 0
+        self.best_value_history = []
+
+        # Adaptive patience state
+        self.adaptive_patience_enabled = kwargs.get('adaptive_patience', True)
+        self.patience_history = []
+        self.convergence_rate_history = []
+        self.current_patience = self.config.early_stopping_patience or 10
+        self.min_patience = max(1, (self.config.early_stopping_patience or 10) // 3)
+        self.max_patience = (self.config.early_stopping_patience or 10) * 2
+        self.patience_adjustment_factor = 1.5
+
+        # Multi-objective state
+        self.multi_objective_enabled = kwargs.get('multi_objective_stopping', False)
+        self.objective_weights = kwargs.get('objective_weights', {})
+        self.objective_history = {}
+        self.pareto_front_optimizer = ParetoFront() if self.multi_objective_enabled else None
+        self.pareto_solutions = []  # Store Solution objects for Pareto front computation
+
+        # Confidence-based stopping state
+        self.confidence_based_stopping_enabled = kwargs.get('confidence_based_stopping', False)
+        self.confidence_level = kwargs.get('confidence_level', 0.95)
+        self.confidence_history = []
+        self.statistical_tests = []
+
+        # Learning rate schedules for thresholds
+        self.threshold_schedule_enabled = kwargs.get('threshold_schedule_enabled', False)
+        self.threshold_schedule_type = kwargs.get('threshold_schedule_type', 'exponential')
+        self.initial_threshold = kwargs.get('initial_threshold', None)
+        self.final_threshold = kwargs.get('final_threshold', None)
+        self.schedule_params = kwargs.get('schedule_params', {})
+        self.current_threshold = None
+        self.threshold_history = []
+
+        self.logger.info("✅ Hardware-Optimized BayesianTPEOptimizer initialized")
+        if self.hardware_manager:
+            self.logger.info("   → Hardware optimization: Enabled")
+        else:
+            self.logger.info("   → Hardware optimization: Disabled")
+        
+        if self.config.early_stopping_patience:
+            self.logger.info(f"   → Early stopping: Enabled (patience={self.config.early_stopping_patience})")
+
+    def _initialize_hardware_optimization(self):
+        """Initialize hardware optimization components."""
+        try:
+            # Initialize unified hardware manager
+            self.hardware_manager = UnifiedHardwareManager()
+            self.hardware_manager.initialize()
+
+            # Configure for ML training workload
+            if self.config.optimization_level == 'aggressive':
+                self.hardware_manager.set_intensive_thresholds()
+            else:
+                self.hardware_manager.set_normal_thresholds()
+
+            # Initialize matrix processor for vectorized operations
+            if HardwareOptimizedMatrixProcessor:
+                self.matrix_processor = HardwareOptimizedMatrixProcessor()
+
+            # Initialize batch processor for efficient evaluation
+            if BatchMatrixProcessor:
+                self.batch_processor = BatchMatrixProcessor(
+                    chunk_size_mb=int(self.config.memory_limit_gb * 128),  # Convert GB to MB
+                    enable_gpu=self.config.enable_gpu_acceleration,
+                    enable_parallel=True,
+                    max_workers=4
+                )
+
+            # Performance monitoring is already available via hardware_manager.performance_monitor
+            self.performance_monitor = self.hardware_manager.performance_monitor
+
+            self.logger.info("✅ Hardware optimization components initialized")
+
+        except Exception as e:
+            self.logger.warning(f"⚠️ Hardware optimization initialization failed: {e}")
+            self.hardware_manager = None
+            self.matrix_processor = None
+            self.batch_processor = None
+            self.performance_monitor = None
+
+    def optimize(self, objective: Callable, search_space: Dict[str, Any],
+                **kwargs) -> Dict[str, Any]:
+        """
+        Run staged Bayesian TPE optimization: coarse grid -> fine grid -> TPE.
+
+        Args:
+            objective: Objective function to optimize
+            search_space: Parameter search space definition
+            **kwargs: Additional optimization parameters
+
+        Returns:
+            Dictionary with optimization results
+        """
+        start_time = time.time()
+
+        try:
+            # Update config with any additional parameters
+            for key, value in kwargs.items():
+                if hasattr(self.config, key):
+                    setattr(self.config, key, value)
+
+            self.logger.info("🚀 Starting staged TPE optimization")
+            self.logger.info(f"   Search space: {list(search_space.keys())}")
+            self.logger.info(f"   Stages: {'Coarse' if self.config.enable_staged_optimization else ''} {'Fine' if self.config.enable_staged_optimization else ''} TPE")
+
+            # Initialize results tracking
+            all_trials = []
+            best_params = None
+            best_value = None
+
+            # Stage 1: Coarse Grid Search (if enabled)
+            if self.config.enable_staged_optimization:
+                coarse_results = self._run_coarse_grid_stage(objective, search_space)
+                if coarse_results:
+                    all_trials.extend(coarse_results['trials'])
+                    if self._is_better_result(coarse_results['best_value'], best_value):
+                        best_params = coarse_results['best_params']
+                        best_value = coarse_results['best_value']
+
+                if coarse_results:
+                    self.logger.info(f"   Coarse grid: {len(coarse_results['trials'])} trials, best: {coarse_results['best_value']:.4f}")
+
+                # Stage 2: Fine Grid Search around best coarse results
+                if coarse_results and coarse_results['best_params']:
+                    fine_results = self._run_fine_grid_stage(objective, search_space, coarse_results['best_params'])
+                    if fine_results:
+                        all_trials.extend(fine_results['trials'])
+                        if self._is_better_result(fine_results['best_value'], best_value):
+                            best_params = fine_results['best_params']
+                            best_value = fine_results['best_value']
+
+                    if fine_results:
+                        self.logger.info(f"   Fine grid: {len(fine_results['trials'])} trials, best: {fine_results['best_value']:.4f}")
+
+            # Stage 3: TPE Optimization
+            tpe_trials_needed = self.config.n_trials - len(all_trials)
+            if tpe_trials_needed > 0:
+                tpe_results = self._run_tpe_stage(objective, search_space, best_params, min(tpe_trials_needed, self.config.tpe_trials))
+                if tpe_results:
+                    all_trials.extend(tpe_results['trials'])
+                    if self._is_better_result(tpe_results['best_value'], best_value):
+                        best_params = tpe_results['best_params']
+                        best_value = tpe_results['best_value']
+
+                if tpe_results:
+                    self.logger.info(f"   TPE: {len(tpe_results['trials'])} trials, best: {tpe_results['best_value']:.4f}")
+
+            # Final results
+            optimization_time = time.time() - start_time
+            self.best_params = best_params
+            self.best_value = best_value
+
+            results = {
+                'best_params': self.best_params,
+                'best_value': self.best_value,
+                'n_trials': len(all_trials),
+                'optimization_time': optimization_time,
+                'history': all_trials,
+                'stages': {
+                    'coarse_grid': len([t for t in all_trials if t.get('stage') == 'coarse']),
+                    'fine_grid': len([t for t in all_trials if t.get('stage') == 'fine']),
+                    'tpe': len([t for t in all_trials if t.get('stage') == 'tpe'])
+                },
+                'early_stopping': {
+                    'triggered': self.early_stopping_triggered,
+                    'trials_without_improvement': self.trials_without_improvement,
+                    'patience': self.config.early_stopping_patience,
+                    'threshold': self.config.early_stopping_threshold
+                }
+            }
+
+            self.logger.info(f"✅ Staged TPE optimization completed in {optimization_time:.2f}s")
+            self.logger.info(f"   Best value: {self.best_value:.4f}")
+            self.logger.info(f"   Best params: {self.best_params}")
+            self.logger.info(f"   Total trials: {len(all_trials)}")
+            if self.early_stopping_triggered:
+                self.logger.info(f"   Early stopping: Triggered (saved {self.config.n_trials - len(all_trials)} trials)")
+
+            return results
+
+        except Exception as e:
+            self.logger.error(f"❌ Staged TPE optimization failed: {e}")
+            raise
+
+    def _is_better_result(self, new_value: float, current_best: float) -> bool:
+        """Check if new value is better than current best."""
+        if current_best is None:
+            return True
+        if self.config.direction == 'maximize':
+            return new_value > current_best
+        else:
+            return new_value < current_best
+    
+    def _create_early_stopping_callback(self) -> Callable:
+        """
+        Create adaptive early stopping callback for Optuna optimization.
+        
+        Returns:
+            Callback function that raises TrialPruned when early stopping criteria met
+        """
+        def callback(study: optuna.Study, trial: optuna.Trial):
+            """Adaptive early stopping callback."""
+            if self.confidence_based_stopping_enabled:
+                # Confidence-based stopping takes precedence
+                if self._confidence_based_early_stopping(study, trial):
+                    raise optuna.TrialPruned()
+            elif self.multi_objective_enabled:
+                return self._multi_objective_early_stopping_callback(study, trial)
+            else:
+                return self._single_objective_early_stopping_callback(study, trial)
+
+        return callback
+
+    def _single_objective_early_stopping_callback(self, study: optuna.Study, trial: optuna.Trial):
+        """Single objective adaptive early stopping callback."""
+        # Get current best value
+        current_best = study.best_value
+
+        # Update history
+        self.best_value_history.append(current_best)
+
+        # Need minimum history for adaptive patience
+        if len(self.best_value_history) < max(self.min_patience + 1, 10):
+                return
+            
+        # Calculate convergence rate and adaptive patience
+        if self.adaptive_patience_enabled:
+            convergence_rate = self._calculate_convergence_rate()
+            adaptive_patience = self._calculate_adaptive_patience(convergence_rate)
+
+            # Update current patience if it changed significantly
+            if abs(adaptive_patience - self.current_patience) > 1:
+                self.current_patience = int(adaptive_patience)
+                self.logger.debug(f"   Adaptive patience adjusted to {self.current_patience}")
+        else:
+            self.current_patience = self.config.early_stopping_patience or 10
+
+        # Check for improvement using adaptive patience
+        recent_history = self.best_value_history[-self.current_patience:]
+        if len(recent_history) < 2:
+            return
+
+        previous_best = recent_history[0]
+
+        # Calculate improvement
+        if self.config.direction == 'maximize':
+            improvement = current_best - previous_best
+        else:
+            improvement = previous_best - current_best
+
+        # Adaptive threshold based on convergence and learning rate schedule
+        if self.config.early_stopping_threshold is not None:
+            min_improvement = self.config.early_stopping_threshold
+        else:
+            # Use adaptive threshold calculation with learning rate schedule
+            min_improvement = self._calculate_adaptive_threshold(convergence_rate)
+
+        # Check if improvement is below adaptive threshold
+        if improvement < min_improvement:
+            self.trials_without_improvement += 1
+        else:
+            self.trials_without_improvement = 0
+
+        # Trigger early stopping if adaptive patience exceeded
+        if self.trials_without_improvement >= self.current_patience:
+            self.early_stopping_triggered = True
+            self.logger.info(f"⏹️ Early stopping triggered after {len(self.best_value_history)} trials")
+            self.logger.info(f"   No improvement for {self.trials_without_improvement} consecutive checks")
+            self.logger.info(f"   Best value: {current_best:.6f}")
+            self.logger.info(f"   Adaptive patience: {self.current_patience}")
+            self.logger.info(f"   Convergence rate: {convergence_rate:.6f}")
+            raise optuna.TrialPruned()
+        
+    def _multi_objective_early_stopping_callback(self, study: optuna.Study, trial: optuna.Trial):
+        """Multi-objective adaptive early stopping callback."""
+        # Extract multiple objectives from trial
+        objectives = {}
+        for obj_name in self.objective_weights.keys():
+            if hasattr(trial, 'user_attrs') and obj_name in trial.user_attrs:
+                objectives[obj_name] = trial.user_attrs[obj_name]
+            else:
+                # Skip if objective not available
+                return
+
+        if not objectives:
+            return
+
+        # Update objective history
+        for obj_name, value in objectives.items():
+            if obj_name not in self.objective_history:
+                self.objective_history[obj_name] = []
+            self.objective_history[obj_name].append(value)
+
+        # Need minimum history for multi-objective analysis
+        min_history = max(self.min_patience + 1, 10)
+        if any(len(history) < min_history for history in self.objective_history.values()):
+            return
+
+        # Calculate convergence rate and adaptive patience
+        if self.adaptive_patience_enabled:
+            convergence_rate = self._calculate_multi_objective_convergence_rate()
+            adaptive_patience = self._calculate_adaptive_patience(convergence_rate)
+
+            # Update current patience if it changed significantly
+            if abs(adaptive_patience - self.current_patience) > 1:
+                self.current_patience = int(adaptive_patience)
+                self.logger.debug(f"   Multi-objective adaptive patience adjusted to {self.current_patience}")
+        else:
+            self.current_patience = self.config.early_stopping_patience or 10
+
+        # Update Pareto front using existing Pareto optimizer
+        self._update_pareto_front_with_optimizer(objectives)
+
+        # Check for Pareto improvement
+        recent_history = self.best_value_history[-self.current_patience:] if self.best_value_history else []
+
+        if self._should_stop_multi_objective_with_pareto(recent_history):
+            self.early_stopping_triggered = True
+            self.logger.info(f"⏹️ Multi-objective early stopping triggered after {len(self.best_value_history)} trials")
+            self.logger.info(f"   No Pareto improvement for {self.trials_without_improvement} consecutive checks")
+            self.logger.info(f"   Current objectives: {objectives}")
+            pareto_size = len(self.pareto_solutions) if self.pareto_solutions else 0
+            self.logger.info(f"   Pareto front size: {pareto_size}")
+            raise optuna.TrialPruned()
+
+    def _calculate_multi_objective_convergence_rate(self) -> float:
+        """Calculate convergence rate for multi-objective optimization."""
+        if not self.objective_history:
+            return 1.0
+
+        # Calculate convergence for each objective and combine
+        convergence_rates = []
+        for obj_name, history in self.objective_history.items():
+            if len(history) < 10:
+                convergence_rates.append(1.0)
+                continue
+
+            recent_values = history[-20:]
+            if len(recent_values) < 5:
+                convergence_rates.append(1.0)
+                continue
+
+            # Calculate improvements for this objective
+            improvements = []
+            for i in range(1, len(recent_values)):
+                improvement = recent_values[i] - recent_values[i-1]
+                improvements.append(max(0, improvement))
+
+            if not improvements:
+                convergence_rates.append(0.1)
+                continue
+
+            # Exponential moving average
+            alpha = 0.3
+            ema_improvements = [improvements[0]]
+            for imp in improvements[1:]:
+                ema = alpha * imp + (1 - alpha) * ema_improvements[-1]
+                ema_improvements.append(ema)
+
+            # Normalize and scale
+            value_range = max(recent_values) - min(recent_values)
+            if value_range == 0:
+                convergence_rates.append(1.0)
+                continue
+
+            avg_improvement = np.mean(ema_improvements[-5:])
+            normalized_rate = avg_improvement / value_range
+            convergence_rate = max(0.1, min(2.0, normalized_rate * 10))
+            convergence_rates.append(convergence_rate)
+
+        # Return weighted average of convergence rates
+        if convergence_rates:
+            weights = [self.objective_weights.get(obj_name, 1.0)
+                      for obj_name in self.objective_history.keys()]
+            return np.average(convergence_rates, weights=weights)
+        else:
+            return 1.0
+
+    def _update_pareto_front_with_optimizer(self, objectives: Dict[str, float]) -> None:
+        """Update Pareto front using the existing ParetoFront optimizer."""
+        if not self.pareto_front_optimizer:
+            return
+
+        # Create a Solution object for the current objectives
+        current_solution = Solution(metrics=objectives.copy())
+
+        # Add to the list of solutions for Pareto front computation
+        self.pareto_solutions.append(current_solution)
+
+        # Compute Pareto front using the existing optimizer
+        # Define objectives direction (assuming maximization for all by default)
+        objectives_direction = {obj_name: 'max' for obj_name in objectives.keys()}
+
+        try:
+            # Compute the Pareto front using the existing ParetoFront optimizer
+            pareto_front = self.pareto_front_optimizer.compute_pareto_front_gpu(
+                self.pareto_solutions, objectives_direction, use_gpu=False  # Use CPU for simplicity
+            )
+
+            # Update our stored Pareto front
+            self.pareto_solutions = pareto_front
+
+        except Exception as e:
+            self.logger.warning(f"Failed to compute Pareto front: {e}")
+            # Fallback to simple approach if Pareto computation fails
+            pass
+
+    def _should_stop_multi_objective_with_pareto(self, recent_history: List[float]) -> bool:
+        """Determine if multi-objective optimization should stop early using Pareto front analysis."""
+        if not self.pareto_solutions or len(recent_history) < self.current_patience:
+            return False
+
+        # Check if Pareto front has been stable recently
+        recent_trials = recent_history[-self.current_patience:]
+        if not recent_trials:
+            return False
+
+        # Calculate Pareto front stability metrics
+        if len(self.pareto_solutions) < 2:
+            return False
+
+        # Check if the Pareto front size has been stable
+        # If the Pareto front hasn't changed significantly in recent trials, consider stopping
+        current_pareto_size = len(self.pareto_solutions)
+
+        # Simple heuristic: if Pareto front size hasn't changed for several trials
+        # and recent trials haven't produced significantly better solutions
+        recent_max = max(recent_trials) if recent_trials else 0
+        overall_max = max(recent_history) if recent_history else 0
+
+        # If recent trials aren't improving the Pareto front significantly
+        improvement_ratio = recent_max / (overall_max + 1e-8) if overall_max > 0 else 1.0
+
+        if improvement_ratio < 0.95 and len(recent_history) >= self.current_patience * 2:
+            # Pareto front appears stable, check if we should stop
+            self.trials_without_improvement += 1
+        else:
+            self.trials_without_improvement = 0
+
+        return self.trials_without_improvement >= self.current_patience
+
+    def _confidence_based_early_stopping(self, study: optuna.Study, trial: optuna.Trial) -> bool:
+        """Confidence-based early stopping using statistical confidence intervals."""
+        if len(self.best_value_history) < 20:  # Need sufficient history
+            return False
+
+        current_best = study.best_value
+
+        # Update confidence history
+        self.confidence_history.append(current_best)
+
+        # Perform statistical analysis every few trials for efficiency
+        if len(self.confidence_history) % 5 != 0:
+            return False
+
+        # Calculate confidence intervals for recent performance
+        recent_values = np.array(self.confidence_history[-50:])  # Last 50 trials
+
+        if len(recent_values) < 10:
+            return False
+
+        # Calculate mean and standard deviation
+        mean_performance = np.mean(recent_values)
+        std_performance = np.std(recent_values, ddof=1)  # Sample standard deviation
+
+        if std_performance == 0:
+            # No variation, optimization has likely converged
+            return True
+
+        # Calculate confidence interval
+        from scipy import stats
+        confidence_interval = stats.t.interval(
+            self.confidence_level,
+            len(recent_values) - 1,
+            loc=mean_performance,
+            scale=stats.sem(recent_values)  # Standard error of the mean
+        )
+
+        # Calculate expected improvement potential
+        expected_improvement = self._calculate_expected_improvement_potential(recent_values)
+
+        # Check if current best is near the upper bound of confidence interval
+        if self.config.direction == 'maximize':
+            upper_bound = confidence_interval[1]
+            improvement_potential = upper_bound - current_best
+            # Stop if current best is within confidence interval of recent mean
+            # and expected improvement is minimal
+            if (current_best >= confidence_interval[0] and
+                improvement_potential < abs(mean_performance) * 0.01):  # Less than 1% potential improvement
+                self.logger.info(f"⏹️ Confidence-based early stopping triggered")
+                self.logger.info(f"   Current best: {current_best:.6f}")
+                self.logger.info(f"   Confidence interval: [{confidence_interval[0]:.6f}, {confidence_interval[1]:.6f}]")
+                self.logger.info(f"   Expected improvement: {improvement_potential:.6f}")
+                self.logger.info(f"   Confidence level: {self.confidence_level}")
+                return True
+        else:
+            lower_bound = confidence_interval[0]
+            improvement_potential = current_best - lower_bound
+            # Stop if current best is within confidence interval of recent mean
+            # and expected improvement is minimal
+            if (current_best <= confidence_interval[1] and
+                improvement_potential < abs(mean_performance) * 0.01):  # Less than 1% potential improvement
+                self.logger.info(f"⏹️ Confidence-based early stopping triggered")
+                self.logger.info(f"   Current best: {current_best:.6f}")
+                self.logger.info(f"   Confidence interval: [{confidence_interval[0]:.6f}, {confidence_interval[1]:.6f}]")
+                self.logger.info(f"   Expected improvement: {improvement_potential:.6f}")
+                self.logger.info(f"   Confidence level: {self.confidence_level}")
+                return True
+
+        # Store statistical test results
+        test_result = {
+            'trial': trial.number,
+            'current_best': current_best,
+            'confidence_interval': confidence_interval,
+            'expected_improvement': improvement_potential,
+            'should_stop': improvement_potential < abs(mean_performance) * 0.01
+        }
+        self.statistical_tests.append(test_result)
+
+        return False
+
+    def _calculate_expected_improvement_potential(self, recent_values: np.ndarray) -> float:
+        """Calculate expected improvement potential based on recent optimization trend."""
+        if len(recent_values) < 10:
+            return float('inf')  # High potential with little data
+
+        # Fit linear trend to recent values
+        x = np.arange(len(recent_values))
+        try:
+            slope, intercept = np.polyfit(x, recent_values, 1)
+
+            # Calculate trend strength
+            trend_strength = abs(slope) / (np.std(recent_values) + 1e-8)
+
+            # Estimate potential improvement based on trend
+            if self.config.direction == 'maximize':
+                if slope > 0:
+                    # Improving trend - estimate potential based on trend strength
+                    potential = abs(slope) * len(recent_values) * (1 + trend_strength)
+                else:
+                    # Declining trend - low potential
+                    potential = abs(slope) * 5  # Limited potential
+            else:
+                if slope < 0:
+                    # Improving trend for minimization
+                    potential = abs(slope) * len(recent_values) * (1 + trend_strength)
+                else:
+                    # Worsening trend - low potential
+                    potential = abs(slope) * 5
+
+            return max(0, potential)
+
+        except np.RankWarning:
+            # Singular matrix, likely due to constant values
+            return 0.0
+
+    def _calculate_adaptive_threshold(self, convergence_rate: float) -> float:
+        """Calculate adaptive threshold using learning rate schedules."""
+        if not self.threshold_schedule_enabled:
+            return self.config.early_stopping_threshold or (abs(self.best_value_history[-1]) * 0.001 if self.best_value_history else 0.001)
+
+        # Get base threshold
+        if self.initial_threshold is not None:
+            base_threshold = self.initial_threshold
+        elif self.best_value_history:
+            base_threshold = abs(self.best_value_history[-1]) * 0.001
+        else:
+            base_threshold = 0.001
+
+        # Calculate progress through optimization
+        total_trials = len(self.best_value_history)
+        max_trials = self.config.n_trials
+
+        if max_trials == 0:
+            progress = 0.5  # Default to middle if no max trials
+        else:
+            progress = min(1.0, total_trials / max_trials)
+
+        # Apply schedule
+        if self.threshold_schedule_type == 'exponential':
+            # Exponential decay: threshold decreases over time
+            decay_rate = self.schedule_params.get('decay_rate', 0.9)
+            current_threshold = base_threshold * (decay_rate ** progress)
+
+        elif self.threshold_schedule_type == 'linear':
+            # Linear decrease from initial to final threshold
+            if self.final_threshold is not None:
+                current_threshold = base_threshold + (self.final_threshold - base_threshold) * progress
+            else:
+                current_threshold = base_threshold * (1.0 - progress * 0.5)  # Default linear decrease
+
+        elif self.threshold_schedule_type == 'step':
+            # Step function: sudden changes at certain progress points
+            step_points = self.schedule_params.get('step_points', [0.25, 0.5, 0.75])
+            step_factors = self.schedule_params.get('step_factors', [0.8, 0.6, 0.4])
+
+            current_threshold = base_threshold
+            for i, point in enumerate(step_points):
+                if progress >= point:
+                    factor = step_factors[i] if i < len(step_factors) else step_factors[-1]
+                    current_threshold = base_threshold * factor
+
+        elif self.threshold_schedule_type == 'adaptive':
+            # Adaptive based on convergence rate
+            if convergence_rate > 1.0:
+                # Fast convergence - use stricter threshold
+                current_threshold = base_threshold * 0.5
+            elif convergence_rate > 0.5:
+                # Moderate convergence - normal threshold
+                current_threshold = base_threshold
+            else:
+                # Slow convergence - use more lenient threshold
+                current_threshold = base_threshold * 1.5
+
+        else:
+            # Default exponential decay
+            current_threshold = base_threshold * (0.9 ** progress)
+
+        # Record threshold history
+        self.threshold_history.append(current_threshold)
+        if len(self.threshold_history) > 20:
+            self.threshold_history.pop(0)
+
+        self.logger.debug(f"   Adaptive threshold: {current_threshold:.8f} (progress: {progress:.2f}, convergence: {convergence_rate:.2f})")
+
+        return current_threshold
+    
+    def _check_early_stopping_grid(self, trials: List[Dict], stage: str) -> bool:
+        """
+        Check if early stopping should be triggered for grid search.
+        
+        Args:
+            trials: List of completed trials
+            stage: Stage name ('coarse' or 'fine')
+            
+        Returns:
+            True if early stopping should be triggered
+        """
+        if not self.config.early_stopping_patience or len(trials) < self.config.early_stopping_patience:
+            return False
+        
+        # Get recent trial values
+        recent_trials = sorted(trials[-self.config.early_stopping_patience:], 
+                             key=lambda x: x['value'], 
+                             reverse=(self.config.direction == 'maximize'))
+        
+        best_recent = recent_trials[0]['value']
+        
+        # Compare with best overall
+        all_trials_sorted = sorted(trials, 
+                                  key=lambda x: x['value'], 
+                                  reverse=(self.config.direction == 'maximize'))
+        best_overall = all_trials_sorted[0]['value']
+        
+        # Calculate improvement
+        if self.config.direction == 'maximize':
+            improvement = best_recent - best_overall
+        else:
+            improvement = best_overall - best_recent
+        
+        # Check threshold
+        threshold = self.config.early_stopping_threshold or (abs(best_overall) * 0.001)
+        
+        if improvement < threshold:
+            self.logger.info(f"⏹️ Early stopping triggered in {stage} stage")
+            self.logger.info(f"   No significant improvement in last {self.config.early_stopping_patience} trials")
+            self.logger.info(f"   Best value: {best_overall:.6f}")
+            return True
+        
+        return False
+
+    def _calculate_convergence_rate(self) -> float:
+        """Calculate convergence rate based on recent optimization history."""
+        if len(self.best_value_history) < 10:
+            return 1.0  # Assume fast convergence with little history
+
+        # Use exponential moving average of recent improvements
+        recent_values = self.best_value_history[-20:]  # Last 20 trials
+        if len(recent_values) < 5:
+            return 1.0
+
+        # Calculate improvements
+        improvements = []
+        for i in range(1, len(recent_values)):
+            if self.config.direction == 'maximize':
+                improvement = recent_values[i] - recent_values[i-1]
+            else:
+                improvement = recent_values[i-1] - recent_values[i]
+            improvements.append(max(0, improvement))  # Only positive improvements
+
+        if not improvements:
+            return 0.1  # Very slow convergence
+
+        # Exponential moving average of improvements
+        alpha = 0.3  # Smoothing factor
+        ema_improvements = [improvements[0]]
+        for imp in improvements[1:]:
+            ema = alpha * imp + (1 - alpha) * ema_improvements[-1]
+            ema_improvements.append(ema)
+
+        # Normalize by the range of recent values
+        value_range = max(recent_values) - min(recent_values)
+        if value_range == 0:
+            return 1.0
+
+        # Convergence rate: higher values = faster convergence
+        avg_improvement = np.mean(ema_improvements[-5:])  # Last 5 improvements
+        normalized_rate = avg_improvement / value_range
+
+        # Scale to reasonable range [0.1, 2.0]
+        convergence_rate = max(0.1, min(2.0, normalized_rate * 10))
+
+        # Update convergence history for trend analysis
+        self.convergence_rate_history.append(convergence_rate)
+        if len(self.convergence_rate_history) > 50:
+            self.convergence_rate_history.pop(0)
+
+        return convergence_rate
+
+    def _calculate_adaptive_patience(self, convergence_rate: float) -> float:
+        """Calculate adaptive patience based on convergence rate and history."""
+        # Base patience calculation
+        base_patience = self.config.early_stopping_patience or 10
+
+        # Adjust based on convergence rate
+        if convergence_rate > 1.0:
+            # Fast convergence - reduce patience
+            patience_factor = 0.7
+        elif convergence_rate > 0.5:
+            # Moderate convergence - normal patience
+            patience_factor = 1.0
+        elif convergence_rate > 0.2:
+            # Slow convergence - increase patience
+            patience_factor = 1.3
+        else:
+            # Very slow convergence - significantly increase patience
+            patience_factor = 1.8
+
+        adaptive_patience = base_patience * patience_factor
+
+        # Consider convergence trend
+        if len(self.convergence_rate_history) >= 10:
+            recent_trend = np.polyfit(range(10), self.convergence_rate_history[-10:], 1)[0]
+            if recent_trend > 0.01:  # Improving convergence
+                adaptive_patience *= 0.9  # Slightly reduce patience
+            elif recent_trend < -0.01:  # Worsening convergence
+                adaptive_patience *= 1.1  # Slightly increase patience
+
+        # Record patience history
+        self.patience_history.append(adaptive_patience)
+        if len(self.patience_history) > 20:
+            self.patience_history.pop(0)
+
+        # Clamp to reasonable bounds
+        return max(self.min_patience, min(self.max_patience, adaptive_patience))
+
+    def _run_coarse_grid_stage(self, objective: Callable, search_space: Dict[str, Any]) -> Dict[str, Any]:
+        """Run hardware-optimized coarse grid search stage."""
+        try:
+            self.logger.info("🔍 Stage 1: Hardware-optimized coarse grid search")
+
+            # Configure hardware for grid search workload
+            if self.hardware_manager and self.config.enable_hardware_optimization:
+                self.hardware_manager.set_normal_thresholds()
+
+            # Generate coarse grid using vectorized operations
+            coarse_grid = build_coarse_grid_from_search_space(search_space, self.config.coarse_grid_points)
+            self.logger.info(f"   Generated {len(coarse_grid)} coarse grid points")
+
+            if not coarse_grid:
+                self.logger.warning("⚠️ No coarse grid points generated")
+                return None
+
+            # Use batch processing for evaluation if available
+            if self.batch_processor and self.config.enable_batch_processing and len(coarse_grid) > 1:
+                return self._batch_evaluate_grid(objective, coarse_grid, 'coarse')
+            else:
+                # Fallback to sequential evaluation
+                return self._sequential_evaluate_grid(objective, coarse_grid, 'coarse')
+
+        except Exception as e:
+            self.logger.error(f"❌ Coarse grid stage failed: {e}")
+            return None
+
+    def _run_fine_grid_stage(self, objective: Callable, search_space: Dict[str, Any],
+                           coarse_best_params: Dict[str, Any]) -> Dict[str, Any]:
+        """Run hardware-optimized fine grid search stage around best coarse results."""
+        try:
+            self.logger.info("🔍 Stage 2: Hardware-optimized fine grid search")
+
+            # Configure hardware for intensive search workload
+            if self.hardware_manager and self.config.enable_hardware_optimization:
+                self.hardware_manager.set_intensive_thresholds()  # More aggressive for fine search
+
+            # Generate fine grid around best coarse parameters using vectorized operations
+            fine_grid = build_fine_grid_around_best(search_space, coarse_best_params, self.config.fine_grid_points)
+            self.logger.info(f"   Generated {len(fine_grid)} fine grid points")
+
+            if not fine_grid:
+                self.logger.warning("⚠️ No fine grid points generated")
+                return None
+
+            # Use batch processing for fine grid evaluation
+            if self.batch_processor and self.config.enable_batch_processing and len(fine_grid) > 1:
+                return self._batch_evaluate_grid(objective, fine_grid, 'fine')
+            else:
+                # Fallback to sequential evaluation
+                return self._sequential_evaluate_grid(objective, fine_grid, 'fine')
+
+        except Exception as e:
+            self.logger.error(f"❌ Fine grid stage failed: {e}")
+            return None
+
+    def _run_tpe_stage(self, objective: Callable, search_space: Dict[str, Any],
+                      current_best_params: Dict[str, Any], n_trials: int) -> Dict[str, Any]:
+        """Run TPE optimization stage with early stopping support."""
+        try:
+            self.logger.info(f"🔍 Stage 3: TPE optimization ({n_trials} trials)")
+
+            # Create Optuna study with TPE sampler (without n_jobs parameter)
+            sampler = TPESampler(
+                n_startup_trials=self.config.n_startup_trials,
+                n_ei_candidates=self.config.n_ei_candidates,
+                gamma=self.config.gamma,
+                seed=self.config.seed,
+                multivariate=self.config.multivariate,
+                group=self.config.group
+            )
+
+            self.study = optuna.create_study(
+                direction=self.config.direction,
+                sampler=sampler,
+                study_name=f"tpe_optimization_{int(time.time())}"
+            )
+
+            # Add early stopping callback if configured
+            callbacks = []
+            if self.config.early_stopping_patience:
+                early_stopping_callback = self._create_early_stopping_callback()
+                callbacks.append(early_stopping_callback)
+
+            # Run TPE optimization with callbacks
+            self.study.optimize(
+                self._create_objective_wrapper(objective, search_space),
+                n_trials=n_trials,
+                timeout=self.config.timeout,
+                callbacks=callbacks if callbacks else None,
+                show_progress_bar=False  # Disable progress bar for cleaner output
+            )
+
+            # Extract results
+            best_params = self.study.best_params
+            best_value = self.study.best_value
+
+            # Convert Optuna trials to our format
+            trials = [
+                {
+                    'trial': trial.number,
+                    'stage': 'tpe',
+                    'params': trial.params,
+                    'value': trial.value,
+                    'duration': trial.duration.total_seconds() if trial.duration else None
+                }
+                for trial in self.study.trials
+            ]
+
+            return {
+                'best_params': best_params,
+                'best_value': best_value,
+                'trials': trials,
+                'study': self.study
+            }
+
+        except Exception as e:
+            self.logger.error(f"❌ TPE stage failed: {e}")
+            return None
+
+    def _batch_evaluate_grid(self, objective: Callable, grid_points: List[Dict[str, Any]],
+                           stage: str) -> Dict[str, Any]:
+        """Evaluate grid points using hardware-accelerated batch processing."""
+        try:
+            self.logger.info(f"🔄 Batch evaluating {len(grid_points)} {stage} grid points")
+
+            # Record performance metrics
+            start_time = time.time()
+            initial_memory = self._get_memory_usage() if self.performance_monitor else 0
+
+            # Use batch processor for efficient evaluation
+            if self.batch_processor:
+                # Convert parameter dictionaries to format suitable for batch processing
+                param_arrays = self._prepare_batch_parameters(grid_points)
+
+                # Evaluate in batches for memory efficiency
+                batch_size = min(self.config.batch_size, len(grid_points))
+                results = []
+
+                for i in range(0, len(grid_points), batch_size):
+                    batch_params = grid_points[i:i + batch_size]
+                    batch_results = []
+
+                    for params in batch_params:
+                        try:
+                            value = objective(params)
+                            batch_results.append(value)
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ Batch evaluation {i} failed: {e}")
+                            batch_results.append(float('-inf') if self.config.direction == 'maximize' else float('inf'))
+
+                    results.extend(batch_results)
+
+            else:
+                # Fallback: sequential evaluation with performance monitoring
+                results = []
+                for i, params in enumerate(grid_points):
+                    trial_start = time.time()
+                    try:
+                        value = objective(params)
+                        results.append(value)
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Batch evaluation {i} failed: {e}")
+                        results.append(float('-inf') if self.config.direction == 'maximize' else float('inf'))
+
+            # Create trial records and check early stopping
+            trials = []
+            best_params = None
+            best_value = None
+
+            for i, (params, value) in enumerate(zip(grid_points, results)):
+                trial_info = {
+                    'trial': i,
+                    'stage': stage,
+                    'params': params,
+                    'value': value,
+                    'duration': None
+                }
+                trials.append(trial_info)
+
+                if self._is_better_result(value, best_value):
+                    best_params = params
+                    best_value = value
+                
+                # Note: Early stopping for batch evaluation is less useful since
+                # all evaluations are already computed. This is logged for consistency.
+
+            # Record performance metrics
+            end_time = time.time()
+            final_memory = self._get_memory_usage() if self.performance_monitor else 0
+
+            performance_info = {
+                'stage': stage,
+                'duration': end_time - start_time,
+                'memory_used': final_memory - initial_memory,
+                'evaluations_per_second': len(grid_points) / (end_time - start_time),
+                'hardware_accelerated': self.batch_processor is not None
+            }
+
+            self.performance_metrics.append(performance_info)
+            self.logger.info(f"   Batch evaluation completed in {performance_info['duration']:.2f}s")
+            self.logger.info(f"   Evaluations/sec: {performance_info['evaluations_per_second']:.1f}")
+            if self.batch_processor:
+                self.logger.info("   Hardware acceleration: Enabled")
+
+            return {
+                'best_params': best_params,
+                'best_value': best_value,
+                'trials': trials
+            }
+
+        except Exception as e:
+            self.logger.error(f"❌ Batch evaluation failed: {e}")
+            return None
+
+    def _sequential_evaluate_grid(self, objective: Callable, grid_points: List[Dict[str, Any]],
+                                stage: str) -> Dict[str, Any]:
+        """Sequential evaluation with performance monitoring and early stopping."""
+        try:
+            self.logger.info(f"🔄 Sequential evaluating {len(grid_points)} {stage} grid points")
+
+            trials = []
+            best_params = None
+            best_value = None
+
+            for i, params in enumerate(grid_points):
+                trial_start = time.time()
+                try:
+                    value = objective(params)
+                    trial_duration = time.time() - trial_start
+
+                    trial_info = {
+                        'trial': i,
+                        'stage': stage,
+                        'params': params,
+                        'value': value,
+                        'duration': trial_duration
+                    }
+                    trials.append(trial_info)
+
+                    if self._is_better_result(value, best_value):
+                        best_params = params
+                        best_value = value
+                    
+                    # Check early stopping after minimum trials
+                    if i >= self.config.early_stopping_patience:
+                        if self._check_early_stopping_grid(trials, stage):
+                            self.logger.info(f"   Stopped after {i+1}/{len(grid_points)} evaluations")
+                            break
+
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Sequential evaluation {i} failed: {e}")
+                    trial_info = {
+                        'trial': i,
+                        'stage': stage,
+                        'params': params,
+                        'value': float('-inf') if self.config.direction == 'maximize' else float('inf'),
+                        'duration': None,
+                        'error': str(e)
+                    }
+                    trials.append(trial_info)
+
+            return {
+                'best_params': best_params,
+                'best_value': best_value,
+                'trials': trials
+            }
+
+        except Exception as e:
+            self.logger.error(f"❌ Sequential evaluation failed: {e}")
+            return None
+
+    def _prepare_batch_parameters(self, grid_points: List[Dict[str, Any]]) -> Dict[str, List]:
+        """Prepare parameters for batch processing."""
+        # Extract parameter names and values for vectorized processing
+        if not grid_points:
+            return {}
+
+        param_names = list(grid_points[0].keys())
+        param_arrays = {name: [] for name in param_names}
+
+        # Use vectorized operations for better performance instead of nested loops
+        if self.matrix_processor and self.config.enable_batch_processing:
+            try:
+                # Use matrix operations for efficient parameter processing
+                import numpy as np
+
+                # Convert to numpy arrays for vectorized operations
+                param_matrices = {}
+                for name in param_names:
+                    # Extract values for each parameter across all grid points
+                    values = [params[name] for params in grid_points]
+                    param_matrices[name] = np.array(values)
+
+                # Use batch matrix operations for efficient processing
+                if hasattr(self.matrix_processor, 'batch_matrix_multiply'):
+                    # Process parameter matrices in batches for memory efficiency
+                    batch_size = min(100, len(grid_points))  # Process in batches
+                    processed_matrices = {}
+
+                    for name, matrix in param_matrices.items():
+                        if matrix.ndim == 1:
+                            # Convert 1D arrays to column vectors for matrix operations
+                            matrix = matrix.reshape(-1, 1)
+
+                        # Process in batches to avoid memory issues
+                        processed_batches = []
+                        for i in range(0, len(matrix), batch_size):
+                            batch = matrix[i:i + batch_size]
+                            # Use matrix operations for processing if available
+                            if hasattr(self.matrix_processor, 'optimize_matrix'):
+                                processed_batch = self.matrix_processor.optimize_matrix(batch)
+                            else:
+                                processed_batch = batch
+                            processed_batches.append(processed_batch)
+
+                        # Combine processed batches
+                        if processed_batches:
+                            processed_matrices[name] = np.vstack(processed_batches)
+                        else:
+                            processed_matrices[name] = matrix
+
+                    # Convert back to list format for compatibility
+                    for name in param_names:
+                        if name in processed_matrices:
+                            param_arrays[name] = processed_matrices[name].flatten().tolist()
+                        else:
+                            # Fallback to original nested loop approach
+                            param_arrays[name] = [params[name] for params in grid_points]
+                else:
+                    # Fallback to optimized list comprehension
+                    for name in param_names:
+                        param_arrays[name] = [params[name] for params in grid_points]
+
+            except Exception as e:
+                self.logger.warning(f"⚠️ Matrix-based parameter processing failed, using list comprehension: {e}")
+                # Fallback to optimized list comprehension (still better than nested loops)
+                for name in param_names:
+                    param_arrays[name] = [params[name] for params in grid_points]
+        else:
+            # Use optimized list comprehension instead of nested loops
+            for name in param_names:
+                param_arrays[name] = [params[name] for params in grid_points]
+
+        return param_arrays
+
+    def _get_memory_usage(self) -> float:
+        """Get current memory usage in MB."""
+        try:
+            if self.performance_monitor:
+                return self.performance_monitor.get_memory_usage()
+            elif hasattr(self.hardware_manager, 'get_memory_usage'):
+                return self.hardware_manager.get_memory_usage()
+            else:
+                # Fallback: use psutil if available
+                try:
+                    import psutil
+                    process = psutil.Process()
+                    return process.memory_info().rss / (1024 * 1024)  # Convert to MB
+                except ImportError:
+                    return 0.0
+        except Exception:
+            return 0.0
+
+    def _create_objective_wrapper(self, objective: Callable, search_space: Dict[str, Any]) -> Callable:
+        """Create wrapper for objective function to work with Optuna."""
+        def optuna_objective(trial: optuna.Trial) -> float:
+            """Optuna-compatible objective function."""
+            try:
+                # Suggest parameters based on search space
+                params = {}
+                for param_name, param_config in search_space.items():
+                    if isinstance(param_config, tuple) and len(param_config) == 2:
+                        # (low, high) format for numerical parameters
+                        low, high = param_config
+                        if isinstance(low, int) and isinstance(high, int):
+                            params[param_name] = trial.suggest_int(param_name, low, high)
+                        else:
+                            params[param_name] = trial.suggest_float(param_name, low, high)
+                    elif isinstance(param_config, list):
+                        # Choice format for categorical parameters
+                        params[param_name] = trial.suggest_categorical(param_name, param_config)
+                    elif isinstance(param_config, dict):
+                        # Advanced configuration format
+                        if param_config.get('type') == 'int':
+                            params[param_name] = trial.suggest_int(
+                                param_name,
+                                param_config['low'],
+                                param_config['high']
+                            )
+                        elif param_config.get('type') == 'float':
+                            params[param_name] = trial.suggest_float(
+                                param_name,
+                                param_config['low'],
+                                param_config['high'],
+                                log=param_config.get('log', False)
+                            )
+                        elif param_config.get('type') == 'categorical':
+                            params[param_name] = trial.suggest_categorical(
+                                param_name,
+                                param_config['choices']
+                            )
+                        else:
+                            raise ValueError(f"Unknown parameter config for {param_name}")
+
+                # Evaluate objective function
+                value = objective(params)
+
+                # Apply constraints if specified
+                if self.config.constraints:
+                    for constraint_name, constraint_func in self.config.constraints.items():
+                        if not constraint_func(params, value):
+                            # Return worst possible value for constraint violation
+                            if self.config.direction == 'maximize':
+                                return float('-inf')
+                            else:
+                                return float('inf')
+
+                # Check early stopping conditions
+                if self._should_stop_early(trial.number, value):
+                    raise optuna.TrialPruned()
+
+                return value
+
+            except optuna.TrialPruned:
+                raise
+            except Exception as e:
+                self.logger.warning(f"⚠️ Trial {trial.number} failed: {e}")
+                # Return worst possible value for failed trials
+                if self.config.direction == 'maximize':
+                    return float('-inf')
+                else:
+                    return float('inf')
+
+        return optuna_objective
+
+    def _should_stop_early(self, trial_number: int, current_value: float) -> bool:
+        """Check if optimization should stop early."""
+        if self.config.early_stopping_patience is None:
+            return False
+
+        if trial_number < self.config.early_stopping_patience:
+            return False
+
+        # Check if best value hasn't improved for patience trials
+        recent_trials = self.study.trials[-self.config.early_stopping_patience:]
+        if self.config.direction == 'maximize':
+            best_recent = max(t.value for t in recent_trials if t.value != float('-inf'))
+            return current_value < best_recent and self.config.early_stopping_threshold is not None
+        else:
+            best_recent = min(t.value for t in recent_trials if t.value != float('inf'))
+            return current_value > best_recent and self.config.early_stopping_threshold is not None
+
+    def get_optimization_summary(self) -> Dict[str, Any]:
+        """Get comprehensive summary of optimization results including hardware performance."""
+        if not hasattr(self, 'optimization_history') or not self.optimization_history:
+            return {'error': 'No optimization has been run yet'}
+
+        # Basic optimization summary
+        completed_trials = [t for t in self.optimization_history if t.get('stage') == 'tpe']
+        coarse_trials = [t for t in self.optimization_history if t.get('stage') == 'coarse']
+        fine_trials = [t for t in self.optimization_history if t.get('stage') == 'fine']
+
+        summary = {
+            'total_trials': len(self.optimization_history),
+            'coarse_trials': len(coarse_trials),
+            'fine_trials': len(fine_trials),
+            'tpe_trials': len(completed_trials),
+            'best_params': self.best_params,
+            'best_value': self.best_value,
+            'direction': self.config.direction,
+            'hardware_optimization_enabled': self.hardware_manager is not None,
+            'batch_processing_enabled': self.batch_processor is not None,
+            'matrix_acceleration_enabled': self.matrix_processor is not None
+        }
+
+        # Performance metrics summary
+        if self.performance_metrics:
+            stage_performance = {}
+            for metric in self.performance_metrics:
+                stage = metric['stage']
+                if stage not in stage_performance:
+                    stage_performance[stage] = []
+                stage_performance[stage].append(metric)
+
+            summary['performance_summary'] = {}
+            for stage, metrics in stage_performance.items():
+                if metrics:
+                    avg_duration = np.mean([m['duration'] for m in metrics])
+                    avg_throughput = np.mean([m['evaluations_per_second'] for m in metrics])
+                    hardware_accelerated = any([m['hardware_accelerated'] for m in metrics])
+
+                    summary['performance_summary'][stage] = {
+                        'avg_duration': avg_duration,
+                        'avg_throughput': avg_throughput,
+                        'hardware_accelerated': hardware_accelerated,
+                        'num_evaluations': len(metrics)
+                    }
+
+        # Hardware configuration summary
+        if self.hardware_manager:
+            summary['hardware_config'] = {
+                'workload_type': self.config.workload_type,
+                'optimization_level': self.config.optimization_level,
+                'gpu_acceleration': self.config.enable_gpu_acceleration,
+                'batch_processing': self.config.enable_batch_processing,
+                'memory_limit_gb': self.config.memory_limit_gb
+            }
+
+        return summary
+
+    def get_parameter_importance(self) -> Dict[str, float]:
+        """Get parameter importance scores."""
+        if not self.study:
+            return {}
+
+        try:
+            importance = optuna.importance.get_param_importances(self.study)
+            return dict(importance)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not calculate parameter importance: {e}")
+            return {}
+
+    def plot_optimization_history(self) -> 'optuna.visualization.matplotlib.PlotlyPlot':
+        """Plot optimization history (requires plotly)."""
+        if not self.study:
+            raise ValueError("No optimization has been run yet")
+
+        try:
+            return optuna.visualization.plot_optimization_history(self.study)
+        except ImportError:
+            self.logger.warning("⚠️ Plotly not available for visualization")
+            return None
+
+    def plot_param_importances(self) -> 'optuna.visualization.matplotlib.PlotlyPlot':
+        """Plot parameter importances (requires plotly)."""
+        if not self.study:
+            raise ValueError("No optimization has been run yet")
+
+        try:
+            return optuna.visualization.plot_param_importances(self.study)
+        except ImportError:
+            self.logger.warning("⚠️ Plotly not available for visualization")
+            return None
+
+    def save_study(self, filepath: str) -> None:
+        """Save Optuna study to file."""
+        if not self.study:
+            raise ValueError("No optimization has been run yet")
+
+        try:
+            import joblib
+            joblib.dump(self.study, filepath)
+            self.logger.info(f"💾 Study saved to {filepath}")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to save study: {e}")
+            raise
+
+    def load_study(self, filepath: str) -> None:
+        """Load Optuna study from file."""
+        try:
+            import joblib
+            self.study = joblib.load(filepath)
+            if self.study.trials:
+                self.best_params = self.study.best_params
+                self.best_value = self.study.best_value
+            self.logger.info(f"📂 Study loaded from {filepath}")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to load study: {e}")
+            raise

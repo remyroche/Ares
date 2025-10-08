@@ -13,7 +13,7 @@ from scipy import stats
 from scipy.signal import find_peaks
 from sklearn.preprocessing import StandardScaler
 
-from ..core.feature_generator import (
+from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
 # Optimization utilities
 try:
@@ -22,11 +22,6 @@ try:
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
-    FeatureGenerator, 
-    FeatureConfig, 
-    FeatureCategory,
-    VectorizedFeatureGenerator
-)
 
 
 class RegimeEntropyGenerator(VectorizedFeatureGenerator):
@@ -487,19 +482,4 @@ __all__ = [
     'RegimeMemoryStrengthGenerator',
     'create_advanced_regime_generators'
 ]
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
 

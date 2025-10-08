@@ -51,64 +51,112 @@ except ImportError as e:
 try:
     from src.utils.common_operations import (
         get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-        cleanup_m1_optimizers, integrate_with_m1_optimizers
+        cleanup_m1_optimizers, integrate_with_m1_optimizers, safe_divide,
+        ensure_directory, safe_file_exists, get_current_datetime, validate_positive
     )
+    COMMON_OPERATIONS_AVAILABLE = True
     tprint_info("✅ Common operations utilities loaded")
 except ImportError as e:
     print(f"❌ CRITICAL ERROR: Common operations utilities are required but not available: {e}")
     print("❌ Hardware optimizers are essential for performance. Please install common_operations.")
+    COMMON_OPERATIONS_AVAILABLE = False
     raise ImportError(f"CRITICAL: Common operations utilities are required but not available: {e}") from e
+
+# Import model persistence and caching
+try:
+    from src.utils.ml_common.post_training.model_persistence import (
+        ModelPersistence, ModelMetadata, PersistenceConfig
+    )
+    from src.utils.ml_common.models.model_cache import (
+        ModelCache, get_model_cache, CachedModelMetadata
+    )
+    MODEL_PERSISTENCE_AVAILABLE = True
+except ImportError:
+    MODEL_PERSISTENCE_AVAILABLE = False
+
+# Import data cleaning utilities  
+try:
+    from src.utils.data.quality.data_cleaning import (
+        DataCleaner, CleaningConfig, MissingValueStrategy, OutlierStrategy
+    )
+    DATA_CLEANING_AVAILABLE = True
+except ImportError:
+    DATA_CLEANING_AVAILABLE = False
 
 try:
     from src.utils.common_utilities import (
         safe_dataframe_operation, validate_dataframe_columns, calculate_data_quality_metrics,
         safe_merge_dataframes, create_summary_statistics
     )
+    COMMON_UTILITIES_AVAILABLE = True
     tprint_info("✅ Common utilities loaded")
 except ImportError as e:
     print(f"❌ CRITICAL ERROR: Common utilities are required but not available: {e}")
     print("❌ Enhanced data operations are essential. Please install common_utilities.")
+    COMMON_UTILITIES_AVAILABLE = False
     raise ImportError(f"CRITICAL: Common utilities are required but not available: {e}") from e
 
 try:
     from src.utils.math_validation import (
-        safe_divide, validate_finite, validate_positive, validate_range,
+        validate_finite, validate_positive, validate_range,
         safe_correlation, safe_percentage_change
     )
+    MATH_VALIDATION_AVAILABLE = True
     tprint_info("✅ Math validation utilities loaded")
 except ImportError as e:
     print(f"❌ CRITICAL ERROR: Math validation utilities are required but not available: {e}")
     print("❌ Safe math operations are essential for data integrity. Please install math_validation.")
+    MATH_VALIDATION_AVAILABLE = False
     raise ImportError(f"CRITICAL: Math validation utilities are required but not available: {e}") from e
 
 try:
     from src.utils.kline_parquet import validate_klines_data, process_klines_data
     from src.utils.serialization_utils import safe_serialize, safe_deserialize
+    DATA_UTILITIES_AVAILABLE = True
     tprint_info("✅ Data utilities loaded")
 except ImportError as e:
     print(f"❌ CRITICAL ERROR: Data utilities are required but not available: {e}")
     print("❌ Enhanced data validation is essential. Please install kline_parquet and serialization_utils.")
+    DATA_UTILITIES_AVAILABLE = False
     raise ImportError(f"CRITICAL: Data utilities are required but not available: {e}") from e
 
 try:
     from src.utils.matrix_operations import (
         safe_matrix_operations, validate_matrix_properties, optimize_matrix_computations
     )
+    MATRIX_OPERATIONS_AVAILABLE = True
     tprint_info("✅ Matrix operations utilities loaded")
 except ImportError as e:
     print(f"❌ CRITICAL ERROR: Matrix operations utilities are required but not available: {e}")
     print("❌ Optimized matrix computations are essential for performance. Please install matrix_operations.")
+    MATRIX_OPERATIONS_AVAILABLE = False
     raise ImportError(f"CRITICAL: Matrix operations utilities are required but not available: {e}") from e
 
 try:
     from src.utils.ml_common import (
         cross_validation_utils, lookahead_bias_detector, hyperparameter_optimization
     )
+    ML_COMMON_AVAILABLE = True
     tprint_info("✅ ML common utilities loaded")
 except ImportError as e:
     print(f"❌ CRITICAL ERROR: ML common utilities are required but not available: {e}")
     print("❌ Advanced ML features are essential. Please install ml_common.")
+    ML_COMMON_AVAILABLE = False
     raise ImportError(f"CRITICAL: ML common utilities are required but not available: {e}") from e
+
+# Import Bayesian TPE optimizer for advanced HPO
+try:
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+        BayesianTPEOptimizer, OptimizationConfig, OptimizationResult
+    )
+    BAYESIAN_TPE_AVAILABLE = True
+    tprint_info("✅ Bayesian TPE optimizer loaded")
+except ImportError as e:
+    BAYESIAN_TPE_AVAILABLE = False
+    BayesianTPEOptimizer = None
+    OptimizationConfig = None
+    OptimizationResult = None
+    tprint_warning(f"⚠️ Bayesian TPE optimizer not available: {e} (will use fallback HPO)")
 
 # Enhanced training utilities integration
 try:
@@ -151,6 +199,75 @@ except Exception as e:
     print(f"❌ CRITICAL ERROR: Failed to initialize system logger: {e}")
     print("❌ System logger is required for proper logging. Please check logger configuration.")
     raise RuntimeError(f"CRITICAL: Failed to initialize system logger: {e}") from e
+
+
+@dataclass
+class TacticianTrainingConfig(PerRegimeTrainingConfig):
+    """
+    Configuration for Tactician models training with specific parameters.
+    
+    Extends PerRegimeTrainingConfig with tactician-specific settings for:
+    - Entry timing optimization
+    - Confidence-aware ensemble training
+    - Analyst signal integration
+    """
+    
+    # Tactician-specific configuration
+    enable_entry_timing_optimization: bool = True
+    entry_timing_range: float = 0.004  # 0-0.4% range for entry timing
+    expected_movement: float = 0.004  # Expected movement threshold
+    
+    # Entry timing objectives and penalties
+    entry_timing_objectives: Dict[str, Any] = None
+    early_entry_penalty_weight: float = 1.0
+    late_entry_penalty_weight: float = 1.0
+    optimal_entry_reward_weight: float = 2.0
+    
+    # Confidence-aware ensemble settings (always enabled for Tactician)
+    enable_confidence_aware_ensemble: bool = True
+    confidence_threshold: float = 0.5
+    confidence_weighting_method: str = "exponential"  # "linear", "exponential", "sigmoid"
+    
+    # Analyst integration settings
+    require_analyst_signals: bool = True
+    use_analyst_confidence_scores: bool = True
+    analyst_signal_types: List[str] = None  # ["directional", "magnitude", "timing"]
+    
+    # Advanced tactician features
+    enable_microstructure_features: bool = True
+    enable_regime_transition_handling: bool = False
+    enable_multi_horizon_prediction: bool = False
+    multi_horizon_windows: List[int] = None  # [1, 2, 5, 10] minutes
+    
+    # Random Survival Forest specific settings
+    enable_survival_analysis: bool = True
+    survival_horizons: List[int] = None  # [1, 2, 5, 10] minutes
+    survival_horizon_weights: List[float] = None  # [0.4, 0.3, 0.2, 0.1]
+    latency_constraint: float = 2.0  # seconds
+    
+    def __post_init__(self):
+        """Initialize default values for complex fields."""
+        super().__post_init__() if hasattr(super(), '__post_init__') else None
+        
+        if self.entry_timing_objectives is None:
+            self.entry_timing_objectives = {
+                'minimize_early_entry_penalty': True,
+                'minimize_late_entry_penalty': True,
+                'maximize_optimal_entry_reward': True,
+                'minimize_adverse_movement': True
+            }
+        
+        if self.analyst_signal_types is None:
+            self.analyst_signal_types = ["directional", "magnitude"]
+        
+        if self.multi_horizon_windows is None:
+            self.multi_horizon_windows = [1, 2, 5, 10]
+        
+        if self.survival_horizons is None:
+            self.survival_horizons = [1, 2, 5, 10]
+        
+        if self.survival_horizon_weights is None:
+            self.survival_horizon_weights = [0.4, 0.3, 0.2, 0.1]
 
 
 class TrainingPhase(Enum):
@@ -213,17 +330,12 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             config: Per-regime training configuration
             enable_vectorization: Whether to enable vectorized training
         """
-        # Initialize comprehensive tracking
-        self.training_metrics: Dict[TrainingPhase, TrainingMetrics] = {}
+        tprint_info("🚀 Initializing Tactician Models Training Step")
         self.overall_start_time = time.time()
         self.phase_start_time = time.time()
-        self.initialization_errors = []
-        self.utility_integration_status = {}
+        self.training_metrics: Dict[TrainingPhase, TrainingMetrics] = {}
         
-        # Log initialization start
-        tprint_info("🚀 Starting Enhanced Tactician Models Training Step initialization")
-        
-        # Set default configuration for tactician models with enhanced settings
+        # Set default configuration
         if config is None:
             config = TacticianTrainingConfig(
                 model_name="tactician_models",
@@ -248,59 +360,120 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             )
 
         try:
-            # Initialize parent class with comprehensive error handling
-            tprint_info("🔄 Initializing parent PerRegimeTrainingStep...")
-            super().__init__(config)
-            
-            # Initialize logger - CRITICAL: Fast fail if not available
-            try:
-                self.logger = logger.getChild('TacticianModelsTrainingEnhanced')
-            except Exception as e:
-                error_msg = f"CRITICAL: Failed to initialize child logger: {e}"
-                tprint_error(f"❌ {error_msg}")
-                raise RuntimeError(error_msg) from e
-            
-            tprint_success("✅ Parent class initialized successfully")
-            
-            # Vectorization support with enhanced validation
-            self.enable_vectorization = enable_vectorization and VECTORIZED_TRAINING_AVAILABLE
-            self.vectorization_fallback_used = False
-            
             # Initialize training metrics for initialization phase
             self._start_phase(TrainingPhase.INITIALIZATION)
             
-            # Validate configuration with comprehensive checks
-            tprint_info("🔍 Validating configuration...")
-            self._validate_configuration(config)
-            tprint_success("✅ Configuration validation passed")
+            # Initialize parent class
+            super().__init__(config)
+            self.logger = logger.getChild('TacticianModelsTrainingEnhanced')
             
-            # Initialize hardware optimizers with error handling
-            tprint_info("🧠 Initializing hardware optimizers...")
-            self._initialize_hardware_optimizers()
+            # Vectorization support
+            self.enable_vectorization = enable_vectorization and VECTORIZED_TRAINING_AVAILABLE
+            self.vectorization_fallback_used = False
             
-            # Initialize utility integrations
-            tprint_info("🔧 Initializing utility integrations...")
-            self._initialize_utility_integrations()
+            # Validate configuration (consolidated)
+            self._validate_config_consolidated(config)
             
-            # Initialize enhanced training utilities
+            # Initialize components (consolidated)
+            self._initialize_components_consolidated()
+            
+            # Initialize enhanced training utilities if available
             if ENHANCED_TRAINING_AVAILABLE:
-                tprint_info("🚀 Initializing enhanced training utilities...")
                 self._initialize_enhanced_training_utilities()
             
-            # Log initialization success with comprehensive status
-            if self.enable_vectorization:
-                tprint_success("🚀 Enhanced Tactician Models Training Step initialized with vectorization")
-            else:
-                tprint_success("✅ Enhanced Tactician Models Training Step initialized (standard mode)")
-            
-            # Log utility integration status
-            self._log_utility_integration_status()
+            init_time = time.time() - self.overall_start_time
+            tprint_success(f"✅ Initialization complete in {init_time:.2f}s")
             
             self._complete_phase(TrainingPhase.INITIALIZATION, success=True)
             
         except Exception as e:
-            self._handle_initialization_error(e)
+            tprint_error(f"❌ Initialization failed: {e}")
             raise
+    
+    def _validate_config_consolidated(self, config: PerRegimeTrainingConfig) -> None:
+        """Consolidated configuration validation using common utilities."""
+        try:
+            if not config.model_types or len(config.model_types) == 0:
+                raise ValueError("At least one model type required")
+            
+            if config.enable_hpo:
+                validate_positive(config.hpo_n_trials, "hpo_n_trials")
+                validate_positive(config.hpo_timeout_seconds, "hpo_timeout_seconds")
+            
+            validate_positive(config.min_samples_per_regime, "min_samples_per_regime")
+            
+            if config.save_models and config.model_save_path:
+                ensure_directory(config.model_save_path)
+            
+            tprint_success("✅ Configuration validation passed")
+        except Exception as e:
+            tprint_error(f"❌ Configuration validation failed: {e}")
+            raise
+    
+    def _initialize_components_consolidated(self):
+        """Consolidated initialization of all components."""
+        with tprint_timer("Component initialization"):
+            # Hardware optimizers
+            self._initialize_hardware_optimizers()
+            
+            # Utility integrations
+            self._initialize_utility_integrations()
+            
+            # Data cleaner
+            if DATA_CLEANING_AVAILABLE:
+                self.data_cleaner = self._initialize_data_cleaner()
+            
+            # Model persistence
+            if MODEL_PERSISTENCE_AVAILABLE:
+                self.model_persistence = self._initialize_model_persistence()
+            
+            # Model cache
+            if MODEL_PERSISTENCE_AVAILABLE:
+                self.model_cache = self._initialize_model_cache()
+            
+            tprint_success("✅ All components initialized")
+    
+    def _initialize_data_cleaner(self) -> Optional[Any]:
+        """Initialize data cleaner."""
+        try:
+            cleaning_config = CleaningConfig(
+                missing_value_strategy=MissingValueStrategy.INTERPOLATE,
+                outlier_strategy=OutlierStrategy.CLIP,
+                outlier_threshold=3.0
+            )
+            tprint_success("✅ Data cleaner initialized")
+            return DataCleaner(cleaning_config)
+        except Exception as e:
+            tprint_warning(f"⚠️ Data cleaner unavailable: {e}")
+            return None
+    
+    def _initialize_model_persistence(self) -> Optional[Any]:
+        """Initialize model persistence."""
+        try:
+            persistence_config = PersistenceConfig(
+                base_model_dir=self.config.model_save_path,
+                enable_versioning=True,
+                max_versions=5
+            )
+            tprint_success("✅ Model persistence initialized")
+            return ModelPersistence(persistence_config)
+        except Exception as e:
+            tprint_warning(f"⚠️ Model persistence unavailable: {e}")
+            return None
+    
+    def _initialize_model_cache(self) -> Optional[Any]:
+        """Initialize model cache."""
+        try:
+            model_cache = get_model_cache(
+                max_memory_models=10,
+                max_disk_models=50,
+                cache_dir=f"{self.config.model_save_path}/cache"
+            )
+            tprint_success("✅ Model cache initialized")
+            return model_cache
+        except Exception as e:
+            tprint_warning(f"⚠️ Model cache unavailable: {e}")
+            return None
     
     def _initialize_enhanced_training_utilities(self):
         """Initialize enhanced training utilities for overfitting prevention and lookahead bias detection."""
@@ -424,11 +597,114 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         except ImportError as e:
             self.logger.error(f"❌ Random Survival Forest not available: {e}")
             # Fallback to RandomForest
+            from sklearn.ensemble import RandomForestRegressor
             return RandomForestRegressor(n_estimators=200, random_state=42)
         except Exception as e:
             self.logger.error(f"❌ Failed to create Random Survival Forest: {e}")
             # Fallback to RandomForest
+            from sklearn.ensemble import RandomForestRegressor
             return RandomForestRegressor(n_estimators=200, random_state=42)
+    
+    def _optimize_hyperparameters_with_bayesian_tpe(
+        self,
+        model_type: str,
+        X: np.ndarray,
+        y: np.ndarray,
+        search_space: Dict[str, Any],
+        n_trials: int = 100,
+        timeout: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Optimize hyperparameters using Bayesian TPE with staged optimization (coarse grid -> fine grid -> TPE).
+        
+        Args:
+            model_type: Type of model to optimize
+            X: Training features
+            y: Training targets
+            search_space: Hyperparameter search space
+            n_trials: Number of optimization trials
+            timeout: Timeout in seconds
+            
+        Returns:
+            Dictionary containing best parameters and optimization results
+        """
+        tprint_info(f"🔍 Starting Bayesian TPE hyperparameter optimization for {model_type}...")
+        
+        if not BAYESIAN_TPE_AVAILABLE:
+            tprint_warning("⚠️ Bayesian TPE optimizer not available, skipping HPO")
+            return {'best_params': {}, 'optimization_skipped': True}
+        
+        try:
+            # Create optimization configuration
+            opt_config = OptimizationConfig(
+                n_trials=n_trials,
+                timeout=timeout,
+                direction='maximize',  # Maximize validation score
+                metric_name='validation_score',
+                enable_staged_optimization=True,
+                coarse_grid_points=5,
+                fine_grid_points=5,
+                coarse_grid_trials=25,
+                fine_grid_trials=25,
+                tpe_trials=max(50, n_trials - 50),
+                enable_hardware_optimization=hasattr(self, 'm1_optimizers_available') and self.m1_optimizers_available,
+                enable_adaptive_optimization=True,
+                early_stopping_patience=15,
+                seed=42
+            )
+            
+            # Define objective function for optimization
+            def objective(params: Dict[str, Any]) -> float:
+                """Objective function for hyperparameter optimization."""
+                try:
+                    # Create model with these parameters
+                    model = self._create_model_instance(model_type)
+                    
+                    # Set parameters
+                    if hasattr(model, 'set_params'):
+                        model.set_params(**params)
+                    
+                    # Perform cross-validation
+                    from sklearn.model_selection import cross_val_score
+                    scores = cross_val_score(
+                        model, X, y,
+                        cv=5,
+                        scoring='neg_mean_squared_error',
+                        n_jobs=-1
+                    )
+                    
+                    # Return negative MSE (higher is better)
+                    return -np.mean(scores)
+                    
+                except Exception as e:
+                    tprint_warning(f"⚠️ Objective evaluation failed: {e}")
+                    return -np.inf
+            
+            # Create and run optimizer
+            optimizer = BayesianTPEOptimizer(search_space, opt_config)
+            result = optimizer.optimize(objective)
+            
+            if result.success:
+                tprint_success(f"✅ Bayesian TPE optimization completed successfully")
+                tprint_info(f"📊 Best score: {result.best_value:.6f}")
+                tprint_info(f"📊 Total trials: {result.n_trials}")
+                tprint_info(f"📊 Optimization time: {result.optimization_time:.2f}s")
+                
+                return {
+                    'best_params': result.best_params,
+                    'best_score': result.best_value,
+                    'n_trials': result.n_trials,
+                    'optimization_time': result.optimization_time,
+                    'optimization_history': result.optimization_history,
+                    'success': True
+                }
+            else:
+                tprint_warning(f"⚠️ Bayesian TPE optimization failed: {result.error_message}")
+                return {'best_params': {}, 'success': False, 'error': result.error_message}
+                
+        except Exception as e:
+            tprint_error(f"❌ Bayesian TPE optimization error: {e}")
+            return {'best_params': {}, 'success': False, 'error': str(e)}
     
     def _start_phase(self, phase: TrainingPhase, context: Optional[Dict[str, Any]] = None) -> None:
         """Start tracking a training phase with structured logging."""
@@ -479,21 +755,14 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 )
     
     def _validate_configuration(self, config: PerRegimeTrainingConfig) -> None:
-        """Validate training configuration."""
-        try:
-            # Validate model types
-            if not config.model_types:
-                raise ValueError("No model types specified in configuration")
-            
-            # Validate timeframe
-            if not config.timeframe:
-                raise ValueError("No timeframe specified in configuration")
-            
-            # Validate minimum samples - CRITICAL: Fast fail on invalid config
-            if config.min_samples_per_regime < 100:
-                error_msg = f"CRITICAL: Very low minimum samples per regime: {config.min_samples_per_regime} (minimum: 100)"
-                tprint_error(f"❌ {error_msg}")
-                raise ValueError(error_msg)
+        """Validate configuration - delegates to consolidated method."""
+        self._validate_config_consolidated(config)
+        
+        # Tactician-specific critical validation
+        if config.min_samples_per_regime < 100:
+            error_msg = f"CRITICAL: Very low minimum samples per regime: {config.min_samples_per_regime} (minimum: 100)"
+            tprint_error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
             
             # Validate HPO settings - CRITICAL: Fast fail on invalid config
             if config.enable_hpo and config.hpo_n_trials < 10:
@@ -508,48 +777,77 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             raise
     
     def _initialize_hardware_optimizers(self) -> None:
-        """Initialize hardware optimizers - CRITICAL: Fast fail if not available."""
+        """Initialize hardware optimizers with graceful fallback for non-M1 systems."""
         try:
-            tprint_info("🧠 Initializing M1 hardware optimizers...")
+            tprint_info("🧠 Initializing hardware optimizers...")
             
-            # Initialize M1 GPU manager - CRITICAL: Fast fail if not available
-            self.m1_gpu_manager = get_m1_gpu_manager()
-            if not self.m1_gpu_manager:
-                error_msg = "CRITICAL: M1 GPU manager is required but not available"
-                tprint_error(f"❌ {error_msg}")
-                raise RuntimeError(error_msg)
-            tprint_success("✅ M1 GPU manager initialized")
+            # Flag to track if M1 optimizers are available
+            self.m1_optimizers_available = False
             
-            # Initialize M1 memory optimizer - CRITICAL: Fast fail if not available
-            self.m1_memory_optimizer = get_m1_memory_optimizer()
-            if not self.m1_memory_optimizer:
-                error_msg = "CRITICAL: M1 memory optimizer is required but not available"
-                tprint_error(f"❌ {error_msg}")
-                raise RuntimeError(error_msg)
-            tprint_success("✅ M1 memory optimizer initialized")
+            try:
+                # Try to initialize M1 GPU manager
+                self.m1_gpu_manager = get_m1_gpu_manager()
+                if self.m1_gpu_manager:
+                    tprint_success("✅ M1 GPU manager initialized")
+                    self.m1_optimizers_available = True
+                else:
+                    tprint_warning("⚠️ M1 GPU manager not available (graceful fallback)")
+                    self.m1_gpu_manager = None
+            except Exception as e:
+                tprint_warning(f"⚠️ M1 GPU manager initialization failed: {e} (graceful fallback)")
+                self.m1_gpu_manager = None
             
-            # Initialize M1 CPU optimizer - CRITICAL: Fast fail if not available
-            self.m1_cpu_optimizer = get_m1_cpu_optimizer()
-            if not self.m1_cpu_optimizer:
-                error_msg = "CRITICAL: M1 CPU optimizer is required but not available"
-                tprint_error(f"❌ {error_msg}")
-                raise RuntimeError(error_msg)
-            tprint_success("✅ M1 CPU optimizer initialized")
+            try:
+                # Try to initialize M1 memory optimizer
+                self.m1_memory_optimizer = get_m1_memory_optimizer()
+                if self.m1_memory_optimizer:
+                    tprint_success("✅ M1 memory optimizer initialized")
+                    self.m1_optimizers_available = True
+                else:
+                    tprint_warning("⚠️ M1 memory optimizer not available (graceful fallback)")
+                    self.m1_memory_optimizer = None
+            except Exception as e:
+                tprint_warning(f"⚠️ M1 memory optimizer initialization failed: {e} (graceful fallback)")
+                self.m1_memory_optimizer = None
             
-            # Integrate with M1 optimizers - CRITICAL: Fast fail if not successful
-            integration_result = integrate_with_m1_optimizers()
-            if not integration_result.get('success', False):
-                error_msg = "CRITICAL: M1 optimizers integration failed"
-                tprint_error(f"❌ {error_msg}")
-                raise RuntimeError(error_msg)
-            tprint_success("✅ M1 optimizers integration successful")
+            try:
+                # Try to initialize M1 CPU optimizer
+                self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+                if self.m1_cpu_optimizer:
+                    tprint_success("✅ M1 CPU optimizer initialized")
+                    self.m1_optimizers_available = True
+                else:
+                    tprint_warning("⚠️ M1 CPU optimizer not available (graceful fallback)")
+                    self.m1_cpu_optimizer = None
+            except Exception as e:
+                tprint_warning(f"⚠️ M1 CPU optimizer initialization failed: {e} (graceful fallback)")
+                self.m1_cpu_optimizer = None
             
-            tprint_success("✅ Hardware optimizers initialization completed")
+            # Try to integrate with M1 optimizers if any are available
+            if self.m1_optimizers_available:
+                try:
+                    integration_result = integrate_with_m1_optimizers()
+                    if integration_result and integration_result.get('success', False):
+                        tprint_success("✅ M1 optimizers integration successful")
+                    else:
+                        tprint_warning("⚠️ M1 optimizers integration incomplete (graceful fallback)")
+                        self.m1_optimizers_available = False
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 optimizers integration failed: {e} (graceful fallback)")
+                    self.m1_optimizers_available = False
+            
+            if self.m1_optimizers_available:
+                tprint_success("✅ Hardware optimizers initialization completed with M1 acceleration")
+            else:
+                tprint_info("ℹ️ Hardware optimizers initialization completed (standard CPU mode)")
             
         except Exception as e:
-            error_msg = f"CRITICAL: Hardware optimizer initialization failed: {e}"
-            tprint_error(f"❌ {error_msg}")
-            raise RuntimeError(error_msg) from e
+            # Even if all optimizers fail, continue with standard CPU mode
+            tprint_warning(f"⚠️ Hardware optimizer initialization encountered errors: {e} (continuing with standard CPU mode)")
+            self.m1_gpu_manager = None
+            self.m1_memory_optimizer = None
+            self.m1_cpu_optimizer = None
+            self.m1_optimizers_available = False
     
     def _initialize_utility_integrations(self) -> None:
         """Initialize utility integrations - All utilities are required."""
@@ -1267,9 +1565,12 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             self._start_phase(TrainingPhase.MODEL_TRAINING)
             try:
                 with tprint_timer("Model Training"):
-                    results = self._execute_training_enhanced(
+                    results = self._execute_training(
                         X, y, regime_labels, feature_names, hmm_states,
-                        analyst_confidence_scores, analyst_directional_info
+                        analyst_confidence_scores, analyst_directional_info,
+                        timestamps, analyst_signals, analyst_model_outputs,
+                        hmm_regime_features, all_analyst_models_outputs,
+                        hmm_model_outputs, analyst_ensemble_outputs
                     )
                 
                 models_trained = len(results.get('models', {}))
@@ -1307,6 +1608,263 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     'final_features': X.shape[1],
                     'success': True
                 })
+                
+                # Generate thorough outcome file with datetime stamp
+                try:
+                    from datetime import datetime
+                    from pathlib import Path
+                    import json
+                    
+                    outcome_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    outcomes_dir = Path('outcomes')
+                    outcomes_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    outcome_filename = f"tactician_model_training_outcome_{outcome_timestamp}.json"
+                    outcome_path = outcomes_dir / outcome_filename
+                    
+                    # Extract comprehensive training statistics
+                    models_trained_dict = results.get('models', {})
+                    model_stats = {
+                        'total_models': len(models_trained_dict),
+                        'model_names': list(models_trained_dict.keys()),
+                        'per_model_details': {}
+                    }
+                    
+                    for model_name, model_info in models_trained_dict.items():
+                        if isinstance(model_info, dict):
+                            # Extract comprehensive ML metrics
+                            ml_metrics = {}
+                            
+                            # Classification metrics
+                            if 'accuracy' in model_info:
+                                ml_metrics['accuracy'] = float(model_info['accuracy']) if model_info['accuracy'] is not None else None
+                            if 'auc' in model_info:
+                                ml_metrics['auc'] = float(model_info['auc']) if model_info['auc'] is not None else None
+                            if 'roc_auc' in model_info:
+                                ml_metrics['roc_auc'] = float(model_info['roc_auc']) if model_info['roc_auc'] is not None else None
+                            if 'precision' in model_info:
+                                ml_metrics['precision'] = float(model_info['precision']) if model_info['precision'] is not None else None
+                            if 'recall' in model_info:
+                                ml_metrics['recall'] = float(model_info['recall']) if model_info['recall'] is not None else None
+                            if 'f1_score' in model_info:
+                                ml_metrics['f1_score'] = float(model_info['f1_score']) if model_info['f1_score'] is not None else None
+                            if 'average_precision' in model_info:
+                                ml_metrics['average_precision'] = float(model_info['average_precision']) if model_info['average_precision'] is not None else None
+                            
+                            # Regression metrics
+                            if 'mse' in model_info:
+                                ml_metrics['mse'] = float(model_info['mse']) if model_info['mse'] is not None else None
+                            if 'rmse' in model_info:
+                                ml_metrics['rmse'] = float(model_info['rmse']) if model_info['rmse'] is not None else None
+                            if 'mae' in model_info:
+                                ml_metrics['mae'] = float(model_info['mae']) if model_info['mae'] is not None else None
+                            if 'r2_score' in model_info:
+                                ml_metrics['r2_score'] = float(model_info['r2_score']) if model_info['r2_score'] is not None else None
+                            
+                            # Trading-specific metrics
+                            if 'sharpe_ratio' in model_info:
+                                ml_metrics['sharpe_ratio'] = float(model_info['sharpe_ratio']) if model_info['sharpe_ratio'] is not None else None
+                            if 'win_rate' in model_info:
+                                ml_metrics['win_rate'] = float(model_info['win_rate']) if model_info['win_rate'] is not None else None
+                            if 'profit_factor' in model_info:
+                                ml_metrics['profit_factor'] = float(model_info['profit_factor']) if model_info['profit_factor'] is not None else None
+                            if 'max_drawdown' in model_info:
+                                ml_metrics['max_drawdown'] = float(model_info['max_drawdown']) if model_info['max_drawdown'] is not None else None
+                            if 'sortino_ratio' in model_info:
+                                ml_metrics['sortino_ratio'] = float(model_info['sortino_ratio']) if model_info['sortino_ratio'] is not None else None
+                            
+                            # CV scores
+                            cv_scores = {}
+                            if 'cv_scores' in model_info and model_info['cv_scores'] is not None:
+                                cv_scores_list = model_info['cv_scores']
+                                if isinstance(cv_scores_list, (list, tuple)) and len(cv_scores_list) > 0:
+                                    cv_scores = {
+                                        'mean': float(np.mean(cv_scores_list)),
+                                        'std': float(np.std(cv_scores_list)),
+                                        'min': float(np.min(cv_scores_list)),
+                                        'max': float(np.max(cv_scores_list)),
+                                        'scores': [float(s) for s in cv_scores_list],
+                                    }
+                            
+                            # Confusion matrix if available
+                            confusion_matrix_data = {}
+                            if 'confusion_matrix' in model_info and model_info['confusion_matrix'] is not None:
+                                cm = model_info['confusion_matrix']
+                                if hasattr(cm, 'tolist'):
+                                    confusion_matrix_data = {
+                                        'matrix': cm.tolist(),
+                                        'shape': list(cm.shape),
+                                    }
+                            
+                            model_stats['per_model_details'][model_name] = {
+                                'model_type': model_info.get('model_type', 'unknown'),
+                                'training_score': float(model_info.get('train_score', 0.0)) if model_info.get('train_score') is not None else None,
+                                'validation_score': float(model_info.get('val_score', 0.0)) if model_info.get('val_score') is not None else None,
+                                'test_score': float(model_info.get('test_score', 0.0)) if model_info.get('test_score') is not None else None,
+                                'n_features': model_info.get('n_features', 0),
+                                'n_samples': model_info.get('n_samples', 0),
+                                'ml_metrics': ml_metrics,
+                                'cv_scores': cv_scores,
+                                'confusion_matrix': confusion_matrix_data,
+                            }
+                    
+                    # Calculate aggregate metrics across all models
+                    aggregate_metrics = {
+                        'avg_training_score': 0.0,
+                        'avg_validation_score': 0.0,
+                        'avg_test_score': 0.0,
+                        'avg_accuracy': 0.0,
+                        'avg_auc': 0.0,
+                        'avg_precision': 0.0,
+                        'avg_recall': 0.0,
+                        'avg_f1_score': 0.0,
+                        'best_model': None,
+                        'worst_model': None,
+                    }
+                    
+                    valid_train_scores = []
+                    valid_val_scores = []
+                    valid_test_scores = []
+                    valid_accuracies = []
+                    valid_aucs = []
+                    valid_precisions = []
+                    valid_recalls = []
+                    valid_f1_scores = []
+                    
+                    for model_name, details in model_stats['per_model_details'].items():
+                        if details['training_score'] is not None:
+                            valid_train_scores.append((model_name, details['training_score']))
+                        if details['validation_score'] is not None:
+                            valid_val_scores.append((model_name, details['validation_score']))
+                        if details['test_score'] is not None:
+                            valid_test_scores.append((model_name, details['test_score']))
+                        
+                        ml_metrics = details.get('ml_metrics', {})
+                        if ml_metrics.get('accuracy') is not None:
+                            valid_accuracies.append(ml_metrics['accuracy'])
+                        if ml_metrics.get('auc') is not None or ml_metrics.get('roc_auc') is not None:
+                            valid_aucs.append(ml_metrics.get('auc') or ml_metrics.get('roc_auc'))
+                        if ml_metrics.get('precision') is not None:
+                            valid_precisions.append(ml_metrics['precision'])
+                        if ml_metrics.get('recall') is not None:
+                            valid_recalls.append(ml_metrics['recall'])
+                        if ml_metrics.get('f1_score') is not None:
+                            valid_f1_scores.append(ml_metrics['f1_score'])
+                    
+                    if valid_train_scores:
+                        aggregate_metrics['avg_training_score'] = float(np.mean([s for _, s in valid_train_scores]))
+                        aggregate_metrics['best_model'] = max(valid_train_scores, key=lambda x: x[1])[0]
+                        aggregate_metrics['worst_model'] = min(valid_train_scores, key=lambda x: x[1])[0]
+                    if valid_val_scores:
+                        aggregate_metrics['avg_validation_score'] = float(np.mean([s for _, s in valid_val_scores]))
+                    if valid_test_scores:
+                        aggregate_metrics['avg_test_score'] = float(np.mean([s for _, s in valid_test_scores]))
+                    if valid_accuracies:
+                        aggregate_metrics['avg_accuracy'] = float(np.mean(valid_accuracies))
+                        aggregate_metrics['std_accuracy'] = float(np.std(valid_accuracies))
+                    if valid_aucs:
+                        aggregate_metrics['avg_auc'] = float(np.mean(valid_aucs))
+                        aggregate_metrics['std_auc'] = float(np.std(valid_aucs))
+                    if valid_precisions:
+                        aggregate_metrics['avg_precision'] = float(np.mean(valid_precisions))
+                    if valid_recalls:
+                        aggregate_metrics['avg_recall'] = float(np.mean(valid_recalls))
+                    if valid_f1_scores:
+                        aggregate_metrics['avg_f1_score'] = float(np.mean(valid_f1_scores))
+                        aggregate_metrics['std_f1_score'] = float(np.std(valid_f1_scores))
+                    
+                    # Performance metrics breakdown
+                    phase_metrics = {}
+                    for phase_name, phase_data in self.phase_metrics.items():
+                        phase_metrics[phase_name] = {
+                            'duration': phase_data.get('duration', 0.0),
+                            'success': phase_data.get('success', False),
+                            'samples_processed': phase_data.get('samples_processed', 0),
+                            'errors': phase_data.get('errors', []),
+                        }
+                    
+                    performance_metrics = {
+                        'total_execution_time_seconds': total_time,
+                        'models_per_second': len(models_trained_dict) / max(0.001, total_time),
+                        'phase_metrics': phase_metrics,
+                        'final_samples': int(X.shape[0]),
+                        'final_features': int(X.shape[1]),
+                        'aggregate_ml_metrics': aggregate_metrics,
+                    }
+                    
+                    # Training configuration details
+                    training_config = {
+                        'timeframe': getattr(self.config, 'timeframe', '15m'),
+                        'regime_aware': getattr(self.config, 'regime_aware', True),
+                        'enable_enhanced_training': getattr(self.config, 'enable_enhanced_training', True),
+                        'enable_overfitting_prevention': getattr(self.config, 'enable_overfitting_prevention', True),
+                        'use_purged_cv': getattr(self.config, 'use_purged_cv', True),
+                        'cv_folds': getattr(self.config, 'cv_folds', 5),
+                        'early_stopping_enabled': getattr(self.config, 'early_stopping_enabled', True),
+                        'enable_entry_timing_optimization': getattr(self.config, 'enable_entry_timing_optimization', False),
+                        'confidence_aware_ensemble_enabled': True,  # Always enabled for Tactician
+                    }
+                    
+                    # Data quality and validation
+                    data_quality = {
+                        'input_samples': results.get('input_samples', X.shape[0]),
+                        'input_features': results.get('input_features', X.shape[1]),
+                        'training_samples': results.get('training_samples', 0),
+                        'validation_samples': results.get('validation_samples', 0),
+                        'test_samples': results.get('test_samples', 0),
+                        'feature_names': results.get('feature_names', []),
+                        'regime_distribution': results.get('regime_distribution', {}),
+                        'analyst_signals_used': analyst_signals is not None,
+                        'analyst_directional_info_used': analyst_directional_info is not None,
+                    }
+                    
+                    # Warnings and issues
+                    warnings_and_issues = {
+                        'overfitting_warnings': results.get('overfitting_warnings', []),
+                        'lookahead_warnings': results.get('lookahead_warnings', []),
+                        'data_quality_warnings': results.get('data_quality_warnings', []),
+                        'total_warnings': len(results.get('overfitting_warnings', [])) + len(results.get('lookahead_warnings', [])),
+                    }
+                    
+                    # Entry timing optimization results if applicable
+                    entry_timing_stats = {}
+                    if 'entry_timing_optimization' in results:
+                        entry_timing_stats = {
+                            'enabled': True,
+                            'results': results.get('entry_timing_optimization', {}),
+                        }
+                    
+                    # Create comprehensive outcome report
+                    outcome_data = {
+                        'component': 'tactician_model_training',
+                        'timestamp': datetime.now().isoformat(),
+                        'execution_time': total_time,
+                        'configuration': training_config,
+                        'results': {
+                            'summary': {
+                                'models_trained': len(models_trained_dict),
+                                'training_successful': True,
+                            },
+                            'model_statistics': model_stats,
+                            'data_quality': data_quality,
+                            'entry_timing_optimization': entry_timing_stats,
+                        },
+                        'performance_metrics': performance_metrics,
+                        'warnings_and_issues': warnings_and_issues,
+                        'enhanced_training_metadata': results.get('enhanced_training_metadata', {}),
+                        'status': 'success'
+                    }
+                    
+                    # Save outcome file
+                    with open(outcome_path, 'w') as f:
+                        json.dump(outcome_data, f, indent=2, default=str)
+                    
+                    tprint_success(f"📄 Outcome file saved: {outcome_filename}")
+                    results['outcome_file'] = str(outcome_path)
+                    
+                except Exception as outcome_error:
+                    tprint_warning(f"⚠️ Failed to save outcome file: {outcome_error}")
+                    # Don't fail training if outcome file generation fails
                 
                 return results
                 
@@ -1449,9 +2007,9 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 X, y, regime_labels = X_filtered, y_filtered, regime_labels_filtered
                 
                 if hmm_states is not None:
-                    hmm_states = hmm_states[green_light_mask]
-                    if hmm_states.shape[0] != green_light_count:
-                        error_msg = f"HMM states filtering mismatch: expected {green_light_count}, got {hmm_states.shape[0]}"
+                    hmm_states = hmm_states[directional_mask]
+                    if hmm_states.shape[0] != directional_count:
+                        error_msg = f"HMM states filtering mismatch: expected {directional_count}, got {hmm_states.shape[0]}"
                         preparation_metrics['errors'].append(error_msg)
                         raise ValueError(error_msg)
             
@@ -1464,7 +2022,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             if hmm_regime_features is not None:
                 try:
                     if analyst_signals is not None:
-                        hmm_regime_features = hmm_regime_features[green_light_mask]
+                        hmm_regime_features = hmm_regime_features[directional_mask]
                     
                     # Validate HMM features shape
                     if hmm_regime_features.shape[0] != X.shape[0]:
@@ -1507,7 +2065,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             if hmm_model_outputs is not None:
                 try:
                     if analyst_signals is not None:
-                        hmm_model_outputs = hmm_model_outputs[green_light_mask]
+                        hmm_model_outputs = hmm_model_outputs[directional_mask]
                     
                     # Validate HMM model outputs shape
                     if hmm_model_outputs.shape[0] != X.shape[0]:
@@ -1552,7 +2110,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 for model_name, model_outputs in all_analyst_models_outputs.items():
                     try:
                         if analyst_signals is not None:
-                            model_outputs = model_outputs[green_light_mask]
+                            model_outputs = model_outputs[directional_mask]
                         
                         # Validate model outputs shape
                         if model_outputs.shape[0] != X.shape[0]:
@@ -1595,7 +2153,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             if analyst_ensemble_outputs is not None:
                 try:
                     if analyst_signals is not None:
-                        analyst_ensemble_outputs = analyst_ensemble_outputs[green_light_mask]
+                        analyst_ensemble_outputs = analyst_ensemble_outputs[directional_mask]
                     
                     # Validate analyst ensemble outputs shape
                     if analyst_ensemble_outputs.shape[0] != X.shape[0]:
@@ -1638,7 +2196,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             if analyst_model_outputs is not None:
                 try:
                     if analyst_signals is not None:
-                        analyst_model_outputs = analyst_model_outputs[green_light_mask]
+                        analyst_model_outputs = analyst_model_outputs[directional_mask]
                     
                     # Validate legacy outputs shape
                     if analyst_model_outputs.shape[0] != X.shape[0]:
@@ -1745,7 +2303,14 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
         feature_names: Optional[List[str]],
         hmm_states: Optional[np.ndarray],
         analyst_confidence_scores: Optional[np.ndarray] = None,
-        analyst_directional_info: Optional[Dict[str, Any]] = None
+        analyst_directional_info: Optional[Dict[str, Any]] = None,
+        timestamps: Optional[np.ndarray] = None,
+        analyst_signals: Optional[np.ndarray] = None,
+        analyst_model_outputs: Optional[np.ndarray] = None,
+        hmm_regime_features: Optional[np.ndarray] = None,
+        all_analyst_models_outputs: Optional[Dict[str, np.ndarray]] = None,
+        hmm_model_outputs: Optional[np.ndarray] = None,
+        analyst_ensemble_outputs: Optional[np.ndarray] = None
     ) -> Dict[str, Any]:
         """Execute training with enhanced vectorization and comprehensive error handling."""
         training_metrics = {
@@ -1877,10 +2442,9 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 entry_timing_results = self._apply_entry_timing_optimization(X, y, feature_names, results)
                 results.update(entry_timing_results)
             
-            # Always add confidence-aware ensemble training for Tactician (core requirement)
-            self.logger.info("🔄 Training confidence-aware ensemble model (always enabled for Tactician)...")
-            ensemble_results = self._train_confidence_aware_ensemble_model(X, y, feature_names, results)
-            results.update(ensemble_results)
+            # NOTE: Ensemble training is handled by tactician_ensemble_training.py
+            # Individual model training is complete - ensemble training is a separate step
+            tprint_info("✅ Individual model training complete. Ensemble training handled separately by tactician_ensemble_training.py")
             
             return results
             
@@ -1999,7 +2563,7 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
                                 X_regime, y_regime, 
                                 feature_names=feature_names,
                                 analyst_signals=analyst_signals[regime_mask] if analyst_signals is not None else None,
-                                hmm_regime_probs=hmm_regime_probs[regime_mask] if hmm_regime_probs is not None else None,
+                                hmm_regime_probs=None,  # TODO: Extract from hmm_regime_features if available
                                 enable_hpo=True,
                                 hpo_trials=self.config.hpo_n_trials,
                                 cv_folds=5,
@@ -2202,260 +2766,21 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             self.logger.error(f"❌ Entry timing optimization failed: {e}")
             return {}
     
-    def _train_confidence_aware_ensemble_model(
-        self,
-        X: np.ndarray,
-        y: np.ndarray,
-        feature_names: Optional[List[str]],
-        base_models_results: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Train confidence-aware ensemble model using base models as inputs."""
-        try:
-            from .tactician_directional_optimization import ConfidenceAwareEnsemble, ConfidenceAwareModel, EntryTimingLossFunction
-            
-            self.logger.info("🔄 Training confidence-aware ensemble model from base models...")
-            
-            # Get base models from results
-            base_models = base_models_results.get('models', {})
-            if not base_models:
-                self.logger.warning("⚠️ No base models found for ensemble training")
-                return {}
-            
-            # Wrap base models with confidence awareness
-            confidence_aware_models = []
-            loss_functions = EntryTimingLossFunction()
-            
-            for model_name, model in base_models.items():
-                try:
-                    # Wrap model with confidence awareness
-                    confidence_aware_model = ConfidenceAwareModel(model, loss_functions)
-                    confidence_aware_models.append(confidence_aware_model)
-                    self.logger.info(f"📊 Wrapped {model_name} with confidence awareness")
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Failed to wrap {model_name} with confidence awareness: {e}")
-            
-            if not confidence_aware_models:
-                self.logger.warning("⚠️ No valid confidence-aware models for ensemble training")
-                return {}
-            
-            # Create meta model (LightGBM as meta-learner)
-            meta_model_type = getattr(self.config, 'meta_model', 'LightGBM')
-            if meta_model_type == 'LightGBM':
-                meta_model = LGBMRegressor(
-                    n_estimators=1000,
-                    learning_rate=0.05,
-                    max_depth=6,
-                    num_leaves=31,
-                    subsample=0.8,
-                    colsample_bytree=0.8,
-                    random_state=42,
-                    verbose=-1
-                )
-            elif meta_model_type == 'ElasticNetCV':
-                from sklearn.linear_model import ElasticNetCV
-                meta_model = ElasticNetCV(
-                    cv=5,
-                    random_state=42,
-                    l1_ratio=[0.1, 0.5, 0.7, 0.9, 0.95, 0.99, 1.0],
-                    alphas=np.logspace(-4, 1, 50)
-                )
-            else:
-                meta_model = self.training_utils.create_model(meta_model_type)
-            
-            # Create confidence-aware ensemble
-            ensemble_name = getattr(self.config, 'ensemble_name', 'tactician_ensemble')
-            confidence_aware_ensemble = ConfidenceAwareEnsemble(
-                confidence_aware_models, meta_model, loss_functions
-            )
-            
-            # Train ensemble
-            confidence_aware_ensemble.fit(X, y)
-            
-            # Evaluate ensemble performance
-            ensemble_predictions, ensemble_confidence = confidence_aware_ensemble.predict_with_confidence(X, y)
-            
-            # Calculate ensemble metrics
-            ensemble_metrics = {
-                'ensemble_name': ensemble_name,
-                'n_base_models': len(confidence_aware_models),
-                'meta_model_type': meta_model_type,
-                'avg_confidence': np.mean(ensemble_confidence),
-                'confidence_std': np.std(ensemble_confidence),
-                'min_confidence': np.min(ensemble_confidence),
-                'max_confidence': np.max(ensemble_confidence)
-            }
-            
-            self.logger.info(f"✅ Confidence-aware ensemble training completed")
-            self.logger.info(f"   Average confidence: {ensemble_metrics['avg_confidence']:.4f}")
-            self.logger.info(f"   Confidence range: [{ensemble_metrics['min_confidence']:.4f}, {ensemble_metrics['max_confidence']:.4f}]")
-            
-            return {
-                'ensemble_model': confidence_aware_ensemble,
-                'ensemble_metrics': ensemble_metrics,
-                'ensemble_predictions': ensemble_predictions,
-                'ensemble_confidence': ensemble_confidence
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Confidence-aware ensemble training failed: {e}")
-            return {}
-    
-    def _train_ensemble_model(
-        self,
-        X: np.ndarray,
-        y: np.ndarray,
-        feature_names: Optional[List[str]],
-        base_models_results: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Train ensemble model using base models as inputs."""
-        try:
-            self.logger.info("🔄 Training ensemble model from base models...")
-            
-            # Get base models from results
-            base_models = base_models_results.get('models', {})
-            if not base_models:
-                self.logger.warning("⚠️ No base models found for ensemble training")
-                return {}
-            
-            # Generate base model predictions for ensemble training
-            base_predictions = []
-            base_model_names = []
-            
-            for model_name, model in base_models.items():
-                try:
-                    # Generate predictions using the base model
-                    if hasattr(model, 'predict'):
-                        predictions = model.predict(X)
-                        base_predictions.append(predictions.reshape(-1, 1))
-                        base_model_names.append(model_name)
-                        self.logger.info(f"📊 Generated predictions from {model_name}")
-                    else:
-                        self.logger.warning(f"⚠️ Model {model_name} does not have predict method")
-                except Exception as e:
-                    self.logger.warning(f"⚠️ Failed to generate predictions from {model_name}: {e}")
-            
-            if not base_predictions:
-                self.logger.warning("⚠️ No valid base model predictions for ensemble training")
-                return {}
-            
-            # Combine base model predictions
-            X_ensemble = np.column_stack(base_predictions)
-            ensemble_feature_names = [f"base_model_{name}" for name in base_model_names]
-            
-            self.logger.info(f"📊 Ensemble training data: {X_ensemble.shape[0]} samples, {X_ensemble.shape[1]} base model predictions")
-            
-            # Train ensemble model
-            ensemble_method = getattr(self.config, 'ensemble_method', 'stacking')
-            meta_model_type = getattr(self.config, 'meta_model', 'ElasticNetCV')
-            ensemble_name = getattr(self.config, 'ensemble_name', 'tactician_ensemble')
-            
-            if ensemble_method == 'stacking':
-                # Use stacking ensemble
-                ensemble_model = self._train_stacking_ensemble(
-                    X_ensemble, y, meta_model_type, ensemble_name
-                )
-            else:
-                # Use simple meta-model
-                ensemble_model = self.training_utils.train_single_model(
-                    model_type=meta_model_type,
-                    X=X_ensemble,
-                    y=y,
-                    model_name=ensemble_name
-                )
-            
-            # Evaluate ensemble model
-            ensemble_evaluation = self.training_utils.evaluate_model(
-                model=ensemble_model,
-                X=X_ensemble,
-                y=y,
-                metrics=self.config.evaluation_metrics
-            )
-            
-            ensemble_results = {
-                'ensemble_model': ensemble_model,
-                'ensemble_evaluation': ensemble_evaluation,
-                'ensemble_method': ensemble_method,
-                'meta_model_type': meta_model_type,
-                'base_models_used': base_model_names,
-                'ensemble_feature_names': ensemble_feature_names
-            }
-            
-            self.logger.info(f"✅ Ensemble training completed: {ensemble_method} with {meta_model_type}")
-            self.logger.info(f"📊 Ensemble performance: {ensemble_evaluation}")
-            
-            return ensemble_results
-            
-        except Exception as e:
-            self.logger.error(f"❌ Ensemble training failed: {e}")
-            return {}
-    
-    def _train_stacking_ensemble(
-        self,
-        X_ensemble: np.ndarray,
-        y: np.ndarray,
-        meta_model_type: str,
-        ensemble_name: str
-    ):
-        """Train a stacking ensemble model."""
-        try:
-            from sklearn.ensemble import StackingRegressor
-            from sklearn.model_selection import cross_val_predict
-            
-            # Create base estimators from the ensemble features
-            base_estimators = []
-            for i in range(X_ensemble.shape[1]):
-                # Use simple models as base estimators for stacking
-                base_estimator = self.training_utils.create_model('Ridge')
-                base_estimators.append((f'base_{i}', base_estimator))
-            
-            # Create meta-model (ElasticNetCV for better performance)
-            if meta_model_type == 'ElasticNetCV':
-                meta_model = ElasticNetCV(
-                    cv=5,
-                    random_state=42,
-                    l1_ratio=[0.1, 0.5, 0.7, 0.9, 0.95, 0.99, 1.0],
-                    alphas=np.logspace(-4, 1, 50)
-                )
-            else:
-                meta_model = self.training_utils.create_model(meta_model_type)
-            
-            # Create stacking regressor
-            stacking_regressor = StackingRegressor(
-                estimators=base_estimators,
-                final_estimator=meta_model,
-                cv=5,  # 5-fold cross-validation
-                stack_method='predict'
-            )
-            
-            # Train the stacking ensemble
-            stacking_regressor.fit(X_ensemble, y)
-            
-            self.logger.info(f"✅ Stacking ensemble trained with {len(base_estimators)} base estimators")
-            
-            return stacking_regressor
-            
-        except Exception as e:
-            self.logger.error(f"❌ Stacking ensemble training failed: {e}")
-            # Fallback to simple meta-model with ElasticNetCV
-            if meta_model_type == 'ElasticNetCV':
-                from sklearn.model_selection import cross_val_score
-                
-                # Create and train ElasticNetCV directly
-                elastic_net = ElasticNetCV(
-                    cv=5,
-                    random_state=42,
-                    l1_ratio=[0.1, 0.5, 0.7, 0.9, 0.95, 0.99, 1.0],
-                    alphas=np.logspace(-4, 1, 50)
-                )
-                elastic_net.fit(X_ensemble, y)
-                return elastic_net
-            else:
-                return self.training_utils.train_single_model(
-                    model_type=meta_model_type,
-                    X=X_ensemble,
-                    y=y,
-                    model_name=ensemble_name
-                )
+    # ============================================================================
+    # ENSEMBLE TRAINING REMOVED - Use Dedicated Module
+    # ============================================================================
+    # Ensemble training logic has been removed from this file and is now handled
+    # by the dedicated tactician_ensemble_training.py module.
+    #
+    # This consolidation:
+    # - Eliminates ~250 lines of duplicate ensemble code
+    # - Provides single source of truth for ensemble training
+    # - Separates concerns: individual models vs ensemble meta-learning
+    # - Improves maintainability
+    #
+    # For ensemble training, use:
+    #   from .tactician_ensemble_training import TacticianEnsembleTrainingStep
+    # ============================================================================
     
     def _finalize_results(self, results: Dict[str, Any], analyst_signals: Optional[np.ndarray]) -> Dict[str, Any]:
         """Finalize results with tactician-specific metadata and comprehensive reporting."""
@@ -2641,39 +2966,50 @@ class TacticianModelsTrainingStepRefactored(PerRegimeTrainingStep):
             self.logger.error(f"❌ Traceback: {traceback.format_exc()}")
     
     def cleanup_resources(self) -> None:
-        """Clean up hardware optimizers and other resources."""
+        """Clean up hardware optimizers and other resources with graceful error handling."""
         try:
             tprint_info("🧹 Cleaning up resources...")
             
-            # Clean up M1 optimizers - CRITICAL: Must be available
-            try:
-                cleanup_result = cleanup_m1_optimizers()
-                if not cleanup_result:
-                    error_msg = "CRITICAL: M1 optimizer cleanup failed"
-                    tprint_error(f"❌ {error_msg}")
-                    raise RuntimeError(error_msg)
-                tprint_success("✅ M1 optimizers cleaned up successfully")
-            except Exception as e:
-                error_msg = f"CRITICAL: Failed to cleanup M1 optimizers: {e}"
-                tprint_error(f"❌ {error_msg}")
-                raise RuntimeError(error_msg) from e
+            # Clean up M1 optimizers if they were initialized
+            if hasattr(self, 'm1_optimizers_available') and self.m1_optimizers_available:
+                try:
+                    cleanup_result = cleanup_m1_optimizers()
+                    if cleanup_result:
+                        tprint_success("✅ M1 optimizers cleaned up successfully")
+                    else:
+                        tprint_warning("⚠️ M1 optimizer cleanup returned false (may not be critical)")
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 optimizer cleanup failed: {e} (non-critical)")
+            else:
+                tprint_debug("M1 optimizers not initialized, skipping cleanup")
             
-            # Clean up hardware resources
+            # Clean up hardware resources if they exist
             if hasattr(self, 'm1_gpu_manager') and self.m1_gpu_manager:
-                tprint_debug("Cleaning up M1 GPU manager...")
+                try:
+                    tprint_debug("Cleaning up M1 GPU manager...")
+                    # Add specific cleanup if needed
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 GPU manager cleanup warning: {e}")
             
             if hasattr(self, 'm1_memory_optimizer') and self.m1_memory_optimizer:
-                tprint_debug("Cleaning up M1 memory optimizer...")
+                try:
+                    tprint_debug("Cleaning up M1 memory optimizer...")
+                    # Add specific cleanup if needed
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 memory optimizer cleanup warning: {e}")
             
             if hasattr(self, 'm1_cpu_optimizer') and self.m1_cpu_optimizer:
-                tprint_debug("Cleaning up M1 CPU optimizer...")
+                try:
+                    tprint_debug("Cleaning up M1 CPU optimizer...")
+                    # Add specific cleanup if needed
+                except Exception as e:
+                    tprint_warning(f"⚠️ M1 CPU optimizer cleanup warning: {e}")
             
             tprint_success("✅ Resource cleanup completed")
             
         except Exception as e:
-            error_msg = f"CRITICAL: Resource cleanup failed: {e}"
-            tprint_error(f"❌ {error_msg}")
-            raise RuntimeError(error_msg) from e
+            # Log but don't raise - cleanup failures should not crash the program
+            tprint_warning(f"⚠️ Resource cleanup encountered errors: {e} (non-critical)")
     
     def __del__(self):
         """Destructor to ensure cleanup on object deletion."""

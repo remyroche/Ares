@@ -1,6 +1,6 @@
 """Order Flow features"""
 import pandas as pd
-from typing import List
+from typing import List, Optional
 from ..core.feature_generator import FeatureGenerator, FeatureConfig, FeatureCategory, VectorizedFeatureGenerator
 
 # Optimization utilities

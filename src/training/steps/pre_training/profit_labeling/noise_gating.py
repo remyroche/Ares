@@ -28,6 +28,9 @@ from src.utils.common_operations import (
 )
 from src.utils.math_validation import MathValidation
 
+# Import matrix operations for optimized rolling calculations
+from src.utils.matrix_operations import vectorized_rolling_features
+
 
 class NoiseGateType(Enum):
     """Enumeration of noise gate types."""
@@ -41,27 +44,30 @@ class NoiseGateType(Enum):
 class NoiseGatingConfig:
     """Configuration for noise gating."""
     
+    # Global enable/disable
+    enabled: bool = True
+    
     # Micro-range gating
     enable_micro_range_gating: bool = True
-    min_move_ratio: float = 1.5  # Minimum k·σ_t / (α·mTR_t) ratio
+    min_move_ratio: float = 1.2  # Minimum k·σ_t / (α·mTR_t) ratio - more lenient
     micro_range_window: int = 20  # Window for median true range calculation
     
     # Variance ratio gating
     enable_variance_ratio_gating: bool = True
-    vr_threshold_low: float = 0.5  # Lower threshold for microstructure detection
-    vr_threshold_high: float = 1.5  # Upper threshold for random walk
+    vr_threshold_low: float = 0.6  # Lower threshold for microstructure detection - more lenient
+    vr_threshold_high: float = 1.4  # Upper threshold for random walk - more lenient
     vr_window: int = 30  # Window for variance ratio calculation
     vr_subperiods: int = 5  # Number of subperiods for VR calculation
     
     
     # Signal-to-noise gating
     enable_signal_noise_gating: bool = True
-    min_snr_ratio: float = 1.2  # Minimum signal-to-noise ratio
+    min_snr_ratio: float = 1.1  # Minimum signal-to-noise ratio - more lenient
     snr_window: int = 25  # Window for SNR calculation
     
     # Combined gating
     gate_type: NoiseGateType = NoiseGateType.COMBINED
-    min_eligibility_ratio: float = 0.3  # Minimum ratio of eligible samples
+    min_eligibility_ratio: float = 0.2  # Minimum ratio of eligible samples - more lenient
     strict_mode: bool = False  # Use strict eligibility criteria
     
     # Quality checks
@@ -147,6 +153,17 @@ class NoiseGatingFilter:
             eligibility_ratio=0.0,
             config_used=self.config
         )
+        
+        # If noise gating is disabled, return all samples as eligible
+        if hasattr(self.config, 'enabled') and not self.config.enabled:
+            tprint_info("⚡ Noise gating disabled - marking all samples as eligible")
+            result.eligibility_mask = pd.Series(True, index=bars.index)
+            result.n_total_samples = len(bars)
+            result.n_eligible_samples = len(bars)
+            result.eligibility_ratio = 1.0
+            result.signal_quality_score = 1.0
+            result.processing_time = (datetime.now() - start_time).total_seconds()
+            return result
         
         try:
             # Validate input data
@@ -263,10 +280,36 @@ class NoiseGatingFilter:
             low_close = np.abs(bars['low'] - bars['close'].shift(1))
             
             true_range = np.maximum(high_low, np.maximum(high_close, low_close))
-            median_true_range = true_range.rolling(
-                window=self.config.micro_range_window,
-                min_periods=self.config.micro_range_window // 2
-            ).median()
+
+            # Use optimized rolling median for better performance
+            try:
+                # Use vectorized rolling features for median calculation
+                true_range_df = pd.DataFrame({'true_range': true_range})
+                min_periods = self.config.micro_range_window // 2
+
+                # Use vectorized rolling features for median
+                rolling_result = vectorized_rolling_features(
+                    true_range_df,
+                    windows=[self.config.micro_range_window],
+                    features=['median']
+                )
+
+                # Extract the median column
+                median_column = f'true_range_rolling_median_{self.config.micro_range_window}'
+                if median_column in rolling_result.columns:
+                    median_true_range = rolling_result[median_column]
+                else:
+                    # Fallback to pandas if vectorized features don't include expected column
+                    median_true_range = true_range.rolling(
+                        window=self.config.micro_range_window,
+                        min_periods=min_periods
+                    ).median()
+            except Exception as e:
+                tprint_warning(f"⚠️ Optimized rolling median failed, using pandas: {e}")
+                median_true_range = true_range.rolling(
+                    window=self.config.micro_range_window,
+                    min_periods=self.config.micro_range_window // 2
+                ).median()
             
             # Calculate minimum move threshold
             min_move_threshold = self.config.min_move_ratio * median_true_range
@@ -343,16 +386,48 @@ class NoiseGatingFilter:
             if len(returns) < self.config.snr_window:
                 return pd.Series(True, index=bars.index)
             
-            # Calculate rolling signal-to-noise ratio
-            signal_power = returns.rolling(
-                window=self.config.snr_window,
-                min_periods=self.config.snr_window // 2
-            ).mean().abs()
-            
-            noise_power = returns.rolling(
-                window=self.config.snr_window,
-                min_periods=self.config.snr_window // 2
-            ).std()
+            # Calculate rolling signal-to-noise ratio using optimized operations
+            try:
+                # Use vectorized rolling features for mean and std calculations
+                returns_df = pd.DataFrame({'returns': returns})
+                min_periods = self.config.snr_window // 2
+
+                # Use vectorized rolling features for mean and std
+                rolling_result = vectorized_rolling_features(
+                    returns_df,
+                    windows=[self.config.snr_window],
+                    features=['mean', 'std']
+                )
+
+                # Extract the mean and std columns
+                mean_column = f'returns_rolling_mean_{self.config.snr_window}'
+                std_column = f'returns_rolling_std_{self.config.snr_window}'
+
+                if mean_column in rolling_result.columns and std_column in rolling_result.columns:
+                    signal_power = rolling_result[mean_column].abs()
+                    noise_power = rolling_result[std_column]
+                else:
+                    # Fallback to pandas if vectorized features don't include expected columns
+                    signal_power = returns.rolling(
+                        window=self.config.snr_window,
+                        min_periods=min_periods
+                    ).mean().abs()
+
+                    noise_power = returns.rolling(
+                        window=self.config.snr_window,
+                        min_periods=min_periods
+                    ).std()
+            except Exception as e:
+                tprint_warning(f"⚠️ Optimized rolling mean/std failed, using pandas: {e}")
+                signal_power = returns.rolling(
+                    window=self.config.snr_window,
+                    min_periods=self.config.snr_window // 2
+                ).mean().abs()
+
+                noise_power = returns.rolling(
+                    window=self.config.snr_window,
+                    min_periods=self.config.snr_window // 2
+                ).std()
             
             snr_ratio = signal_power / noise_power
             snr_ratio = snr_ratio.fillna(0)

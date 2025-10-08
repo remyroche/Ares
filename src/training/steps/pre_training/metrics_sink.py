@@ -9,6 +9,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
+# Import common utilities for enhanced file operations and error handling
+from src.utils.common_operations import ensure_directory, safe_file_exists, format_bytes, get_memory_usage
+from src.utils.tprint import tprint, tprint_debug, tprint_warning, tprint_error
+
 try:  # pragma: no cover - optional dependency guard
     from prometheus_client import CollectorRegistry, Gauge
 except ImportError:  # pragma: no cover - handled at runtime when enabled
@@ -35,10 +39,19 @@ class MetricsSink:
         self.output_format = config.output_format.lower()
         self._csv_fieldnames: Optional[Iterable[str]] = None
 
+        tprint(f"📊 Initialized MetricsSink for {self.output_format.upper()} output")
+        tprint_debug(f"📁 Output path: {self.output_path}")
+
         if self.output_format not in {"csv", "jsonl"}:
+            tprint_error(f"❌ Unsupported metrics output format: {self.output_format}")
             raise ValueError(f"Unsupported metrics output format: {self.output_format}")
 
-        self.output_path.parent.mkdir(parents=True, exist_ok=True)
+        # Use common utility for directory creation with error handling
+        if not ensure_directory(self.output_path.parent):
+            tprint_error(f"❌ Failed to create metrics output directory: {self.output_path.parent}")
+            raise ValueError(f"Cannot create metrics output directory: {self.output_path.parent}")
+
+        tprint_debug(f"✅ MetricsSink initialized successfully")
 
         self.registry: Optional[CollectorRegistry] = None
         self._prometheus_metrics: Dict[str, Gauge] = {}
@@ -57,6 +70,8 @@ class MetricsSink:
     def write(self, record: Dict[str, Any]) -> None:
         """Append a metrics record to the configured sink."""
 
+        tprint_debug(f"📝 Writing metrics record with {len(record)} fields")
+
         if self.registry is not None:
             self._update_prometheus(record)
 
@@ -65,6 +80,8 @@ class MetricsSink:
             self._write_csv(serialized_record)
         else:
             self._write_jsonl(serialized_record)
+
+        tprint_debug(f"✅ Metrics record written successfully")
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -27,6 +27,47 @@ except Exception as e:
 logger = _LOGGER
 
 
+def _ensure_probability_matrix(prob_matrix: np.ndarray) -> np.ndarray:
+    """Return a 2D probability matrix, coercing binary vectors into two-column form."""
+    matrix = np.asarray(prob_matrix, dtype=float)
+    if matrix.ndim == 1:
+        matrix = np.column_stack([1.0 - matrix, matrix])
+    elif matrix.ndim != 2:
+        raise ValueError("Probability data must be 1D or 2D to form a matrix.")
+    return np.clip(matrix, 0.0, 1.0)
+
+
+def _coerce_probability_array(probabilities: Union[np.ndarray, List[np.ndarray]]) -> np.ndarray:
+    """Normalise probability inputs into a numpy array."""
+    if isinstance(probabilities, (list, tuple)):
+        if len(probabilities) == 0:
+            raise ValueError("No probability arrays supplied.")
+        matrices = [_ensure_probability_matrix(prob) for prob in probabilities]
+        try:
+            return np.stack(matrices, axis=1)  # (n_samples, n_outputs, n_classes)
+        except ValueError as exc:
+            raise ValueError("Inconsistent probability array shapes for multi-output model.") from exc
+
+    array = np.asarray(probabilities)
+    if array.ndim == 1:
+        return _ensure_probability_matrix(array)
+    if array.ndim in (2, 3):
+        return array.astype(float)
+    raise ValueError("Probability array must be 1D, 2D or 3D.")
+
+
+def _flatten_probabilities(prob_array: np.ndarray) -> np.ndarray:
+    """Flatten probability arrays to 2D for aggregate statistics."""
+    if prob_array.ndim == 1:
+        raise ValueError("Probability array must be at least 2D after coercion.")
+    if prob_array.ndim == 2:
+        return prob_array
+    if prob_array.ndim == 3:
+        n_samples = prob_array.shape[0]
+        return prob_array.reshape(n_samples, -1)
+    raise ValueError("Unsupported probability array dimensionality.")
+
+
 def calculate_confidence_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray, 
                                 is_multi_output: bool = False,
                                 output_names: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -50,11 +91,17 @@ def calculate_confidence_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray,
         return {'error': 'No prediction probabilities available'}
     
     try:
-        _LOGGER.debug(f"📊 Processing {len(y_pred_proba)} samples with {y_pred_proba.shape[1]} classes")
-        
+        probability_array = _coerce_probability_array(y_pred_proba)
+        flattened_probs = _flatten_probabilities(probability_array)
+        _LOGGER.debug(
+            "📊 Processing %d samples with %d probability columns",
+            flattened_probs.shape[0],
+            flattened_probs.shape[1],
+        )
+
         # Calculate prediction confidence statistics
-        max_probs = np.max(y_pred_proba, axis=1)
-        
+        max_probs = np.max(flattened_probs, axis=1)
+
         confidence_metrics = {
             'mean_confidence': float(np.mean(max_probs)),
             'std_confidence': float(np.std(max_probs)),
@@ -72,15 +119,23 @@ def calculate_confidence_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray,
         
         # Calculate calibration metrics
         _LOGGER.debug("🔄 Calculating calibration metrics...")
-        if is_multi_output:
-            calibration_metrics = calculate_multi_output_calibration_metrics(y_true, y_pred_proba, output_names)
+        multi_output = is_multi_output or probability_array.ndim == 3
+        if multi_output:
+            calibration_metrics = calculate_multi_output_calibration_metrics(
+                y_true,
+                probability_array,
+                output_names,
+            )
         else:
-            calibration_metrics = calculate_calibration_metrics(y_true, y_pred_proba)
+            calibration_metrics = calculate_calibration_metrics(
+                np.asarray(y_true).ravel(),
+                np.asarray(probability_array, dtype=float)
+            )
         confidence_metrics.update(calibration_metrics)
         
         # Calculate prediction distribution statistics
         _LOGGER.debug("📊 Calculating prediction distribution metrics...")
-        distribution_metrics = calculate_prediction_distribution(y_pred_proba)
+        distribution_metrics = calculate_prediction_distribution(flattened_probs)
         confidence_metrics.update(distribution_metrics)
         
         execution_time = time.time() - start_time
@@ -91,8 +146,15 @@ def calculate_confidence_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray,
     except Exception as e:
         execution_time = time.time() - start_time
         _LOGGER.error(f"❌ Failed to calculate confidence metrics after {execution_time:.3f}s: {e}")
-        _LOGGER.error(f"Input shapes - y_true: {y_true.shape if hasattr(y_true, 'shape') else 'unknown'}, "
-                     f"y_pred_proba: {y_pred_proba.shape if hasattr(y_pred_proba, 'shape') else 'unknown'}")
+        try:
+            y_true_shape = np.asarray(y_true).shape
+        except Exception:
+            y_true_shape = 'unknown'
+        try:
+            proba_shape = np.asarray(y_pred_proba, dtype=object).shape
+        except Exception:
+            proba_shape = 'unknown'
+        _LOGGER.error(f"Input shapes - y_true: {y_true_shape}, y_pred_proba: {proba_shape}")
         return {'error': f'Confidence metrics calculation failed: {e}'}
 
 
@@ -112,55 +174,92 @@ def calculate_multi_output_calibration_metrics(y_true: np.ndarray, y_pred_proba:
     _LOGGER.debug("🔄 Starting multi-output calibration metrics calculation...")
     
     try:
-        if len(y_true.shape) != 2 or len(y_pred_proba.shape) != 2:
-            _LOGGER.error("❌ Multi-output calibration requires 2D arrays")
-            return {'error': 'Invalid input shape for multi-output calibration'}
-        
-        n_outputs = y_true.shape[1]
+        y_true_array = np.asarray(y_true)
+        if y_true_array.ndim == 1:
+            y_true_array = y_true_array.reshape(-1, 1)
+        if y_true_array.ndim != 2:
+            _LOGGER.error("❌ Multi-output calibration requires 2D target array")
+            return {'error': 'Invalid target shape for multi-output calibration'}
+
+        proba_array = np.asarray(y_pred_proba, dtype=float)
+        if proba_array.ndim == 2:
+            if proba_array.shape[1] == y_true_array.shape[1]:
+                positive = np.clip(proba_array, 0.0, 1.0)
+                negative = 1.0 - positive
+                proba_array = np.stack((negative, positive), axis=-1)
+            else:
+                proba_array = proba_array.reshape(proba_array.shape[0], 1, proba_array.shape[1])
+        elif proba_array.ndim != 3:
+            _LOGGER.error("❌ Multi-output calibration requires 2D or 3D probability array")
+            return {'error': 'Invalid probability shape for multi-output calibration'}
+
+        n_outputs = proba_array.shape[1]
         if output_names is None:
             output_names = [f"output_{i+1}" for i in range(n_outputs)]
-        
-        # Calculate calibration metrics for each output
-        per_output_calibration = {}
-        overall_metrics = {}
-        
-        for i in range(n_outputs):
-            y_true_output = y_true[:, i]
-            y_pred_proba_output = y_pred_proba[:, i]
-            
-            # Calculate calibration metrics for this output
-            output_calibration = calculate_calibration_metrics(
-                y_true_output.reshape(-1, 1), 
-                y_pred_proba_output.reshape(-1, 1)
+        if len(output_names) != n_outputs:
+            _LOGGER.warning(
+                "⚠️ Output names count (%d) does not match number of outputs (%d); trimming to match.",
+                len(output_names),
+                n_outputs,
             )
-            
+            output_names = output_names[:n_outputs]
+
+        if y_true_array.shape[1] != n_outputs:
+            _LOGGER.error(
+                "❌ Mismatch between target outputs (%d) and probability outputs (%d)",
+                y_true_array.shape[1],
+                n_outputs,
+            )
+            return {'error': 'Mismatch between target outputs and probability outputs'}
+
+        per_output_calibration: Dict[str, Dict[str, Any]] = {}
+        overall_metrics: Dict[str, Any] = {}
+
+        for i in range(n_outputs):
+            y_true_output = y_true_array[:, i].reshape(-1)
+            y_pred_proba_output = proba_array[:, i, :]
+
+            output_calibration = calculate_calibration_metrics(
+                y_true_output,
+                y_pred_proba_output
+            )
+
             per_output_calibration[output_names[i]] = output_calibration
-            
-            # Add to overall metrics
+
             if 'brier_score' in output_calibration:
                 overall_metrics[f'{output_names[i]}_brier_score'] = output_calibration['brier_score']
             if 'expected_calibration_error' in output_calibration:
                 overall_metrics[f'{output_names[i]}_ece'] = output_calibration['expected_calibration_error']
-        
-        # Calculate overall calibration metrics
-        brier_scores = [cal['brier_score'] for cal in per_output_calibration.values() 
-                       if 'brier_score' in cal and cal['brier_score'] is not None]
-        ece_scores = [cal['expected_calibration_error'] for cal in per_output_calibration.values() 
-                     if 'expected_calibration_error' in cal and cal['expected_calibration_error'] is not None]
-        
+
+        brier_scores = [
+            cal['brier_score'] for cal in per_output_calibration.values()
+            if 'brier_score' in cal and cal['brier_score'] is not None
+        ]
+        ece_scores = [
+            cal['expected_calibration_error'] for cal in per_output_calibration.values()
+            if 'expected_calibration_error' in cal and cal['expected_calibration_error'] is not None
+        ]
+
         overall_metrics['overall_brier_score'] = float(np.mean(brier_scores)) if brier_scores else None
         overall_metrics['overall_ece'] = float(np.mean(ece_scores)) if ece_scores else None
-        
-        _LOGGER.info(f"📈 Multi-output calibration - Overall Brier: {overall_metrics['overall_brier_score']:.4f}, "
-                    f"ECE: {overall_metrics['overall_ece']:.4f}")
-        
+
+        brier_display = (
+            f"{overall_metrics['overall_brier_score']:.4f}"
+            if overall_metrics['overall_brier_score'] is not None else "n/a"
+        )
+        ece_display = (
+            f"{overall_metrics['overall_ece']:.4f}"
+            if overall_metrics['overall_ece'] is not None else "n/a"
+        )
+        _LOGGER.info(f"📈 Multi-output calibration - Overall Brier: {brier_display}, ECE: {ece_display}")
+
         return {
             'per_output_calibration': per_output_calibration,
             'overall_metrics': overall_metrics,
             'n_outputs': n_outputs,
             'output_names': output_names
         }
-        
+
     except Exception as e:
         _LOGGER.error(f"❌ Multi-output calibration metrics calculation failed: {e}")
         return {'error': str(e)}
@@ -180,18 +279,23 @@ def calculate_calibration_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray) 
     _LOGGER.debug("🔄 Starting calibration metrics calculation...")
     
     try:
-        if y_pred_proba.shape[1] == 2:
+        y_true_array = np.asarray(y_true).ravel()
+        prob_matrix = np.asarray(y_pred_proba, dtype=float)
+        if prob_matrix.ndim != 2:
+            raise ValueError("Probability matrix must be 2-dimensional.")
+
+        if prob_matrix.shape[1] == 2:
             # Binary classification
             _LOGGER.debug("📊 Processing binary classification calibration...")
-            brier_score = brier_score_loss(y_true, y_pred_proba[:, 1])
+            brier_score = brier_score_loss(y_true_array, prob_matrix[:, 1])
             
             # Calibration curve
             fraction_of_positives, mean_predicted_value = calibration_curve(
-                y_true, y_pred_proba[:, 1], n_bins=10, strategy='uniform'
+                y_true_array, prob_matrix[:, 1], n_bins=10, strategy='uniform'
             )
             
             # Calculate calibration error (ECE - Expected Calibration Error)
-            ece = calculate_expected_calibration_error(y_true, y_pred_proba[:, 1], n_bins=10)
+            ece = calculate_expected_calibration_error(y_true_array, prob_matrix[:, 1], n_bins=10)
             
             calibration_quality = _assess_calibration_quality(brier_score, ece)
             
@@ -208,12 +312,12 @@ def calculate_calibration_metrics(y_true: np.ndarray, y_pred_proba: np.ndarray) 
             }
         else:
             # Multiclass classification - use macro average
-            _LOGGER.debug(f"📊 Processing multiclass calibration for {y_pred_proba.shape[1]} classes...")
+            _LOGGER.debug(f"📊 Processing multiclass calibration for {prob_matrix.shape[1]} classes...")
             brier_scores = []
-            for i in range(y_pred_proba.shape[1]):
-                class_mask = (y_true == i)
+            for i in range(prob_matrix.shape[1]):
+                class_mask = (y_true_array == i)
                 if np.sum(class_mask) > 0:
-                    brier_scores.append(brier_score_loss(class_mask, y_pred_proba[:, i]))
+                    brier_scores.append(brier_score_loss(class_mask, prob_matrix[:, i]))
             
             mean_brier_score = np.mean(brier_scores) if brier_scores else 0.0
             calibration_quality = _assess_calibration_quality(mean_brier_score, None)
@@ -282,14 +386,20 @@ def calculate_prediction_distribution(y_pred_proba: np.ndarray) -> Dict[str, Any
         Dictionary containing distribution metrics
     """
     try:
+        prob_matrix = np.asarray(y_pred_proba, dtype=float)
+        if prob_matrix.ndim > 2:
+            prob_matrix = _flatten_probabilities(prob_matrix)
+        elif prob_matrix.ndim == 1:
+            prob_matrix = _ensure_probability_matrix(prob_matrix)
+
         # Calculate entropy for each prediction
         epsilon = 1e-10  # Small value to avoid log(0)
-        y_pred_proba_safe = np.clip(y_pred_proba, epsilon, 1 - epsilon)
-        entropy = -np.sum(y_pred_proba_safe * np.log2(y_pred_proba_safe), axis=1)
+        prob_safe = np.clip(prob_matrix, epsilon, 1 - epsilon)
+        entropy = -np.sum(prob_safe * np.log2(prob_safe), axis=1)
         
         # Calculate prediction diversity
-        max_probs = np.max(y_pred_proba, axis=1)
-        min_probs = np.min(y_pred_proba, axis=1)
+        max_probs = np.max(prob_matrix, axis=1)
+        min_probs = np.min(prob_matrix, axis=1)
         prob_spread = max_probs - min_probs
         
         return {
@@ -297,8 +407,8 @@ def calculate_prediction_distribution(y_pred_proba: np.ndarray) -> Dict[str, Any
             'std_entropy': float(np.std(entropy)),
             'mean_prob_spread': float(np.mean(prob_spread)),
             'std_prob_spread': float(np.std(prob_spread)),
-            'high_entropy_pct': float(np.mean(entropy > np.log2(y_pred_proba.shape[1]) * 0.8) * 100),
-            'low_entropy_pct': float(np.mean(entropy < np.log2(y_pred_proba.shape[1]) * 0.2) * 100)
+            'high_entropy_pct': float(np.mean(entropy > np.log2(prob_matrix.shape[1]) * 0.8) * 100),
+            'low_entropy_pct': float(np.mean(entropy < np.log2(prob_matrix.shape[1]) * 0.2) * 100)
         }
     except Exception as e:
         logger.warning(f"Failed to calculate prediction distribution: {e}")

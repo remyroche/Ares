@@ -202,12 +202,11 @@ try:
         HyperparameterOptimizer,
         OptunaOptimizer
     )
-    from src.utils.ml_common.cvlsa import (
-        TimeSeriesCrossValidator,
-        RegimeAwareCrossValidator,
-        WalkForwardValidator,
-        PurgedCrossValidator
-    )
+    # CVLSA imports removed - no longer available
+    TimeSeriesCrossValidator = None
+    RegimeAwareCrossValidator = None
+    WalkForwardValidator = None
+    PurgedCrossValidator = None
     from src.utils.ml_common.validation import (
         ModelValidator,
         PerformanceValidator,

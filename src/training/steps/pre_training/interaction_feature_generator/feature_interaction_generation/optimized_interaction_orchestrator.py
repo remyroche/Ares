@@ -181,7 +181,7 @@ try:
         BayesianTPEOptimizer, OptimizationConfig
     )
     from src.utils.ml_common.cross_validation import PurgedKFold
-    from src.utils.ml_common.feature_selection import FeatureSelector
+    from src.feature_selection import select_features as FeatureSelector
     from src.utils.ml_common.data_leakage import DataLeakageDetector
     from src.utils.ml_common.lookahead_bias import LookaheadBiasDetector
     from src.utils.ml_common.hyperparameter_optimization import HPOptimizer
@@ -441,7 +441,7 @@ class OptimizedInteractionOrchestrator:
             tprint_error(f"❌ Failed to initialize lookback selector: {e}")
             raise
         
-        # Initialize matrix operations (if available)
+        # Initialize matrix operations - fail fast if not available
         if MATRIX_OPS_AVAILABLE:
             tprint_debug("🧮 Initializing matrix operations...")
             try:
@@ -453,17 +453,13 @@ class OptimizedInteractionOrchestrator:
                 tprint_debug("   - Vectorized processing core: ✅")
                 tprint_debug("   - Batch matrix processor: ✅")
             except Exception as e:
-                tprint_warning(f"⚠️ Matrix operations initialization failed: {e}")
-                self.matrix_ops = None
-                self.vectorized_core = None
-                self.batch_processor = None
+                tprint_error(f"❌ Critical error: Matrix operations initialization failed: {e}")
+                raise RuntimeError(f"Matrix operations initialization failed: {e}")
         else:
-            self.matrix_ops = None
-            self.vectorized_core = None
-            self.batch_processor = None
-            tprint_warning("⚠️ Matrix operations not available - using fallback methods")
+            tprint_error("❌ Critical error: Matrix operations not available")
+            raise ImportError("Matrix operations module not available")
         
-        # Initialize hardware optimizers (if available)
+        # Initialize hardware optimizers - fail fast if not available
         tprint_debug("🖥️ Initializing M1 hardware optimizers...")
         try:
             self.m1_gpu_manager = get_m1_gpu_manager()
@@ -474,12 +470,10 @@ class OptimizedInteractionOrchestrator:
             tprint_debug("   - M1 memory optimizer: ✅")
             tprint_debug("   - M1 CPU optimizer: ✅")
         except Exception as e:
-            tprint_warning(f"⚠️ M1 hardware optimizers not available: {e}")
-            self.m1_gpu_manager = None
-            self.m1_memory_optimizer = None
-            self.m1_cpu_optimizer = None
+            tprint_error(f"❌ Critical error: M1 hardware optimizers initialization failed: {e}")
+            raise RuntimeError(f"M1 hardware optimizers initialization failed: {e}")
         
-        # Initialize ML common utilities (if available)
+        # Initialize ML common utilities - fail fast if not available
         if ML_COMMON_AVAILABLE:
             tprint_debug("🤖 Initializing ML common utilities...")
             try:
@@ -499,25 +493,13 @@ class OptimizedInteractionOrchestrator:
                 tprint_debug("   - Model validator: ✅")
                 tprint_debug("   - Out-of-fold predictor: ✅")
             except Exception as e:
-                tprint_warning(f"⚠️ ML common utilities initialization failed: {e}")
-                self.bayesian_optimizer = None
-                self.feature_selector = None
-                self.data_leakage_detector = None
-                self.lookahead_bias_detector = None
-                self.hp_optimizer = None
-                self.model_validator = None
-                self.oof_predictor = None
+                tprint_error(f"❌ Critical error: ML common utilities initialization failed: {e}")
+                raise RuntimeError(f"ML common utilities initialization failed: {e}")
         else:
-            self.bayesian_optimizer = None
-            self.feature_selector = None
-            self.data_leakage_detector = None
-            self.lookahead_bias_detector = None
-            self.hp_optimizer = None
-            self.model_validator = None
-            self.oof_predictor = None
-            tprint_warning("⚠️ ML common utilities not available")
+            tprint_error("❌ Critical error: ML common utilities not available")
+            raise ImportError("ML common utilities module not available")
         
-        # Initialize data utilities (if available)
+        # Initialize data utilities - fail fast if not available
         if DATA_UTILS_AVAILABLE:
             tprint_debug("📊 Initializing data utilities...")
             try:
@@ -535,21 +517,11 @@ class OptimizedInteractionOrchestrator:
                 tprint_debug("   - Feature engineer: ✅")
                 tprint_debug("   - Time series processor: ✅")
             except Exception as e:
-                tprint_warning(f"⚠️ Data utilities initialization failed: {e}")
-                self.data_loader = None
-                self.data_validator = None
-                self.kline_loader = None
-                self.data_preprocessor = None
-                self.feature_engineer = None
-                self.time_series_processor = None
+                tprint_error(f"❌ Critical error: Data utilities initialization failed: {e}")
+                raise RuntimeError(f"Data utilities initialization failed: {e}")
         else:
-            self.data_loader = None
-            self.data_validator = None
-            self.kline_loader = None
-            self.data_preprocessor = None
-            self.feature_engineer = None
-            self.time_series_processor = None
-            tprint_warning("⚠️ Data utilities not available")
+            tprint_error("❌ Critical error: Data utilities not available")
+            raise ImportError("Data utilities module not available")
         
         tprint_success("✅ All pipeline components initialized successfully")
     
@@ -1107,10 +1079,10 @@ class OptimizedInteractionOrchestrator:
                 metrics['overall_quality'] = quality_score
             
             return metrics
-            
+
         except Exception as e:
-            tprint_warning(f"⚠️ Feature quality calculation failed: {e}")
-            return {'overall_quality': 0.0, 'total_features': 0}
+            tprint_error(f"❌ Critical error: Feature quality calculation failed: {e}")
+            raise RuntimeError(f"Feature quality calculation failed: {e}")
     
     async def _stage_lookback_optimization(self, feature_result: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Stage 3: Optimize lookback periods for features with advanced ML utilities."""
@@ -1321,16 +1293,10 @@ class OptimizedInteractionOrchestrator:
                 'total_families': total_families,
                 'successful_optimizations': successful_optimizations
             }
-            
+
         except Exception as e:
-            tprint_warning(f"⚠️ Lookback optimization metrics calculation failed: {e}")
-            return {
-                'average_confidence': 0.0,
-                'average_ic_score': 0.0,
-                'average_auc_score': 0.0,
-                'success_rate': 0.0,
-                'total_families': 0
-            }
+            tprint_error(f"❌ Critical error: Lookback optimization metrics calculation failed: {e}")
+            raise RuntimeError(f"Lookback optimization metrics calculation failed: {e}")
     
     async def _stage_transform_application(self, lookback_result: Dict[str, Any], pipeline_state: Dict[str, Any]) -> Dict[str, Any]:
         """Stage 4: Apply transforms to parent features."""

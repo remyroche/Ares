@@ -24,6 +24,16 @@ import numpy as np
 import pandas as pd
 
 from src.utils.logger import system_logger
+from src.utils.tprint import (
+    tprint,
+    tprint_info,
+    tprint_warning,
+    tprint_error,
+    tprint_success,
+    tprint_debug,
+)
+from src.utils.data.unified_data_utils import UnifiedDataUtils
+from src.utils.serialization_utils import UniversalSerializer
 
 
 class LabelingMethod(Enum):
@@ -174,6 +184,19 @@ class EnhancedLabeler:
         self.barrier_config = barrier_config or TripleBarrierConfig()
         self.regime_config = regime_config or RegimeLabelingConfig()
         self.logger = logger or system_logger.getChild('EnhancedLabeler')
+
+        # Initialize data utilities for data processing and validation
+        self.data_utils = UnifiedDataUtils()
+
+        # Initialize serialization utilities for saving results
+        self.serializer = UniversalSerializer()
+
+        tprint_info("🔧 Initializing EnhancedLabeler...")
+        tprint_debug(f"📊 Volatility method: {self.volatility_config.method}")
+        tprint_debug(f"🎯 Barrier config: profit_target={self.barrier_config.profit_target_sigma}σ, stop_loss={self.barrier_config.stop_loss_sigma}σ")
+        tprint_debug(f"🏷️ Regime adaptation: {'Enabled' if self.regime_config.enable_regime_adaptation else 'Disabled'}")
+        tprint_debug("💾 Serialization utilities: Enabled")
+        tprint_success("✅ EnhancedLabeler initialized")
     
     def compute_volatility(
         self,
@@ -191,7 +214,8 @@ class EnhancedLabeler:
             Series with volatility estimates
         """
         if self.volatility_config.method == "std":
-            # Simple rolling standard deviation of returns
+            # Simple rolling standard deviation of returns using matrix operations
+            tprint_debug(f"📊 Computing rolling std volatility with window={self.volatility_config.lookback_window}")
             returns = prices.pct_change()
             volatility = returns.rolling(
                 window=self.volatility_config.lookback_window,
@@ -233,7 +257,7 @@ class EnhancedLabeler:
             ).std()
         
         # Forward fill initial NaNs
-        volatility = volatility.fillna(method='bfill')
+        volatility = volatility.bfill()
         
         return volatility
     
@@ -246,18 +270,20 @@ class EnhancedLabeler:
     ) -> pd.DataFrame:
         """
         Create labels with non-overlapping sampling windows.
-        
+
         This ensures sample independence by sampling only once per horizon period.
-        
+
         Args:
             prices: Price series
             horizon_bars: Horizon length in bars
             ohlc: Optional OHLC data for advanced volatility estimators
             regime_labels: Optional regime classifications
-        
+
         Returns:
             DataFrame with labels sampled at non-overlapping intervals
         """
+        tprint_info(f"🏷️ Creating non-overlapping labels with horizon_bars={horizon_bars}")
+        tprint_debug(f"📈 Input prices shape: {prices.shape}")
         # Compute volatility
         volatility = self.compute_volatility(prices, ohlc)
         
@@ -324,17 +350,14 @@ class EnhancedLabeler:
             })
         
         if not labels_list:
-            self.logger.warning("No valid labels created")
+            tprint_warning("⚠️ No valid labels created")
             return pd.DataFrame()
-        
+
         labels_df = pd.DataFrame(labels_list)
         labels_df.set_index('timestamp', inplace=True)
-        
-        self.logger.info(
-            f"Created {len(labels_df)} non-overlapping labels "
-            f"(sampling every {horizon_bars} bars)"
-        )
-        
+
+        tprint_success(f"✅ Created {len(labels_df)} non-overlapping labels (sampling every {horizon_bars} bars)")
+
         return labels_df
     
     def create_triple_barrier_labels(

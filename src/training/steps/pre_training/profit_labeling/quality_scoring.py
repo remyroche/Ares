@@ -222,8 +222,13 @@ class LabelQualityScorer:
 
         # Initialize OOF stacking
         if OOF_AVAILABLE:
-            self.oof_manager = OOFStackingEnsembleManager()
-            tprint_info("   → OOF stacking: Available")
+            try:
+                # Try to initialize with empty config (will use defaults)
+                self.oof_manager = OOFStackingEnsembleManager(config={})
+                tprint_info("   → OOF stacking: Available")
+            except Exception as e:
+                tprint_warning(f"   → OOF stacking initialization failed: {e}, disabling")
+                self.oof_manager = None
         else:
             self.oof_manager = None
 
@@ -430,7 +435,7 @@ class LabelQualityScorer:
             features_data['price_momentum'] = close_prices / shifted_close - 1
 
             # Volume-based features (vectorized)
-            rolling_volume_mean = pd.Series(volume_values, index=target_index).rolling(self.config.feature_window).mean().fillna(method='bfill').values
+            rolling_volume_mean = pd.Series(volume_values, index=target_index).rolling(self.config.feature_window).mean().bfill().values
             features_data['volume_ratio'] = np.divide(volume_values, rolling_volume_mean, out=np.zeros_like(volume_values), where=rolling_volume_mean!=0)
 
             # Volume momentum
@@ -442,7 +447,7 @@ class LabelQualityScorer:
             features_data['close_open_ratio'] = close_prices / open_prices - 1
 
             # Technical indicators
-            rolling_close_mean = pd.Series(close_prices, index=target_index).rolling(self.config.feature_window).mean().fillna(method='bfill').values
+            rolling_close_mean = pd.Series(close_prices, index=target_index).rolling(self.config.feature_window).mean().bfill().values
             features_data['sma_ratio'] = close_prices / rolling_close_mean
 
             # RSI calculation
@@ -472,7 +477,8 @@ class LabelQualityScorer:
             rs = gain / loss
             rsi = 100 - (100 / (1 + rs))
             return rsi
-        except Exception:
+        except Exception as e:
+            tprint_warning(f"⚠️ RSI calculation failed: {e}")
             return pd.Series(0, index=prices.index)
 
     def _calculate_rsi_vectorized(self, prices: np.ndarray, window: int) -> np.ndarray:
@@ -847,7 +853,9 @@ class LabelQualityScorer:
                         corr, _ = spearmanr(X[col].dropna(), y.loc[X[col].dropna().index])
                         if not np.isnan(corr):
                             ic_scores.append(abs(corr))
-                    except Exception:
+                    except Exception as e:
+                        # Silent continue - this is expected for some features
+                        # Only log if this happens frequently
                         continue
             
             # Calculate average IC

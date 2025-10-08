@@ -785,14 +785,22 @@ class BaseTrainingStep(ABC):
         Returns:
             Dictionary containing final results
         """
+        # Add direction information to metadata if available
+        enhanced_metadata = dict(metadata)
+        if hasattr(self.config, 'enable_long_positions') and hasattr(self.config, 'enable_short_positions'):
+            enhanced_metadata['direction_settings'] = {
+                'enable_long_positions': self.config.enable_long_positions,
+                'enable_short_positions': self.config.enable_short_positions,
+            }
+
         results = {
             'models': models,
-            'metadata': metadata,
+            'metadata': enhanced_metadata,
             'evaluation_results': evaluation_results,
             'training_time': training_time,
             'config': self.config
         }
-        
+
         if additional_results:
             results.update(additional_results)
         

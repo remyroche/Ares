@@ -7,6 +7,10 @@ from typing import Any, Dict, List, Optional, Sequence
 import numpy as np
 from sklearn.metrics import brier_score_loss
 
+# Import common utilities for enhanced math operations and validation
+from src.utils.common_operations import safe_divide, safe_mean, safe_std, validate_finite, validate_positive, safe_correlation
+from src.utils.tprint import tprint, tprint_debug, tprint_warning, tprint_error
+
 
 def _bin_edges(n_bins: int) -> np.ndarray:
     n_bins = max(1, int(n_bins))
@@ -21,6 +25,8 @@ def compute_classification_calibration(
     n_bins: int = 10,
 ) -> Dict[str, Any]:
     """Compute Brier score, reliability diagram and ECE for classification outputs."""
+
+    tprint_debug(f"📊 Computing classification calibration with {n_bins} bins")
 
     probabilities = np.asarray(y_pred_proba, dtype=float)
     if probabilities.ndim == 1:
@@ -78,7 +84,8 @@ def compute_classification_calibration(
             )
         reliability_diagram[str(cls)] = bin_records
 
-    overall_brier = float(np.mean(list(per_class_brier.values()))) if per_class_brier else 0.0
+    # Use safe mean calculation from common utilities
+    overall_brier = safe_mean(list(per_class_brier.values())) if per_class_brier else 0.0
 
     predicted_class_index = np.argmax(probabilities, axis=1)
     predicted_confidence = probabilities[np.arange(n_samples), predicted_class_index]
@@ -97,6 +104,11 @@ def compute_classification_calibration(
         accuracy = correct_predictions[mask].mean()
         avg_confidence = predicted_confidence[mask].mean()
         ece += abs(avg_confidence - accuracy) * (count / n_samples)
+
+    # Enhanced logging of calibration results
+    tprint_info(f"✅ Classification calibration computed: Brier={overall_brier:.4f}, ECE={ece:.4f}")
+    tprint_debug(f"📈 Per-class Brier scores: {per_class_brier}")
+    tprint_debug(f"🔢 Processed {n_samples} samples across {n_classes} classes")
 
     return {
         'brier_score': overall_brier,

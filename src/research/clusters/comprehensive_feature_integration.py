@@ -23,11 +23,11 @@ from src.utils.logger import system_logger
 
 # Import ALL feature engineering components
 try:
-    from src.feature_engineering.feature_generators import FeatureGenerators
-    from src.feature_engineering.optimized_feature_orchestrator import OptimizedFeatureOrchestrator
-    from src.feature_engineering.cross_timeframe_analysis_pipeline import CrossTimeframeAnalysisPipeline
-    from src.feature_engineering.limited_microstructure_features import LimitedMicrostructureFeatures
-    from src.feature_engineering.fractional_differentiation_pipeline import FractionalDifferentiationPipeline
+    from src.feature_engineering_roadmap.feature_generators import FeatureGenerators
+    from src.feature_engineering_roadmap.optimized_feature_orchestrator import OptimizedFeatureOrchestrator
+    from src.feature_engineering_roadmap.cross_timeframe_analysis_pipeline import CrossTimeframeAnalysisPipeline
+    from src.feature_engineering_roadmap.limited_microstructure_features import LimitedMicrostructureFeatures
+    from src.feature_engineering_roadmap.fractional_differentiation_pipeline import FractionalDifferentiationPipeline
     FEATURE_ENGINEERING_AVAILABLE = True
 except ImportError as e:
     system_logger.warning(f"Some feature engineering components not available: {e}")

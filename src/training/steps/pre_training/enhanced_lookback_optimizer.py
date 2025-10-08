@@ -26,6 +26,18 @@ import numpy as np
 import pandas as pd
 
 from src.utils.logger import system_logger
+from src.utils.tprint import (
+    tprint,
+    tprint_info,
+    tprint_warning,
+    tprint_error,
+    tprint_success,
+    tprint_debug,
+)
+from src.utils.ml_common.optimization.hpo_utils import HyperparameterOptimization
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
 
 
 class OptimizationObjective(Enum):
@@ -108,6 +120,28 @@ class EnhancedLookbackOptimizer:
         self.objective = objective
         self.constraints = constraints or OptimizationConstraints()
         self.logger = logger or system_logger.getChild('EnhancedLookbackOptimizer')
+
+        # Initialize HPO optimizer for Bayesian TPE optimization
+        self.hp_optimizer = HyperparameterOptimization()
+
+        # Initialize M1 hardware optimizers for performance
+        self.m1_cpu_optimizer = get_m1_cpu_optimizer()
+        self.m1_memory_optimizer = get_m1_memory_optimizer()
+        self.m1_gpu_manager = get_m1_gpu_manager()
+
+        # Optimize for M1 if available
+        if self.m1_cpu_optimizer:
+            self.m1_cpu_optimizer.optimize_numpy_operations()
+
+        tprint_info("🔧 Initializing EnhancedLookbackOptimizer...")
+        tprint_debug(f"🎯 Objective: {self.objective.value}")
+        tprint_debug(f"📏 Lookback range: {self.constraints.min_lookback}-{self.constraints.max_lookback}")
+        tprint_debug(f"🔧 Regularization: {'Enabled' if self.constraints.enable_regularization else 'Disabled'}")
+        tprint_debug("🧠 HPO optimizer: Bayesian TPE enabled")
+        tprint_debug(f"💻 M1 CPU optimization: {'Enabled' if self.m1_cpu_optimizer else 'Not available'}")
+        tprint_debug(f"🧠 M1 Memory optimization: {'Enabled' if self.m1_memory_optimizer else 'Not available'}")
+        tprint_debug(f"🎮 M1 GPU support: {'Enabled' if self.m1_gpu_manager else 'Not available'}")
+        tprint_success("✅ EnhancedLookbackOptimizer initialized")
     
     def optimize(
         self,

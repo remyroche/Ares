@@ -546,24 +546,40 @@ class MLPipelineOrchestrator:
                     # Check if all dependencies are satisfied
                     if self._dependencies_satisfied(step, completed_steps):
                         running_steps.add(step_name)
-                        await self._execute_single_step_async(pipeline, step, results)
+                        step_status = await self._execute_single_step_async(pipeline, step, results)
                         running_steps.remove(step_name)
-                        completed_steps.add(step_name)
 
-                        # Add dependent steps to queue
-                        for dep_step_name, dep_step in pipeline.steps.items():
-                            if (dep_step_name not in completed_steps and
-                                dep_step_name not in running_steps and
-                                dep_step_name not in [pending_steps.queue[i] for i in range(pending_steps.qsize())]):
-                                if self._dependencies_satisfied(dep_step, completed_steps):
-                                    pending_steps.put(dep_step_name)
+                        if step_status == StepStatus.COMPLETED:
+                            completed_steps.add(step_name)
 
-                        if progress_callback:
-                            await progress_callback({
-                                'pipeline_id': pipeline.pipeline_id,
-                                'completed_steps': len(completed_steps),
-                                'total_steps': len(pipeline.steps)
-                            })
+                            # Add dependent steps to queue
+                            for dep_step_name, dep_step in pipeline.steps.items():
+                                if (
+                                    dep_step_name not in completed_steps
+                                    and dep_step_name not in running_steps
+                                    and dep_step_name not in [pending_steps.queue[i] for i in range(pending_steps.qsize())]
+                                ):
+                                    if self._dependencies_satisfied(dep_step, completed_steps):
+                                        pending_steps.put(dep_step_name)
+
+                            if progress_callback:
+                                await progress_callback({
+                                    'pipeline_id': pipeline.pipeline_id,
+                                    'completed_steps': len(completed_steps),
+                                    'total_steps': len(pipeline.steps)
+                                })
+                        elif step_status == StepStatus.PENDING:
+                            # Retry requested – place back into queue
+                            pending_steps.put(step_name)
+                        else:  # StepStatus.FAILED
+                            results['success'] = False
+                            completed_steps.add(step_name)
+                            if progress_callback:
+                                await progress_callback({
+                                    'pipeline_id': pipeline.pipeline_id,
+                                    'completed_steps': len(completed_steps),
+                                    'total_steps': len(pipeline.steps)
+                                })
                     else:
                         # Put back in queue if dependencies not satisfied
                         pending_steps.put(step_name)
@@ -584,7 +600,7 @@ class MLPipelineOrchestrator:
             return {'success': False, 'errors': [str(e)]}
 
     async def _execute_single_step_async(self, pipeline: PipelineExecution,
-                                       step: PipelineStep, results: Dict[str, Any]) -> None:
+                                       step: PipelineStep, results: Dict[str, Any]) -> StepStatus:
         """Execute a single pipeline step asynchronously."""
         try:
             step.status = StepStatus.RUNNING
@@ -605,6 +621,7 @@ class MLPipelineOrchestrator:
             step.execution_time = (step.completed_at - step.started_at).total_seconds()
 
             results['results'][step.name] = result
+            return StepStatus.COMPLETED
 
         except Exception as e:
             step.status = StepStatus.FAILED
@@ -618,8 +635,10 @@ class MLPipelineOrchestrator:
                 step.retry_count += 1
                 step.status = StepStatus.PENDING
                 self.logger.warning(f"⚠️ Step {step.name} failed, retrying ({step.retry_count}/{step.max_retries})")
+                return StepStatus.PENDING
             else:
                 results['errors'].append(f"Step {step.name} failed: {str(e)}")
+                return StepStatus.FAILED
 
     async def _execute_step_function(self, step: PipelineStep) -> Any:
         """Execute step function."""

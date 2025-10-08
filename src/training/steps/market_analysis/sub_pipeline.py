@@ -104,6 +104,10 @@ class SubPipelineConfig:
     custom_params: Dict[str, Any] = field(default_factory=dict)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     
+    # Direction control (optional, not used by market analysis but accepted for compatibility)
+    enable_long_positions: bool = True
+    enable_short_positions: bool = True
+    
     # Unified pipeline configuration
     use_unified_pipeline: bool = True  # Default to unified pipeline
     unified_pipeline_mode: str = "hybrid"  # "nas", "tas", or "hybrid"
@@ -789,7 +793,7 @@ class MarketAnalysisSubPipeline:
         8. Regime data splitting
         9. Multi-horizon profit labeling
         10. Feature lookback optimization
-        11. PID-based feature generation
+        11. Interactive feature generation
         12. Final feature selection (120→100→80→60)
         """
         log_info('🎯 Starting Market Analysis Sub-Pipeline execution')
@@ -996,7 +1000,7 @@ class MarketAnalysisSubPipeline:
             })
             
             # Ensure features and targets are available for regime ensemble training
-            # Extract features from optimized_features or pid_based_features if available
+            # Extract features from optimized_features or interactive_features if available
             features = None
             feature_names = []
             targets = None
@@ -1007,11 +1011,11 @@ class MarketAnalysisSubPipeline:
                     features = features_data['features']
                     feature_names = features_data.get('feature_names', [])
             
-            if features is None and 'pid_based_features' in results:
-                pid_features = results['pid_based_features']
-                if isinstance(pid_features, dict) and 'combined_features' in pid_features:
-                    features = pid_features['combined_features']
-                    feature_names = pid_features.get('combined_feature_names', [])
+            if features is None and 'interactive_features' in results:
+                interactive_features = results['interactive_features']
+                if isinstance(interactive_features, dict) and 'combined_features' in interactive_features:
+                    features = interactive_features['combined_features']
+                    feature_names = interactive_features.get('combined_feature_names', [])
             
             # If no features available yet, use basic features from regime models training
             if features is None:
@@ -1483,7 +1487,7 @@ class MarketAnalysisSubPipeline:
         
         # Additional sub-pipelines that were missing
         additional_steps = [
-            # cross_timeframe_analysis removed - redundant wrapper for pid_based_feature_generation
+            # cross_timeframe_analysis removed - replaced by interactive_feature_generation
         ]
         
         # Complete execution sequence - ALL sub-pipelines in market_analysis stage

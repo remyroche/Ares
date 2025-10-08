@@ -158,7 +158,8 @@ class UncertaintyEstimator:
                 ic = np.corrcoef(weighted_feature, target_vals)[0, 1]
                 if not np.isnan(ic):
                     bootstrap_ics.append(ic)
-            except:
+            except (ValueError, TypeError, RuntimeWarning):
+                # Handle numerical computation issues (e.g., insufficient data, NaN values)
                 continue
         
         if not bootstrap_ics:
@@ -243,7 +244,8 @@ class UncertaintyEstimator:
                 ic = np.corrcoef(bootstrap_feature, bootstrap_target)[0, 1]
                 if not np.isnan(ic):
                     bootstrap_ics.append(ic)
-            except:
+            except (ValueError, TypeError, RuntimeWarning):
+                # Handle numerical computation issues (e.g., insufficient data, NaN values)
                 continue
         
         if not bootstrap_ics:

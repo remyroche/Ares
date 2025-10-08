@@ -166,9 +166,9 @@ class DataQualificationImportManager:
             
             # Feature Selection Framework
             try:
-                from src.utils.ml_common.feature_selection import FeatureSelectionFramework
-                ml_commons['feature_selection'] = FeatureSelectionFramework
-                self.logger.debug("✅ FeatureSelectionFramework imported")
+                from src.feature_selection.core import get_feature_selection_framework
+                ml_commons['feature_selection'] = get_feature_selection_framework
+                self.logger.debug("✅ Feature selection framework imported")
             except ImportError as e:
                 self.logger.warning(f"⚠️ FeatureSelectionFramework not available: {e}")
                 if self.enable_fallbacks:

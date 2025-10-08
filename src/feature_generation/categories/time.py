@@ -8,7 +8,7 @@ Focus on the most important time features:
 """
 import pandas as pd
 import numpy as np
-from typing import List
+from typing import List, Optional
 from ..core.feature_generator import FeatureGenerator, FeatureConfig, FeatureCategory, VectorizedFeatureGenerator
 
 # Optimization utilities

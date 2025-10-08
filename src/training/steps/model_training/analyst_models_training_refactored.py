@@ -21,6 +21,8 @@ from pathlib import Path
 import json
 import time
 import traceback
+import pickle
+from dataclasses import dataclass, field
 
 # Required psutil import - fail fast if not available for production use
 try:
@@ -439,6 +441,10 @@ try:
     )
     from src.utils.ml_common.optimization.hpo_utils import (
         optimize_hyperparameters, create_search_space, validate_hpo_config
+    )
+    # Import Bayesian TPE optimizer with early stopping
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+        BayesianTPEOptimizer, OptimizationConfig
     )
     from src.utils.ml_common.evaluation.evaluation_utils import (
         calculate_metrics, evaluate_model_performance, create_evaluation_report
@@ -964,6 +970,68 @@ class EnhancedErrorHandler:
         return recommendations
 
 
+@dataclass
+class AnalystTrainingConfig(PerRegimeTrainingConfig):
+    """
+    Configuration for Analyst models training with analyst-specific parameters.
+    
+    Extends PerRegimeTrainingConfig with analyst-specific settings for:
+    - Multi-timeframe analysis
+    - Directional signal generation
+    - Risk scoring and management
+    - Magnitude prediction
+    """
+    
+    # Multi-timeframe analysis settings
+    enable_multi_timeframe_analysis: bool = True
+    base_timeframe: str = "5m"
+    additional_timeframes: List[str] = None  # ["15m", "1h", "4h"]
+    timeframe_weights: Dict[str, float] = None  # {"5m": 0.4, "15m": 0.3, "1h": 0.2, "4h": 0.1}
+    
+    # Signal generation settings
+    enable_directional_signals: bool = True
+    directional_confidence_threshold: float = 0.6
+    enable_magnitude_prediction: bool = True
+    magnitude_thresholds: List[float] = None  # [0.01, 0.02, 0.03, 0.05]
+    
+    # Risk management settings
+    enable_risk_scoring: bool = True
+    risk_model_types: List[str] = None  # ["CATBOOST", "XGBOOST"]
+    enable_volatility_adjustment: bool = True
+    volatility_lookback_periods: int = 50
+    
+    # Advanced analyst features
+    enable_regime_transition_detection: bool = True
+    enable_market_microstructure_features: bool = True
+    enable_order_flow_analysis: bool = False
+    
+    # Green light signal settings
+    enable_green_light_generation: bool = True
+    green_light_confidence_threshold: float = 0.65
+    green_light_lookback_periods: int = 20
+    
+    def __post_init__(self):
+        """Initialize default values for complex fields."""
+        super().__post_init__() if hasattr(super(), '__post_init__') else None
+        
+        if self.additional_timeframes is None:
+            self.additional_timeframes = ["15m", "1h", "4h"]
+        
+        if self.timeframe_weights is None:
+            self.timeframe_weights = {
+                "5m": 0.4,
+                "15m": 0.3,
+                "1h": 0.2,
+                "4h": 0.1
+            }
+        
+        if self.magnitude_thresholds is None:
+            self.magnitude_thresholds = [0.01, 0.02, 0.03, 0.05]
+        
+        if self.risk_model_types is None:
+            self.risk_model_types = ["CATBOOST", "XGBOOST"]
+
+
 class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
     """
     Enhanced Analyst Models Training Step with comprehensive utilities integration.
@@ -977,12 +1045,12 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
     - Math validation and serialization utilities
     """
     
-    def __init__(self, config: Optional[PerRegimeTrainingConfig] = None):
+    def __init__(self, config: Optional[AnalystTrainingConfig] = None):
         """
         Initialize Enhanced Analyst models training step with comprehensive utilities integration.
         
         Args:
-            config: Per-regime training configuration
+            config: Analyst training configuration
         """
         try:
             # Fast fail if critical dependencies are missing
@@ -993,7 +1061,7 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 
                 # Set default configuration for analyst models with enhanced settings
                 if config is None:
-                    config = PerRegimeTrainingConfig(
+                    config = AnalystTrainingConfig(
                         model_name="analyst_models",
                         timeframe="5m",
                         model_types=["DEEPSCALER", "CATBOOST", "XGBOOST", "MULTISCALE_NBEATS"],
@@ -1011,7 +1079,6 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 self.logger = logger.getChild('AnalystModelsTrainingStepEnhanced')
                 
                 # Initialize enhanced components
-                tprint_info("🔧 Initializing enhanced components")
                 self.error_handler = EnhancedErrorHandler(self.logger)
                 self.progress_tracker = None  # Will be initialized when training starts
                 
@@ -1029,24 +1096,10 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                     'data_quality_metrics': {}
                 }
                 
-                # Initialize hardware optimization
-                tprint_info("🧠 Initializing hardware optimization")
-                self._initialize_hardware_optimization()
-                
-                # Initialize common utilities
-                tprint_info("🔧 Initializing common utilities")
-                self._initialize_common_utilities()
-                
-                # Initialize ML common utilities
-                tprint_info("🤖 Initializing ML common utilities")
-                self._initialize_ml_utilities()
-                
-                # Initialize serialization utilities
-                tprint_info("💾 Initializing serialization utilities")
-                self._initialize_serialization_utilities()
+                # Initialize all components (consolidated)
+                self._initialize_components_consolidated()
                 
                 # Validate configuration with enhanced error reporting
-                tprint_info("✅ Validating configuration")
                 validation_result = self._validate_config_enhanced(config)
                 if not validation_result['valid']:
                     error_msg = f"Invalid configuration: {validation_result['errors']}"
@@ -1069,6 +1122,47 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 
         except Exception as e:
             tprint_error(f"❌ Failed to initialize Enhanced Analyst Models Training Step: {e}")
+            raise
+    
+    def _initialize_components_consolidated(self):
+        """Consolidated initialization of all components."""
+        with tprint_timer("Component initialization"):
+            # Hardware optimization
+            self._initialize_hardware_optimization()
+            
+            # Common utilities
+            self._initialize_common_utilities()
+            
+            # ML utilities
+            self._initialize_ml_utilities()
+            
+            # Serialization utilities
+            self._initialize_serialization_utilities()
+            
+            tprint_success("✅ All components initialized")
+    
+    def _validate_config_consolidated(self, config: PerRegimeTrainingConfig) -> None:
+        """Consolidated configuration validation using common utilities."""
+        try:
+            # Basic validation
+            if not config.model_types or len(config.model_types) == 0:
+                raise ValueError("At least one model type required")
+            
+            # HPO validation using validate_positive from common_operations
+            if config.enable_hpo:
+                validate_positive(config.hpo_n_trials, "hpo_n_trials")
+                validate_positive(config.hpo_timeout_seconds, "hpo_timeout_seconds")
+            
+            # Regime validation
+            validate_positive(config.min_samples_per_regime, "min_samples_per_regime")
+            
+            # Path validation using ensure_directory from common_operations
+            if config.save_models and config.model_save_path:
+                ensure_directory(config.model_save_path)
+            
+            tprint_success("✅ Configuration validation passed")
+        except Exception as e:
+            tprint_error(f"❌ Configuration validation failed: {e}")
             raise
     
     def _initialize_hardware_optimization(self):
@@ -1095,10 +1189,8 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
             integration_result = integrate_with_m1_optimizers()
             self.training_metrics['hardware_optimization'] = integration_result
             
-            if integration_result.get('success', False):
-                tprint_success("✅ Hardware optimization initialized successfully")
-            else:
-                tprint_warning(f"⚠️ Hardware optimization initialization failed: {integration_result.get('error', 'Unknown error')}")
+            available = sum(1 for x in [self.gpu_manager, self.memory_optimizer, self.cpu_optimizer] if x is not None)
+            tprint_success(f"✅ Hardware optimization: {available}/3 optimizers available")
                 
         except Exception as e:
             self.error_handler.handle_error(e, "Hardware Optimization Initialization", {
@@ -1318,6 +1410,99 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 'component': 'system_info'
             })
             return {'error': str(e)}
+    
+    def _optimize_hyperparameters_with_bayesian_tpe(
+        self,
+        model_type: str,
+        X: np.ndarray,
+        y: np.ndarray,
+        search_space: Dict[str, Any],
+        n_trials: int = 100,
+        timeout: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Optimize hyperparameters using Bayesian TPE with staged optimization.
+        
+        Args:
+            model_type: Type of model to optimize
+            X: Training features
+            y: Training targets
+            search_space: Hyperparameter search space
+            n_trials: Number of optimization trials
+            timeout: Timeout in seconds
+            
+        Returns:
+            Dictionary containing best parameters and optimization results
+        """
+        tprint_info(f"🔍 Starting Bayesian TPE hyperparameter optimization for {model_type}...")
+        
+        if not ENHANCED_HPO_AVAILABLE or BayesianTPEOptimizer is None:
+            tprint_warning("⚠️ Bayesian TPE optimizer not available, skipping HPO")
+            return {'best_params': {}, 'optimization_skipped': True}
+        
+        try:
+            # Create optimization configuration
+            opt_config = OptimizationConfig(
+                n_trials=n_trials,
+                timeout=timeout,
+                direction='minimize',
+                metric_name='mse',
+                enable_staged_optimization=True,
+                coarse_grid_points=5,
+                fine_grid_points=5,
+                coarse_grid_trials=25,
+                fine_grid_trials=25,
+                tpe_trials=max(50, n_trials - 50),
+                enable_hardware_optimization=HARDWARE_UTILITIES_AVAILABLE and is_m1_available(),
+                enable_adaptive_optimization=True,
+                early_stopping_patience=15,
+                seed=42
+            )
+            
+            # Define objective function
+            def objective(params: Dict[str, Any]) -> float:
+                """Objective function for hyperparameter optimization."""
+                try:
+                    if model_type == "XGBOOST":
+                        from xgboost import XGBRegressor
+                        model = XGBRegressor(**params, random_state=42)
+                    elif model_type == "CATBOOST":
+                        from catboost import CatBoostRegressor
+                        model = CatBoostRegressor(**params, random_state=42, verbose=False)
+                    elif model_type == "LIGHTGBM":
+                        from lightgbm import LGBMRegressor
+                        model = LGBMRegressor(**params, random_state=42, verbose=-1)
+                    else:
+                        from sklearn.ensemble import RandomForestRegressor
+                        model = RandomForestRegressor(**params, random_state=42)
+                    
+                    from sklearn.model_selection import cross_val_score
+                    scores = cross_val_score(model, X, y, cv=5, scoring='neg_mean_squared_error', n_jobs=-1)
+                    return -np.mean(scores)
+                except Exception as e:
+                    tprint_warning(f"⚠️ Objective evaluation failed: {e}")
+                    return np.inf
+            
+            # Run optimizer
+            optimizer = BayesianTPEOptimizer(search_space, opt_config)
+            result = optimizer.optimize(objective)
+            
+            if result.success:
+                tprint_success(f"✅ Bayesian TPE optimization completed")
+                tprint_info(f"📊 Best MSE: {result.best_value:.6f}, Trials: {result.n_trials}, Time: {result.optimization_time:.2f}s")
+                return {
+                    'best_params': result.best_params,
+                    'best_mse': result.best_value,
+                    'n_trials': result.n_trials,
+                    'optimization_time': result.optimization_time,
+                    'success': True
+                }
+            else:
+                tprint_warning(f"⚠️ Bayesian TPE optimization failed: {result.error_message}")
+                return {'best_params': {}, 'success': False, 'error': result.error_message}
+        except Exception as e:
+            tprint_error(f"❌ Bayesian TPE optimization error: {e}")
+            return {'best_params': {}, 'success': False, 'error': str(e)}
     
     def _validate_config_enhanced(self, config: PerRegimeTrainingConfig) -> Dict[str, Any]:
         """Enhanced configuration validation with comprehensive error reporting and math validation."""
@@ -1780,6 +1965,237 @@ class AnalystModelsTrainingStepRefactored(PerRegimeTrainingStep):
                 # Log final hardware status
                 final_hardware_status = self._get_hardware_status()
                 tprint_structured(final_hardware_status, LogLevel.INFO)
+                
+                # Generate thorough outcome file with datetime stamp
+                try:
+                    outcome_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    outcomes_dir = Path('outcomes')
+                    outcomes_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    outcome_filename = f"analyst_model_training_outcome_{outcome_timestamp}.json"
+                    outcome_path = outcomes_dir / outcome_filename
+                    
+                    # Extract comprehensive training statistics
+                    models_trained = results.get('models', {})
+                    model_stats = {
+                        'total_models': len(models_trained),
+                        'model_names': list(models_trained.keys()),
+                        'per_model_details': {}
+                    }
+                    
+                    for model_name, model_info in models_trained.items():
+                        if isinstance(model_info, dict):
+                            # Extract comprehensive ML metrics
+                            ml_metrics = {}
+                            
+                            # Classification metrics
+                            if 'accuracy' in model_info:
+                                ml_metrics['accuracy'] = float(model_info['accuracy']) if model_info['accuracy'] is not None else None
+                            if 'auc' in model_info:
+                                ml_metrics['auc'] = float(model_info['auc']) if model_info['auc'] is not None else None
+                            if 'roc_auc' in model_info:
+                                ml_metrics['roc_auc'] = float(model_info['roc_auc']) if model_info['roc_auc'] is not None else None
+                            if 'precision' in model_info:
+                                ml_metrics['precision'] = float(model_info['precision']) if model_info['precision'] is not None else None
+                            if 'recall' in model_info:
+                                ml_metrics['recall'] = float(model_info['recall']) if model_info['recall'] is not None else None
+                            if 'f1_score' in model_info:
+                                ml_metrics['f1_score'] = float(model_info['f1_score']) if model_info['f1_score'] is not None else None
+                            if 'average_precision' in model_info:
+                                ml_metrics['average_precision'] = float(model_info['average_precision']) if model_info['average_precision'] is not None else None
+                            
+                            # Regression metrics
+                            if 'mse' in model_info:
+                                ml_metrics['mse'] = float(model_info['mse']) if model_info['mse'] is not None else None
+                            if 'rmse' in model_info:
+                                ml_metrics['rmse'] = float(model_info['rmse']) if model_info['rmse'] is not None else None
+                            if 'mae' in model_info:
+                                ml_metrics['mae'] = float(model_info['mae']) if model_info['mae'] is not None else None
+                            if 'r2_score' in model_info:
+                                ml_metrics['r2_score'] = float(model_info['r2_score']) if model_info['r2_score'] is not None else None
+                            
+                            # Trading-specific metrics
+                            if 'sharpe_ratio' in model_info:
+                                ml_metrics['sharpe_ratio'] = float(model_info['sharpe_ratio']) if model_info['sharpe_ratio'] is not None else None
+                            if 'win_rate' in model_info:
+                                ml_metrics['win_rate'] = float(model_info['win_rate']) if model_info['win_rate'] is not None else None
+                            if 'profit_factor' in model_info:
+                                ml_metrics['profit_factor'] = float(model_info['profit_factor']) if model_info['profit_factor'] is not None else None
+                            if 'max_drawdown' in model_info:
+                                ml_metrics['max_drawdown'] = float(model_info['max_drawdown']) if model_info['max_drawdown'] is not None else None
+                            
+                            # CV scores
+                            cv_scores = {}
+                            if 'cv_scores' in model_info and model_info['cv_scores'] is not None:
+                                cv_scores_list = model_info['cv_scores']
+                                if isinstance(cv_scores_list, (list, tuple)) and len(cv_scores_list) > 0:
+                                    cv_scores = {
+                                        'mean': float(np.mean(cv_scores_list)),
+                                        'std': float(np.std(cv_scores_list)),
+                                        'min': float(np.min(cv_scores_list)),
+                                        'max': float(np.max(cv_scores_list)),
+                                        'scores': [float(s) for s in cv_scores_list],
+                                    }
+                            
+                            # Confusion matrix if available
+                            confusion_matrix_data = {}
+                            if 'confusion_matrix' in model_info and model_info['confusion_matrix'] is not None:
+                                cm = model_info['confusion_matrix']
+                                if hasattr(cm, 'tolist'):
+                                    confusion_matrix_data = {
+                                        'matrix': cm.tolist(),
+                                        'shape': list(cm.shape),
+                                    }
+                            
+                            model_stats['per_model_details'][model_name] = {
+                                'model_type': model_info.get('model_type', 'unknown'),
+                                'training_score': float(model_info.get('train_score', 0.0)) if model_info.get('train_score') is not None else None,
+                                'validation_score': float(model_info.get('val_score', 0.0)) if model_info.get('val_score') is not None else None,
+                                'test_score': float(model_info.get('test_score', 0.0)) if model_info.get('test_score') is not None else None,
+                                'n_features': model_info.get('n_features', 0),
+                                'n_samples': model_info.get('n_samples', 0),
+                                'ml_metrics': ml_metrics,
+                                'cv_scores': cv_scores,
+                                'confusion_matrix': confusion_matrix_data,
+                            }
+                    
+                    # Calculate aggregate metrics across all models
+                    aggregate_metrics = {
+                        'avg_training_score': 0.0,
+                        'avg_validation_score': 0.0,
+                        'avg_test_score': 0.0,
+                        'avg_accuracy': 0.0,
+                        'avg_auc': 0.0,
+                        'avg_precision': 0.0,
+                        'avg_recall': 0.0,
+                        'avg_f1_score': 0.0,
+                        'best_model': None,
+                        'worst_model': None,
+                    }
+                    
+                    valid_train_scores = []
+                    valid_val_scores = []
+                    valid_test_scores = []
+                    valid_accuracies = []
+                    valid_aucs = []
+                    valid_precisions = []
+                    valid_recalls = []
+                    valid_f1_scores = []
+                    
+                    for model_name, details in model_stats['per_model_details'].items():
+                        if details['training_score'] is not None:
+                            valid_train_scores.append((model_name, details['training_score']))
+                        if details['validation_score'] is not None:
+                            valid_val_scores.append((model_name, details['validation_score']))
+                        if details['test_score'] is not None:
+                            valid_test_scores.append((model_name, details['test_score']))
+                        
+                        ml_metrics = details.get('ml_metrics', {})
+                        if ml_metrics.get('accuracy') is not None:
+                            valid_accuracies.append(ml_metrics['accuracy'])
+                        if ml_metrics.get('auc') is not None or ml_metrics.get('roc_auc') is not None:
+                            valid_aucs.append(ml_metrics.get('auc') or ml_metrics.get('roc_auc'))
+                        if ml_metrics.get('precision') is not None:
+                            valid_precisions.append(ml_metrics['precision'])
+                        if ml_metrics.get('recall') is not None:
+                            valid_recalls.append(ml_metrics['recall'])
+                        if ml_metrics.get('f1_score') is not None:
+                            valid_f1_scores.append(ml_metrics['f1_score'])
+                    
+                    if valid_train_scores:
+                        aggregate_metrics['avg_training_score'] = float(np.mean([s for _, s in valid_train_scores]))
+                        aggregate_metrics['best_model'] = max(valid_train_scores, key=lambda x: x[1])[0]
+                        aggregate_metrics['worst_model'] = min(valid_train_scores, key=lambda x: x[1])[0]
+                    if valid_val_scores:
+                        aggregate_metrics['avg_validation_score'] = float(np.mean([s for _, s in valid_val_scores]))
+                    if valid_test_scores:
+                        aggregate_metrics['avg_test_score'] = float(np.mean([s for _, s in valid_test_scores]))
+                    if valid_accuracies:
+                        aggregate_metrics['avg_accuracy'] = float(np.mean(valid_accuracies))
+                        aggregate_metrics['std_accuracy'] = float(np.std(valid_accuracies))
+                    if valid_aucs:
+                        aggregate_metrics['avg_auc'] = float(np.mean(valid_aucs))
+                        aggregate_metrics['std_auc'] = float(np.std(valid_aucs))
+                    if valid_precisions:
+                        aggregate_metrics['avg_precision'] = float(np.mean(valid_precisions))
+                    if valid_recalls:
+                        aggregate_metrics['avg_recall'] = float(np.mean(valid_recalls))
+                    if valid_f1_scores:
+                        aggregate_metrics['avg_f1_score'] = float(np.mean(valid_f1_scores))
+                        aggregate_metrics['std_f1_score'] = float(np.std(valid_f1_scores))
+                    
+                    # Performance metrics breakdown
+                    performance_metrics = {
+                        'execution_time_seconds': execution_time,
+                        'models_per_second': len(models_trained) / max(0.001, execution_time),
+                        'progress_summary': progress_summary,
+                        'hardware_status': final_hardware_status,
+                        'resource_usage': self.training_metrics.get('resource_usage', {}),
+                        'aggregate_ml_metrics': aggregate_metrics,
+                    }
+                    
+                    # Training configuration details
+                    training_config = {
+                        'timeframe': getattr(self.config, 'timeframe', '60m'),
+                        'regime_aware': getattr(self.config, 'regime_aware', True),
+                        'enable_enhanced_training': getattr(self.config, 'enable_enhanced_training', True),
+                        'enable_overfitting_prevention': getattr(self.config, 'enable_overfitting_prevention', True),
+                        'use_purged_cv': getattr(self.config, 'use_purged_cv', True),
+                        'cv_folds': getattr(self.config, 'cv_folds', 5),
+                        'early_stopping_enabled': getattr(self.config, 'early_stopping_enabled', True),
+                    }
+                    
+                    # Data quality and validation
+                    data_quality = {
+                        'input_samples': results.get('input_samples', 0),
+                        'input_features': results.get('input_features', 0),
+                        'training_samples': results.get('training_samples', 0),
+                        'validation_samples': results.get('validation_samples', 0),
+                        'test_samples': results.get('test_samples', 0),
+                        'feature_names': results.get('feature_names', []),
+                        'regime_distribution': results.get('regime_distribution', {}),
+                    }
+                    
+                    # Warnings and issues
+                    warnings_and_issues = {
+                        'overfitting_warnings': results.get('overfitting_warnings', []),
+                        'lookahead_warnings': results.get('lookahead_warnings', []),
+                        'data_quality_warnings': results.get('data_quality_warnings', []),
+                        'total_warnings': len(results.get('overfitting_warnings', [])) + len(results.get('lookahead_warnings', [])),
+                    }
+                    
+                    # Create comprehensive outcome report
+                    outcome_data = {
+                        'component': 'analyst_model_training',
+                        'timestamp': datetime.now().isoformat(),
+                        'execution_time': execution_time,
+                        'configuration': training_config,
+                        'results': {
+                            'summary': {
+                                'models_trained': len(models_trained),
+                                'training_successful': True,
+                                'report_path': results.get('training_report'),
+                            },
+                            'model_statistics': model_stats,
+                            'data_quality': data_quality,
+                        },
+                        'performance_metrics': performance_metrics,
+                        'warnings_and_issues': warnings_and_issues,
+                        'enhanced_training_metadata': results.get('enhanced_training_metadata', {}),
+                        'ml_utilities_metadata': results.get('ml_utilities_metadata', {}),
+                        'status': 'success'
+                    }
+                    
+                    # Save outcome file
+                    with open(outcome_path, 'w') as f:
+                        json.dump(outcome_data, f, indent=2, default=str)
+                    
+                    tprint_success(f"📄 Outcome file saved: {outcome_filename}")
+                    results['outcome_file'] = str(outcome_path)
+                    
+                except Exception as outcome_error:
+                    tprint_warning(f"⚠️ Failed to save outcome file: {outcome_error}")
+                    # Don't fail training if outcome file generation fails
                 
                 return results
                 

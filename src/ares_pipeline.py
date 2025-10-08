@@ -18,7 +18,7 @@ from core.config_service import ConfigurationService
 from core.decorators import handles_errors
 from core.dependency_injection import DependencyContainer
 from database.sqlite_manager import SQLiteManager
-from exchange.binance import BinanceExchange as RootExchangeFactory
+from exchanges.binance import BinanceExchange as RootExchangeFactory
 from interfaces.base_interfaces import IAnalyst
 from interfaces.base_interfaces import IEventBus
 from interfaces.base_interfaces import IStateManager

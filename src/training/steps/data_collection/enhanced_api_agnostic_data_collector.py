@@ -311,7 +311,7 @@ class IncrementalDataDownloader:
             self.logger.info(f"🔄 Downloading {data_type} data from {self.exchange} API")
             
             # Import exchange factory
-            from exchange.factory import ExchangeFactory
+            from exchanges.factory import ExchangeFactory
             
             # Create exchange instance
             exchange_instance = ExchangeFactory.create_exchange(

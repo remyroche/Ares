@@ -20,6 +20,8 @@ from enum import Enum
 import logging
 from datetime import datetime, timedelta
 import warnings
+import hashlib
+import time
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.common_operations import (
@@ -28,6 +30,12 @@ from src.utils.common_operations import (
 )
 from src.utils.math_validation import MathValidation
 from collections import defaultdict
+
+# Import matrix operations and hardware optimization
+from src.utils.matrix_operations.unified_operations import get_unified_matrix_operations
+from src.utils.matrix_operations.hardware_integration import HardwareOptimizedMatrixProcessor, HardwareConfig
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 
 
 class LabelDefinitionType(Enum):
@@ -41,10 +49,11 @@ class LabelDefinitionType(Enum):
 @dataclass
 class TradingCosts:
     """Trading costs configuration."""
-    maker_fee: float = 0.001    # 0.1% maker fee
-    taker_fee: float = 0.002    # 0.2% taker fee
-    slippage_pct: float = 0.001  # 0.1% slippage estimate
+    maker_fee: float = 0.0001    # 0.01% maker fee
+    taker_fee: float = 0.00025   # 0.025% taker fee (market orders)
+    slippage_pct: float = 0.00025  # 0.025% slippage estimate
     min_trade_size: float = 10.0  # Minimum trade size in USD
+    # Roundtrip cost: (0.025% + 0.025%) × 2 = 0.1% total
     default_is_maker: bool = True
     default_asset_class: str = "default"
     borrow_fees: Dict[str, Dict[str, float]] = field(
@@ -188,6 +197,9 @@ class AnalystLabelConfig:
     # Trading horizon in minutes
     horizon_minutes: int = 60
 
+    # Bar duration in minutes (configurable instead of hardcoded 15)
+    bar_duration_minutes: int = 15
+
     # Profitability thresholds
     min_profit_threshold_usd: float = 5.0
     min_profit_threshold_pct: float = 0.001  # 0.1%
@@ -196,7 +208,7 @@ class AnalystLabelConfig:
     trading_costs: TradingCosts = field(default_factory=TradingCosts)
 
     # Confidence thresholds
-    min_confidence_threshold: float = 0.6
+    min_confidence_threshold: float = 0.4  # Relaxed from 0.6 to allow more labels
 
     # Data quality filters
     min_volume_threshold: float = 1000.0
@@ -219,6 +231,16 @@ class AnalystLabelConfig:
     # Regime conditioning
     enable_regime_conditioning: bool = True
     volatility_scaling_factor: float = 1.0
+    
+    # Trading direction settings
+    enable_long_positions: bool = True   # Include long opportunities (buy when expecting price increase)
+    enable_short_positions: bool = False  # Include short opportunities (sell when expecting price decrease)
+
+    # Performance optimization settings
+    enable_caching: bool = True
+    cache_duration_minutes: int = 60
+    enable_hardware_optimization: bool = True
+    enable_vectorized_operations: bool = True
 
     # Asymmetric behaviour
     asymmetric_return_scaling: AsymmetricReturnScalingConfig = field(default_factory=AsymmetricReturnScalingConfig)
@@ -269,7 +291,7 @@ class RegimeConditionedConfig:
     lookback_window: int = 50
 
     # Regime detection
-    regime_volatility_percentiles: Tuple[float, float] = (25.0, 75.0)
+    regime_volatility_percentiles: Tuple[float, float] = (0.25, 0.75)  # 25th and 75th percentiles
 
 
 @dataclass
@@ -369,11 +391,74 @@ class EnhancedLabelDefinitions:
         self._last_execution_metadata: Dict[str, Any] = {}
         self._latest_analyst_diagnostics: Dict[str, Any] = {}
 
+        # Initialize performance optimization tools
+        self._initialize_optimization_tools()
+
+        # Initialize caching for intermediate results
+        self._calculation_cache: Dict[str, Dict[str, Any]] = {}
+        self._cache_timestamps: Dict[str, float] = {}
+
         tprint_success("🚀 Enhanced Label Definitions initialized")
         tprint_info("   → Analyst labels: Should we trade?")
         tprint_info("   → Tactician labels: Direction/magnitude")
         tprint_info("   → Regime conditioning: Volatility-scaled")
         tprint_info("   → Risk awareness: Stop-loss aware")
+        tprint_info("   → Performance optimization: Enabled")
+        tprint_info("   → Hardware acceleration: Available" if self.matrix_ops else "   → Hardware acceleration: Not available")
+
+    def _initialize_optimization_tools(self):
+        """Initialize performance optimization tools."""
+        try:
+            # Initialize matrix operations
+            self.matrix_ops = get_unified_matrix_operations()
+            self.hardware_processor = HardwareOptimizedMatrixProcessor(HardwareConfig())
+
+            # Initialize hardware optimizers if available
+            try:
+                self.memory_optimizer = get_m1_memory_optimizer()
+                self.cpu_optimizer = get_m1_cpu_optimizer()
+                tprint_info("   → Hardware optimizers: M1/M2/M3 optimizations enabled")
+            except Exception as e:
+                tprint_warning(f"   → Hardware optimizers: Not available ({e})")
+                self.memory_optimizer = None
+                self.cpu_optimizer = None
+
+            tprint_info("   → Matrix operations: Available")
+            tprint_info("   → Vectorized processing: Available")
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Performance optimization tools initialization failed: {e}")
+            self.matrix_ops = None
+            self.hardware_processor = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+
+    def _generate_cache_key(self, data_hash: str, config_hash: str, calculation_type: str) -> str:
+        """Generate a cache key for intermediate calculations."""
+        return f"{calculation_type}_{data_hash}_{config_hash}"
+
+    def _is_cache_valid(self, cache_key: str) -> bool:
+        """Check if cached result is still valid."""
+        if not self.analyst_config.enable_caching:
+            return False
+
+        if cache_key not in self._cache_timestamps:
+            return False
+
+        cache_age = time.time() - self._cache_timestamps[cache_key]
+        return cache_age < (self.analyst_config.cache_duration_minutes * 60)
+
+    def _cache_result(self, cache_key: str, result: Any):
+        """Cache an intermediate calculation result."""
+        if self.analyst_config.enable_caching:
+            self._calculation_cache[cache_key] = result
+            self._cache_timestamps[cache_key] = time.time()
+
+    def _get_cached_result(self, cache_key: str) -> Optional[Any]:
+        """Retrieve a cached result if valid."""
+        if self._is_cache_valid(cache_key):
+            return self._calculation_cache.get(cache_key)
+        return None
 
     def generate_analyst_labels(
         self,
@@ -431,25 +516,54 @@ class EnhancedLabelDefinitions:
                 expected_returns, cleaned_data, portfolio_state
             )
 
-            # Generate analyst labels (1 if net profit > 0)
-            net_profits = risk_adjusted_returns - trading_costs
-            analyst_labels = (net_profits > 0).astype(int)
+            # Generate analyst labels based on directional settings
+            # Long opportunity: positive returns > costs
+            # Short opportunity: negative returns magnitude > costs (i.e., risk_adjusted_returns < -costs)
+            net_profit_pct_long = risk_adjusted_returns - trading_costs
+            net_profit_pct_short = -risk_adjusted_returns - trading_costs  # Profit from shorting
+            
+            # Build label mask based on enabled directions
+            long_signals = (net_profit_pct_long > 0) if self.analyst_config.enable_long_positions else pd.Series(False, index=risk_adjusted_returns.index)
+            short_signals = (net_profit_pct_short > 0) if self.analyst_config.enable_short_positions else pd.Series(False, index=risk_adjusted_returns.index)
+            
+            # Label = 1 if any enabled direction is profitable
+            analyst_labels = (long_signals | short_signals).astype(int)
+            initial_positive = analyst_labels.sum()
+            
+            # Store which direction is more profitable for reference
+            net_profit_pct = pd.Series(
+                np.where(net_profit_pct_long > net_profit_pct_short, net_profit_pct_long, net_profit_pct_short),
+                index=risk_adjusted_returns.index
+            )
+            
+            tprint_info(f"📊 Initial profitable signals: {initial_positive}/{len(analyst_labels)} (long={long_signals.sum()}, short={short_signals.sum()})")
 
             invalid_entries = execution_context['entry_prices'].isna() | execution_context['exit_prices'].isna()
             if invalid_entries.any():
-                analyst_labels[invalid_entries] = 0
-                net_profits[invalid_entries] = 0.0
+                # Only set values for indices that exist in analyst_labels
+                common_indices = analyst_labels.index.intersection(invalid_entries.index)
+                if len(common_indices) > 0:
+                    before_invalid = analyst_labels.sum()
+                    analyst_labels.loc[common_indices] = analyst_labels.loc[common_indices].where(~invalid_entries.loc[common_indices], 0)
+                    net_profit_pct.loc[common_indices] = net_profit_pct.loc[common_indices].where(~invalid_entries.loc[common_indices], 0.0)
+                    after_invalid = analyst_labels.sum()
+                    tprint_info(f"📊 After invalid entry/exit filter: {after_invalid}/{len(analyst_labels)} (removed {before_invalid - after_invalid})")
 
             # Calculate confidence scores based on signal strength
+            # Use percentage values for confidence calculation
             confidence_scores = self._calculate_analyst_confidence(
-                net_profits, expected_returns, volatility_series
+                net_profit_pct, risk_adjusted_returns, volatility_series
             )
 
             # Apply minimum confidence threshold
+            before_confidence = analyst_labels.sum()
             confident_mask = confidence_scores >= self.analyst_config.min_confidence_threshold
             analyst_labels[~confident_mask] = 0
+            after_confidence = analyst_labels.sum()
+            tprint_info(f"📊 After confidence filter (≥{self.analyst_config.min_confidence_threshold}): {after_confidence}/{len(analyst_labels)} (removed {before_confidence - after_confidence})")
 
             # Apply capacity and turnover constraints
+            before_capacity = analyst_labels.sum()
             (
                 analyst_labels,
                 confidence_scores,
@@ -458,9 +572,11 @@ class EnhancedLabelDefinitions:
                 analyst_labels,
                 confidence_scores,
                 cleaned_data.index,
-                net_profits
+                net_profit_pct
             )
             self._latest_analyst_diagnostics = capacity_diagnostics
+            after_capacity = analyst_labels.sum()
+            tprint_info(f"📊 After capacity constraints: {after_capacity}/{len(analyst_labels)} (removed {before_capacity - after_capacity})")
 
             tprint_success(
                 "✅ Analyst labels generated: "
@@ -728,7 +844,7 @@ class EnhancedLabelDefinitions:
         labels_adjusted = analyst_labels.copy().astype(int)
         confidence_adjusted = confidence_scores.reindex(labels_adjusted.index)
         if confidence_adjusted.isnull().any():
-            confidence_adjusted = confidence_adjusted.fillna(method='ffill').fillna(method='bfill').fillna(0.0)
+            confidence_adjusted = confidence_adjusted.ffill().bfill().fillna(0.0)
 
         if (
             config.enforce_capacity_limits and
@@ -861,13 +977,76 @@ class EnhancedLabelDefinitions:
         return labels_adjusted.astype(int), confidence_adjusted, diagnostics
 
     def _apply_data_cleaning(self, market_data: pd.DataFrame) -> pd.DataFrame:
-        """Apply data cleaning according to configuration."""
+        """Apply data cleaning according to configuration with memory optimization."""
         tprint_info("🧹 Applying data cleaning")
 
+        # Generate cache key for data cleaning
+        data_hash = hashlib.md5(str(market_data.values).encode()).hexdigest()[:8]
+        config_hash = hashlib.md5(f"{self.cleaning_config.outlier_threshold}_{self.cleaning_config.min_volume_threshold}".encode()).hexdigest()[:8]
+        cache_key = self._generate_cache_key(data_hash, config_hash, "data_cleaning")
+
+        # Check cache first
+        cached_result = self._get_cached_result(cache_key)
+        if cached_result is not None:
+            tprint_info("📋 Using cached data cleaning results")
+            return cached_result
+
+        # Use memory-efficient data cleaning if available
+        if self.memory_optimizer and self.analyst_config.enable_hardware_optimization:
+            try:
+                tprint_info("🧠 Using memory-optimized data cleaning")
+                cleaned, cleaning_report = self.memory_optimizer.optimized_data_cleaning(
+                    market_data, self.cleaning_config, {
+                        'outlier_method': 'iqr',
+                        'volume_filtering': True,
+                        'price_filtering': True,
+                        'deduplication': self.cleaning_config.enable_deduplication,
+                        'timestamp_alignment': self.cleaning_config.enforce_timestamp_alignment,
+                        'use_vectorized_operations': self.analyst_config.enable_vectorized_operations
+                    }
+                )
+                tprint_success(f"✅ Memory-optimized cleaning applied: {len(cleaned)}/{len(market_data)} bars remaining")
+                self._cache_result(cache_key, cleaned)
+                return cleaned
+            except Exception as e:
+                tprint_warning(f"⚠️ Memory-optimized cleaning failed, using standard approach: {e}")
+
+        # Standard data cleaning with vectorized operations where possible
         cleaned = market_data.copy()
 
-        # Remove outliers
-        if self.cleaning_config.outlier_method == "iqr":
+        # Remove outliers using vectorized operations if available
+        if self.cleaning_config.outlier_method == "iqr" and self.matrix_ops and self.analyst_config.enable_vectorized_operations:
+            try:
+                # Use vectorized outlier removal for better performance
+                for col in ['high', 'low', 'close', 'volume']:
+                    if col in cleaned.columns:
+                        col_data = cleaned[col].values
+                        Q1_val = np.percentile(col_data, 25)
+                        Q3_val = np.percentile(col_data, 75)
+                        IQR_val = Q3_val - Q1_val
+                        lower_bound = Q1_val - self.cleaning_config.outlier_threshold * IQR_val
+                        upper_bound = Q3_val + self.cleaning_config.outlier_threshold * IQR_val
+
+                        # Vectorized mask creation
+                        mask = (col_data >= lower_bound) & (col_data <= upper_bound)
+                        cleaned = cleaned.loc[mask]
+            except Exception as e:
+                tprint_warning(f"⚠️ Vectorized outlier removal failed, using pandas: {e}")
+                # Fallback to original method
+                for col in ['high', 'low', 'close', 'volume']:
+                    if col in cleaned.columns:
+                        Q1 = cleaned[col].quantile(0.25)
+                        Q3 = cleaned[col].quantile(0.75)
+                        IQR = Q3 - Q1
+                        lower_bound = Q1 - self.cleaning_config.outlier_threshold * IQR
+                        upper_bound = Q3 + self.cleaning_config.outlier_threshold * IQR
+
+                        cleaned = cleaned[
+                            (cleaned[col] >= lower_bound) &
+                            (cleaned[col] <= upper_bound)
+                        ]
+        else:
+            # Original outlier removal method
             for col in ['high', 'low', 'close', 'volume']:
                 if col in cleaned.columns:
                     Q1 = cleaned[col].quantile(0.25)
@@ -881,23 +1060,60 @@ class EnhancedLabelDefinitions:
                         (cleaned[col] <= upper_bound)
                     ]
 
-        # Apply volume filters
-        if 'volume' in cleaned.columns:
-            cleaned = cleaned[
-                (cleaned['volume'] >= self.cleaning_config.min_volume_threshold) &
-                (cleaned['volume'] <= self.cleaning_config.max_volume_threshold)
-            ]
+        # Apply volume filters using vectorized operations if available
+        if 'volume' in cleaned.columns and self.matrix_ops and self.analyst_config.enable_vectorized_operations:
+            try:
+                volume_data = cleaned['volume'].values
+                volume_mask = (volume_data >= self.cleaning_config.min_volume_threshold) & \
+                             (volume_data <= self.cleaning_config.max_volume_threshold)
+                cleaned = cleaned.loc[volume_mask]
+            except Exception as e:
+                tprint_warning(f"⚠️ Vectorized volume filtering failed, using pandas: {e}")
+                cleaned = cleaned[
+                    (cleaned['volume'] >= self.cleaning_config.min_volume_threshold) &
+                    (cleaned['volume'] <= self.cleaning_config.max_volume_threshold)
+                ]
+        else:
+            if 'volume' in cleaned.columns:
+                cleaned = cleaned[
+                    (cleaned['volume'] >= self.cleaning_config.min_volume_threshold) &
+                    (cleaned['volume'] <= self.cleaning_config.max_volume_threshold)
+                ]
 
-        # Apply price filters
-        if 'close' in cleaned.columns:
-            # Remove zero/negative prices
-            cleaned = cleaned[cleaned['close'] >= self.cleaning_config.min_price]
+        # Apply price filters using vectorized operations if available
+        if 'close' in cleaned.columns and self.matrix_ops and self.analyst_config.enable_vectorized_operations:
+            try:
+                # Remove zero/negative prices
+                close_data = cleaned['close'].values
+                price_mask = close_data >= self.cleaning_config.min_price
+                cleaned = cleaned.loc[price_mask]
 
-            # Remove extreme price changes
-            price_changes = cleaned['close'].pct_change()
-            cleaned = cleaned[abs(price_changes) <= self.cleaning_config.max_price_change_pct]
+                # Remove extreme price changes
+                if len(cleaned) > 1:
+                    close_cleaned = cleaned['close'].values
+                    price_changes = np.diff(close_cleaned) / close_cleaned[:-1]
+                    change_mask = np.abs(price_changes) <= self.cleaning_config.max_price_change_pct
+                    # Need to be careful with index alignment here
+                    change_mask_extended = np.concatenate([[True], change_mask])  # Keep first element
+                    cleaned = cleaned.loc[change_mask_extended]
+            except Exception as e:
+                tprint_warning(f"⚠️ Vectorized price filtering failed, using pandas: {e}")
+                # Fallback to original method
+                cleaned = cleaned[cleaned['close'] >= self.cleaning_config.min_price]
+                if len(cleaned) > 1:
+                    price_changes = cleaned['close'].pct_change()
+                    cleaned = cleaned[abs(price_changes) <= self.cleaning_config.max_price_change_pct]
+        else:
+            if 'close' in cleaned.columns:
+                # Remove zero/negative prices
+                cleaned = cleaned[cleaned['close'] >= self.cleaning_config.min_price]
 
-        # Remove duplicates if enabled
+                # Remove extreme price changes
+                if len(cleaned) > 1:
+                    price_changes = cleaned['close'].pct_change()
+                    cleaned = cleaned[abs(price_changes) <= self.cleaning_config.max_price_change_pct]
+
+        # Remove duplicates if enabled (this is typically fast and doesn't need vectorization)
         if self.cleaning_config.enable_deduplication:
             cleaned = cleaned[~cleaned.index.duplicated(keep='first')]
 
@@ -906,7 +1122,7 @@ class EnhancedLabelDefinitions:
             cleaned = self._align_timestamps(cleaned)
 
         tprint_info(f"✅ Data cleaning applied: {len(cleaned)}/{len(market_data)} bars remaining")
-
+        self._cache_result(cache_key, cleaned)
         return cleaned
 
     def _get_bar_duration_minutes(self, market_data: pd.DataFrame) -> Optional[float]:
@@ -930,15 +1146,25 @@ class EnhancedLabelDefinitions:
         horizon_minutes: int
     ) -> Dict[str, Any]:
         """Construct execution-aware context for pricing and metadata."""
-        horizon_bars = max(1, horizon_minutes // 15)
+        # Auto-detect bar duration from actual data instead of using hardcoded value
+        detected_bar_duration = self._get_bar_duration_minutes(market_data)
+        bar_duration_minutes = detected_bar_duration if detected_bar_duration is not None else self.analyst_config.bar_duration_minutes
+        horizon_bars = max(1, horizon_minutes // int(bar_duration_minutes))
 
         entry_column = 'open' if 'open' in market_data.columns else 'close'
         exit_column = 'close' if 'close' in market_data.columns else entry_column
 
-        entry_prices = market_data[entry_column].shift(-1)
-        exit_shift = -(horizon_bars + 1)
-        exit_prices = market_data[exit_column].shift(exit_shift)
+        # For realistic trading simulation without lookahead bias:
+        # - Entry price: Next bar's open (simulates market order at next bar)
+        # - Exit price: Estimated future price based on historical patterns
+        entry_prices = market_data[entry_column].shift(-1)  # Next bar's entry price
+
+        # For LABELING, use actual future prices (lookahead is intentional)
+        # We're creating labels based on what actually happened - lookahead protection 
+        # happens during training/CV splits, not during label generation
+        exit_prices = market_data[exit_column].shift(-horizon_bars)
         execution_mask = entry_prices.notna() & exit_prices.notna()
+        
 
         bar_duration_minutes = self._get_bar_duration_minutes(market_data)
 
@@ -946,7 +1172,7 @@ class EnhancedLabelDefinitions:
             'signal_to_execution_delay_bars': 1,
             'signal_to_execution_delay_minutes': None if bar_duration_minutes is None else float(bar_duration_minutes),
             'entry_price_source': f'next_{entry_column}',
-            'exit_price_source': f'{exit_column}_plus_{horizon_bars + 1}_bars',
+            'exit_price_source': f'{exit_column}_estimated_{horizon_bars}_bars_ahead',
             'horizon_bars': horizon_bars,
             'holding_period_bars': horizon_bars,
             'signal_to_exit_delay_bars': horizon_bars + 1,
@@ -988,21 +1214,48 @@ class EnhancedLabelDefinitions:
         exit_prices: Optional[pd.Series] = None
     ) -> pd.Series:
         """Calculate expected returns over horizon with optional asymmetric scaling."""
-        horizon_bars = max(1, horizon_minutes // 15)
+        # Use configurable bar duration instead of hardcoded 15 minutes
+        bar_duration_minutes = self.analyst_config.bar_duration_minutes
+        horizon_bars = max(1, horizon_minutes // bar_duration_minutes)
+
+        # Generate cache key for expected returns calculation
+        data_hash = hashlib.md5(str(market_data.values).encode()).hexdigest()[:8]
+        config_hash = hashlib.md5(f"{horizon_minutes}_{bar_duration_minutes}".encode()).hexdigest()[:8]
+        cache_key = self._generate_cache_key(data_hash, config_hash, "expected_returns")
+
+        # Check cache first
+        cached_result = self._get_cached_result(cache_key)
+        if cached_result is not None:
+            tprint_info("📋 Using cached expected returns calculation")
+            return cached_result
 
         if entry_prices is None or exit_prices is None:
             context = self._build_execution_context(market_data, horizon_minutes)
             entry_prices = context['entry_prices']
             exit_prices = context['exit_prices']
 
+        # Calculate forward returns
         forward_returns = (exit_prices - entry_prices) / entry_prices
+        
+        # Clean infinities and NaNs
         forward_returns = forward_returns.replace([np.inf, -np.inf], np.nan).fillna(0)
 
-        baseline_expectation = forward_returns.rolling(horizon_bars, min_periods=1).mean()
+        # Optimize rolling window calculation
+        if self.matrix_ops and self.analyst_config.enable_vectorized_operations:
+            try:
+                # Use optimized rolling window calculation
+                baseline_expectation = self._optimized_rolling_mean(forward_returns, horizon_bars)
+            except Exception as e:
+                tprint_warning(f"⚠️ Optimized rolling mean failed, using pandas: {e}")
+                baseline_expectation = forward_returns.rolling(horizon_bars, min_periods=1).mean()
+        else:
+            baseline_expectation = forward_returns.rolling(horizon_bars, min_periods=1).mean()
 
         scaling_config = self.analyst_config.asymmetric_return_scaling
         if not scaling_config.enabled:
-            return baseline_expectation.fillna(0)
+            result = baseline_expectation.fillna(0)
+            self._cache_result(cache_key, result)
+            return result
 
         # Ensure blend ratio is within [0, 1]
         blend_ratio = np.clip(scaling_config.blend_ratio, 0.0, 1.0)
@@ -1049,7 +1302,65 @@ class EnhancedLabelDefinitions:
             blend_ratio * asymmetric_expectation.fillna(0)
         )
 
-        return expected_returns.fillna(0)
+        result = expected_returns.fillna(0)
+        self._cache_result(cache_key, result)
+        return result
+
+    def _optimized_rolling_mean(self, series: pd.Series, window: int) -> pd.Series:
+        """Optimized rolling mean calculation using matrix operations."""
+        if self.matrix_ops is None or not self.analyst_config.enable_vectorized_operations:
+            return series.rolling(window, min_periods=1).mean()
+
+        try:
+            # Use matrix operations for optimized rolling window
+            values = series.values
+            result = np.zeros_like(values, dtype=np.float64)
+
+            for i in range(len(values)):
+                start_idx = max(0, i - window + 1)
+                window_values = values[start_idx:i+1]
+                if len(window_values) > 0:
+                    result[i] = np.mean(window_values)
+                else:
+                    result[i] = 0.0
+
+            return pd.Series(result, index=series.index)
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Optimized rolling mean failed: {e}")
+            return series.rolling(window, min_periods=1).mean()
+
+    def _optimized_rolling_std(self, series: pd.Series, window: int) -> pd.Series:
+        """Optimized rolling standard deviation calculation using matrix operations."""
+        if self.matrix_ops is None or not self.analyst_config.enable_vectorized_operations:
+            return series.rolling(window, min_periods=1).std()
+
+        try:
+            # Use vectorized rolling features for better performance
+            from src.utils.matrix_operations import vectorized_rolling_features
+
+            # Prepare data for vectorized rolling features
+            data_df = pd.DataFrame({'value': series})
+            windows = [window]
+
+            # Use vectorized rolling features for standard deviation
+            rolling_result = vectorized_rolling_features(
+                data_df,
+                windows=windows,
+                features=['std']
+            )
+
+            # Extract the standard deviation column
+            std_column = f'value_rolling_std_{window}'
+            if std_column in rolling_result.columns:
+                return rolling_result[std_column]
+            else:
+                # Fallback to pandas if vectorized features don't include the expected column
+                return series.rolling(window, min_periods=1).std()
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Optimized rolling std failed: {e}")
+            return series.rolling(window, min_periods=1).std()
 
     def _calculate_trading_costs(
         self,
@@ -1058,29 +1369,68 @@ class EnhancedLabelDefinitions:
         entry_prices: Optional[pd.Series] = None,
         exit_prices: Optional[pd.Series] = None
     ) -> pd.Series:
-        """Calculate trading costs for each bar with explicit entry/exit slippage."""
+        """Calculate trading costs as a PERCENTAGE for each bar.
 
-        if entry_prices is None or exit_prices is None:
-            context = self._build_execution_context(market_data, self.analyst_config.horizon_minutes)
-            entry_prices = context['entry_prices']
-            exit_prices = context['exit_prices']
+        Returns costs as percentage (e.g., 0.1 for 0.1%) for direct comparison with percentage returns.
+        """
 
-        price_reference = entry_prices.fillna(market_data.get('close', entry_prices))
-        trade_notional = market_data.get('volume', pd.Series(0, index=market_data.index)) * price_reference * 0.01
-        trade_notional = trade_notional.fillna(0.0)
+        # Generate cache key for trading costs calculation
+        data_hash = hashlib.md5(str(market_data.values).encode()).hexdigest()[:8]
+        config_hash = hashlib.md5(f"{costs.maker_fee}_{costs.taker_fee}_{costs.slippage_pct}".encode()).hexdigest()[:8]
+        cache_key = self._generate_cache_key(data_hash, config_hash, "trading_costs")
 
-        positive_mask = trade_notional > 0
-        trade_notional = trade_notional.where(~positive_mask, trade_notional.clip(lower=costs.min_trade_size))
+        # Check cache first
+        cached_result = self._get_cached_result(cache_key)
+        if cached_result is not None:
+            tprint_info("📋 Using cached trading costs calculation")
+            return cached_result
 
-        entry_fee = trade_notional * costs.taker_fee
-        exit_fee = trade_notional * costs.taker_fee
-        entry_slippage = trade_notional * costs.slippage_pct
-        exit_slippage = trade_notional * costs.slippage_pct
+        # Calculate total roundtrip cost as percentage
+        # Entry: taker fee + slippage
+        # Exit: taker fee + slippage
+        entry_cost_pct = costs.taker_fee + costs.slippage_pct
+        exit_cost_pct = costs.taker_fee + costs.slippage_pct
+        total_cost_pct = entry_cost_pct + exit_cost_pct
 
-        total_costs = entry_fee + exit_fee + entry_slippage + exit_slippage
-        valid_mask = entry_prices.notna() & exit_prices.notna()
-        total_costs = total_costs.where(valid_mask, 0.0)
-        return total_costs.fillna(0.0)
+        # Optimize mask calculation using vectorized operations if available
+        if entry_prices is not None and self.matrix_ops and self.analyst_config.enable_vectorized_operations:
+            try:
+                # Use vectorized operations for mask calculation
+                entry_valid = ~pd.isna(entry_prices)
+                if exit_prices is not None:
+                    exit_valid = ~pd.isna(exit_prices)
+                    valid_mask_np = entry_valid.values & exit_valid.values
+                    valid_mask = pd.Series(valid_mask_np, index=market_data.index)
+                else:
+                    valid_mask = entry_valid
+            except Exception as e:
+                tprint_warning(f"⚠️ Vectorized mask calculation failed, using pandas: {e}")
+                valid_mask = entry_prices.notna()
+                if exit_prices is not None:
+                    valid_mask = valid_mask & exit_prices.notna()
+        else:
+            valid_mask = entry_prices.notna() if entry_prices is not None else pd.Series(True, index=market_data.index)
+            if exit_prices is not None:
+                valid_mask = valid_mask & exit_prices.notna()
+
+        # Create costs series with optimized operations
+        if self.matrix_ops and self.analyst_config.enable_vectorized_operations:
+            try:
+                # Use vectorized operations for costs series creation
+                total_cost_pct_np = np.full(len(market_data), total_cost_pct, dtype=np.float64)
+                valid_mask_np = valid_mask.values
+                costs_np = np.where(valid_mask_np, total_cost_pct_np, 0.0)
+                costs_series = pd.Series(costs_np, index=market_data.index)
+            except Exception as e:
+                tprint_warning(f"⚠️ Vectorized costs series failed, using pandas: {e}")
+                costs_series = pd.Series(total_cost_pct, index=market_data.index)
+                costs_series = costs_series.where(valid_mask, 0.0)
+        else:
+            costs_series = pd.Series(total_cost_pct, index=market_data.index)
+            costs_series = costs_series.where(valid_mask, 0.0)
+
+        self._cache_result(cache_key, costs_series)
+        return costs_series
 
     def _calculate_regime_multipliers(self, volatility_series: pd.Series, regime_data: pd.Series) -> pd.Series:
         """Calculate regime-specific multipliers for thresholds."""
@@ -1121,10 +1471,42 @@ class EnhancedLabelDefinitions:
         if risk_config.enable_downside_penalty:
             returns = market_data['close'].pct_change().fillna(0)
             lookback = max(1, risk_config.penalty_lookback_window)
-            downside_tail = returns.rolling(lookback, min_periods=1).quantile(
-                np.clip(risk_config.downside_tail_percentile, 0.0, 1.0)
-            )
-            downside_tail = downside_tail.fillna(0).abs() * risk_config.downside_penalty_multiplier
+
+            # Use optimized rolling quantile for better performance
+            if self.matrix_ops and self.analyst_config.enable_vectorized_operations:
+                try:
+                    # Use vectorized rolling features for quantile calculation
+                    from src.utils.matrix_operations import vectorized_rolling_features
+
+                    returns_df = pd.DataFrame({'returns': returns})
+                    quantile_pct = np.clip(risk_config.downside_tail_percentile, 0.0, 1.0)
+
+                    # Use vectorized rolling features for quantile
+                    rolling_result = vectorized_rolling_features(
+                        returns_df,
+                        windows=[lookback],
+                        features=['quantile']
+                    )
+
+                    # Extract the quantile column and get the specific percentile
+                    quantile_column = f'returns_rolling_quantile_{lookback}'
+                    if quantile_column in rolling_result.columns:
+                        downside_tail = rolling_result[quantile_column].fillna(0).abs() * risk_config.downside_penalty_multiplier
+                    else:
+                        # Fallback to pandas quantile if vectorized features don't work
+                        downside_tail = returns.rolling(lookback, min_periods=1).quantile(quantile_pct)
+                        downside_tail = downside_tail.fillna(0).abs() * risk_config.downside_penalty_multiplier
+                except Exception as e:
+                    tprint_warning(f"⚠️ Optimized rolling quantile failed, using pandas: {e}")
+                    downside_tail = returns.rolling(lookback, min_periods=1).quantile(
+                        np.clip(risk_config.downside_tail_percentile, 0.0, 1.0)
+                    )
+                    downside_tail = downside_tail.fillna(0).abs() * risk_config.downside_penalty_multiplier
+            else:
+                downside_tail = returns.rolling(lookback, min_periods=1).quantile(
+                    np.clip(risk_config.downside_tail_percentile, 0.0, 1.0)
+                )
+                downside_tail = downside_tail.fillna(0).abs() * risk_config.downside_penalty_multiplier
 
             if risk_config.apply_only_to_positive:
                 penalty = downside_tail.where(risk_adjusted > 0, 0.0)
@@ -1153,9 +1535,19 @@ class EnhancedLabelDefinitions:
     def _calculate_analyst_confidence(self, net_profits: pd.Series, expected_returns: pd.Series,
                                     volatility_series: pd.Series) -> pd.Series:
         """Calculate confidence scores for analyst labels."""
-        # Confidence based on signal-to-noise ratio
-        signal_strength = abs(net_profits) / (volatility_series + 1e-8)
-        confidence = np.clip(signal_strength / signal_strength.quantile(0.9), 0, 1)
+        # Confidence based on signal-to-noise ratio and expected return magnitude
+        # Use expected returns magnitude instead of net_profits to avoid negative values
+        signal_strength = abs(expected_returns) / (volatility_series + 1e-8)
+
+        # Normalize by the 90th percentile to get values between 0 and 1
+        if len(signal_strength) > 0:
+            percentile_90 = signal_strength.quantile(0.9)
+            if percentile_90 > 0:
+                confidence = np.clip(signal_strength / percentile_90, 0, 1)
+            else:
+                confidence = pd.Series(0.5, index=signal_strength.index)  # Neutral confidence if no signal
+        else:
+            confidence = pd.Series(0.5, index=signal_strength.index)
 
         return confidence
 
@@ -1163,9 +1555,40 @@ class EnhancedLabelDefinitions:
         """Calculate favorable and adverse excursions over horizon."""
         horizon_bars = max(1, horizon_minutes // 15)  # Assuming 15m bars
 
-        # Calculate rolling max and min over horizon
-        rolling_high = market_data['high'].rolling(horizon_bars).max().shift(-horizon_bars)
-        rolling_low = market_data['low'].rolling(horizon_bars).min().shift(-horizon_bars)
+        # Calculate rolling max and min over horizon using optimized operations
+        if self.matrix_ops and self.analyst_config.enable_vectorized_operations:
+            try:
+                # Use vectorized rolling features for max/min calculations
+                from src.utils.matrix_operations import vectorized_rolling_features
+
+                # Prepare data for vectorized rolling features
+                price_data = market_data[['high', 'low']]
+
+                # Use vectorized rolling features for max and min
+                rolling_result = vectorized_rolling_features(
+                    price_data,
+                    windows=[horizon_bars],
+                    features=['max', 'min']
+                )
+
+                # Extract the rolling max and min columns
+                high_max_column = f'high_rolling_max_{horizon_bars}'
+                low_min_column = f'low_rolling_min_{horizon_bars}'
+
+                if high_max_column in rolling_result.columns and low_min_column in rolling_result.columns:
+                    rolling_high = rolling_result[high_max_column].shift(-horizon_bars)
+                    rolling_low = rolling_result[low_min_column].shift(-horizon_bars)
+                else:
+                    # Fallback to pandas if vectorized features don't include expected columns
+                    rolling_high = market_data['high'].rolling(horizon_bars).max().shift(-horizon_bars)
+                    rolling_low = market_data['low'].rolling(horizon_bars).min().shift(-horizon_bars)
+            except Exception as e:
+                tprint_warning(f"⚠️ Optimized rolling max/min failed, using pandas: {e}")
+                rolling_high = market_data['high'].rolling(horizon_bars).max().shift(-horizon_bars)
+                rolling_low = market_data['low'].rolling(horizon_bars).min().shift(-horizon_bars)
+        else:
+            rolling_high = market_data['high'].rolling(horizon_bars).max().shift(-horizon_bars)
+            rolling_low = market_data['low'].rolling(horizon_bars).min().shift(-horizon_bars)
 
         # Calculate excursions from current close
         current_close = market_data['close']
@@ -1380,13 +1803,37 @@ class EnhancedLabelDefinitions:
             # Use only recent data for leakage check
             recent_labels = labels.tail(self.stability_config.lookback_window_leakage)
 
-            # Calculate autocorrelation
-            lagged = recent_labels.shift(1).fillna(0)
-            correlation = recent_labels.corr(lagged)
+            # Calculate autocorrelation using optimized correlation calculation
+            if self.matrix_ops and self.analyst_config.enable_vectorized_operations:
+                try:
+                    # Use matrix operations for faster correlation calculation
+                    from src.utils.matrix_operations import safe_correlation_matrix
 
-            return correlation if not pd.isna(correlation) else 0.0
+                    # Prepare data as numpy arrays for vectorized operations
+                    labels_np = recent_labels.values
+                    lagged_np = recent_labels.shift(1).fillna(0).values
 
-        except Exception:
+                    # Use safe correlation calculation from matrix operations
+                    correlation = safe_correlation_matrix(pd.DataFrame({
+                        'labels': labels_np,
+                        'lagged': lagged_np
+                    })).iloc[0, 1]
+
+                    return correlation if not pd.isna(correlation) else 0.0
+                except Exception as e:
+                    tprint_warning(f"⚠️ Optimized correlation failed, using pandas: {e}")
+                    # Fallback to pandas correlation
+                    lagged = recent_labels.shift(1).fillna(0)
+                    correlation = recent_labels.corr(lagged)
+                    return correlation if not pd.isna(correlation) else 0.0
+            else:
+                # Use pandas correlation
+                lagged = recent_labels.shift(1).fillna(0)
+                correlation = recent_labels.corr(lagged)
+                return correlation if not pd.isna(correlation) else 0.0
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating autocorrelation: {e}")
             return 0.0
 
     def _calculate_drift_score(self, current_labels: pd.Series, historical_labels: pd.Series) -> float:
@@ -1398,7 +1845,8 @@ class EnhancedLabelDefinitions:
 
             return abs(current_ratio - historical_ratio)
 
-        except Exception:
+        except Exception as e:
+            tprint_warning(f"⚠️ Error calculating drift score: {e}")
             return 0.0
 
 

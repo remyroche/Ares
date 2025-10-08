@@ -161,7 +161,7 @@ class HierarchicalBayesianShrinkage:
         
         return family_data
     
-    def _build_hierarchical_model(self, family_data: Dict[FamilyType, List[SymbolFamilyData]]) -> pm.Model:
+    def _build_hierarchical_model(self, family_data: Dict[FamilyType, List[SymbolFamilyData]]) -> 'pm.Model':
         """Build hierarchical Bayesian model."""
         with pm.Model() as model:
             # Family-level parameters
@@ -205,7 +205,7 @@ class HierarchicalBayesianShrinkage:
             
             return model
     
-    def _variational_inference(self, model: pm.Model) -> Any:
+    def _variational_inference(self, model: 'pm.Model') -> Any:
         """Perform variational inference using ADVI."""
         try:
             with model:
@@ -227,7 +227,7 @@ class HierarchicalBayesianShrinkage:
             self.logger.warning(f"Variational inference failed: {e}. Falling back to NUTS.")
             return self._nuts_sampling(model)
     
-    def _nuts_sampling(self, model: pm.Model) -> Any:
+    def _nuts_sampling(self, model: 'pm.Model') -> Any:
         """Perform NUTS sampling."""
         with model:
             # Sample from posterior

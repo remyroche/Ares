@@ -453,7 +453,7 @@ class UnitTestSuite:
         start_time = time.time()
         
         try:
-            from src.feature_engineering.transforms import OnlineEWZ
+            from src.feature_engineering_roadmap.transforms import OnlineEWZ
             
             # Create test data
             data1 = pd.Series(np.random.randn(100))
@@ -497,7 +497,7 @@ class UnitTestSuite:
         start_time = time.time()
         
         try:
-            from src.feature_engineering.feature_registry import LiquidityMicroFeatures
+            from src.feature_engineering_roadmap.feature_registry import LiquidityMicroFeatures
             
             # Create test data without book fields
             test_data = pd.DataFrame({
@@ -541,7 +541,7 @@ class UnitTestSuite:
         start_time = time.time()
         
         try:
-            from src.feature_engineering.feature_registry import PriceReturnsFeatures
+            from src.feature_engineering_roadmap.feature_registry import PriceReturnsFeatures
             
             # Create test data
             test_data = pd.DataFrame({

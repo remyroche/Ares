@@ -142,7 +142,7 @@ await sync_with_training_pipeline(trading_data)
 - Hardware-aware resource management
 
 #### **Feature Engineering:**
-- `src/feature_engineering/optimized_feature_orchestrator`: Advanced feature generation
+- `src/feature_engineering_roadmap/optimized_feature_orchestrator`: Advanced feature generation
 - Cross-timeframe analysis integration
 - Support for 30+ technical indicators
 - Real-time feature computation

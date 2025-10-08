@@ -36,7 +36,7 @@ class FeatureSelectionFramework:
         self.logger.info("🚀 Initializing FeatureSelectionFramework (delegating to central bank)")
         try:
             # Lazy import to avoid cycles
-            from src.utils.feature_selection.framework import get_feature_selection_framework as _get_bank_framework
+            from src.feature_selection.core.framework import get_feature_selection_framework as _get_bank_framework
             self._bank_framework = _get_bank_framework()
         except Exception as e:
             self.logger.warning(f"⚠️ Central bank framework unavailable, local utilities will be used: {e}")
@@ -134,7 +134,7 @@ class FeatureSelectionFramework:
         try:
             # Delegate to central bank if available
             if self._bank_framework is not None:
-                from src.utils.feature_selection.framework import select_features as bank_select
+                from src.feature_selection.core.framework import select_features as bank_select
 
                 # Map args to central API
                 is_classification = task_type == 'classification'

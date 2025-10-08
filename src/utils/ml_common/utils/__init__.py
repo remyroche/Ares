@@ -31,7 +31,7 @@ __all__ = [
     'ParallelProcessor',
     
     # Caching
-    'UnifiedCache', 'get_unified_cache', 'cached', 'SharedMLCache',
+    'UnifiedCache', 'get_unified_cache', 'cached',
     
     # Threading
     'limit_blas_threads', 'get_thread_info', 'validate_thread_environment',
@@ -57,9 +57,6 @@ def __getattr__(name: str):
         # Resides in top-level utils
         from src.utils.parallel_processing_optimizer import ParallelProcessor as _ParallelProcessor
         return _ParallelProcessor
-    if name == 'SharedMLCache':
-        from .shared_cache import SharedMLCache as _SharedMLCache
-        return _SharedMLCache
     if name in ('limit_blas_threads', 'get_thread_info', 'validate_thread_environment'):
         from .thread_guard import limit_blas_threads as _limit, get_thread_info as _info, validate_thread_environment as _validate
         return {

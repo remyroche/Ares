@@ -14,7 +14,7 @@ from datetime import datetime
 # Import trading system components
 from live_trading import TradingEngine, TradingConfig, TradingMode
 from exchanges import TradingReceiver
-from exchange.factory import ExchangeFactory
+from exchanges.factory import ExchangeFactory
 from src.interfaces.base_interfaces import TradeDecision
 
 # Configure logging

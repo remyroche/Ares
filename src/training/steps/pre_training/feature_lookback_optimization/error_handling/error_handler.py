@@ -50,21 +50,15 @@ class ErrorDetails:
     recoverable: bool = False
 
 
-@dataclass
-class ErrorRecoveryResult:
-    """Result of error recovery attempt."""
-    success: bool
-    fallback_value: Any
-    recovery_method: str
-    error_details: ErrorDetails
+# Removed ErrorRecoveryResult - not needed for fast failing
 
 
 class StandardizedErrorHandler:
     """
-    Standardized error handler with graceful degradation.
+    Standardized error handler with fast failing.
 
     Provides consistent error handling across the feature lookback optimization
-    component with detailed logging and recovery mechanisms.
+    component with immediate failure propagation and detailed logging.
     """
 
     def __init__(self, logger=None, component_name: str = "FeatureLookbackOptimization"):
@@ -83,21 +77,21 @@ class StandardizedErrorHandler:
         error: Exception,
         operation: str,
         return_value: Any = None,
-        reraise: bool = False,
+        reraise: bool = True,
         context: Optional[Dict[str, Any]] = None
     ) -> Any:
         """
-        Handle errors in a standardized way.
+        Handle errors with fast failing - immediately raise exceptions.
 
         Args:
             error: The exception that occurred
             operation: Name of the operation that failed
-            return_value: Value to return if error is handled gracefully
-            reraise: Whether to re-raise the exception
+            return_value: Ignored - exceptions are always raised
+            reraise: Whether to re-raise the exception (default: True for fast failing)
             context: Additional context information
 
-        Returns:
-            return_value if error is handled, otherwise raises the error
+        Raises:
+            Exception: Always re-raises the original error for fast failing
         """
         try:
             # Create error details
@@ -105,36 +99,30 @@ class StandardizedErrorHandler:
 
             # Log the error with tprint
             self._log_error(error_details)
-            tprint_error(f"❌ Error in {operation}: {error_details.error_message}")
+            tprint_error(f"❌ Error in {operation}: {str(error_details.error)}")
             if error_details.severity == ErrorSeverity.CRITICAL:
-                tprint_error(f"🚨 Critical error - operation may fail: {operation}")
+                tprint_error(f"🚨 Critical error - failing immediately: {operation}")
 
             # Track error statistics
             self._track_error(error_details)
-
-            # Attempt recovery
-            recovery_result = self._attempt_recovery(error_details, return_value)
-            if recovery_result.success:
-                tprint_success(f"✅ Error recovery successful for {operation}")
-            else:
-                tprint_warning(f"⚠️ Error recovery failed for {operation}")
 
             # Update recent errors
             self.recent_errors.append(error_details)
             if len(self.recent_errors) > 100:  # Keep only recent errors
                 self.recent_errors = self.recent_errors[-100:]
 
+            # Fast failing: always re-raise the original error
             if reraise:
                 raise error
 
-            return recovery_result.fallback_value
+            # If reraise is False, still raise the error (fast failing behavior)
+            raise error
 
         except Exception as e:
             self.logger.critical(f"Error handler failed: {e}")
             tprint_error(f"🚨 Error handler itself failed: {e}")
-            if reraise:
-                raise error
-            return return_value
+            # Always re-raise for fast failing behavior
+            raise error
 
     def handle_warning(self, warning_msg: str, operation: str, context: Optional[Dict[str, Any]] = None):
         """Handle warnings in a standardized way."""
@@ -240,17 +228,9 @@ class StandardizedErrorHandler:
         return ErrorCategory.UNKNOWN
 
     def _is_error_recoverable(self, error: Exception, operation: str, category: ErrorCategory) -> bool:
-        """Determine if an error is recoverable."""
-        # Critical errors are usually not recoverable
-        if category == ErrorCategory.VALIDATION and 'critical' in operation.lower():
-            return False
-
-        # Memory errors are usually not recoverable
-        if category == ErrorCategory.MEMORY:
-            return False
-
-        # Most other errors are potentially recoverable
-        return True
+        """Determine if an error is recoverable - always False for fast failing."""
+        # Fast failing: all errors are non-recoverable
+        return False
 
     def _log_error(self, error_details: ErrorDetails):
         """Log error with appropriate level."""
@@ -282,105 +262,7 @@ class StandardizedErrorHandler:
         operation_key = f"operation_{error_details.operation}"
         self.error_counts[operation_key] = self.error_counts.get(operation_key, 0) + 1
 
-    def _attempt_recovery(self, error_details: ErrorDetails, fallback_value: Any) -> ErrorRecoveryResult:
-        """Attempt to recover from the error."""
-        try:
-            # Try different recovery methods based on error category
-            if error_details.category == ErrorCategory.VALIDATION:
-                recovery_result = self._recover_from_validation_error(error_details, fallback_value)
-            elif error_details.category == ErrorCategory.DATA_PROCESSING:
-                recovery_result = self._recover_from_data_error(error_details, fallback_value)
-            elif error_details.category == ErrorCategory.OPTIMIZATION:
-                recovery_result = self._recover_from_optimization_error(error_details, fallback_value)
-            else:
-                recovery_result = self._create_default_recovery(fallback_value, error_details)
-
-            return recovery_result
-
-        except Exception as e:
-            self.logger.error(f"Recovery attempt failed: {e}")
-            return self._create_default_recovery(fallback_value, error_details)
-
-    def _recover_from_validation_error(self, error_details: ErrorDetails, fallback_value: Any) -> ErrorRecoveryResult:
-        """Recover from validation errors."""
-        # For validation errors, often the best recovery is to use default values
-        recovery_method = "use_defaults"
-
-        if error_details.operation == "validate_dataframe_type":
-            # If it's not a DataFrame, create an empty one or use fallback
-            fallback_value = self._create_empty_dataframe_fallback()
-        elif error_details.operation == "validate_required_columns":
-            # Try to add missing columns with NaN values
-            fallback_value = self._add_missing_columns_fallback(fallback_value)
-        else:
-            # Use provided fallback
-            recovery_method = "use_provided_fallback"
-
-        return ErrorRecoveryResult(
-            success=True,
-            fallback_value=fallback_value,
-            recovery_method=recovery_method,
-            error_details=error_details
-        )
-
-    def _recover_from_data_error(self, error_details: ErrorDetails, fallback_value: Any) -> ErrorRecoveryResult:
-        """Recover from data processing errors."""
-        # For data errors, try to clean the data
-        recovery_method = "data_cleaning"
-
-        try:
-            # Attempt basic data cleaning
-            if hasattr(fallback_value, 'fillna'):
-                fallback_value = fallback_value.fillna(0)
-            elif hasattr(fallback_value, 'dropna'):
-                fallback_value = fallback_value.dropna()
-        except Exception:
-            recovery_method = "use_provided_fallback"
-
-        return ErrorRecoveryResult(
-            success=True,
-            fallback_value=fallback_value,
-            recovery_method=recovery_method,
-            error_details=error_details
-        )
-
-    def _recover_from_optimization_error(self, error_details: ErrorDetails, fallback_value: Any) -> ErrorRecoveryResult:
-        """Recover from optimization errors."""
-        # For optimization errors, try to use simpler methods
-        recovery_method = "simplify_algorithm"
-
-        # Could implement fallback to simpler optimization methods here
-        # For now, use provided fallback
-        recovery_method = "use_provided_fallback"
-
-        return ErrorRecoveryResult(
-            success=True,
-            fallback_value=fallback_value,
-            recovery_method=recovery_method,
-            error_details=error_details
-        )
-
-    def _create_default_recovery(self, fallback_value: Any, error_details: ErrorDetails) -> ErrorRecoveryResult:
-        """Create default recovery result."""
-        return ErrorRecoveryResult(
-            success=False,
-            fallback_value=fallback_value,
-            recovery_method="none",
-            error_details=error_details
-        )
-
-    def _create_empty_dataframe_fallback(self):
-        """Create an empty DataFrame as fallback."""
-        try:
-            import pandas as pd
-            return pd.DataFrame()
-        except ImportError:
-            return None
-
-    def _add_missing_columns_fallback(self, data):
-        """Add missing columns to data."""
-        # This is a placeholder - in practice, would need to know what columns to add
-        return data
+    # Removed all recovery methods - fast failing doesn't need them
 
     def get_error_statistics(self) -> Dict[str, int]:
         """Get error statistics."""

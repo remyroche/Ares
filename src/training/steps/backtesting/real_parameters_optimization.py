@@ -21,8 +21,13 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 # Import existing utilities
 from src.utils.ml_common.optimization import HyperparameterOptimizer
-from src.utils.ml_common.cvlsa import CVLSAValidator
 from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
+
+# Optional CVLSA support
+try:
+    from src.utils.ml_common.cvlsa import CVLSAValidator
+except ImportError:
+    CVLSAValidator = None
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
 from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 from src.utils.matrix_operations.unified_operations import get_unified_matrix_operations
@@ -124,7 +129,7 @@ class RealParametersOptimizer:
         self.matrix_ops = get_unified_matrix_operations()
         
         # Initialize ML utilities
-        self.cv_validator = CVLSAValidator() if config.enable_cv_validation else None
+        self.cv_validator = CVLSAValidator() if (CVLSAValidator and config.enable_cv_validation) else None
         self.hpo_optimizer = HyperparameterOptimizer()
         
         # Optimization state

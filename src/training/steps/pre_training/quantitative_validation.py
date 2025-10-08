@@ -842,10 +842,47 @@ def validate_pre_training_outputs(
     )
 
 
+def calculate_information_coefficient(
+    predictions: pd.Series,
+    labels: pd.Series,
+    method: str = 'spearman'
+) -> float:
+    """Calculate OOS Information Coefficient (IC).
+
+    IC measures rank correlation between predictions and future returns.
+    More appropriate for trading than MSE/MAE.
+
+    Args:
+        predictions: Model predictions
+        labels: True labels (forward returns)
+        method: 'spearman' or 'pearson'
+
+    Returns:
+        IC score
+    """
+    from scipy.stats import spearmanr, pearsonr
+
+    # Drop NaN values
+    valid_idx = predictions.notna() & labels.notna()
+    pred_valid = predictions[valid_idx]
+    labels_valid = labels[valid_idx]
+
+    if len(pred_valid) < 10:
+        return 0.0
+
+    if method == 'spearman':
+        ic, _ = spearmanr(pred_valid, labels_valid)
+    else:
+        ic, _ = pearsonr(pred_valid, labels_valid)
+
+    return ic if not np.isnan(ic) else 0.0
+
+
 __all__ = [
     'QuantitativeValidator',
     'ValidationResult',
     'ValidationReport',
     'ValidationStatus',
     'validate_pre_training_outputs',
+    'calculate_information_coefficient',
 ]

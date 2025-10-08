@@ -10,8 +10,7 @@ import pandas as pd
 from typing import Any, Dict, List, Optional, Union
 from scipy import stats
 
-from ..core.feature_generator import (
-
+from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 # Optimization utilities
 try:
     from ..utils.vectorization_optimizer import get_vectorization_optimizer
@@ -19,11 +18,6 @@ try:
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
-    FeatureGenerator, 
-    FeatureConfig, 
-    FeatureCategory,
-    VectorizedFeatureGenerator
-)
 from ..base_calculations import (
     BaseCalculationType,
     create_base_calculator

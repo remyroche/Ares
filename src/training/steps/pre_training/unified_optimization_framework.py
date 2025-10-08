@@ -199,6 +199,7 @@ class UnifiedOptimizationFramework:
             tprint_success("✅ Quality scorer initialized")
         except Exception as e:
             tprint_warning(f"⚠️ Failed to initialize quality scorer: {e}")
+            self.logger.exception("Quality scorer initialization failed with exception:")
             self.quality_scorer = None
         
         try:
@@ -213,6 +214,7 @@ class UnifiedOptimizationFramework:
             tprint_success("✅ Volatility labeler initialized")
         except Exception as e:
             tprint_warning(f"⚠️ Failed to initialize volatility labeler: {e}")
+            self.logger.exception("Volatility labeler initialization failed with exception:")
             self.volatility_labeler = None
         
         try:
@@ -229,6 +231,7 @@ class UnifiedOptimizationFramework:
             tprint_success("✅ Multi-target scheme initialized")
         except Exception as e:
             tprint_warning(f"⚠️ Failed to initialize multi-target scheme: {e}")
+            self.logger.exception("Multi-target scheme initialization failed with exception:")
             self.multi_target_scheme = None
         
         try:
@@ -243,6 +246,7 @@ class UnifiedOptimizationFramework:
             tprint_success("✅ Noise gating filter initialized")
         except Exception as e:
             tprint_warning(f"⚠️ Failed to initialize noise gating filter: {e}")
+            self.logger.exception("Noise gating filter initialization failed with exception:")
             self.noise_gating_filter = None
     
     def _initialize_optimization_systems(self):
@@ -258,7 +262,8 @@ class UnifiedOptimizationFramework:
                 )
                 tprint_success("✅ Feature lookback optimizer initialized")
             except Exception as e:
-                tprint_warning(f"⚠️ Failed to initialize feature lookback optimizer: {e}")
+                tprint_error(f"❌ Failed to initialize feature lookback optimizer: {e}")
+                self.logger.exception("Feature lookback optimizer initialization failed with exception:")
         
         if OptimizationSystem.INTERACTION_GENERATOR in self.config.enabled_systems:
             try:
@@ -267,15 +272,45 @@ class UnifiedOptimizationFramework:
                 )
                 tprint_success("✅ Interaction generator orchestrator initialized")
             except Exception as e:
-                tprint_warning(f"⚠️ Failed to initialize interaction generator: {e}")
+                tprint_error(f"❌ Failed to initialize interaction generator: {e}")
+                self.logger.exception("Interaction generator initialization failed with exception:")
     
-    async def optimize_features(self, data: pd.DataFrame, 
+    def optimize_features(self, data: pd.DataFrame, 
                               pipeline_state: Optional[Dict[str, Any]] = None) -> UnifiedOptimizationResult:
-        """Run unified feature optimization across all enabled systems."""
+        """
+        Run unified feature optimization across all enabled systems.
+        
+        This is a synchronous method since most optimization operations are CPU-bound
+        and don't benefit from async/await. Individual systems may use threading or
+        multiprocessing internally for parallelization.
+        
+        Args:
+            data: DataFrame containing features to optimize
+            pipeline_state: Optional pipeline state for context
+            
+        Returns:
+            UnifiedOptimizationResult with aggregated optimization results
+        """
         tprint_info("🚀 Starting unified feature optimization...")
         start_time = time.time()
         
         try:
+            # Check if any systems are available
+            if not self.systems:
+                tprint_error("❌ No optimization systems available - all initialization failed")
+                self.logger.error("No optimization systems initialized")
+                return UnifiedOptimizationResult(
+                    success=False,
+                    execution_time=time.time() - start_time,
+                    system_results={},
+                    quality_metrics={},
+                    filtered_features=[],
+                    optimization_summary={'error': 'No systems available'},
+                    error_message="No optimization systems were successfully initialized"
+                )
+            
+            tprint_info(f"📊 Running optimization with {len(self.systems)} system(s): {[s.value for s in self.systems.keys()]}")
+            
             system_results = {}
             quality_metrics = {}
             filtered_features = []
@@ -286,9 +321,32 @@ class UnifiedOptimizationFramework:
                 
                 try:
                     if system_type == OptimizationSystem.FEATURE_LOOKBACK:
-                        result = await system.optimize_features_with_labels(
-                            data, [], pipeline_state
-                        )
+                        # Check if method is async or sync
+                        if hasattr(system, 'optimize_features_with_labels'):
+                            import inspect
+                            if inspect.iscoroutinefunction(system.optimize_features_with_labels):
+                                # If async, we need to run it in an event loop
+                                tprint_debug(f"🔄 {system_type.value} uses async method, creating event loop")
+                                import asyncio
+                                try:
+                                    loop = asyncio.get_event_loop()
+                                    tprint_debug("✅ Using existing event loop")
+                                except RuntimeError as e:
+                                    tprint_debug(f"⚠️ No event loop found ({e}), creating new one")
+                                    loop = asyncio.new_event_loop()
+                                    asyncio.set_event_loop(loop)
+                                result = loop.run_until_complete(
+                                    system.optimize_features_with_labels(data, [], pipeline_state)
+                                )
+                            else:
+                                # Sync method
+                                tprint_debug(f"🔄 {system_type.value} uses sync method")
+                                result = system.optimize_features_with_labels(data, [], pipeline_state)
+                        else:
+                            tprint_error(f"❌ {system_type.value} system missing expected method 'optimize_features_with_labels'")
+                            self.logger.error(f"{system_type.value} system missing expected method")
+                            result = None
+                            
                     elif system_type == OptimizationSystem.INTERACTION_GENERATOR:
                         # Convert data format for interaction generator
                         data_dict = {'symbol': data}
@@ -306,6 +364,7 @@ class UnifiedOptimizationFramework:
                     
                 except Exception as e:
                     tprint_warning(f"⚠️ {system_type.value} optimization failed: {e}")
+                    self.logger.exception(f"Detailed error for {system_type.value}:")
                     system_results[system_type] = None
             
             # Apply quality filtering if enabled
@@ -364,25 +423,200 @@ class UnifiedOptimizationFramework:
         for system_type, result in system_results.items():
             if result is None:
                 continue
-            
-            # This would need to be implemented based on the actual result structure
-            # For now, return empty list as placeholder
-            tprint_debug(f"📊 Quality filtering for {system_type.value}: placeholder implementation")
-            # TODO: Implement actual quality filtering logic based on result structure
+
+            # Extract features and their quality scores from result
+            # This implementation assumes result has 'features' and 'quality_scores' keys
+            # but can be adapted based on actual result structure
+            try:
+                if isinstance(result, dict):
+                    features = result.get('features', [])
+                    quality_scores = result.get('quality_scores', {})
+
+                    for feature in features:
+                        # Get quality score for this feature (default to 0.5 if not found)
+                        quality_score = quality_scores.get(feature, 0.5)
+
+                        # Apply quality threshold (could be configurable)
+                        if quality_score >= 0.6:  # 60% quality threshold
+                            filtered_features.append(feature)
+                        else:
+                            tprint_debug(f"❌ Feature '{feature}' filtered out (quality: {quality_score:.3f})")
+                else:
+                    tprint_debug(f"⚠️ Unexpected result structure for {system_type.value}, skipping quality filtering")
+
+            except Exception as e:
+                tprint_error(f"❌ Error during quality filtering for {system_type.value}: {e}")
+                self.logger.exception(f"Quality filtering failed for {system_type.value}:")
+                # Continue processing other systems
         
         tprint_success(f"✅ Quality filtering completed: {len(filtered_features)} features passed")
         return filtered_features
     
     def _calculate_quality_metrics(self, system_results: Dict[OptimizationSystem, Any]) -> Dict[str, float]:
-        """Calculate overall quality metrics from system results."""
+        """
+        Calculate overall quality metrics from system results.
+        
+        Aggregates metrics across all optimization systems to provide
+        comprehensive quality assessment including LQS, IC, stability, and feature counts.
+        """
         tprint_info("📊 Calculating quality metrics...")
         
-        metrics = {}
+        metrics = {
+            'mean_lqs': 0.0,
+            'mean_ic': 0.0,
+            'mean_stability': 0.0,
+            'total_features': 0,
+            'quality_passed_features': 0,
+            'total_systems_run': 0,
+            'successful_systems': 0,
+            'mean_auc': 0.0,
+            'mean_psi': 0.0,
+            'mean_flip_rate': 0.0,
+            'mean_balance_score': 0.0
+        }
         
-        # Calculate metrics based on system results
-        # This would need to be implemented based on the actual result structure
+        lqs_scores = []
+        ic_scores = []
+        stability_scores = []
+        auc_scores = []
+        psi_scores = []
+        flip_rates = []
+        balance_scores = []
         
-        tprint_success("✅ Quality metrics calculated")
+        # Aggregate metrics from each system
+        for system_type, result in system_results.items():
+            metrics['total_systems_run'] += 1
+            
+            if result is None:
+                self.logger.warning(f"No results from {system_type.value}")
+                continue
+            
+            metrics['successful_systems'] += 1
+            
+            try:
+                # Extract metrics based on result structure
+                if isinstance(result, dict):
+                    # Handle dictionary results
+                    result_metrics = result.get('metrics', {})
+                    quality_metrics = result.get('quality_metrics', {})
+                    
+                    # LQS scores
+                    if 'lqs' in result_metrics:
+                        lqs_scores.append(result_metrics['lqs'])
+                    elif 'lqs_score' in quality_metrics:
+                        lqs_scores.append(quality_metrics['lqs_score'])
+                    
+                    # IC scores
+                    if 'ic' in result_metrics:
+                        ic_scores.append(result_metrics['ic'])
+                    elif 'information_coefficient' in result_metrics:
+                        ic_scores.append(result_metrics['information_coefficient'])
+                    
+                    # Stability scores
+                    if 'stability' in result_metrics:
+                        stability_scores.append(result_metrics['stability'])
+                    elif 'feature_stability' in result_metrics:
+                        stability_scores.append(result_metrics['feature_stability'])
+                    
+                    # AUC scores
+                    if 'auc' in quality_metrics:
+                        auc_scores.append(quality_metrics['auc'])
+                    elif 'mean_auc' in quality_metrics:
+                        auc_scores.append(quality_metrics['mean_auc'])
+                    
+                    # PSI scores
+                    if 'psi' in quality_metrics:
+                        psi_scores.append(quality_metrics['psi'])
+                    
+                    # Flip rate
+                    if 'flip_rate' in quality_metrics:
+                        flip_rates.append(quality_metrics['flip_rate'])
+                    
+                    # Balance score
+                    if 'balance_score' in quality_metrics:
+                        balance_scores.append(quality_metrics['balance_score'])
+                    
+                    # Feature counts
+                    if 'features' in result:
+                        features = result['features']
+                        if isinstance(features, list):
+                            metrics['total_features'] += len(features)
+                        elif isinstance(features, dict):
+                            metrics['total_features'] += len(features)
+                    
+                    if 'quality_passed_features' in result:
+                        metrics['quality_passed_features'] += result['quality_passed_features']
+                    elif 'filtered_features' in result:
+                        metrics['quality_passed_features'] += len(result['filtered_features'])
+                
+                elif hasattr(result, '__dict__'):
+                    # Handle object results with attributes
+                    if hasattr(result, 'metrics'):
+                        result_metrics = result.metrics
+                        if 'lqs' in result_metrics:
+                            lqs_scores.append(result_metrics['lqs'])
+                        if 'ic' in result_metrics:
+                            ic_scores.append(result_metrics['ic'])
+                        if 'stability' in result_metrics:
+                            stability_scores.append(result_metrics['stability'])
+                    
+                    if hasattr(result, 'features'):
+                        if isinstance(result.features, list):
+                            metrics['total_features'] += len(result.features)
+                        elif hasattr(result.features, '__len__'):
+                            metrics['total_features'] += len(result.features)
+                
+            except Exception as e:
+                tprint_warning(f"⚠️ Error extracting metrics from {system_type.value}: {e}")
+                self.logger.exception(f"Metrics extraction failed for {system_type.value}:")
+                continue
+        
+        # Calculate mean values using safe operations
+        if lqs_scores:
+            metrics['mean_lqs'] = float(np.mean(lqs_scores))
+        if ic_scores:
+            metrics['mean_ic'] = float(np.mean(ic_scores))
+        if stability_scores:
+            metrics['mean_stability'] = float(np.mean(stability_scores))
+        if auc_scores:
+            metrics['mean_auc'] = float(np.mean(auc_scores))
+        if psi_scores:
+            metrics['mean_psi'] = float(np.mean(psi_scores))
+        if flip_rates:
+            metrics['mean_flip_rate'] = float(np.mean(flip_rates))
+        if balance_scores:
+            metrics['mean_balance_score'] = float(np.mean(balance_scores))
+        
+        # Calculate composite quality score
+        composite_score = 0.0
+        score_components = []
+        
+        if metrics['mean_lqs'] > 0:
+            score_components.append(metrics['mean_lqs'] * self.config.lqs_weight)
+        if metrics['mean_ic'] > 0:
+            score_components.append(abs(metrics['mean_ic']) * self.config.ic_weight)
+        if metrics['mean_stability'] > 0:
+            score_components.append(metrics['mean_stability'] * self.config.stability_weight)
+        
+        if score_components:
+            composite_score = sum(score_components) / sum([self.config.lqs_weight, self.config.ic_weight, self.config.stability_weight])
+        
+        metrics['composite_quality_score'] = composite_score
+        
+        # Calculate success rate
+        if metrics['total_systems_run'] > 0:
+            metrics['system_success_rate'] = metrics['successful_systems'] / metrics['total_systems_run']
+        else:
+            metrics['system_success_rate'] = 0.0
+        
+        # Calculate feature quality rate
+        if metrics['total_features'] > 0:
+            metrics['feature_quality_rate'] = metrics['quality_passed_features'] / metrics['total_features']
+        else:
+            metrics['feature_quality_rate'] = 0.0
+        
+        tprint_success(f"✅ Quality metrics calculated: composite_score={composite_score:.3f}, features={metrics['total_features']}, quality_passed={metrics['quality_passed_features']}")
+        
         return metrics
     
     def _generate_optimization_summary(self, system_results: Dict[OptimizationSystem, Any],
@@ -419,11 +653,21 @@ def create_unified_config(
     )
 
 
-async def run_unified_optimization(
+def run_unified_optimization(
     data: pd.DataFrame,
     config: Optional[UnifiedOptimizationConfig] = None,
     pipeline_state: Optional[Dict[str, Any]] = None
 ) -> UnifiedOptimizationResult:
-    """Run unified optimization with the given configuration."""
+    """
+    Run unified optimization with the given configuration.
+    
+    Args:
+        data: DataFrame containing features to optimize
+        config: Optional configuration, defaults to UnifiedOptimizationConfig()
+        pipeline_state: Optional pipeline state for context
+        
+    Returns:
+        UnifiedOptimizationResult with optimization results
+    """
     framework = UnifiedOptimizationFramework(config)
-    return await framework.optimize_features(data, pipeline_state)
+    return framework.optimize_features(data, pipeline_state)

@@ -12,8 +12,10 @@ Key Features:
 - Trains on ALL market data (not just Analyst green lights)
 """
 
+import time
 import numpy as np
 import pandas as pd
+import warnings
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -21,9 +23,56 @@ from scipy.signal import find_peaks
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.logger import system_logger
+from src.utils.common_operations import (
+    validate_dataframe_columns,
+    safe_dataframe_operation,
+    validate_positive,
+    validate_range,
+    safe_int,
+    safe_float,
+    get_dataframe_info,
+    create_data_quality_report,
+    ensure_directory,
+    safe_json_dump,
+    safe_json_load,
+    format_bytes,
+    timed_operation,
+    memory_checkpoint,
+    optimize_memory,
+    check_disk_space,
+    safe_divide,
+    safe_mean,
+    safe_std,
+    integrate_with_m1_optimizers,
+    get_m1_gpu_manager,
+    get_m1_memory_optimizer
+)
+from src.utils.common_utilities import (
+    analyze_nan_values_detailed,
+    format_nan_analysis_report,
+    create_data_quality_report as create_detailed_quality_report,
+    get_dataframe_info as get_detailed_dataframe_info
+)
+from src.utils.matrix_operations import (
+    get_unified_matrix_operations,
+    get_vectorized_processing_core,
+    get_enhanced_matrix_operations,
+    optimize_dataframe,
+    vectorized_rolling_features,
+    matrix_correlation_analysis,
+    safe_correlation_matrix,
+    compute_trading_indicators,
+    get_hardware_performance_report
+)
+from src.utils.ml_common.optimization.grid_utils import (
+    generate_grid,
+    build_coarse_grid_from_search_space,
+    GridSearchOptimizer
+)
 from src.training.steps.pre_training.components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
 from src.training.steps.pre_training.components.contracts import PipelineState
 from src.training.steps.pre_training.components.component_factory import register_component
+from src.training.steps.pre_training.validation.schemas import validate_raw_ohlcv, SchemaValidationException
 
 
 @dataclass
@@ -49,6 +98,79 @@ class TacticianLabelingConfig:
     enable_regime_adaptive_labeling: bool = True
     regime_specific_thresholds: Dict[str, Dict[str, float]] = field(default_factory=dict)
 
+    # Trading direction settings
+    enable_long_positions: bool = True   # Include long opportunities (buy when expecting price increase)
+    enable_short_positions: bool = False  # Include short opportunities (sell when expecting price decrease)
+
+    def get_optimization_search_space(self) -> Dict[str, Any]:
+        """Get search space for hyperparameter optimization."""
+        return {
+            'entry_quality_threshold': {
+                'type': 'float',
+                'low': 0.1,
+                'high': 0.5,
+                'log': False
+            },
+            'max_adverse_movement_pct': {
+                'type': 'float',
+                'low': 0.2,
+                'high': 1.0,
+                'log': False
+            },
+            'min_favorable_movement_pct': {
+                'type': 'float',
+                'low': 0.1,
+                'high': 0.5,
+                'log': False
+            },
+            'risk_aversion': {
+                'type': 'float',
+                'low': 1.0,
+                'high': 5.0,
+                'log': False
+            }
+        }
+
+    def optimize_config_grid_search(self, data: pd.DataFrame, max_trials: int = 50) -> 'TacticianLabelingConfig':
+        """Optimize configuration using grid search."""
+        search_space = self.get_optimization_search_space()
+
+        # Generate parameter grid
+        param_grid = generate_grid(search_space, max_trials)
+
+        best_config = None
+        best_score = -float('inf')
+
+        # Simple evaluation based on data characteristics
+        for params in param_grid[:max_trials]:
+            try:
+                # Create config with current parameters
+                config = TacticianLabelingConfig(
+                    entry_quality_threshold=params.get('entry_quality_threshold', self.entry_quality_threshold),
+                    max_adverse_movement_pct=params.get('max_adverse_movement_pct', self.max_adverse_movement_pct),
+                    min_favorable_movement_pct=params.get('min_favorable_movement_pct', self.min_favorable_movement_pct),
+                    risk_aversion=params.get('risk_aversion', self.risk_aversion)
+                )
+
+                # Simple scoring based on data quality metrics
+                quality = create_data_quality_report(data)
+                score = quality.get('quality_metrics', {}).get('numeric_columns', 0) * 0.1
+                score += (1 - quality.get('quality_metrics', {}).get('missing_percentage', 100)) * 0.01
+
+                if score > best_score:
+                    best_score = score
+                    best_config = config
+
+            except Exception as e:
+                tprint_warning(f"⚠️ Error evaluating config {params}: {e}")
+                continue
+
+        if best_config:
+            tprint_success(f"✅ Grid search completed. Best score: {best_score:.3f}")
+            return best_config
+
+        return self
+
 
 class TacticianDifferentiatedLabeler:
     """Create differentiated entry timing labels for the Tactician pipeline."""
@@ -56,10 +178,50 @@ class TacticianDifferentiatedLabeler:
     def __init__(self, config: TacticianLabelingConfig):
         self.config = config
         self.logger = system_logger.getChild('TacticianDifferentiatedLabeler')
-        
+
+        # Initialize matrix operations for enhanced data processing
+        self.matrix_ops = get_unified_matrix_operations()
+        self.vectorized_core = get_vectorized_processing_core()
+        self.enhanced_matrix_ops = get_enhanced_matrix_operations()
+
+        tprint_info(f"🧮 Matrix operations initialized: {self.matrix_ops.__class__.__name__}")
+
+        # Initialize M1 optimizations if available
+        self.m1_integration = integrate_with_m1_optimizers()
+        if self.m1_integration.get('success', False):
+            tprint_info(f"🧠 M1 optimizations initialized: GPU={'✅' if self.m1_integration.get('gpu_manager') else '❌'}, Memory={'✅' if self.m1_integration.get('memory_optimizer') else '❌'}")
+
         # Initialize enhanced quality scorer
         self._initialize_quality_scorer()
-    
+
+    def cleanup(self) -> None:
+        """Clean up resources and optimize memory."""
+        try:
+            # Optimize memory usage
+            memory_info = optimize_memory()
+            if memory_info.get('success', False):
+                tprint_info(f"🧠 Memory optimized: {memory_info.get('objects_collected', 0)} objects collected")
+
+            # Clean up matrix operations resources
+            try:
+                from src.utils.matrix_operations import cleanup_hardware_resources
+                cleanup_hardware_resources()
+                tprint_info("🧮 Matrix operations resources cleaned up")
+            except ImportError:
+                pass
+
+            # Clean up M1 optimizers if available
+            from src.utils.common_operations import cleanup_m1_optimizers
+            cleanup_m1_optimizers()
+
+            # Get final hardware performance report
+            hardware_report = get_hardware_performance_report()
+            tprint_info(f"🔧 Final hardware status: CPU cores={hardware_report.get('cpu_cores', 'N/A')}, GPU={hardware_report.get('gpu_available', 'N/A')}")
+
+            tprint_success("✅ TacticianDifferentiatedLabeler cleanup completed")
+        except Exception as e:
+            tprint_warning(f"⚠️ Error during cleanup: {e}")
+
     def _initialize_quality_scorer(self):
         """Initialize the enhanced entry quality scorer based on configuration."""
         try:
@@ -118,43 +280,104 @@ class TacticianDifferentiatedLabeler:
         """
         tprint_info("🎯 Creating tactician entry timing labels for ALL market data")
 
+        # Validate input data format and constraints
+        try:
+            data = validate_raw_ohlcv(data, context='tactician_entry_labeler.input_validation')
+            tprint_info(f"✅ Input data validated: {len(data)} rows, {len(data.columns)} columns")
+        except SchemaValidationException as e:
+            tprint_error(f"❌ Input data validation failed: {e}")
+            raise ValueError(f"Invalid input data format: {e}") from e
+
+        # Validate input data quality using common operations and utilities
+        data_quality = create_data_quality_report(data)
+        detailed_quality = analyze_nan_values_detailed(data)
+
+        if data_quality.get('quality_metrics', {}).get('missing_percentage', 0) > 50:
+            tprint_warning(f"⚠️ High missing data percentage: {data_quality['quality_metrics']['missing_percentage']:.2f}%")
+
+        # Log detailed NaN analysis if issues found
+        if detailed_quality.get('total_nans', 0) > 0:
+            nan_report = format_nan_analysis_report(detailed_quality, "  ")
+            tprint_info(f"📊 NaN Analysis:\n{nan_report}")
+
+        # Optimize data using matrix operations for better performance
+        tprint_info(f"🧮 Optimizing data with matrix operations ({data.shape})")
+        original_shape = data.shape
+        optimized_data = optimize_dataframe(data)
+
+        if optimized_data is not data:
+            data = optimized_data
+            tprint_success(f"✅ Data optimized: {original_shape} → {data.shape}")
+
+        # Validate required columns for OHLCV data
+        required_columns = ['open', 'high', 'low', 'close', 'volume']
+        if not validate_dataframe_columns(data, required_columns):
+            missing_cols = set(required_columns) - set(data.columns)
+            raise ValueError(f"Missing required OHLCV columns: {missing_cols}")
+
+        # Validate volume data (should not be all zero or negative)
+        if 'volume' in data.columns:
+            zero_volume_count = safe_int((data['volume'] <= 0).sum())
+            if zero_volume_count > 0:
+                tprint_warning(f"⚠️ Found {zero_volume_count} rows with zero or negative volume")
+            if zero_volume_count == len(data):
+                tprint_error("❌ All volume values are zero or negative - cannot create entry labels")
+                raise ValueError("Invalid volume data: all values are zero or negative")
+
+        # Validate index monotonicity (timestamps should be sorted)
+        if not data.index.is_monotonic_increasing:
+            tprint_error("❌ Data index is not sorted by timestamp")
+            raise ValueError("Data index must be sorted by timestamp for time-series operations")
+
+        # Validate window size against data length
+        window_size = self.config.max_entry_window_minutes
+        if len(data) <= window_size:
+            tprint_error(f"❌ Data length ({len(data)}) is too short for window size ({window_size})")
+            raise ValueError(f"Insufficient data: need at least {window_size + 1} rows for window size {window_size}")
+
         if regime_assignments is not None:
             regime_assignments = regime_assignments.reindex(data.index)
 
         labels = pd.Series(0.0, index=data.index, dtype=float)
-        
+
         # CHANGE: Process ALL data, not just Analyst green light periods
         # Create sliding windows across entire dataset
         tprint_info(f"📊 Processing {len(data)} candles for entry opportunities")
 
-        entry_points: List[pd.Timestamp] = []
-        
-        # Scan entire dataset with sliding window
+        # Vectorized approach to avoid O(n²) nested loops with DataFrame operations
         window_size = self.config.max_entry_window_minutes
-        
-        for i in range(len(data) - window_size):
-            # Current potential entry point
-            entry_idx = i
-            entry_index = data.index[entry_idx]
-            
-            # Future window for quality assessment
-            future_window = data.iloc[entry_idx + 1:entry_idx + 1 + window_size]
-            
-            if future_window.empty:
-                continue
-            
-            # Calculate entry quality score
-            score = self._calculate_entry_quality_score(
-                data.iloc[entry_idx],
-                future_window,
-                entry_index,
-                regime_assignments
-            )
-            
-            # Store score if above threshold
-            if score > self.config.entry_quality_threshold:
-                labels.loc[entry_index] = score
-                entry_points.append(entry_index)
+
+        # Pre-allocate arrays for better performance
+        entry_indices = data.index[:-window_size]  # All potential entry points
+        future_window_starts = np.arange(1, len(data) - window_size + 1)  # Start indices for future windows
+        future_window_ends = future_window_starts + window_size  # End indices for future windows
+
+        # Vectorized quality score calculation
+        scores = np.zeros(len(entry_indices))
+
+        for i, (entry_idx, start_idx, end_idx) in enumerate(zip(
+            range(len(entry_indices)),
+            future_window_starts,
+            future_window_ends
+        )):
+            entry_index = entry_indices[i]
+            future_window = data.iloc[start_idx:end_idx]
+
+            if not future_window.empty:
+                # Calculate entry quality score
+                score = self._calculate_entry_quality_score(
+                    data.iloc[entry_idx],
+                    future_window,
+                    entry_index,
+                    regime_assignments
+                )
+                scores[i] = score
+
+        # Apply threshold and store results
+        valid_entries = scores > self.config.entry_quality_threshold
+        labels.loc[entry_indices[valid_entries]] = scores[valid_entries]
+
+        entry_points = entry_indices[valid_entries].tolist()
         
         # Apply peak detection to identify local maxima
         if len(entry_points) > 0:
@@ -166,6 +389,11 @@ class TacticianDifferentiatedLabeler:
             labels,
             entry_points
         )
+
+        # Log memory usage and data quality
+        memory_info = optimize_memory()
+        data_info = get_dataframe_info(data)
+        tprint_info(f"📊 Data info: {data_info['shape']} shape, {format_bytes(data_info['memory_usage'])} memory")
 
         tprint_success(
             "✅ Entry labeling completed on ALL data ("
@@ -210,7 +438,27 @@ class TacticianDifferentiatedLabeler:
             best_idx = np.argmax(scores)
             if best_idx < len(indices):
                 filtered_labels.loc[indices[best_idx]] = scores[best_idx]
-        
+
+        # Validate that we have usable training data
+        final_entry_count = int((filtered_labels > 0).sum())
+        if final_entry_count == 0:
+            raise ValueError(
+                "Peak filtering resulted in no usable entry labels for training. "
+                f"Original entries: {len(scores)}, Peak threshold: {self.config.entry_quality_threshold}, "
+                f"Min window: {self.config.min_entry_window_minutes} minutes. "
+                "Consider lowering the entry quality threshold or minimum window requirements."
+            )
+
+        # Warn if we have very few entries (might indicate overly strict filtering)
+        if final_entry_count < 10:
+            warnings.warn(
+                f"Peak filtering resulted in very few entry labels ({final_entry_count}). "
+                "Training data may be insufficient for reliable model training. "
+                "Consider adjusting entry quality threshold or minimum window requirements.",
+                UserWarning,
+                stacklevel=2
+            )
+
         return filtered_labels
 
     def _calculate_labeling_quality_metrics_all_data(
@@ -232,11 +480,11 @@ class TacticianDifferentiatedLabeler:
         
         positive_scores = labels[labels > 0]
         if not positive_scores.empty:
-            metrics['avg_entry_quality'] = float(positive_scores.mean())
-            metrics['min_entry_quality'] = float(positive_scores.min())
-            metrics['max_entry_quality'] = float(positive_scores.max())
-            std_value = float(positive_scores.std())
-            if np.isnan(std_value):
+            metrics['avg_entry_quality'] = safe_float(safe_mean(positive_scores))
+            metrics['min_entry_quality'] = safe_float(positive_scores.min())
+            metrics['max_entry_quality'] = safe_float(positive_scores.max())
+            std_value = safe_float(safe_std(positive_scores))
+            if std_value == 0.0:  # safe_std returns 0.0 for empty or error cases
                 std_value = 0.0
             metrics['entry_quality_std'] = std_value
         else:
@@ -305,9 +553,9 @@ class TacticianDifferentiatedLabeler:
             return 0.0
 
         risk_reward_ratio = favorable_move / (adverse_move + 1e-8)
-        timing_score = 1.0 / (1.0 + len(future_data) / self.config.max_entry_window_minutes)
-        volatility = future_data['close'].pct_change().std() or 0.0
-        volatility_score = 1.0 / (1.0 + (volatility * 100) / 10.0)
+        timing_score = safe_divide(1.0, 1.0 + safe_divide(len(future_data), self.config.max_entry_window_minutes), default=0.0)
+        volatility = safe_float(safe_std(future_data['close'].pct_change())) if not future_data['close'].pct_change().empty else 0.0
+        volatility_score = safe_divide(1.0, 1.0 + safe_divide(volatility * 100, 10.0), default=1.0)
 
         quality_score = (
             risk_reward_ratio * 0.4 +
@@ -391,6 +639,9 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
         try:
             tprint_info("🚀 Starting Tactician Entry Labeling execution...")
             
+            # Start timing
+            start_time = time.time()
+            
             # Extract data from pipeline state if not provided
             if data is None:
                 data = pipeline_state.get('prepared_data')
@@ -420,6 +671,9 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                 analyst_signals=analyst_signals,
                 regime_assignments=regime_assignments
             )
+            
+            # Calculate processing time
+            processing_time = time.time() - start_time
             
             # Create labels DataFrame
             label_column = 'tactician_entry_target'
@@ -453,7 +707,15 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                     'confidence_scores': confidence_df,
                     'eligibility_masks': eligibility_df,
                     'quality_scores': quality_scores,
-                    'quality_summary': quality_metrics,
+                    'normalization_factors': {
+                        'scaling_reference': 'Entry quality normalized scoring',
+                        'quality_threshold': quality_metrics.get('quality_threshold', 0.0),
+                        'balance_factor': quality_metrics.get('labeling_coverage', 0.0)
+                    },
+                    'processing_time': processing_time,
+                    'n_samples': len(label_df),
+                    'n_targets': 1,
+                    'n_horizons': 1,
                     'method': 'tactician_entry_labeling',
                     'metadata': {
                         'symbol': self.config.symbol if self.config else 'UNKNOWN',
@@ -461,7 +723,7 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                         'timeframe': self.config.timeframe if self.config else '15m',
                         'label_focus': 'entry_timing',
                         'regime_aware': bool(regime_assignments is not None),
-                        'processing_time': 0.0,
+                        'processing_time': processing_time,
                         'n_samples': len(label_df),
                         'n_targets': 1,
                         'n_horizons': 1,
@@ -488,8 +750,148 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                     'timeframe': self.config.timeframe if self.config else '15m',
                     'n_entry_points': int((labels > 0).sum()),
                     'quality_metrics': quality_metrics,
+                    'direction_settings': {
+                        'enable_long_positions': self.config.enable_long_positions if self.config else True,
+                        'enable_short_positions': self.config.enable_short_positions if self.config else False,
+                    }
                 }
             )
+            
+            # Generate outcome file with datetime stamp
+            try:
+                outcome_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                outcomes_dir = Path('outcomes')
+                ensure_directory(outcomes_dir)
+                
+                outcome_filename = f"tactician_labeler_outcome_{outcome_timestamp}.json"
+                outcome_path = outcomes_dir / outcome_filename
+                
+                # Create comprehensive outcome report with detailed statistics
+                
+                # Entry distribution analysis
+                entry_distribution = {
+                    'total_samples': len(labels),
+                    'entry_points': int((labels > 0).sum()),
+                    'non_entry_points': int((labels == 0).sum()),
+                    'entry_rate': float((labels > 0).sum() / len(labels) * 100) if len(labels) > 0 else 0.0,
+                    'entry_quality_stats': {
+                        'mean': float(labels[labels > 0].mean()) if (labels > 0).sum() > 0 else 0.0,
+                        'median': float(labels[labels > 0].median()) if (labels > 0).sum() > 0 else 0.0,
+                        'std': float(labels[labels > 0].std()) if (labels > 0).sum() > 0 else 0.0,
+                        'min': float(labels[labels > 0].min()) if (labels > 0).sum() > 0 else 0.0,
+                        'max': float(labels[labels > 0].max()) if (labels > 0).sum() > 0 else 0.0,
+                        'percentile_25': float(labels[labels > 0].quantile(0.25)) if (labels > 0).sum() > 0 else 0.0,
+                        'percentile_75': float(labels[labels > 0].quantile(0.75)) if (labels > 0).sum() > 0 else 0.0,
+                    }
+                }
+                
+                # Regime-specific analysis if available
+                regime_analysis = {}
+                if regime_assignments is not None:
+                    try:
+                        regime_groups = pd.DataFrame({'label': labels, 'regime': regime_assignments})
+                        for regime in regime_groups['regime'].unique():
+                            regime_labels = regime_groups[regime_groups['regime'] == regime]['label']
+                            regime_analysis[str(regime)] = {
+                                'total_samples': int(len(regime_labels)),
+                                'entry_points': int((regime_labels > 0).sum()),
+                                'entry_rate': float((regime_labels > 0).sum() / len(regime_labels) * 100) if len(regime_labels) > 0 else 0.0,
+                                'avg_entry_quality': float(regime_labels[regime_labels > 0].mean()) if (regime_labels > 0).sum() > 0 else 0.0,
+                            }
+                    except Exception as e:
+                        regime_analysis['error'] = str(e)
+                
+                # Timing analysis
+                timing_analysis = {
+                    'entry_window': {
+                        'min_minutes': self.labeler.config.min_entry_window_minutes,
+                        'max_minutes': self.labeler.config.max_entry_window_minutes,
+                        'avg_minutes': (self.labeler.config.min_entry_window_minutes + self.labeler.config.max_entry_window_minutes) / 2,
+                    },
+                    'movement_expectations': {
+                        'max_adverse_pct': self.labeler.config.max_adverse_movement_pct,
+                        'min_favorable_pct': self.labeler.config.min_favorable_movement_pct,
+                        'risk_reward_ratio': self.labeler.config.min_favorable_movement_pct / self.labeler.config.max_adverse_movement_pct if self.labeler.config.max_adverse_movement_pct > 0 else 0.0,
+                    }
+                }
+                
+                # Data quality assessment
+                data_quality = {
+                    'input_data': {
+                        'rows': len(data),
+                        'columns': len(data.columns),
+                        'date_range': {
+                            'start': str(data.index.min()) if hasattr(data.index, 'min') else None,
+                            'end': str(data.index.max()) if hasattr(data.index, 'max') else None,
+                            'duration_days': float((data.index.max() - data.index.min()).total_seconds() / 86400) if hasattr(data.index, 'min') and hasattr(data.index, 'max') else None,
+                        },
+                        'missing_values': int(data.isnull().sum().sum()),
+                        'missing_percentage': float(data.isnull().sum().sum() / (len(data) * len(data.columns)) * 100),
+                    },
+                    'output_labels': {
+                        'total_generated': len(labels),
+                        'label_coverage': 100.0,  # All samples get a label (even if 0)
+                        'valid_entries': int((labels > 0).sum()),
+                        'valid_entry_rate': float((labels > 0).sum() / len(labels) * 100) if len(labels) > 0 else 0.0,
+                    }
+                }
+                
+                outcome_data = {
+                    'component': 'tactician_entry_labeler',
+                    'timestamp': datetime.now().isoformat(),
+                    'execution_time': processing_time,
+                    'timeframe': self.config.timeframe if self.config else '15m',
+                    'configuration': {
+                        'min_entry_window_minutes': self.labeler.config.min_entry_window_minutes,
+                        'max_entry_window_minutes': self.labeler.config.max_entry_window_minutes,
+                        'entry_quality_threshold': self.labeler.config.entry_quality_threshold,
+                        'max_adverse_movement_pct': self.labeler.config.max_adverse_movement_pct,
+                        'min_favorable_movement_pct': self.labeler.config.min_favorable_movement_pct,
+                        'entry_quality_scoring_method': self.labeler.config.entry_quality_scoring_method,
+                        'enable_regime_adaptive_labeling': self.labeler.config.enable_regime_adaptive_labeling,
+                        'enable_interaction_terms': self.labeler.config.enable_interaction_terms,
+                        'enable_penalty_system': self.labeler.config.enable_penalty_system,
+                        'risk_aversion': self.labeler.config.risk_aversion,
+                    },
+                    'results': {
+                        'n_samples': len(label_df),
+                        'n_entry_points': int((labels > 0).sum()),
+                        'entry_density': quality_metrics.get('entry_density', 0.0),
+                        'labeling_coverage': quality_metrics.get('labeling_coverage', 0.0),
+                        'quality_metrics': quality_metrics,
+                        'entry_distribution': entry_distribution,
+                        'regime_analysis': regime_analysis,
+                        'timing_analysis': timing_analysis,
+                    },
+                    'quality_scores': quality_scores,
+                    'data_quality': data_quality,
+                    'data_info': {
+                        'input_rows': len(data),
+                        'input_columns': len(data.columns),
+                        'analyst_signals_available': analyst_signals is not None,
+                        'analyst_signals_count': int(analyst_signals.sum()) if analyst_signals is not None and hasattr(analyst_signals, 'sum') else None,
+                        'regime_assignments_available': regime_assignments is not None,
+                        'regime_count': int(regime_assignments.nunique()) if regime_assignments is not None and hasattr(regime_assignments, 'nunique') else None,
+                    },
+                    'confidence_statistics': {
+                        'mean_confidence': float(confidence_df.iloc[:, 0].mean()) if len(confidence_df) > 0 else 0.0,
+                        'median_confidence': float(confidence_df.iloc[:, 0].median()) if len(confidence_df) > 0 else 0.0,
+                        'min_confidence': float(confidence_df.iloc[:, 0].min()) if len(confidence_df) > 0 else 0.0,
+                        'max_confidence': float(confidence_df.iloc[:, 0].max()) if len(confidence_df) > 0 else 0.0,
+                    },
+                    'eligibility_statistics': {
+                        'eligible_samples': int(eligibility_df.iloc[:, 0].sum()) if len(eligibility_df) > 0 else 0,
+                        'eligibility_rate': float(eligibility_df.iloc[:, 0].sum() / len(eligibility_df) * 100) if len(eligibility_df) > 0 else 0.0,
+                    },
+                    'status': 'success'
+                }
+                
+                safe_json_dump(outcome_data, str(outcome_path))
+                tprint_success(f"📄 Outcome file saved: {outcome_filename}")
+                
+            except Exception as outcome_error:
+                tprint_warning(f"⚠️ Failed to save outcome file: {outcome_error}")
+                # Don't fail the component if outcome file generation fails
             
             tprint_success("✅ Tactician Entry Labeling completed successfully")
             return result

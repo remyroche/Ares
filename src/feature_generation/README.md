@@ -1,408 +1,386 @@
-# Unified Feature Generation System
+# feature_generation/ - General Purpose Feature Generation
 
-A centralized, category-based feature generation system that consolidates all scattered feature generation code into a single source of truth while maintaining full backwards compatibility.
+## Purpose
 
-## 🚀 Key Features
+This is the **general-purpose feature generation system** for exploration, backtesting, and most models in the Ares trading platform.
 
-- **Category-based Organization**: Features organized by categories (returns, momentum, volume, support/resistance, etc.)
-- **Matrix Operations Integration**: Leverages the existing `matrix_operations/` framework for optimized computation
-- **Lookback Optimization**: Data-driven optimization of feature lookback periods
-- **Feature Bank**: Central registry where scripts can pick needed features by category
-- **Backwards Compatibility**: Seamless integration with existing feature generation code
-- **Hardware Acceleration**: Apple Silicon M1/M2/M3 optimization support
+## Key Features
 
-## 📁 Architecture
+- ✅ **100+ Feature Generators** - Comprehensive library of technical indicators and features
+- ✅ **Flexible & Dynamic** - Create and register features at runtime with customizable parameters
+- ✅ **Category-Based Organization** - Momentum, volatility, volume, oscillators, and more
+- ✅ **Performance Optimized** - Matrix operations, GPU acceleration, caching support
+- ✅ **Extensible** - Easy to add new feature generators by inheriting from base classes
 
-```
-src/feature_generation/
-├── __init__.py                 # Main module interface
-├── core/                       # Core framework
-│   ├── feature_bank.py        # Central feature registry and management
-│   ├── feature_generator.py   # Base classes and interfaces
-│   ├── feature_registry.py    # Feature organization and search
-│   └── factory.py             # Factory functions
-├── categories/                 # Category-specific generators
-│   ├── returns.py             # Returns features (price returns, log returns, etc.)
-│   ├── momentum.py            # Momentum indicators (RSI, MACD, etc.)
-│   ├── volume.py              # Volume features (OBV, VWAP, etc.)
-│   ├── volatility.py          # Volatility measures (Bollinger Bands, ATR, etc.)
-│   ├── trend.py               # Trend indicators (moving averages, etc.)
-│   ├── oscillator.py          # Oscillator indicators (Stochastic, Williams %R, etc.)
-│   ├── support_resistance.py  # Support/resistance features
-│   ├── candlestick_pattern.py # Candlestick pattern recognition
-│   └── hmm_regime.py          # HMM regime features
-├── optimization/               # Lookback optimization system
-│   └── lookback_optimizer.py  # Leverages existing optimization code
-├── matrix_integration/         # Matrix operations integration
-│   └── matrix_processor.py    # Optimized computation using matrix_operations/
-├── compatibility/              # Backwards compatibility layer
-│   └── legacy_adapter.py      # Integration with existing code
-└── convenience/                # Convenience functions
-    └── convenience_functions.py # Easy-to-use functions
-```
+## When to Use
 
-## 🎯 Usage Examples
+Use `feature_generation/` for:
+- 🎯 Exploratory feature engineering
+- 🎯 Backtesting with custom indicators
+- 🎯 Analyst model features
+- 🎯 Tactician model features
+- 🎯 General trading strategies
+- 🎯 Feature discovery and research
+
+**DO NOT use for:** End-to-end roadmap training (use `feature_engineering_roadmap/` instead)
+
+## Quick Start
 
 ### Basic Usage
 
 ```python
-from src.feature_generation import (
-    FeatureBank,
-    generate_features_by_category,
-    get_feature_summary
-)
+from src.feature_generation.categories.momentum import RSIGenerator
+from src.feature_generation.categories.volatility import ATRGenerator
+from src.feature_generation.core.feature_registry import FeatureRegistry
+import pandas as pd
 
-# Initialize feature bank
-bank = FeatureBank()
+# Load your data
+data = pd.DataFrame({
+    'open': [...],
+    'high': [...],
+    'low': [...],
+    'close': [...],
+    'volume': [...]
+})
 
-# Generate features by category
-features = bank.generate_features(
-    data=df,
-    categories=['returns', 'momentum', 'volume'],
-    lookback_optimization=True,
-    target_column='target'
-)
-
-# Or use convenience function
-features = generate_features_by_category(
-    data=df,
-    categories=['returns', 'momentum', 'volume']
-)
-```
-
-### Advanced Usage with Lookback Optimization
-
-```python
-from src.feature_generation import (
-    FeatureBank,
-    FeatureBankConfig,
-    FeatureCategory
-)
-
-# Configure feature bank
-config = FeatureBankConfig(
-    enable_matrix_operations=True,
-    enable_gpu_acceleration=True,
-    enable_lookback_optimization=True,
-    parallel_processing=True
-)
-
-bank = FeatureBank(config)
-
-# Generate features with optimization
-features = bank.generate_features(
-    data=df,
-    categories=[FeatureCategory.RETURNS, FeatureCategory.MOMENTUM],
-    lookback_optimization=True,
-    target_column='returns_1d'
-)
-```
-
-### Category-Specific Feature Generation
-
-```python
-from src.feature_generation import (
-    ReturnsFeatureGenerator,
-    MomentumFeatureGenerator,
-    VolumeFeatureGenerator
-)
-
-# Create specific generators
-returns_gen = ReturnsFeatureGenerator()
-momentum_gen = MomentumFeatureGenerator()
-volume_gen = VolumeFeatureGenerator()
+# Create generators
+rsi_gen = RSIGenerator(period=14)
+atr_gen = ATRGenerator(period=20)
 
 # Generate features
-returns_features = returns_gen.generate(df)
-momentum_features = momentum_gen.generate(df)
-volume_features = volume_gen.generate(df)
+rsi_result = rsi_gen.generate(data)
+atr_result = atr_gen.generate(data)
+
+print(f"RSI: {rsi_result.data}")
+print(f"ATR: {atr_result.data}")
+print(f"Computation time: {rsi_result.computation_time:.3f}s")
 ```
 
-### Using the Feature Bank
+### Using the Registry
 
 ```python
-from src.feature_generation import FeatureBank
+from src.feature_generation.core.feature_registry import FeatureRegistry
+from src.feature_generation.categories.momentum import MomentumGenerator
 
-bank = FeatureBank()
+# Create registry
+registry = FeatureRegistry()
 
-# List available categories
-categories = bank.list_categories()
-print(f"Available categories: {[cat.value for cat in categories]}")
+# Register generators
+registry.register(MomentumGenerator(period=5))
+registry.register(MomentumGenerator(period=10))
+registry.register(MomentumGenerator(period=20))
 
-# List features in a category
-returns_features = bank.list_features(FeatureCategory.RETURNS)
-print(f"Returns features: {returns_features}")
+# Generate all features
+results = {}
+for name in registry.list_names():
+    generator = registry.get_by_name(name)
+    result = generator.generate(data)
+    results[name] = result.data
 
-# Get specific generator
-rsi_generator = bank.get_generator_by_name("rsi_14")
-
-# Generate specific features
-features = bank.generate_specific_features(
-    data=df,
-    feature_names=["rsi_14", "macd_12_26_9", "bb_upper_20_2"]
-)
+features_df = pd.DataFrame(results)
 ```
 
-### Matrix Operations Integration
+## Directory Structure
+
+```
+feature_generation/
+├── core/                       # Core framework
+│   ├── feature_generator.py   # Base classes (FeatureGenerator, VectorizedFeatureGenerator)
+│   ├── feature_registry.py    # Dynamic registry for managing generators
+│   ├── factory.py             # Feature factory pattern
+│   ├── feature_bank.py        # Feature storage and caching
+│   └── feature_cache.py       # Caching mechanisms
+│
+├── categories/                 # Feature categories (35+ files)
+│   ├── momentum.py            # Momentum indicators (RSI, MACD, ROC, etc.)
+│   ├── volatility.py          # Volatility features (ATR, Bollinger Bands, etc.)
+│   ├── volume.py              # Volume indicators (OBV, VWAP, etc.)
+│   ├── oscillator.py          # Oscillators (Stochastic, Williams %R, etc.)
+│   ├── trend.py               # Trend indicators (SMA, EMA, ADX, etc.)
+│   ├── interaction.py         # Feature interactions
+│   ├── support_resistance.py  # Support/resistance levels
+│   └── [30+ more categories]
+│
+├── base_calculations/          # Base calculation types
+│   ├── base_calculator.py     # BaseCalculator interface
+│   └── [calculation types]
+│
+├── utils/                      # Utilities and optimizations
+│   ├── optimization/          # Performance optimization
+│   ├── vectorization_optimizer.py
+│   └── [40+ utility files]
+│
+├── examples/                   # Usage examples
+│   ├── usage_example.py
+│   └── enhanced_usage_examples.py
+│
+└── README.md                   # This file
+```
+
+## Available Categories
+
+| Category | Description | Examples |
+|----------|-------------|----------|
+| **momentum** | Momentum indicators | RSI, MACD, ROC, Momentum |
+| **volatility** | Volatility measures | ATR, Bollinger Bands, Standard Deviation |
+| **volume** | Volume-based features | OBV, VWAP, Volume MA |
+| **oscillator** | Oscillator indicators | Stochastic, Williams %R, CCI |
+| **trend** | Trend-following indicators | SMA, EMA, ADX, Supertrend |
+| **returns** | Return calculations | Log returns, Simple returns |
+| **normalization** | Normalization techniques | Z-score, Min-max, Robust scaling |
+| **interaction** | Feature interactions | Momentum × Volume, Volatility × Price |
+| **support_resistance** | S/R levels | Price levels, Break detection |
+| **candlestick_pattern** | Candlestick patterns | Doji, Hammer, Engulfing |
+| **microstructure** | Market microstructure | Bid-ask spread, Order flow |
+| **entropy** | Entropy-based features | Sample entropy, Approximate entropy |
+| **regime** | Regime detection | HMM regimes, Volatility regimes |
+
+## Creating Custom Features
+
+### Step 1: Inherit from FeatureGenerator
 
 ```python
-from src.feature_generation import (
-    enable_matrix_acceleration,
-    get_matrix_processor
+from src.feature_generation.core.feature_generator import (
+    FeatureGenerator, FeatureConfig, FeatureCategory
 )
+import pandas as pd
 
-# Enable matrix acceleration
-enable_matrix_acceleration(True)
-
-# Get matrix processor
-processor = get_matrix_processor(enable_gpu=True, enable_parallel=True)
-
-# Process features with matrix optimization
-results = processor.process_features(generators, data)
+class MyCustomGenerator(FeatureGenerator):
+    def __init__(self, period: int = 14):
+        config = FeatureConfig(
+            name=f"my_custom_feature_{period}",
+            category=FeatureCategory.CUSTOM,
+            description=f"My custom feature with period {period}",
+            required_columns=["close"],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={'period': period}
+        )
+        super().__init__(config)
+        self.period = period
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        """Implement your feature calculation here."""
+        return data['close'].rolling(window=self.period).mean()
 ```
 
-### Backwards Compatibility
+### Step 2: Use Your Custom Generator
 
 ```python
-from src.feature_generation import (
-    LegacyFeatureAdapter,
-    migrate_legacy_features
-)
+# Create and use
+custom_gen = MyCustomGenerator(period=20)
+result = custom_gen.generate(data)
 
-# Create legacy adapter
-adapter = LegacyFeatureAdapter()
-
-# Migrate existing feature generation code
-legacy_config = {
-    'sma_20': {
-        'category': 'trend',
-        'description': 'Simple Moving Average',
-        'required_columns': ['close'],
-        'parameters': {'period': 20}
-    }
-}
-
-generators = migrate_legacy_features(legacy_config)
+# Register for reuse
+registry = FeatureRegistry()
+registry.register(custom_gen)
 ```
 
-## 📊 Available Feature Categories
+## Base Classes
 
-### Returns Features
-- Simple returns (1d, 5d, 10d, 20d)
-- Log returns
-- Cumulative returns
-- Return volatility
-- Return skewness and kurtosis
+### FeatureGenerator
+The main base class for all feature generators.
 
-### Momentum Features
-- RSI (Relative Strength Index)
-- MACD (Moving Average Convergence Divergence)
-- Stochastic Oscillator
-- Williams %R
-- Rate of Change (ROC)
-- Momentum indicator
+**Key methods:**
+- `generate(data, **kwargs)` - Generate feature with error handling
+- `_generate_feature(data, **kwargs)` - Override this to implement your feature
+- `get_config()` - Get feature configuration
+- `get_performance_stats()` - Get performance statistics
 
-### Volume Features
-- Volume moving averages
-- Volume ratios
-- On-Balance Volume (OBV)
-- Volume Weighted Average Price (VWAP)
-- Volume Rate of Change
-- Volume-Price Trend (VPT)
-- Accumulation/Distribution Line
+### VectorizedFeatureGenerator
+Optimized base class for vectorized operations.
 
-### Volatility Features
-- Bollinger Bands
-- Average True Range (ATR)
-- Rolling volatility
-- Volatility of volatility
+**Additional features:**
+- Matrix operations support
+- Hardware acceleration (GPU)
+- Vectorized rolling operations
 
-### Trend Features
-- Simple Moving Averages (SMA)
-- Exponential Moving Averages (EMA)
-- Trend strength indicators
+### FeatureConfig
+Configuration dataclass for features.
 
-### Support/Resistance Features
-- Pivot points
-- Support/resistance levels
-- Breakout indicators
+**Fields:**
+- `name` - Feature name
+- `category` - FeatureCategory enum
+- `description` - Human-readable description
+- `required_columns` - Required DataFrame columns
+- `optional_columns` - Optional columns
+- `default_lookback` - Default lookback period
+- `parameters` - Additional parameters
 
-### Candlestick Pattern Features
-- Doji patterns
-- Hammer patterns
-- Engulfing patterns
-- Other candlestick formations
-
-### HMM Regime Features
-- Regime detection
-- Regime-specific features
-- Regime transition indicators
-
-## 🔧 Configuration
-
-### Feature Bank Configuration
-
-```python
-from src.feature_generation import FeatureBankConfig
-
-config = FeatureBankConfig(
-    enable_matrix_operations=True,      # Enable matrix operations integration
-    enable_gpu_acceleration=True,       # Enable GPU acceleration
-    enable_lookback_optimization=True,  # Enable lookback optimization
-    enable_parallel_processing=True,    # Enable parallel processing
-    max_workers=4,                      # Number of parallel workers
-    chunk_size=1000,                    # Chunk size for processing
-    memory_efficient=True,              # Enable memory optimization
-    cache_results=True,                 # Cache generated features
-    default_lookback=20                 # Default lookback period
-)
-```
-
-### Lookback Optimization Configuration
-
-```python
-from src.feature_generation import FeatureOptimizationConfig, OptimizationMethod
-
-config = FeatureOptimizationConfig(
-    min_lookback=5,                     # Minimum lookback period
-    max_lookback=252,                   # Maximum lookback period
-    step_size=1,                        # Step size for optimization
-    optimization_method=OptimizationMethod.STATISTICAL_ANALYSIS,
-    cv_folds=5,                         # Cross-validation folds
-    stability_threshold=0.8,            # Stability threshold
-    performance_threshold=0.6,          # Performance threshold
-    regime_aware=True,                  # Enable regime-aware optimization
-    parallel_processing=True,           # Enable parallel optimization
-    max_workers=4                       # Number of parallel workers
-)
-```
-
-## 🚀 Performance Features
-
-### Matrix Operations Integration
-- Leverages existing `matrix_operations/` framework
-- Vectorized operations for improved performance
-- GPU acceleration support (Apple Silicon M1/M2/M3)
-- Memory-efficient batch processing
-
-### Parallel Processing
-- Multi-threaded feature generation
-- Configurable number of workers
-- Automatic load balancing
+## Performance Optimization
 
 ### Caching
-- Feature result caching
-- Configurable cache management
-- Memory-efficient storage
-
-### Lookback Optimization
-- Data-driven optimization of lookback periods
-- Multiple optimization methods (cross-validation, statistical analysis, etc.)
-- Regime-aware optimization
-- Performance and stability metrics
-
-## 🔄 Migration from Existing Code
-
-### Step 1: Identify Current Feature Generation
 ```python
-# Old way
-from src.feature_generation.utils.feature_generators import FeatureGenerators
-generator = FeatureGenerators()
-features = generator.batch_technical_indicators(df, indicator_configs)
+from src.feature_generation.core.feature_cache import FeatureCache
+from src.feature_generation.core.feature_bank import FeatureBank
+
+# Create cache
+cache = FeatureCache()
+
+# Use with feature bank
+bank = FeatureBank(cache=cache)
+bank.register_generator(RSIGenerator(period=14))
+
+# Generate with caching (faster on subsequent calls)
+features = bank.generate_all(data, use_cache=True)
 ```
 
-### Step 2: Use Unified System
+### Matrix Operations
 ```python
-# New way
-from src.feature_generation import FeatureBank
-bank = FeatureBank()
-features = bank.generate_features(df, categories=['momentum', 'volume'])
+from src.feature_generation.core.feature_generator import VectorizedFeatureGenerator
+
+class OptimizedGenerator(VectorizedFeatureGenerator):
+    def __init__(self, config):
+        super().__init__(
+            config,
+            enable_matrix_ops=True,  # Enable matrix operations
+            enable_vectorization_optimization=True  # Enable vectorization
+        )
+    
+    def _generate_feature(self, data, **kwargs):
+        # Optimize DataFrame processing
+        data = self.optimize_dataframe_processing(data)
+        
+        # Use vectorized rolling operations
+        result = self.vectorized_rolling_operations(
+            data,
+            operations=['mean', 'std'],
+            windows=[10, 20],
+            columns=['close', 'volume']
+        )
+        return result
 ```
 
-### Step 3: Leverage Backwards Compatibility
-```python
-# Migration path
-from src.feature_generation import LegacyFeatureAdapter
-adapter = LegacyFeatureAdapter()
-# Existing code continues to work while you migrate
-```
+## Integration with Other Systems
 
-## 📈 Best Practices
-
-1. **Use Categories**: Organize features by category for better management
-2. **Enable Optimization**: Use lookback optimization for better performance
-3. **Leverage Matrix Operations**: Enable matrix operations for large datasets
-4. **Use Parallel Processing**: Enable parallel processing for multiple features
-5. **Cache Results**: Enable caching for repeated feature generation
-6. **Validate Data**: Always validate input data before feature generation
-
-## 🛠️ Extending the System
-
-### Adding New Feature Categories
+### Shared Base Classes
+This system uses shared base classes from `features_common/`:
 
 ```python
-from src.feature_generation.core import FeatureGenerator, FeatureConfig, FeatureCategory
-
-class CustomFeatureGenerator(FeatureGenerator):
-    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Implement your feature generation logic
-        return pd.Series(feature_data, index=data.index)
-
-# Register the generator
-from src.feature_generation import register_feature_generator
-generator = CustomFeatureGenerator(config)
-register_feature_generator(generator)
+from src.features_common.transforms.base_scaler import BaseScaler
+from src.features_common.optimization.cv_base import BaseCVSplitter
+from src.features_common.registry.base_registry import BaseFeatureRegistry
 ```
 
-### Adding New Optimization Methods
+### Relationship to feature_engineering_roadmap
+- **feature_generation/** - General purpose, flexible (this system)
+- **feature_engineering_roadmap/** - Locked features for end-to-end roadmap only
+
+**Rule:** Use feature_generation for everything except end-to-end roadmap training.
+
+## Examples
+
+See `examples/` directory for detailed examples:
+- `usage_example.py` - Basic usage
+- `enhanced_usage_examples.py` - Advanced patterns
+
+## Testing
 
 ```python
-from src.feature_generation.optimization import LookbackOptimizer
+import pytest
+from src.feature_generation.categories.momentum import RSIGenerator
 
-class CustomOptimizer(LookbackOptimizer):
-    def _custom_optimization_method(self, generator, data, target_column):
-        # Implement your optimization logic
-        return optimal_lookback
+def test_rsi_generation():
+    # Create test data
+    data = pd.DataFrame({
+        'close': [100, 102, 101, 103, 105, 104, 106]
+    })
+    
+    # Generate RSI
+    gen = RSIGenerator(period=3)
+    result = gen.generate(data)
+    
+    # Verify
+    assert result.success
+    assert not result.data.empty
+    assert result.computation_time > 0
 ```
 
-## 📚 API Reference
+## Common Patterns
 
-### Core Classes
-- `FeatureBank`: Central feature registry and management
-- `FeatureGenerator`: Base class for feature generators
-- `FeatureConfig`: Configuration for feature generators
-- `FeatureCategory`: Enumeration of feature categories
+### Pattern 1: Multi-Timeframe Features
+```python
+from src.feature_generation.categories.cross_timeframe import CrossTimeframeGenerator
 
-### Convenience Functions
-- `generate_features_by_category()`: Generate features by category
-- `generate_all_features()`: Generate all available features
-- `get_feature_summary()`: Get summary of available features
-- `validate_feature_data()`: Validate input data
-- `export_feature_config()`: Export feature configuration
+gen = CrossTimeframeGenerator(
+    base_feature='close',
+    timeframes=['5m', '15m', '1h']
+)
+result = gen.generate(data)
+```
 
-### Optimization
-- `LookbackOptimizer`: Optimize feature lookback periods
-- `FeatureOptimizationConfig`: Configuration for optimization
-- `optimize_feature_lookbacks()`: Optimize multiple features
+### Pattern 2: Feature Interactions
+```python
+from src.feature_generation.categories.interaction import MomentumVolumeGenerator
 
-### Matrix Integration
-- `MatrixFeatureProcessor`: Process features with matrix operations
-- `enable_matrix_acceleration()`: Enable/disable matrix acceleration
-- `get_matrix_processor()`: Get matrix processor instance
+gen = MomentumVolumeGenerator(period=14)
+interaction = gen.generate(data)  # Momentum × Volume interaction
+```
 
-### Backwards Compatibility
-- `LegacyFeatureAdapter`: Adapter for legacy code
-- `migrate_legacy_features()`: Migrate legacy configurations
-- `enable_legacy_compatibility()`: Enable/disable legacy compatibility
+### Pattern 3: Batch Generation
+```python
+from src.feature_generation.core.factory import FeatureFactory
 
-## 🤝 Contributing
+factory = FeatureFactory()
+generators = [
+    RSIGenerator(period=14),
+    ATRGenerator(period=20),
+    MomentumGenerator(period=10)
+]
 
-1. Follow the existing code structure
-2. Add comprehensive tests
-3. Update documentation
-4. Ensure backwards compatibility
-5. Follow the established naming conventions
+all_features = factory.generate_all(data, generators)
+```
 
-## 📄 License
+## Troubleshooting
 
-This module is part of the larger trading system and follows the same licensing terms.
+### Issue: "Missing required columns"
+```python
+# Check required columns
+gen = RSIGenerator(period=14)
+print(gen.config.required_columns)  # ['close']
+
+# Ensure your data has these columns
+assert 'close' in data.columns
+```
+
+### Issue: "Insufficient data"
+```python
+# Check minimum lookback
+gen = RSIGenerator(period=14)
+print(gen.config.min_lookback)  # 14
+
+# Ensure enough data points
+assert len(data) >= gen.config.min_lookback
+```
+
+### Issue: Performance issues
+```python
+# Use vectorized generators
+from src.feature_generation.core.feature_generator import VectorizedFeatureGenerator
+
+# Enable caching
+cache = FeatureCache()
+bank = FeatureBank(cache=cache)
+features = bank.generate_all(data, use_cache=True)
+```
+
+## Contributing
+
+When adding new features:
+1. Inherit from `FeatureGenerator` or `VectorizedFeatureGenerator`
+2. Place in appropriate category file
+3. Add tests
+4. Update documentation
+5. Follow existing naming conventions
+
+## Related Documentation
+
+- [Feature Systems Guide](../FEATURE_SYSTEMS_GUIDE.md) - Overview of both systems
+- [features_common/](../features_common/) - Shared base classes
+- [feature_engineering_roadmap/](../feature_engineering_roadmap/) - Roadmap-specific features
+
+---
+
+Last updated: 2025-10-08  
+Part of Strategy C Implementation

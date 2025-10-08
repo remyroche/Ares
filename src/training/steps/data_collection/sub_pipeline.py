@@ -127,9 +127,14 @@ class SubPipelineConfig:
     data_locator: Optional[DataLocator] = None
     data_dir_key: str = "market_data"
     cache_dir_key: str = "default"
+    
+    # Direction control (optional, not used by data collection but accepted for compatibility)
+    enable_long_positions: bool = True
+    enable_short_positions: bool = True
     artifacts_dir_key: str = "default"
     generated_dir_key: str = "market_analysis"
     config_dir_key: str = "multi_horizon_labeling"
+    use_existing_data: bool = False
     _path_view: Optional[LocatorPaths] = field(default=None, init=False, repr=False)
 
     def attach_locator(self, locator: DataLocator) -> None:
@@ -385,25 +390,41 @@ class DataCollectionSubPipeline:
     @log_important_calls
     @with_error_recovery(service_name="data_download")
     async def _data_download_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
-        """Data download sub-pipeline using unified downloader."""
+        """Data download sub-pipeline using unified downloader or existing data."""
         self.logger.info("📥 Executing unified data download pipeline")
-        
+
         artifacts = {
             'downloaded_files': [],
             'download_stats': {},
             'exchange_info': {},
             'data_types': []
         }
-        
+
         if config.mode == ExecutionMode.BLANK:
             self.logger.info("🔄 Blank mode: Skipping actual download")
             artifacts['downloaded_files'] = ['mock_data.parquet']
             return artifacts
-        
+
+        # Check if we should use existing data instead of downloading
+        use_existing_data = config.custom_params.get('use_existing_data', False)
+        if use_existing_data:
+            self.logger.info("📁 Using existing data instead of downloading new data")
+            return await self._use_existing_data_pipeline(config)
+
         if not self.downloader:
             self.logger.warning("⚠️ Unified downloader not available, using fallback")
             return await self._fallback_data_download(config)
-        
+
+        # Check if we should use existing data instead of downloading
+        use_existing_data = config.custom_params.get('use_existing_data', False)
+        if use_existing_data:
+            self.logger.info("📁 Using existing data instead of downloading new data")
+            return await self._use_existing_data_pipeline(config)
+
+        if not self.downloader:
+            self.logger.warning("⚠️ Unified downloader not available, using fallback")
+            return await self._fallback_data_download(config)
+
         try:
             # Set date range - use config dates if available, otherwise calculate from lookback_days
             if config.start_date and config.end_date:
@@ -414,7 +435,7 @@ class DataCollectionSubPipeline:
                 end_date = datetime.now()
                 start_date = end_date - timedelta(days=config.custom_params.get('lookback_days', 30))
                 self.logger.info(f"📅 Using calculated date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
-            
+
             # Download klines data
             self.logger.info(f"📥 Downloading klines data for {config.exchange}_{config.symbol}_{config.timeframe}")
             klines_success, klines_data, klines_error = await self.downloader.download_klines(
@@ -461,7 +482,85 @@ class DataCollectionSubPipeline:
         self.logger.info(f"📈 Download Stats: {artifacts['download_stats']}")
         
         return artifacts
-    
+
+    async def _use_existing_data_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Use existing data pipeline instead of downloading new data."""
+        self.logger.info("📁 Executing use existing data pipeline")
+
+        artifacts = {
+            'downloaded_files': [],
+            'download_stats': {},
+            'exchange_info': {},
+            'data_types': []
+        }
+
+        try:
+            # Import KlinesParquetManager
+            from src.utils.data.klines_parquet import KlinesParquetManager
+
+            # Create manager instance
+            manager = KlinesParquetManager(config.data_dir)
+
+            # Set date range - use config dates if available, otherwise use last 20 days for light mode
+            start_date = None
+            end_date = None
+
+            if config.start_date and config.end_date:
+                start_date = datetime.strptime(config.start_date, '%Y-%m-%d')
+                end_date = datetime.strptime(config.end_date, '%Y-%m-%d')
+                self.logger.info(f"📅 Using config date range: {config.start_date} to {config.end_date}")
+            else:
+                # Use last 20 days for light mode as default
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=20)
+                self.logger.info(f"📅 Using default light mode date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+
+            # Read existing klines data
+            self.logger.info(f"📁 Reading existing klines data for {config.exchange}_{config.symbol}_{config.timeframe}")
+            klines_df = manager.read_data(
+                symbol=config.symbol,
+                interval=config.timeframe,
+                start_date=start_date,
+                end_date=end_date,
+                data_type="processed"  # Use processed data if available
+            )
+
+            if klines_df is not None and not klines_df.empty:
+                self.logger.info(f"✅ Successfully read {len(klines_df)} records from existing data")
+
+                # Save the data to the expected location
+                klines_file = f"klines_{config.exchange}_{config.symbol}_{config.timeframe}_raw.parquet"
+                klines_path = os.path.join(config.data_dir, klines_file)
+                os.makedirs(config.data_dir, exist_ok=True)
+
+                # Write the data using the standardized parquet handler
+                from src.utils.parquet_utils import standardized_parquet_handler
+                standardized_parquet_handler.write_parquet_standardized(klines_df, klines_path, index=False)
+
+                artifacts['downloaded_files'].append(klines_file)
+                artifacts['data_types'].append('klines')
+
+                # Add download stats
+                artifacts['download_stats'] = {
+                    'records_read': len(klines_df),
+                    'date_range': f"{klines_df.index.min()} to {klines_df.index.max()}",
+                    'source': 'existing_data'
+                }
+
+                self.logger.info(f"💾 Saved existing data to: {klines_path}")
+                return artifacts
+            else:
+                self.logger.warning(f"⚠️ No existing data found for {config.symbol} {config.timeframe}")
+                # Fallback to download if no existing data is available
+                self.logger.info("🔄 Falling back to data download since no existing data was found")
+                return await self._fallback_data_download(config)
+
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to use existing data: {e}")
+            # Fallback to download if reading existing data fails
+            self.logger.info("🔄 Falling back to data download due to error reading existing data")
+            return await self._fallback_data_download(config)
+
     async def _fallback_data_download(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Fallback data download method - now fails fast instead of creating mock data."""
         self.logger.error("❌ Data download failed - no fallback data available")

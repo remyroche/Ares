@@ -66,24 +66,53 @@ from src.utils.math_validation import (
     validate_array_finite, validate_matrix_finite
 )
 
-from src.utils.serialization_utils import JSONSerializer, PickleSerializer
+# Import common operations for hardware and data utilities
+from src.utils.common_operations import (
+    get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
+    cleanup_m1_optimizers, ensure_directory, safe_file_exists,
+    get_current_datetime, validate_positive
+)
 
-from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager
-from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
-from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+# Import common utilities for DataFrame operations
+from src.utils.common_utilities import (
+    analyze_nan_values_detailed, safe_dataframe_operation,
+    validate_dataframe_columns
+)
+
+from src.utils.serialization_utils import JSONSerializer, PickleSerializer
 
 # Import ML common utilities
 from src.utils.ml_common.training.vectorized_training_manager import VectorizedTrainingManager
 from src.utils.ml_common.matrix_cross_validation import MatrixCrossValidator
 from src.utils.ml_common.optimization.hyperparameter_optimization import HyperparameterOptimizer
 
+# Import Bayesian TPE optimizer for advanced HPO
+from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+    BayesianTPEOptimizer, OptimizationConfig
+)
+
+# Import Auto-Tuner for automatic HPO parameter selection
+from src.utils.ml_common.optimization.auto_tuner import (
+    AutoTuner, auto_tune_and_optimize
+)
+
+# Import model persistence for saving/loading models
+from src.utils.ml_common.post_training.model_persistence import (
+    ModelPersistence, ModelMetadata, PersistenceConfig
+)
+
+# Import model caching for warm-start training
+from src.utils.ml_common.models.model_cache import (
+    ModelCache, get_model_cache, CachedModelMetadata
+)
+
+# Import data cleaning utilities
+from src.utils.data.quality.data_cleaning import (
+    DataCleaner, CleaningConfig, MissingValueStrategy, OutlierStrategy
+)
+
 # Setup logging
 logger = system_logger.getChild('AnalystEnsembleTraining')
-
-# Initialize hardware optimizers
-gpu_manager = get_m1_gpu_manager()
-memory_optimizer = get_m1_memory_optimizer()
-cpu_optimizer = get_m1_cpu_optimizer()
 
 
 class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
@@ -128,56 +157,51 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             RuntimeError: If initialization fails with critical errors
             ValueError: If configuration is invalid
         """
-        tprint_info("🚀 Initializing Analyst Ensemble Training Step for 5m timeframe with HMM integration")
+        tprint_info("🚀 Initializing Analyst Ensemble Training Step")
         
         # Initialize logging and timing
         self.logger = logger.getChild('AnalystEnsembleTrainingStep')
         self.start_time = time.time()
-        self.initialization_errors = []
-        self.initialization_warnings = []
         
         try:
             # Step 1: Validate and setup configuration
-            tprint_info("📋 Step 1: Setting up configuration")
             config = self._setup_configuration(config)
+            self._validate_config_consolidated(config)
             
-            # Step 2: Validate configuration with enhanced error handling
-            tprint_info("🔍 Step 2: Validating configuration")
-            self._validate_config_enhanced(config)
-            
-            # Step 3: Initialize NAS models storage
-            tprint_info("🧠 Step 3: Initializing NAS models storage")
+            # Step 2: Initialize NAS models storage
             self.nas_models = {}  # Per-regime NAS models
             self.nas_architectures = {}  # Per-regime NAS architectures
             
-            # Step 4: Initialize hardware optimizers
-            tprint_info("⚙️ Step 3: Initializing hardware optimizers")
-            self._initialize_hardware_optimizers()
+            # Step 3: Initialize hardware optimizers (consolidated)
+            self.hardware = self._initialize_hardware_optimizers_consolidated()
             
-            # Step 4: Initialize parent class with error handling
-            tprint_info("🏗️ Step 4: Initializing parent class")
-            self._initialize_parent_class(config, enable_vectorization)
+            # Step 4: Initialize data cleaner
+            self.data_cleaner = self._initialize_data_cleaner()
             
-            # Step 5: Setup tracking and monitoring
-            tprint_info("📊 Step 5: Setting up tracking and monitoring")
-            self._setup_tracking_and_monitoring(config)
+            # Step 5: Initialize model persistence
+            self.model_persistence = self._initialize_model_persistence()
             
-            # Step 6: Validate initialization success
-            tprint_info("✅ Step 6: Validating initialization")
-            self._validate_initialization_success()
+            # Step 5.5: Initialize model cache
+            self.model_cache = self._initialize_model_cache()
             
-            # Log comprehensive initialization summary
-            self._log_initialization_summary()
+            # Step 6: Initialize parent class
+            super().__init__(config, enable_vectorization=enable_vectorization)
+            
+            # Step 7: Setup consolidated tracking
+            self._setup_tracking_consolidated(config)
+            
+            # Log initialization summary
+            init_time = time.time() - self.start_time
+            tprint_success(f"✅ Initialization complete in {init_time:.2f}s")
             
         except Exception as e:
-            self._handle_initialization_error(e)
+            tprint_error(f"❌ Initialization failed: {e}")
             raise
     
     def _setup_configuration(self, config: Optional[EnsembleTrainingConfig]) -> EnsembleTrainingConfig:
         """Setup configuration with enhanced error handling."""
         try:
             if config is None:
-                tprint_info("📋 Creating default configuration for analyst ensemble training (5m timeframe)")
                 config = EnsembleTrainingConfig(
                     model_name="analyst_ensemble_models_5m",
                     timeframe="5m",
@@ -190,138 +214,130 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
                     model_save_path="generated/model_training/models/analyst_ensemble_models_5m",
                     evaluation_metrics=["mse", "mae", "r2", "mape", "smape"]
                 )
-                tprint_success("✅ Default configuration created successfully")
-            else:
-                tprint_info(f"📋 Using provided configuration: {config.model_name}")
-            
             return config
-            
         except Exception as e:
-            error_msg = f"Configuration setup failed: {e}"
-            tprint_error(error_msg)
-            raise RuntimeError(error_msg) from e
+            tprint_error(f"Configuration setup failed: {e}")
+            raise RuntimeError(f"Configuration setup failed: {e}") from e
     
-    def _validate_config_enhanced(self, config: EnsembleTrainingConfig) -> None:
-        """Enhanced configuration validation with comprehensive error handling."""
-        try:
-            tprint_info("🔍 Starting enhanced configuration validation")
+    def _validate_config_consolidated(self, config: EnsembleTrainingConfig) -> None:
+        """Consolidated configuration validation using common utilities."""
+        with tprint_timer("Config validation"):
+            # Basic validation
+            if not config.model_types or len(config.model_types) == 0:
+                raise ValueError("At least one model type required")
             
-            # Validate model types
-            if not hasattr(config, 'model_types') or not config.model_types or len(config.model_types) == 0:
-                raise ValueError("At least one model type must be specified")
+            # HPO validation using validate_positive from common_operations
+            if config.enable_hpo:
+                validate_positive(config.hpo_n_trials, "hpo_n_trials")
+                validate_positive(config.hpo_timeout_seconds, "hpo_timeout_seconds")
             
-            # Validate timeframe
-            valid_timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"]
-            if not hasattr(config, 'timeframe') or config.timeframe not in valid_timeframes:
-                self.initialization_warnings.append(f"Unusual timeframe specified: {getattr(config, 'timeframe', 'None')}")
-                tprint_warning(f"⚠️ Unusual timeframe specified: {getattr(config, 'timeframe', 'None')}")
+            # Regime validation
+            validate_positive(config.min_samples_per_regime, "min_samples_per_regime")
             
-            # Validate HPO parameters
-            if hasattr(config, 'enable_hpo') and config.enable_hpo:
-                if hasattr(config, 'hpo_n_trials') and config.hpo_n_trials <= 0:
-                    raise ValueError("HPO trials must be positive")
-                if hasattr(config, 'hpo_timeout_seconds') and config.hpo_timeout_seconds <= 0:
-                    raise ValueError("HPO timeout must be positive")
-            
-            # Validate minimum samples
-            if hasattr(config, 'min_samples_per_regime') and config.min_samples_per_regime <= 0:
-                raise ValueError("Minimum samples per regime must be positive")
-            
-            # Validate save path
-            if hasattr(config, 'save_models') and config.save_models and hasattr(config, 'model_save_path') and config.model_save_path:
-                try:
-                    save_path = Path(config.model_save_path)
-                    if not save_path.parent.exists():
-                        self.initialization_warnings.append(f"Save path parent directory does not exist: {save_path.parent}")
-                        tprint_warning(f"⚠️ Save path parent directory does not exist: {save_path.parent}")
-                except Exception as e:
-                    self.initialization_warnings.append(f"Save path validation failed: {e}")
-                    tprint_warning(f"⚠️ Save path validation failed: {e}")
-            
-            tprint_success("✅ Enhanced configuration validation passed")
-            
-        except Exception as e:
-            error_msg = f"Enhanced configuration validation failed: {e}"
-            tprint_error(error_msg)
-            raise ValueError(error_msg) from e
+            # Path validation using ensure_directory from common_operations
+            if config.save_models and config.model_save_path:
+                ensure_directory(config.model_save_path)
     
-    def _initialize_hardware_optimizers(self) -> None:
-        """Initialize hardware optimizers with error handling."""
-        tprint_info("⚙️ Initializing hardware optimizers")
-        
-        # Initialize hardware optimizers with error handling
-        try:
-            self.gpu_manager = get_m1_gpu_manager()
-            tprint_success("✅ M1 GPU manager initialized")
-        except Exception as e:
-            self.gpu_manager = None
-            self.initialization_warnings.append(f"GPU manager initialization failed: {e}")
-            tprint_warning(f"⚠️ GPU manager initialization failed: {e}")
+    def _initialize_hardware_optimizers_consolidated(self) -> Dict[str, Any]:
+        """Initialize hardware optimizers (consolidated approach)."""
+        hardware = {}
         
         try:
-            self.memory_optimizer = get_m1_memory_optimizer()
-            tprint_success("✅ M1 memory optimizer initialized")
+            hardware['gpu'] = get_m1_gpu_manager()
+            hardware['memory'] = get_m1_memory_optimizer()
+            hardware['cpu'] = get_m1_cpu_optimizer()
+            
+            available = sum(1 for v in hardware.values() if v is not None)
+            tprint_success(f"✅ Hardware: {available}/3 optimizers available")
         except Exception as e:
-            self.memory_optimizer = None
-            self.initialization_warnings.append(f"Memory optimizer initialization failed: {e}")
-            tprint_warning(f"⚠️ Memory optimizer initialization failed: {e}")
+            tprint_warning(f"⚠️ Hardware init partial: {e}")
         
+        return hardware
+    
+    def _initialize_data_cleaner(self) -> Optional[DataCleaner]:
+        """Initialize data cleaner with configuration."""
         try:
-            self.cpu_optimizer = get_m1_cpu_optimizer()
-            tprint_success("✅ M1 CPU optimizer initialized")
+            cleaning_config = CleaningConfig(
+                missing_value_strategy=MissingValueStrategy.INTERPOLATE,
+                outlier_strategy=OutlierStrategy.CLIP,
+                outlier_threshold=3.0,
+                enable_gap_detection=True,
+                enable_async_processing=False
+            )
+            tprint_success("✅ Data cleaner initialized")
+            return DataCleaner(cleaning_config)
         except Exception as e:
-            self.cpu_optimizer = None
-            self.initialization_warnings.append(f"CPU optimizer initialization failed: {e}")
-            tprint_warning(f"⚠️ CPU optimizer initialization failed: {e}")
-        
-        # Check availability
-        available_count = sum([self.gpu_manager is not None, 
-                             self.memory_optimizer is not None, 
-                             self.cpu_optimizer is not None])
-        
-        if available_count > 0:
-            tprint_success(f"✅ Hardware optimizers initialized: {available_count}/3 available")
-        else:
-            self.initialization_warnings.append("No hardware optimizers available")
-            tprint_warning("⚠️ No hardware optimizers available")
+            tprint_warning(f"⚠️ Data cleaner unavailable: {e}")
+            return None
     
-    def _initialize_parent_class(self, config: EnsembleTrainingConfig, enable_vectorization: bool) -> None:
-        """Initialize parent class."""
-        tprint_info("🏗️ Initializing parent class")
-        
-        super().__init__(config, enable_vectorization=enable_vectorization)
-        tprint_success("✅ Parent class initialized successfully")
+    def _initialize_model_persistence(self) -> Optional[ModelPersistence]:
+        """Initialize model persistence manager."""
+        try:
+            persistence_config = PersistenceConfig(
+                base_model_dir=self.config.model_save_path,
+                enable_versioning=True,
+                max_versions=5,
+                serialization_format="joblib",
+                compression=True
+            )
+            tprint_success("✅ Model persistence initialized")
+            return ModelPersistence(persistence_config)
+        except Exception as e:
+            tprint_warning(f"⚠️ Model persistence unavailable: {e}")
+            return None
     
-    def _setup_tracking_and_monitoring(self, config: EnsembleTrainingConfig) -> None:
-        """Setup tracking and monitoring."""
-        tprint_info("📊 Setting up tracking and monitoring")
-        
-        # Initialize tracking variables
+    def _initialize_model_cache(self) -> Optional[ModelCache]:
+        """Initialize model cache for warm-start training."""
+        try:
+            model_cache = get_model_cache(
+                max_memory_models=10,
+                max_disk_models=50,
+                cache_dir=f"{self.config.model_save_path}/cache"
+            )
+            tprint_success("✅ Model cache initialized")
+            return model_cache
+        except Exception as e:
+            tprint_warning(f"⚠️ Model cache unavailable: {e}")
+            return None
+    
+    def _setup_tracking_consolidated(self, config: EnsembleTrainingConfig) -> None:
+        """Setup consolidated tracking and monitoring."""
         self.training_stats = {
             'initialization_time': time.time() - self.start_time,
-            'vectorization_enabled': self.enable_vectorization,
-            'config_used': config.model_name,
-            'model_types': config.model_types,
+            'config': config.model_name,
             'timeframe': config.timeframe,
-            'hardware_optimizers_available': {
-                'gpu_manager': self.gpu_manager is not None,
-                'memory_optimizer': self.memory_optimizer is not None,
-                'cpu_optimizer': self.cpu_optimizer is not None
+            'vectorization_enabled': self.enable_vectorization,
+            'hardware_available': {
+                'gpu': self.hardware.get('gpu') is not None,
+                'memory': self.hardware.get('memory') is not None,
+                'cpu': self.hardware.get('cpu') is not None
             },
-            'ensemble_diversity_metrics': {},
-            'confidence_intervals': {},
             'utilities_available': {
-                'math_validation': True,  # math_validation utilities are imported
-                'serialization': True,    # serialization utilities are imported
-                'hardware_optimization': True,  # hardware optimizers are initialized
-                'ml_common': True,       # ml_common utilities are imported
-                'tprint': True          # tprint utilities are imported
-            },
-            'initialization_errors': self.initialization_errors.copy(),
-            'initialization_warnings': self.initialization_warnings.copy()
+                'data_cleaner': self.data_cleaner is not None,
+                'model_persistence': self.model_persistence is not None,
+                'model_cache': self.model_cache is not None
+            }
         }
-        
-        tprint_success("✅ Tracking and monitoring setup completed")
+    
+    def _validate_config_enhanced(self, config: EnsembleTrainingConfig) -> None:
+        """Enhanced configuration validation - delegates to consolidated method."""
+        self._validate_config_consolidated(config)
+    
+    def _initialize_hardware_optimizers(self) -> None:
+        """Initialize hardware optimizers - delegates to consolidated method."""
+        self.hardware = self._initialize_hardware_optimizers_consolidated()
+        # Set individual references for backwards compatibility
+        self.gpu_manager = self.hardware.get('gpu')
+        self.memory_optimizer = self.hardware.get('memory')
+        self.cpu_optimizer = self.hardware.get('cpu')
+    
+    def _initialize_parent_class(self, config: EnsembleTrainingConfig, enable_vectorization: bool) -> None:
+        """Initialize parent class - now handled in __init__."""
+        pass  # Kept for backwards compatibility
+    
+    def _setup_tracking_and_monitoring(self, config: EnsembleTrainingConfig) -> None:
+        """Setup tracking and monitoring - delegates to consolidated method."""
+        self._setup_tracking_consolidated(config)
     
     def calculate_ensemble_diversity_metrics(self, predictions: Dict[str, np.ndarray]) -> Dict[str, float]:
         """Calculate ensemble diversity metrics for model complementarity."""
@@ -565,47 +581,74 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             tprint_error(f"❌ Legacy configuration validation failed: {e}")
             raise ValueError(f"Invalid configuration: {e}") from e
     
-    def _validate_input_data(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray) -> None:
+    def _validate_and_clean_input_data(
+        self, 
+        X: np.ndarray, 
+        y: np.ndarray, 
+        regime_labels: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict[str, Any]]:
         """
-        Enhanced input data validation with comprehensive error handling and math validation.
+        Enhanced input data validation and cleaning using common utilities.
         
         Args:
             X: Input features
             y: Target values
             regime_labels: Regime labels
             
-        Raises:
-            ValueError: If input data is invalid
-            RuntimeError: If critical validation errors occur
+        Returns:
+            Tuple of (cleaned_X, cleaned_y, cleaned_regime_labels, cleaning_report)
         """
-        try:
-            tprint_info("🔍 Starting enhanced input data validation")
+        with tprint_timer("Data validation & cleaning"):
+            # Shape validation
+            if X.shape[0] != y.shape[0] or X.shape[0] != regime_labels.shape[0]:
+                raise ValueError(f"Shape mismatch: X={X.shape}, y={y.shape}, regimes={regime_labels.shape}")
             
-            # Step 1: Basic shape validation
-            tprint_info("📏 Step 1: Validating data shapes")
-            self._validate_data_shapes(X, y, regime_labels)
+            # Mathematical validation using math_validation
+            validate_array_finite(X, "features")
+            validate_array_finite(y, "targets")
+            validate_array_finite(regime_labels, "regimes")
             
-            # Step 2: Empty data validation
-            tprint_info("📊 Step 2: Checking for empty data")
-            self._validate_empty_data(X, y, regime_labels)
+            # NaN analysis using common_utilities
+            nan_analysis = analyze_nan_values_detailed(X)
             
-            # Step 3: Mathematical validation using math_validation utilities
-            tprint_info("🧮 Step 3: Mathematical validation")
-            self._validate_mathematical_properties(X, y, regime_labels)
+            cleaning_report = {
+                'initial_shape': X.shape,
+                'nan_analysis': {
+                    'total_nans': nan_analysis.get('total_nans', 0),
+                    'nan_percentage': nan_analysis.get('nan_percentage', 0)
+                }
+            }
             
-            # Step 4: Regime distribution validation
-            tprint_info("📈 Step 4: Validating regime distribution")
-            self._validate_regime_distribution(regime_labels)
+            # Clean data if cleaner is available
+            if self.data_cleaner and nan_analysis.get('total_nans', 0) > 0:
+                tprint_info(f"🧹 Cleaning {nan_analysis['total_nans']} NaN values")
+                
+                # Convert to DataFrame for cleaning
+                df = pd.DataFrame(X)
+                df_cleaned = self.data_cleaner.handle_missing_values(df)
+                X_cleaned = df_cleaned.values
+                
+                # Verify cleaning
+                remaining_nans = np.isnan(X_cleaned).sum()
+                cleaning_report['nans_removed'] = nan_analysis['total_nans'] - remaining_nans
+                cleaning_report['final_nans'] = remaining_nans
+                
+                tprint_success(f"✅ Cleaned data: removed {cleaning_report['nans_removed']} NaN values")
+                return X_cleaned, y, regime_labels, cleaning_report
             
-            # Step 5: Memory and performance validation
-            tprint_info("💾 Step 5: Memory and performance validation")
-            self._validate_memory_and_performance(X, y, regime_labels)
-            
-            tprint_success("✅ Enhanced input data validation completed successfully")
-            
-        except Exception as e:
-            tprint_error(f"❌ Enhanced input data validation failed: {e}")
-            raise ValueError(f"Invalid input data: {e}") from e
+            tprint_success("✅ Data validation passed")
+            return X, y, regime_labels, cleaning_report
+    
+    def _validate_input_data(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray) -> None:
+        """
+        Legacy validation method - delegates to new consolidated method.
+        
+        Args:
+            X: Input features
+            y: Target values
+            regime_labels: Regime labels
+        """
+        _, _, _, _ = self._validate_and_clean_input_data(X, y, regime_labels)
     
     def _validate_data_shapes(self, X: np.ndarray, y: np.ndarray, regime_labels: np.ndarray) -> None:
         """Validate data shapes with enhanced error handling."""
@@ -848,89 +891,74 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         }
         
         try:
-            # Step 1: Pre-execution validation and setup
-            tprint_info("🔄 Step 1: Pre-execution validation and setup")
-            with tprint_timer("Pre-execution validation"):
-                self._pre_execution_validation(X, y, regime_labels, feature_names, hmm_states, base_analyst_models, analyst_training_metrics, hmm_data)
-            execution_stats['steps_completed'] += 1
+            # Step 1: Validate and clean data (consolidated)
+            with tprint_timer("Step 1: Data validation & cleaning"):
+                X_clean, y_clean, regimes_clean, cleaning_report = self._validate_and_clean_input_data(
+                    X, y, regime_labels
+                )
+                execution_stats['cleaning_report'] = cleaning_report
+                execution_stats['steps_completed'] += 1
             
             # Step 2: Hardware optimization setup
-            tprint_info("🔄 Step 2: Hardware optimization setup")
-            with tprint_timer("Hardware optimization setup"):
-                self._setup_hardware_optimizations(X, y, regime_labels, execution_stats)
-            execution_stats['steps_completed'] += 1
+            with tprint_timer("Step 2: Hardware optimization"):
+                self._setup_hardware_optimizations(X_clean, y_clean, regimes_clean, execution_stats)
+                execution_stats['steps_completed'] += 1
             
-            # Step 3: Enhanced input validation
-            tprint_info("🔄 Step 3: Enhanced input validation")
-            with tprint_timer("Enhanced input validation"):
-                self._validate_input_data(X, y, regime_labels)
-            execution_stats['steps_completed'] += 1
+            # Step 3: HMM integration if available
+            if hmm_data is not None:
+                with tprint_timer("Step 3: HMM integration"):
+                    X_enhanced = self._integrate_hmm_features(X_clean, hmm_data, execution_stats)
+                    execution_stats['steps_completed'] += 1
+            else:
+                X_enhanced = X_clean
+                tprint_info("⏭️ Step 3: Skipping HMM integration (no data provided)")
             
-            # Step 4: HMM integration and feature enhancement
-            tprint_info("🔄 Step 4: HMM integration and feature enhancement")
-            with tprint_timer("HMM integration"):
-                X_enhanced = self._integrate_hmm_features(X, hmm_data, execution_stats)
-            execution_stats['steps_completed'] += 1
-            
-            # Step 5: Base models validation and preparation
-            tprint_info("🔄 Step 5: Base models validation and preparation")
-            with tprint_timer("Base models preparation"):
-                base_analyst_models = self._prepare_base_models(base_analyst_models, execution_stats)
-            execution_stats['steps_completed'] += 1
-            
-            # Step 6: Execute training with enhanced error handling
-            tprint_info("🔄 Step 6: Executing ensemble training")
-            with tprint_timer("Ensemble training execution"):
-                results = self._execute_training_with_enhanced_error_handling(
-                    X_enhanced, y, regime_labels, feature_names, hmm_states, base_analyst_models, execution_stats
+            # Step 4: Execute training with parent class
+            with tprint_timer("Step 4: Ensemble training"):
+                training_results = super().execute(
+                    X=X_enhanced,
+                    y=y_clean,
+                    regime_labels=regimes_clean,
+                    feature_names=feature_names,
+                    hmm_states=hmm_states,
+                    is_classification=False,
+                    base_models=base_analyst_models,
+                    timeframe=self.config.timeframe
                 )
-            execution_stats['steps_completed'] += 1
+                results = training_results
+                execution_stats['steps_completed'] += 1
             
-            # Step 7: Post-training processing
-            tprint_info("🔄 Step 7: Post-training processing")
-            with tprint_timer("Post-training processing"):
-                results = self._post_training_processing(results, base_analyst_models, analyst_training_metrics, execution_stats)
-            execution_stats['steps_completed'] += 1
+            # Step 5: Save models if persistence is available
+            if self.model_persistence and self.config.save_models:
+                with tprint_timer("Step 5: Model persistence"):
+                    self._save_models_with_metadata(results, cleaning_report)
+                    execution_stats['steps_completed'] += 1
             
-            # Step 8: Generate comprehensive report
-            tprint_info("🔄 Step 8: Generating comprehensive report")
-            with tprint_timer("Report generation"):
-                execution_time = time.time() - execution_start_time
-                results = self._generate_enhanced_comprehensive_report(results, execution_time, base_analyst_models, analyst_training_metrics, execution_stats)
-            execution_stats['steps_completed'] += 1
+            # Step 6: Generate consolidated report
+            execution_time = time.time() - execution_start_time
+            results['success'] = True
+            results['execution_time'] = execution_time
+            results['execution_stats'] = execution_stats
+            results['cleaning_report'] = cleaning_report
             
-            # Step 9: Final validation and cleanup
-            tprint_info("🔄 Step 9: Final validation and cleanup")
-            with tprint_timer("Final validation and cleanup"):
-                self._final_validation_and_cleanup(results, execution_stats)
-            execution_stats['steps_completed'] += 1
-            
-            # Log execution summary
-            self._log_execution_summary(execution_stats, execution_time)
-            
-            tprint_success(f"✅ Analyst ensemble training completed successfully in {execution_time:.2f}s")
-            tprint_info("=" * 60)
+            tprint_success(f"✅ Training complete in {execution_time:.2f}s")
             return results
             
         except Exception as e:
             execution_time = time.time() - execution_start_time
             execution_stats['steps_failed'] += 1
-            execution_stats['errors_count'] += 1
-            
-            error_msg = f"Analyst ensemble training failed after {execution_time:.2f}s: {e}"
-            tprint_error(f"❌ {error_msg}")
-            tprint_error(f"🔍 Traceback: {traceback.format_exc()}")
-            
-            # Log execution failure summary
-            self._log_execution_failure_summary(execution_stats, execution_time, error_msg)
+            tprint_error(f"❌ Training failed after {execution_time:.2f}s: {e}")
             
             return {
-                'error': error_msg,
+                'success': False,
+                'error': str(e),
                 'execution_time': execution_time,
-                'traceback': traceback.format_exc(),
-                'training_stats': self.training_stats,
                 'execution_stats': execution_stats
             }
+        
+        finally:
+            # Cleanup hardware resources using common_operations
+            self._cleanup_hardware_resources()
     
     def _pre_execution_validation(
         self,
@@ -1142,7 +1170,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         base_analyst_models: Optional[Dict[str, Any]],
         execution_stats: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Prepare base models with validation."""
+        """Prepare base models with validation and cache support."""
         tprint_info("🤖 Preparing base models")
         
         if base_analyst_models is None or not base_analyst_models:
@@ -1160,6 +1188,115 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
         
         tprint_success(f"✅ Base models preparation completed: {len(base_analyst_models)} models")
         return base_analyst_models
+    
+    def _try_load_cached_model(
+        self,
+        regime: str,
+        model_type: str,
+        X: np.ndarray,
+        y: np.ndarray,
+        config: Dict[str, Any]
+    ) -> Optional[Tuple[Any, CachedModelMetadata]]:
+        """
+        Try to load a cached model for warm-start training.
+        
+        Args:
+            regime: Regime identifier
+            model_type: Type of model
+            X: Training features (for hash)
+            y: Training targets (for hash)
+            config: Model configuration (for hash)
+            
+        Returns:
+            Tuple of (model, metadata) or None if not found
+        """
+        if not self.model_cache:
+            return None
+        
+        try:
+            # Generate hashes
+            data_hash = self.model_cache._hash_data(X, y)
+            config_hash = self.model_cache._hash_config(config)
+            
+            # Try to retrieve from cache
+            cached_result = self.model_cache.get_model(
+                regime=regime,
+                model_type=model_type,
+                data_hash=data_hash,
+                config_hash=config_hash
+            )
+            
+            if cached_result:
+                tprint_success(f"✅ Loaded cached model for regime {regime}, type {model_type}")
+                return cached_result
+            
+            return None
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to load cached model: {e}")
+            return None
+    
+    def _cache_trained_model(
+        self,
+        model: Any,
+        regime: str,
+        model_type: str,
+        X: np.ndarray,
+        y: np.ndarray,
+        config: Dict[str, Any],
+        train_score: Optional[float] = None,
+        val_score: Optional[float] = None,
+        training_duration: float = 0.0
+    ) -> None:
+        """
+        Cache a trained model for future use.
+        
+        Args:
+            model: Trained model
+            regime: Regime identifier
+            model_type: Type of model
+            X: Training features
+            y: Training targets
+            config: Model configuration
+            train_score: Training score
+            val_score: Validation score
+            training_duration: Time taken to train
+        """
+        if not self.model_cache:
+            return
+        
+        try:
+            # Create metadata
+            metadata = CachedModelMetadata(
+                model_id=f"{regime}_{model_type}",
+                model_type=model_type,
+                regime=regime,
+                timestamp=get_current_datetime().isoformat(),
+                data_hash=self.model_cache._hash_data(X, y),
+                config_hash=self.model_cache._hash_config(config),
+                train_score=train_score,
+                val_score=val_score,
+                n_samples=len(X),
+                n_features=X.shape[1],
+                training_duration=training_duration,
+                hyperparameters=config
+            )
+            
+            # Cache the model
+            self.model_cache.put_model(
+                model=model,
+                regime=regime,
+                model_type=model_type,
+                X=X,
+                y=y,
+                config=config,
+                metadata=metadata
+            )
+            
+            tprint_success(f"✅ Cached model for regime {regime}, type {model_type}")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to cache model: {e}")
     
     def _execute_training_with_enhanced_error_handling(
         self,
@@ -1296,35 +1433,57 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             results['comprehensive_report'] = {'error': f"Report generation failed: {e}"}
             return results
     
+    def _save_models_with_metadata(self, results: Dict[str, Any], cleaning_report: Dict[str, Any]) -> None:
+        """Save models with comprehensive metadata using model persistence."""
+        try:
+            if 'trained_models' not in results:
+                tprint_warning("⚠️ No trained models to save")
+                return
+            
+            for regime, model in results['trained_models'].items():
+                try:
+                    metadata = ModelMetadata(
+                        model_name=f"analyst_ensemble_{regime}",
+                        model_type=self.config.model_types[0] if self.config.model_types else "ensemble",
+                        version="1.0",
+                        training_timestamp=get_current_datetime().isoformat(),
+                        training_duration=results.get('execution_time', 0),
+                        training_data_size=cleaning_report.get('initial_shape', [0])[0],
+                        feature_count=cleaning_report.get('initial_shape', [0, 0])[1],
+                        r2_score=results.get('evaluation_results', {}).get(regime, {}).get('r2'),
+                        hyperparameters=getattr(model, 'get_params', lambda: {})(),
+                        description=f"Analyst ensemble model for regime {regime}",
+                        tags=['analyst', 'ensemble', f'regime_{regime}', self.config.timeframe]
+                    )
+                    
+                    self.model_persistence.save_model(model, metadata)
+                    tprint_success(f"✅ Saved model for regime {regime}")
+                except Exception as e:
+                    tprint_warning(f"⚠️ Failed to save model for regime {regime}: {e}")
+        except Exception as e:
+            tprint_warning(f"⚠️ Model saving failed: {e}")
+    
+    def _cleanup_hardware_resources(self) -> None:
+        """Cleanup hardware resources using common_operations utility."""
+        try:
+            # Use the common_operations cleanup utility
+            cleanup_m1_optimizers()
+            tprint_success("✅ Hardware cleanup complete")
+        except Exception as e:
+            tprint_warning(f"⚠️ Hardware cleanup failed: {e}")
+    
     def _final_validation_and_cleanup(
         self,
         results: Dict[str, Any],
         execution_stats: Dict[str, Any]
     ) -> None:
-        """Final validation and cleanup."""
-        tprint_info("🔍 Starting final validation and cleanup")
-        
-        # Validate results structure
+        """Final validation and cleanup - now delegates to cleanup method."""
         if 'error' in results:
             tprint_warning("⚠️ Training completed with errors")
-            execution_stats['errors_count'] += 1
         else:
-            tprint_success("✅ Training completed without critical errors")
+            tprint_success("✅ Training completed successfully")
         
-        # Cleanup hardware optimizations
-        if self.memory_optimizer:
-            self.memory_optimizer.cleanup()
-            tprint_success("✅ Memory optimizer cleanup completed")
-        
-        if self.cpu_optimizer:
-            self.cpu_optimizer.cleanup()
-            tprint_success("✅ CPU optimizer cleanup completed")
-        
-        if self.gpu_manager:
-            self.gpu_manager.cleanup()
-            tprint_success("✅ GPU manager cleanup completed")
-        
-        tprint_success("✅ Final validation and cleanup completed")
+        self._cleanup_hardware_resources()
     
     def _log_execution_summary(self, execution_stats: Dict[str, Any], execution_time: float) -> None:
         """Log comprehensive execution summary."""
@@ -1512,93 +1671,28 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             tprint_error(f"❌ {error_msg}")
             raise ImportError(error_msg) from e
         
+        # Import TCN from models module
         try:
-            from tensorflow.keras.models import Sequential
-            from tensorflow.keras.layers import Conv1D, Dense, Dropout, GlobalMaxPooling1D
-            from tensorflow.keras.optimizers import Adam
-            from sklearn.base import BaseEstimator, RegressorMixin
-            import tensorflow as tf
+            from src.models.tcn_regressor import TCNRegressor
         except ImportError as e:
-            error_msg = f"TensorFlow/Keras is required for TCN but not available: {e}"
+            error_msg = f"TCNRegressor is required but not available: {e}"
             tprint_error(f"❌ {error_msg}")
             raise ImportError(error_msg) from e
-        
-        class TCNRegressor(BaseEstimator, RegressorMixin):
-            """Temporal Convolutional Network Regressor wrapper for sklearn compatibility."""
-            
-            def __init__(self, filters=64, kernel_size=3, dropout=0.2, epochs=50, batch_size=32, random_state=42):
-                self.filters = filters
-                self.kernel_size = kernel_size
-                self.dropout = dropout
-                self.epochs = epochs
-                self.batch_size = batch_size
-                self.random_state = random_state
-                self.model_ = None
-                self.scaler_ = None
-            
-            def fit(self, X, y):
-                from sklearn.preprocessing import StandardScaler
-                from sklearn.utils.validation import check_X_y
-                
-                X, y = check_X_y(X, y)
-                
-                # Reshape X for Conv1D (samples, timesteps, features)
-                if len(X.shape) == 2:
-                    X_reshaped = X.reshape(X.shape[0], X.shape[1], 1)
-                else:
-                    X_reshaped = X
-                
-                # Scale features
-                self.scaler_ = StandardScaler()
-                X_scaled = self.scaler_.fit_transform(X.reshape(-1, X.shape[-1])).reshape(X_reshaped.shape)
-                
-                # Build TCN model
-                self.model_ = Sequential([
-                    Conv1D(self.filters, self.kernel_size, activation='relu', input_shape=(X_reshaped.shape[1], X_reshaped.shape[2])),
-                    Dropout(self.dropout),
-                    Conv1D(self.filters * 2, self.kernel_size, activation='relu'),
-                    Dropout(self.dropout),
-                    GlobalMaxPooling1D(),
-                    Dense(50, activation='relu'),
-                    Dropout(self.dropout),
-                    Dense(1, activation='linear')
-                ])
-                
-                self.model_.compile(optimizer=Adam(learning_rate=0.001), loss='mse', metrics=['mae'])
-                
-                # Set random seed
-                tf.random.set_seed(self.random_state)
-                
-                # Train model
-                self.model_.fit(X_scaled, y, epochs=self.epochs, batch_size=self.batch_size, verbose=0)
-                return self
-            
-            def predict(self, X):
-                if self.model_ is None or self.scaler_ is None:
-                    raise ValueError("Model must be fitted before prediction")
-                
-                # Reshape X for Conv1D
-                if len(X.shape) == 2:
-                    X_reshaped = X.reshape(X.shape[0], X.shape[1], 1)
-                else:
-                    X_reshaped = X
-                
-                # Scale features
-                X_scaled = self.scaler_.transform(X.reshape(-1, X.shape[-1])).reshape(X_reshaped.shape)
-                
-                return self.model_.predict(X_scaled, verbose=0).flatten()
         
         # Create base models for Analyst (5m timeframe)
         base_models = {}
         
-        # TCN Model - Fast fail if TensorFlow not available
+        # TCN Model - Now imported from models module
         base_models['tcn'] = TCNRegressor(
             filters=64,
             kernel_size=3,
             dropout=0.2,
             epochs=50,
             batch_size=32,
-            random_state=42
+            early_stopping_patience=10,  # Enable early stopping
+            reduce_lr_patience=5,  # Enable learning rate reduction
+            random_state=42,
+            verbose=0
         )
         tprint_success("✅ TCN (Temporal Convolutional Network) model created")
         
@@ -2344,7 +2438,7 @@ class AnalystEnsembleTrainingStep(EnsembleTrainingStep):
             if base_predictions and len(base_predictions) > 1:
                 # Use meta-feature generator from feature engineering
                 try:
-                    from src.feature_engineering.ensemble_meta_features import EnsembleMetaFeatureGenerator
+                    from src.feature_engineering_roadmap.ensemble_meta_features import EnsembleMetaFeatureGenerator
                     meta_feature_generator = EnsembleMetaFeatureGenerator(self.logger)
                     
                     # Generate meta-features using the feature engineering module

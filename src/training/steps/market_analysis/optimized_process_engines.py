@@ -3,7 +3,7 @@ Optimized Process Engines for Market Analysis
 
 This module provides optimized engines for all major market analysis processes:
 1. Feature Lookback Optimization
-2. PID-Based Feature Generation  
+2. Interactive Feature Generation  
 3. Multi-Horizon Profit Labeler
 4. Final Feature Selection
 
@@ -59,7 +59,7 @@ from src.utils.tprint import tprint
 class ProcessType(Enum):
     """Types of processes that can be optimized."""
     FEATURE_LOOKBACK_OPTIMIZATION = "feature_lookback_optimization"
-    PID_BASED_FEATURE_GENERATION = "pid_based_feature_generation"
+    INTERACTIVE_FEATURE_GENERATION = "interactive_feature_generation"
     MULTI_HORIZON_PROFIT_LABELER = "multi_horizon_profit_labeler"
     FINAL_FEATURE_SELECTION = "final_feature_selection"
 
@@ -340,18 +340,18 @@ class OptimizedFeatureLookbackEngine(BaseOptimizedProcessEngine):
             return {'optimized_features': {}, 'optimization_metrics': {}}
 
 
-class OptimizedPIDFeatureEngine(BaseOptimizedProcessEngine):
-    """Optimized engine for PID-based feature generation."""
+class OptimizedInteractiveFeatureEngine(BaseOptimizedProcessEngine):
+    """Optimized engine for interactive feature generation."""
     
     def __init__(self, use_hardware_accel: bool = True, cache_size: int = 1000):
-        super().__init__(ProcessType.PID_BASED_FEATURE_GENERATION, use_hardware_accel, cache_size)
+        super().__init__(ProcessType.INTERACTIVE_FEATURE_GENERATION, use_hardware_accel, cache_size)
     
-    def generate_pid_features(self, base_features: pd.DataFrame,
+    def generate_interactive_features(self, base_features: pd.DataFrame,
                             interaction_features: List[Tuple[str, str]] = None,
                             polynomial_features: List[str] = None,
                             cross_timeframe_features: Dict[str, List[int]] = None) -> Dict[str, Any]:
         """
-        Generate PID-based features using vectorized operations and matrix operations.
+        Generate interactive features using vectorized operations and matrix operations.
         
         Args:
             base_features: Base feature DataFrame
@@ -373,7 +373,7 @@ class OptimizedPIDFeatureEngine(BaseOptimizedProcessEngine):
             # Check cache first
             cached_result = self._get_from_cache(cache_key)
             if cached_result is not None:
-                tprint("📋 Using cached PID feature generation results")
+                tprint("📋 Using cached interactive feature generation results")
                 return cached_result
             
             # Use vectorized operations for feature generation
@@ -390,7 +390,7 @@ class OptimizedPIDFeatureEngine(BaseOptimizedProcessEngine):
             return result
             
         except Exception as e:
-            tprint(f"⚠️ PID feature generation failed: {e}")
+            tprint(f"⚠️ Interactive feature generation failed: {e}")
             return {'error': str(e), 'generated_features': pd.DataFrame()}
     
     def _generate_with_matrix_ops(self, base_features: pd.DataFrame,
@@ -414,7 +414,7 @@ class OptimizedPIDFeatureEngine(BaseOptimizedProcessEngine):
                     'memory_intensive': True
                 }
                 
-                # Optimize for PID generation workload
+                # Optimize for interactive generation workload
                 optimized_config = optimize_for_workload(workload_config)
                 
                 # Process with hardware optimization
@@ -426,7 +426,7 @@ class OptimizedPIDFeatureEngine(BaseOptimizedProcessEngine):
                                           polynomial_features, cross_timeframe_features)
                 
         except Exception as e:
-            tprint(f"⚠️ Matrix operations PID generation failed: {e}")
+            tprint(f"⚠️ Matrix operations interactive generation failed: {e}")
             return self._generate_basic(base_features, interaction_features, 
                                       polynomial_features, cross_timeframe_features)
     
@@ -434,7 +434,7 @@ class OptimizedPIDFeatureEngine(BaseOptimizedProcessEngine):
                                             interaction_features: List[Tuple[str, str]],
                                             polynomial_features: List[str],
                                             cross_timeframe_features: Dict[str, List[int]]) -> Dict[str, Any]:
-        """Process PID generation with hardware acceleration."""
+        """Process interactive generation with hardware acceleration."""
         # Use chunking for large datasets
         if len(base_features) > 5000 and self.memory_optimizer:
             return self._generate_pid_chunked(base_features, interaction_features, 
@@ -447,7 +447,7 @@ class OptimizedPIDFeatureEngine(BaseOptimizedProcessEngine):
                             interaction_features: List[Tuple[str, str]],
                             polynomial_features: List[str],
                             cross_timeframe_features: Dict[str, List[int]]) -> Dict[str, Any]:
-        """Generate PID features using chunking for large datasets."""
+        """Generate interactive features using chunking for large datasets."""
         try:
             # Use memory-optimized chunking
             chunks = self.memory_optimizer.chunk_series(pd.Series(range(len(base_features))), chunk_size=2000)
@@ -467,7 +467,7 @@ class OptimizedPIDFeatureEngine(BaseOptimizedProcessEngine):
             return self._aggregate_pid_results(generated_features)
             
         except Exception as e:
-            tprint(f"⚠️ Chunked PID generation failed: {e}")
+            tprint(f"⚠️ Chunked interactive generation failed: {e}")
             return self._generate_basic(base_features, interaction_features, 
                                       polynomial_features, cross_timeframe_features)
     
@@ -475,7 +475,7 @@ class OptimizedPIDFeatureEngine(BaseOptimizedProcessEngine):
                        interaction_features: List[Tuple[str, str]],
                        polynomial_features: List[str],
                        cross_timeframe_features: Dict[str, List[int]]) -> Dict[str, Any]:
-        """Basic PID feature generation using vectorized operations."""
+        """Basic interactive feature generation using vectorized operations."""
         try:
             generated_features = base_features.copy()
             feature_metadata = {}
@@ -505,7 +505,7 @@ class OptimizedPIDFeatureEngine(BaseOptimizedProcessEngine):
             }
             
         except Exception as e:
-            tprint(f"⚠️ Basic PID generation failed: {e}")
+            tprint(f"⚠️ Basic interactive generation failed: {e}")
             return {'generated_features': base_features.copy(), 'feature_metadata': {}}
     
     def _generate_interaction_features(self, base_features: pd.DataFrame, 
@@ -623,8 +623,8 @@ class OptimizedPIDFeatureEngine(BaseOptimizedProcessEngine):
             tprint(f"⚠️ Cross-timeframe feature generation failed: {e}")
             return {'features': pd.DataFrame(index=base_features.index), 'metadata': {}}
     
-    def _aggregate_pid_results(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Aggregate results from chunked PID generation."""
+    def _aggregate_interactive_results(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Aggregate results from chunked interactive generation."""
         try:
             all_features = []
             all_metadata = {}
@@ -645,7 +645,7 @@ class OptimizedPIDFeatureEngine(BaseOptimizedProcessEngine):
             }
             
         except Exception as e:
-            tprint(f"⚠️ PID result aggregation failed: {e}")
+            tprint(f"⚠️ Interactive result aggregation failed: {e}")
             return {'generated_features': pd.DataFrame(), 'feature_metadata': {}}
 
 
@@ -1030,7 +1030,7 @@ def create_optimized_engine(process_type: ProcessType, **kwargs) -> BaseOptimize
     """Factory function to create optimized engines."""
     engines = {
         ProcessType.FEATURE_LOOKBACK_OPTIMIZATION: OptimizedFeatureLookbackEngine,
-        ProcessType.PID_BASED_FEATURE_GENERATION: OptimizedPIDFeatureEngine,
+        ProcessType.INTERACTIVE_FEATURE_GENERATION: OptimizedInteractiveFeatureEngine,
         ProcessType.MULTI_HORIZON_PROFIT_LABELER: OptimizedMultiHorizonEngine,
         ProcessType.FINAL_FEATURE_SELECTION: OptimizedFeatureSelectionEngine
     }

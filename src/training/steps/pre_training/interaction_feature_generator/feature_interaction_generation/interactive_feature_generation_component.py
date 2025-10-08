@@ -41,7 +41,7 @@ from src.training.steps.pre_training.validation.data_contracts import (
     validate_feature_artifact,
 )
 
-# Import common operations and utilities
+# Import common operations and utilities - fail fast if not available
 try:
     from src.utils.common_operations import (
         safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
@@ -49,39 +49,10 @@ try:
         optimize_memory_usage, parallel_processing_optimizer
     )
     COMMON_OPS_AVAILABLE = True
+    tprint_success("✅ Common operations imported successfully")
 except ImportError as e:
-    tprint_warning(f"Common operations not available: {e}")
-    COMMON_OPS_AVAILABLE = False
-
-    def safe_divide(a, b):
-        return a / b
-
-    def safe_log(x):
-        return np.log(x)
-
-    def safe_sqrt(x):
-        return np.sqrt(x)
-
-    def safe_power(x, y):
-        return np.power(x, y)
-
-    def validate_finite(x):
-        return np.isfinite(x).all()
-
-    def get_m1_gpu_manager():
-        return None
-
-    def get_m1_memory_optimizer():
-        return None
-
-    def get_m1_cpu_optimizer():
-        return None
-
-    def optimize_memory_usage(*args, **kwargs):
-        return None
-
-    def parallel_processing_optimizer(*args, **kwargs):
-        return None
+    tprint_error(f"❌ Critical error: Common operations not available: {e}")
+    raise ImportError(f"Required module src.utils.common_operations not available: {e}")
 
 # Import math validation
 from src.utils.math_validation import (
@@ -89,7 +60,10 @@ from src.utils.math_validation import (
     safe_sqrt as math_safe_sqrt, validate_finite as math_validate_finite
 )
 
-# Import matrix operations
+# Import component registration
+from src.training.steps.pre_training.components.component_factory import register_component
+
+# Import matrix operations - fail fast if not available
 try:
     from src.utils.matrix_operations import (
         get_unified_matrix_operations, get_vectorized_processing_core,
@@ -98,32 +72,35 @@ try:
         optimize_dataframe, get_hardware_performance_report
     )
     MATRIX_OPS_AVAILABLE = True
+    tprint_success("✅ Matrix operations imported successfully")
 except ImportError as e:
-    tprint_warning(f"Matrix operations not available: {e}")
-    MATRIX_OPS_AVAILABLE = False
+    tprint_error(f"❌ Critical error: Matrix operations not available: {e}")
+    raise ImportError(f"Required module src.utils.matrix_operations not available: {e}")
 
-# Import ML common utilities
+# Import ML common utilities - fail fast if not available
 try:
     from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
         BayesianTPEOptimizer, OptimizationConfig
     )
-    from src.utils.ml_common.cross_validation import PurgedKFold
-    from src.utils.ml_common.feature_selection import FeatureSelector
+    from src.utils.purged_kfold import PurgedKFoldTime as PurgedKFold
+    from src.feature_selection import select_features as FeatureSelector
     ML_COMMON_AVAILABLE = True
+    tprint_success("✅ ML common utilities imported successfully")
 except ImportError as e:
-    tprint_warning(f"ML common utilities not available: {e}")
-    ML_COMMON_AVAILABLE = False
+    tprint_error(f"❌ Critical error: ML common utilities not available: {e}")
+    raise ImportError(f"Required module src.utils.ml_common not available: {e}")
 
-# Import data utilities
+# Import data utilities - fail fast if not available
 try:
-    from src.utils.data.data_loader import DataLoader
-    from src.utils.data.data_validation import DataValidator
-    from src.utils.kline_parquet import KlineParquetLoader
+    from src.utils.data.real_data_loader import DataLoader
+    from src.utils.data.validation.validators import DataValidator
+    from src.utils.data.klines_parquet import KlineParquetLoader
     from src.utils.serialization_utils import save_pickle, load_pickle
     DATA_UTILS_AVAILABLE = True
+    tprint_success("✅ Data utilities imported successfully")
 except ImportError as e:
-    tprint_warning(f"Data utilities not available: {e}")
-    DATA_UTILS_AVAILABLE = False
+    tprint_error(f"❌ Critical error: Data utilities not available: {e}")
+    raise ImportError(f"Required module src.utils.data not available: {e}")
 
 # Import column naming utilities
 from ...column_naming import (
@@ -141,48 +118,18 @@ from .optimized_interaction_orchestrator import (
 )
 from ...settings import get_pre_training_settings
 
-# Import sub_pipeline components for compatibility
+# Import sub_pipeline components for compatibility - fail fast if not available
 try:
-    from ..components.base_component import BaseComponent, BasePreTrainingComponent, ComponentConfig, ComponentResult
-    from ..components.component_factory import ComponentFactory
-    from ..components.contracts import InteractiveFeatureArtifacts
-except ImportError:
-    tprint_warning(
-        "Component subsystem not available; using lightweight stubs for tests"
-    )
-
-    @dataclass
-    class ComponentResult:  # type: ignore
-        success: bool
-        artifacts: Dict[str, Any] = None
-        metadata: Dict[str, Any] = None
-        error_message: Optional[str] = None
-        execution_time: float = 0.0
-
-        def __post_init__(self):
-            if self.artifacts is None:
-                self.artifacts = {}
-            if self.metadata is None:
-                self.metadata = {}
-
-    class BaseComponent:  # type: ignore
-        def __init__(self, *args, **kwargs):
-            self.args = args
-            self.kwargs = kwargs
-
-        async def run(self, *args, **kwargs):  # pragma: no cover - stub
-            return None
-
-    class ComponentFactory:  # type: ignore
-        @staticmethod
-        def create(*args, **kwargs):  # pragma: no cover - stub
-            return BaseComponent(*args, **kwargs)
-
-    class InteractiveFeatureArtifacts(dict):  # type: ignore
-        """Lightweight fallback when component contracts are unavailable."""
-
-        def __init__(self, **kwargs):
-            super().__init__(**kwargs)
+    from ...components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+    from ...components.component_factory import ComponentFactory
+    from ...components.contracts import InteractiveFeatureArtifacts
+    _COMPONENTS_AVAILABLE = True
+    # BaseComponent doesn't exist - use BasePreTrainingComponent for both
+    BaseComponent = BasePreTrainingComponent
+    tprint_success("✅ Component subsystem imported successfully")
+except ImportError as e:
+    tprint_error(f"❌ Critical error: Component subsystem not available: {e}")
+    raise ImportError(f"Required component subsystem not available: {e}")
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -270,6 +217,7 @@ class InteractiveFeatureGenerationResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
+@register_component('interactive_feature_generation')
 class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
     """
     Interactive Feature Generation Component for Pre-Training Pipeline.
@@ -500,6 +448,143 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
             
             # Convert result to component result format
             component_result = self._convert_to_component_result(result, start_time, validation_metadata)
+
+            # Generate outcome file with datetime stamp - fail fast if file operations fail
+            from datetime import datetime
+            from pathlib import Path
+            import json
+
+            outcome_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            outcomes_dir = Path('outcomes')
+            outcomes_dir.mkdir(parents=True, exist_ok=True)
+
+            outcome_filename = f"interactive_feature_generation_outcome_{outcome_timestamp}.json"
+            outcome_path = outcomes_dir / outcome_filename
+
+            # Feature type categorization
+            feature_type_breakdown = {
+                'total_features': len(result.feature_names),
+                'base_features': len(result.features.columns) if hasattr(result.features, 'columns') else 0,
+                'interaction_features': len(result.interaction_features.columns) if hasattr(result.interaction_features, 'columns') else 0,
+                'cross_timeframe_features': len(result.cross_timeframe_features.columns) if hasattr(result.cross_timeframe_features, 'columns') else 0,
+                'selected_features': len(result.selected_features),
+                'selection_rate': float(len(result.selected_features) / max(1, len(result.feature_names)) * 100),
+            }
+
+            # Interaction statistics
+            interaction_stats = {}
+            if hasattr(result.interaction_features, 'columns'):
+                interaction_cols = result.interaction_features.columns
+                interaction_stats = {
+                    'total_interactions': len(interaction_cols),
+                    'interaction_types': {},
+                    'sample_interactions': list(interaction_cols[:10]),  # First 10 as examples
+                }
+                # Count interaction types (multiply, divide, add, subtract, etc.)
+                for col in interaction_cols:
+                    col_str = str(col)
+                    if '_x_' in col_str or '*' in col_str:
+                        interaction_stats['interaction_types']['multiply'] = interaction_stats['interaction_types'].get('multiply', 0) + 1
+                    elif '_div_' in col_str or '/' in col_str:
+                        interaction_stats['interaction_types']['divide'] = interaction_stats['interaction_types'].get('divide', 0) + 1
+                    elif '_add_' in col_str or '+' in col_str:
+                        interaction_stats['interaction_types']['add'] = interaction_stats['interaction_types'].get('add', 0) + 1
+                    elif '_sub_' in col_str or '-' in col_str:
+                        interaction_stats['interaction_types']['subtract'] = interaction_stats['interaction_types'].get('subtract', 0) + 1
+                    else:
+                        interaction_stats['interaction_types']['other'] = interaction_stats['interaction_types'].get('other', 0) + 1
+
+            # Cross-timeframe statistics
+            cross_timeframe_stats = {}
+            if hasattr(result.cross_timeframe_features, 'columns'):
+                ctf_cols = result.cross_timeframe_features.columns
+                cross_timeframe_stats = {
+                    'total_features': len(ctf_cols),
+                    'sample_features': list(ctf_cols[:10]),  # First 10 as examples
+                }
+
+            # Performance and efficiency metrics
+            performance_breakdown = {
+                'execution_time_seconds': result.execution_time,
+                'features_per_second': float(len(result.feature_names) / max(0.001, result.execution_time)),
+                'memory_usage_mb': getattr(result, 'memory_usage_mb', 0.0),
+                'memory_per_feature_kb': float(getattr(result, 'memory_usage_mb', 0.0) * 1024 / max(1, len(result.feature_names))),
+                'cpu_usage_percent': getattr(result, 'cpu_usage_percent', 0.0),
+                'gpu_usage_percent': getattr(result, 'gpu_usage_percent', 0.0),
+            }
+
+            # Stage-wise results if available
+            stage_results_summary = {}
+            if hasattr(result, 'stage_results') and result.stage_results:
+                for stage, stage_data in result.stage_results.items():
+                    if isinstance(stage_data, dict):
+                        stage_results_summary[str(stage)] = {
+                            'execution_time': stage_data.get('execution_time', 0.0),
+                            'features_generated': stage_data.get('features_generated', 0),
+                            'success': stage_data.get('success', False),
+                        }
+
+            # Hardware acceleration details
+            hardware_details = {
+                'matrix_optimization_enabled': self._interactive_config.enable_matrix_optimization,
+                'hardware_optimization_enabled': self._interactive_config.enable_hardware_optimization,
+                'parallel_processing_enabled': self._interactive_config.enable_parallel_processing,
+                'max_workers': self._interactive_config.max_workers,
+                'batch_size': self._interactive_config.batch_size,
+                'matrix_ops_available': MATRIX_OPS_AVAILABLE,
+                'ml_common_available': ML_COMMON_AVAILABLE,
+            }
+
+            # Create comprehensive outcome report
+            outcome_data = {
+                'component': 'interactive_feature_generation',
+                'timestamp': datetime.now().isoformat(),
+                'execution_time': result.execution_time,
+                'configuration': {
+                    'symbol': self._interactive_config.symbol,
+                    'exchange': self._interactive_config.exchange,
+                    'timeframe': self._interactive_config.timeframe,
+                    'feature_budget_pre': self._interactive_config.feature_budget_pre,
+                    'feature_budget_post': self._interactive_config.feature_budget_post,
+                    'interactions_cap': self._interactive_config.interactions_cap,
+                    'transforms_per_parent': self._interactive_config.transforms_per_parent,
+                    'lookback_ceiling_minutes': self._interactive_config.lookback_ceiling_minutes,
+                    'latency_budget_ms': self._interactive_config.latency_budget_ms,
+                    'enable_matrix_optimization': self._interactive_config.enable_matrix_optimization,
+                    'enable_hardware_optimization': self._interactive_config.enable_hardware_optimization,
+                    'enable_parallel_processing': self._interactive_config.enable_parallel_processing,
+                    'max_workers': self._interactive_config.max_workers,
+                    'batch_size': self._interactive_config.batch_size,
+                },
+                'results': {
+                    'summary': {
+                        'total_features_generated': len(result.feature_names),
+                        'selected_features': len(result.selected_features),
+                        'selection_rate_pct': feature_type_breakdown['selection_rate'],
+                    },
+                    'feature_type_breakdown': feature_type_breakdown,
+                    'interaction_statistics': interaction_stats,
+                    'cross_timeframe_statistics': cross_timeframe_stats,
+                    'feature_names': result.feature_names,
+                    'selected_feature_names': result.selected_features,
+                },
+                'performance_metrics': performance_breakdown,
+                'hardware_details': hardware_details,
+                'stage_results': stage_results_summary,
+                'validation_metadata': validation_metadata,
+                'artifacts': {
+                    'features_shape': list(result.features.shape) if hasattr(result.features, 'shape') else [0, 0],
+                    'interaction_features_shape': list(result.interaction_features.shape) if hasattr(result.interaction_features, 'shape') else [0, 0],
+                    'cross_timeframe_features_shape': list(result.cross_timeframe_features.shape) if hasattr(result.cross_timeframe_features, 'shape') else [0, 0],
+                },
+                'status': 'success'
+            }
+
+            # Save outcome file - fail fast if file operations fail
+            with open(outcome_path, 'w') as f:
+                json.dump(outcome_data, f, indent=2, default=str)
+
+            tprint_success(f"📄 Outcome file saved: {outcome_filename}")
 
             # Log success
             tprint_success("✅ Interactive feature generation completed successfully")
@@ -1030,7 +1115,7 @@ def create_interactive_feature_generation_component(
     else:
         component_config = _build_component_config(config)
 
-    from ..components.component_factory import ComponentFactory
+    from ...components.component_factory import ComponentFactory
 
     return ComponentFactory.create_component('interactive_feature_generation', component_config)  # type: ignore[return-value]
 
@@ -1039,7 +1124,7 @@ def create_interactive_feature_generation_component(
 def register_interactive_feature_generation_component():
     """Register the interactive feature generation component with the factory."""
     try:
-        from ..components.component_factory import ComponentFactory
+        from ...components.component_factory import ComponentFactory
 
         # Register the component
         ComponentFactory.register_component(
@@ -1074,6 +1159,7 @@ async def execute_interactive_feature_generation(
     return await component.execute(training_input, pipeline_state)
 
 
-# Auto-register component on import
-if __name__ != "__main__":
-    register_interactive_feature_generation_component()
+# Register the component with the factory
+if _COMPONENTS_AVAILABLE:
+    # Component factory is already imported above when _COMPONENTS_AVAILABLE is True
+    ComponentFactory.register_component('interactive_feature_generation', InteractiveFeatureGenerationComponent)

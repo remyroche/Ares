@@ -151,7 +151,7 @@ beyond_volume_volatility_insights = {
 
 ## 📊 **4. COMPREHENSIVE FEATURE INTEGRATION**
 
-### **✅ FULLY IMPLEMENTED: ALL Features from feature_engineering/**
+### **✅ FULLY IMPLEMENTED: ALL Features from feature_engineering_roadmap/**
 **File**: `comprehensive_feature_integration.py`
 
 **Feature Categories (100+ features):**
@@ -207,7 +207,7 @@ orchestrated_features = orchestrator.generate_all_features(
 
 ### **Enhanced Pipeline Steps:**
 ```
-Step 1: Comprehensive Feature Generation (100+ features from feature_engineering/)
+Step 1: Comprehensive Feature Generation (100+ features from feature_engineering_roadmap/)
    ↓ (Uses ALL available generators and orchestrator)
 Step 2: Statistical Dimensionality Analysis (PCA, FA, ICA + statistical tests)
    ↓ (KMO, Bartlett, explained variance, component selection)
@@ -292,7 +292,7 @@ src/research/clusters/
 ├── trading_calibration.py                  # ✅ Empirical trading calibration
 ├── lookahead_bias_prevention.py           # ✅ Temporal separation framework
 ├── metric_orthogonalization.py            # ✅ Redundancy reduction
-├── comprehensive_feature_integration.py    # ✅ ALL feature_engineering/ integration
+├── comprehensive_feature_integration.py    # ✅ ALL feature_engineering_roadmap/ integration
 ├── statistical_dimension_analysis.py       # ✅ Complete statistical framework
 ├── dimension_economic_relevance.py        # ✅ Price action influence analysis
 │

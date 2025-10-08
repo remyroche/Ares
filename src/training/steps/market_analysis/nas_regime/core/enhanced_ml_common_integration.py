@@ -32,7 +32,7 @@ try:
     from src.utils.ml_common.optimization.grid_utils import (
         build_coarse_grid_from_search_space, build_fine_grid_around_best
     )
-    from src.utils.ml_common.feature_selection import get_feature_selection_utils
+    from src.feature_selection.core import get_feature_selection_framework as get_feature_selection_utils
     from src.utils.ml_common.ensembles import get_ensemble_utils
     from src.utils.ml_common.evaluation import get_evaluation_utils
     from src.utils.ml_common.math_validation import MathValidator, ValidationLevel

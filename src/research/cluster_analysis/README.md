@@ -93,7 +93,7 @@ relevance = relevance_analyzer.analyze_pattern_dimension_relevance(
 
 ## 📊 **Integration Points**
 
-- **Feature Engineering**: Uses features from `src/feature_engineering/`
+- **Feature Engineering**: Uses features from `src/feature_engineering_roadmap/`
 - **Data Management**: Integrates with `src/utils/data/`
 - **ML Training**: Provides targets and features for model training
 - **Trading Systems**: Generates regime-aware trading signals

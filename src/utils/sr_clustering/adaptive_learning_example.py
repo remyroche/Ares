@@ -140,7 +140,7 @@ def test_adaptive_learning():
 
 def test_adaptive_feature_selection():
     """Test adaptive feature selection with different sample sizes."""
-    from src.utils.sr_clustering.adaptive_feature_selection import get_adaptive_feature_selector, AdaptiveFeatureSelectionConfig
+    from src.feature_selection.specialized.adaptive_selector import AdaptiveFeatureSelector, AdaptiveFeatureSelectionConfig
     
     logger.info(f"\n{'='*60}")
     logger.info("Testing Adaptive Feature Selection")

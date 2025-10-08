@@ -543,7 +543,9 @@ class BacktestingSubPipeline:
     
     async def _basic_backtesting_pre_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Basic backtesting sub-pipeline (pre-optimization baseline) - REAL IMPLEMENTATION."""
-        self.logger.info("📊 Executing basic backtesting pipeline (pre-optimization baseline) - REAL IMPLEMENTATION")
+        from src.utils.tprint import tprint_info, tprint_error, tprint_success, tprint_warning, tprint_exception
+        
+        tprint_info("📊 Executing basic backtesting pipeline (pre-optimization baseline)")
         
         artifacts = {
             'basic_backtest_results': {},
@@ -668,35 +670,31 @@ class BacktestingSubPipeline:
                 'comparison_notes': 'Basic backtesting results before parameter optimization (baseline)'
             }
             
+        except ImportError as e:
+            tprint_exception(e, "Failed to import backtesting engine")
+            raise ImportError(f"Could not import RealBacktestingEngine. Ensure dependencies are installed: {e}")
+        
+        except ValueError as e:
+            tprint_exception(e, "Data validation error in backtesting pre-pipeline")
+            raise ValueError(f"Data validation failed: {e}")
+        
         except Exception as e:
-            self.logger.error(f"❌ Basic backtesting pre-pipeline failed: {e}")
-            # Fallback to mock data if real implementation fails
-            artifacts['basic_backtest_results'] = {
-                'total_trades': 50,
-                'win_rate': 0.55,
-                'profit_factor': 1.2,
-                'max_drawdown': 0.08,
-                'sharpe_ratio': 1.1,
-                'total_return': 0.12,
-                'error': str(e)
-            }
-            artifacts['basic_performance_metrics'] = {
-                'start_date': '2024-01-01',
-                'end_date': '2024-01-10',
-                'duration_days': 10,
-                'total_return_pct': 12.0,
-                'annualized_return_pct': 438.0,
-                'volatility_pct': 15.2,
-                'max_drawdown_pct': 8.0
-            }
-            artifacts['basic_trade_analysis'] = {
-                'avg_trade_duration': '2.5 hours',
-                'avg_profit_per_trade': 0.0024,
-                'largest_win': 0.015,
-                'largest_loss': -0.008,
-                'consecutive_wins': 5,
-                'consecutive_losses': 3
-            }
+            tprint_exception(e, "Unexpected error in basic backtesting pre-pipeline")
+            tprint_error("❌ Backtesting pre-pipeline failed. No mock data fallback - please fix the underlying issue.")
+            tprint_error(f"Error type: {type(e).__name__}")
+            tprint_error(f"Error details: {str(e)}")
+            
+            # Provide diagnostic information
+            tprint_warning("Diagnostic Information:")
+            tprint_warning(f"  - Symbol: {config.symbol}")
+            tprint_warning(f"  - Exchange: {config.exchange}")
+            tprint_warning(f"  - Timeframe: {config.timeframe}")
+            tprint_warning(f"  - Start Date: {config.start_date}")
+            tprint_warning(f"  - End Date: {config.end_date}")
+            tprint_warning(f"  - Mode: {config.mode.value if hasattr(config.mode, 'value') else config.mode}")
+            
+            # Re-raise the exception instead of returning mock data
+            raise RuntimeError(f"Basic backtesting pre-pipeline failed: {e}") from e
         
         return artifacts
     

@@ -43,10 +43,11 @@ except ImportError:
 
 # Import multi-horizon profit labeler for target alignment
 try:
-    from ..multi_horizon_profit_labeler import MultiHorizonConfig, apply_multi_horizon_labeling
+    from ...multi_horizon_profit_labeler import MultiHorizonConfig
     MULTI_HORIZON_AVAILABLE = True
 except ImportError:
     MULTI_HORIZON_AVAILABLE = False
+    MultiHorizonConfig = None
 from src.utils.serialization_utils import UniversalSerializer
 from src.utils.tprint import tprint, tprint_error, tprint_success, tprint_warning, tprint_debug
 from src.utils.logger import get_logger
@@ -3422,8 +3423,12 @@ class CoreOptimizer:
 
         if allow_labeler and MULTI_HORIZON_AVAILABLE:
             try:
-                config = MultiHorizonConfig()
-                labeled_data = apply_multi_horizon_labeling(data, config)
+                # Note: apply_multi_horizon_labeling has been deprecated
+                # Using direct labeler instantiation instead
+                from ...multi_horizon_profit_labeler import MultiHorizonProfitLabeler
+                config = MultiHorizonConfig() if MultiHorizonConfig else {}
+                labeler = MultiHorizonProfitLabeler(config)
+                labeled_data = labeler.label(data)
                 self.logger.info("🔁 Generated multi-horizon labels on the fly for forward-return alignment")
                 return self._create_multi_horizon_aligned_targets(labeled_data, max_horizon, allow_labeler=False)
             except Exception as exc:

@@ -65,14 +65,16 @@ from src.core.errors import (
 from src.utils.logger import system_logger
 
 # Advanced feature selection tools
-from src.utils.feature_selection.step08_unified_complete import (
-    UnifiedFeatureSelector, RegimeDataSplitter, FinancialMetrics,
-    RiskMetrics, RegimeBalanceMetrics, FeatureSelectionValidation,
-    Step08Results, FeatureSelectionConfig
-)
-from src.utils.feature_selection.step08_optimized_methods import (
-    OptimizedFeatureSelectionMethods, AdvancedFeatureSelector
-)
+# NOTE: These imports are commented out as the modules no longer exist.
+# Use src.feature_selection instead for feature selection functionality.
+# from src.utils.feature_selection.step08_unified_complete import (
+#     UnifiedFeatureSelector, RegimeDataSplitter, FinancialMetrics,
+#     RiskMetrics, RegimeBalanceMetrics, FeatureSelectionValidation,
+#     Step08Results, FeatureSelectionConfig
+# )
+# from src.utils.feature_selection.step08_optimized_methods import (
+#     OptimizedFeatureSelectionMethods, AdvancedFeatureSelector
+# )
 
 # Hardware optimization tools
 from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager, M1GPUManager

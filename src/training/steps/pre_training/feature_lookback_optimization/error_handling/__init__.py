@@ -12,7 +12,8 @@ except ImportError:
     TPRINT_AVAILABLE = False
     def tprint_debug(*args, **kwargs): print("DEBUG:", *args, **kwargs)
 
-from .error_handler import StandardizedErrorHandler, ErrorSeverity, ErrorCategory, ErrorDetails, ErrorRecoveryResult
+from .error_handler import StandardizedErrorHandler, ErrorSeverity, ErrorCategory, ErrorDetails
+# ErrorRecoveryResult doesn't exist - removed from import
 
 # Log module import
 if TPRINT_AVAILABLE:

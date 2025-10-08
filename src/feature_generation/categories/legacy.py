@@ -15,7 +15,7 @@ All legacy generators now use vectorized numpy operations for optimal performanc
 """
 import pandas as pd
 import numpy as np
-from typing import List
+from typing import List, Optional
 from ..core.feature_generator import VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 
 # Optimization utilities

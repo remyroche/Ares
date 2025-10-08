@@ -38,7 +38,7 @@ from sklearn.ensemble import RandomForestRegressor
 
 # Import utilities
 from .utils import FeatureGeneratorWrapper
-from feature_engineering.feature_registry import FeatureRegistry
+from feature_engineering_roadmap.feature_registry import FeatureRegistry
 from .interaction_generator import InteractionFeature
 from .config import FinalSelectionConfig
 from src.training.steps.pre_training.validation.schemas import SplitAwareScaler

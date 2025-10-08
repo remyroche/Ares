@@ -143,7 +143,7 @@ market_dimensions = {
 ## 🔗 **Integration**
 
 **Input Sources:**
-- `src/feature_engineering/`: Engineered features
+- `src/feature_engineering_roadmap/`: Engineered features
 - Feature correlation matrices
 - Cross-timeframe feature relationships
 

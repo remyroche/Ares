@@ -1,8 +1,14 @@
 """
 Real A/B Testing Engine
 
-This module provides comprehensive A/B testing for trading strategies using
-existing utilities from src/utils/ for statistical analysis and ML validation.
+Enhanced A/B testing for trading strategies with:
+- Hardware-accelerated parallel processing (M1 optimization)
+- Comprehensive statistical testing (t-test, Mann-Whitney, Wilcoxon, etc.)
+- Multiple comparison correction (Bonferroni, Holm, FDR)
+- Power analysis and effect size calculations
+- Data validation and leakage detection
+- Cross-validation support
+- Advanced metric calculations
 """
 
 import asyncio
@@ -17,14 +23,59 @@ import time
 import gc
 from pathlib import Path
 import json
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+import multiprocessing as mp
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 
-# Import existing utilities
+# ML utilities
 from src.utils.ml_common.optimization import HyperparameterOptimizer
-from src.utils.ml_common.cvlsa import CVLSAValidator
-from src.utils.common_ml.backtesting.ab_testing_engine import ABTestingEngine, ABTestConfig
-from src.utils.common_operations import safe_json_dump, safe_json_load, ensure_directory
-from src.utils.math_validation import safe_divide, safe_log, safe_sqrt, validate_finite
+from src.utils.ml_common.cv_utils import TimeSeriesSplitValidator
+from src.utils.ml_common.oof_generator import OOFGenerator
+from src.utils.ml_common.data_leakage_detector import DataLeakageDetector
+
+# Optional CVLSA support
+try:
+    from src.utils.ml_common.cvlsa import CVLSAValidator
+except ImportError:
+    CVLSAValidator = None
+
+# AB Testing base engine
+try:
+    from src.utils.common_ml.backtesting.ab_testing_engine import ABTestingEngine, ABTestConfig
+    BASE_ENGINE_AVAILABLE = True
+except ImportError:
+    BASE_ENGINE_AVAILABLE = False
+
+# Math validation
+from src.utils.math_validation import (
+    safe_divide, safe_log, safe_sqrt, validate_finite,
+    validate_probability, validate_positive, validate_range,
+    check_for_nans, check_for_infs
+)
+
+# Common operations
+from src.utils.common_operations import (
+    safe_json_dump, safe_json_load, ensure_directory,
+    calculate_sharpe_ratio, calculate_sortino_ratio, calculate_max_drawdown,
+    calculate_win_rate, calculate_profit_factor, calculate_calmar_ratio,
+    calculate_information_ratio
+)
+from src.utils.common_utilities import ensure_list, ensure_array, flatten_dict
+
+# Hardware optimization
+try:
+    from src.utils.hardware.m1_gpu_utils import M1GPUAccelerator
+    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+    from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
+    from src.utils.matrix_operations.hardware_integration import HardwareOptimizedMatrixProcessor
+    from src.utils.matrix_operations.batch_operations import BatchMatrixProcessor
+    M1_HARDWARE_AVAILABLE = True
+except ImportError:
+    M1_HARDWARE_AVAILABLE = False
+
+# Output utilities
+from src.utils.tprint import tprint
+
+# Decorators
 from src.core.decorators import handles_errors, traced, log_execution_time
 
 # Statistical testing imports
@@ -34,14 +85,17 @@ try:
 except ImportError:
     SCIPY_AVAILABLE = False
     stats = None
+    tprint("⚠️  scipy not available - statistical tests limited", "warning")
 
 try:
     import statsmodels.api as sm
     from statsmodels.stats.power import ttest_power
+    from statsmodels.stats.multitest import multipletests
     STATSMODELS_AVAILABLE = True
 except ImportError:
     STATSMODELS_AVAILABLE = False
     sm = None
+    tprint("⚠️  statsmodels not available - power analysis limited", "warning")
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +107,106 @@ class ABTestType(Enum):
     MAX_DRAWDOWN = "max_drawdown"
     WIN_RATE = "win_rate"
     COMPREHENSIVE = "comprehensive"
+
+
+@dataclass
+class ABTestMetrics:
+    """Comprehensive metrics for A/B testing comparison"""
+    # Basic metrics
+    mean_return_a: float = 0.0
+    mean_return_b: float = 0.0
+    std_return_a: float = 0.0
+    std_return_b: float = 0.0
+    
+    # Risk-adjusted metrics
+    sharpe_ratio_a: float = 0.0
+    sharpe_ratio_b: float = 0.0
+    sortino_ratio_a: float = 0.0
+    sortino_ratio_b: float = 0.0
+    calmar_ratio_a: float = 0.0
+    calmar_ratio_b: float = 0.0
+    
+    # Risk metrics
+    max_drawdown_a: float = 0.0
+    max_drawdown_b: float = 0.0
+    var_a: float = 0.0
+    var_b: float = 0.0
+    
+    # Trade metrics
+    win_rate_a: float = 0.0
+    win_rate_b: float = 0.0
+    profit_factor_a: float = 0.0
+    profit_factor_b: float = 0.0
+    
+    # Statistical test results
+    t_test_statistic: float = 0.0
+    t_test_pvalue: float = 1.0
+    mann_whitney_statistic: float = 0.0
+    mann_whitney_pvalue: float = 1.0
+    
+    # Effect sizes
+    cohens_d: float = 0.0
+    effect_size_category: str = "negligible"
+    
+    # Power analysis
+    statistical_power: float = 0.0
+    required_sample_size: int = 0
+    
+    # Overall assessment
+    winner: str = "inconclusive"
+    confidence_level: str = "low"
+    is_significant: bool = False
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert metrics to structured dictionary"""
+        return {
+            'strategy_a': {
+                'mean_return': self.mean_return_a,
+                'std_return': self.std_return_a,
+                'sharpe_ratio': self.sharpe_ratio_a,
+                'sortino_ratio': self.sortino_ratio_a,
+                'calmar_ratio': self.calmar_ratio_a,
+                'max_drawdown': self.max_drawdown_a,
+                'var': self.var_a,
+                'win_rate': self.win_rate_a,
+                'profit_factor': self.profit_factor_a
+            },
+            'strategy_b': {
+                'mean_return': self.mean_return_b,
+                'std_return': self.std_return_b,
+                'sharpe_ratio': self.sharpe_ratio_b,
+                'sortino_ratio': self.sortino_ratio_b,
+                'calmar_ratio': self.calmar_ratio_b,
+                'max_drawdown': self.max_drawdown_b,
+                'var': self.var_b,
+                'win_rate': self.win_rate_b,
+                'profit_factor': self.profit_factor_b
+            },
+            'statistical_tests': {
+                't_test': {
+                    'statistic': self.t_test_statistic,
+                    'p_value': self.t_test_pvalue
+                },
+                'mann_whitney': {
+                    'statistic': self.mann_whitney_statistic,
+                    'p_value': self.mann_whitney_pvalue
+                }
+            },
+            'effect_sizes': {
+                'cohens_d': self.cohens_d,
+                'category': self.effect_size_category
+            },
+            'power_analysis': {
+                'statistical_power': self.statistical_power,
+                'required_sample_size': self.required_sample_size
+            },
+            'assessment': {
+                'winner': self.winner,
+                'confidence': self.confidence_level,
+                'is_significant': self.is_significant
+            }
+        }
+
 
 @dataclass
 class RealABTestConfig:
@@ -72,11 +226,31 @@ class RealABTestConfig:
     multiple_comparison_correction: str = "bonferroni"  # "bonferroni", "fdr", "holm"
     effect_size_threshold: float = 0.1
     confidence_interval: float = 0.95
+    bootstrap_iterations: int = 1000
     
     # ML validation
     enable_cv_validation: bool = True
+    cv_folds: int = 5
+    embargo_pct: float = 0.01
     enable_hpo: bool = True
     hpo_method: str = "bayesian"
+    
+    # Data validation
+    enable_data_validation: bool = True
+    enable_leakage_detection: bool = True
+    
+    # Parallel processing
+    enable_parallel_processing: bool = True
+    max_workers: int = field(default_factory=lambda: max(1, mp.cpu_count() - 1))
+    
+    # Hardware optimization
+    enable_hardware_optimization: bool = True
+    chunk_size_mb: int = 128
+    
+    # Output settings
+    save_results: bool = True
+    results_path: str = "ab_testing_results"
+    enable_detailed_logging: bool = True
     
     # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
@@ -94,36 +268,146 @@ class RealABTestingEngine:
     """
     
     def __init__(self, config: RealABTestConfig):
-        """Initialize the real A/B testing engine."""
+        """Initialize the enhanced A/B testing engine with hardware acceleration."""
         self.config = config
         self.logger = logger.getChild('RealABTestingEngine')
         
-        # Initialize ML utilities
-        self.cv_validator = CVLSAValidator() if config.enable_cv_validation else None
-        self.hpo_optimizer = HyperparameterOptimizer() if config.enable_hpo else None
+        tprint("🚀 Initializing Enhanced A/B Testing Engine", "header")
         
-        # Initialize A/B testing engine
-        self.ab_testing_engine = ABTestingEngine()
+        # Initialize CV and validation utilities
+        if config.enable_cv_validation:
+            self.cv_validator = TimeSeriesSplitValidator(
+                n_splits=config.cv_folds,
+                test_size=1.0 / config.cv_folds,
+                embargo_pct=config.embargo_pct
+            )
+            self.oof_generator = OOFGenerator()
+            # Keep CVLSA if available
+            self.cvlsa_validator = CVLSAValidator() if CVLSAValidator else None
+            tprint("✅ CV utilities initialized", "success")
+        else:
+            self.cv_validator = None
+            self.oof_generator = None
+            self.cvlsa_validator = None
+        
+        # Initialize leakage detector
+        if config.enable_leakage_detection:
+            self.leakage_detector = DataLeakageDetector()
+            tprint("✅ Data leakage detector initialized", "success")
+        else:
+            self.leakage_detector = None
+        
+        # Initialize HPO optimizer
+        if config.enable_hpo:
+            try:
+                self.hpo_optimizer = HyperparameterOptimizer()
+            except Exception:
+                self.hpo_optimizer = None
+        else:
+            self.hpo_optimizer = None
+        
+        # Initialize hardware optimization if available
+        self.hardware_enabled = M1_HARDWARE_AVAILABLE and config.enable_hardware_optimization
+        if self.hardware_enabled:
+            self._init_hardware_optimization()
+        else:
+            self.gpu_accelerator = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+            self.matrix_processor = None
+            self.batch_processor = None
+            tprint("ℹ️  Hardware optimization disabled", "info")
+        
+        # Initialize base A/B testing engine if available
+        if BASE_ENGINE_AVAILABLE:
+            try:
+                self.ab_testing_engine = ABTestingEngine()
+            except Exception:
+                self.ab_testing_engine = None
+        else:
+            self.ab_testing_engine = None
         
         # Results storage
         self.test_results = {}
         self.statistical_tests = {}
         
+        # Configuration summary
+        tprint(f"📊 A/B Testing Configuration:", "info")
+        tprint(f"   Test type: {config.test_type.value}", "info")
+        tprint(f"   Significance level: {config.significance_level}", "info")
+        tprint(f"   Power: {config.power}", "info")
+        tprint(f"   Min sample size: {config.min_sample_size}", "info")
+        tprint(f"   Multiple comparison: {config.multiple_comparison_correction}", "info")
+        tprint(f"   CV validation: {config.enable_cv_validation} ({config.cv_folds} folds)", "info")
+        tprint(f"   Leakage detection: {config.enable_leakage_detection}", "info")
+        tprint(f"   Parallel processing: {config.enable_parallel_processing} ({config.max_workers} workers)", "info")
+        tprint(f"   Hardware optimization: {self.hardware_enabled}", "info")
+        
+        tprint("✅ A/B Testing Engine initialization complete", "success")
+    
+    def _init_hardware_optimization(self):
+        """Initialize hardware optimization components"""
+        try:
+            tprint("⚡ Initializing M1 hardware optimization", "info")
+            
+            # Initialize M1 accelerators
+            self.gpu_accelerator = M1GPUAccelerator()
+            self.memory_optimizer = M1MemoryOptimizer()
+            self.cpu_optimizer = M1CPUOptimizer()
+            
+            # Initialize matrix operations
+            self.matrix_processor = HardwareOptimizedMatrixProcessor()
+            self.batch_processor = BatchMatrixProcessor(
+                chunk_size_mb=self.config.chunk_size_mb,
+                enable_gpu=True,
+                enable_parallel=True,
+                max_workers=self.config.max_workers
+            )
+            
+            # Optimize memory
+            self.memory_optimizer.optimize_memory_for_ml()
+            
+            tprint("✅ Hardware optimization initialized", "success")
+            tprint(f"   GPU: {'Available' if self.gpu_accelerator.is_available() else 'Not available'}", "info")
+            tprint(f"   Memory optimized: {self.memory_optimizer.is_optimized}", "info")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize hardware optimization: {e}")
+            tprint(f"⚠️  Hardware optimization init failed: {e}", "warning")
+            self.gpu_accelerator = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+            self.matrix_processor = None
+            self.batch_processor = None
+        
     async def run_ab_test(self, strategy_a_results: Dict[str, Any], 
                          strategy_b_results: Dict[str, Any],
                          test_name: str = "strategy_comparison") -> Dict[str, Any]:
-        """Run comprehensive A/B test between two strategies."""
-        self.logger.info(f"🧪 Running A/B test: {test_name}")
+        """Run comprehensive A/B test between two strategies with validation."""
+        start_time = time.time()
+        tprint(f"🧪 Running A/B Test: {test_name}", "header")
+        tprint(f"   Test type: {self.config.test_type.value}", "info")
         
         try:
             # Validate input data
+            tprint("📊 Validating strategy results", "info")
             self._validate_test_data(strategy_a_results, strategy_b_results)
+            tprint("✅ Data validation passed", "success")
             
             # Extract performance metrics
+            tprint("📈 Extracting performance metrics", "info")
             metrics_a = self._extract_metrics(strategy_a_results)
             metrics_b = self._extract_metrics(strategy_b_results)
             
+            tprint(f"   Strategy A: {len(metrics_a.get('returns', []))} samples", "info")
+            tprint(f"   Strategy B: {len(metrics_b.get('returns', []))} samples", "info")
+            
+            # Check for data leakage if enabled
+            if self.leakage_detector and self.config.enable_leakage_detection:
+                self._check_strategy_leakage(metrics_a, metrics_b)
+            
             # Run statistical tests based on test type
+            tprint(f"🔬 Running statistical tests ({self.config.test_type.value})", "info")
             if self.config.test_type == ABTestType.PERFORMANCE:
                 test_results = await self._test_performance(metrics_a, metrics_b)
             elif self.config.test_type == ABTestType.RISK_ADJUSTED:
@@ -140,13 +424,16 @@ class RealABTestingEngine:
                 raise ValueError(f"Unknown test type: {self.config.test_type}")
             
             # Calculate effect sizes
+            tprint("📊 Calculating effect sizes", "info")
             effect_sizes = self._calculate_effect_sizes(metrics_a, metrics_b)
             
             # Power analysis
+            tprint("⚡ Running power analysis", "info")
             power_analysis = self._calculate_power_analysis(metrics_a, metrics_b)
             
             # Multiple comparison correction
             if self.config.multiple_comparison_correction:
+                tprint(f"🔧 Applying {self.config.multiple_comparison_correction} correction", "info")
                 test_results = self._apply_multiple_comparison_correction(test_results)
             
             # Generate comprehensive report
@@ -158,13 +445,104 @@ class RealABTestingEngine:
             # Store results
             self.test_results[test_name] = report
             
-            self.logger.info(f"✅ A/B test completed: {test_name}")
+            execution_time = time.time() - start_time
+            
+            # Display summary
+            tprint(f"✅ A/B Test Complete: {test_name}", "success")
+            tprint(f"   Execution time: {execution_time:.2f}s", "info")
+            
+            # Display key results
+            assessment = report.get('test_results', {}).get('overall_assessment', {})
+            tprint(f"📊 Test Results:", "info")
+            tprint(f"   Winner: {assessment.get('overall_winner', 'inconclusive').upper()}", "info")
+            tprint(f"   Confidence: {assessment.get('confidence_level', 'low').upper()}", "info")
+            tprint(f"   Significant differences: {assessment.get('significant_differences', 0)}/{assessment.get('total_tests', 0)}", "info")
+            
+            # Display metric comparisons
+            tprint(f"📈 Strategy Comparison:", "info")
+            tprint(f"   Mean Return:     A={metrics_a.get('mean_return', 0):.2%} vs B={metrics_b.get('mean_return', 0):.2%}", "info")
+            tprint(f"   Sharpe Ratio:    A={metrics_a.get('sharpe_ratio', 0):.3f} vs B={metrics_b.get('sharpe_ratio', 0):.3f}", "info")
+            tprint(f"   Max Drawdown:    A={metrics_a.get('max_drawdown', 0):.2%} vs B={metrics_b.get('max_drawdown', 0):.2%}", "info")
+            tprint(f"   Win Rate:        A={metrics_a.get('win_rate', 0):.1%} vs B={metrics_b.get('win_rate', 0):.1%}", "info")
+            
+            # Display effect size
+            cohens_d = effect_sizes.get('cohens_d_returns', 0)
+            tprint(f"   Cohen's d: {cohens_d:.3f} ({self._categorize_effect_size(cohens_d)})", "info")
+            
+            # Save results if requested
+            if self.config.save_results:
+                self._save_ab_test_results(report, test_name)
             
             return report
             
         except Exception as e:
             self.logger.error(f"❌ A/B test failed: {e}")
+            tprint(f"❌ A/B test failed: {e}", "error")
             raise
+    
+    def _check_strategy_leakage(self, metrics_a: Dict[str, Any], metrics_b: Dict[str, Any]):
+        """Check for data leakage in strategy comparisons"""
+        try:
+            tprint("🔍 Checking for data leakage", "info")
+            
+            # Check each strategy
+            for name, metrics in [("Strategy A", metrics_a), ("Strategy B", metrics_b)]:
+                if 'returns' in metrics:
+                    returns = metrics['returns']
+                    
+                    # Create simple features
+                    X = pd.DataFrame({
+                        'return': returns,
+                        'return_lag1': np.roll(returns, 1),
+                    }).iloc[1:]
+                    
+                    y = pd.Series(returns[1:] > 0)
+                    
+                    leakage_results = self.leakage_detector.detect_leakage(X.values, y.values)
+                    
+                    if leakage_results.get('has_leakage', False):
+                        leakage_score = leakage_results.get('leakage_score', 0)
+                        tprint(f"⚠️  {name} leakage detected: score={leakage_score:.4f}", "warning")
+            
+            tprint("✅ Leakage check complete", "success")
+                    
+        except Exception as e:
+            tprint(f"⚠️  Leakage detection failed: {e}", "warning")
+    
+    def _categorize_effect_size(self, cohens_d: float) -> str:
+        """Categorize Cohen's d effect size"""
+        abs_d = abs(cohens_d)
+        if abs_d < 0.2:
+            return "negligible"
+        elif abs_d < 0.5:
+            return "small"
+        elif abs_d < 0.8:
+            return "medium"
+        else:
+            return "large"
+    
+    def _save_ab_test_results(self, report: Dict[str, Any], test_name: str):
+        """Save A/B test results to disk"""
+        try:
+            results_path = Path(self.config.results_path)
+            ensure_directory(str(results_path))
+            
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_name = test_name.replace(" ", "_").replace("/", "_")
+            
+            # Save JSON report
+            json_path = results_path / f"ab_test_{safe_name}_{timestamp}.json"
+            safe_json_dump(report, str(json_path))
+            
+            # Save pickle
+            pkl_path = results_path / f"ab_test_{safe_name}_{timestamp}.pkl"
+            with open(pkl_path, 'wb') as f:
+                pickle.dump(report, f)
+            
+            tprint(f"💾 Results saved to {results_path}", "success")
+            
+        except Exception as e:
+            tprint(f"⚠️  Failed to save results: {e}", "warning")
     
     def _validate_test_data(self, strategy_a_results: Dict[str, Any], strategy_b_results: Dict[str, Any]):
         """Validate input data for A/B testing."""
@@ -190,60 +568,99 @@ class RealABTestingEngine:
             raise
     
     def _extract_metrics(self, results: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract performance metrics from strategy results."""
+        """Extract and calculate comprehensive performance metrics using validated utilities."""
         try:
             metrics = {}
             
-            # Extract returns
+            # Extract and validate returns
             if 'returns' in results:
-                returns = results['returns']
-                if isinstance(returns, pd.Series):
-                    returns = returns.values
-                metrics['returns'] = np.array(returns)
+                returns = ensure_array(results['returns'])
+                # Remove NaN/Inf
+                returns = returns[~check_for_nans(returns)]
+                returns = returns[~check_for_infs(returns)]
+                metrics['returns'] = returns
+                
+                # Calculate basic statistics with validation
+                metrics['mean_return'] = validate_finite(float(np.mean(returns)), default=0.0)
+                metrics['std_return'] = validate_positive(float(np.std(returns)), default=0.01)
+                metrics['total_return'] = validate_finite(float(np.prod(1 + returns) - 1), default=0.0)
+                metrics['volatility'] = validate_positive(metrics['std_return'] * np.sqrt(252), default=0.01)
+                
+                # Calculate performance metrics using common_operations
+                metrics['sharpe_ratio'] = validate_finite(calculate_sharpe_ratio(returns), default=0.0)
+                metrics['sortino_ratio'] = validate_finite(calculate_sortino_ratio(returns), default=0.0)
+                metrics['win_rate'] = validate_probability(calculate_win_rate(returns))
+                metrics['profit_factor'] = validate_positive(calculate_profit_factor(returns), default=0.0)
+                
+                # Calculate drawdown from returns
+                cumulative_returns = np.cumsum(returns)
+                metrics['max_drawdown'] = validate_finite(calculate_max_drawdown(cumulative_returns), default=0.0)
+                
+                # Calculate Calmar ratio
+                metrics['calmar_ratio'] = validate_finite(
+                    calculate_calmar_ratio(returns, metrics['max_drawdown']), default=0.0
+                )
+                
+                # Calculate Information ratio
+                metrics['information_ratio'] = validate_finite(
+                    calculate_information_ratio(returns), default=0.0
+                )
+                
+                # Calculate VaR (5%)
+                var_percentile = 5.0
+                metrics['var_5pct'] = validate_finite(float(np.percentile(returns, var_percentile)), default=0.0)
             
             # Extract equity curve
             if 'equity_curve' in results:
-                equity_curve = results['equity_curve']
-                if isinstance(equity_curve, list):
-                    equity_curve = np.array(equity_curve)
+                equity_curve = ensure_array(results['equity_curve'])
+                equity_curve = equity_curve[~check_for_nans(equity_curve)]
+                equity_curve = equity_curve[~check_for_infs(equity_curve)]
                 metrics['equity_curve'] = equity_curve
+                
+                # Calculate drawdown from equity curve
+                if len(equity_curve) > 0:
+                    peak = np.maximum.accumulate(equity_curve)
+                    drawdown = safe_divide(equity_curve - peak, peak, default=0.0)
+                    metrics['max_drawdown_from_equity'] = validate_finite(float(np.min(drawdown)), default=0.0)
+                    downside_drawdowns = drawdown[drawdown < 0]
+                    if len(downside_drawdowns) > 0:
+                        metrics['avg_drawdown'] = validate_finite(float(np.mean(downside_drawdowns)), default=0.0)
             
-            # Extract trade log
+            # Extract and calculate trade metrics
             if 'trade_log' in results:
-                metrics['trade_log'] = results['trade_log']
-            
-            # Calculate derived metrics
-            if 'returns' in metrics:
-                returns = metrics['returns']
-                metrics['mean_return'] = np.mean(returns)
-                metrics['std_return'] = np.std(returns)
-                metrics['sharpe_ratio'] = metrics['mean_return'] / metrics['std_return'] if metrics['std_return'] > 0 else 0
-                metrics['total_return'] = np.prod(1 + returns) - 1
-                metrics['volatility'] = metrics['std_return'] * np.sqrt(252)
-            
-            # Calculate drawdown metrics
-            if 'equity_curve' in metrics:
-                equity_curve = metrics['equity_curve']
-                peak = np.maximum.accumulate(equity_curve)
-                drawdown = (equity_curve - peak) / peak
-                metrics['max_drawdown'] = np.min(drawdown)
-                metrics['avg_drawdown'] = np.mean(drawdown[drawdown < 0])
-            
-            # Calculate trade metrics
-            if 'trade_log' in metrics:
-                trade_log = metrics['trade_log']
-                if trade_log:
-                    profits = [t.get('profit', 0) for t in trade_log if 'profit' in t]
+                trade_log = results['trade_log']
+                if trade_log and isinstance(trade_log, list):
+                    # Extract profits
+                    profits = [float(t.get('profit', 0)) for t in trade_log if 'profit' in t]
+                    profits = [p for p in profits if not (check_for_nans(p) or check_for_infs(p))]
+                    
                     if profits:
-                        metrics['win_rate'] = len([p for p in profits if p > 0]) / len(profits)
-                        metrics['avg_win'] = np.mean([p for p in profits if p > 0]) if any(p > 0 for p in profits) else 0
-                        metrics['avg_loss'] = np.mean([p for p in profits if p < 0]) if any(p < 0 for p in profits) else 0
-                        metrics['profit_factor'] = abs(metrics['avg_win'] / metrics['avg_loss']) if metrics['avg_loss'] != 0 else 0
+                        # Calculate trade metrics
+                        metrics['n_trades'] = len(profits)
+                        winning_trades = [p for p in profits if p > 0]
+                        losing_trades = [p for p in profits if p < 0]
+                        
+                        metrics['win_rate_from_trades'] = validate_probability(
+                            len(winning_trades) / len(profits) if profits else 0.0
+                        )
+                        metrics['avg_win'] = validate_positive(
+                            float(np.mean(winning_trades)) if winning_trades else 0.0, default=0.0
+                        )
+                        metrics['avg_loss'] = validate_finite(
+                            float(np.mean(losing_trades)) if losing_trades else 0.0, default=0.0
+                        )
+                        metrics['profit_factor_from_trades'] = validate_positive(
+                            safe_divide(metrics['avg_win'], abs(metrics['avg_loss']), default=0.0), default=0.0
+                        )
+                        metrics['avg_trade_duration'] = float(
+                            np.mean([t.get('duration', 0) for t in trade_log if 'duration' in t])
+                        ) if any('duration' in t for t in trade_log) else 0.0
             
             return metrics
             
         except Exception as e:
             self.logger.error(f"❌ Failed to extract metrics: {e}")
+            tprint(f"❌ Metric extraction failed: {e}", "error")
             raise
     
     async def _test_performance(self, metrics_a: Dict[str, Any], metrics_b: Dict[str, Any]) -> Dict[str, Any]:

@@ -86,13 +86,44 @@ except ImportError as e:
 try:
     from src.utils.common_operations import (
         get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-        cleanup_m1_optimizers, integrate_with_m1_optimizers
+        cleanup_m1_optimizers, integrate_with_m1_optimizers,
+        ensure_directory, safe_file_exists, get_current_datetime, validate_positive
     )
     tprint_info("✅ Common operations utilities loaded for ensemble")
 except ImportError as e:
     print(f"❌ CRITICAL ERROR: Common operations utilities are required but not available: {e}")
     print("❌ Hardware optimizers are essential for performance. Please install common_operations.")
     raise ImportError(f"CRITICAL: Common operations utilities are required but not available: {e}") from e
+
+# Import Bayesian TPE optimizer for advanced HPO
+try:
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+        BayesianTPEOptimizer, OptimizationConfig
+    )
+    BAYESIAN_TPE_AVAILABLE = True
+except ImportError:
+    BAYESIAN_TPE_AVAILABLE = False
+
+# Import model persistence and caching
+try:
+    from src.utils.ml_common.post_training.model_persistence import (
+        ModelPersistence, ModelMetadata, PersistenceConfig
+    )
+    from src.utils.ml_common.models.model_cache import (
+        ModelCache, get_model_cache, CachedModelMetadata
+    )
+    MODEL_PERSISTENCE_AVAILABLE = True
+except ImportError:
+    MODEL_PERSISTENCE_AVAILABLE = False
+
+# Import data cleaning utilities
+try:
+    from src.utils.data.quality.data_cleaning import (
+        DataCleaner, CleaningConfig, MissingValueStrategy, OutlierStrategy
+    )
+    DATA_CLEANING_AVAILABLE = True
+except ImportError:
+    DATA_CLEANING_AVAILABLE = False
 
 # Import advanced hardware optimization tools
 try:
@@ -132,13 +163,18 @@ except ImportError as e:
     raise ImportError(f"CRITICAL: Math validation utilities are required but not available: {e}") from e
 
 try:
-    from src.utils.kline_parquet import validate_klines_data, process_klines_data
+    from src.utils.data.klines_parquet import validate_klines_data, process_klines_data
     from src.utils.serialization_utils import safe_serialize, safe_deserialize
+    DATA_UTILITIES_AVAILABLE = True
     tprint_info("✅ Data utilities loaded for ensemble")
 except ImportError as e:
-    print(f"❌ CRITICAL ERROR: Data utilities are required but not available: {e}")
-    print("❌ Enhanced data validation is essential. Please install kline_parquet and serialization_utils.")
-    raise ImportError(f"CRITICAL: Data utilities are required but not available: {e}") from e
+    # Make these optional since they're not critical
+    DATA_UTILITIES_AVAILABLE = False
+    validate_klines_data = None
+    process_klines_data = None
+    safe_serialize = None
+    safe_deserialize = None
+    tprint_warning(f"⚠️ Data utilities not available (non-critical): {e}")
 
 try:
     from src.utils.matrix_operations import (
@@ -230,95 +266,173 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             config: Per-regime training configuration
             enable_vectorization: Whether to enable vectorized training
         """
-        # Initialize comprehensive tracking
-        self.initialization_errors = []
-        self.utility_integration_status = {}
-        
-        # Initialize TAS models storage
-        self.tas_models = {}  # Per-regime TAS models
-        self.tas_architectures = {}  # Per-regime TAS architectures
-        
-        # Log initialization start
-        tprint_info("🚀 Starting Enhanced Tactician Ensemble Training Step initialization")
+        tprint_info("🚀 Initializing Tactician Ensemble Training Step")
+        self.start_time = time.time()
+        self.logger = logger.getChild('TacticianEnsembleTrainingStep')
         
         try:
-            # Set default configuration for tactician ensemble models with enhanced settings
-            if config is None:
-                try:
-                    config = EnsembleTrainingConfig(
-                        model_name="tactician_ensemble_models_1m",
-                        timeframe="1m",
-                        model_types=["lightgbm", "ridge", "elastic_net", "random_forest"],
-                        hpo_n_trials=100,
-                        hpo_timeout_seconds=3600,
-                        min_samples_per_regime=1000,
-                        enable_data_augmentation=True,
-                        augmentation_method="smote",
-                        model_save_path="generated/model_training/models/tactician_ensemble_models_1m",
-                        evaluation_metrics=["mse", "mae", "r2", "mape", "smape"]
-                    )
-                    tprint_success("✅ Default ensemble configuration created successfully")
-                except Exception as e:
-                    error_msg = f"Failed to create default ensemble configuration: {e}"
-                    tprint_error(f"❌ {error_msg}")
-                    self.initialization_errors.append(error_msg)
-                    raise RuntimeError(error_msg) from e
-
-            # Validate configuration with comprehensive checks
-            tprint_info("🔍 Validating ensemble configuration...")
-            self._validate_config(config)
-            tprint_success("✅ Ensemble configuration validation passed")
+            # Step 1: Setup and validate configuration
+            config = self._setup_configuration(config)
+            self._validate_config_consolidated(config)
             
-            # Initialize parent class with comprehensive error handling
-            tprint_info("🔄 Initializing parent EnsembleTrainingStep...")
+            # Step 2: Initialize TAS models storage
+            self.tas_models = {}
+            self.tas_architectures = {}
+            
+            # Step 3: Initialize hardware optimizers (consolidated)
+            self.hardware = self._initialize_hardware_optimizers_consolidated()
+            
+            # Step 4: Initialize data cleaner
+            self.data_cleaner = self._initialize_data_cleaner() if DATA_CLEANING_AVAILABLE else None
+            
+            # Step 5: Initialize model persistence
+            self.model_persistence = self._initialize_model_persistence() if MODEL_PERSISTENCE_AVAILABLE else None
+            
+            # Step 6: Initialize model cache
+            self.model_cache = self._initialize_model_cache() if MODEL_PERSISTENCE_AVAILABLE else None
+            
+            # Step 7: Initialize parent class
             super().__init__(config, enable_vectorization=enable_vectorization and VECTORIZED_TRAINING_AVAILABLE)
             
-            # Initialize logger - CRITICAL: Fast fail if not available
-            try:
-                self.logger = logger.getChild('TacticianEnsembleTrainingStep')
-            except Exception as e:
-                error_msg = f"CRITICAL: Failed to initialize child logger: {e}"
-                tprint_error(f"❌ {error_msg}")
-                raise RuntimeError(error_msg) from e
+            # Step 8: Initialize enhanced training utilities if available
+            if ENHANCED_TRAINING_AVAILABLE:
+                self._initialize_enhanced_training_utilities()
             
-            tprint_success("✅ Parent class initialized successfully")
-            
-            # Initialize progress tracking
+            # Step 9: Initialize progress tracking
             self.progress_tracker: List[TrainingProgress] = []
             self.current_step: Optional[TrainingProgress] = None
             
-            # Initialize hardware optimizers with error handling
-            tprint_info("🧠 Initializing hardware optimizers...")
-            self._initialize_hardware_optimizers()
+            # Step 10: Setup consolidated tracking
+            self._setup_tracking_consolidated(config)
             
-            # Initialize utility integrations
-            tprint_info("🔧 Initializing utility integrations...")
-            self._initialize_utility_integrations()
-            
-            # Initialize enhanced training utilities
-            if ENHANCED_TRAINING_AVAILABLE:
-                tprint_info("🚀 Initializing enhanced training utilities...")
-                self._initialize_enhanced_training_utilities()
-            
-            # Log initialization success with comprehensive status
-            if self.enable_vectorization:
-                tprint_success("🚀 Enhanced Tactician Ensemble Training Step initialized with vectorization")
-            else:
-                tprint_success("✅ Enhanced Tactician Ensemble Training Step initialized (standard mode)")
-            
-            # Log utility integration status
-            self._log_utility_integration_status()
+            init_time = time.time() - self.start_time
+            tprint_success(f"✅ Initialization complete in {init_time:.2f}s")
                 
         except Exception as e:
-            error_msg = f"Failed to initialize TacticianEnsembleTrainingStep: {str(e)}"
-            tprint_error(f"❌ {error_msg}")
-            tprint_error(f"❌ Traceback: {traceback.format_exc()}")
+            tprint_error(f"❌ Initialization failed: {e}")
+            raise
+    
+    def _setup_configuration(self, config: Optional[EnsembleTrainingConfig]) -> EnsembleTrainingConfig:
+        """Setup configuration with defaults."""
+        if config is None:
+            config = EnsembleTrainingConfig(
+                model_name="tactician_ensemble_models_1m",
+                timeframe="1m",
+                model_types=["lightgbm", "ridge", "elastic_net", "random_forest"],
+                hpo_n_trials=100,
+                hpo_timeout_seconds=3600,
+                min_samples_per_regime=1000,
+                enable_data_augmentation=True,
+                augmentation_method="smote",
+                model_save_path="generated/model_training/models/tactician_ensemble_models_1m",
+                evaluation_metrics=["mse", "mae", "r2", "mape", "smape"]
+            )
+        return config
+    
+    def _validate_config_consolidated(self, config: EnsembleTrainingConfig) -> None:
+        """Consolidated configuration validation using common utilities."""
+        with tprint_timer("Config validation"):
+            if not config.model_types or len(config.model_types) == 0:
+                raise ValueError("At least one model type required")
             
-            # Log utility integration status even on failure
-            if hasattr(self, 'utility_integration_status'):
-                self._log_utility_integration_status()
+            if config.enable_hpo:
+                validate_positive(config.hpo_n_trials, "hpo_n_trials")
+                validate_positive(config.hpo_timeout_seconds, "hpo_timeout_seconds")
             
-            raise RuntimeError(error_msg) from e
+            validate_positive(config.min_samples_per_regime, "min_samples_per_regime")
+            
+            if config.save_models and config.model_save_path:
+                ensure_directory(config.model_save_path)
+    
+    def _initialize_hardware_optimizers_consolidated(self) -> Dict[str, Any]:
+        """Initialize hardware optimizers (consolidated method)."""
+        hardware = {}
+        try:
+            hardware['gpu'] = get_m1_gpu_manager()
+            hardware['memory'] = get_m1_memory_optimizer()
+            hardware['cpu'] = get_m1_cpu_optimizer()
+            
+            available = sum(1 for v in hardware.values() if v is not None)
+            tprint_success(f"✅ Hardware: {available}/3 optimizers available")
+            
+            # Set individual references for backwards compatibility
+            self.m1_gpu_manager = hardware['gpu']
+            self.m1_memory_optimizer = hardware['memory']
+            self.m1_cpu_optimizer = hardware['cpu']
+            self.hardware_optimization_enabled = available > 0
+        except Exception as e:
+            tprint_warning(f"⚠️ Hardware init failed: {e}")
+            self.m1_gpu_manager = None
+            self.m1_memory_optimizer = None
+            self.m1_cpu_optimizer = None
+            self.hardware_optimization_enabled = False
+        
+        return hardware
+    
+    def _initialize_data_cleaner(self) -> Optional[Any]:
+        """Initialize data cleaner."""
+        try:
+            cleaning_config = CleaningConfig(
+                missing_value_strategy=MissingValueStrategy.INTERPOLATE,
+                outlier_strategy=OutlierStrategy.CLIP,
+                outlier_threshold=3.0,
+                enable_gap_detection=True,
+                enable_async_processing=False
+            )
+            tprint_success("✅ Data cleaner initialized")
+            return DataCleaner(cleaning_config)
+        except Exception as e:
+            tprint_warning(f"⚠️ Data cleaner unavailable: {e}")
+            return None
+    
+    def _initialize_model_persistence(self) -> Optional[Any]:
+        """Initialize model persistence."""
+        try:
+            persistence_config = PersistenceConfig(
+                base_model_dir=self.config.model_save_path,
+                enable_versioning=True,
+                max_versions=5,
+                serialization_format="joblib",
+                compression=True
+            )
+            tprint_success("✅ Model persistence initialized")
+            return ModelPersistence(persistence_config)
+        except Exception as e:
+            tprint_warning(f"⚠️ Model persistence unavailable: {e}")
+            return None
+    
+    def _initialize_model_cache(self) -> Optional[Any]:
+        """Initialize model cache."""
+        try:
+            model_cache = get_model_cache(
+                max_memory_models=10,
+                max_disk_models=50,
+                cache_dir=f"{self.config.model_save_path}/cache"
+            )
+            tprint_success("✅ Model cache initialized")
+            return model_cache
+        except Exception as e:
+            tprint_warning(f"⚠️ Model cache unavailable: {e}")
+            return None
+    
+    def _setup_tracking_consolidated(self, config: EnsembleTrainingConfig) -> None:
+        """Setup consolidated tracking."""
+        self.training_stats = {
+            'initialization_time': time.time() - self.start_time,
+            'config': config.model_name,
+            'timeframe': config.timeframe,
+            'vectorization_enabled': self.enable_vectorization,
+            'hardware_available': {
+                'gpu': self.hardware.get('gpu') is not None,
+                'memory': self.hardware.get('memory') is not None,
+                'cpu': self.hardware.get('cpu') is not None
+            },
+            'utilities_available': {
+                'data_cleaner': self.data_cleaner is not None,
+                'model_persistence': self.model_persistence is not None,
+                'model_cache': self.model_cache is not None
+            }
+        }
     
     def _initialize_enhanced_training_utilities(self):
         """Initialize enhanced training utilities for overfitting prevention and lookahead bias detection."""
@@ -358,66 +472,8 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             self.enhanced_training_utils = {}
     
     def _initialize_hardware_optimizers(self) -> None:
-        """Initialize hardware optimizers with graceful degradation."""
-        try:
-            tprint_info("🧠 Initializing hardware optimizers for ensemble training...")
-            
-            # Initialize optimizers with fallback capability
-            self.m1_gpu_manager = None
-            self.m1_memory_optimizer = None
-            self.m1_cpu_optimizer = None
-            self.hardware_optimization_enabled = False
-            
-            try:
-                # Try to initialize M1 GPU manager
-                self.m1_gpu_manager = get_m1_gpu_manager()
-                if self.m1_gpu_manager:
-                    tprint_success("✅ M1 GPU manager initialized")
-                else:
-                    tprint_warning("⚠️ M1 GPU manager not available - proceeding without GPU optimization")
-                
-                # Try to initialize M1 memory optimizer
-                self.m1_memory_optimizer = get_m1_memory_optimizer()
-                if self.m1_memory_optimizer:
-                    tprint_success("✅ M1 memory optimizer initialized")
-                else:
-                    tprint_warning("⚠️ M1 memory optimizer not available - proceeding without memory optimization")
-                
-                # Try to initialize M1 CPU optimizer
-                self.m1_cpu_optimizer = get_m1_cpu_optimizer()
-                if self.m1_cpu_optimizer:
-                    tprint_success("✅ M1 CPU optimizer initialized")
-                else:
-                    tprint_warning("⚠️ M1 CPU optimizer not available - proceeding without CPU optimization")
-                
-                # Try integration if any optimizers are available
-                if any([self.m1_gpu_manager, self.m1_memory_optimizer, self.m1_cpu_optimizer]):
-                    try:
-                        integration_result = integrate_with_m1_optimizers()
-                        if integration_result.get('success', False):
-                            self.hardware_optimization_enabled = True
-                            tprint_success("✅ Hardware optimization enabled")
-                        else:
-                            tprint_warning("⚠️ Hardware integration failed - proceeding without optimization")
-                    except Exception as integration_error:
-                        tprint_warning(f"⚠️ Hardware integration failed: {integration_error} - proceeding without optimization")
-                else:
-                    tprint_info("ℹ️ No hardware optimizers available - using standard processing")
-                
-            except ImportError as import_error:
-                tprint_warning(f"⚠️ Hardware optimization modules not available: {import_error}")
-            except Exception as hardware_error:
-                tprint_warning(f"⚠️ Hardware optimizer initialization failed: {hardware_error}")
-            
-            tprint_info(f"🧠 Hardware optimization status: {'Enabled' if self.hardware_optimization_enabled else 'Disabled'}")
-            
-        except Exception as e:
-            tprint_warning(f"⚠️ Hardware optimizer setup failed: {e} - proceeding with standard processing")
-            # Set all optimizers to None for safe operation
-            self.m1_gpu_manager = None
-            self.m1_memory_optimizer = None
-            self.m1_cpu_optimizer = None
-            self.hardware_optimization_enabled = False
+        """Initialize hardware optimizers - delegates to consolidated method."""
+        self.hardware = self._initialize_hardware_optimizers_consolidated()
     
     def _initialize_utility_integrations(self) -> None:
         """Initialize utility integrations - All utilities are required."""
@@ -465,37 +521,12 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             tprint_error(f"❌ Failed to log ensemble utility integration status: {e}")
     
     def _validate_config(self, config: EnsembleTrainingConfig) -> None:
-        """Validate configuration parameters with enhanced error handling."""
-        validation_errors = []
+        """Validate configuration - delegates to consolidated method."""
+        self._validate_config_consolidated(config)
         
-        try:
-            tprint_debug("Validating ensemble configuration parameters...")
-            
-            if not config.model_name or not isinstance(config.model_name, str):
-                validation_errors.append("model_name must be a non-empty string")
-            
-            if not config.timeframe or not isinstance(config.timeframe, str):
-                validation_errors.append("timeframe must be a non-empty string")
-                
-            if not config.model_types or not isinstance(config.model_types, list) or len(config.model_types) == 0:
-                validation_errors.append("model_types must be a non-empty list")
-                
-            if config.hpo_n_trials <= 0:
-                validation_errors.append("hpo_n_trials must be positive")
-                
-            if config.min_samples_per_regime <= 0:
-                validation_errors.append("min_samples_per_regime must be positive")
-            
-            if validation_errors:
-                error_msg = f"Configuration validation failed: {'; '.join(validation_errors)}"
-                tprint_error(f"❌ {error_msg}")
-                raise ValueError(error_msg)
-            
-            tprint_debug("✅ Ensemble configuration validation passed")
-            
-        except Exception as e:
-            tprint_error(f"❌ Ensemble configuration validation failed: {e}")
-            raise
+        # Tactician-specific validation
+        if config.timeframe != "1m":
+            tprint_warning(f"⚠️ Tactician ensemble typically uses 1m timeframe, but {config.timeframe} was specified")
     
     def _start_step(self, step_name: str) -> TrainingProgress:
         """Start tracking a training step."""
@@ -1114,6 +1145,88 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
         }
     
     
+    def _extract_hmm_features(self, X: np.ndarray, hmm_data: Optional[Dict[str, Any]]) -> Tuple[Optional[np.ndarray], int]:
+        """
+        Extract HMM features safely with validation.
+        
+        Args:
+            X: Base features for shape validation
+            hmm_data: HMM regime data dictionary
+            
+        Returns:
+            Tuple of (hmm_features, features_count)
+        """
+        try:
+            from src.utils.math_validation import validate_finite
+            from src.utils.common_utilities import validate_dataframe_columns
+            
+            if not hmm_data or 'regime_features' not in hmm_data:
+                tprint_debug("No HMM features available")
+                return None, 0
+            
+            hmm_features = hmm_data['regime_features']
+            
+            # Validate shape
+            if not isinstance(hmm_features, np.ndarray):
+                tprint_warning("⚠️ HMM features not a numpy array")
+                return None, 0
+            
+            if hmm_features.shape[0] != X.shape[0]:
+                tprint_warning(f"⚠️ HMM features shape mismatch: {hmm_features.shape[0]} vs {X.shape[0]}")
+                return None, 0
+            
+            # Validate finite values
+            if not validate_finite(hmm_features):
+                tprint_warning("⚠️ HMM features contain non-finite values")
+                hmm_features = np.nan_to_num(hmm_features, nan=0.0, posinf=1e6, neginf=-1e6)
+            
+            tprint_success(f"✅ Extracted {hmm_features.shape[1]} HMM features")
+            return hmm_features, hmm_features.shape[1]
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to extract HMM features: {e}")
+            return None, 0
+    
+    def _generate_analyst_oof_predictions(self, analyst_models: Optional[Dict[str, Any]], X: np.ndarray) -> List[Tuple[str, np.ndarray]]:
+        """
+        Generate OOF predictions for analyst models.
+        
+        Args:
+            analyst_models: Dictionary of analyst models
+            X: Input features
+            
+        Returns:
+            List of (model_name, predictions) tuples
+        """
+        try:
+            tprint_info("🔄 Generating OOF predictions for analyst models")
+            analyst_predictions = []
+            
+            if not analyst_models:
+                tprint_debug("No analyst models provided")
+                return analyst_predictions
+            
+            for model_name, model in analyst_models.items():
+                try:
+                    tprint_debug(f"  Processing analyst model: {model_name}")
+                    predictions = self._generate_oof_predictions(model, X, model_name)
+                    
+                    if predictions is not None:
+                        analyst_predictions.append((model_name, predictions))
+                        tprint_success(f"  ✅ Generated OOF predictions for analyst model: {model_name}")
+                    else:
+                        tprint_warning(f"  ⚠️ Failed to generate OOF predictions for {model_name}")
+                        
+                except Exception as e:
+                    tprint_warning(f"  ⚠️ Could not add predictions from {model_name}: {e}")
+            
+            tprint_info(f"📊 Generated OOF predictions for {len(analyst_predictions)}/{len(analyst_models)} analyst models")
+            return analyst_predictions
+            
+        except Exception as e:
+            tprint_error(f"❌ Failed to generate analyst OOF predictions: {e}")
+            return []
+    
     def _combine_all_model_inputs(
         self,
         X: np.ndarray,
@@ -1124,6 +1237,13 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
     ) -> np.ndarray:
         """
         Combine all model inputs for meta-learner training with memory-efficient processing.
+        
+        This method:
+        - Extracts HMM features safely
+        - Generates OOF predictions from analyst models
+        - Generates OOF predictions from base tactician models
+        - Generates OOF predictions from analyst ensembles
+        - Combines all features efficiently
         
         Args:
             X: Base features
@@ -1136,6 +1256,11 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             Enhanced feature matrix with all model inputs
         """
         try:
+            from src.utils.math_validation import validate_finite
+            from src.utils.common_utilities import safe_dataframe_operation
+            
+            tprint_info("🔧 Combining all model inputs for meta-learner")
+            tprint_progress(f"📊 Base features shape: {X.shape}")
             # Pre-calculate total features needed to allocate memory efficiently
             base_features = X.shape[1]
             additional_features_count = 0
@@ -1148,39 +1273,17 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 'memory_optimized': True
             }
             
-            # Count HMM features
-            hmm_features_count = 0
-            hmm_features = None
-            if hmm_data and 'regime_features' in hmm_data:
-                try:
-                    hmm_features = hmm_data['regime_features']
-                    if isinstance(hmm_features, np.ndarray) and hmm_features.shape[0] == X.shape[0]:
-                        hmm_features_count = hmm_features.shape[1]
-                        additional_features_count += hmm_features_count
-                        integration_stats['hmm_features_added'] = hmm_features_count
-                    else:
-                        hmm_features = None
-                        integration_stats['integration_errors'].append("HMM features shape mismatch")
-                except Exception as e:
-                    hmm_features = None
-                    integration_stats['integration_errors'].append(f"HMM integration failed: {e}")
+            # Extract HMM features safely
+            hmm_features, hmm_features_count = self._extract_hmm_features(X, hmm_data)
+            if hmm_features_count > 0:
+                additional_features_count += hmm_features_count
+                integration_stats['hmm_features_added'] = hmm_features_count
             
             # Generate OOF predictions for analyst models to prevent data leakage
-            analyst_predictions = []
-            if analyst_models:
-                for model_name, model in analyst_models.items():
-                    try:
-                        predictions = self._generate_oof_predictions(model, X, model_name)
-                        if predictions is not None:
-                            analyst_predictions.append((model_name, predictions))
-                            additional_features_count += predictions.shape[1]
-                            integration_stats['analyst_models_integrated'] += 1
-                            self.logger.info(f"✅ Generated OOF predictions for analyst model: {model_name}")
-                        else:
-                            integration_stats['integration_errors'].append(f"Failed to generate OOF predictions for {model_name}")
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Could not add predictions from {model_name}: {e}")
-                        integration_stats['integration_errors'].append(f"Analyst model {model_name} failed: {e}")
+            analyst_predictions = self._generate_analyst_oof_predictions(analyst_models, X)
+            for model_name, predictions in analyst_predictions:
+                additional_features_count += predictions.shape[1]
+                integration_stats['analyst_models_integrated'] += 1
 
             # Generate OOF predictions for base tactician models as additional meta inputs
             tactician_predictions = []
@@ -1318,6 +1421,27 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                 # Add ensemble predictions with hardware optimization
                 for ensemble_name, predictions in ensemble_predictions:
                     pred_cols = predictions.shape[1]
+                    try:
+                        if ADVANCED_MEMORY_AVAILABLE:
+                            # Use hardware-optimized copy
+                            memory_optimizer.optimized_array_copy(
+                                source=predictions,
+                                destination=X_enhanced[:, current_col:current_col + pred_cols]
+                            )
+                        else:
+                            X_enhanced[:, current_col:current_col + pred_cols] = predictions
+                    except (ValueError, TypeError, IndexError) as e:
+                        tprint_debug(f"Could not use optimized copy: {e}")
+                        # Fallback to standard copy
+                        X_enhanced[:, current_col:current_col + pred_cols] = predictions
+                    except Exception as e:
+                        tprint_warning(f"Unexpected error with copy: {e}")
+                        # Fallback to standard copy
+                        X_enhanced[:, current_col:current_col + pred_cols] = predictions
+                    
+                    current_col += pred_cols
+                    tprint_info(f"📊 Added {pred_cols} features from analyst ensemble: {ensemble_name}")
+                
                 # Add base tactician predictions with hardware optimization
                 for base_name, predictions in tactician_predictions:
                     pred_cols = predictions.shape[1]
@@ -1329,30 +1453,15 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
                             )
                         else:
                             X_enhanced[:, current_col:current_col + pred_cols] = predictions
-                    except:
-                        X_enhanced[:, current_col:current_col + pred_cols] = predictions
-                    current_col += pred_cols
-                    self.logger.info(f"📊 Added {pred_cols} features from base tactician model: {base_name}")
-                    try:
-                        if ADVANCED_MEMORY_AVAILABLE:
-                            # Use hardware-optimized copy
-                            memory_optimizer.optimized_array_copy(
-                                source=predictions,
-                                destination=X_enhanced[:, current_col:current_col + pred_cols]
-                            )
-                        else:
-                            X_enhanced[:, current_col:current_col + pred_cols] = predictions
                     except (ValueError, TypeError, IndexError) as e:
-                        self.logger.debug(f"Could not use optimized copy: {e}")
-                        # Fallback to standard copy
+                        tprint_debug(f"Could not use optimized copy for tactician: {e}")
                         X_enhanced[:, current_col:current_col + pred_cols] = predictions
                     except Exception as e:
-                        self.logger.warning(f"Unexpected error with copy: {e}")
-                        # Fallback to standard copy
+                        tprint_warning(f"Unexpected error with tactician copy: {e}")
                         X_enhanced[:, current_col:current_col + pred_cols] = predictions
                     
                     current_col += pred_cols
-                    self.logger.info(f"📊 Added {pred_cols} features from analyst ensemble: {ensemble_name}")
+                    tprint_info(f"📊 Added {pred_cols} features from base tactician model: {base_name}")
                 
                 self.logger.info(f"📊 Meta-learner features: {base_features} base + {additional_features_count} model inputs = {total_features} total")
                 
@@ -1397,72 +1506,129 @@ class TacticianEnsembleTrainingStep(EnsembleTrainingStep):
             return X
 
     def _generate_oof_predictions(self, model: Any, X: np.ndarray, model_name: str, n_splits: int = 5) -> Optional[np.ndarray]:
-        """Generate OOF predictions for external models via TimeSeriesSplit.
-
-        If the external model is already trained, we only predict on validation folds;
-        if prediction fails, fall back to a simple last-10% holdout prediction column.
+        """
+        Generate OOF predictions using PurgedKFoldTime to prevent data leakage.
+        
+        This implementation:
+        - Uses purged cross-validation with embargo periods
+        - Prevents temporal leakage in time-series data
+        - Uses out-of-fold predictions only
+        
+        Args:
+            model: Pre-trained model to generate predictions from
+            X: Input features
+            model_name: Name of the model for logging
+            n_splits: Number of CV splits
+            
+        Returns:
+            OOF predictions array or None if failed
         """
         try:
-            import numpy as _np
-            from sklearn.model_selection import TimeSeriesSplit
-
+            tprint_debug(f"🔄 Generating OOF predictions for {model_name} with PurgedKFoldTime")
+            
+            # Validate model has predict method
             if not hasattr(model, 'predict'):
+                tprint_warning(f"⚠️ Model {model_name} does not have predict method")
                 return None
 
+            from src.utils.purged_kfold import PurgedKFoldTime
+            from src.utils.math_validation import validate_finite
+            from src.utils.common_operations import safe_float
+            
             n = len(X)
             if n < max(3, n_splits + 1):
-                # Too few samples for CV; try simple prediction
-                pred = model.predict(X)
-                pred_arr = _np.asarray(pred).reshape(-1, 1)
-                if pred_arr.shape[0] == n:
-                    return pred_arr
-                return None
-
-            splitter = TimeSeriesSplit(n_splits=max(2, n_splits))
-            oof = _np.zeros((n, 1), dtype=float)
-            filled = _np.zeros(n, dtype=bool)
-
-            for tr_idx, va_idx in splitter.split(_np.arange(n)):
+                tprint_warning(f"⚠️ Insufficient samples ({n}) for {n_splits}-fold CV")
+                # Too few samples for CV; use simple holdout
                 try:
-                    # Assume model is pre-trained; predict on validation indices
-                    pred = model.predict(X[va_idx])
-                    pred_arr = _np.asarray(pred).reshape(-1, 1)
+                    holdout_size = max(1, int(0.2 * n))
+                    pred = model.predict(X[-holdout_size:])
+                    pred_arr = np.asarray(pred).reshape(-1, 1)
+                    oof = np.zeros((n, 1), dtype=float)
+                    oof[-holdout_size:] = pred_arr
+                    return oof
+                except Exception as e:
+                    tprint_error(f"❌ Holdout prediction failed for {model_name}: {e}")
+                    return None
+
+            # Create DataFrame with DatetimeIndex for PurgedKFoldTime
+            # If X doesn't have index, create sequential timestamps
+            if isinstance(X, pd.DataFrame) and isinstance(X.index, pd.DatetimeIndex):
+                X_df = X
+            else:
+                # Create synthetic timestamps (1-minute intervals)
+                timestamps = pd.date_range(start='2020-01-01', periods=n, freq='1min')
+                if isinstance(X, pd.DataFrame):
+                    X_df = X.copy()
+                    X_df.index = timestamps
+                else:
+                    X_df = pd.DataFrame(X, index=timestamps)
+            
+            # Initialize purged K-fold with embargo period
+            purge_minutes = safe_float(getattr(self.config, 'purge_minutes', 30), 30.0)
+            embargo_minutes = safe_float(getattr(self.config, 'embargo_minutes', 15), 15.0)
+            
+            splitter = PurgedKFoldTime(
+                n_splits=n_splits,
+                purge=pd.Timedelta(minutes=purge_minutes),
+                embargo=pd.Timedelta(minutes=embargo_minutes)
+            )
+            
+            # Generate OOF predictions
+            oof = np.zeros((n, 1), dtype=float)
+            filled = np.zeros(n, dtype=bool)
+            
+            tprint_progress(f"📊 Running {n_splits}-fold purged CV for {model_name}")
+            
+            for fold_idx, (tr_idx, va_idx) in enumerate(splitter.split(X_df)):
+                try:
+                    tprint_debug(f"  Fold {fold_idx + 1}/{n_splits}: train={len(tr_idx)}, val={len(va_idx)}")
+                    
+                    # Predict on validation fold only (model already trained)
+                    if isinstance(X, pd.DataFrame):
+                        X_val = X.iloc[va_idx].values
+                    else:
+                        X_val = X[va_idx]
+                    
+                    pred = model.predict(X_val)
+                    pred_arr = np.asarray(pred).reshape(-1, 1)
+                    
                     if pred_arr.shape[0] != len(va_idx):
+                        tprint_warning(f"⚠️ Shape mismatch in fold {fold_idx + 1}")
                         continue
+                    
+                    # Validate predictions are finite
+                    if not validate_finite(pred_arr):
+                        tprint_warning(f"⚠️ Non-finite predictions in fold {fold_idx + 1}")
+                        pred_arr = np.nan_to_num(pred_arr, nan=0.0, posinf=1e6, neginf=-1e6)
+                    
                     oof[va_idx, 0] = pred_arr[:, 0]
                     filled[va_idx] = True
+                    
                 except Exception as e:
-                    # Cannot create OOF for this model
-                    self.logger.debug(f"OOF prediction failed for {model_name} on a fold: {e}")
+                    tprint_error(f"❌ OOF prediction failed for {model_name} on fold {fold_idx + 1}: {e}")
                     continue
 
-            if filled.any():
-                # For any unfilled rows (e.g., earliest fold), try a holdout prediction from the last segment
-                if not filled.all():
-                    try:
-                        holdout = max(1, int(0.1 * n))
-                        tr_end = n - holdout
-                        pred_tail = model.predict(X[tr_end:])
-                        pred_tail_arr = _np.asarray(pred_tail).reshape(-1, 1)
-                        oof[tr_end:, 0] = pred_tail_arr[:, 0]
-                    except Exception:
-                        pass
-                return oof
-
-            # Full fallback: single holdout
-            try:
-                holdout = max(1, int(0.1 * n))
-                tr_end = n - holdout
-                pred_tail = model.predict(X[tr_end:])
-                pred_tail_arr = _np.asarray(pred_tail).reshape(-1, 1)
-                oof = _np.zeros((n, 1), dtype=float)
-                oof[tr_end:, 0] = pred_tail_arr[:, 0]
-                return oof
-            except Exception:
+            # Check if we have sufficient coverage
+            fill_ratio = np.mean(filled)
+            tprint_info(f"📊 OOF coverage for {model_name}: {fill_ratio:.1%}")
+            
+            if fill_ratio < 0.5:
+                tprint_warning(f"⚠️ Low OOF coverage ({fill_ratio:.1%}) for {model_name}")
                 return None
+            
+            # For unfilled samples, use mean of filled predictions
+            if not filled.all():
+                unfilled_indices = ~filled
+                mean_pred = safe_float(np.mean(oof[filled, 0]), 0.0)
+                oof[unfilled_indices, 0] = mean_pred
+                tprint_debug(f"  Filled {np.sum(unfilled_indices)} missing predictions with mean: {mean_pred:.4f}")
+            
+            tprint_success(f"✅ Generated OOF predictions for {model_name}")
+            return oof
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to generate OOF predictions from {model_name}: {e}")
+            tprint_error(f"❌ Failed to generate OOF predictions from {model_name}: {e}")
+            tprint_error(f"   Traceback: {traceback.format_exc()}")
             return None
     
     def _generate_model_predictions(self, model: Any, X: np.ndarray, model_name: str) -> Optional[np.ndarray]:
@@ -2073,81 +2239,33 @@ def integrate_nas_in_tactician_ensemble(X_train: np.ndarray,
     Returns:
         Updated base models dictionary with NAS replacing DeepScaler1m
     """
-    tprint_info("🧠 Integrating NAS model as DeepScaler1m replacement in Tactician ensemble...")
+    # NOTE: NAS integration has been removed from this pipeline
+    # Using standard base models for Tactician ensemble
+    tprint_info("📋 Using standard base models for Tactician ensemble...")
     
-    if not NAS_AVAILABLE:
-        tprint_error("❌ NAS integration not available - using original base models")
-        return {
-            "xgboost": "XGBoost",
-            "lightgbm": "LightGBM", 
-            "FinancialResNet": "FinancialResNet",
-            "RSF": "RandomSurvivalForest"
-        }
+    # Standard base models (NAS integration removed)
+    # Return standard base models for Tactician ensemble
+    tprint_success("✅ Using standard base models for Tactician ensemble")
     
-    try:
-        # Configure NAS for Tactician (1m timeframe, all regimes)
-        nas_config = TacticianNASConfig(
-            n_trials=30,  # Reduced for faster training
-            timeout_seconds=1800,  # 30 minutes max
-            max_layers=6,  # Shallow networks for 1m timeframe speed
-            max_units=256,  # Moderate complexity
-            min_units=32,  # Minimum for meaningful learning
-            objectives=['accuracy', 'efficiency', 'robustness'],
-            objective_weights=[0.5, 0.3, 0.2],  # Balance for 1m timeframe
-            enable_regime_awareness=True,
-            early_stopping_patience=10
-        )
-        
-        # Create NAS model
-        tprint_info("🔍 Creating NAS model for Tactician ensemble...")
-        nas_model = create_tactician_nas_model(
-            X_train=X_train, y_train=y_train,
-            X_val=X_val, y_val=y_val,
-            config=nas_config,
-            regime_labels=regime_labels,
-            regime_features=regime_features
-        )
-        
-        if nas_model is None:
-            tprint_error("❌ NAS model creation failed - using original base models")
-            return {
-                "xgboost": "XGBoost",
-                "lightgbm": "LightGBM", 
-                "FinancialResNet": "FinancialResNet",
-                "RSF": "RandomSurvivalForest"
-            }
-        
-        # Updated base models with NAS replacing DeepScaler1m
-        updated_base_models = {
-            "xgboost": "XGBoost",
-            "lightgbm": "LightGBM",
-            "nas_optimized": nas_model,  # ← REPLACES DeepScaler1m
-            "FinancialResNet": "FinancialResNet",
-            "RSF": "RandomSurvivalForest"
-        }
-        
-        tprint_success("✅ NAS model integrated successfully as DeepScaler1m replacement")
-        tprint_info(f"📊 Updated base models: {list(updated_base_models.keys())}")
-        tprint_info("🎯 NAS model optimized for 1m timeframe with regime awareness")
-        
-        return updated_base_models
-        
-    except Exception as e:
-        tprint_error(f"❌ NAS integration failed: {e}")
-        tprint_info("🔄 Falling back to original base models...")
-        return {
-            "xgboost": "XGBoost",
-            "lightgbm": "LightGBM", 
-            "FinancialResNet": "FinancialResNet",
-            "RSF": "RandomSurvivalForest"
-        }
+    return {
+        "xgboost": "XGBoost",
+        "lightgbm": "LightGBM", 
+        "FinancialResNet": "FinancialResNet",
+        "RSF": "RandomSurvivalForest"
+    }
+
+
+class TacticianEnsembleTrainingStepExtensions:
+    """Extension methods for TacticianEnsembleTrainingStep to avoid indentation confusion."""
     
-    def load_tas_models(self, tas_models: Dict[str, Any], tas_architectures: Dict[str, Any] = None):
+    @staticmethod
+    def load_tas_models(instance: 'TacticianEnsembleTrainingStep', tas_models: Dict[str, Any], tas_architectures: Dict[str, Any] = None):
         """Load TAS models for ensemble integration."""
         try:
-            self.tas_models = tas_models
+            tprint_info(f"🔄 Loading {len(tas_models)} TAS models for ensemble integration")
+            instance.tas_models = tas_models
             if tas_architectures:
-                self.tas_architectures = tas_architectures
+                instance.tas_architectures = tas_architectures
             
             tprint_success(f"✅ Loaded {len(tas_models)} TAS models for ensemble integration")
             tprint_info(f"   Regimes with TAS models: {list(tas_models.keys())}")
@@ -2155,8 +2273,14 @@ def integrate_nas_in_tactician_ensemble(X_train: np.ndarray,
         except Exception as e:
             tprint_error(f"❌ Failed to load TAS models: {e}")
             raise
-    
-    def _get_meta_features(self, df: pd.DataFrame, is_live: bool = False, **kwargs: Any) -> pd.DataFrame:
+
+
+# Add as method to TacticianEnsembleTrainingStep
+TacticianEnsembleTrainingStep.load_tas_models = lambda self, *args, **kwargs: TacticianEnsembleTrainingStepExtensions.load_tas_models(self, *args, **kwargs)
+
+
+# Attach extension methods to TacticianEnsembleTrainingStep class
+def _tactician_get_meta_features(self, df: pd.DataFrame, is_live: bool = False, **kwargs: Any) -> pd.DataFrame:
         """
         Extract comprehensive meta-features including disagreement features for the tactician ensemble.
         
@@ -2202,7 +2326,7 @@ def integrate_nas_in_tactician_ensemble(X_train: np.ndarray,
             if base_predictions and len(base_predictions) > 1:
                 # Use meta-feature generator from feature engineering
                 try:
-                    from src.feature_engineering.ensemble_meta_features import EnsembleMetaFeatureGenerator
+                    from src.feature_engineering_roadmap.ensemble_meta_features import EnsembleMetaFeatureGenerator
                     meta_feature_generator = EnsembleMetaFeatureGenerator(self.logger)
                     
                     # Generate meta-features using the feature engineering module
@@ -2259,8 +2383,8 @@ def integrate_nas_in_tactician_ensemble(X_train: np.ndarray,
             except Exception as fallback_error:
                 self.logger.error(f"Fallback meta-feature generation also failed: {fallback_error}")
                 return pd.DataFrame(index=df.index)
-    
-    def _get_base_model_predictions(self, df: pd.DataFrame, is_live: bool = False) -> Dict[str, Any]:
+
+def _tactician_get_base_model_predictions(self, df: pd.DataFrame, is_live: bool = False) -> Dict[str, Any]:
         """
         Get predictions from all base models for disagreement analysis.
         
@@ -2322,6 +2446,10 @@ def integrate_nas_in_tactician_ensemble(X_train: np.ndarray,
         except Exception as e:
             self.logger.error(f"Error getting base model predictions: {e}")
             return {}
+
+# Attach extension methods to the class
+TacticianEnsembleTrainingStep._get_meta_features = _tactician_get_meta_features
+TacticianEnsembleTrainingStep._get_base_model_predictions = _tactician_get_base_model_predictions
 
 
 def execute_tactician_ensemble_training(

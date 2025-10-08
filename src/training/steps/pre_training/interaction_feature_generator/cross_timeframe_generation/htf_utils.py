@@ -4,8 +4,8 @@ from typing import Dict, List, Set, Tuple
 
 import pandas as pd
 
-from feature_engineering.feature_registry import FeatureFamily, FeatureRegistry
-from feature_engineering.transforms import TransformConfig, TransformType
+from feature_engineering_roadmap.feature_registry import FeatureFamily, FeatureRegistry
+from feature_engineering_roadmap.transforms import TransformConfig, TransformType
 
 try:
     from src.utils.tprint import tprint

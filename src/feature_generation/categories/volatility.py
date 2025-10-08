@@ -11,8 +11,7 @@ import pandas as pd
 import logging
 from typing import Any, Dict, List, Optional, Union
 
-from ..core.feature_generator import (
-
+from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
 # Optimization utilities
 try:
     from ..utils.vectorization_optimizer import get_vectorization_optimizer
@@ -20,11 +19,6 @@ try:
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
-    FeatureGenerator,
-    FeatureConfig,
-    FeatureCategory,
-    VectorizedFeatureGenerator
-)
 from ..base_calculations import (
     BaseCalculator,
     BaseCalculationType,
@@ -736,10 +730,6 @@ def create_volatility_generators(periods: Dict[str, List[int]] = None) -> List[F
             super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
 
         def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
-        # Optimize DataFrame for processing
-        if hasattr(self, 'optimize_dataframe_processing'):
-            data = self.optimize_dataframe_processing(data)
-
             """Generate volatility ratio feature."""
             returns = data['close'].pct_change()
 

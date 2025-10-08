@@ -58,7 +58,7 @@ tprint("✅ [IMPORTS] Core decorators imported")
 tprint("🔧 [IMPORTS] Importing main training pipeline components...")
 from src.training.steps.main_training_pipeline import (
     MainTrainingPipeline, MainPipelineConfig, MainPipelineResult,
-    PipelineStage, ExecutionMode, get_full_pipeline_config,
+    PipelineStage, ExecutionMode, DirectionType, get_full_pipeline_config,
     get_light_pipeline_config, get_blank_pipeline_config, SubPipelineStatus
 )
 tprint("✅ [IMPORTS] Main training pipeline components imported")
@@ -216,7 +216,8 @@ class AresLauncher:
                 'timeframe': config.timeframe,
                 'mode': config.mode.value,
                 'intensity_percentage': config.intensity_percentage,
-                'training_mode_config': config.training_mode_config
+                'training_mode_config': config.training_mode_config,
+                'direction_type': config.direction_type.value if hasattr(config, 'direction_type') else 'both'
             },
             'next_stage_requirements': self._get_next_stage_requirements(stage, sub_pipeline)
         }
@@ -313,6 +314,7 @@ class AresLauncher:
         exchange: str = "binance",
         timeframe: str = "15m",
         data_dir: str = "historical_data",
+        direction: str = "both",
         stage: Optional[PipelineStage] = None,
         sub_pipeline: Optional[str] = None,
         execution_mode: ExecutionModeType = ExecutionModeType.FULL,
@@ -320,18 +322,19 @@ class AresLauncher:
     ) -> MainPipelineResult:
         """
         Execute the training pipeline with granular control.
-        
+
         Args:
             mode: Launcher execution mode (full, light, blank, stage, sub_pipeline)
             symbol: Trading symbol
             exchange: Exchange name
             timeframe: Data timeframe
             data_dir: Data directory
+            direction: Direction type for training (longs, shorts, both)
             stage: Specific stage to execute (for STAGE mode)
             sub_pipeline: Specific sub-pipeline to execute (for SUB_PIPELINE mode)
             execution_mode: Execution mode type (full, light, blank) for stage/sub-pipeline specific execution
             custom_config: Custom configuration parameters
-            
+
         Returns:
             MainPipelineResult with execution details
         """
@@ -341,21 +344,22 @@ class AresLauncher:
         tprint(f"🚀 [EXECUTE_PIPELINE] Exchange: {exchange}")
         tprint(f"🚀 [EXECUTE_PIPELINE] Timeframe: {timeframe}")
         tprint(f"🚀 [EXECUTE_PIPELINE] Data directory: {data_dir}")
+        tprint(f"🚀 [EXECUTE_PIPELINE] Direction: {direction}")
         tprint(f"🚀 [EXECUTE_PIPELINE] Execution mode: {execution_mode.value}")
-        
+
         if stage:
             tprint(f"🚀 [EXECUTE_PIPELINE] Target stage: {stage.value}")
         if sub_pipeline:
             tprint(f"🚀 [EXECUTE_PIPELINE] Target sub-pipeline: {sub_pipeline}")
         if custom_config:
             tprint(f"🚀 [EXECUTE_PIPELINE] Custom config provided: {len(custom_config)} parameters")
-        
+
         self.logger.info(f"🚀 Starting pipeline execution: {mode.value}")
-        
+
         # Create configuration based on mode
         tprint("🚀 [EXECUTE_PIPELINE] Creating configuration...")
         config = self._create_config(
-            mode, symbol, exchange, timeframe, data_dir, 
+            mode, symbol, exchange, timeframe, data_dir, direction,
             stage, sub_pipeline, execution_mode, custom_config
         )
         tprint("✅ [EXECUTE_PIPELINE] Configuration created successfully")
@@ -379,6 +383,7 @@ class AresLauncher:
         exchange: str,
         timeframe: str,
         data_dir: str,
+        direction: str,
         stage: Optional[PipelineStage],
         sub_pipeline: Optional[str],
         execution_mode: ExecutionModeType,
@@ -391,8 +396,17 @@ class AresLauncher:
         tprint(f"⚙️ [CREATE_CONFIG] Exchange: {exchange}")
         tprint(f"⚙️ [CREATE_CONFIG] Timeframe: {timeframe}")
         tprint(f"⚙️ [CREATE_CONFIG] Data directory: {data_dir}")
+        tprint(f"⚙️ [CREATE_CONFIG] Direction: {direction}")
         tprint(f"⚙️ [CREATE_CONFIG] Execution mode: {execution_mode.value}")
-        
+
+        # Convert direction string to enum
+        direction_map = {
+            'longs': DirectionType.LONGS,
+            'shorts': DirectionType.SHORTS,
+            'both': DirectionType.BOTH
+        }
+        direction_enum = direction_map[direction]
+
         # Base configuration
         tprint("⚙️ [CREATE_CONFIG] Creating base configuration...")
         base_config = {
@@ -400,14 +414,16 @@ class AresLauncher:
             'exchange': exchange,
             'timeframe': timeframe,
             'data_dir': data_dir,
+            'direction_type': direction_enum,
             'custom_params': custom_config or {}
         }
         tprint("✅ [CREATE_CONFIG] Base configuration created")
         
         # Filter base_config to only include supported parameters for each config function
         tprint("⚙️ [CREATE_CONFIG] Filtering configuration parameters...")
-        supported_params = ['symbol', 'exchange', 'timeframe', 'data_dir']
-        filtered_config = {k: v for k, v in base_config.items() if k in supported_params}
+        # Note: direction_type is NOT included as it's not a parameter for get_*_pipeline_config functions
+        config_function_params = ['symbol', 'exchange', 'timeframe', 'data_dir']
+        filtered_config = {k: v for k, v in base_config.items() if k in config_function_params}
         tprint(f"✅ [CREATE_CONFIG] Filtered config: {list(filtered_config.keys())}")
         
         # Mode-specific configuration
@@ -423,10 +439,10 @@ class AresLauncher:
             config = get_blank_pipeline_config(**filtered_config)
         elif mode == LauncherMode.STAGE and stage:
             tprint(f"⚙️ [CREATE_CONFIG] Creating STAGE configuration for: {stage.value}")
-            config = self._create_stage_config(stage, base_config, execution_mode)
+            config = self._create_stage_config(stage, base_config, execution_mode, direction)
         elif mode == LauncherMode.SUB_PIPELINE and sub_pipeline:
             tprint(f"⚙️ [CREATE_CONFIG] Creating SUB_PIPELINE configuration for: {sub_pipeline}")
-            config = self._create_sub_pipeline_config(sub_pipeline, base_config, execution_mode)
+            config = self._create_sub_pipeline_config(sub_pipeline, base_config, execution_mode, direction)
         else:
             # Default to full configuration
             tprint("⚙️ [CREATE_CONFIG] Using DEFAULT (FULL) pipeline configuration")
@@ -435,15 +451,17 @@ class AresLauncher:
         tprint("✅ [CREATE_CONFIG] Configuration creation completed successfully")
         return config
     
-    def _create_stage_config(self, stage: PipelineStage, base_config: Dict[str, Any], execution_mode: ExecutionModeType) -> MainPipelineConfig:
+    def _create_stage_config(self, stage: PipelineStage, base_config: Dict[str, Any], execution_mode: ExecutionModeType, direction: str) -> MainPipelineConfig:
         """Create configuration for a specific stage."""
         tprint(f"🎭 [STAGE_CONFIG] Creating stage configuration for: {stage.value}")
         tprint(f"🎭 [STAGE_CONFIG] Execution mode: {execution_mode.value}")
-        
+        tprint(f"🎭 [STAGE_CONFIG] Direction: {direction}")
+
         # Filter base_config to only include supported parameters for each config function
         tprint("🎭 [STAGE_CONFIG] Filtering configuration parameters...")
-        supported_params = ['symbol', 'exchange', 'timeframe', 'data_dir']
-        filtered_config = {k: v for k, v in base_config.items() if k in supported_params}
+        # Note: direction_type is NOT included as it's not a parameter for get_*_pipeline_config functions
+        config_function_params = ['symbol', 'exchange', 'timeframe', 'data_dir']
+        filtered_config = {k: v for k, v in base_config.items() if k in config_function_params}
         tprint(f"✅ [STAGE_CONFIG] Filtered config: {list(filtered_config.keys())}")
         
         # Use the provided timeframe for all stages
@@ -467,7 +485,8 @@ class AresLauncher:
         # Enable only the specified stage
         tprint(f"🎭 [STAGE_CONFIG] Enabling stage: {stage.value}")
         config.enabled_stages = [stage]
-        tprint("✅ [STAGE_CONFIG] Stage enabled")
+        config.single_stage_only = True  # Prevent automatic stage transitions
+        tprint("✅ [STAGE_CONFIG] Stage enabled (single stage mode)")
         
         # Get all available sub-pipelines for the stage
         tprint("🎭 [STAGE_CONFIG] Getting available sub-pipelines...")
@@ -493,11 +512,12 @@ class AresLauncher:
         tprint("✅ [STAGE_CONFIG] Stage configuration completed successfully")
         return config
     
-    def _create_sub_pipeline_config(self, sub_pipeline: str, base_config: Dict[str, Any], execution_mode: ExecutionModeType) -> MainPipelineConfig:
+    def _create_sub_pipeline_config(self, sub_pipeline: str, base_config: Dict[str, Any], execution_mode: ExecutionModeType, direction: str) -> MainPipelineConfig:
         """Create configuration for a specific sub-pipeline."""
         tprint(f"🔧 [SUB_PIPELINE_CONFIG] Creating sub-pipeline configuration for: {sub_pipeline}")
         tprint(f"🔧 [SUB_PIPELINE_CONFIG] Execution mode: {execution_mode.value}")
-        
+        tprint(f"🔧 [SUB_PIPELINE_CONFIG] Direction: {direction}")
+
         # Set the execution mode in base config
         tprint("🔧 [SUB_PIPELINE_CONFIG] Setting execution mode in base config...")
         base_config['mode'] = ExecutionMode(execution_mode.value)
@@ -1257,20 +1277,32 @@ Note: The following sub-pipelines are DEPRECATED and will be removed in future v
   - nas (use nas_tas_regime_discovery instead)
 
 Examples:
-  # Full pipeline execution (1460 days, 100% intensity)
+  # Full pipeline execution (1460 days, 100% intensity, both directions)
   python ares_launcher.py --mode full --symbol ETHUSDT --exchange binance
 
-  # Light pipeline execution (10 days, 5% intensity)
+  # Full pipeline execution for longs only
+  python ares_launcher.py --mode full --symbol ETHUSDT --direction longs
+
+  # Full pipeline execution for shorts only
+  python ares_launcher.py --mode full --symbol ETHUSDT --direction shorts
+
+  # Light pipeline execution (10 days, 5% intensity, both directions)
   python ares_launcher.py --mode light --symbol ETHUSDT
 
   # Execute specific stage with full execution mode (1460 days, 100% intensity)
   python ares_launcher.py --mode stage --stage data_collection --execution-mode full --symbol ETHUSDT
+
+  # Execute specific stage for longs only
+  python ares_launcher.py --mode stage --stage data_collection --direction longs --symbol ETHUSDT
 
   # Execute specific stage with light execution mode (10 days, 5% intensity)
   python ares_launcher.py --mode stage --stage market_analysis --execution-mode light --symbol ETHUSDT
 
   # Execute specific sub-pipeline with blank execution mode (180 days, 10% intensity)
   python ares_launcher.py --mode sub_pipeline --sub_pipeline sr_detection --execution-mode blank --symbol ETHUSDT
+
+  # Execute specific sub-pipeline for longs only
+  python ares_launcher.py --mode sub_pipeline --sub_pipeline sr_detection --direction longs --symbol ETHUSDT
 
   # Execute specific sub-pipeline with full execution mode (1460 days, 100% intensity)
   python ares_launcher.py --mode sub_pipeline --sub_pipeline nas_tas_regime_discovery --execution-mode full --symbol ETHUSDT
@@ -1347,7 +1379,14 @@ Examples:
         default='historical_data',
         help='Data directory (default: historical_data)'
     )
-    
+
+    parser.add_argument(
+        '--direction',
+        choices=['longs', 'shorts', 'both'],
+        default='both',
+        help='Direction type for training: longs (long positions only), shorts (short positions only), or both (default: both)'
+    )
+
     parser.add_argument(
         '--stage',
         choices=['data_collection', 'market_analysis', 'pre_training', 'model_training', 'backtesting'],
@@ -1554,6 +1593,7 @@ async def main():
             exchange=args.exchange,
             timeframe=args.timeframe,
             data_dir=args.data_dir,
+            direction=args.direction,
             stage=stage,
             sub_pipeline=selected_sub_pipeline,
             execution_mode=execution_mode,

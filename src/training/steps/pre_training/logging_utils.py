@@ -13,6 +13,9 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+# Import tprint for enhanced logging capabilities
+from src.utils.tprint import tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success
+
 
 class _JSONFormatter(logging.Formatter):
     """JSON formatter that keeps console output readable and machine friendly."""
@@ -48,9 +51,12 @@ def configure_pre_training_logging() -> logging.Logger:
     """Configure and return the structured pre-training logger."""
     global _CONFIGURED
 
+    tprint_debug(f"🔧 Configuring pre-training logging system (logger: {_LOGGER_NAME})")
+
     logger = logging.getLogger(_LOGGER_NAME)
 
     if not _CONFIGURED:
+        tprint_debug("📋 Setting up JSON formatter and handlers for structured logging")
         handler = logging.StreamHandler()
         handler.setFormatter(_JSONFormatter())
         handler.setLevel(logging.INFO)
@@ -60,6 +66,8 @@ def configure_pre_training_logging() -> logging.Logger:
         logger.setLevel(logging.INFO)
         logger.propagate = False
         _CONFIGURED = True
+
+        tprint_info(f"✅ Pre-training logging system configured successfully")
 
     return logger
 
@@ -91,6 +99,9 @@ class PreTrainingEventLogger:
         self._logger = logger or configure_pre_training_logging()
 
     def pipeline_begin(self, *, run_id: str, symbol: str, timeframe: str, mode: str, metadata: Dict[str, Any]) -> None:
+        tprint(f"🚀 Pre-training pipeline started: {symbol}_{timeframe} (mode: {mode})")
+        tprint_debug(f"📋 Run ID: {run_id}")
+
         self._emit(
             event="pipeline_begin",
             message="Pre-training pipeline started",
@@ -121,6 +132,20 @@ class PreTrainingEventLogger:
         metadata: Dict[str, Any],
         error: Optional[str] = None,
     ) -> None:
+        # Enhanced pipeline end logging
+        if success:
+            tprint_success(f"🎉 Pre-training pipeline completed successfully: {symbol}_{timeframe}")
+            tprint(f"📊 Steps: {completed_steps}/{total_steps} completed")
+            if duration_ms:
+                tprint(f"⏱️ Duration: {duration_ms/1000:.2f} seconds")
+        else:
+            tprint_error(f"❌ Pre-training pipeline failed: {symbol}_{timeframe}")
+            tprint(f"📊 Steps: {completed_steps}/{total_steps} completed")
+            if duration_ms:
+                tprint_warning(f"⏱️ Duration before failure: {duration_ms/1000:.2f} seconds")
+            if error:
+                tprint_error(f"💥 Error: {error}")
+
         payload = {
             "run_id": run_id,
             "step": "pipeline",

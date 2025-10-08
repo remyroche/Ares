@@ -25,7 +25,11 @@ import os
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Type, Union, get_type_hints
+
+# Import common utilities for enhanced path handling and validation
+from src.utils.common_operations import ensure_directory, safe_file_exists, validate_finite, validate_positive
+from src.utils.tprint import tprint_debug, tprint_info
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
@@ -41,13 +45,60 @@ except Exception:  # pragma: no cover - exercised via fallback path in tests
     BaseModel = object  # type: ignore[misc,assignment]
 
     class BaseSettings:  # type: ignore[override]
-        """Fallback shim with a minimal API compatible with pydantic."""
+        """Fallback shim with a minimal API compatible with pydantic and runtime type validation."""
 
         model_config: Dict[str, Any] = {}
 
         def __init__(self, **kwargs: Any) -> None:
+            # Perform runtime type validation when pydantic is not available
+            if hasattr(self.__class__, '__annotations__'):
+                type_hints = get_type_hints(self.__class__)
+                for key, value in kwargs.items():
+                    if key in type_hints:
+                        expected_type = type_hints[key]
+                        if not self._validate_type(value, expected_type):
+                            raise TypeError(f"Invalid type for {key}: expected {expected_type}, got {type(value)}")
+
             for key, value in kwargs.items():
                 setattr(self, key, value)
+
+        def _validate_type(self, value: Any, expected_type: Type) -> bool:
+            """Basic runtime type validation for fallback mode."""
+            if expected_type is Any:
+                return True
+
+            # Handle Optional types
+            if hasattr(expected_type, '__origin__') and expected_type.__origin__ is Union:
+                # Check if None is allowed in Union
+                if type(None) in expected_type.__args__:
+                    if value is None:
+                        return True
+                    # Remove None from args for further validation
+                    non_none_args = tuple(arg for arg in expected_type.__args__ if arg is not type(None))
+                    if len(non_none_args) == 1:
+                        return self._validate_type(value, non_none_args[0])
+
+            # Handle basic types
+            if expected_type in (str, int, float, bool):
+                return isinstance(value, expected_type)
+
+            # Handle Path
+            if expected_type is Path:
+                return isinstance(value, (str, Path))
+
+            # Handle Dict
+            if hasattr(expected_type, '__origin__') and expected_type.__origin__ is dict:
+                return isinstance(value, dict)
+
+            # Handle List
+            if hasattr(expected_type, '__origin__') and expected_type.__origin__ is list:
+                return isinstance(value, list)
+
+            # For complex types or when validation fails, allow but log warning
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Type validation not fully implemented for {expected_type}, allowing value")
+            return True
 
     def Field(  # type: ignore[override]
         default: Any = None, *, env: Optional[str] = None, alias: Optional[str] = None, **_: Any
@@ -185,6 +236,16 @@ def _resolve_path(value: Any) -> Optional[ResolvedPath]:
         path = (PROJECT_ROOT / path).resolve(strict=False)
     else:
         path = path.resolve(strict=False)
+
+    # Validate path exists or parent directories exist for creation
+    if not path.exists():
+        if not path.parent.exists():
+            raise ValueError(
+                f"Pre-training configuration path does not exist and parent directory cannot be created: {raw!r} "
+                f"(resolved to: {path!r}). Please ensure the parent directory exists or the path is accessible."
+            )
+        # Path doesn't exist but parent exists - this is OK for output directories that will be created
+
     return ResolvedPath(raw=raw, resolved=path)
 
 
@@ -264,15 +325,29 @@ def _load_without_pydantic() -> Dict[str, Any]:  # pragma: no cover - exercised 
 
 
 def _load_raw_settings() -> Dict[str, Any]:
+    """Load raw settings with enhanced logging."""
+    tprint_debug("🔧 Loading pre-training settings from environment")
+
     if _PYDANTIC_AVAILABLE:
-        return _load_with_pydantic()
-    return _load_without_pydantic()
+        tprint_debug("📋 Using Pydantic settings loader")
+        settings = _load_with_pydantic()
+    else:
+        tprint_debug("📋 Using fallback settings loader")
+        settings = _load_without_pydantic()
+
+    tprint_info(f"✅ Loaded {len(settings)} top-level configuration sections")
+    return settings
 
 
 def _build_settings(raw: Dict[str, Any]) -> PreTrainingSettings:
+    """Build settings object with enhanced logging."""
+    tprint_debug(f"🏗️ Building pre-training settings from {len(raw)} sections")
+
     data = raw.get("data", {})
     regime = raw.get("regime", {})
     metrics = raw.get("metrics", {})
+
+    tprint_debug(f"📊 Configuration sections: data={len(data)} items, regime={len(regime)} items, metrics={len(metrics)} items")
 
     data_paths = PreTrainingDataPaths(
         root=_ensure_resolved(data.get("root"), name="data.root"),

@@ -27,6 +27,7 @@ import time
 import json
 import logging
 import inspect
+import traceback
 from datetime import datetime, timezone
 from typing import Any, Optional, Union, Dict, List, TextIO, Callable
 from pathlib import Path
@@ -229,6 +230,12 @@ class TPrintConfig:
     print_capture_level: LogLevel = LogLevel.INFO
     auto_replace_print: bool = False  # Set to True to auto-replace built-in print on import
 
+    # Traceback configuration
+    include_traceback: bool = True  # Include traceback in error messages
+    traceback_depth: int = 10  # Maximum number of stack frames to show (0 = all)
+    show_locals: bool = False  # Include local variables in traceback
+    compact_traceback: bool = False  # Use compact traceback format
+
     # Color scheme
     colors: Dict[LogLevel, str] = field(default_factory=lambda: {
         LogLevel.DEBUG: Fore.CYAN,
@@ -407,6 +414,107 @@ class TPrintManager:
             except Exception:
                 # Silently handle logger errors
                 pass
+    
+    def _format_traceback(self, exc: Optional[BaseException] = None, include_locals: bool = None, depth: int = None) -> str:
+        """Format traceback for error messages.
+        
+        Args:
+            exc: Exception to format traceback for (if None, uses current exception)
+            include_locals: Whether to include local variables (overrides config)
+            depth: Maximum depth to show (overrides config, 0 = all)
+            
+        Returns:
+            Formatted traceback string
+        """
+        if not self.config.include_traceback:
+            return ""
+        
+        include_locals = include_locals if include_locals is not None else self.config.show_locals
+        depth = depth if depth is not None else self.config.traceback_depth
+        
+        try:
+            if exc is None:
+                # Get current exception info
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                if exc_type is None:
+                    # No exception available, get stack trace instead
+                    stack_frames = traceback.extract_stack()[:-1]  # Exclude this function
+                    if depth > 0 and len(stack_frames) > depth:
+                        stack_frames = stack_frames[-depth:]
+                    tb_lines = ['Stack trace (most recent call last):']
+                    for frame in stack_frames:
+                        tb_lines.append(f'  File "{frame.filename}", line {frame.lineno}, in {frame.name}')
+                        if frame.line:
+                            tb_lines.append(f'    {frame.line}')
+                    return '\n' + '\n'.join(tb_lines)
+            else:
+                exc_type = type(exc)
+                exc_value = exc
+                exc_tb = exc.__traceback__
+            
+            if exc_tb is None:
+                return f"\n{exc_type.__name__}: {exc_value}"
+            
+            # Format the traceback
+            if self.config.compact_traceback:
+                # Compact format: just file, line, function
+                tb_frames = traceback.extract_tb(exc_tb)
+                if depth > 0 and len(tb_frames) > depth:
+                    tb_frames = tb_frames[-depth:]
+                tb_lines = ['\nTraceback (most recent call last):']
+                for frame in tb_frames:
+                    tb_lines.append(f'  {frame.filename}:{frame.lineno} in {frame.name}')
+                tb_lines.append(f'{exc_type.__name__}: {exc_value}')
+                return '\n'.join(tb_lines)
+            else:
+                # Full format
+                tb_lines = ['', 'Traceback (most recent call last):']
+                tb_frames = traceback.extract_tb(exc_tb)
+                
+                if depth > 0 and len(tb_frames) > depth:
+                    tb_frames = tb_frames[-depth:]
+                    tb_lines.append(f'  ... ({len(traceback.extract_tb(exc_tb)) - depth} frames omitted)')
+                
+                for frame in tb_frames:
+                    tb_lines.append(f'  File "{frame.filename}", line {frame.lineno}, in {frame.name}')
+                    if frame.line:
+                        tb_lines.append(f'    {frame.line}')
+                    
+                    # Add local variables if requested
+                    if include_locals and exc_tb is not None:
+                        # Get locals from the frame
+                        try:
+                            local_vars = exc_tb.tb_frame.f_locals
+                            if local_vars:
+                                tb_lines.append('    Local variables:')
+                                for var_name, var_value in list(local_vars.items())[:5]:  # Limit to 5 vars
+                                    try:
+                                        var_repr = repr(var_value)
+                                        if len(var_repr) > 100:
+                                            var_repr = var_repr[:97] + '...'
+                                        tb_lines.append(f'      {var_name} = {var_repr}')
+                                    except Exception:
+                                        tb_lines.append(f'      {var_name} = <unavailable>')
+                        except Exception:
+                            pass
+                
+                # Add the exception message
+                tb_lines.append(f'{exc_type.__name__}: {exc_value}')
+                
+                # Check for exception chain (__cause__ or __context__)
+                if hasattr(exc, '__cause__') and exc.__cause__ is not None:
+                    tb_lines.append('')
+                    tb_lines.append('The above exception was the direct cause of the following exception:')
+                    tb_lines.append(self._format_traceback(exc.__cause__, include_locals, depth))
+                elif hasattr(exc, '__context__') and exc.__context__ is not None and not exc.__suppress_context__:
+                    tb_lines.append('')
+                    tb_lines.append('During handling of the above exception, another exception occurred:')
+                    tb_lines.append(self._format_traceback(exc.__context__, include_locals, depth))
+                
+                return '\n'.join(tb_lines)
+        
+        except Exception as format_error:
+            return f"\n[Error formatting traceback: {format_error}]"
     
     def _log(self, level: LogLevel, *args, **kwargs):
         """Internal logging method."""
@@ -619,11 +727,94 @@ def tprint_error(*args, **kwargs) -> None:
     Args:
         *args: Arguments to print
         **kwargs: Keyword arguments for print function
+            - include_traceback: bool = True - Include traceback if available
+            - traceback_depth: int = None - Override default traceback depth
+            - show_locals: bool = None - Override show_locals config
     
     Example:
         tprint_error("Connection failed")  # [2025-01-11 06:30:15] ERROR: Connection failed
+        tprint_error("Error occurred", include_traceback=True)  # Includes traceback if in exception context
     """
+    # Extract traceback-related kwargs
+    include_traceback = kwargs.pop('include_traceback', True)
+    traceback_depth = kwargs.pop('traceback_depth', None)
+    show_locals = kwargs.pop('show_locals', None)
+    
+    # Log the error message
     _global_manager._log(LogLevel.ERROR, *args, **kwargs)
+    
+    # Add traceback if we're in an exception context
+    if include_traceback and _global_manager.config.include_traceback:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        if exc_type is not None:
+            tb_str = _global_manager._format_traceback(exc_value, show_locals, traceback_depth)
+            if tb_str:
+                _global_manager._write_to_outputs(tb_str, LogLevel.ERROR)
+
+
+def tprint_exception(exc: Optional[BaseException] = None, message: str = "", **kwargs) -> None:
+    """
+    Print exception with full traceback details.
+    
+    Args:
+        exc: Exception to log (if None, uses current exception from sys.exc_info())
+        message: Optional message to include with the exception
+        **kwargs: Additional keyword arguments
+            - include_locals: bool - Include local variables in traceback
+            - traceback_depth: int - Maximum depth of traceback to show (0 = all)
+            - compact: bool - Use compact traceback format
+    
+    Example:
+        try:
+            # ... code that raises exception ...
+        except Exception as e:
+            tprint_exception(e, "Failed to process data")
+            
+        # Or use without argument in except block:
+        try:
+            # ... code ...
+        except:
+            tprint_exception(message="Unexpected error occurred")
+    """
+    # Extract configuration overrides
+    include_locals = kwargs.pop('include_locals', None)
+    traceback_depth = kwargs.pop('traceback_depth', None)
+    compact = kwargs.pop('compact', None)
+    
+    # Get exception if not provided
+    if exc is None:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        if exc_type is not None:
+            exc = exc_value
+        else:
+            tprint_error("tprint_exception called but no exception is active")
+            return
+    
+    # Build the error message
+    exc_type_name = type(exc).__name__
+    exc_message = str(exc)
+    
+    if message:
+        error_msg = f"{message}: {exc_type_name}: {exc_message}"
+    else:
+        error_msg = f"{exc_type_name}: {exc_message}"
+    
+    # Log the error message
+    _global_manager._log(LogLevel.ERROR, error_msg, **kwargs)
+    
+    # Temporarily override compact setting if requested
+    if compact is not None:
+        old_compact = _global_manager.config.compact_traceback
+        _global_manager.config.compact_traceback = compact
+    
+    # Format and log the traceback
+    tb_str = _global_manager._format_traceback(exc, include_locals, traceback_depth)
+    if tb_str:
+        _global_manager._write_to_outputs(tb_str, LogLevel.ERROR)
+    
+    # Restore compact setting if it was overridden
+    if compact is not None:
+        _global_manager.config.compact_traceback = old_compact
 
 
 def tprint_success(*args, **kwargs) -> None:
@@ -762,65 +953,102 @@ def timestamped_print(*args, **kwargs) -> None:
 
 
 # Decorator for automatic function logging
-def tprint_logged(level: LogLevel = LogLevel.INFO, include_args: bool = False, include_result: bool = False):
+def tprint_logged(level: LogLevel = LogLevel.INFO, include_args: bool = False, include_result: bool = False, 
+                  include_traceback: bool = True, traceback_depth: int = None):
     """
-    Decorator to automatically log function calls.
+    Decorator to automatically log function calls with enhanced error tracking.
     
     Args:
         level: Log level for the messages
         include_args: Whether to include function arguments in log
         include_result: Whether to include function result in log
+        include_traceback: Whether to include traceback on errors (default: True)
+        traceback_depth: Maximum traceback depth to show (None = use config default)
     
     Example:
         @tprint_logged(LogLevel.INFO, include_args=True, include_result=True)
         def my_function(x, y):
             return x + y
+            
+        @tprint_logged(LogLevel.DEBUG, include_traceback=True, traceback_depth=5)
+        def risky_function():
+            # Will show detailed traceback if it fails
+            pass
     """
     def decorator(func):
         func_name = func.__name__
+        func_module = func.__module__
         is_coroutine = inspect.iscoroutinefunction(func)
 
         if is_coroutine:
             @functools.wraps(func)
             async def async_wrapper(*args, **kwargs):
+                # Get caller information
+                frame = inspect.currentframe()
+                caller_frame = frame.f_back if frame else None
+                caller_info = ""
+                if caller_frame:
+                    caller_info = f" (called from {caller_frame.f_code.co_filename}:{caller_frame.f_lineno})"
+                
                 if include_args:
-                    tprint_with_level(level, f"Calling {func_name} with args={args}, kwargs={kwargs}")
+                    # Truncate long args for readability
+                    args_repr = str(args)[:200] + ('...' if len(str(args)) > 200 else '')
+                    kwargs_repr = str(kwargs)[:200] + ('...' if len(str(kwargs)) > 200 else '')
+                    tprint_with_level(level, f"Calling {func_module}.{func_name} with args={args_repr}, kwargs={kwargs_repr}{caller_info}")
                 else:
-                    tprint_with_level(level, f"Calling {func_name}")
+                    tprint_with_level(level, f"Calling {func_module}.{func_name}{caller_info}")
 
                 try:
                     result = await func(*args, **kwargs)
 
                     if include_result:
-                        tprint_with_level(level, f"{func_name} completed with result={result}")
+                        result_repr = str(result)[:200] + ('...' if len(str(result)) > 200 else '')
+                        tprint_with_level(level, f"{func_module}.{func_name} completed with result={result_repr}")
                     else:
-                        tprint_with_level(level, f"{func_name} completed")
+                        tprint_with_level(level, f"{func_module}.{func_name} completed")
 
                     return result
                 except Exception as e:
-                    tprint_error(f"{func_name} failed with error: {e}")
+                    if include_traceback:
+                        tprint_exception(e, f"{func_module}.{func_name} failed", traceback_depth=traceback_depth)
+                    else:
+                        tprint_error(f"{func_module}.{func_name} failed with error: {e}", include_traceback=False)
                     raise
 
             return async_wrapper
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
+            # Get caller information
+            frame = inspect.currentframe()
+            caller_frame = frame.f_back if frame else None
+            caller_info = ""
+            if caller_frame:
+                caller_info = f" (called from {caller_frame.f_code.co_filename}:{caller_frame.f_lineno})"
+            
             if include_args:
-                tprint_with_level(level, f"Calling {func_name} with args={args}, kwargs={kwargs}")
+                # Truncate long args for readability
+                args_repr = str(args)[:200] + ('...' if len(str(args)) > 200 else '')
+                kwargs_repr = str(kwargs)[:200] + ('...' if len(str(kwargs)) > 200 else '')
+                tprint_with_level(level, f"Calling {func_module}.{func_name} with args={args_repr}, kwargs={kwargs_repr}{caller_info}")
             else:
-                tprint_with_level(level, f"Calling {func_name}")
+                tprint_with_level(level, f"Calling {func_module}.{func_name}{caller_info}")
 
             try:
                 result = func(*args, **kwargs)
 
                 if include_result:
-                    tprint_with_level(level, f"{func_name} completed with result={result}")
+                    result_repr = str(result)[:200] + ('...' if len(str(result)) > 200 else '')
+                    tprint_with_level(level, f"{func_module}.{func_name} completed with result={result_repr}")
                 else:
-                    tprint_with_level(level, f"{func_name} completed")
+                    tprint_with_level(level, f"{func_module}.{func_name} completed")
 
                 return result
             except Exception as e:
-                tprint_error(f"{func_name} failed with error: {e}")
+                if include_traceback:
+                    tprint_exception(e, f"{func_module}.{func_name} failed", traceback_depth=traceback_depth)
+                else:
+                    tprint_error(f"{func_module}.{func_name} failed with error: {e}", include_traceback=False)
                 raise
 
         return wrapper
@@ -954,6 +1182,74 @@ def cleanup_tprint():
     _global_manager.close()
 
 
+# Helper functions for traceback configuration
+def enable_traceback(enabled: bool = True, depth: int = None, show_locals: bool = None, compact: bool = None):
+    """Enable or disable traceback in error messages.
+    
+    Args:
+        enabled: Whether to enable traceback
+        depth: Maximum traceback depth (None = use current, 0 = all)
+        show_locals: Whether to show local variables
+        compact: Whether to use compact format
+    
+    Example:
+        enable_traceback(True, depth=5, show_locals=True)
+    """
+    _global_manager.config.include_traceback = enabled
+    if depth is not None:
+        _global_manager.config.traceback_depth = depth
+    if show_locals is not None:
+        _global_manager.config.show_locals = show_locals
+    if compact is not None:
+        _global_manager.config.compact_traceback = compact
+
+
+def get_traceback_config() -> Dict[str, Any]:
+    """Get current traceback configuration.
+    
+    Returns:
+        Dictionary with traceback configuration settings
+    """
+    return {
+        'include_traceback': _global_manager.config.include_traceback,
+        'traceback_depth': _global_manager.config.traceback_depth,
+        'show_locals': _global_manager.config.show_locals,
+        'compact_traceback': _global_manager.config.compact_traceback,
+    }
+
+
+@contextmanager
+def enhanced_traceback(depth: int = 0, show_locals: bool = True, compact: bool = False):
+    """Context manager for temporarily enabling enhanced traceback.
+    
+    Args:
+        depth: Maximum traceback depth (0 = all)
+        show_locals: Whether to show local variables
+        compact: Whether to use compact format
+        
+    Example:
+        with enhanced_traceback(depth=0, show_locals=True):
+            # Code with enhanced error reporting
+            risky_operation()
+    """
+    old_include = _global_manager.config.include_traceback
+    old_depth = _global_manager.config.traceback_depth
+    old_locals = _global_manager.config.show_locals
+    old_compact = _global_manager.config.compact_traceback
+    
+    try:
+        _global_manager.config.include_traceback = True
+        _global_manager.config.traceback_depth = depth
+        _global_manager.config.show_locals = show_locals
+        _global_manager.config.compact_traceback = compact
+        yield
+    finally:
+        _global_manager.config.include_traceback = old_include
+        _global_manager.config.traceback_depth = old_depth
+        _global_manager.config.show_locals = old_locals
+        _global_manager.config.compact_traceback = old_compact
+
+
 # Export all functions
 __all__ = [
     # Core functions
@@ -962,6 +1258,7 @@ __all__ = [
     'tprint_info',
     'tprint_warning',
     'tprint_error',
+    'tprint_exception',
     'tprint_success',
     'tprint_progress',
     'tprint_performance',
@@ -988,6 +1285,11 @@ __all__ = [
     'enable_auto_print_logging',
     'set_print_log_level',
     '_auto_setup_print_capture',
+
+    # Traceback configuration
+    'enable_traceback',
+    'get_traceback_config',
+    'enhanced_traceback',
 
     # Classes and enums
     'TPrintConfig',

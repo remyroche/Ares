@@ -46,13 +46,15 @@ except ImportError:
     HARDWARE_OPTIMIZATIONS_AVAILABLE = False
 
 # Advanced feature selection imports
+# NOTE: step08_* modules no longer exist. Use src.feature_selection instead.
 FEATURE_SELECTION_AVAILABLE = False
 try:
-    from src.utils.feature_selection.step08_unified_final import (
+    # These imports will fail - kept for backward compatibility
+    from src.feature_selection.step08_unified_final import (
         Step08Unified, FinancialMetrics, RiskMetrics, RegimeBalanceMetrics,
         FeatureSelectionValidation, Step08Results
     )
-    from src.utils.feature_selection.step08_advanced_feature_selection import (
+    from src.feature_selection.step08_advanced_feature_selection import (
         Step08AdvancedFeatureSelection
     )
     FEATURE_SELECTION_AVAILABLE = True

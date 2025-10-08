@@ -20,6 +20,16 @@ from .base_exchange import (
     ExchangeResponseHandler as ResponseHandler
 )
 
+# Import exchange factory
+from .factory import ExchangeFactory
+
+# Import exchange implementations
+from .binance import BinanceExchange
+from .gateio import GateioExchange
+from .mexc import MexcExchange
+from .okx import OkxExchange
+from .phemex import PhemexExchange
+
 __all__ = [
     "TradingReceiver",
     "OrderRouter",
@@ -30,5 +40,11 @@ __all__ = [
     "ExchangeMessageHandler",
     "ExchangeResponseHandler",
     "MessageHandler",
-    "ResponseHandler"
+    "ResponseHandler",
+    "ExchangeFactory",
+    "BinanceExchange",
+    "GateioExchange",
+    "MexcExchange",
+    "OkxExchange",
+    "PhemexExchange"
 ]

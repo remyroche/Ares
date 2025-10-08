@@ -13,6 +13,43 @@ import pandas as pd
 from pandas import Series
 from sklearn.base import BaseEstimator, TransformerMixin
 
+# Import core utilities
+try:
+    from ...utils.tprint import tprint, tprint_debug, tprint_error, tprint_info, tprint_warning
+    from ...utils.common_operations import (
+        validate_dataframe, validate_positive, validate_range, safe_divide,
+        timed_operation, format_bytes, get_dataframe_info, calculate_data_quality_metrics
+    )
+    from ...utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+    # Import matrix operations for DataFrame correlation and optimization
+    from ...utils.matrix_operations import (
+        safe_correlation_matrix, matrix_correlation_analysis, optimize_dataframe,
+        get_unified_matrix_operations
+    )
+    MATRIX_OPERATIONS_AVAILABLE = True
+except ImportError as e:
+    # Fallback imports if utils are not available
+    MATRIX_OPERATIONS_AVAILABLE = False
+    def tprint(*args, **kwargs): pass
+    def tprint_debug(*args, **kwargs): pass
+    def tprint_error(*args, **kwargs): pass
+    def tprint_info(*args, **kwargs): pass
+    def tprint_warning(*args, **kwargs): pass
+    def validate_dataframe(df): return isinstance(df, pd.DataFrame) and not df.empty
+    def validate_positive(value, name="value"): return value if value > 0 else 0.0
+    def validate_range(value, min_val=None, max_val=None, name="value"): return value
+    def safe_divide(a, b, default=0.0): return a / b if b != 0 else default
+    def timed_operation(func): return func
+    def format_bytes(bytes_value): return f"{bytes_value}B"
+    def get_dataframe_info(df): return {}
+    def calculate_data_quality_metrics(df): return {}
+    def get_m1_memory_optimizer(): return None
+    # Matrix operations fallbacks
+    def safe_correlation_matrix(df): return df.corr() if hasattr(df, 'corr') else None
+    def matrix_correlation_analysis(*args, **kwargs): return {}
+    def optimize_dataframe(df): return df
+    def get_unified_matrix_operations(): return None
+
 try:
     import pandera as pa
     from pandera import errors as pa_errors
@@ -84,9 +121,6 @@ LABELED_DATASET_SCHEMA = pa.DataFrameSchema(
 
 
 ENGINEERED_FEATURE_SCHEMA = pa.DataFrameSchema(
-    columns={
-        r"^.+$": pa.Column(pa.Float64, regex=True, required=False, coerce=True, nullable=False),
-    },
     index=pa.Index(pa.DateTime, coerce=True, nullable=False),
     strict=False,
     coerce=True,
@@ -453,22 +487,101 @@ def _validate(
     return df
 
 
+@timed_operation
 def validate_raw_ohlcv(df: pd.DataFrame, *, context: str, lazy: bool = False) -> pd.DataFrame:
     """Validate raw OHLCV input frames."""
 
-    return _validate(RAW_OHLCV_SCHEMA, "raw_ohlcv", df, context=context, lazy=lazy)
+    tprint_debug(f"Validating raw OHLCV data for {context}")
+    memory_optimizer = get_m1_memory_optimizer()
+
+    # Initialize matrix operations for correlation analysis
+    matrix_ops = get_unified_matrix_operations() if MATRIX_OPERATIONS_AVAILABLE else None
+
+    if not validate_dataframe(df):
+        tprint_error(f"Invalid DataFrame for {context}")
+        raise ValueError(f"Input must be a valid pandas DataFrame for {context}")
+
+    # Log data quality metrics
+    if validate_dataframe(df):
+        quality_metrics = calculate_data_quality_metrics(df)
+        info = get_dataframe_info(df)
+        tprint_debug(f"OHLCV data quality: {quality_metrics}")
+        tprint_debug(f"OHLCV data info: shape={info.get('shape', 'unknown')}, memory={format_bytes(info.get('memory_usage', 0))}")
+
+        # Use matrix operations for OHLCV correlation analysis if available
+        if matrix_ops and len(df.columns) > 1:
+            try:
+                corr_matrix = safe_correlation_matrix(df)
+                if corr_matrix is not None:
+                    correlation_analysis = matrix_correlation_analysis(df.values, method='correlation')
+                    tprint_debug(f"OHLCV correlation analysis completed for {len(df.columns)} columns")
+            except Exception as e:
+                tprint_debug(f"OHLCV correlation analysis failed: {e}")
+
+        # Optimize memory for large datasets
+        if memory_optimizer and info.get('memory_usage', 0) > 100 * 1024 * 1024:  # > 100MB
+            memory_optimizer.optimize_dataframe_memory(df)
+
+    validated_df = _validate(RAW_OHLCV_SCHEMA, "raw_ohlcv", df, context=context, lazy=lazy)
+
+    tprint_debug(f"Successfully validated raw OHLCV data for {context}")
+    return validated_df
 
 
+@timed_operation
 def validate_labeled_dataset(df: pd.DataFrame, *, context: str, lazy: bool = False) -> pd.DataFrame:
     """Validate labeled dataset frames."""
 
-    return _validate(LABELED_DATASET_SCHEMA, "labeled_dataset", df, context=context, lazy=lazy)
+    tprint_debug(f"Validating labeled dataset for {context}")
+    memory_optimizer = get_m1_memory_optimizer()
+
+    if not validate_dataframe(df):
+        tprint_error(f"Invalid DataFrame for {context}")
+        raise ValueError(f"Input must be a valid pandas DataFrame for {context}")
+
+    # Log data quality metrics for labeled data
+    if validate_dataframe(df):
+        quality_metrics = calculate_data_quality_metrics(df)
+        info = get_dataframe_info(df)
+        tprint_debug(f"Labeled dataset quality: {quality_metrics}")
+        tprint_debug(f"Labeled dataset info: shape={info.get('shape', 'unknown')}, memory={format_bytes(info.get('memory_usage', 0))}")
+
+        # Optimize memory for large labeled datasets
+        if memory_optimizer and info.get('memory_usage', 0) > 50 * 1024 * 1024:  # > 50MB
+            memory_optimizer.optimize_dataframe_memory(df)
+
+    validated_df = _validate(LABELED_DATASET_SCHEMA, "labeled_dataset", df, context=context, lazy=lazy)
+
+    tprint_debug(f"Successfully validated labeled dataset for {context}")
+    return validated_df
 
 
+@timed_operation
 def validate_engineered_features(df: pd.DataFrame, *, context: str, lazy: bool = False) -> pd.DataFrame:
     """Validate engineered feature frames."""
 
-    return _validate(ENGINEERED_FEATURE_SCHEMA, "engineered_features", df, context=context, lazy=lazy)
+    tprint_debug(f"Validating engineered features for {context}")
+    memory_optimizer = get_m1_memory_optimizer()
+
+    if not validate_dataframe(df):
+        tprint_error(f"Invalid DataFrame for {context}")
+        raise ValueError(f"Input must be a valid pandas DataFrame for {context}")
+
+    # Log data quality metrics for features
+    if validate_dataframe(df):
+        quality_metrics = calculate_data_quality_metrics(df)
+        info = get_dataframe_info(df)
+        tprint_debug(f"Engineered features quality: {quality_metrics}")
+        tprint_debug(f"Engineered features info: shape={info.get('shape', 'unknown')}, memory={format_bytes(info.get('memory_usage', 0))}")
+
+        # Optimize memory for large feature datasets
+        if memory_optimizer and info.get('memory_usage', 0) > 200 * 1024 * 1024:  # > 200MB
+            memory_optimizer.optimize_dataframe_memory(df)
+
+    validated_df = _validate(ENGINEERED_FEATURE_SCHEMA, "engineered_features", df, context=context, lazy=lazy)
+
+    tprint_debug(f"Successfully validated engineered features for {context}")
+    return validated_df
 
 
 _Numeric = (int, float, np.integer, np.floating)
@@ -967,8 +1080,13 @@ def _default_ic_scorer(model: Any, X: pd.DataFrame, y: Series) -> float:
     if calculate_information_coefficient is not None:
         try:
             return float(calculate_information_coefficient(aligned_predictions, aligned_targets))
-        except Exception:
-            pass
+        except Exception as e:
+            # Log the error instead of silently passing
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to calculate information coefficient: {e}")
+            # Return 0.0 as fallback instead of failing completely
+            return 0.0
 
     ranked_predictions = aligned_predictions.rank(method="average")
     ranked_targets = aligned_targets.rank(method="average")

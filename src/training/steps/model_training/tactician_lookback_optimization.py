@@ -99,6 +99,17 @@ except ImportError:
     OPTUNA_AVAILABLE = False
     tprint_warning("⚠️ Optuna not available, using grid search fallback")
 
+# Import Bayesian TPE optimizer with early stopping
+try:
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
+        BayesianTPEOptimizer, OptimizationConfig
+    )
+    from src.utils.ml_common.models.model_cache import get_model_cache
+    BAYESIAN_TPE_AVAILABLE = True
+except ImportError:
+    BAYESIAN_TPE_AVAILABLE = False
+    tprint_warning("⚠️ Bayesian TPE optimizer not available")
+
 logger = system_logger.getChild('TacticianLookbackOptimization')
 
 
@@ -178,10 +189,32 @@ class TacticianLookbackOptimizer:
     """
     
     def __init__(self, config: TacticianLookbackConfig):
+        """Initialize Tactician lookback optimizer."""
+        tprint_info("🚀 Initializing Tactician Lookback Optimizer")
+        
         self.config = config
         self.logger = logger.getChild('TacticianLookbackOptimizer')
+        self.start_time = time.time()
         
-        # Initialize utilities
+        # Initialize components consolidated
+        self._initialize_components_consolidated()
+        
+        # Performance tracking
+        self.optimization_metrics = {
+            'total_evaluations': 0,
+            'successful_evaluations': 0,
+            'failed_evaluations': 0,
+            'best_score': 0.0,
+            'convergence_history': [],
+            'early_stopping_triggered': False
+        }
+        
+        init_time = time.time() - self.start_time
+        tprint_success(f"✅ Tactician Lookback Optimizer initialized in {init_time:.2f}s")
+    
+    def _initialize_components_consolidated(self):
+        """Consolidated component initialization."""
+        # Utilities
         self.math_validator = MathValidation()
         self.serializers = {
             'json': JSONSerializer(),
@@ -189,14 +222,14 @@ class TacticianLookbackOptimizer:
             'parquet': ParquetSerializer()
         }
         
-        # Initialize feature generators for indicator calculations
+        # Feature generators
         self.cross_timeframe_generator = OptimizedCrossTimeframeAnalysisIntegration()
         self.momentum_generator = MomentumFeatureGenerator()
         self.trend_generator = TrendFeatureGenerator() 
         self.volume_generator = VolumeFeatureGenerator()
         self.volatility_generator = VolatilityFeatureGenerator()
         
-        # Initialize specific indicator generators
+        # Specific indicator generators
         self.stochastic_generator = StochasticGenerator()
         self.williams_r_generator = WilliamsRGenerator()
         self.roc_generator = ROCGenerator()
@@ -219,15 +252,20 @@ class TacticianLookbackOptimizer:
         self.analyst_ensemble = None
         self.analyst_outputs_cache = {}
         
-        # Performance tracking
-        self.start_time = None
-        self.optimization_metrics = {
-            'total_evaluations': 0,
-            'successful_evaluations': 0,
-            'failed_evaluations': 0,
-            'best_score': 0.0,
-            'convergence_history': []
-        }
+        # Model cache for optimized configurations
+        if BAYESIAN_TPE_AVAILABLE:
+            try:
+                self.lookback_cache = get_model_cache(
+                    max_memory_models=20,
+                    max_disk_models=100,
+                    cache_dir=f"{self.config.analyst_model_path}/lookback_cache"
+                )
+                tprint_success("✅ Lookback configuration cache initialized")
+            except Exception as e:
+                self.lookback_cache = None
+                tprint_warning(f"⚠️ Lookback cache unavailable: {e}")
+        else:
+            self.lookback_cache = None
     
     async def initialize(self) -> bool:
         """Initialize the Tactician lookback optimizer."""

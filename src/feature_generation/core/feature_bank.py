@@ -109,13 +109,13 @@ class FeatureBank:
             'matrix_accelerations': 0
         }
 
-        # Normalization configuration
-        self.auto_normalize = self.config.get('auto_normalize', True)
-        self.normalization_method = self.config.get('normalization_method', 'zscore')
+        # Normalization configuration (use helper method for dict/Pydantic compatibility)
+        self.auto_normalize = self._get_config_value('auto_normalize', True)
+        self.normalization_method = self._get_config_value('normalization_method', 'zscore')
         self.normalization_config = {
-            'exclude_categories': self.config.get('normalization_exclude_categories', []),
-            'exclude_features': self.config.get('normalization_exclude_features', []),
-            'rolling_windows': self.config.get('normalization_rolling_windows', [20, 50, 100])
+            'exclude_categories': self._get_config_value('normalization_exclude_categories', []),
+            'exclude_features': self._get_config_value('normalization_exclude_features', []),
+            'rolling_windows': self._get_config_value('normalization_rolling_windows', [20, 50, 100])
         }
         
         # Cache for generated features

@@ -24,6 +24,20 @@ from pathlib import Path
 from enum import Enum
 from dataclasses import dataclass, field
 
+class DirectionType(Enum):
+    """Direction types for trading."""
+    LONGS = "longs"        # Long positions only
+    SHORTS = "shorts"      # Short positions only
+    BOTH = "both"          # Both long and short positions
+
+# Import enhanced utilities for comprehensive logging and operations
+from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_debug
+from src.utils.common_operations import (
+    safe_divide, safe_mean, safe_std, validate_finite, optimize_dataframe_dtypes,
+    calculate_data_quality_metrics, get_dataframe_info
+)
+from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
+
 # Define ExecutionMode locally as fallback
 class ExecutionMode(Enum):
     """Execution modes for the pipeline."""
@@ -64,7 +78,11 @@ except ImportError:
     STANDARDIZED_LOGGING_AVAILABLE = False
 
 from src.core.decorators import handles_errors, traced, log_execution_time
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_debug, tprint_info, tprint_warning, tprint_error, tprint_success, tprint_performance
+from src.utils.common_operations import (
+    safe_json_load, safe_json_dump, ensure_directory, safe_file_exists,
+    timed_operation, format_bytes, get_memory_usage, optimize_memory
+)
 
 # Import sub-pipelines with optional imports
 try:
@@ -202,7 +220,10 @@ class MainPipelineConfig:
     # Intensity parameters for ML training
     intensity_percentage: float = 1.0  # Default to 100% intensity
     training_mode_config: Optional[Dict[str, Any]] = None
-    
+
+    # Direction control for trading (longs, shorts, or both)
+    direction_type: DirectionType = DirectionType.BOTH  # Default to both directions
+
     # Single stage execution control
     single_stage_only: bool = False  # Control whether to execute only the requested stage
 
@@ -290,6 +311,10 @@ class MainTrainingPipeline:
         config = config or self.config
         pipeline_id = f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
+        # Enhanced logging with tprint
+        tprint(f"🚀 Starting main training pipeline: {pipeline_id} (mode: {config.mode.value})")
+        tprint_debug(f"📋 Pipeline configuration: {len(config.enabled_stages)} stages enabled")
+
         if STANDARDIZED_LOGGING_AVAILABLE:
             log_info(f"🚀 Starting main training pipeline: {pipeline_id} (mode: {config.mode.value})")
         else:
@@ -303,16 +328,24 @@ class MainTrainingPipeline:
         )
         
         try:
-            # Execute each enabled stage
-            for stage in config.enabled_stages:
+            # Execute each enabled stage with comprehensive logging
+            total_stages = len(config.enabled_stages)
+            for i, stage in enumerate(config.enabled_stages, 1):
+                tprint(f"📋 [{i}/{total_stages}] Executing stage: {stage.value}")
+                tprint_info(f"🔄 Stage progress: {i}/{total_stages} ({100*i//total_stages}%)")
+
                 if STANDARDIZED_LOGGING_AVAILABLE:
                     log_info(f"📋 Executing stage: {stage.value}")
                 else:
                     self.logger.info(f"📋 Executing stage: {stage.value}")
                 self.current_stage = stage
-                
+
                 stage_result = await self._execute_stage(stage, config)
                 result.stage_results[stage] = stage_result
+
+                # Log stage completion with timing
+                stage_duration = (datetime.now() - start_time).total_seconds()
+                tprint_success(f"✅ Stage {stage.value} completed in {stage_duration:.1f}s")
                 
                 # Check if stage failed and handle accordingly
                 failed_sub_pipelines = [r for r in stage_result if r.status == SubPipelineStatus.FAILED]
@@ -333,6 +366,11 @@ class MainTrainingPipeline:
             
             if result.failed_sub_pipelines == 0:
                 result.status = SubPipelineStatus.COMPLETED
+                # Enhanced success logging with tprint
+                tprint_success(f"✅ Main training pipeline {pipeline_id} completed successfully in {result.duration_seconds:.2f}s")
+                tprint(f"📊 Execution summary: {result.completed_sub_pipelines}/{result.total_sub_pipelines} sub-pipelines completed")
+                tprint(f"🏆 Success rate: {result.success_rate:.1%}")
+
                 if STANDARDIZED_LOGGING_AVAILABLE:
                     log_success(f"✅ Main training pipeline {pipeline_id} completed successfully in {result.duration_seconds:.2f}s")
                 else:
@@ -486,6 +524,7 @@ class MainTrainingPipeline:
     
     def _create_stage_config(self, stage: PipelineStage, config: MainPipelineConfig) -> Any:
         """Create stage-specific configuration."""
+        # Base configuration that all stage configs support
         base_config = {
             'mode': config.mode,
             'symbol': config.symbol,
@@ -499,9 +538,19 @@ class MainTrainingPipeline:
             'max_workers': config.max_workers,
             'validation_enabled': config.validation_enabled,
             'monitoring_enabled': config.monitoring_enabled,
-            'single_stage_only': config.single_stage_only,
-            'custom_params': config.stage_params.get(stage, {})
+            'custom_params': config.stage_params.get(stage, {}),
+            # Direction settings from main pipeline config
+            'enable_long_positions': config.direction_type in [DirectionType.LONGS, DirectionType.BOTH],
+            'enable_short_positions': config.direction_type in [DirectionType.SHORTS, DirectionType.BOTH]
         }
+
+        # Add flag to use existing data instead of downloading new data
+        # This is crucial for the current setup where we want to use pre-existing data
+        base_config['use_existing_data'] = True
+
+        # Remove parameters that are specific to MainPipelineConfig and not supported by stage configs
+        # single_stage_only is a MainPipelineConfig parameter used for controlling pipeline execution
+        # but it's not needed by individual stage configurations
         
         if stage == PipelineStage.DATA_COLLECTION:
             if DATA_COLLECTION_AVAILABLE:
@@ -760,12 +809,18 @@ class MainTrainingPipeline:
                 result = await self.pre_training_pipeline.execute_sub_pipeline(sub_pipeline_name, config)
                 results.append(result)
 
-                # Check if this sub-pipeline failed
+                # Check sub-pipeline result status
                 if result.status == SubPipelineStatus.FAILED:
-                    self.logger.error(f"❌ Sub-pipeline {sub_pipeline_name} failed, stopping sequential execution")
+                    self.logger.error(f"❌ Sub-pipeline {sub_pipeline_name} FAILED")
+                    if result.error_message:
+                        self.logger.error(f"   Error: {result.error_message}")
+                    self.logger.error(f"   Stopping sequential execution")
                     break
-                else:
+                elif result.status == SubPipelineStatus.COMPLETED:
                     self.logger.info(f"✅ Sub-pipeline {sub_pipeline_name} completed successfully")
+                else:
+                    self.logger.warning(f"⚠️ Sub-pipeline {sub_pipeline_name} finished with status: {result.status.value}")
+                    # Continue execution for non-FAILED statuses
 
         except Exception as e:
             self.logger.error(f"❌ Error executing pre-training stage: {e}")
@@ -850,9 +905,10 @@ class MainTrainingPipeline:
             for sub_result in stage_results:
                 total_sub_pipelines += 1
                 self.logger.info(f"   Sub-pipeline: {sub_result.sub_pipeline_name}, Status: {sub_result.status.value}")
-                if sub_result.status.value == "completed":
+                # Use enum comparison instead of string comparison for accuracy
+                if sub_result.status == SubPipelineStatus.COMPLETED:
                     completed_sub_pipelines += 1
-                elif sub_result.status.value == "failed":
+                elif sub_result.status == SubPipelineStatus.FAILED:
                     failed_sub_pipelines += 1
 
         result.total_sub_pipelines = total_sub_pipelines
@@ -973,9 +1029,15 @@ def get_main_training_pipeline(config: Optional[MainPipelineConfig] = None) -> M
 async def execute_main_training_pipeline(
     config: Optional[MainPipelineConfig] = None
 ) -> MainPipelineResult:
-    """Convenience function to execute the main training pipeline."""
+    """Convenience function to execute the main training pipeline with comprehensive logging."""
+    tprint("🚀 Executing main training pipeline via convenience function")
+    tprint_info(f"📋 Configuration: symbol={config.symbol if config else 'default'}, exchange={config.exchange if config else 'default'}")
+
     pipeline = get_main_training_pipeline(config)
-    return await pipeline.execute_pipeline(config)
+    result = await pipeline.execute_pipeline(config)
+
+    tprint_success(f"✅ Main training pipeline execution completed: {result.status.value}")
+    return result
 
 # Predefined pipeline configurations
 def get_full_pipeline_config(
@@ -997,43 +1059,54 @@ def get_full_pipeline_config(
         from src.utils.data.klines_parquet import KlinesParquetManager
         manager = KlinesParquetManager(data_dir=data_dir)
 
-        # Load a small sample of recent data to determine the date range
-        # Use last 30 days to get a representative sample without loading everything
         from datetime import datetime, timedelta
-        recent_start = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
-        recent_end = datetime.now().strftime('%Y-%m-%d')
-
-        sample_data = manager.read_data(
-            symbol=symbol,
-            interval=timeframe,
-            start_date=recent_start,
-            end_date=recent_end,
-            data_type="processed"
-        )
         
-        if sample_data is not None and not sample_data.empty:
-            # Get the last available date from the data
-            if 'timestamp' in sample_data.columns:
-                timestamps = pd.to_datetime(sample_data['timestamp'], unit='s')
-                end_date = timestamps.max()
-                start_date = end_date - timedelta(days=mode_config.lookback_days)
-            else:
-                # Fallback to using the index if available
-                if hasattr(sample_data.index, 'max'):
-                    end_date = sample_data.index.max()
+        # First, get data info to find the actual available date range without filtering
+        data_info = manager.get_data_info(symbol=symbol, interval=timeframe, data_type="processed")
+        
+        if data_info and data_info.get("available") and data_info.get("date_range"):
+            # Use the last date from the available data
+            _, max_date = data_info["date_range"]
+            end_date = pd.to_datetime(max_date)
+            start_date = end_date - timedelta(days=mode_config.lookback_days)
+            print(f"✅ Using last available data date: {end_date.strftime('%Y-%m-%d')}")
+        else:
+            # Fallback: Load without date filtering to find the actual date range
+            print("⚠️ Could not get data info, loading sample to determine date range...")
+            sample_data = manager.read_data(
+                symbol=symbol,
+                interval=timeframe,
+                start_date=None,
+                end_date=None,
+                data_type="processed"
+            )
+            
+            if sample_data is not None and not sample_data.empty:
+                # Get the last available date from the data
+                if 'timestamp' in sample_data.columns:
+                    timestamps = pd.to_datetime(sample_data['timestamp'], unit='s')
+                    end_date = timestamps.max()
                     start_date = end_date - timedelta(days=mode_config.lookback_days)
                 else:
-                    # Final fallback to current date
-                    end_date = datetime.now()
-                    start_date = end_date - timedelta(days=mode_config.lookback_days)
-        else:
-            # No data available, use current date as fallback
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=mode_config.lookback_days)
+                    # Fallback to using the index if available
+                    if hasattr(sample_data.index, 'max'):
+                        end_date = sample_data.index.max()
+                        start_date = end_date - timedelta(days=mode_config.lookback_days)
+                    else:
+                        # Final fallback to current date
+                        end_date = datetime.now()
+                        start_date = end_date - timedelta(days=mode_config.lookback_days)
+                print(f"✅ Determined date range from data: {end_date.strftime('%Y-%m-%d')}")
+            else:
+                # No data available, use current date as fallback
+                print("⚠️ No data available, using current date as fallback")
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=mode_config.lookback_days)
             
     except Exception as e:
         # If there's any error, fall back to current date
         print(f"⚠️ Could not determine available data range: {e}")
+        from datetime import datetime, timedelta
         end_date = datetime.now()
         start_date = end_date - timedelta(days=mode_config.lookback_days)
     
@@ -1114,43 +1187,54 @@ def get_light_pipeline_config(
         from src.utils.data.klines_parquet import KlinesParquetManager
         manager = KlinesParquetManager(data_dir=data_dir)
 
-        # Load a small sample of recent data to determine the date range
-        # Use last 30 days to get a representative sample without loading everything
         from datetime import datetime, timedelta
-        recent_start = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
-        recent_end = datetime.now().strftime('%Y-%m-%d')
-
-        sample_data = manager.read_data(
-            symbol=symbol,
-            interval=timeframe,
-            start_date=recent_start,
-            end_date=recent_end,
-            data_type="processed"
-        )
         
-        if sample_data is not None and not sample_data.empty:
-            # Get the last available date from the data
-            if 'timestamp' in sample_data.columns:
-                timestamps = pd.to_datetime(sample_data['timestamp'], unit='s')
-                end_date = timestamps.max()
-                start_date = end_date - timedelta(days=mode_config.lookback_days)
-            else:
-                # Fallback to using the index if available
-                if hasattr(sample_data.index, 'max'):
-                    end_date = sample_data.index.max()
+        # First, get data info to find the actual available date range without filtering
+        data_info = manager.get_data_info(symbol=symbol, interval=timeframe, data_type="processed")
+        
+        if data_info and data_info.get("available") and data_info.get("date_range"):
+            # Use the last date from the available data
+            _, max_date = data_info["date_range"]
+            end_date = pd.to_datetime(max_date)
+            start_date = end_date - timedelta(days=mode_config.lookback_days)
+            print(f"✅ Using last available data date: {end_date.strftime('%Y-%m-%d')}")
+        else:
+            # Fallback: Load without date filtering to find the actual date range
+            print("⚠️ Could not get data info, loading sample to determine date range...")
+            sample_data = manager.read_data(
+                symbol=symbol,
+                interval=timeframe,
+                start_date=None,
+                end_date=None,
+                data_type="processed"
+            )
+            
+            if sample_data is not None and not sample_data.empty:
+                # Get the last available date from the data
+                if 'timestamp' in sample_data.columns:
+                    timestamps = pd.to_datetime(sample_data['timestamp'], unit='s')
+                    end_date = timestamps.max()
                     start_date = end_date - timedelta(days=mode_config.lookback_days)
                 else:
-                    # Final fallback to current date
-                    end_date = datetime.now()
-                    start_date = end_date - timedelta(days=mode_config.lookback_days)
-        else:
-            # No data available, use current date as fallback
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=mode_config.lookback_days)
+                    # Fallback to using the index if available
+                    if hasattr(sample_data.index, 'max'):
+                        end_date = sample_data.index.max()
+                        start_date = end_date - timedelta(days=mode_config.lookback_days)
+                    else:
+                        # Final fallback to current date
+                        end_date = datetime.now()
+                        start_date = end_date - timedelta(days=mode_config.lookback_days)
+                print(f"✅ Determined date range from data: {end_date.strftime('%Y-%m-%d')}")
+            else:
+                # No data available, use current date as fallback
+                print("⚠️ No data available, using current date as fallback")
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=mode_config.lookback_days)
             
     except Exception as e:
         # If there's any error, fall back to current date
         print(f"⚠️ Could not determine available data range: {e}")
+        from datetime import datetime, timedelta
         end_date = datetime.now()
         start_date = end_date - timedelta(days=mode_config.lookback_days)
     

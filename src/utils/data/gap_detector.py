@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
-from exchange.binance import BinanceExchange
+from exchanges.binance import BinanceExchange
 from src.utils.logger import system_logger
 from src.utils.parquet_utils import ParquetUtils
 

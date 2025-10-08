@@ -81,6 +81,7 @@ try:
     from .validation import (
         ConfigurationValidator,
         CrossValidationUtilities, PurgedKFold, TemporalCrossValidator,
+        TimeSeriesSplitValidator, OOFGenerator, DataLeakageDetector,
         StabilityAnalyzer,
         # Unified CV
         UnifiedCrossValidator, UnifiedCVResult,
@@ -107,9 +108,8 @@ try:
     
     # Legacy imports for backward compatibility
     from .feature_selection_backwards_compat import FeatureSelector, FeatureSelectionConfig
-    # HMM regime detection module - needs to be implemented
+    # HMM regime detection module has been deprecated; keep flag for compatibility probes
     HMM_REGIME_DETECTION_AVAILABLE = False
-    # HMMRegimeDetector and RegimeConfig classes would be imported here when available
     from .confidence_metrics import calculate_confidence_metrics, calculate_calibration_metrics
     # Defer matrix operations to avoid circular import at init
     try:
@@ -162,6 +162,7 @@ try:
         # Validation
         'ConfigurationValidator',
         'TemporalCrossValidator', 'PurgedKFold', 'CrossValidationUtilities', 'PurgedSplitConfig',
+        'TimeSeriesSplitValidator', 'OOFGenerator', 'DataLeakageDetector',
         # Unified CV exports
         'UnifiedCrossValidator', 'UnifiedCVResult',
         'perform_cross_validation', 'temporal_cross_validation', 'nested_cross_validation',
@@ -172,14 +173,13 @@ try:
         'setup_logger', 'get_logger',
         'MemoryOptimizer', 'MemoryIntegrator',
         'ParallelProcessor',
-        'UnifiedCache', 'get_unified_cache', 'cached', 'SharedMLCache',
+        'UnifiedCache', 'get_unified_cache', 'cached',
         'limit_blas_threads', 'get_thread_info', 'validate_thread_environment',
         'LookaheadProtection', 'MLTrainingSafeguards',
         'RobustErrorHandler',
         
         # Legacy
         'FeatureSelector', 'FeatureSelectionConfig', 'LegacyFeatureSelector',
-        'HMMRegimeDetector', 'RegimeConfig',
         'calculate_confidence_metrics', 'calculate_calibration_metrics',
         'M1EnhancedMatrixOperations', 'get_enhanced_matrix_operations', 'PipelineOrchestrator',
         

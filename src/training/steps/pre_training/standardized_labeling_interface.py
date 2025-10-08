@@ -14,6 +14,25 @@ from dataclasses import dataclass
 from enum import Enum
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+from src.utils.common_operations import (
+    validate_dataframe_columns,
+    safe_dataframe_operation,
+    validate_positive,
+    validate_range,
+    safe_int,
+    safe_float,
+    get_dataframe_info,
+    create_data_quality_report,
+    format_bytes,
+    memory_checkpoint,
+    optimize_memory
+)
+from src.utils.matrix_operations import (
+    get_unified_matrix_operations,
+    optimize_dataframe,
+    safe_correlation_matrix,
+    get_hardware_performance_report
+)
 from .column_naming import (
     ColumnNamespace,
     ensure_namespace,

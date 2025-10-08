@@ -148,6 +148,10 @@ class TacticianModelsTrainingConfig:
     save_metrics: bool = True
     output_directory: str = "generated/tactician_models_training"
 
+    # Direction control for training
+    enable_long_positions: bool = True
+    enable_short_positions: bool = True
+
     # Hardware optimization
     enable_parallel_processing: bool = True
     enable_gpu_acceleration: bool = True
@@ -504,7 +508,11 @@ class TacticianModelsTrainingStep:
                 'samples_used': len(filtered_data),
                 'analyst_filter_info': analyst_filter_info,
                 'model_types_trained': [mt.value for mt in self.config.model_types],
-                'models_per_type': len(self.config.model_types)
+                'models_per_type': len(self.config.model_types),
+                'direction_settings': {
+                    'enable_long_positions': self.config.enable_long_positions,
+                    'enable_short_positions': self.config.enable_short_positions,
+                }
             }
 
         except Exception as e:
@@ -514,7 +522,11 @@ class TacticianModelsTrainingStep:
                 'models': {},
                 'metrics': {},
                 'training_time': execution_time,
-                'error': str(e)
+                'error': str(e),
+                'direction_settings': {
+                    'enable_long_positions': self.config.enable_long_positions,
+                    'enable_short_positions': self.config.enable_short_positions,
+                }
             }
 
     def _generate_model_oof_predictions(

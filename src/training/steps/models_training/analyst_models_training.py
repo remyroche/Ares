@@ -134,6 +134,10 @@ class AnalystModelsTrainingConfig:
     save_models: bool = True
     output_directory: str = "generated/analyst_models_training"
 
+    # Direction control for training
+    enable_long_positions: bool = True
+    enable_short_positions: bool = True
+
     # Hardware optimization
     enable_parallel_processing: bool = True
     enable_gpu_acceleration: bool = True
@@ -852,35 +856,6 @@ class AnalystModelsTrainingStep:
                 'gating_entropy_penalty': config.gating.entropy_penalty,
             }
 
-            return {
-                'models': {
-                    'stacker_lgbm_gate': model,
-                    'stacker_lgbm_calibrated': model,
-                },
-                'metrics': metrics,
-                'artifacts': {
-                    'stacker_gating_state': gating_state,
-                    'stacker_calibration_state': calibration_state,
-                },
-            config = StackerLGBMCalibratedConfig()
-            model = create_stacker_lgbm_calibrated(config)
-
-            # Format OOF predictions from base models
-            formatted_predictions: Dict[str, np.ndarray] = {}
-            for name, preds in base_model_oof_predictions.items():
-                if preds is None:
-                    continue
-                array_preds = np.asarray(preds)
-                if array_preds.ndim == 1:
-                    formatted_predictions[name] = array_preds
-                elif array_preds.ndim == 2:
-                    formatted_predictions[name] = array_preds
-                else:
-                    raise ValueError(f"Unsupported prediction shape for {name}: {array_preds.shape}")
-
-            if not formatted_predictions:
-                raise ValueError("No valid OOF predictions available for stacker training")
-
             # Generate meta OOF matrix and persist before fitting
             meta_oof_matrix = model._prepare_stacking_features(formatted_predictions)
 
@@ -895,18 +870,29 @@ class AnalystModelsTrainingStep:
             # Fit final stacker on OOF-derived features
             model.fit(formatted_predictions, y.ravel(), sample_weight)
 
+            # Update metrics with the final stacker information
             metrics = {
                 'model_type': 'Stacker_LGBM_Calibrated',
                 'config': config,
                 'base_models_used': list(formatted_predictions.keys()),
                 'meta_oof_path': meta_oof_path,
-                'meta_oof_shape': meta_oof_matrix.shape,
+                'meta_oof_predictions': meta_oof_matrix.tolist(),
             }
 
             return {
-                'models': {'stacker_lgbm_calibrated': model},
+                'models': {
+                    'stacker_lgbm_gate': model,
+                    'stacker_lgbm_calibrated': model,
+                },
                 'metrics': metrics,
-                'meta_oof_predictions': meta_oof_matrix.tolist(),
+                'artifacts': {
+                    'stacker_gating_state': gating_state,
+                    'stacker_calibration_state': calibration_state,
+                },
+                'direction_settings': {
+                    'enable_long_positions': config.enable_long_positions,
+                    'enable_short_positions': config.enable_short_positions,
+                }
             }
 
         except Exception as e:
@@ -1433,6 +1419,10 @@ class AnalystModelsTrainingStep:
         return {
             'models': models,
             'metrics': metrics,
+            'direction_settings': {
+                'enable_long_positions': config.enable_long_positions,
+                'enable_short_positions': config.enable_short_positions,
+            }
         }
 
 

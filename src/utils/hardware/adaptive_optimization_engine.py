@@ -1029,6 +1029,115 @@ class AdaptiveOptimizationEngine:
         except Exception as e:
             self.logger.error(f"Failed to generate learning report: {e}")
             return {'error': str(e)}
+    
+    def get_optimal_strategy(self, operation_type: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get optimal strategy for a given operation type and context.
+        
+        Args:
+            operation_type: Type of operation (e.g., 'feature_selection', 'training', 'inference')
+            context: Context information including memory pressure, hardware config, etc.
+            
+        Returns:
+            Dictionary containing optimal strategy configuration
+        """
+        try:
+            # Extract context information
+            memory_pressure = context.get('memory_pressure', 0.0)
+            hardware_config = context.get('hardware_config', {})
+            
+            # Determine workload type based on operation
+            workload_map = {
+                'feature_selection': WorkloadType.TRAINING,
+                'training': WorkloadType.TRAINING,
+                'inference': WorkloadType.INFERENCE,
+                'data_processing': WorkloadType.DATA_PROCESSING,
+                'optimization': WorkloadType.OPTIMIZATION
+            }
+            workload_type = workload_map.get(operation_type, WorkloadType.TRAINING)
+            
+            # Determine optimization target based on memory pressure
+            if memory_pressure > 0.8:
+                target = OptimizationTarget.EFFICIENCY
+            elif memory_pressure < 0.3:
+                target = OptimizationTarget.PERFORMANCE
+            else:
+                target = OptimizationTarget.BALANCED
+            
+            # Get optimal settings
+            optimal_settings = self.learner.predict_optimal_settings(workload_type.value, target)
+            
+            # Build strategy dictionary
+            strategy = {
+                'operation_type': operation_type,
+                'workload_type': workload_type.value,
+                'optimization_target': target.value,
+                'memory_pressure': memory_pressure,
+                'use_gpu': hardware_config.get('use_gpu', False),
+                'batch_size': hardware_config.get('batch_size', 1000),
+                'num_threads': hardware_config.get('num_threads', 4),
+                'recommended_settings': {}
+            }
+            
+            # Add optimal settings if available
+            if optimal_settings:
+                strategy['recommended_settings'] = {
+                    'cpu_cores_performance': optimal_settings.cpu_cores_performance,
+                    'cpu_cores_efficiency': optimal_settings.cpu_cores_efficiency,
+                    'memory_allocation_strategy': optimal_settings.memory_allocation_strategy,
+                    'gpu_acceleration_enabled': optimal_settings.gpu_acceleration_enabled,
+                    'optimization_level': optimal_settings.optimization_level
+                }
+            else:
+                # Provide default recommendations based on target
+                if target == OptimizationTarget.PERFORMANCE:
+                    strategy['recommended_settings'] = {
+                        'cpu_cores_performance': 8,
+                        'cpu_cores_efficiency': 2,
+                        'memory_allocation_strategy': 'aggressive',
+                        'gpu_acceleration_enabled': True,
+                        'optimization_level': 'aggressive'
+                    }
+                elif target == OptimizationTarget.EFFICIENCY:
+                    strategy['recommended_settings'] = {
+                        'cpu_cores_performance': 4,
+                        'cpu_cores_efficiency': 4,
+                        'memory_allocation_strategy': 'conservative',
+                        'gpu_acceleration_enabled': False,
+                        'optimization_level': 'minimal'
+                    }
+                else:
+                    strategy['recommended_settings'] = {
+                        'cpu_cores_performance': 6,
+                        'cpu_cores_efficiency': 2,
+                        'memory_allocation_strategy': 'balanced',
+                        'gpu_acceleration_enabled': True,
+                        'optimization_level': 'balanced'
+                    }
+            
+            self.logger.debug(f"🎯 Optimal strategy for {operation_type}: {strategy['optimization_target']}")
+            return strategy
+            
+        except Exception as e:
+            self.logger.error(f"Failed to get optimal strategy: {e}")
+            # Return a safe default strategy
+            return {
+                'operation_type': operation_type,
+                'workload_type': 'training',
+                'optimization_target': 'balanced',
+                'memory_pressure': context.get('memory_pressure', 0.5),
+                'use_gpu': False,
+                'batch_size': 1000,
+                'num_threads': 4,
+                'recommended_settings': {
+                    'cpu_cores_performance': 6,
+                    'cpu_cores_efficiency': 2,
+                    'memory_allocation_strategy': 'balanced',
+                    'gpu_acceleration_enabled': False,
+                    'optimization_level': 'balanced'
+                },
+                'error': str(e)
+            }
 
 # Global instance
 _adaptive_optimization_engine: Optional[AdaptiveOptimizationEngine] = None

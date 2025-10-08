@@ -28,7 +28,14 @@ from .mrmr_lookback_optimizer import (
 )
 
 # Import tprint for consistent logging
-from src.utils.tprint import tprint
+from src.utils.tprint import (
+    tprint,
+    tprint_debug,
+    tprint_info,
+    tprint_warning,
+    tprint_error,
+    tprint_success,
+)
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -248,7 +255,9 @@ class DirectionalLookbackOptimizer:
         Returns:
             DirectionalOptimizationResult with optimized features
         """
-        tprint("🚀 Starting directional feature lookback optimization (method call logged)")
+        tprint("🚀 Starting directional feature lookback optimization")
+        tprint_info(f"📊 Input: {len(data)} samples, {len(feature_columns)} features, target={target_column}")
+        tprint_info(f"⚙️ Config: lookback range=[{self.config.min_lookback}, {self.config.max_lookback}], method={self.config.optimization_method}")
         start_time = time.time()
         
         # Split data by direction
@@ -260,47 +269,64 @@ class DirectionalLookbackOptimizer:
         
         # Initialize result
         result = DirectionalOptimizationResult(config_used=self.config)
+        tprint_info("📋 Initialized directional optimization result container")
         
         # Optimize features for each direction
-        tprint("📊 Optimizing features for LONG signals...")
+        tprint_info(f"📊 Optimizing {len(feature_columns)} features for LONG signals...")
         result.long_features = self._optimize_direction_features(
             long_data, feature_columns, target_column, "long"
         )
+        tprint_success(f"✅ Long optimization complete: {len(result.long_features)} features")
         
-        tprint("📊 Optimizing features for SHORT signals...")
+        tprint_info(f"📊 Optimizing {len(feature_columns)} features for SHORT signals...")
         result.short_features = self._optimize_direction_features(
             short_data, feature_columns, target_column, "short"
         )
+        tprint_success(f"✅ Short optimization complete: {len(result.short_features)} features")
         
         # Perform cross-directional analysis
         if self.config.cross_directional_analysis:
-            tprint("🔄 Analyzing cross-directional differences...")
+            tprint_info("🔄 Analyzing cross-directional differences...")
             result.directional_differences = self._analyze_directional_differences(
                 result.long_features, result.short_features
             )
+            tprint_success(f"✅ Cross-directional analysis: {len(result.directional_differences)} features compared")
+            
             result.complementary_features = self._find_complementary_features(
                 result.long_features, result.short_features
             )
+            tprint_info(f"🔍 Found {len(result.complementary_features)} complementary feature patterns")
         
         # Perform period consolidation if enabled
         if self.config.enable_period_consolidation:
-            tprint("🔀 Consolidating similar periods...")
+            tprint_info(f"🔀 Consolidating similar periods (threshold={self.config.consolidation_variance_threshold:.1%})...")
+            pre_consolidation_count = len(result.long_features) + len(result.short_features)
             result = self._consolidate_similar_periods(result)
+            post_consolidation_count = len(result.long_features) + len(result.short_features) + len(result.consolidated_features)
+            tprint_success(f"✅ Period consolidation: {pre_consolidation_count} → {post_consolidation_count} features ({len(result.consolidated_features)} consolidated)")
         
         # Select final features
-        tprint("🎯 Selecting optimal feature subset...")
+        tprint_info("🎯 Selecting optimal feature subset...")
         result = self._select_final_features(result)
+        tprint_success(f"✅ Feature selection complete: {result.final_feature_count} total features")
         
         # Calculate final metrics
         result.total_optimization_time = time.time() - start_time
+        tprint_info(f"⏱️ Total optimization time: {result.total_optimization_time:.2f}s")
+        
         result = self._calculate_final_metrics(result)
+        tprint_info(f"📊 Average MI score: {result.average_mutual_info_score:.4f}, Convergence rate: {result.convergence_rate:.2%}")
         
         # Store result in history
         self.optimization_history.append(result)
+        tprint_debug(f"📚 Stored result in history (total runs: {len(self.optimization_history)})")
         
-        tprint(f"✅ Directional optimization completed in {result.total_optimization_time:.2f}s")
-        tprint(f"📈 Final features: {result.final_feature_count} "
-               f"({len(result.selected_long_features)} long + {len(result.selected_short_features)} short)")
+        tprint_success(f"✅ Directional optimization completed in {result.total_optimization_time:.2f}s")
+        tprint_info(f"📈 Final features: {result.final_feature_count} total")
+        tprint_info(f"   → {len(result.selected_long_features)} long features")
+        tprint_info(f"   → {len(result.selected_short_features)} short features")
+        tprint_info(f"   → {len(result.consolidated_features)} consolidated features")
+        tprint_info(f"📊 Directional balance ratio: {result.directional_balance_ratio:.2%}")
         
         return result
     
@@ -329,8 +355,12 @@ class DirectionalLookbackOptimizer:
             
         except Exception as e:
             tprint(f"❌ Error splitting data by direction: {e}")
-            # Return equal splits as fallback
+            tprint_warning(f"⚠️ CRITICAL: Using midpoint split as fallback - may not reflect true directional signals!")
+            tprint_warning(f"⚠️ This fallback method does NOT guarantee proper long/short separation")
+            tprint_warning(f"⚠️ Results may be unreliable - consider fixing the target column issue")
+            # Return equal splits as fallback (with explicit warning logged)
             mid_point = len(data) // 2
+            self.logger.warning(f"Data split by direction failed: {e}. Using midpoint fallback which may be unreliable.")
             return data.iloc[:mid_point].copy(), data.iloc[mid_point:].copy()
     
     def _validate_directional_data(self, 
@@ -371,10 +401,11 @@ class DirectionalLookbackOptimizer:
             tprint(f"🔧 Optimizing {feature_name} for {direction} ({i+1}/{len(feature_columns)})...")
             
             try:
-                # Check cache first
-                cache_key = f"{feature_name}_{direction}_{len(data)}"
+                # Check cache first - include all relevant parameters in key
+                cache_key = f"{feature_name}_{direction}_{len(data)}_{self.config.min_lookback}_{self.config.max_lookback}_{self.config.optimization_method}"
                 if cache_key in self.feature_cache:
                     direction_results[feature_name] = self.feature_cache[cache_key]
+                    tprint_debug(f"💾 Cache hit for {feature_name} ({direction})")
                     continue
                 
                 # Run single-period optimization (modify MRMR result)
@@ -463,7 +494,9 @@ class DirectionalLookbackOptimizer:
             
             return max(0.0, min(1.0, quality_score))
             
-        except Exception:
+        except Exception as e:
+            tprint_warning(f"⚠️ Data quality score calculation failed for {feature_name}: {e}, returning neutral score")
+            self.logger.warning(f"Data quality calculation failed for {feature_name}: {e}")
             return 0.5  # Neutral score on error
     
     def _analyze_directional_differences(self,
@@ -515,13 +548,14 @@ class DirectionalLookbackOptimizer:
                               avg_period: float,
                               long_result: DirectionalFeatureResult,
                               short_result: DirectionalFeatureResult) -> float:
-        """Get adaptive threshold based on feature characteristics and market conditions."""
+        """Get adaptive threshold based on feature characteristics and market conditions with bounds checking."""
         
         if not self.config.enable_adaptive_thresholds:
             return self.config.consolidation_variance_threshold
         
         # Start with base threshold
         threshold = self.config.consolidation_variance_threshold
+        tprint_debug(f"🎯 Adaptive threshold for {feature_name}: base={threshold:.3f}")
         
         # 1. Feature-type based adjustment
         if self.config.feature_type_thresholds:
@@ -529,22 +563,38 @@ class DirectionalLookbackOptimizer:
             for pattern, custom_threshold in self.config.feature_type_thresholds.items():
                 if pattern.lower() in feature_name.lower():
                     threshold = custom_threshold
+                    tprint_debug(f"   Feature-type adjustment: {threshold:.3f} (pattern: {pattern})")
                     break
         else:
             # Default feature type detection
+            prev_threshold = threshold
             threshold = self._get_feature_type_threshold(feature_name)
+            tprint_debug(f"   Feature-type adjustment: {prev_threshold:.3f} → {threshold:.3f}")
+        
+        # Bounds check after each adjustment
+        threshold = max(0.05, min(0.50, threshold))
         
         # 2. Period-length based adjustment
+        prev_threshold = threshold
         threshold = self._adjust_threshold_by_period_length(threshold, avg_period)
+        threshold = max(0.05, min(0.50, threshold))  # Bounds check
+        tprint_debug(f"   Period-length adjustment: {prev_threshold:.3f} → {threshold:.3f}")
         
         # 3. Market condition adjustment
+        prev_threshold = threshold
         threshold = self._adjust_threshold_by_market_conditions(threshold)
+        threshold = max(0.05, min(0.50, threshold))  # Bounds check
+        tprint_debug(f"   Market condition adjustment: {prev_threshold:.3f} → {threshold:.3f}")
         
         # 4. Performance difference adjustment
+        prev_threshold = threshold
         threshold = self._adjust_threshold_by_performance_diff(threshold, long_result, short_result)
+        threshold = max(0.05, min(0.50, threshold))  # Bounds check
+        tprint_debug(f"   Performance adjustment: {prev_threshold:.3f} → {threshold:.3f}")
         
-        # Ensure threshold stays within reasonable bounds
+        # Final bounds check
         threshold = max(0.05, min(0.50, threshold))
+        tprint_debug(f"   Final threshold: {threshold:.3f}")
         
         return threshold
     

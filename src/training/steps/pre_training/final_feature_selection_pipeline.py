@@ -76,7 +76,7 @@ try:
         mrmr_selection, lasso_selection, correlation_filtering,
         recursive_feature_elimination, variance_filtering
     )
-    from src.utils.feature_selection.feature_importance_analyzer import (
+    from src.feature_selection.analysis.feature_importance_analyzer import (
         FeatureImportanceAnalyzer, ImportanceMethod, FeatureImportanceConfig
     )
     from src.training.utils.feature_selection.quality_metrics import (
@@ -106,54 +106,31 @@ except Exception:
     PURGED_KFOLD_AVAILABLE = False
 
 @dataclass
-class FeatureSelectionConfig:
-    """Configuration for multi-stage feature selection."""
+class BaseFeatureSelectionConfig:
+    """Base configuration for multi-stage feature selection."""
     # Stage targets
     initial_features: int = 120
     stage_1_target: int = 100
     stage_2_target: int = 80
     stage_3_target: int = 60
 
-    # Enhanced model-specific parameters for regime detection
+    # Model configuration
     model_type: str = 'regime_detection'
     target_features: int = 80
     min_features: int = 60
     max_features: int = 100
     priority_categories: List[str] = field(default_factory=lambda: ['volatility', 'structural', 'volume_regime', 'statistical'])
 
-    # NEW: Regime-specific feature selection
-    regime_focus_weights: Dict[str, float] = field(default_factory=lambda: {
-        'volatility': 0.35,      # Highest weight for volatility regimes
-        'structural': 0.25,      # Trend and structural regimes
-        'volume_regime': 0.20,   # Volume-based regimes
-        'statistical': 0.20      # Statistical regime features
-    })
+    # Output settings
+    save_models: bool = True
+    save_analysis: bool = True
+    output_directory: str = "outcomes/market_analysis"
+    verbose: bool = True
 
-    # NEW: Directional feature selection modes
-    direction_mode: str = 'both'  # 'both', 'long_only', 'short_only'
-    separate_directional_features: bool = True  # Create completely separate feature sets for long/short
-    directional_feature_prefixes: Dict[str, str] = field(default_factory=lambda: {
-        'long': 'long_',
-        'short': 'short_'
-    })
-    
-    # Enhanced feature selection methods using existing tools
-    selection_methods: List[str] = field(default_factory=lambda: [
-        'mrmr', 'lasso', 'correlation_filtering', 'rfe', 'variance_filtering', 'mutual_info'
-    ])
-    
-    # NEW: Use existing feature selection framework
-    use_existing_framework: bool = True
-    existing_methods: List[str] = field(default_factory=lambda: [
-        'mrmr_selection', 'lasso_selection', 'correlation_filtering', 
-        'recursive_feature_elimination', 'variance_filtering'
-    ])
-    
-    # NEW: Regime-aware feature selection
-    enable_regime_aware_selection: bool = True
-    regime_clustering_threshold: float = 0.7
-    regime_separation_bonus: float = 0.1
 
+@dataclass
+class ModelSpecificConfig:
+    """Model-specific parameters."""
     # RandomForest parameters
     rf_n_estimators: int = 100
     rf_max_depth: int = 10
@@ -164,66 +141,7 @@ class FeatureSelectionConfig:
     shap_sample_size: int = 1000
     shap_max_features: int = 200
 
-    # Cross-validation and trading-aware evaluation
-    cv_folds: int = 5
-    cv_scoring: str = 'neg_mean_squared_error'
-    label_horizon_minutes: int = 30
-    purge_minutes: Optional[int] = None
-    embargo_minutes: Optional[int] = None
-    trading_cost: float = 0.0005
-    trading_horizon: int = 252  # Periods used to annualize Sharpe
-    turnover_penalty: float = 0.0
-    ic_method: str = 'spearman'
-    market_impact_coefficient: float = 0.1
-    capacity_limit_usd: float = 1_000_000.0
-    max_turnover_annual: float = 50.0
-    min_sharpe_to_turnover_ratio: float = 0.1
-
-    # Uncertainty & calibration reporting
-    enable_uncertainty_reporting: bool = True
-    reliability_bins: int = 10
-    confidence_coverage_target: float = 0.9
-
-    # Enhanced quality thresholds for regime detection
-    min_feature_importance: float = 0.002  # Increased for better regime separation
-    min_correlation_threshold: float = 0.90  # Reduced to allow more regime features
-    min_variance_threshold: float = 0.005   # Reduced to include more regime indicators
-
-    # Enhanced model-specific thresholds for regime detection
-    model_correlation_threshold: float = 0.85  # More permissive for regime features
-    model_importance_threshold: float = 0.003  # Balanced for regime detection
-    
-    # NEW: Regime-specific quality thresholds
-    regime_importance_threshold: float = 0.005  # Higher threshold for regime features
-    regime_correlation_threshold: float = 0.80  # More permissive for regime features
-    regime_variance_threshold: float = 0.001    # Lower threshold for regime indicators
-    
-    # NEW: Advanced feature selection criteria
-    enable_multi_criteria_selection: bool = True
-    criteria_weights: Dict[str, float] = field(default_factory=lambda: {
-        'importance': 0.30,
-        'correlation': 0.20,
-        'variance': 0.15,
-        'regime_separation': 0.25,
-        'temporal_stability': 0.10
-    })
-
-    # NEW: Entropy stability filtering
-    enable_entropy_balancing: bool = True
-    entropy_num_slices: int = 12
-    entropy_min_slice_size: int = 100
-    entropy_variance_threshold: float = 0.12
-    entropy_max_bins: int = 15
-    entropy_min_unique_values: int = 5
-    entropy_use_time_index: bool = True
-
-    # NEW: Early termination and smart pruning
-    enable_early_termination: bool = True
-    early_termination_threshold: float = 0.01  # Stop processing features below this importance threshold
-    adaptive_importance_threshold: bool = True  # Dynamically adjust threshold based on feature distribution
-    importance_percentile_cutoff: float = 20.0  # Bottom percentile to prune
-
-    # NEW: LightGBM optimization parameters
+    # LightGBM parameters
     lightgbm_params: Dict[str, Any] = field(default_factory=lambda: {
         'n_estimators': 100,
         'learning_rate': 0.1,
@@ -237,31 +155,145 @@ class FeatureSelectionConfig:
         'random_state': 42
     })
 
-    # NEW: Recursive Feature Elimination parameters
+
+@dataclass
+class QualityThresholdsConfig:
+    """Quality thresholds for feature selection."""
+    min_feature_importance: float = 0.002
+    min_correlation_threshold: float = 0.90
+    min_variance_threshold: float = 0.005
+    model_correlation_threshold: float = 0.85
+    model_importance_threshold: float = 0.003
+    
+    # Regime-specific thresholds
+    regime_importance_threshold: float = 0.005
+    regime_correlation_threshold: float = 0.80
+    regime_variance_threshold: float = 0.001
+
+
+@dataclass
+class ValidationConfig:
+    """Cross-validation and trading-aware evaluation."""
+    cv_folds: int = 5
+    cv_scoring: str = 'neg_mean_squared_error'
+    label_horizon_minutes: int = 30
+    purge_minutes: Optional[int] = None
+    embargo_minutes: Optional[int] = None
+    
+    # Trading parameters
+    trading_cost: float = 0.0005
+    trading_horizon: int = 252
+    turnover_penalty: float = 0.0
+    ic_method: str = 'spearman'
+    market_impact_coefficient: float = 0.1
+    capacity_limit_usd: float = 1_000_000.0
+    max_turnover_annual: float = 50.0
+    min_sharpe_to_turnover_ratio: float = 0.1
+
+    # Uncertainty & calibration
+    enable_uncertainty_reporting: bool = True
+    reliability_bins: int = 10
+    confidence_coverage_target: float = 0.9
+
+
+@dataclass
+class AdvancedSelectionConfig:
+    """Advanced feature selection parameters."""
+    # Selection methods
+    selection_methods: List[str] = field(default_factory=lambda: [
+        'mrmr', 'lasso', 'correlation_filtering', 'rfe', 'variance_filtering', 'mutual_info'
+    ])
+    use_existing_framework: bool = True
+    existing_methods: List[str] = field(default_factory=lambda: [
+        'mrmr_selection', 'lasso_selection', 'correlation_filtering', 
+        'recursive_feature_elimination', 'variance_filtering'
+    ])
+
+    # Directional feature selection
+    direction_mode: str = 'both'
+    separate_directional_features: bool = True
+    directional_feature_prefixes: Dict[str, str] = field(default_factory=lambda: {
+        'long': 'long_',
+        'short': 'short_'
+    })
+
+    # Regime-aware selection
+    enable_regime_aware_selection: bool = True
+    regime_clustering_threshold: float = 0.7
+    regime_separation_bonus: float = 0.1
+    regime_focus_weights: Dict[str, float] = field(default_factory=lambda: {
+        'volatility': 0.35,
+        'structural': 0.25,
+        'volume_regime': 0.20,
+        'statistical': 0.20
+    })
+
+    # Multi-criteria selection
+    enable_multi_criteria_selection: bool = True
+    criteria_weights: Dict[str, float] = field(default_factory=lambda: {
+        'importance': 0.30,
+        'correlation': 0.20,
+        'variance': 0.15,
+        'regime_separation': 0.25,
+        'temporal_stability': 0.10
+    })
+
+    # Entropy stability filtering
+    enable_entropy_balancing: bool = True
+    entropy_num_slices: int = 12
+    entropy_min_slice_size: int = 100
+    entropy_variance_threshold: float = 0.12
+    entropy_max_bins: int = 15
+    entropy_min_unique_values: int = 5
+    entropy_use_time_index: bool = True
+
+    # Early termination
+    enable_early_termination: bool = True
+    early_termination_threshold: float = 0.01
+    adaptive_importance_threshold: bool = True
+    importance_percentile_cutoff: float = 20.0
+
+    # RFE parameters
     enable_rfe: bool = True
-    rfe_step_size: float = 0.1  # Remove 10% of features per step
-    rfe_min_features: int = 10  # Minimum features to keep in RFE
+    rfe_step_size: float = 0.1
+    rfe_min_features: int = 10
     rfe_cv_folds: int = 3
     rfe_early_stopping: bool = True
-    rfe_early_stopping_patience: int = 3  # Stop if no improvement for 3 consecutive steps
+    rfe_early_stopping_patience: int = 3
 
-    # NEW: Mutual information parameters
+    # Mutual information
     enable_mutual_information: bool = True
-    mutual_info_method: str = 'auto'  # 'auto', 'discrete', 'continuous'
-    mutual_info_k: int = 10  # Number of nearest neighbors for continuous MI
+    mutual_info_method: str = 'auto'
+    mutual_info_k: int = 10
     mutual_info_discrete_features: bool = False
 
-    # NEW: Chunked processing parameters
+    # Chunked processing
     enable_chunked_processing: bool = True
-    chunk_size: int = 1000  # Process features in chunks of this size
-    max_chunks: int = 10  # Maximum number of chunks to process
-    chunk_overlap: int = 50  # Overlap between chunks for consistency
+    chunk_size: int = 1000
+    max_chunks: int = 10
+    chunk_overlap: int = 50
 
-    # Output settings
-    save_models: bool = True
-    save_analysis: bool = True
-    output_directory: str = "outcomes/market_analysis"
-    verbose: bool = True
+    # Optional tool usage
+    use_shap: bool = True
+    use_lightgbm: bool = True
+
+
+@dataclass
+class FeatureSelectionConfig(BaseFeatureSelectionConfig):
+    """Complete configuration combining all sub-configs."""
+    
+    def __post_init__(self):
+        """Initialize sub-configurations."""
+        self.model_config = ModelSpecificConfig()
+        self.quality_config = QualityThresholdsConfig()
+        self.validation_config = ValidationConfig()
+        self.advanced_config = AdvancedSelectionConfig()
+        
+        # Merge parameters from sub-configs for backward compatibility
+        for config in [self.model_config, self.quality_config, self.validation_config, self.advanced_config]:
+            for attr, value in config.__dict__.items():
+                if not hasattr(self, attr):
+                    setattr(self, attr, value)
 
 @dataclass
 class FeatureSelectionResult:
@@ -385,6 +417,48 @@ class MultiStageFeatureSelector:
         tprint(f"⚡ Chunked Processing: {self.config.enable_chunked_processing}")
         tprint(f"⚡ Vectorization: Enabled")
         tprint(f"⚡ Caching: Enabled")
+        
+        # Memory management thresholds
+        self.cache_size_limit_mb = 500  # 500MB cache limit
+        self.max_cache_entries = 1000   # Maximum number of cache entries
+
+    def _cleanup_cache(self, threshold_mb: float = 500) -> None:
+        """Clear cache if memory usage exceeds threshold."""
+        import sys
+        
+        try:
+            # Calculate cache size
+            cache_size_mb = sum(sys.getsizeof(v) for v in self._cache.values()) / 1e6
+            
+            if cache_size_mb > threshold_mb:
+                # Clear caches
+                cleared_entries = len(self._cache)
+                self._cache.clear()
+                self._vectorized_arrays.clear()
+                self._computation_cache.clear()
+                
+                tprint(f"🧹 Cleared {cleared_entries} cache entries ({cache_size_mb:.1f}MB)")
+                self.logger.info(f"Cache cleanup: cleared {cache_size_mb:.1f}MB")
+                
+                # Reset cache statistics
+                self._cache_hits = 0
+                self._cache_misses = 0
+        except Exception as e:
+            tprint_warning(f"⚠️ Cache cleanup failed: {e}")
+            self.logger.warning(f"Cache cleanup error: {e}")
+    
+    def _trim_cache_by_entries(self, max_entries: int = 1000) -> None:
+        """Trim cache to maximum number of entries (LRU-like)."""
+        if len(self._cache) > max_entries:
+            # Keep only the most recent entries
+            excess = len(self._cache) - max_entries
+            keys_to_remove = list(self._cache.keys())[:excess]
+            
+            for key in keys_to_remove:
+                del self._cache[key]
+            
+            tprint(f"🧹 Trimmed {excess} excess cache entries")
+            self.logger.info(f"Cache trimmed: removed {excess} entries")
 
     def _set_model_specific_parameters(self):
         """Set model-specific feature selection parameters."""
@@ -499,8 +573,7 @@ class MultiStageFeatureSelector:
         if hasattr(model, 'feature_importances_'):
             importance = model.feature_importances_
         else:
-            # Fallback to variance-based importance
-            importance = np.var(X.values, axis=0)
+            raise AttributeError(f"Model {type(model).__name__} does not have feature_importances_ attribute. Cannot compute feature importance.")
         
         # Cache the result
         self._cache[cache_key] = importance
@@ -540,12 +613,18 @@ class MultiStageFeatureSelector:
             
             return normalized_scores
             
-        except ImportError:
-            tprint("⚠️ sklearn not available for mutual information calculation")
-            return np.zeros(len(X.columns))
+        except ImportError as e:
+            if self.config.enable_mutual_information:
+                raise ImportError("sklearn is required for mutual information calculation but not available. Please install sklearn") from e
+            else:
+                tprint("⚠️ sklearn not available for mutual information calculation (disabled in config)")
+                return np.zeros(len(X.columns))
         except Exception as e:
-            tprint(f"⚠️ Mutual information calculation failed: {e}")
-            return np.zeros(len(X.columns))
+            if self.config.enable_mutual_information:
+                raise RuntimeError(f"Mutual information calculation failed: {e}") from e
+            else:
+                tprint(f"⚠️ Mutual information calculation failed (disabled in config): {e}")
+                return np.zeros(len(X.columns))
 
     def _vectorized_stability_analysis(self, X: pd.DataFrame, y: pd.Series) -> np.ndarray:
         """Vectorized stability analysis across time periods."""
@@ -807,16 +886,10 @@ class MultiStageFeatureSelector:
             direction_features = self._filter_direction_features(X, direction)
 
             if len(direction_features.columns) < stage_targets[-1]:
-                self.logger.warning(f"⚠️ {direction} direction has only {len(direction_features.columns)} features, less than target {stage_targets[-1]}")
-                tprint(
-                    f"⚠️ {direction.capitalize()} direction insufficient features: {len(direction_features.columns)} available,"
-                    f" requires {stage_targets[-1]}"
+                raise ValueError(
+                    f"Insufficient features for {direction} direction: {len(direction_features.columns)} available, "
+                    f"requires at least {stage_targets[-1]}"
                 )
-                if direction == 'long':
-                    self.long_results = self._handle_insufficient_features(direction_features, y)
-                else:
-                    self.short_results = self._handle_insufficient_features(direction_features, y)
-                continue
 
             # Select features for this direction
             direction_result = self._select_unified_features(direction_features, y, feature_names, stage_targets)
@@ -884,6 +957,99 @@ class MultiStageFeatureSelector:
         )
         tprint(directional_summary)
 
+        # Generate outcome file with datetime stamp (directional)
+        try:
+            from datetime import datetime
+            from pathlib import Path
+            import json
+            
+            outcome_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            outcomes_dir = Path('outcomes')
+            outcomes_dir.mkdir(parents=True, exist_ok=True)
+            
+            outcome_filename = f"final_feature_selection_directional_outcome_{outcome_timestamp}.json"
+            outcome_path = outcomes_dir / outcome_filename
+            
+            # Feature overlap analysis
+            feature_overlap = {}
+            if 'long' in directions and 'short' in directions:
+                long_set = set(long_features)
+                short_set = set(short_features)
+                overlap = long_set & short_set
+                feature_overlap = {
+                    'overlap_count': len(overlap),
+                    'overlap_features': list(overlap),
+                    'unique_to_long': len(long_set - short_set),
+                    'unique_to_short': len(short_set - long_set),
+                    'overlap_percentage': float(len(overlap) / max(1, len(long_set | short_set)) * 100),
+                }
+            
+            # Stage transition analysis
+            stage_transitions = {
+                'long_pipeline': {
+                    'stage_1_to_2_reduction': self.long_results.feature_counts.get('long_stage_1', 0) - self.long_results.feature_counts.get('long_stage_2', 0) if 'long' in directions else 0,
+                    'stage_2_to_3_reduction': self.long_results.feature_counts.get('long_stage_2', 0) - self.long_results.feature_counts.get('long_stage_3', 0) if 'long' in directions else 0,
+                    'total_reduction_pct': float((1 - self.long_results.feature_counts.get('long_stage_3', 0) / max(1, self.long_results.feature_counts.get('long_stage_1', 1))) * 100) if 'long' in directions else 0,
+                },
+                'short_pipeline': {
+                    'stage_1_to_2_reduction': self.short_results.feature_counts.get('short_stage_1', 0) - self.short_results.feature_counts.get('short_stage_2', 0) if 'short' in directions else 0,
+                    'stage_2_to_3_reduction': self.short_results.feature_counts.get('short_stage_2', 0) - self.short_results.feature_counts.get('short_stage_3', 0) if 'short' in directions else 0,
+                    'total_reduction_pct': float((1 - self.short_results.feature_counts.get('short_stage_3', 0) / max(1, self.short_results.feature_counts.get('short_stage_1', 1))) * 100) if 'short' in directions else 0,
+                }
+            }
+            
+            # Create comprehensive outcome report
+            outcome_data = {
+                'component': 'final_feature_selection_directional',
+                'timestamp': datetime.now().isoformat(),
+                'execution_time': combined_result.selection_time,
+                'selection_type': 'directional',
+                'directions': directions,
+                'configuration': {
+                    'enable_directional_features': self.config.enable_directional_features,
+                    'stage_1_target': self.config.stage_1_target,
+                    'stage_2_target': self.config.stage_2_target,
+                    'stage_3_target': self.config.stage_3_target,
+                    'use_shap': self.config.use_shap,
+                    'use_lightgbm': self.config.use_lightgbm,
+                    'n_estimators': self.config.n_estimators,
+                    'cv_folds': self.config.cv_folds,
+                },
+                'results': {
+                    'summary': {
+                        'long_features_count': len(long_features) if 'long' in directions else 0,
+                        'short_features_count': len(short_features) if 'short' in directions else 0,
+                        'total_features_count': len(combined_features),
+                    },
+                    'long_features': long_features if 'long' in directions else [],
+                    'short_features': short_features if 'short' in directions else [],
+                    'feature_counts': combined_result.feature_counts,
+                    'feature_overlap': feature_overlap,
+                    'stage_transitions': stage_transitions,
+                },
+                'long_pipeline_scores': {
+                    'stage_1': self.long_results.stage_1_scores if 'long' in directions else {},
+                    'stage_2': self.long_results.stage_2_scores if 'long' in directions else {},
+                    'stage_3': self.long_results.stage_3_scores if 'long' in directions else {},
+                },
+                'short_pipeline_scores': {
+                    'stage_1': self.short_results.stage_1_scores if 'short' in directions else {},
+                    'stage_2': self.short_results.stage_2_scores if 'short' in directions else {},
+                    'stage_3': self.short_results.stage_3_scores if 'short' in directions else {},
+                },
+                'status': 'success'
+            }
+            
+            # Save outcome file
+            with open(outcome_path, 'w') as f:
+                json.dump(outcome_data, f, indent=2, default=str)
+            
+            tprint(f"📄 Outcome file saved: {outcome_filename}")
+            
+        except Exception as outcome_error:
+            tprint(f"⚠️ Failed to save outcome file: {outcome_error}")
+            # Don't fail the component if outcome file generation fails
+
         return combined_result
 
     def _select_unified_features(self, X: pd.DataFrame, y: pd.Series, feature_names: Optional[List[str]], stage_targets: Tuple[int, ...]) -> FeatureSelectionResult:
@@ -891,12 +1057,10 @@ class MultiStageFeatureSelector:
 
         # Validate inputs
         if len(X.columns) < stage_targets[-1]:  # Check against final target
-            self.logger.warning(f"⚠️ Input has only {len(X.columns)} features, less than target {stage_targets[-1]}")
-            tprint(
-                f"⚠️ Unified selection skipped — only {len(X.columns)} features available,"
-                f" need at least {stage_targets[-1]}"
+            raise ValueError(
+                f"Insufficient features for unified selection: {len(X.columns)} available, "
+                f"requires at least {stage_targets[-1]}"
             )
-            return self._handle_insufficient_features(X, y)
 
         # Stage 0: Initial feature preparation
         self.logger.info("📊 Stage 0: Initial feature preparation")
@@ -932,6 +1096,98 @@ class MultiStageFeatureSelector:
         if self.config.save_analysis:
             tprint("💾 Saving feature selection analysis")
             self._save_analysis()
+
+        # Generate outcome file with datetime stamp (unified)
+        try:
+            from datetime import datetime
+            from pathlib import Path
+            import json
+            
+            outcome_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            outcomes_dir = Path('outcomes')
+            outcomes_dir.mkdir(parents=True, exist_ok=True)
+            
+            outcome_filename = f"final_feature_selection_outcome_{outcome_timestamp}.json"
+            outcome_path = outcomes_dir / outcome_filename
+            
+            # Stage transition analysis
+            stage_transitions = {
+                'stage_1_to_2': {
+                    'features_removed': len(self.results.stage_1_features) - len(self.results.stage_2_features),
+                    'removal_rate_pct': float((len(self.results.stage_1_features) - len(self.results.stage_2_features)) / max(1, len(self.results.stage_1_features)) * 100),
+                },
+                'stage_2_to_3': {
+                    'features_removed': len(self.results.stage_2_features) - len(self.results.stage_3_features),
+                    'removal_rate_pct': float((len(self.results.stage_2_features) - len(self.results.stage_3_features)) / max(1, len(self.results.stage_2_features)) * 100),
+                },
+                'overall': {
+                    'total_features_removed': len(self.results.stage_1_features) - len(self.results.final_features),
+                    'total_removal_rate_pct': float((len(self.results.stage_1_features) - len(self.results.final_features)) / max(1, len(self.results.stage_1_features)) * 100),
+                }
+            }
+            
+            # Feature importance summary (top features from each stage)
+            feature_importance_summary = {}
+            if self.results.stage_1_scores and 'feature_importance' in self.results.stage_1_scores:
+                importance_dict = self.results.stage_1_scores.get('feature_importance', {})
+                if isinstance(importance_dict, dict):
+                    sorted_features = sorted(importance_dict.items(), key=lambda x: x[1], reverse=True)
+                    feature_importance_summary['top_10_stage_1'] = [
+                        {'feature': feat, 'importance': float(imp)} 
+                        for feat, imp in sorted_features[:10]
+                    ]
+            
+            # Create comprehensive outcome report
+            outcome_data = {
+                'component': 'final_feature_selection',
+                'timestamp': datetime.now().isoformat(),
+                'execution_time': self.results.selection_time,
+                'selection_type': 'unified',
+                'configuration': {
+                    'stage_1_target': self.config.stage_1_target,
+                    'stage_2_target': self.config.stage_2_target,
+                    'stage_3_target': self.config.stage_3_target,
+                    'use_shap': self.config.use_shap,
+                    'use_lightgbm': self.config.use_lightgbm,
+                    'n_estimators': self.config.n_estimators,
+                    'cv_folds': self.config.cv_folds,
+                    'enable_caching': self.config.enable_caching,
+                    'cache_size': self.config.cache_size,
+                },
+                'results': {
+                    'summary': {
+                        'stage_1_features_count': len(self.results.stage_1_features),
+                        'stage_2_features_count': len(self.results.stage_2_features),
+                        'stage_3_features_count': len(self.results.stage_3_features),
+                        'final_features_count': len(self.results.final_features),
+                    },
+                    'stage_1_features': self.results.stage_1_features,
+                    'stage_2_features': self.results.stage_2_features,
+                    'stage_3_features': self.results.stage_3_features,
+                    'final_features': self.results.final_features,
+                    'feature_counts': self.results.feature_counts,
+                    'stage_transitions': stage_transitions,
+                    'feature_importance_summary': feature_importance_summary,
+                },
+                'quality_metrics': {
+                    'stage_1_scores': self.results.stage_1_scores,
+                    'stage_2_scores': self.results.stage_2_scores,
+                    'stage_3_scores': self.results.stage_3_scores,
+                },
+                'polarity_adjustments': self.results.polarity_adjustments if hasattr(self.results, 'polarity_adjustments') else {},
+                'sign_stability': self.results.sign_stability if hasattr(self.results, 'sign_stability') else {},
+                'status': 'success'
+            }
+            
+            # Save outcome file
+            with open(outcome_path, 'w') as f:
+                json.dump(outcome_data, f, indent=2, default=str)
+            
+            tprint(f"📄 Outcome file saved: {outcome_filename}")
+            
+        except Exception as outcome_error:
+            tprint(f"⚠️ Failed to save outcome file: {outcome_error}")
+            # Don't fail the component if outcome file generation fails
 
         return self.results
 
@@ -1259,12 +1515,18 @@ class MultiStageFeatureSelector:
 
             return normalized_scores
 
-        except ImportError:
-            self.logger.warning("⚠️ sklearn not available for mutual information calculation")
-            return {}
+        except ImportError as e:
+            if self.config.enable_mutual_information:
+                raise ImportError("sklearn is required for mutual information calculation but not available. Please install sklearn") from e
+            else:
+                self.logger.warning("⚠️ sklearn not available for mutual information calculation (disabled in config)")
+                return {}
         except Exception as e:
-            self.logger.warning(f"⚠️ Mutual information calculation failed: {e}")
-            return {}
+            if self.config.enable_mutual_information:
+                raise RuntimeError(f"Mutual information calculation failed: {e}") from e
+            else:
+                self.logger.warning(f"⚠️ Mutual information calculation failed (disabled in config): {e}")
+                return {}
 
     def _calculate_feature_stability_score(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, float]:
         """Calculate feature stability across different time periods/regimes."""
@@ -1362,19 +1624,26 @@ class MultiStageFeatureSelector:
 
     def _train_optimized_model(self, X: pd.DataFrame, y: pd.Series):
         """Train either LightGBM or RandomForest based on availability and performance."""
+        # Check if LightGBM is required and available
+        if self.config.use_lightgbm and not LIGHTGBM_AVAILABLE:
+            raise ImportError("LightGBM is required but not available. Please install LightGBM: pip install lightgbm")
+
         try:
-            if LIGHTGBM_AVAILABLE and len(X.columns) > 50:
+            if self.config.use_lightgbm and LIGHTGBM_AVAILABLE and len(X.columns) > 50:
                 self.logger.info("🚀 Using LightGBM for faster training")
                 tprint(f"🚀 Optimized training — selecting LightGBM (features: {len(X.columns)})")
                 return self._train_lightgbm_model(X, y)
             else:
-                self.logger.info("📊 Using RandomForest (LightGBM not available or dataset too small)")
+                self.logger.info("📊 Using RandomForest (LightGBM not required/available or dataset too small)")
                 tprint("📊 Optimized training — selecting RandomForest")
                 return self._train_random_forest(X, y)
         except Exception as e:
-            self.logger.warning(f"⚠️ LightGBM training failed, falling back to RandomForest: {e}")
-            tprint(f"⚠️ LightGBM training failed ({e}), falling back to RandomForest")
-            return self._train_random_forest(X, y)
+            if self.config.use_lightgbm:
+                raise RuntimeError(f"LightGBM training failed and is required: {e}") from e
+            else:
+                self.logger.info(f"📊 LightGBM training failed but not required, falling back to RandomForest: {e}")
+                tprint(f"📊 LightGBM training failed ({e}), falling back to RandomForest")
+                return self._train_random_forest(X, y)
 
     def _calculate_adaptive_importance_threshold(self, importance_scores: Dict[str, float]) -> float:
         """Calculate adaptive importance threshold based on feature distribution."""
@@ -1765,19 +2034,20 @@ class MultiStageFeatureSelector:
             scores['mutual_information_std'] = np.std(mi_scores_array)
             tprint(f"📊 Mutual information average: {scores['mutual_information']:.4f}")
 
-        # Use SHAP if available for final refinement
-        if SHAP_AVAILABLE and len(selected_features) <= self.config.shap_max_features:
+        # Use SHAP for final refinement (required if configured)
+        if self.config.use_shap and len(selected_features) <= self.config.shap_max_features:
+            if not SHAP_AVAILABLE:
+                raise ImportError("SHAP is required for feature refinement but not available. Please install SHAP: pip install shap")
             tprint("🔮 Applying SHAP refinement...")
             try:
                 shap_features, shap_scores = self._shap_based_selection(X[selected_features], y, actual_target)
-                if shap_features:
-                    selected_features = shap_features
-                    scores.update(shap_scores)
-                    tprint("✅ SHAP refinement completed")
-                else:
-                    tprint("⚠️ SHAP refinement returned no features")
+                if not shap_features:
+                    raise ValueError("SHAP refinement returned no features - cannot proceed with empty feature set")
+                selected_features = shap_features
+                scores.update(shap_scores)
+                tprint("✅ SHAP refinement completed")
             except Exception as e:
-                tprint(f"⚠️ SHAP refinement failed: {e}")
+                raise RuntimeError(f"SHAP refinement failed: {e}") from e
 
         tprint(f"✅ Stage 2 completed: {len(selected_features)} features selected")
         tprint(f"📊 Selection quality: {scores['selection_quality']:.2%}")

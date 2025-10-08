@@ -162,7 +162,7 @@ src/research/clusters/
 2. ✅ **Trading Calibration** (empirical thresholds tied to real trading impact)
 3. ✅ **Lookahead Bias Prevention** (strict temporal separation)
 4. ✅ **Metric Orthogonalization** (reduced redundancy, 79% independence)
-5. ✅ **Comprehensive Feature Integration** (ALL features from feature_engineering/)
+5. ✅ **Comprehensive Feature Integration** (ALL features from feature_engineering_roadmap/)
 6. ✅ **Statistical Validation** (PCA, AIC, BIC, bootstrap testing)
 7. ✅ **Economic Relevance Analysis** (beyond volume/volatility discovery)
 

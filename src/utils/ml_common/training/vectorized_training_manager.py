@@ -1452,7 +1452,7 @@ class VectorizedTrainingManager:
     def _vectorized_feature_selection(self, processed_data: Dict[str, Any], y: np.ndarray) -> Dict[str, Any]:
         """VECTORIZED: Perform feature selection using vectorized operations."""
         try:
-            from src.utils.feature_selection.feature_importance_analyzer import FeatureImportanceAnalyzer, FeatureImportanceConfig, ImportanceMethod
+            from src.feature_selection.analysis.feature_importance_analyzer import FeatureImportanceAnalyzer, FeatureImportanceConfig, ImportanceMethod
 
             # Configure feature selection
             config = FeatureImportanceConfig(

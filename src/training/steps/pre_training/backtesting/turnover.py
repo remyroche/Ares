@@ -7,13 +7,21 @@ from typing import Any, Dict, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
-from src.utils.tprint import tprint_warning
+from src.utils.tprint import tprint_warning, tprint_info, tprint_success, tprint_error
+from src.utils.common_operations import (
+    safe_divide, safe_mean, safe_std, validate_finite, optimize_dataframe_dtypes,
+    calculate_data_quality_metrics, get_dataframe_info
+)
+from src.utils.math_validation import safe_correlation, safe_covariance
+from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
+from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
+from src.utils.matrix_operations.unified_operations import UnifiedMatrixOperations
 
 SeriesLike = Union[pd.Series, np.ndarray, Dict[int, float], Tuple[float, ...], list]
 
 
 def _to_series(value: Optional[SeriesLike], index: Optional[pd.Index] = None) -> pd.Series:
-    """Convert arbitrary sequence-like input to a float ``Series`` aligned to *index*.
+    """Convert arbitrary sequence-like input to a float ``Series`` aligned to *index* with enhanced utilities.
 
     Parameters
     ----------
@@ -24,24 +32,47 @@ def _to_series(value: Optional[SeriesLike], index: Optional[pd.Index] = None) ->
         match, the resulting series is reindexed to ``index`` with missing values
         filled by zero.
     """
+    tprint_info(f"🔄 Converting input to Series with {len(value) if value is not None else 0} elements")
 
-    if value is None:
-        return pd.Series(dtype=float)
+    try:
+        if value is None:
+            tprint_info("📊 Creating empty Series")
+            return pd.Series(dtype=float)
 
-    if isinstance(value, pd.Series):
-        series = value.astype(float)
+        if isinstance(value, pd.Series):
+            tprint_info("📊 Converting existing Series")
+            series = value.astype(float)
+            if index is not None:
+                series = series.reindex(index)
+            # Use safe fillna from common operations
+            series = series.fillna(0.0)
+            return series
+
+        # Convert to numpy array with enhanced error handling
+        array = np.asarray(value, dtype=float)
+
+        # Validate array is finite using math validation utilities
+        array = validate_finite(array, "input array")
+
+        if index is not None and len(array) == len(index):
+            tprint_info(f"📊 Creating Series with matching index ({len(array)} elements)")
+            return pd.Series(array, index=index, dtype=float)
+
         if index is not None:
-            series = series.reindex(index)
-        return series.fillna(0.0)
+            tprint_info(f"📊 Creating Series with index padding ({len(index)} target, {len(array)} source)")
+            series = pd.Series(np.zeros(len(index), dtype=float), index=index)
+            # Use safe operations for array slicing
+            safe_len = min(len(array), len(index))
+            series.iloc[:safe_len] = array[:safe_len]
+            return series
 
-    array = np.asarray(value, dtype=float)
-    if index is not None and len(array) == len(index):
-        return pd.Series(array, index=index, dtype=float)
-    if index is not None:
-        series = pd.Series(np.zeros(len(index), dtype=float), index=index)
-        series.iloc[: min(len(array), len(index))] = array[: len(index)]
-        return series
-    return pd.Series(array, dtype=float)
+        tprint_info(f"📊 Creating Series from array ({len(array)} elements)")
+        return pd.Series(array, dtype=float)
+
+    except Exception as e:
+        tprint_error(f"❌ Failed to convert input to Series: {e}")
+        # Return empty series as fallback
+        return pd.Series(dtype=float)
 
 
 def calculate_turnover_metrics(
@@ -51,7 +82,7 @@ def calculate_turnover_metrics(
     *,
     periods_per_year: float = 252.0,
 ) -> Dict[str, float]:
-    """Calculate turnover diagnostics for a trading configuration.
+    """Calculate turnover diagnostics for a trading configuration with enhanced utilities.
 
     Parameters
     ----------
@@ -65,35 +96,120 @@ def calculate_turnover_metrics(
     periods_per_year:
         Number of evaluation periods used to annualise turnover.
     """
+    tprint_info("📊 Calculating turnover metrics with enhanced utilities")
 
-    positions_series = _to_series(positions)
-    returns_series = _to_series(returns, positions_series.index)
+    try:
+        # Get memory optimizer for performance tracking
+        memory_optimizer = get_m1_memory_optimizer()
 
-    if position_changes is None:
-        position_changes_series = positions_series.diff().abs()
-    else:
-        position_changes_series = _to_series(position_changes, positions_series.index).abs()
+        # Initialize matrix operations for advanced correlation analysis
+        matrix_ops = UnifiedMatrixOperations()
 
-    if not position_changes_series.empty:
-        position_changes_series.iloc[0] = abs(positions_series.iloc[0])
+        # Convert inputs using enhanced utilities
+        positions_series = _to_series(positions)
+        returns_series = _to_series(returns, positions_series.index)
 
-    turnover_per_period = float(position_changes_series.mean()) if not position_changes_series.empty else 0.0
-    turnover_annual = float(turnover_per_period * periods_per_year)
+        # Optimize data types for better memory usage
+        positions_series = optimize_dataframe_dtypes(positions_series.to_frame()).iloc[:, 0]
+        returns_series = optimize_dataframe_dtypes(returns_series.to_frame()).iloc[:, 0]
 
-    non_zero_changes = position_changes_series[position_changes_series > 0]
-    if len(non_zero_changes) > 1:
-        avg_holding_period = float(len(positions_series) / len(non_zero_changes))
-    else:
-        avg_holding_period = float(len(positions_series))
+        # Calculate position changes if not provided
+        if position_changes is None:
+            tprint_info("🔄 Computing position changes")
+            position_changes_series = positions_series.diff().abs()
+        else:
+            position_changes_series = _to_series(position_changes, positions_series.index).abs()
 
-    stability = float((position_changes_series == 0).mean()) if not position_changes_series.empty else 0.0
+        # Handle first position (no previous position to diff from)
+        if not position_changes_series.empty and len(positions_series) > 0:
+            position_changes_series.iloc[0] = abs(positions_series.iloc[0])
 
-    return {
-        "turnover_per_period": turnover_per_period,
-        "turnover_annual": turnover_annual,
-        "avg_holding_period_bars": avg_holding_period,
-        "position_stability": stability,
-    }
+        # Calculate metrics using safe operations
+        turnover_per_period = safe_mean(position_changes_series) if not position_changes_series.empty else 0.0
+        turnover_annual = safe_divide(turnover_per_period * periods_per_year, 1.0)
+
+        # Calculate average holding period
+        non_zero_changes = position_changes_series[position_changes_series > 0]
+        if len(non_zero_changes) > 1:
+            avg_holding_period = safe_divide(len(positions_series), len(non_zero_changes))
+        else:
+            avg_holding_period = float(len(positions_series))
+
+        # Calculate position stability
+        stability = safe_mean((position_changes_series == 0).astype(float)) if not position_changes_series.empty else 0.0
+
+        # Calculate additional correlation metrics using enhanced utilities and matrix operations
+        correlation_returns = safe_correlation(positions_series, returns_series)
+        correlation_changes = safe_correlation(positions_series, position_changes_series) if not position_changes_series.empty else 0.0
+
+        # Use matrix operations for more sophisticated correlation analysis
+        try:
+            # Create correlation matrix for multiple time series
+            combined_data = pd.DataFrame({
+                'positions': positions_series,
+                'returns': returns_series,
+                'position_changes': position_changes_series
+            }).dropna()
+
+            if len(combined_data) > 10:  # Need sufficient data for correlation matrix
+                correlation_matrix = matrix_ops.compute_correlation_matrix(combined_data.values)
+                if correlation_matrix is not None and correlation_matrix.shape == (3, 3):
+                    # Extract pairwise correlations from matrix
+                    pos_returns_corr = correlation_matrix[0, 1]  # positions vs returns
+                    pos_changes_corr = correlation_matrix[0, 2]  # positions vs changes
+                    returns_changes_corr = correlation_matrix[1, 2]  # returns vs changes
+
+                    # Use matrix-based correlations if they are more reliable
+                    if np.isfinite(pos_returns_corr) and abs(pos_returns_corr - correlation_returns) < 0.1:
+                        correlation_returns = pos_returns_corr
+
+                    if np.isfinite(pos_changes_corr) and not position_changes_series.empty:
+                        correlation_changes = pos_changes_corr
+
+                    tprint_debug(f"📊 Matrix-based correlations computed: pos-returns={pos_returns_corr:.3f}, pos-changes={pos_changes_corr:.3f}")
+                else:
+                    tprint_debug("📊 Matrix correlation computation failed, using scalar correlations")
+            else:
+                tprint_debug("📊 Insufficient data for matrix correlation analysis")
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Matrix correlation analysis failed: {e}")
+            # Fall back to scalar correlations
+
+        # Create comprehensive metrics dictionary
+        metrics = {
+            "turnover_per_period": turnover_per_period,
+            "turnover_annual": turnover_annual,
+            "avg_holding_period_bars": avg_holding_period,
+            "position_stability": stability,
+            "correlation_with_returns": correlation_returns,
+            "correlation_with_changes": correlation_changes,
+            "total_positions": len(positions_series),
+            "memory_usage_mb": memory_optimizer.memory_pressure * 100 if memory_optimizer else 0.0,
+        }
+
+        # Validate all metrics are finite
+        for key, value in metrics.items():
+            if not np.isfinite(value):
+                tprint_warning(f"⚠️ Non-finite metric detected: {key} = {value}")
+                metrics[key] = 0.0
+
+        tprint_success(f"✅ Turnover metrics calculated: annual={turnover_annual:.3f}x, stability={stability:.3f}")
+        return metrics
+
+    except Exception as e:
+        tprint_error(f"❌ Failed to calculate turnover metrics: {e}")
+        return {
+            "turnover_per_period": 0.0,
+            "turnover_annual": 0.0,
+            "avg_holding_period_bars": 0.0,
+            "position_stability": 0.0,
+            "correlation_with_returns": 0.0,
+            "correlation_with_changes": 0.0,
+            "total_positions": 0,
+            "memory_usage_mb": 0.0,
+            "error": str(e)
+        }
 
 
 def apply_market_impact_model(

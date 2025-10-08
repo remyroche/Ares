@@ -133,9 +133,9 @@ class VolatilityAwareConfig:
     max_auc_std_threshold: float = 0.03
     min_psi_threshold: float = 0.1
     max_flip_rate_threshold: float = 0.15
-    min_balance_threshold: float = 0.35
-    max_balance_threshold: float = 0.65
-    max_correlation_threshold: float = 0.4
+    min_balance_threshold: float = 0.25  # More lenient for better target generation
+    max_balance_threshold: float = 0.75  # More lenient for better target generation
+    max_correlation_threshold: float = 0.5  # More lenient for better target generation
     prefer_sigma_payoffs: bool = False
 
     def __post_init__(self):
@@ -372,9 +372,12 @@ class VolatilityAwareMultiHorizonLabeler:
                     self.lookahead_detector.set_current_timestamp(market_data.index[-1])
 
                 # Validate no future data in input
-                market_data = self.lookahead_detector.validate_dataframe_timestamps(
+                is_valid = self.lookahead_detector.validate_dataframe_timestamps(
                     market_data, timestamp_column='timestamp' if 'timestamp' in market_data.columns else None
                 )
+                if not is_valid:
+                    tprint_error("❌ Future data detected in input")
+                    return self._create_empty_result()
             except Exception as e:
                 tprint_error(f"❌ Data leakage detected: {e}")
                 return self._create_empty_result()
@@ -404,29 +407,47 @@ class VolatilityAwareMultiHorizonLabeler:
         result.target_shifts = {}
         
         try:
-            # Step 1: Event-based bar construction (with caching)
-            tprint_info("📊 Step 1: Constructing event-based bars")
-            try:
-                bar_cache_key = f"bars_{data_hash}_{hash(str(self.config.bar_construction))}"
-                if self.config.enable_caching and bar_cache_key in self.bar_cache:
-                    bar_result = self.bar_cache[bar_cache_key]
-                    tprint_info("📋 Using cached bar construction")
-                else:
-                    bar_result = self.bar_constructor.construct_bars(market_data)
-                    if self.config.enable_caching:
-                        self.bar_cache[bar_cache_key] = bar_result
-                    tprint_success("✅ Bar construction completed")
-
+            # Step 1: Event-based bar construction or OHLCV passthrough
+            # For OHLCV data with TIME bars, skip bar construction and use data directly
+            from .bar_construction import BarType
+            if self.config.bar_construction.bar_type == BarType.TIME and 'open' in market_data.columns:
+                tprint_info("📊 Step 1: Using OHLCV data directly (TIME bars at native resolution)")
+                # Create a minimal bar result that wraps the OHLCV data
+                from .bar_construction import BarConstructionResult
+                bar_result = BarConstructionResult(
+                    cleaned_bars=market_data[['open', 'high', 'low', 'close', 'volume']].copy(),
+                    original_bars=market_data[['open', 'high', 'low', 'close', 'volume']].copy(),
+                    config_used=self.config.bar_construction
+                )
+                bar_result.n_original_bars = len(market_data)
+                bar_result.n_cleaned_bars = len(market_data)
+                bar_result.bars_removed = 0
                 result.bar_construction_result = bar_result
+                tprint_success(f"✅ Using {len(market_data)} OHLCV bars directly")
+            else:
+                # Use event-based bar construction for trade data
+                tprint_info("📊 Step 1: Constructing event-based bars")
+                try:
+                    bar_cache_key = f"bars_{data_hash}_{hash(str(self.config.bar_construction))}"
+                    if self.config.enable_caching and bar_cache_key in self.bar_cache:
+                        bar_result = self.bar_cache[bar_cache_key]
+                        tprint_info("📋 Using cached bar construction")
+                    else:
+                        bar_result = self.bar_constructor.construct_bars(market_data)
+                        if self.config.enable_caching:
+                            self.bar_cache[bar_cache_key] = bar_result
+                        tprint_success("✅ Bar construction completed")
 
-                if bar_result.cleaned_bars.empty:
-                    tprint_error("❌ No valid bars constructed - check data quality")
+                    result.bar_construction_result = bar_result
+
+                    if bar_result.cleaned_bars.empty:
+                        tprint_error("❌ No valid bars constructed - check data quality")
+                        return self._create_empty_result()
+                    else:
+                        tprint_success(f"✅ Constructed {len(bar_result.cleaned_bars)} valid bars")
+                except Exception as e:
+                    tprint_error(f"❌ Bar construction failed: {e}")
                     return self._create_empty_result()
-                else:
-                    tprint_success(f"✅ Constructed {len(bar_result.cleaned_bars)} valid bars")
-            except Exception as e:
-                tprint_error(f"❌ Bar construction failed: {e}")
-                return self._create_empty_result()
             
             # Step 2: Volatility modeling (with caching)
             tprint_info("📈 Step 2: Modeling volatility")
@@ -545,8 +566,8 @@ class VolatilityAwareMultiHorizonLabeler:
             result.labels = filtered_result.labels
             result.confidence_scores = filtered_result.confidence_scores
             result.eligibility_masks = filtered_result.eligibility_masks
-            result.sigma_payoffs = filtered_result.sigma_payoffs
-            result.training_labels = filtered_result.training_labels
+            result.sigma_payoffs = getattr(filtered_result, 'sigma_payoffs', pd.DataFrame())
+            result.training_labels = getattr(filtered_result, 'training_labels', pd.DataFrame())
             result.smoothing_settings = getattr(
                 filtered_result,
                 'smoothing_settings',
@@ -1415,13 +1436,7 @@ def create_fast_config() -> VolatilityAwareConfig:
             n_trials=20,
             max_targets_per_band=1,
             min_lqs_score=0.2
-        ),
-
-        # Relaxed thresholds
-        min_auc_threshold=0.5,
-        max_auc_std_threshold=0.05,
-        min_balance_threshold=0.3,
-        max_balance_threshold=0.7
+        )
     )
 
 
@@ -1455,13 +1470,17 @@ def create_accurate_config() -> VolatilityAwareConfig:
             smoothing_window=3
         ),
 
-        # Full noise gating
+        # Accurate noise gating - use combined but with more lenient parameters
         noise_gating=NoiseGatingConfig(
             gate_type=NoiseGateType.COMBINED,
             enable_micro_range_gating=True,
             enable_variance_ratio_gating=True,
             enable_signal_noise_gating=True,
-            min_snr_ratio=1.5
+            min_move_ratio=1.3,  # More lenient than default 1.5
+            vr_threshold_low=0.6,  # More lenient than default 0.5
+            vr_threshold_high=1.4,  # More lenient than default 1.5
+            min_snr_ratio=1.3,  # More lenient than default 1.2
+            min_eligibility_ratio=0.15  # Lower requirement
         ),
 
         # Comprehensive quality scoring
@@ -1520,12 +1539,14 @@ def create_balanced_config() -> VolatilityAwareConfig:
             enable_smoothing=True
         ),
 
-        # Balanced noise gating
+        # Balanced noise gating - use only micro-range for better target generation
         noise_gating=NoiseGatingConfig(
-            gate_type=NoiseGateType.COMBINED,
+            gate_type=NoiseGateType.MICRO_RANGE,
             enable_micro_range_gating=True,
-            enable_variance_ratio_gating=True,
-            enable_signal_noise_gating=False
+            enable_variance_ratio_gating=False,
+            enable_signal_noise_gating=False,
+            min_move_ratio=1.2,  # Slightly more lenient
+            min_eligibility_ratio=0.2  # Lower requirement
         ),
 
         # Balanced quality scoring

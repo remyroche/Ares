@@ -10,6 +10,9 @@ Features implemented:
 - Regime normalization
 - Cross-sectional normalization
 - Stationarity transformations
+
+Note: Individual normalization methods now inherit from BaseScaler (features_common)
+for consistency with feature_engineering_roadmap.
 """
 
 import numpy as np
@@ -17,7 +20,8 @@ import pandas as pd
 from typing import Any, Dict, List, Optional, Union, Tuple
 import logging
 
-from ..core.feature_generator import (
+from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig
+from src.features_common.transforms.base_scaler import BaseScaler
 
 # Optimization utilities
 try:
@@ -26,11 +30,7 @@ try:
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
-    FeatureGenerator,
-    FeatureConfig,
-    FeatureCategory,
-    VectorizedFeatureGenerator
-)
+
 from ..base_calculations import (
     BaseCalculator,
     BaseCalculationType,
@@ -41,10 +41,10 @@ from ..base_calculations import (
 logger = logging.getLogger(__name__)
 
 
-class NormalizationFeatureGenerator(VectorizedFeatureGenerator):
+class NormalizationFeatureGenerator(FeatureGenerator):
     """Feature generator for normalization and stationarity features."""
 
-    def __init__(self, config: Optional[FeatureConfig] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
@@ -551,3 +551,215 @@ class CrossSectionalNormalizer(FeatureGenerator):
                     return (price_combined - price_combined.mean()) / price_combined.std()
 
         return pd.Series(np.zeros(len(data)), index=data.index)
+
+# ============================================================================
+# BaseScaler-based Normalizers
+# These classes provide consistent interface with feature_engineering_roadmap
+# ============================================================================
+
+class ZScoreNormalizer(BaseScaler):
+    """
+    Z-score normalizer that inherits from BaseScaler.
+    
+    Provides consistent interface with feature_engineering_roadmap transforms.
+    Uses tprint for better UX and math_validation for robustness.
+    """
+    
+    def __init__(self):
+        super().__init__()
+        self.mean = None
+        self.std = None
+    
+    def fit_transform(self, data: pd.Series) -> pd.Series:
+        """Fit mean/std and transform data with enhanced logging and validation."""
+        self._log_info(f"🔧 [ZScoreNormalizer] Fitting on {len(data)} samples")
+        
+        # Validate input
+        self._validate_numeric_input(data, "input data")
+        
+        clean_data = data.dropna()
+        
+        if len(clean_data) == 0:
+            self._log_warning("⚠️  No valid data to fit, using defaults")
+            self.mean = 0.0
+            self.std = 1.0
+        else:
+            self.mean = float(clean_data.mean())
+            self.std = float(clean_data.std())
+            
+            if self.std == 0 or np.isnan(self.std):
+                self._log_warning("⚠️  Zero std detected, using 1.0")
+                self.std = 1.0
+        
+        self.fitted = True
+        self._log_success(f"✅ [ZScoreNormalizer] Fitted: mean={self.mean:.4f}, std={self.std:.4f}")
+        
+        transformed = self.transform(data)
+        
+        # Validate output
+        self._check_output_validity(transformed, "transformed data")
+        
+        return transformed
+    
+    def transform(self, data: pd.Series) -> pd.Series:
+        """Transform data using fitted mean/std with safe division."""
+        self._validate_fitted()
+        
+        if self.mean is None or self.std is None:
+            raise ValueError("Normalizer state is invalid")
+        
+        # Use safe division to prevent inf/nan
+        return self._safe_divide(data - self.mean, self.std, default=0.0)
+    
+    def get_state(self) -> Dict[str, Any]:
+        """Get state for persistence."""
+        return {
+            'mean': self.mean,
+            'std': self.std,
+            'fitted': self.fitted
+        }
+    
+    def set_state(self, state: Dict[str, Any]) -> None:
+        """Restore state from persistence."""
+        self.mean = state.get('mean')
+        self.std = state.get('std')
+        self.fitted = state.get('fitted', False)
+
+
+class RobustScaler(BaseScaler):
+    """
+    Robust scaler using median and MAD.
+    
+    More robust to outliers than standard z-score normalization.
+    Uses tprint for better UX and math_validation for robustness.
+    """
+    
+    def __init__(self):
+        super().__init__()
+        self.median = None
+        self.mad = None
+    
+    def fit_transform(self, data: pd.Series) -> pd.Series:
+        """Fit median/MAD and transform data with enhanced logging and validation."""
+        self._log_info(f"🔧 [RobustScaler] Fitting on {len(data)} samples")
+        
+        # Validate input
+        self._validate_numeric_input(data, "input data")
+        
+        clean_data = data.dropna()
+        
+        if len(clean_data) == 0:
+            self._log_warning("⚠️  No valid data to fit, using defaults")
+            self.median = 0.0
+            self.mad = 1.0
+        else:
+            self.median = float(clean_data.median())
+            deviations = np.abs(clean_data - self.median)
+            self.mad = float(deviations.median())
+            
+            if self.mad == 0 or np.isnan(self.mad):
+                self._log_warning("⚠️  Zero MAD detected, using 1.0")
+                self.mad = 1.0
+        
+        self.fitted = True
+        self._log_success(f"✅ [RobustScaler] Fitted: median={self.median:.4f}, mad={self.mad:.4f}")
+        
+        transformed = self.transform(data)
+        
+        # Validate output
+        self._check_output_validity(transformed, "transformed data")
+        
+        return transformed
+    
+    def transform(self, data: pd.Series) -> pd.Series:
+        """Transform data using fitted median/MAD with safe division."""
+        self._validate_fitted()
+        
+        if self.median is None or self.mad is None:
+            raise ValueError("Scaler state is invalid")
+        
+        # 1.4826 factor for consistency with standard deviation
+        # Use safe division to prevent inf/nan
+        return self._safe_divide(data - self.median, 1.4826 * self.mad, default=0.0)
+    
+    def get_state(self) -> Dict[str, Any]:
+        """Get state for persistence."""
+        return {
+            'median': self.median,
+            'mad': self.mad,
+            'fitted': self.fitted
+        }
+    
+    def set_state(self, state: Dict[str, Any]) -> None:
+        """Restore state from persistence."""
+        self.median = state.get('median')
+        self.mad = state.get('mad')
+        self.fitted = state.get('fitted', False)
+
+
+class MinMaxScaler(BaseScaler):
+    """
+    Min-max scaler that scales data to [0, 1] range.
+    
+    Uses tprint for better UX and math_validation for robustness.
+    """
+    
+    def __init__(self):
+        super().__init__()
+        self.min_val = None
+        self.max_val = None
+    
+    def fit_transform(self, data: pd.Series) -> pd.Series:
+        """Fit min/max and transform data with enhanced logging and validation."""
+        self._log_info(f"🔧 [MinMaxScaler] Fitting on {len(data)} samples")
+        
+        # Validate input
+        self._validate_numeric_input(data, "input data")
+        
+        clean_data = data.dropna()
+        
+        if len(clean_data) == 0:
+            self._log_warning("⚠️  No valid data to fit, using defaults")
+            self.min_val = 0.0
+            self.max_val = 1.0
+        else:
+            self.min_val = float(clean_data.min())
+            self.max_val = float(clean_data.max())
+            
+            if self.min_val == self.max_val:
+                self._log_warning("⚠️  Min equals max, adjusting range")
+                self.max_val = self.min_val + 1.0
+        
+        self.fitted = True
+        self._log_success(f"✅ [MinMaxScaler] Fitted: min={self.min_val:.4f}, max={self.max_val:.4f}")
+        
+        transformed = self.transform(data)
+        
+        # Validate output
+        self._check_output_validity(transformed, "transformed data")
+        
+        return transformed
+    
+    def transform(self, data: pd.Series) -> pd.Series:
+        """Transform data using fitted min/max with safe division."""
+        self._validate_fitted()
+        
+        if self.min_val is None or self.max_val is None:
+            raise ValueError("Scaler state is invalid")
+        
+        # Use safe division to prevent inf/nan
+        return self._safe_divide(data - self.min_val, self.max_val - self.min_val, default=0.0)
+    
+    def get_state(self) -> Dict[str, Any]:
+        """Get state for persistence."""
+        return {
+            'min_val': self.min_val,
+            'max_val': self.max_val,
+            'fitted': self.fitted
+        }
+    
+    def set_state(self, state: Dict[str, Any]) -> None:
+        """Restore state from persistence."""
+        self.min_val = state.get('min_val')
+        self.max_val = state.get('max_val')
+        self.fitted = state.get('fitted', False)

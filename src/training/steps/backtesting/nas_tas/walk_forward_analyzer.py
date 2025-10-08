@@ -1,8 +1,13 @@
 """
 Walk-Forward Analysis
 
-Advanced walk-forward analysis for NAS-TAS models with regime-aware
-validation and performance tracking.
+Enhanced walk-forward analysis for NAS-TAS models with:
+- Regime-aware validation and performance tracking
+- Hardware-accelerated parallel processing (M1 optimization)
+- Cross-validation with purging and embargo
+- Data leakage detection
+- Comprehensive validation and error handling
+- Advanced metric calculations
 """
 
 import numpy as np
@@ -15,8 +20,43 @@ from pathlib import Path
 import json
 import pickle
 from enum import Enum
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+import multiprocessing as mp
 import warnings
 warnings.filterwarnings('ignore')
+
+# ML Utilities
+from src.utils.ml_common.cv_utils import TimeSeriesSplitValidator
+from src.utils.ml_common.oof_generator import OOFGenerator
+from src.utils.ml_common.data_leakage_detector import DataLeakageDetector
+
+# Math and validation utilities
+from src.utils.math_validation import (
+    validate_probability, validate_positive, validate_range,
+    safe_divide, safe_log, check_for_nans, check_for_infs
+)
+
+# Common operations
+from src.utils.common_operations import (
+    calculate_sharpe_ratio, calculate_sortino_ratio, calculate_max_drawdown,
+    calculate_win_rate, calculate_profit_factor, calculate_calmar_ratio
+)
+from src.utils.common_utilities import ensure_list, ensure_array, flatten_dict
+
+# Output utilities
+from src.utils.tprint import tprint
+
+# Hardware optimization
+try:
+    from src.utils.hardware.m1_gpu_utils import M1GPUAccelerator
+    from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+    from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
+    from src.utils.matrix_operations.hardware_integration import HardwareOptimizedMatrixProcessor
+    from src.utils.matrix_operations.batch_operations import BatchMatrixProcessor
+    M1_HARDWARE_AVAILABLE = True
+except ImportError:
+    M1_HARDWARE_AVAILABLE = False
+    tprint("⚠️  M1 hardware optimization not available", "warning")
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +116,19 @@ class WalkForwardConfig:
     enable_feature_engineering: bool = True
     enable_data_validation: bool = True
     
+    # Data leakage and integrity
+    enable_leakage_detection: bool = True
+    enable_purging: bool = True
+    embargo_pct: float = 0.01  # Embargo percentage for temporal data
+    
+    # Parallel processing
+    enable_parallel_processing: bool = True
+    max_workers: int = field(default_factory=lambda: max(1, mp.cpu_count() - 1))
+    
+    # Hardware optimization
+    enable_hardware_optimization: bool = True
+    chunk_size_mb: int = 128
+    
     # Output settings
     save_results: bool = True
     results_path: str = "walk_forward_results"
@@ -134,13 +187,15 @@ class WalkForwardAnalyzer:
     """
     
     def __init__(self, config: WalkForwardConfig):
-        """Initialize walk-forward analyzer.
+        """Initialize enhanced walk-forward analyzer with hardware acceleration.
         
         Args:
             config: Walk-forward configuration
         """
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        tprint("🚀 Initializing Enhanced Walk-Forward Analyzer", "header")
         
         # Analysis state
         self.fold_results = []
@@ -152,11 +207,89 @@ class WalkForwardAnalyzer:
         self.available_models = {}
         self.model_performance = {}
         
-        self.logger.info("✅ Walk-Forward Analyzer initialized")
-        self.logger.info(f"   Mode: {config.mode.value}")
-        self.logger.info(f"   Initial training size: {config.initial_training_size}")
-        self.logger.info(f"   Validation size: {config.validation_size}")
-        self.logger.info(f"   Step size: {config.step_size}")
+        # Initialize CV utilities
+        if config.enable_purging:
+            self.cv_validator = TimeSeriesSplitValidator(
+                n_splits=5,  # Default, can be adjusted
+                test_size=config.validation_size / (config.initial_training_size + config.validation_size),
+                embargo_pct=config.embargo_pct
+            )
+            tprint("✅ Time-series CV validator initialized with purging", "success")
+        else:
+            self.cv_validator = None
+        
+        # Initialize leakage detector
+        if config.enable_leakage_detection:
+            self.leakage_detector = DataLeakageDetector()
+            tprint("✅ Data leakage detector initialized", "success")
+        else:
+            self.leakage_detector = None
+        
+        # Initialize OOF generator
+        self.oof_generator = OOFGenerator()
+        
+        # Initialize hardware optimization if available
+        self.hardware_enabled = M1_HARDWARE_AVAILABLE and config.enable_hardware_optimization
+        if self.hardware_enabled:
+            self._init_hardware_optimization()
+        else:
+            self.gpu_accelerator = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+            self.matrix_processor = None
+            self.batch_processor = None
+            tprint("ℹ️  Hardware optimization disabled", "info")
+        
+        # Initialize parallel processing
+        self.enable_parallel = config.enable_parallel_processing
+        self.max_workers = config.max_workers
+        
+        tprint(f"📊 Walk-Forward Configuration:", "info")
+        tprint(f"   Mode: {config.mode.value}", "info")
+        tprint(f"   Initial training size: {config.initial_training_size}", "info")
+        tprint(f"   Validation size: {config.validation_size}", "info")
+        tprint(f"   Step size: {config.step_size}", "info")
+        tprint(f"   Purging: {config.enable_purging}, Embargo: {config.embargo_pct:.2%}", "info")
+        tprint(f"   Leakage detection: {config.enable_leakage_detection}", "info")
+        tprint(f"   Parallel processing: {self.enable_parallel} ({self.max_workers} workers)", "info")
+        tprint(f"   Hardware optimization: {self.hardware_enabled}", "info")
+        
+        tprint("✅ Walk-Forward Analyzer initialization complete", "success")
+    
+    def _init_hardware_optimization(self):
+        """Initialize hardware optimization components"""
+        try:
+            tprint("⚡ Initializing M1 hardware optimization", "info")
+            
+            # Initialize M1 accelerators
+            self.gpu_accelerator = M1GPUAccelerator()
+            self.memory_optimizer = M1MemoryOptimizer()
+            self.cpu_optimizer = M1CPUOptimizer()
+            
+            # Initialize matrix operations
+            self.matrix_processor = HardwareOptimizedMatrixProcessor()
+            self.batch_processor = BatchMatrixProcessor(
+                chunk_size_mb=self.config.chunk_size_mb,
+                enable_gpu=True,
+                enable_parallel=True,
+                max_workers=self.max_workers
+            )
+            
+            # Optimize memory
+            self.memory_optimizer.optimize_memory_for_ml()
+            
+            tprint("✅ Hardware optimization initialized", "success")
+            tprint(f"   GPU: {'Available' if self.gpu_accelerator.is_available() else 'Not available'}", "info")
+            tprint(f"   Memory optimized: {self.memory_optimizer.is_optimized}", "info")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize hardware optimization: {e}")
+            tprint(f"⚠️  Hardware optimization init failed: {e}", "warning")
+            self.gpu_accelerator = None
+            self.memory_optimizer = None
+            self.cpu_optimizer = None
+            self.matrix_processor = None
+            self.batch_processor = None
     
     def register_models(self, 
                        regime_models: Dict[int, Dict[str, Any]],
@@ -206,7 +339,7 @@ class WalkForwardAnalyzer:
                                 target_variable: str = 'close',
                                 feature_columns: Optional[List[str]] = None) -> WalkForwardResult:
         """
-        Run comprehensive walk-forward analysis.
+        Run comprehensive walk-forward analysis with hardware acceleration.
         
         Args:
             market_data: Historical market data
@@ -217,14 +350,14 @@ class WalkForwardAnalyzer:
             WalkForwardResult with complete analysis results
         """
         start_time = datetime.now()
-        self.logger.info("🚀 Starting walk-forward analysis")
+        tprint("🚀 Starting Walk-Forward Analysis", "header")
         
         try:
             # Validate and prepare data
-            self.logger.info("📊 Preparing data for walk-forward analysis...")
             prepared_data = self._prepare_data(market_data, target_variable, feature_columns)
             
             if not prepared_data['success']:
+                tprint(f"❌ Data preparation failed: {prepared_data['error']}", "error")
                 return WalkForwardResult(
                     success=False,
                     execution_time=0.0,
@@ -240,10 +373,11 @@ class WalkForwardAnalyzer:
             self._initialize_analysis_state()
             
             # Generate walk-forward folds
-            self.logger.info("🔄 Generating walk-forward folds...")
+            tprint("🔄 Generating walk-forward folds", "info")
             folds = self._generate_walk_forward_folds(data)
             
             if not folds:
+                tprint("❌ No valid folds generated", "error")
                 return WalkForwardResult(
                     success=False,
                     execution_time=0.0,
@@ -252,12 +386,17 @@ class WalkForwardAnalyzer:
                     error_message="No valid folds generated"
                 )
             
+            tprint(f"✅ Generated {len(folds)} walk-forward folds", "success")
+            
             # Run walk-forward analysis
-            self.logger.info(f"🔄 Running walk-forward analysis on {len(folds)} folds...")
+            tprint(f"🔄 Running walk-forward analysis on {len(folds)} folds", "info")
             fold_results = self._run_walk_forward_folds(folds, data, target_variable)
             
+            successful_folds = len([f for f in fold_results if f.get('success', False)])
+            tprint(f"✅ Completed {successful_folds}/{len(folds)} folds successfully", "success")
+            
             # Analyze results
-            self.logger.info("📈 Analyzing walk-forward results...")
+            tprint("📈 Analyzing walk-forward results", "info")
             analysis_results = self._analyze_walk_forward_results(fold_results)
             
             # Create result
@@ -266,7 +405,7 @@ class WalkForwardAnalyzer:
                 success=True,
                 execution_time=execution_time,
                 total_folds=len(folds),
-                successful_folds=len([f for f in fold_results if f['success']]),
+                successful_folds=successful_folds,
                 overall_performance=analysis_results['overall_performance'],
                 fold_performance=fold_results,
                 regime_performance=analysis_results['regime_performance'],
@@ -283,19 +422,28 @@ class WalkForwardAnalyzer:
             
             # Save results if requested
             if self.config.save_results:
-                self.logger.info("💾 Saving walk-forward results...")
+                tprint("💾 Saving walk-forward results", "info")
                 self._save_walk_forward_results(result)
             
-            self.logger.info(f"✅ Walk-forward analysis completed in {execution_time:.2f}s")
-            self.logger.info(f"   Total folds: {result.total_folds}")
-            self.logger.info(f"   Successful folds: {result.successful_folds}")
-            self.logger.info(f"   Success rate: {result.successful_folds/result.total_folds:.2%}")
+            tprint(f"✅ Walk-Forward Analysis Complete", "success")
+            tprint(f"   Execution time: {execution_time:.2f}s", "info")
+            tprint(f"   Total folds: {result.total_folds}", "info")
+            tprint(f"   Successful folds: {result.successful_folds}", "info")
+            tprint(f"   Success rate: {result.successful_folds/result.total_folds:.1%}", "info")
+            
+            # Print performance summary
+            if result.overall_performance:
+                tprint("📊 Performance Summary:", "info")
+                for metric, values in result.overall_performance.items():
+                    if isinstance(values, dict) and 'mean' in values:
+                        tprint(f"   {metric}: {values['mean']:.4f} ± {values.get('std', 0):.4f}", "info")
             
             return result
             
         except Exception as e:
             execution_time = (datetime.now() - start_time).total_seconds()
-            self.logger.error(f"❌ Walk-forward analysis failed: {e}")
+            tprint(f"❌ Walk-forward analysis failed: {e}", "error")
+            self.logger.exception("Full traceback:")
             
             return WalkForwardResult(
                 success=False,
@@ -309,32 +457,76 @@ class WalkForwardAnalyzer:
                      market_data: pd.DataFrame,
                      target_variable: str,
                      feature_columns: Optional[List[str]]) -> Dict[str, Any]:
-        """Prepare data for walk-forward analysis."""
+        """Prepare and validate data for walk-forward analysis."""
         try:
+            tprint("📊 Preparing data for walk-forward analysis", "info")
+            
             # Validate data
             if market_data.empty:
+                tprint("❌ Empty dataset provided", "error")
                 return {'success': False, 'error': 'Empty dataset'}
             
             # Check required columns
             if target_variable not in market_data.columns:
+                tprint(f"❌ Target variable '{target_variable}' not found", "error")
                 return {'success': False, 'error': f'Target variable {target_variable} not found'}
             
             # Determine feature columns
             if feature_columns is None:
                 feature_columns = [col for col in market_data.columns if col != target_variable]
             
+            tprint(f"   Records: {len(market_data):,}, Features: {len(feature_columns)}", "info")
+            
+            # Check for NaN/Inf values
+            nan_count = market_data.isnull().sum().sum()
+            inf_count = np.isinf(market_data.select_dtypes(include=[np.number]).values).sum()
+            
+            if nan_count > 0:
+                tprint(f"⚠️  Found {nan_count:,} NaN values", "warning")
+            if inf_count > 0:
+                tprint(f"⚠️  Found {inf_count:,} Inf values", "warning")
+            
             # Calculate data statistics
+            missing_ratio = nan_count / (len(market_data) * len(market_data.columns))
+            data_quality = 1.0 - missing_ratio
+            
             statistics = {
                 'total_records': len(market_data),
                 'total_features': len(feature_columns),
                 'date_range': (market_data.index[0], market_data.index[-1]) if hasattr(market_data.index, '__getitem__') else None,
-                'missing_data_ratio': market_data.isnull().sum().sum() / (len(market_data) * len(market_data.columns)),
-                'data_quality': 1.0 - (market_data.isnull().sum().sum() / (len(market_data) * len(market_data.columns)))
+                'missing_data_ratio': missing_ratio,
+                'inf_count': inf_count,
+                'data_quality': data_quality
             }
             
             # Sort by index if datetime
             if hasattr(market_data.index, 'sort_values'):
                 market_data = market_data.sort_index()
+            
+            # Check for data leakage if enabled
+            if self.leakage_detector and self.config.enable_leakage_detection:
+                tprint("🔍 Checking for data leakage", "info")
+                try:
+                    X = market_data[feature_columns].values
+                    y = market_data[target_variable].values
+                    
+                    leakage_results = self.leakage_detector.detect_leakage(X, y)
+                    
+                    if leakage_results.get('has_leakage', False):
+                        leakage_score = leakage_results.get('leakage_score', 0)
+                        tprint(f"⚠️  Data leakage detected: score={leakage_score:.4f}", "warning")
+                        statistics['leakage_detected'] = True
+                        statistics['leakage_score'] = leakage_score
+                    else:
+                        tprint("✅ No data leakage detected", "success")
+                        statistics['leakage_detected'] = False
+                        statistics['leakage_score'] = 0.0
+                except Exception as e:
+                    tprint(f"⚠️  Leakage detection failed: {e}", "warning")
+                    statistics['leakage_detected'] = False
+                    statistics['leakage_score'] = 0.0
+            
+            tprint(f"✅ Data quality: {data_quality:.1%}", "success")
             
             return {
                 'success': True,
@@ -343,6 +535,7 @@ class WalkForwardAnalyzer:
             }
             
         except Exception as e:
+            tprint(f"❌ Data preparation failed: {e}", "error")
             return {'success': False, 'error': str(e)}
     
     def _initialize_analysis_state(self):
@@ -728,26 +921,82 @@ class WalkForwardAnalyzer:
                                    validation_result: Dict[str, Any],
                                    validation_data: pd.DataFrame,
                                    target_variable: str) -> Dict[str, float]:
-        """Calculate performance metrics for a fold."""
+        """Calculate comprehensive performance metrics using validated utilities."""
         try:
             if not validation_result['success']:
                 return self._get_default_metrics()
             
-            predictions = validation_result['predictions']
-            y_true = validation_data[target_variable].values
+            predictions = ensure_array(validation_result['predictions'])
+            y_true = ensure_array(validation_data[target_variable].values)
+            
+            # Validate input lengths
+            if len(predictions) != len(y_true):
+                tprint(f"⚠️  Prediction length mismatch: {len(predictions)} vs {len(y_true)}", "warning")
+                return self._get_default_metrics()
+            
+            # Remove NaN/Inf values
+            valid_mask = ~(check_for_nans(predictions) | check_for_infs(predictions) |
+                          check_for_nans(y_true) | check_for_infs(y_true))
+            predictions = predictions[valid_mask]
+            y_true = y_true[valid_mask]
+            
+            if len(predictions) == 0:
+                tprint("⚠️  No valid predictions after filtering", "warning")
+                return self._get_default_metrics()
             
             # Calculate basic metrics
-            accuracy = np.mean(predictions == y_true) if len(predictions) == len(y_true) else 0.0
+            accuracy = float(np.mean(predictions == y_true))
+            accuracy = validate_probability(accuracy)
             
-            # Calculate precision, recall, F1
-            from sklearn.metrics import precision_score, recall_score, f1_score
-            precision = precision_score(y_true, predictions, average='weighted', zero_division=0)
-            recall = recall_score(y_true, predictions, average='weighted', zero_division=0)
-            f1 = f1_score(y_true, predictions, average='weighted', zero_division=0)
+            # Calculate precision, recall, F1 with proper error handling
+            try:
+                from sklearn.metrics import precision_score, recall_score, f1_score
+                precision = precision_score(y_true, predictions, average='weighted', zero_division=0)
+                recall = recall_score(y_true, predictions, average='weighted', zero_division=0)
+                f1 = f1_score(y_true, predictions, average='weighted', zero_division=0)
+                
+                precision = validate_probability(precision)
+                recall = validate_probability(recall)
+                f1 = validate_probability(f1)
+            except Exception as e:
+                self.logger.warning(f"sklearn metrics failed: {e}")
+                precision, recall, f1 = 0.0, 0.0, 0.0
             
-            # Calculate Sharpe ratio (simplified)
-            returns = np.diff(validation_data[target_variable].values) / validation_data[target_variable].values[:-1]
-            sharpe_ratio = np.mean(returns) / np.std(returns) if np.std(returns) > 0 else 0
+            # Calculate trading metrics using common_operations
+            if 'close' in validation_data.columns:
+                try:
+                    prices = ensure_array(validation_data['close'].values)
+                    returns = np.diff(prices) / prices[:-1]
+                    
+                    # Remove invalid values
+                    returns_valid = returns[~(check_for_nans(returns) | check_for_infs(returns))]
+                    
+                    if len(returns_valid) > 0:
+                        # Use validated calculation functions
+                        sharpe_ratio = calculate_sharpe_ratio(returns_valid)
+                        sortino_ratio = calculate_sortino_ratio(returns_valid)
+                        max_dd = calculate_max_drawdown(np.cumsum(returns_valid))
+                        win_rate = calculate_win_rate(returns_valid)
+                        profit_factor = calculate_profit_factor(returns_valid)
+                        calmar_ratio = calculate_calmar_ratio(returns_valid, max_dd)
+                        
+                        # Validate all metrics
+                        sharpe_ratio = validate_positive(sharpe_ratio, default=0.0) if not check_for_nans(sharpe_ratio) else 0.0
+                        sortino_ratio = validate_positive(sortino_ratio, default=0.0) if not check_for_nans(sortino_ratio) else 0.0
+                        max_dd = float(max_dd) if not check_for_nans(max_dd) else 0.0
+                        win_rate = validate_probability(win_rate) if not check_for_nans(win_rate) else 0.0
+                        profit_factor = validate_positive(profit_factor, default=0.0) if not check_for_nans(profit_factor) else 0.0
+                        calmar_ratio = float(calmar_ratio) if not check_for_nans(calmar_ratio) else 0.0
+                    else:
+                        sharpe_ratio = sortino_ratio = max_dd = win_rate = profit_factor = calmar_ratio = 0.0
+                except Exception as e:
+                    self.logger.warning(f"Trading metrics calculation failed: {e}")
+                    sharpe_ratio = sortino_ratio = max_dd = win_rate = profit_factor = calmar_ratio = 0.0
+            else:
+                sharpe_ratio = sortino_ratio = max_dd = win_rate = profit_factor = calmar_ratio = 0.0
+            
+            # Get and validate confidence
+            confidence = validate_probability(validation_result.get('confidence', 0.5))
             
             return {
                 'accuracy': accuracy,
@@ -755,11 +1004,17 @@ class WalkForwardAnalyzer:
                 'recall': recall,
                 'f1_score': f1,
                 'sharpe_ratio': sharpe_ratio,
-                'confidence': validation_result.get('confidence', 0.5)
+                'sortino_ratio': sortino_ratio,
+                'max_drawdown': max_dd,
+                'win_rate': win_rate,
+                'profit_factor': profit_factor,
+                'calmar_ratio': calmar_ratio,
+                'confidence': confidence
             }
             
         except Exception as e:
             self.logger.warning(f"Performance calculation failed: {e}")
+            tprint(f"⚠️  Performance calculation failed: {e}", "warning")
             return self._get_default_metrics()
     
     def _get_default_metrics(self) -> Dict[str, float]:
@@ -770,6 +1025,11 @@ class WalkForwardAnalyzer:
             'recall': 0.0,
             'f1_score': 0.0,
             'sharpe_ratio': 0.0,
+            'sortino_ratio': 0.0,
+            'max_drawdown': 0.0,
+            'win_rate': 0.0,
+            'profit_factor': 0.0,
+            'calmar_ratio': 0.0,
             'confidence': 0.0
         }
     

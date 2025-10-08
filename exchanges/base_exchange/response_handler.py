@@ -53,7 +53,7 @@ class ExchangeResponse:
 @dataclass
 class OrderExecutionResponse(ExchangeResponse):
     """Response from order execution"""
-    order_id: str
+    order_id: str = ""
     exchange_order_id: Optional[str] = None
     symbol: str = ""
     side: str = ""

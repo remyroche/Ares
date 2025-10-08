@@ -63,7 +63,8 @@ try:
         ConfigurationValidator, DataValidator as MLDataValidator, ResourceValidator,
         ExecutionValidator, ResultValidator
     )
-    from src.utils.ml_common.cvlsa.advanced_monitoring_analytics import PerformanceAnalytics
+    # CVLSA PerformanceAnalytics removed - no longer available
+    PerformanceAnalytics = None
     from src.utils.ml_common.optimization.shared_utils.integration_verification import SharedUtilsIntegrationVerifier
 except ImportError:
     BayesianTPEOptimizer = None

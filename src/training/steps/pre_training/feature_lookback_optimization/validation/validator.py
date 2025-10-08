@@ -332,7 +332,7 @@ class InputValidator:
         """Fix data completeness issues."""
         try:
             # Simple forward fill for missing values
-            fixed_data = data.fillna(method='ffill').fillna(method='bfill')
+            fixed_data = data.ffill().bfill()
             return fixed_data, True
         except Exception as e:
             self.logger.error(f"Failed to fix data completeness: {e}")

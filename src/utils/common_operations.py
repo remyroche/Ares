@@ -179,25 +179,31 @@ def setup_basic_logging(level: int = logging.INFO) -> None:
     )
 
 def safe_log_metric(name: str, value: float) -> None:
-    """Safely log metric."""
+    """Safely log metric with proper error handling."""
     try:
         logger.info(f"📊 Metric {name}: {value}")
-    except Exception:
-        pass
+    except (AttributeError, TypeError) as e:
+        logger.debug(f"Failed to log metric {name}: {e}")
+    except Exception as e:
+        logger.warning(f"Unexpected error logging metric {name}: {e}")
 
 def safe_log_params(params: Dict[str, Any]) -> None:
-    """Safely log parameters."""
+    """Safely log parameters with proper error handling."""
     try:
         logger.info(f"⚙️ Parameters: {params}")
-    except Exception:
-        pass
+    except (AttributeError, TypeError) as e:
+        logger.debug(f"Failed to log parameters: {e}")
+    except Exception as e:
+        logger.warning(f"Unexpected error logging parameters: {e}")
 
 def safe_log_artifact(name: str, path: str) -> None:
-    """Safely log artifact."""
+    """Safely log artifact with proper error handling."""
     try:
         logger.info(f"📁 Artifact {name} saved to {path}")
-    except Exception:
-        pass
+    except (AttributeError, TypeError) as e:
+        logger.debug(f"Failed to log artifact {name}: {e}")
+    except Exception as e:
+        logger.warning(f"Unexpected error logging artifact {name}: {e}")
 
 # =============================================================================
 # DATETIME UTILITIES
@@ -224,40 +230,69 @@ def parse_datetime(dt_str: str, format_str: str = "%Y-%m-%d %H:%M:%S") -> dateti
 # =============================================================================
 
 def ensure_directory(path: Union[str, Path]) -> bool:
-    """Ensure directory exists."""
+    """Ensure directory exists with proper error handling."""
     try:
         Path(path).mkdir(parents=True, exist_ok=True)
         return True
+    except PermissionError as e:
+        logger.error(f"❌ Permission denied creating directory {path}: {e}")
+        return False
+    except OSError as e:
+        logger.error(f"❌ OS error creating directory {path}: {e}")
+        return False
     except Exception as e:
-        logger.error(f"❌ Error creating directory {path}: {e}")
+        logger.error(f"❌ Unexpected error creating directory {path}: {e}")
         return False
 
 def safe_file_exists(path: Union[str, Path]) -> bool:
-    """Safely check if file exists."""
+    """Safely check if file exists with proper error handling."""
     try:
         return Path(path).exists()
-    except Exception:
+    except (OSError, PermissionError) as e:
+        logger.debug(f"Error checking file existence for {path}: {e}")
+        return False
+    except Exception as e:
+        logger.warning(f"Unexpected error checking file existence for {path}: {e}")
         return False
 
 def safe_json_dump(data: Any, file_path: Union[str, Path], **kwargs) -> bool:
-    """Safely dump data to JSON file."""
+    """Safely dump data to JSON file with proper error handling."""
     try:
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, **kwargs)
         return True
+    except PermissionError as e:
+        logger.error(f"❌ Permission denied writing JSON to {file_path}: {e}")
+        return False
+    except OSError as e:
+        logger.error(f"❌ OS error writing JSON to {file_path}: {e}")
+        return False
+    except (TypeError, ValueError) as e:
+        logger.error(f"❌ Data serialization error writing JSON to {file_path}: {e}")
+        return False
     except Exception as e:
         logger.error(f"❌ Error saving JSON to {file_path}: {e}")
         return False
 
 def safe_json_load(file_path: Union[str, Path], default: Any = None) -> Any:
-    """Safely load JSON data from file."""
+    """Safely load JSON data from file with proper error handling."""
     try:
         if not safe_file_exists(file_path):
+            logger.debug(f"JSON file not found: {file_path}")
             return default
         with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
+    except PermissionError as e:
+        logger.error(f"❌ Permission denied reading JSON from {file_path}: {e}")
+        return default
+    except OSError as e:
+        logger.error(f"❌ OS error reading JSON from {file_path}: {e}")
+        return default
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        logger.error(f"❌ JSON parsing error in {file_path}: {e}")
+        return default
     except Exception as e:
-        logger.error(f"❌ Error loading JSON from {file_path}: {e}")
+        logger.error(f"❌ Unexpected error loading JSON from {file_path}: {e}")
         return default
 
 # =============================================================================
@@ -268,31 +303,96 @@ def create_empty_dataframe(columns: List[str] = None) -> pd.DataFrame:
     """Create an empty DataFrame with specified columns."""
     return pd.DataFrame(columns=columns or [])
 
-def validate_dataframe(df: pd.DataFrame) -> bool:
-    """Validate DataFrame."""
+def validate_dataframe(df: Any) -> bool:
+    """Validate DataFrame with proper type checking and error handling.
+
+    Args:
+        df: Object to validate as DataFrame
+
+    Returns:
+        bool: True if valid DataFrame, False otherwise
+    """
     try:
-        return isinstance(df, pd.DataFrame) and not df.empty
-    except Exception:
+        if df is None:
+            logger.debug("DataFrame validation failed: df is None")
+            return False
+        if not isinstance(df, pd.DataFrame):
+            logger.debug(f"DataFrame validation failed: not a DataFrame, got {type(df)}")
+            return False
+        if df.empty:
+            logger.debug("DataFrame validation failed: DataFrame is empty")
+            return False
+        return True
+    except AttributeError as e:
+        logger.debug(f"DataFrame validation failed - attribute error: {e}")
+        return False
+    except Exception as e:
+        logger.warning(f"Unexpected error during DataFrame validation: {e}")
         return False
 
 def validate_dataframe_columns(df: pd.DataFrame, required_columns: List[str]) -> bool:
-    """Validate that DataFrame has required columns."""
+    """Validate that DataFrame has required columns with enhanced error handling.
+
+    Args:
+        df: DataFrame to validate
+        required_columns: List of required column names
+
+    Returns:
+        bool: True if all required columns present, False otherwise
+    """
     try:
+        if not validate_dataframe(df):
+            logger.warning("DataFrame validation failed before column validation")
+            return False
+
+        if not required_columns:
+            logger.debug("No required columns specified for validation")
+            return True
+
         missing_columns = set(required_columns) - set(df.columns)
         if missing_columns:
-            logger.warning(f"⚠️ Missing required columns: {missing_columns}")
+            logger.warning(f"⚠️ Missing required columns: {sorted(missing_columns)}")
             return False
+
+        logger.debug(f"✅ All required columns present: {sorted(required_columns)}")
         return True
+    except AttributeError as e:
+        logger.error(f"❌ Attribute error validating DataFrame columns: {e}")
+        return False
     except Exception as e:
-        logger.error(f"❌ Error validating DataFrame columns: {e}")
+        logger.error(f"❌ Unexpected error validating DataFrame columns: {e}")
         return False
 
-def safe_dataframe_operation(df: pd.DataFrame, operation: Callable, *args, **kwargs) -> pd.DataFrame:
-    """Safely perform operation on DataFrame."""
+def safe_dataframe_operation(df: pd.DataFrame, operation: Callable[..., pd.DataFrame], *args, **kwargs) -> pd.DataFrame:
+    """Safely perform operation on DataFrame with comprehensive error handling.
+
+    Args:
+        df: DataFrame to operate on
+        operation: Function to apply to DataFrame
+        *args: Positional arguments for operation
+        **kwargs: Keyword arguments for operation
+
+    Returns:
+        pd.DataFrame: Result of operation or original DataFrame on error
+    """
     try:
-        return operation(df, *args, **kwargs)
-    except Exception as e:
+        if not validate_dataframe(df):
+            logger.warning("Cannot perform operation on invalid DataFrame")
+            return df if isinstance(df, pd.DataFrame) else pd.DataFrame()
+
+        result = operation(df, *args, **kwargs)
+
+        # Validate result is still a DataFrame
+        if not isinstance(result, pd.DataFrame):
+            logger.warning(f"Operation {operation.__name__} did not return DataFrame, got {type(result)}")
+            return df
+
+        return result
+    except (AttributeError, TypeError) as e:
         logger.warning(f"⚠️ Error in DataFrame operation {operation.__name__}: {e}")
+        return df
+    except Exception as e:
+        logger.error(f"❌ Unexpected error in DataFrame operation {operation.__name__}: {e}")
         return df
 
 def safe_fillna(df: pd.DataFrame, value: Any = None, method: str = None) -> pd.DataFrame:
@@ -598,6 +698,64 @@ def safe_percentage_change(old_value: float, new_value: float) -> float:
         return ((new_value - old_value) / old_value) * 100
     except Exception:
         return 0.0
+
+def optimize_memory_usage() -> Dict[str, Any]:
+    """
+    Optimize memory usage by leveraging matrix operations manager.
+    
+    Returns:
+        Dictionary containing memory optimization statistics
+    """
+    try:
+        from .matrix_operations.convenience import optimize_memory_usage as matrix_optimize
+        return matrix_optimize()
+    except ImportError as e:
+        logger.warning(f"⚠️ Matrix operations not available for memory optimization: {e}")
+        # Return a fallback dictionary
+        return {
+            'status': 'unavailable',
+            'message': 'Matrix operations module not available',
+            'memory_freed_mb': 0.0,
+            'success': False
+        }
+    except Exception as e:
+        logger.error(f"❌ Memory optimization failed: {e}")
+        return {
+            'status': 'failed',
+            'error': str(e),
+            'memory_freed_mb': 0.0,
+            'success': False
+        }
+
+def parallel_processing_optimizer(data: Any, operation: Callable, num_workers: int = None) -> Any:
+    """
+    Optimize parallel processing operations.
+    
+    Args:
+        data: Data to process
+        operation: Operation to apply
+        num_workers: Number of parallel workers (None for auto-detection)
+        
+    Returns:
+        Processed data
+    """
+    try:
+        import multiprocessing
+        if num_workers is None:
+            num_workers = max(1, multiprocessing.cpu_count() - 1)
+        
+        # Use concurrent processing for large datasets
+        if hasattr(data, '__len__') and len(data) > 1000:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+                results = list(executor.map(operation, data))
+            return results
+        else:
+            # For small datasets, direct processing is faster
+            return [operation(item) for item in data]
+    except Exception as e:
+        logger.warning(f"⚠️ Parallel processing failed, falling back to sequential: {e}")
+        # Fallback to sequential processing
+        return [operation(item) for item in data]
 
 # =============================================================================
 # STRING UTILITIES
@@ -1154,17 +1312,32 @@ def memory_checkpoint(name: str):
 
     @contextmanager
     def _memory_checkpoint():
+        """Enhanced memory checkpoint with proper error handling and logging."""
+        # Try to get M1 memory optimizer with specific error handling
+        memory_optimizer = None
         try:
-            # Try to get M1 memory optimizer
             memory_optimizer = get_m1_memory_optimizer()
-            if memory_optimizer and hasattr(memory_optimizer, 'memory_checkpoint'):
+        except ImportError as e:
+            logger.debug(f"M1 memory optimizer not available: {e}")
+        except (AttributeError, RuntimeError) as e:
+            logger.warning(f"M1 memory optimizer initialization failed: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error getting M1 memory optimizer: {e}")
+
+        # Use memory checkpointing if available, otherwise just yield
+        if memory_optimizer and hasattr(memory_optimizer, 'memory_checkpoint'):
+            try:
                 with memory_optimizer.memory_checkpoint(name):
                     yield
-            else:
-                # Fallback: just yield without checkpointing
-                yield
-        except Exception:
-            # If anything fails, just yield without checkpointing
+            except AttributeError as e:
+                logger.warning(f"Memory checkpoint method not available: {e}")
+                yield  # Fallback: just yield without checkpointing
+            except Exception as e:
+                logger.error(f"Error during memory checkpointing: {e}")
+                yield  # Fallback: just yield without checkpointing
+        else:
+            # Fallback: just yield without checkpointing
+            logger.debug(f"Memory checkpointing not available for {name}, using fallback")
             yield
 
     return _memory_checkpoint()

@@ -34,6 +34,11 @@ import numpy as np
 import pandas as pd
 
 from src.utils.logger import system_logger
+from src.utils.common_operations import (
+    safe_json_load, safe_json_dump, ensure_directory, safe_file_exists,
+    safe_divide, safe_mean, safe_std, format_bytes, get_memory_usage
+)
+from src.utils.tprint import tprint, tprint_debug, tprint_info, tprint_warning, tprint_error
 
 
 @dataclass
@@ -127,10 +132,18 @@ class ReproducibilityManifest:
         }
     
     def save(self, path: Path) -> None:
-        """Save manifest to JSON file."""
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, 'w') as f:
-            json.dump(self.to_dict(), f, indent=2, default=str)
+        """Save manifest to JSON file using common utilities."""
+        # Use common utility for directory creation with error handling
+        if not ensure_directory(path.parent):
+            tprint_error(f"Failed to create directory for manifest: {path.parent}")
+            raise ValueError(f"Cannot create directory: {path.parent}")
+
+        # Use safe JSON dump with error handling
+        if not safe_json_dump(self.to_dict(), path, indent=2, default=str):
+            tprint_error(f"Failed to save manifest to {path}")
+            raise ValueError(f"Cannot save manifest to {path}")
+
+        tprint_info(f"✅ Successfully saved reproducibility manifest to {path}")
     
     @classmethod
     def load(cls, path: Path) -> ReproducibilityManifest:
@@ -178,6 +191,9 @@ class ReproducibilityTracker:
         """
         self.run_id = run_id or self._generate_run_id()
         self.logger = logger or system_logger.getChild('ReproducibilityTracker')
+
+        tprint(f"🔬 Initialized ReproducibilityTracker with run_id: {self.run_id}")
+        tprint_debug(f"📋 Tracking datasets, configs, and lineage for reproducibility")
         
         self.datasets: Dict[str, DatasetInfo] = {}
         self.configs: Dict[str, ConfigInfo] = {}
@@ -336,8 +352,9 @@ class ReproducibilityTracker:
                     module = __import__(pkg.replace('-', '_'))
                     version = getattr(module, '__version__', 'unknown')
                     packages[pkg] = version
-                except ImportError:
-                    pass
+                except ImportError as e:
+                    self.logger.debug(f"Package {pkg} not available: {e}")
+                    packages[pkg] = 'not_available'
         
         # Environment variables
         env_variables = {}

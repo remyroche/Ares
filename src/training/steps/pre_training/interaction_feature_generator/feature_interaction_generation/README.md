@@ -5,7 +5,7 @@ This module provides a fully wired, optimized interaction feature generation pip
 ## 🚀 Key Features
 
 ### Complete Pipeline Integration
-- **Feature Engineering Bank**: Gets features from the feature_engineering/ bank
+- **Feature Engineering Bank**: Gets features from the feature_engineering_roadmap/ bank
 - **Lookback Optimization**: Selects optimal lookback periods using data-driven methods
 - **Cross-timeframe Features**: Generates features across multiple timeframes
 - **Interaction Features**: Creates 15 locked interactions with theory-first approach
@@ -35,7 +35,7 @@ feature_interaction_generation/
 ├── example_optimized_usage.py              # Usage examples
 ├── test_integration.py                     # Integration tests
 ├── README.md                               # This file
-└── feature_engineering/                    # Feature engineering components
+└── feature_engineering_roadmap/                    # Feature engineering components
     ├── assembly_dag.py                     # Assembly DAG orchestrator
     ├── feature_registry.py                 # Feature registry
     ├── lookback_selection.py               # Lookback optimization
@@ -368,7 +368,7 @@ result = await pipeline._execute_interactive_feature_generation(config)
 
 - **Example Usage**: See `example_optimized_usage.py` for comprehensive examples
 - **Integration Tests**: See `test_integration.py` for testing patterns
-- **Feature Engineering**: See `feature_engineering/` for component details
+- **Feature Engineering**: See `feature_engineering_roadmap/` for component details
 - **Sub-pipeline**: See `../sub_pipeline.py` for integration details
 
 ## 🤝 Contributing

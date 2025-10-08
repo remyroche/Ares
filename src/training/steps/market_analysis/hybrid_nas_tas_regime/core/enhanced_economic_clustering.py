@@ -32,7 +32,7 @@ from src.training.steps.market_analysis.hybrid_nas_tas_regime.evaluation.cluster
 from src.training.steps.market_analysis.hybrid_nas_tas_regime.evaluation.robust_scoring_models import (
     RobustScoringModels, create_robust_scoring_models
 )
-from src.utils.feature_selection import create_pca_module, create_vif_module
+from src.feature_selection.dimensionality import create_pca_module, create_vif_module
 
 logger = logging.getLogger(__name__)
 

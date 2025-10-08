@@ -380,6 +380,8 @@ class FinalFeatureSelectionStep:
                         return result
 
         # Fallback: try to load from data_cache or other locations
+        tprint_warning(f"⚠️ No standardized target data found for {symbol}/{exchange}/{timeframe}")
+        self.logger.info(f"No standardized target data found for {symbol}/{exchange}/{timeframe}")
         return None
 
     def _load_standardized_target_from_file(
@@ -396,27 +398,33 @@ class FinalFeatureSelectionStep:
                 outcome_data = json.load(handle)
         except FileNotFoundError:
             self.logger.warning(f"⚠️ Outcome file missing: {outcome_file}")
+            tprint_warning(f"⚠️ Outcome file not found: {outcome_file}")
             return None
         except json.JSONDecodeError as exc:
             self.logger.warning(f"⚠️ Could not parse outcome JSON {outcome_file}: {exc}")
+            tprint_error(f"❌ Invalid JSON in outcome file {outcome_file}: {exc}")
             return None
 
         config_data = outcome_data.get('config', {})
         if config_data:
             if config_data.get('symbol') and config_data.get('symbol') != expected_symbol:
                 self.logger.warning("⚠️ Outcome file symbol mismatch; skipping")
+                tprint_warning(f"⚠️ Outcome file symbol mismatch: expected {expected_symbol}, got {config_data.get('symbol')}")
                 return None
             if config_data.get('exchange') and config_data.get('exchange') != expected_exchange:
                 self.logger.warning("⚠️ Outcome file exchange mismatch; skipping")
+                tprint_warning(f"⚠️ Outcome file exchange mismatch: expected {expected_exchange}, got {config_data.get('exchange')}")
                 return None
             if config_data.get('timeframe') and config_data.get('timeframe') != expected_timeframe:
                 self.logger.warning("⚠️ Outcome file timeframe mismatch; skipping")
+                tprint_warning(f"⚠️ Outcome file timeframe mismatch: expected {expected_timeframe}, got {config_data.get('timeframe')}")
                 return None
 
         artifacts = outcome_data.get('artifacts', {})
         standardized_output = artifacts.get('standardized_output') if isinstance(artifacts, dict) else None
         if not standardized_output:
             self.logger.warning("⚠️ No standardized output found in outcome file")
+            tprint_warning(f"⚠️ No standardized output found in outcome file: {outcome_file}")
             return None
 
         target_data = standardized_output.get('labels')
@@ -428,6 +436,7 @@ class FinalFeatureSelectionStep:
 
         if target_data is None:
             self.logger.warning("⚠️ No labels found in standardized output")
+            tprint_warning(f"⚠️ No labels found in standardized output from {outcome_file}")
             return None
 
         if isinstance(target_data, dict):
@@ -437,9 +446,10 @@ class FinalFeatureSelectionStep:
         else:
             try:
                 target_df = pd.DataFrame(target_data)
-            except Exception:
-                self.logger.warning("⚠️ Target data in unexpected format")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Target data in unexpected format: {e}")
                 tprint_warning(f"⚠️ Target data has unexpected type: {type(target_data)}")
+                tprint_error(f"❌ Failed to convert target data to DataFrame: {e}")
                 return None
 
         target_df = self._standardize_target_frame(target_df)
@@ -451,6 +461,7 @@ class FinalFeatureSelectionStep:
 
         if target_df.empty:
             self.logger.warning("⚠️ Standardized target dataframe is empty")
+            tprint_error("❌ Standardized target DataFrame is empty - no data to use for feature selection")
             return None
 
         self.logger.info("✅ Successfully loaded target data from standardized format")
@@ -591,6 +602,7 @@ class FinalFeatureSelectionStep:
 
                 except ImportError as e:
                     self.logger.warning(f"⚠️ Data cleaning utility not available for final feature selection: {e}")
+                    tprint_info(f"   ℹ️ Data cleaning utility not available: {e}")
                 except Exception as e:
                     self.logger.warning(f"⚠️ Data cleaning failed for final feature selection, proceeding with original data: {e}")
                     tprint_warning(f"   ⚠️ Data cleaning issues encountered: {e}")
@@ -846,7 +858,9 @@ class FinalFeatureSelectionStep:
 
         try:
             flattened = extract_p_value_mapping(vars(selection_result))
-        except Exception:
+        except Exception as e:
+            tprint_warning(f"⚠️ Failed to extract p-value mapping: {e}")
+            self.logger.warning(f"P-value extraction failed: {e}")
             flattened = {}
 
         horizon_p_values = {
@@ -877,6 +891,9 @@ class FinalFeatureSelectionStep:
             )
         except Exception as e:
             self.logger.error(f"❌ Failed to save selection results: {e}")
+            tprint_error(f"❌ Failed to save selection results: {e}")
+            import traceback
+            tprint_debug(f"🔍 Save error details: {traceback.format_exc()}")
 
     def _save_selection_results_sync(self, selection_result: Any, symbol: str, exchange: str,
                                      timeframe: str) -> None:

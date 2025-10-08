@@ -17,7 +17,7 @@ Key Features:
 import asyncio
 import time
 import logging
-from typing import Dict, List, Optional, Any, Tuple, Iterable
+from typing import Dict, List, Optional, Any, Tuple, Iterable, Mapping, Union
 from dataclasses import dataclass, field
 from enum import Enum
 import pandas as pd
@@ -141,8 +141,9 @@ from .optimized_interaction_orchestrator import (
 
 # Import sub_pipeline components for compatibility
 try:
-    from ..components.base_component import BaseComponent, ComponentResult
+    from ..components.base_component import BaseComponent, BasePreTrainingComponent, ComponentConfig, ComponentResult
     from ..components.component_factory import ComponentFactory
+    from ..components.contracts import InteractiveFeatureArtifacts
 except ImportError:
     tprint_warning(
         "Component subsystem not available; using lightweight stubs for tests"
@@ -174,6 +175,12 @@ except ImportError:
         @staticmethod
         def create(*args, **kwargs):  # pragma: no cover - stub
             return BaseComponent(*args, **kwargs)
+
+    class InteractiveFeatureArtifacts(dict):  # type: ignore
+        """Lightweight fallback when component contracts are unavailable."""
+
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
 
 # Setup logging
 logger = logging.getLogger(__name__)
@@ -257,61 +264,108 @@ class InteractiveFeatureGenerationResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
-class InteractiveFeatureGenerationComponent(BaseComponent):
+class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
     """
     Interactive Feature Generation Component for Pre-Training Pipeline.
-    
+
     This component integrates the optimized interaction feature generation
     pipeline with the pre-training sub_pipeline architecture.
     """
-    
-    def __init__(self, config: Optional[InteractiveFeatureGenerationConfig] = None):
+
+    def __init__(self, config: Optional[ComponentConfig] = None):
         """Initialize the interactive feature generation component."""
-        super().__init__()
-        
-        self.config = config or InteractiveFeatureGenerationConfig()
+        super().__init__(config)
+
         self.logger = logger.getChild('InteractiveFeatureGenerationComponent')
-        
+        self.performance_metrics: Dict[str, Any] = {}
+        self._interactive_config = self._build_interactive_config(self.config)
+
         # Initialize the optimized orchestrator
         self._initialize_orchestrator()
-        
-        # Performance tracking
-        self.performance_metrics = {}
-        
+
         tprint_success("🚀 Interactive Feature Generation Component initialized")
         tprint_info(f"📊 Symbol: {self.config.symbol}, Exchange: {self.config.exchange}")
         tprint_info(f"⏰ Timeframe: {self.config.timeframe}")
         tprint_info(f"🔧 Matrix ops: {MATRIX_OPS_AVAILABLE}, ML common: {ML_COMMON_AVAILABLE}")
-    
+
+    @staticmethod
+    def _coerce_tuple(value: Optional[Any], default: Tuple[int, int]) -> Tuple[int, int]:
+        """Coerce configuration values that may be provided as a tuple or list."""
+
+        if value is None:
+            return default
+        if isinstance(value, (list, tuple)) and len(value) == 2:
+            return int(value[0]), int(value[1])
+        return default
+
+    def _build_interactive_config(
+        self,
+        component_config: ComponentConfig,
+    ) -> InteractiveFeatureGenerationConfig:
+        """Translate the generic component config into the interactive schema."""
+
+        params = dict(component_config.custom_params or {})
+
+        feature_budget_post = self._coerce_tuple(
+            params.get('feature_budget_post'),
+            InteractiveFeatureGenerationConfig.feature_budget_post,
+        )
+
+        return InteractiveFeatureGenerationConfig(
+            symbol=component_config.symbol,
+            exchange=component_config.exchange,
+            timeframe=component_config.timeframe,
+            data_dir=component_config.data_dir,
+            feature_budget_pre=int(params.get('feature_budget_pre', InteractiveFeatureGenerationConfig.feature_budget_pre)),
+            feature_budget_post=feature_budget_post,
+            interactions_cap=int(params.get('interactions_cap', InteractiveFeatureGenerationConfig.interactions_cap)),
+            transforms_per_parent=int(params.get('transforms_per_parent', InteractiveFeatureGenerationConfig.transforms_per_parent)),
+            lookback_ceiling_minutes=int(params.get('lookback_ceiling_minutes', InteractiveFeatureGenerationConfig.lookback_ceiling_minutes)),
+            latency_budget_ms=int(params.get('latency_budget_ms', InteractiveFeatureGenerationConfig.latency_budget_ms)),
+            enable_matrix_optimization=bool(params.get('enable_matrix_optimization', InteractiveFeatureGenerationConfig.enable_matrix_optimization)),
+            enable_hardware_optimization=bool(params.get('enable_hardware_optimization', InteractiveFeatureGenerationConfig.enable_hardware_optimization)),
+            enable_parallel_processing=bool(params.get('enable_parallel_processing', InteractiveFeatureGenerationConfig.enable_parallel_processing)),
+            max_workers=int(params.get('max_workers', InteractiveFeatureGenerationConfig.max_workers)),
+            batch_size=int(params.get('batch_size', InteractiveFeatureGenerationConfig.batch_size)),
+            enable_validation=bool(params.get('enable_validation', InteractiveFeatureGenerationConfig.enable_validation)),
+            validation_threshold=float(params.get('validation_threshold', InteractiveFeatureGenerationConfig.validation_threshold)),
+            verbose_logging=bool(params.get('verbose_logging', InteractiveFeatureGenerationConfig.verbose_logging)),
+            log_performance=bool(params.get('log_performance', InteractiveFeatureGenerationConfig.log_performance)),
+            integrate_with_ares_launcher=bool(params.get('integrate_with_ares_launcher', InteractiveFeatureGenerationConfig.integrate_with_ares_launcher)),
+            maintain_backward_compatibility=bool(params.get('maintain_backward_compatibility', InteractiveFeatureGenerationConfig.maintain_backward_compatibility)),
+            market_data_batch_size=params.get('market_data_batch_size', InteractiveFeatureGenerationConfig.market_data_batch_size),
+            market_data_window_days=params.get('market_data_window_days', InteractiveFeatureGenerationConfig.market_data_window_days),
+        )
+
     def _initialize_orchestrator(self):
         """Initialize the optimized interaction orchestrator."""
         tprint_debug("🔧 Initializing optimized interaction orchestrator...")
-        
+
         # Convert config to orchestrator config
         orchestrator_config = OptimizedInteractionConfig(
-            symbol=self.config.symbol,
-            exchange=self.config.exchange,
-            timeframe=self.config.timeframe,
-            data_dir=self.config.data_dir,
-            feature_budget_pre=self.config.feature_budget_pre,
-            feature_budget_post=self.config.feature_budget_post,
-            interactions_cap=self.config.interactions_cap,
-            transforms_per_parent=self.config.transforms_per_parent,
-            lookback_ceiling_minutes=self.config.lookback_ceiling_minutes,
-            latency_budget_ms=self.config.latency_budget_ms,
-            enable_matrix_optimization=self.config.enable_matrix_optimization,
-            enable_hardware_optimization=self.config.enable_hardware_optimization,
-            enable_parallel_processing=self.config.enable_parallel_processing,
-            max_workers=self.config.max_workers,
-            batch_size=self.config.batch_size,
-            enable_validation=self.config.enable_validation,
-            validation_threshold=self.config.validation_threshold,
-            verbose_logging=self.config.verbose_logging,
-            log_performance=self.config.log_performance,
-            market_data_batch_size=self.config.market_data_batch_size,
-            market_data_window_days=self.config.market_data_window_days,
+            symbol=self._interactive_config.symbol,
+            exchange=self._interactive_config.exchange,
+            timeframe=self._interactive_config.timeframe,
+            data_dir=self._interactive_config.data_dir,
+            feature_budget_pre=self._interactive_config.feature_budget_pre,
+            feature_budget_post=self._interactive_config.feature_budget_post,
+            interactions_cap=self._interactive_config.interactions_cap,
+            transforms_per_parent=self._interactive_config.transforms_per_parent,
+            lookback_ceiling_minutes=self._interactive_config.lookback_ceiling_minutes,
+            latency_budget_ms=self._interactive_config.latency_budget_ms,
+            enable_matrix_optimization=self._interactive_config.enable_matrix_optimization,
+            enable_hardware_optimization=self._interactive_config.enable_hardware_optimization,
+            enable_parallel_processing=self._interactive_config.enable_parallel_processing,
+            max_workers=self._interactive_config.max_workers,
+            batch_size=self._interactive_config.batch_size,
+            enable_validation=self._interactive_config.enable_validation,
+            validation_threshold=self._interactive_config.validation_threshold,
+            verbose_logging=self._interactive_config.verbose_logging,
+            log_performance=self._interactive_config.log_performance,
+            market_data_batch_size=self._interactive_config.market_data_batch_size,
+            market_data_window_days=self._interactive_config.market_data_window_days,
         )
-        
+
         self.orchestrator = OptimizedInteractionOrchestrator(orchestrator_config)
         tprint_debug("✅ Optimized interaction orchestrator initialized")
     
@@ -425,7 +479,7 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
             return ComponentResult(
                 success=False,
                 error_message=error_message,
-                artifacts={},
+                artifacts=InteractiveFeatureArtifacts(),
                 execution_time=execution_time,
                 metadata={
                     'schema_error': {
@@ -444,7 +498,7 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
             return ComponentResult(
                 success=False,
                 error_message=error_message,
-                artifacts={},
+                artifacts=InteractiveFeatureArtifacts(),
                 execution_time=execution_time,
                 metadata={
                     'data_contract_error': {
@@ -464,7 +518,7 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
             return ComponentResult(
                 success=False,
                 error_message=error_message,
-                artifacts={},
+                artifacts=InteractiveFeatureArtifacts(),
                 execution_time=execution_time
             )
     
@@ -674,24 +728,48 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
     def _update_orchestrator_config(self, pipeline_state: Dict[str, Any]) -> None:
         """Update orchestrator configuration with pipeline state."""
         tprint_debug("🔧 Updating orchestrator configuration...")
-        
+
         # Update symbol and exchange if provided
         if 'symbol' in pipeline_state:
             self.config.symbol = pipeline_state['symbol']
-            self.orchestrator.config.symbol = pipeline_state['symbol']
-        
+
         if 'exchange' in pipeline_state:
             self.config.exchange = pipeline_state['exchange']
-            self.orchestrator.config.exchange = pipeline_state['exchange']
-        
+
         if 'timeframe' in pipeline_state:
             self.config.timeframe = pipeline_state['timeframe']
-            self.orchestrator.config.timeframe = pipeline_state['timeframe']
-        
+
         # Update data directory if provided
         if 'data_dir' in pipeline_state:
             self.config.data_dir = pipeline_state['data_dir']
-            self.orchestrator.config.data_dir = pipeline_state['data_dir']
+
+        if 'custom_params' in pipeline_state and isinstance(pipeline_state['custom_params'], Mapping):
+            self.config.custom_params.update(dict(pipeline_state['custom_params']))
+
+        self._interactive_config = self._build_interactive_config(self.config)
+
+        orchestrator_config = self.orchestrator.config
+        orchestrator_config.symbol = self._interactive_config.symbol
+        orchestrator_config.exchange = self._interactive_config.exchange
+        orchestrator_config.timeframe = self._interactive_config.timeframe
+        orchestrator_config.data_dir = self._interactive_config.data_dir
+        orchestrator_config.feature_budget_pre = self._interactive_config.feature_budget_pre
+        orchestrator_config.feature_budget_post = self._interactive_config.feature_budget_post
+        orchestrator_config.interactions_cap = self._interactive_config.interactions_cap
+        orchestrator_config.transforms_per_parent = self._interactive_config.transforms_per_parent
+        orchestrator_config.lookback_ceiling_minutes = self._interactive_config.lookback_ceiling_minutes
+        orchestrator_config.latency_budget_ms = self._interactive_config.latency_budget_ms
+        orchestrator_config.enable_matrix_optimization = self._interactive_config.enable_matrix_optimization
+        orchestrator_config.enable_hardware_optimization = self._interactive_config.enable_hardware_optimization
+        orchestrator_config.enable_parallel_processing = self._interactive_config.enable_parallel_processing
+        orchestrator_config.max_workers = self._interactive_config.max_workers
+        orchestrator_config.batch_size = self._interactive_config.batch_size
+        orchestrator_config.enable_validation = self._interactive_config.enable_validation
+        orchestrator_config.validation_threshold = self._interactive_config.validation_threshold
+        orchestrator_config.verbose_logging = self._interactive_config.verbose_logging
+        orchestrator_config.log_performance = self._interactive_config.log_performance
+        orchestrator_config.market_data_batch_size = self._interactive_config.market_data_batch_size
+        orchestrator_config.market_data_window_days = self._interactive_config.market_data_window_days
 
         tprint_debug("✅ Orchestrator configuration updated")
 
@@ -729,34 +807,35 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
         execution_time = time.time() - start_time
 
         # Create artifacts
-        artifacts = {
-            'interactive_feature_generation_result': {
-                'features': result.features,
-                'feature_names': result.feature_names,
-                'selected_features': result.selected_features,
-                'interaction_features': result.interaction_features,
-                'cross_timeframe_features': result.cross_timeframe_features,
-                'execution_time': result.execution_time,
-                'memory_usage_mb': getattr(result, 'memory_usage_mb', 0.0),
-                'success': result.success,
-                'error_message': result.error_message,
-                'validated_schemas': validation_metadata
-            },
-            'stage_results': getattr(result, 'stage_results', {}),
-            'performance_metrics': getattr(result, 'performance_metrics', {}),
-            'artifacts': getattr(result, 'artifacts', {}),
+        artifact_payload = {
+            'features': result.features,
+            'feature_names': result.feature_names,
+            'selected_features': result.selected_features,
+            'interaction_features': result.interaction_features,
+            'cross_timeframe_features': result.cross_timeframe_features,
+            'execution_time': result.execution_time,
+            'memory_usage_mb': getattr(result, 'memory_usage_mb', 0.0),
+            'success': result.success,
+            'error_message': result.error_message,
+            'validated_schemas': validation_metadata,
         }
 
         try:
-            artifacts['interactive_feature_generation_result'] = validate_feature_artifact(
-                artifacts['interactive_feature_generation_result'],
+            validated_payload = validate_feature_artifact(
+                artifact_payload,
                 context='interactive_feature_generation_component.artifacts',
             )
         except DataContractValidationError as contract_error:
             tprint_error(f"❌ Interactive feature generation artifact invalid: {contract_error}")
             raise
 
-        artifacts.setdefault('validated_schemas', validation_metadata)
+        artifact_bundle = InteractiveFeatureArtifacts(
+            interactive_feature_generation_result=validated_payload,
+            stage_results=getattr(result, 'stage_results', {}) or {},
+            performance_metrics=getattr(result, 'performance_metrics', {}) or {},
+            artifacts=getattr(result, 'artifacts', {}) or {},
+            validated_schemas=validation_metadata,
+        )
 
         # Create output files list (for backward compatibility)
         output_files = []
@@ -796,9 +875,9 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
         return ComponentResult(
             success=result.success,
             error_message=result.error_message,
-            artifacts=artifacts,
+            artifacts=artifact_bundle,
             execution_time=execution_time,
-            metadata=metadata
+            metadata=metadata,
         )
     
     def get_component_info(self) -> Dict[str, Any]:
@@ -819,10 +898,10 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
                 'symbol': self.config.symbol,
                 'exchange': self.config.exchange,
                 'timeframe': self.config.timeframe,
-                'feature_budget_pre': self.config.feature_budget_pre,
-                'interactions_cap': self.config.interactions_cap,
-                'enable_matrix_optimization': self.config.enable_matrix_optimization,
-                'enable_hardware_optimization': self.config.enable_hardware_optimization
+                'feature_budget_pre': self._interactive_config.feature_budget_pre,
+                'interactions_cap': self._interactive_config.interactions_cap,
+                'enable_matrix_optimization': self._interactive_config.enable_matrix_optimization,
+                'enable_hardware_optimization': self._interactive_config.enable_hardware_optimization
             },
             'capabilities': [
                 'Parent feature generation',
@@ -855,19 +934,64 @@ class InteractiveFeatureGenerationComponent(BaseComponent):
 
 
 # Factory function for component creation
+def _build_component_config(
+    config: Optional[InteractiveFeatureGenerationConfig] = None,
+) -> ComponentConfig:
+    """Convert an interactive configuration into a generic component config."""
+
+    interactive_config = config or InteractiveFeatureGenerationConfig()
+    custom_params = {
+        'feature_budget_pre': interactive_config.feature_budget_pre,
+        'feature_budget_post': interactive_config.feature_budget_post,
+        'interactions_cap': interactive_config.interactions_cap,
+        'transforms_per_parent': interactive_config.transforms_per_parent,
+        'lookback_ceiling_minutes': interactive_config.lookback_ceiling_minutes,
+        'latency_budget_ms': interactive_config.latency_budget_ms,
+        'enable_matrix_optimization': interactive_config.enable_matrix_optimization,
+        'enable_hardware_optimization': interactive_config.enable_hardware_optimization,
+        'enable_parallel_processing': interactive_config.enable_parallel_processing,
+        'max_workers': interactive_config.max_workers,
+        'batch_size': interactive_config.batch_size,
+        'enable_validation': interactive_config.enable_validation,
+        'validation_threshold': interactive_config.validation_threshold,
+        'verbose_logging': interactive_config.verbose_logging,
+        'log_performance': interactive_config.log_performance,
+        'integrate_with_ares_launcher': interactive_config.integrate_with_ares_launcher,
+        'maintain_backward_compatibility': interactive_config.maintain_backward_compatibility,
+        'market_data_batch_size': interactive_config.market_data_batch_size,
+        'market_data_window_days': interactive_config.market_data_window_days,
+    }
+
+    return ComponentConfig(
+        symbol=interactive_config.symbol,
+        exchange=interactive_config.exchange,
+        timeframe=interactive_config.timeframe,
+        data_dir=interactive_config.data_dir,
+        custom_params=custom_params,
+    )
+
+
 def create_interactive_feature_generation_component(
-    config: Optional[InteractiveFeatureGenerationConfig] = None
+    config: Optional[Union[InteractiveFeatureGenerationConfig, ComponentConfig]] = None
 ) -> InteractiveFeatureGenerationComponent:
     """
     Create an interactive feature generation component.
-    
+
     Args:
-        config: Configuration for the component
-        
+        config: Optional legacy interactive config or generic component config.
+
     Returns:
         InteractiveFeatureGenerationComponent instance
     """
-    return InteractiveFeatureGenerationComponent(config)
+
+    if isinstance(config, ComponentConfig):
+        component_config = config
+    else:
+        component_config = _build_component_config(config)
+
+    from ..components.component_factory import ComponentFactory
+
+    return ComponentFactory.create_component('interactive_feature_generation', component_config)  # type: ignore[return-value]
 
 
 # Integration with component factory
@@ -875,13 +999,13 @@ def register_interactive_feature_generation_component():
     """Register the interactive feature generation component with the factory."""
     try:
         from ..components.component_factory import ComponentFactory
-        
+
         # Register the component
         ComponentFactory.register_component(
             'interactive_feature_generation',
-            create_interactive_feature_generation_component
+            InteractiveFeatureGenerationComponent
         )
-        
+
         tprint_success("✅ Interactive feature generation component registered with factory")
         
     except ImportError as e:

@@ -8,7 +8,9 @@ from functools import lru_cache
 from typing import Any, Callable, Dict, Iterator, Mapping, Optional, Tuple, Type, TypeVar, Union
 
 from src.training.steps.pre_training.validation.data_contracts import (
+    validate_feature_artifact,
     validate_multi_horizon_labeling_result,
+    validate_selection_artifact,
 )
 
 
@@ -126,6 +128,17 @@ class FinalFeatureSelectionArtifacts(ArtifactBundle):
 
 
 @dataclass
+class InteractiveFeatureArtifacts(ArtifactBundle):
+    """Artifacts produced by the interactive feature generation component."""
+
+    interactive_feature_generation_result: Dict[str, Any] = field(default_factory=dict)
+    stage_results: Dict[str, Any] = field(default_factory=dict)
+    performance_metrics: Dict[str, Any] = field(default_factory=dict)
+    artifacts: Dict[str, Any] = field(default_factory=dict)
+    validated_schemas: Optional[Dict[str, Any]] = None
+
+
+@dataclass
 class FeatureLookbackArtifacts(ArtifactBundle):
     """Artifacts produced by the feature lookback optimization component."""
 
@@ -200,8 +213,32 @@ def _validate_multi_horizon(bundle: MultiHorizonArtifacts) -> MultiHorizonArtifa
     return bundle
 
 
+def _validate_interactive_features(
+    bundle: InteractiveFeatureArtifacts,
+) -> InteractiveFeatureArtifacts:
+    if bundle.interactive_feature_generation_result:
+        bundle.interactive_feature_generation_result = validate_feature_artifact(
+            bundle.interactive_feature_generation_result,
+            context="components.interactive_feature_generation_result",
+        )
+    return bundle
+
+
+def _validate_final_selection(
+    bundle: FinalFeatureSelectionArtifacts,
+) -> FinalFeatureSelectionArtifacts:
+    if bundle.final_feature_selection_result:
+        bundle.final_feature_selection_result = validate_selection_artifact(
+            bundle.final_feature_selection_result,
+            context="components.final_feature_selection_result",
+        )
+    return bundle
+
+
 _ARTIFACT_VALIDATORS: Dict[Type[ArtifactBundle], Validator] = {
     MultiHorizonArtifacts: _validate_multi_horizon,
+    InteractiveFeatureArtifacts: _validate_interactive_features,
+    FinalFeatureSelectionArtifacts: _validate_final_selection,
 }
 
 
@@ -220,6 +257,7 @@ __all__ = [
     "FeatureLookbackArtifacts",
     "FinalFeatureSelectionArtifacts",
     "GenericArtifacts",
+    "InteractiveFeatureArtifacts",
     "MultiHorizonArtifacts",
     "PipelineState",
     "validate_artifact_bundle",

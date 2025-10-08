@@ -14,7 +14,7 @@ Each step can receive a timeframe parameter, with default 15m.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, TypedDict
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple, TypedDict
 from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass, field
@@ -110,10 +110,9 @@ except ImportError:  # pragma: no cover
 
 
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint, tprint_error, tprint_warning
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.version_manager import get_version_manager
-from src.utils.random_seeding import SeededRNGs, seed_rngs
+from src.utils.random_seeding import SeededRNGs, seed_rngs, set_global_seed
 from src.utils.tprint import tprint, tprint_error, tprint_warning
 from .logging_utils import (
     PreTrainingEventLogger,
@@ -131,6 +130,7 @@ from src.training.steps.pre_training.validation.data_contracts import (
     validate_multi_horizon_labeling_result,
     validate_selection_artifact,
 )
+from src.training.common.component_result import ComponentError
 
 logger = system_logger.getChild('PreTrainingSubPipeline')
 
@@ -302,6 +302,7 @@ class SubPipelineConfig:
     fast_mode: bool = False
     skip_next_pipeline: bool = False
     custom_params: Dict[str, Any] = field(default_factory=dict)
+    random_seed: Optional[int] = None
     pipeline: Dict[str, Any] = field(default_factory=dict)
     label_imbalance_warning_threshold: float = 0.75
     nan_rate_warning_threshold: float = 0.05
@@ -475,11 +476,46 @@ class PreTrainingSubPipeline:
         self._data_locator: Optional[DataLocator] = None
         self._seeded_rngs: Optional[SeededRNGs] = None
         self._active_seed: Optional[int] = None
+        self._missing_components: Set[str] = set()
+
+        self._refresh_component_registry()
 
     @staticmethod
     def _get_step_spec(step_name: str) -> Optional[StepSpec]:
         """Return the registry specification for a step."""
         return STEP_REGISTRY.get(step_name)
+
+    def _refresh_component_registry(self) -> None:
+        """Synchronize component availability with the registered step list."""
+
+        available_components = set(ComponentFactory.get_available_components())
+        step_components = {spec.component_key for spec in STEP_REGISTRY.values()}
+
+        missing_components = step_components - available_components
+        extra_components = available_components - step_components
+
+        if missing_components and missing_components != self._missing_components:
+            message = (
+                "Some pre-training steps are unavailable because their components "
+                f"are not registered: {sorted(missing_components)}"
+            )
+            self.logger.warning(message)
+            self.event_logger.warning(
+                message,
+                context={
+                    'step': 'component_registry',
+                    'missing_components': sorted(missing_components),
+                    'available_components': sorted(available_components),
+                },
+            )
+
+        if extra_components:
+            self.logger.debug(
+                "📋 Component factory exposes additional components not in the step registry: %s",
+                sorted(extra_components),
+            )
+
+        self._missing_components = missing_components
 
     def _get_ordered_step_specs(
         self,
@@ -489,6 +525,8 @@ class PreTrainingSubPipeline:
     ) -> List[StepSpec]:
         """Return registry specs ordered by execution priority."""
 
+        self._refresh_component_registry()
+
         specs = [
             spec
             for spec in STEP_REGISTRY.values()
@@ -497,6 +535,13 @@ class PreTrainingSubPipeline:
 
         if sequence_only:
             specs = [spec for spec in specs if spec.include_in_default_sequence]
+
+        if not include_disabled:
+            specs = [
+                spec
+                for spec in specs
+                if spec.component_key not in self._missing_components
+            ]
 
         return sorted(specs, key=lambda spec: (spec.order, spec.name))
 
@@ -512,6 +557,11 @@ class PreTrainingSubPipeline:
 
     @staticmethod
     def _extract_component_error_code(component_result: Any, default_code: str) -> str:
+        component_errors = getattr(component_result, 'errors', None)
+        if component_errors:
+            for err in component_errors:
+                if isinstance(err, ComponentError) and err.code:
+                    return err.code
         for attr in ('error_code', 'error_code_slug'):
             value = getattr(component_result, attr, None)
             if value:
@@ -544,7 +594,18 @@ class PreTrainingSubPipeline:
     def _collect_component_errors(self, component_result: Any) -> List[str]:
         errors: List[str] = []
         component_errors = getattr(component_result, 'errors', []) or []
-        self._extend_messages(errors, component_errors)
+        formatted_errors: List[str] = []
+        for item in component_errors:
+            if isinstance(item, ComponentError):
+                text = f"[{item.code}] {item.message}" if item.code else item.message
+                if item.details:
+                    details_preview = ', '.join(f"{k}={v}" for k, v in list(item.details.items())[:3])
+                    if details_preview:
+                        text = f"{text} (details: {details_preview})"
+                formatted_errors.append(text)
+            else:
+                formatted_errors.append(str(item))
+        self._extend_messages(errors, formatted_errors)
         error_message = getattr(component_result, 'error_message', None)
         if error_message:
             self._extend_messages(errors, [error_message])
@@ -740,6 +801,30 @@ class PreTrainingSubPipeline:
         )
 
         return None
+    def _build_event_context(
+        self,
+        step: str,
+        *,
+        config: Optional[SubPipelineConfig] = None,
+        rows_in: Optional[int] = None,
+        rows_out: Optional[int] = None,
+        duration_ms: Optional[float] = None,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Construct structured logging context with standard fields."""
+
+        context: Dict[str, Any] = {
+            'run_id': self._run_metadata.get('run_id', 'unknown'),
+            'step': step,
+            'symbol': (config.symbol if config else self._run_metadata.get('symbol')) or 'unknown',
+            'timeframe': (config.timeframe if config else self._run_metadata.get('timeframe')) or 'unknown',
+            'rows_in': rows_in,
+            'rows_out': rows_out,
+            'duration_ms': duration_ms,
+        }
+        if extra:
+            context.update(extra)
+        return context
 
     def _create_failure(
         self,
@@ -864,12 +949,55 @@ class PreTrainingSubPipeline:
         errors = pipeline_results.setdefault('errors', [])
         summary = self._compose_error_summary(failure, errors)
         pipeline_results['error_summary'] = summary
+        rows_in: Optional[int] = None
+        rows_out: Optional[int] = None
+        duration_ms: Optional[float] = None
+        if failure.context:
+            rows_in = self._search_numeric_fields(
+                failure.context,
+                ('rows_in', 'input_rows', 'rows_before', 'n_rows_in', 'samples_in'),
+                depth=1,
+            )
+            rows_out = self._search_numeric_fields(
+                failure.context,
+                ('rows_out', 'output_rows', 'rows_after', 'n_rows_out', 'samples_out'),
+                depth=1,
+            )
+            if isinstance(failure.context.get('duration_ms'), (int, float)):
+                duration_ms = float(failure.context['duration_ms'])
+            else:
+                duration_seconds = self._search_numeric_fields(
+                    failure.context,
+                    ('duration_seconds',),
+                    depth=1,
+                )
+                if duration_seconds is not None:
+                    duration_ms = float(duration_seconds) * 1000.0
+
+        message = summary or failure.message
+        event_extra: Dict[str, Any] = {
+            'error_code': failure.error_code,
+            'failure_context': failure.context,
+        }
         if summary:
-            tprint_error(f"❌ {summary}")
             self.logger.error(summary)
+            event_extra['error_summary'] = summary
         else:
-            tprint_error(f"❌ {failure.message}")
             self.logger.error(failure.message)
+        if failure.traceback:
+            event_extra['traceback'] = failure.traceback
+
+        self.event_logger.error(
+            message,
+            context=self._build_event_context(
+                failure.step,
+                config=config,
+                rows_in=rows_in,
+                rows_out=rows_out,
+                duration_ms=duration_ms,
+                extra=event_extra,
+            ),
+        )
 
         self._log_step_timing_summary(pipeline_results)
 
@@ -1011,7 +1139,11 @@ class PreTrainingSubPipeline:
             PipelineResultDict containing execution results with typed fields
         """
         seed = self._resolve_random_seed(config)
-        self._seeded_rngs = seed_rngs(seed)
+        config.random_seed = seed
+        if config.custom_params is None:
+            config.custom_params = {}
+        config.custom_params.setdefault('random_seed', seed)
+        self._seeded_rngs = set_global_seed(seed)
         self._active_seed = seed
 
         run_metadata = self._gather_run_metadata(config, seed)
@@ -1027,6 +1159,7 @@ class PreTrainingSubPipeline:
         self.logger.info('🚀 Starting Pre-Training Sub-Pipeline execution')
         self.logger.info(f'📊 Symbol: {config.symbol}, Exchange: {config.exchange}')
         self.logger.info(f'⏰ Timeframe: {config.timeframe}, Mode: {config.mode.value}')
+        self.logger.info(f'🎲 Random seed: {seed}')
         self.logger.info(f'🧾 Run metadata:\n{metadata_block}')
 
         run_id = self._run_metadata.get('run_id', 'unknown')
@@ -1072,6 +1205,154 @@ class PreTrainingSubPipeline:
         }
         results['metrics']['random_seed'] = seed
 
+        try:
+            # Step 1: Multi-Horizon Profit Labeler
+            mh_context = StepLogContext(
+                run_id=run_id,
+                step='multi_horizon_profit_labeler',
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+            )
+            self.event_logger.step_begin(mh_context)
+            self.logger.info('🎯 Step 1: Multi-Horizon Profit Labeler')
+            mh_result = await self._execute_multi_horizon_profit_labeler(config, self._run_metadata)
+            self._capture_step_timing_metrics('multi_horizon_profit_labeler', mh_result, config, results)
+            rows_in, rows_out = self._resolve_row_counts(mh_result)
+            mh_context.rows_in = rows_in
+            mh_context.rows_out = rows_out
+            if mh_result.success:
+                results['completed_steps'] += 1
+            self._record_step_metrics('multi_horizon_profit_labeler', mh_result, results, metrics_sink, step_metric_records)
+            mh_duration_ms = self._result_duration_ms(mh_result)
+            self._extend_pipeline_collections(results, mh_result)
+            if not mh_result.success:
+                failure = self._resolve_failure_from_result(
+                    'multi_horizon_profit_labeler',
+                    mh_result,
+                    'Multi-horizon profit labeling failed',
+                )
+                code_text = f"[{failure.error_code}] " if failure.error_code else ''
+                self.logger.error(
+                    f"❌ Multi-horizon profit labeling failed: {code_text}{failure.message}"
+                )
+                self.event_logger.step_end(
+                    mh_context,
+                    duration_ms=mh_duration_ms,
+                    success=False,
+                    error=failure.message,
+                    extra={'error_code': failure.error_code},
+                )
+                results['results']['multi_horizon_profit_labeler'] = mh_result.artifacts
+                results['error_message'] = failure.message
+                results['error_code'] = failure.error_code
+                step_failures.append(('multi_horizon_profit_labeler', failure, mh_result))
+                if not continue_on_error:
+                    return self._apply_failure_to_results(
+                        results,
+                        failure,
+                        start_time,
+                        metrics_sink,
+                        step_metric_records,
+                        config,
+                    )
+                self.event_logger.warning(
+                    "Continue-on-error enabled; proceeding after multi_horizon_profit_labeler failure",
+                    context=self._build_event_context(
+                        'multi_horizon_profit_labeler',
+                        config=config,
+                        rows_in=mh_context.rows_in,
+                        rows_out=mh_context.rows_out,
+                        duration_ms=mh_duration_ms,
+                        extra={
+                            'error_code': failure.error_code,
+                            'continue_on_error': True,
+                        },
+                    ),
+                )
+                self.logger.warning(
+                    "Continue-on-error enabled; proceeding after multi_horizon_profit_labeler failure",
+                )
+            if mh_result.success:
+                # Validate artifacts before updating state
+                if 'multi_horizon_labeling_result' in mh_result.artifacts:
+                    labeled_data = mh_result.artifacts.get('multi_horizon_labeling_result', {}).get('labeled_data', pd.DataFrame())
+                    if isinstance(labeled_data, pd.DataFrame) and not labeled_data.empty:
+                        self.logger.info(f"✅ Multi-horizon profit labeling completed for {config.symbol}")
+                        self.logger.info(f"   → Labels generated: {len(labeled_data.columns)} columns")
+                        results['results']['multi_horizon_profit_labeler'] = mh_result.artifacts
+                        self._current_pipeline_state.update(mh_result.artifacts)
+                    else:
+                        message = "Multi-horizon labeling artifact validation failed"
+                        failure = self._create_failure(
+                            'multi_horizon_profit_labeler',
+                            mh_result.error_code or self._default_step_error_code('multi_horizon_profit_labeler'),
+                            message,
+                            context={'reason': 'empty_or_invalid_labeled_data'},
+                        )
+                        self.logger.error(f"❌ {message}")
+
+            # Validate artifacts before updating state
+            artifacts = mh_result.artifacts or {}
+
+            if 'multi_horizon_labeling_result' in artifacts:
+                labeled_data = artifacts.get('multi_horizon_labeling_result', {}).get('labeled_data', pd.DataFrame())
+                if isinstance(labeled_data, pd.DataFrame) and not labeled_data.empty:
+                    self.logger.info(f"✅ Multi-horizon profit labeling completed for {config.symbol}")
+                    self.logger.info(f"   → Labels generated: {len(labeled_data.columns)} columns")
+                    try:
+                        merged_artifacts = self._current_pipeline_state.merge_step_artifacts(
+                            'multi_horizon_profit_labeler',
+                            artifacts,
+                        )
+                    except UnexpectedArtifactKeyError as merge_error:
+                        failure = self._create_failure(
+                            'multi_horizon_profit_labeler',
+                            f"{self._default_step_error_code('multi_horizon_profit_labeler')}_SCHEMA",
+                            str(merge_error),
+                            context={'unexpected_keys': merge_error.keys},
+                        )
+                        self.logger.error(f"❌ {merge_error}")
+                        self.event_logger.step_end(
+                            mh_context,
+                            duration_ms=mh_duration_ms,
+                            success=False,
+                            error=str(merge_error),
+                            extra={'error_code': failure.error_code},
+                        )
+                        return self._apply_failure_to_results(
+                            results,
+                            failure,
+                            start_time,
+                            metrics_sink,
+                            step_metric_records,
+                            config,
+                        )
+
+                    results['results']['multi_horizon_profit_labeler'] = merged_artifacts
+                else:
+                    message = "Missing multi_horizon_labeling_result artifact"
+                    failure = self._create_failure(
+                        'multi_horizon_profit_labeler',
+                        mh_result.error_code or self._default_step_error_code('multi_horizon_profit_labeler'),
+                        message,
+                        context={'reason': 'missing_artifact'},
+                    )
+                    self.logger.error(f"❌ {message}")
+                    self.event_logger.step_end(
+                        mh_context,
+                        duration_ms=mh_duration_ms,
+                        success=False,
+                        error=message,
+                        extra={'error_code': failure.error_code},
+                    )
+                    return self._apply_failure_to_results(
+                        results,
+                        failure,
+                        start_time,
+                        metrics_sink,
+                        step_metric_records,
+                        config,
+                    )
 
         end_time: Optional[datetime] = None
 
@@ -1080,6 +1361,186 @@ class PreTrainingSubPipeline:
                 message = (
                     'No pre-training steps are enabled in STEP_REGISTRY. '
                     'Enable at least one step or adjust the configuration.'
+            # Step 2: Feature Lookback Optimization
+            flo_context = StepLogContext(
+                run_id=run_id,
+                step='feature_lookback_optimization',
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+            )
+            self.event_logger.step_begin(flo_context)
+            self.logger.info('⚙️ Step 2: Feature Lookback Optimization')
+            flo_result = await self._execute_feature_lookback_optimization(config, self._run_metadata)
+            self._capture_step_timing_metrics('feature_lookback_optimization', flo_result, config, results)
+            rows_in, rows_out = self._resolve_row_counts(flo_result)
+            flo_context.rows_in = rows_in
+            flo_context.rows_out = rows_out
+            if flo_result.success:
+                results['completed_steps'] += 1
+            self._record_step_metrics('feature_lookback_optimization', flo_result, results, metrics_sink, step_metric_records)
+            flo_duration_ms = self._result_duration_ms(flo_result)
+            self._extend_pipeline_collections(results, flo_result)
+            if not flo_result.success:
+                failure = self._resolve_failure_from_result(
+                    'feature_lookback_optimization',
+                    flo_result,
+                    'Feature lookback optimization failed',
+                )
+                code_text = f"[{failure.error_code}] " if failure.error_code else ''
+                self.logger.error(
+                    f"❌ Feature lookback optimization failed: {code_text}{failure.message}"
+                )
+                self.event_logger.step_end(
+                    flo_context,
+                    duration_ms=flo_duration_ms,
+                    success=False,
+                    error=failure.message,
+                    extra={'error_code': failure.error_code},
+                )
+                results['results']['feature_lookback_optimization'] = flo_result.artifacts
+                results['error_message'] = failure.message
+                results['error_code'] = failure.error_code
+                step_failures.append(('feature_lookback_optimization', failure, flo_result))
+                if not continue_on_error:
+                return self._apply_failure_to_results(
+                    results,
+                    failure,
+                    start_time,
+                    metrics_sink,
+                    step_metric_records,
+                    config,
+                )
+
+            flo_artifacts = flo_result.artifacts or {}
+
+            # Validate artifacts before updating state
+            if 'feature_lookback_optimization_result' in flo_artifacts:
+                optimized_features = flo_artifacts.get('feature_lookback_optimization_result', {}).get('optimized_features', {})
+                self.logger.info(f"✅ Feature lookback optimization completed for {config.symbol}")
+                self.logger.info(f"   → Features optimized: {len(optimized_features)}")
+                try:
+                    merged_flo_artifacts = self._current_pipeline_state.merge_step_artifacts(
+                        'feature_lookback_optimization',
+                        flo_artifacts,
+                    )
+                except UnexpectedArtifactKeyError as merge_error:
+                    failure = self._create_failure(
+                        'feature_lookback_optimization',
+                        f"{self._default_step_error_code('feature_lookback_optimization')}_SCHEMA",
+                        str(merge_error),
+                        context={'unexpected_keys': merge_error.keys},
+                    )
+                    self.logger.error(f"❌ {merge_error}")
+                    self.event_logger.step_end(
+                        flo_context,
+                        duration_ms=flo_duration_ms,
+                        success=False,
+                        error=str(merge_error),
+                        extra={'error_code': failure.error_code},
+                    )
+                    return self._apply_failure_to_results(
+                        results,
+                        failure,
+                        start_time,
+                        metrics_sink,
+                        step_metric_records,
+                        config,
+                    )
+                self.event_logger.warning(
+                    "Continue-on-error enabled; proceeding after feature_lookback_optimization failure",
+                    context=self._build_event_context(
+                        'feature_lookback_optimization',
+                        config=config,
+                        rows_in=flo_context.rows_in,
+                        rows_out=flo_context.rows_out,
+                        duration_ms=flo_duration_ms,
+                        extra={
+                            'error_code': failure.error_code,
+                            'continue_on_error': True,
+                        },
+                    ),
+                )
+                self.logger.warning(
+                    "Continue-on-error enabled; proceeding after feature_lookback_optimization failure",
+                )
+            if flo_result.success:
+                # Validate artifacts before updating state
+                if 'feature_lookback_optimization_result' in flo_result.artifacts:
+                    optimized_features = flo_result.artifacts.get('feature_lookback_optimization_result', {}).get('optimized_features', {})
+                    self.logger.info(f"✅ Feature lookback optimization completed for {config.symbol}")
+                    self.logger.info(f"   → Features optimized: {len(optimized_features)}")
+                    results['results']['feature_lookback_optimization'] = flo_result.artifacts
+                    self._current_pipeline_state.update(flo_result.artifacts)
+                else:
+                    self.logger.warning("⚠️ Feature lookback optimization completed but artifact structure unexpected")
+                    results['results']['feature_lookback_optimization'] = flo_result.artifacts
+                    self._current_pipeline_state.update(flo_result.artifacts)
+
+                results['results']['feature_lookback_optimization'] = merged_flo_artifacts
+            elif flo_artifacts:
+                self.logger.warning("⚠️ Feature lookback optimization completed but artifact structure unexpected")
+                try:
+                    merged_flo_artifacts = self._current_pipeline_state.merge_step_artifacts(
+                        'feature_lookback_optimization',
+                        flo_artifacts,
+                    )
+                except UnexpectedArtifactKeyError as merge_error:
+                    failure = self._create_failure(
+                        'feature_lookback_optimization',
+                        f"{self._default_step_error_code('feature_lookback_optimization')}_SCHEMA",
+                        str(merge_error),
+                        context={'unexpected_keys': merge_error.keys},
+                    )
+                    self.logger.error(f"❌ {merge_error}")
+                    self.event_logger.step_end(
+                        flo_context,
+                        duration_ms=flo_duration_ms,
+                        success=False,
+                        error=str(merge_error),
+                        extra={'error_code': failure.error_code},
+                    )
+                    return self._apply_failure_to_results(
+                        results,
+                        failure,
+                        start_time,
+                        metrics_sink,
+                        step_metric_records,
+                        config,
+                    )
+
+                results['results']['feature_lookback_optimization'] = merged_flo_artifacts
+
+                self.event_logger.step_end(
+                    flo_context,
+                    duration_ms=flo_duration_ms,
+                    success=True,
+                    extra={'artifact_keys': sorted(flo_result.artifacts.keys())},
+                )
+
+            # Step 3: Interactive Feature Generation
+            interactive_context = StepLogContext(
+                run_id=run_id,
+                step='interactive_feature_generation',
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+            )
+            self.event_logger.step_begin(interactive_context)
+            self.logger.info('🔧 Step 3: Interactive Feature Generation')
+            interactive_result = await self._execute_interactive_feature_generation(config, self._run_metadata)
+            self._capture_step_timing_metrics('interactive_feature_generation', interactive_result, config, results)
+            rows_in, rows_out = self._resolve_row_counts(interactive_result)
+            interactive_context.rows_in = rows_in
+            interactive_context.rows_out = rows_out
+            if interactive_result.success:
+                results['completed_steps'] += 1
+            self._record_step_metrics('interactive_feature_generation', interactive_result, results, metrics_sink, step_metric_records)
+            interactive_duration_ms = self._result_duration_ms(interactive_result)
+            self._extend_pipeline_collections(results, interactive_result)
+            if not interactive_result.success:
+                failure = self._resolve_failure_from_result(
+                    'interactive_feature_generation',
+                    interactive_result,
+                    'Interactive feature generation failed',
                 )
                 failure = self._create_failure(
                     'pipeline',
@@ -1113,6 +1574,196 @@ class PreTrainingSubPipeline:
                     start_time=start_time,
                     step_index=index,
                     total_steps=sequence_step_count,
+            interactive_artifacts = interactive_result.artifacts or {}
+
+            # Validate artifacts before updating state
+            if 'interactive_feature_generation_result' in interactive_artifacts:
+                features = interactive_artifacts.get('interactive_feature_generation_result', {}).get('features', {})
+                self.logger.info(f"✅ Interactive feature generation completed for {config.symbol}")
+                self.logger.info(f"   → Features generated: {len(features)}")
+                try:
+                    merged_interactive_artifacts = self._current_pipeline_state.merge_step_artifacts(
+                        'interactive_feature_generation',
+                        interactive_artifacts,
+                    )
+                except UnexpectedArtifactKeyError as merge_error:
+                    failure = self._create_failure(
+                        'interactive_feature_generation',
+                        f"{self._default_step_error_code('interactive_feature_generation')}_SCHEMA",
+                        str(merge_error),
+                        context={'unexpected_keys': merge_error.keys},
+                    )
+                    self.logger.error(f"❌ {merge_error}")
+                    self.event_logger.step_end(
+                        interactive_context,
+                        duration_ms=interactive_duration_ms,
+                        success=False,
+                        error=str(merge_error),
+                        extra={'error_code': failure.error_code},
+                    )
+                    return self._apply_failure_to_results(
+                        results,
+                        failure,
+                        start_time,
+                        metrics_sink,
+                        step_metric_records,
+                        config,
+                    )
+                self.event_logger.warning(
+                    "Continue-on-error enabled; proceeding after interactive_feature_generation failure",
+                    context=self._build_event_context(
+                        'interactive_feature_generation',
+                        config=config,
+                        rows_in=interactive_context.rows_in,
+                        rows_out=interactive_context.rows_out,
+                        duration_ms=interactive_duration_ms,
+                        extra={
+                            'error_code': failure.error_code,
+                            'continue_on_error': True,
+                        },
+                    ),
+                )
+                self.logger.warning(
+                    "Continue-on-error enabled; proceeding after interactive_feature_generation failure",
+                )
+            if interactive_result.success:
+                # Validate artifacts before updating state
+                if 'interactive_feature_generation_result' in interactive_result.artifacts:
+                    features = interactive_result.artifacts.get('interactive_feature_generation_result', {}).get('features', {})
+                    self.logger.info(f"✅ Interactive feature generation completed for {config.symbol}")
+                    self.logger.info(f"   → Features generated: {len(features)}")
+                    results['results']['interactive_feature_generation'] = interactive_result.artifacts
+                    self._current_pipeline_state.update(interactive_result.artifacts)
+                else:
+                    self.logger.warning("⚠️ Interactive feature generation completed but artifact structure unexpected")
+                    results['results']['interactive_feature_generation'] = interactive_result.artifacts
+                    self._current_pipeline_state.update(interactive_result.artifacts)
+
+                results['results']['interactive_feature_generation'] = merged_interactive_artifacts
+            elif interactive_artifacts:
+                self.logger.warning("⚠️ Interactive feature generation completed but artifact structure unexpected")
+                try:
+                    merged_interactive_artifacts = self._current_pipeline_state.merge_step_artifacts(
+                        'interactive_feature_generation',
+                        interactive_artifacts,
+                    )
+                except UnexpectedArtifactKeyError as merge_error:
+                    failure = self._create_failure(
+                        'interactive_feature_generation',
+                        f"{self._default_step_error_code('interactive_feature_generation')}_SCHEMA",
+                        str(merge_error),
+                        context={'unexpected_keys': merge_error.keys},
+                    )
+                    self.logger.error(f"❌ {merge_error}")
+                    self.event_logger.step_end(
+                        interactive_context,
+                        duration_ms=interactive_duration_ms,
+                        success=False,
+                        error=str(merge_error),
+                        extra={'error_code': failure.error_code},
+                    )
+                    return self._apply_failure_to_results(
+                        results,
+                        failure,
+                        start_time,
+                        metrics_sink,
+                        step_metric_records,
+                        config,
+                    )
+
+                results['results']['interactive_feature_generation'] = merged_interactive_artifacts
+
+                self.event_logger.step_end(
+                    interactive_context,
+                    duration_ms=interactive_duration_ms,
+                    success=True,
+                    extra={'artifact_keys': sorted(interactive_result.artifacts.keys())},
+                )
+
+            # Step 4: Final Feature Selection
+            ffs_context = StepLogContext(
+                run_id=run_id,
+                step='final_feature_selection',
+                symbol=config.symbol,
+                timeframe=config.timeframe,
+            )
+            self.event_logger.step_begin(ffs_context)
+            self.logger.info('🎯 Step 4: Final Feature Selection')
+            ffs_result = await self._execute_final_feature_selection(config, self._run_metadata)
+            self._capture_step_timing_metrics('final_feature_selection', ffs_result, config, results)
+            rows_in, rows_out = self._resolve_row_counts(ffs_result)
+            ffs_context.rows_in = rows_in
+            ffs_context.rows_out = rows_out
+            if ffs_result.success:
+                results['completed_steps'] += 1
+            self._record_step_metrics('final_feature_selection', ffs_result, results, metrics_sink, step_metric_records)
+            ffs_duration_ms = self._result_duration_ms(ffs_result)
+            self._extend_pipeline_collections(results, ffs_result)
+            if not ffs_result.success:
+                failure = self._resolve_failure_from_result(
+                    'final_feature_selection',
+                    ffs_result,
+                    'Final feature selection failed',
+                )
+                code_text = f"[{failure.error_code}] " if failure.error_code else ''
+                self.logger.error(
+                    f"❌ Final feature selection failed: {code_text}{failure.message}"
+                )
+                self.event_logger.step_end(
+                    ffs_context,
+                    duration_ms=ffs_duration_ms,
+                    success=False,
+                    error=failure.message,
+                    extra={'error_code': failure.error_code},
+                )
+                results['results']['final_feature_selection'] = ffs_result.artifacts
+                results['error_message'] = failure.message
+                results['error_code'] = failure.error_code
+                step_failures.append(('final_feature_selection', failure, ffs_result))
+                if not continue_on_error:
+                    return self._apply_failure_to_results(
+                        results,
+                        failure,
+                        start_time,
+                        metrics_sink,
+                        step_metric_records,
+                        config,
+                    )
+                self.event_logger.warning(
+                    "Continue-on-error enabled; proceeding after final_feature_selection failure",
+                    context=self._build_event_context(
+                        'final_feature_selection',
+                        config=config,
+                        rows_in=ffs_context.rows_in,
+                        rows_out=ffs_context.rows_out,
+                        duration_ms=ffs_duration_ms,
+                        extra={
+                            'error_code': failure.error_code,
+                            'continue_on_error': True,
+                        },
+                    ),
+                )
+                self.logger.warning(
+                    "Continue-on-error enabled; proceeding after final_feature_selection failure",
+                )
+            if ffs_result.success:
+                # Validate artifacts before updating state
+                if 'final_feature_selection_result' in ffs_result.artifacts:
+                    selected_features = ffs_result.artifacts.get('final_feature_selection_result', {}).get('selected_features', [])
+                    self.logger.info(f"✅ Final feature selection completed for {config.symbol}")
+                    self.logger.info(f"   → Final features: {len(selected_features)}")
+                    results['results']['final_feature_selection'] = ffs_result.artifacts
+                    self._current_pipeline_state.update(ffs_result.artifacts)
+                else:
+                    self.logger.warning("⚠️ Final feature selection completed but artifact structure unexpected")
+                    results['results']['final_feature_selection'] = ffs_result.artifacts
+                    self._current_pipeline_state.update(ffs_result.artifacts)
+
+                self.event_logger.step_end(
+                    ffs_context,
+                    duration_ms=ffs_duration_ms,
+                    success=True,
+                    extra={'artifact_keys': sorted(ffs_result.artifacts.keys())},
                 )
                 if step_result is not None:
                     return step_result
@@ -1394,7 +2045,14 @@ class PreTrainingSubPipeline:
         ):
             pass
 
-        tprint("📈 Step duration summary:")
+        self.logger.info("📈 Step duration summary:")
+        self.event_logger.info(
+            "Step duration summary emitted",
+            context=self._build_event_context(
+                'pipeline.summary',
+                extra={'steps': sorted(step_metrics.keys())},
+            ),
+        )
         for spec in self._get_ordered_step_specs(sequence_only=True):
             step_name = spec.name
             metrics = step_metrics.get(step_name)
@@ -1416,16 +2074,16 @@ class PreTrainingSubPipeline:
             self.logger.info(message)
             self.event_logger.info(
                 "Step duration summary",
-                context={
-                    'run_id': self._run_metadata.get('run_id'),
-                    'step': f'pipeline.summary.{step_name}',
-                    'symbol': self._run_metadata.get('symbol'),
-                    'timeframe': self._run_metadata.get('timeframe'),
-                    'duration_seconds': duration,
-                    'budget_seconds': budget,
-                    'over_budget': over_budget,
-                    'over_budget_seconds': over_budget_seconds,
-                },
+                context=self._build_event_context(
+                    f'pipeline.summary.{step_name}',
+                    duration_ms=duration * 1000.0,
+                    extra={
+                        'duration_seconds': duration,
+                        'budget_seconds': budget,
+                        'over_budget': over_budget,
+                        'over_budget_seconds': over_budget_seconds,
+                    },
+                ),
             )
 
     @staticmethod
@@ -1618,13 +2276,25 @@ class PreTrainingSubPipeline:
         if data_dir is None and isinstance(locator, DataLocator):
             data_dir = str(locator.data_path(data_dir_key))
 
+        custom_params_source = pipeline_state.get('custom_params')
+        custom_params = dict(custom_params_source) if isinstance(custom_params_source, Mapping) else {}
+        random_seed_value = pipeline_state.get('random_seed')
+        resolved_seed: Optional[int] = None
+        if random_seed_value is not None:
+            try:
+                resolved_seed = int(random_seed_value)
+                custom_params.setdefault('random_seed', resolved_seed)
+            except (TypeError, ValueError):
+                resolved_seed = None
+
         config = SubPipelineConfig(
             symbol=pipeline_state.get('symbol', 'ETHUSDT'),
             exchange=pipeline_state.get('exchange', 'binance'),
             timeframe=pipeline_state.get('timeframe', '1h'),  # Default 1h for pre-training (analyst)
             data_dir=data_dir,
             mode=ExecutionMode.FULL,  # Default to full mode
-            custom_params=pipeline_state.get('custom_params', {}),
+            custom_params=custom_params,
+            random_seed=resolved_seed,
             data_locator=locator if isinstance(locator, DataLocator) else None,
             data_dir_key=data_dir_key,
         )
@@ -1715,8 +2385,9 @@ class PreTrainingSubPipeline:
     def _build_component_custom_params(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Augment component custom parameters with quality thresholds."""
         params = dict(config.custom_params or {})
-        if self._active_seed is not None:
-            params.setdefault('random_seed', self._active_seed)
+        seed = config.random_seed if config.random_seed is not None else self._active_seed
+        if seed is not None:
+            params.setdefault('random_seed', seed)
         params.setdefault('quality_thresholds', self._get_quality_thresholds(config))
         if config.market_data_batch_size is not None:
             params.setdefault('market_data_batch_size', config.market_data_batch_size)
@@ -2252,45 +2923,18 @@ class PreTrainingSubPipeline:
         result.error_code = self._default_step_error_code('interactive_feature_generation')
 
         try:
-            # Import the new interactive feature generation component
-            try:
-                from .interaction_feature_generator.feature_interaction_generation.interactive_feature_generation_component import (
-                    create_interactive_feature_generation_component, InteractiveFeatureGenerationConfig
-                )
-                self.logger.info("🔧 Using optimized interactive feature generation component")
-            except ImportError as import_error:
-                self.logger.error(f"❌ Required component not found: {import_error}")
-                result.status = SubPipelineStatus.FAILED
-                result.error_message = f"Missing interactive feature generation component: {str(import_error)}"
-                result.end_time = datetime.now()
-                result.duration_seconds = (result.end_time - result.start_time).total_seconds()
-                result.error_code = f"{self._default_step_error_code('interactive_feature_generation')}_IMPORT"
-                result.failure = self._create_failure(
-                    'interactive_feature_generation',
-                    result.error_code,
-                    result.error_message,
-                    exception=import_error,
-                )
-                return result
-            
-            # Create component configuration
-            component_config = InteractiveFeatureGenerationConfig(
+            component_config = ComponentConfig(
                 symbol=config.symbol,
                 exchange=config.exchange,
                 timeframe=config.timeframe,
                 data_dir=config.data_dir,
-                feature_budget_pre=config.custom_params.get('feature_budget_pre', 120),
-                feature_budget_post=config.custom_params.get('feature_budget_post', (30, 60)),
-                interactions_cap=config.custom_params.get('interactions_cap', 15),
-                enable_matrix_optimization=config.custom_params.get('enable_matrix_optimization', True),
-                enable_hardware_optimization=config.custom_params.get('enable_hardware_optimization', True),
-                enable_parallel_processing=config.parallel_processing,
-                max_workers=config.max_workers,
-                verbose_logging=config.custom_params.get('verbose_logging', True)
+                custom_params=self._build_component_custom_params(config),
             )
 
-            # Create component
-            component = create_interactive_feature_generation_component(component_config)
+            component = ComponentFactory.create_component(
+                'interactive_feature_generation',
+                component_config,
+            )
             if hasattr(component, 'set_run_metadata'):
                 component.set_run_metadata(run_metadata)
 
@@ -2363,6 +3007,21 @@ class PreTrainingSubPipeline:
                 if result.error_message:
                     self._extend_messages(result.errors, [result.error_message])
 
+        except ValueError as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = str(e)
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            self.logger.error(f"❌ Interactive feature generation unavailable: {e}")
+            result.metadata = self._merge_run_metadata(result.metadata)
+            result.error_code = f"{self._default_step_error_code('interactive_feature_generation')}_UNAVAILABLE"
+            result.failure = self._create_failure(
+                'interactive_feature_generation',
+                result.error_code,
+                result.error_message,
+                exception=e,
+            )
+            self._extend_messages(result.errors, [result.error_message])
         except ImportError as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = f"Missing dependencies: {str(e)}"
@@ -2693,6 +3352,60 @@ class PreTrainingSubPipeline:
         """Execute a specific sub-pipeline."""
         if not self._run_metadata:
             self._run_metadata = self._gather_run_metadata(config)
+
+        self._refresh_component_registry()
+
+        spec = STEP_REGISTRY.get(sub_pipeline_name)
+        if spec and spec.component_key in self._missing_components:
+            available_components = ComponentFactory.get_available_components()
+            message = (
+                f"Component '{spec.component_key}' required for '{sub_pipeline_name}' is not registered."
+            )
+            error_code = f"{self._default_step_error_code(sub_pipeline_name)}_UNAVAILABLE"
+            now = datetime.now()
+            result = SubPipelineResult(
+                sub_pipeline_name=sub_pipeline_name,
+                status=SubPipelineStatus.FAILED,
+                start_time=now,
+                end_time=now,
+                duration_seconds=0.0,
+                success=False,
+                error_message=message,
+                error_code=error_code,
+            )
+            result.metadata = self._merge_run_metadata({'available_components': available_components})
+            result.failure = self._create_failure(
+                sub_pipeline_name,
+                error_code,
+                message,
+                context={
+                    'requested_component': spec.component_key,
+                    'available_components': available_components,
+                },
+            )
+            self.event_logger.error(
+                message,
+                context={
+                    'run_id': self._run_metadata.get('run_id'),
+                    'step': sub_pipeline_name,
+                    'symbol': config.symbol,
+                    'timeframe': config.timeframe,
+                    'requested_component': spec.component_key,
+                    'available_components': available_components,
+                },
+            )
+            return result
+
+        if sub_pipeline_name == 'multi_horizon_profit_labeler':
+            return await self._execute_multi_horizon_profit_labeler(config, self._run_metadata)
+        elif sub_pipeline_name == 'feature_lookback_optimization':
+            return await self._execute_feature_lookback_optimization(config, self._run_metadata)
+        elif sub_pipeline_name == 'optimized_lookback_generation':
+            return await self._execute_optimized_lookback_generation(config, self._run_metadata)
+        elif sub_pipeline_name == 'interactive_feature_generation':
+            return await self._execute_interactive_feature_generation(config, self._run_metadata)
+        elif sub_pipeline_name == 'final_feature_selection':
+            return await self._execute_final_feature_selection(config, self._run_metadata)
 
         spec = self._get_step_spec(sub_pipeline_name)
         if spec is None:

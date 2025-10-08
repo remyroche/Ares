@@ -93,14 +93,14 @@ class ComponentResult(_BaseComponentResult):
             error=error,
             error_message=error_message,
         )
-        self.artifacts = validated_bundle
+        self.artifact_bundle = validated_bundle
         details = {
             'success': self.success,
             'artifacts_keys': list(self.artifacts.keys()),
             'metadata_keys': list(self.metadata.keys()),
             'metrics_keys': list(self.metrics.keys()),
             'warnings': list(self.warnings),
-            'errors': [str(err) for err in self.errors],
+            'errors': [err.to_dict() for err in self.errors],
             'error': self.error_message,
             'execution_time': self.execution_time,
         }
@@ -223,10 +223,9 @@ class BasePreTrainingComponent(ABC):
 
         self._log_success(
             f"✅ Artifacts persisted for {component_name}",
-            {'correlation_id': report.correlation_id, 'artifact_count': len(artifact_payload)}
-            correlation_id=report.correlation_id,
-            artifact_count=len(artifacts),
             event='component_artifacts_persisted',
+            correlation_id=report.correlation_id,
+            artifact_count=len(artifact_payload),
             duration=report.duration,
         )
 

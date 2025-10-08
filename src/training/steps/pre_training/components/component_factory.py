@@ -6,20 +6,58 @@ import importlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, Optional, Set, Type
+from typing import Any, Dict, Iterable, Optional, Set, Type
 
 try:  # Python 3.10+
     from importlib import metadata as importlib_metadata
 except ImportError:  # pragma: no cover - fallback for older Python versions
     import importlib_metadata  # type: ignore
 
-from src.utils.tprint import (
-    tprint,
-    tprint_debug,
-    tprint_warning,
-)
+from src.utils.logger import system_logger
+from ..logging_utils import PreTrainingEventLogger, configure_pre_training_logging
 
 from .base_component import BasePreTrainingComponent, ComponentConfig
+
+logger = system_logger.getChild('PreTrainingComponentFactory')
+factory_event_logger = PreTrainingEventLogger(configure_pre_training_logging())
+
+
+def _factory_context(extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    payload = {
+        'step': 'component_factory',
+        'run_id': None,
+        'symbol': None,
+        'timeframe': None,
+        'rows_in': None,
+        'rows_out': None,
+    }
+    if extra:
+        payload.update(extra)
+    return payload
+
+
+def _log_info(message: str, **context: Any) -> None:
+    payload = _factory_context(context)
+    logger.info(message)
+    factory_event_logger.info(message, context=payload)
+
+
+def _log_warning(message: str, **context: Any) -> None:
+    payload = _factory_context(context)
+    logger.warning(message)
+    factory_event_logger.warning(message, context=payload)
+
+
+def _log_error(message: str, **context: Any) -> None:
+    payload = _factory_context(context)
+    logger.error(message)
+    factory_event_logger.error(message, context=payload)
+
+
+def _log_debug(message: str, **context: Any) -> None:
+    payload = _factory_context(context)
+    logger.debug(message)
+    factory_event_logger.info(message, context=payload)
 
 
 @dataclass
@@ -84,8 +122,10 @@ class ComponentRegistry:
         )
         self._components[name] = registration
         status = "available" if registration.available else "unavailable"
-        tprint_debug(
-            f"🧾 [PRE_TRAINING_FACTORY] Registered component '{name}' ({status})"
+        _log_debug(
+            f"🧾 [PRE_TRAINING_FACTORY] Registered component '{name}' ({status})",
+            component=name,
+            available=registration.available,
         )
         return registration
 
@@ -144,8 +184,10 @@ class ComponentRegistry:
         try:
             entry_points = importlib_metadata.entry_points()
         except Exception as exc:  # pragma: no cover - very defensive
-            tprint_warning(
-                f"⚠️ [PRE_TRAINING_FACTORY] Could not load entry points: {exc}"
+            _log_warning(
+                f"⚠️ [PRE_TRAINING_FACTORY] Could not load entry points: {exc}",
+                group=group,
+                error=str(exc),
             )
             return
 
@@ -257,9 +299,10 @@ class ComponentFactory:
     ) -> BasePreTrainingComponent:
         """Create and return a registered component instance."""
 
-        tprint(
+        _log_info(
             f"🏭 [PRE_TRAINING_FACTORY] Creating component: {component_name}",
-            color="cyan",
+            event='component_factory_create',
+            component=component_name,
         )
 
         cls._ensure_initialized()
@@ -267,35 +310,41 @@ class ComponentFactory:
         registration = cls.registry.get(component_name)
         if registration is None:
             available_components = list(cls.registry.available_components().keys())
-            tprint(
+            _log_error(
                 f"❌ [PRE_TRAINING_FACTORY] Unknown component: {component_name}",
-                color="red",
+                event='component_factory_unknown',
+                component=component_name,
             )
-            tprint(
+            _log_info(
                 f"📊 [PRE_TRAINING_FACTORY] Available components: {available_components}",
-                color="cyan",
+                event='component_factory_available_list',
+                available_components=available_components,
             )
             raise ValueError(
                 f"Unknown component: {component_name}. Available components: {available_components}"
             )
 
-        tprint(
+        _log_info(
             f"🔧 [PRE_TRAINING_FACTORY] Creating {component_name} from registered components",
-            color="yellow",
+            event='component_factory_instantiate',
+            component=component_name,
         )
 
         try:
             component = registration.instantiate(config)
         except ValueError as exc:
-            tprint(
+            _log_error(
                 f"❌ [PRE_TRAINING_FACTORY] Component {component_name} is not available: {exc}",
-                color="red",
+                event='component_factory_unavailable',
+                component=component_name,
+                error=str(exc),
             )
             raise
 
-        tprint(
+        _log_info(
             f"✅ [PRE_TRAINING_FACTORY] Successfully created {component_name}",
-            color="green",
+            event='component_factory_created',
+            component=component_name,
         )
         return component
 
@@ -308,7 +357,11 @@ class ComponentFactory:
         """Register a component class with the factory."""
 
         cls.registry.register(name, component_class)
-        tprint(f"🧾 [PRE_TRAINING_FACTORY] Registered component: {name}", color="blue")
+        _log_info(
+            f"🧾 [PRE_TRAINING_FACTORY] Registered component: {name}",
+            event='component_factory_register',
+            component=name,
+        )
 
     @classmethod
     def get_available_components(cls) -> list[str]:
@@ -316,9 +369,10 @@ class ComponentFactory:
 
         cls._ensure_initialized()
         available = list(cls.registry.available_components().keys())
-        tprint(
+        _log_info(
             f"📋 [PRE_TRAINING_FACTORY] Available components: {available}",
-            color="magenta",
+            event='component_factory_available_components',
+            available_components=available,
         )
         return available
 
@@ -329,9 +383,11 @@ class ComponentFactory:
         cls._ensure_initialized()
         registration = cls.registry.get(component_name)
         available = bool(registration and registration.available)
-        tprint(
+        _log_info(
             f"🔍 [PRE_TRAINING_FACTORY] Component '{component_name}' available: {available}",
-            color="yellow",
+            event='component_factory_availability',
+            component=component_name,
+            available=available,
         )
         return available
 
@@ -363,12 +419,17 @@ class ComponentFactory:
 
         try:
             importlib.import_module(module_path)
-            tprint_debug(
-                f"📦 [PRE_TRAINING_FACTORY] Imported component module '{module_path}'"
+            _log_debug(
+                f"📦 [PRE_TRAINING_FACTORY] Imported component module '{module_path}'",
+                module=module_path,
+                event='component_factory_module_imported',
             )
         except Exception as exc:
-            tprint_warning(
-                f"⚠️ [PRE_TRAINING_FACTORY] Could not import '{module_path}': {exc}"
+            _log_warning(
+                f"⚠️ [PRE_TRAINING_FACTORY] Could not import '{module_path}': {exc}",
+                module=module_path,
+                error=str(exc),
+                event='component_factory_module_import_failed',
             )
 
     @classmethod
@@ -396,8 +457,11 @@ class ComponentFactory:
                     if line.strip() and not line.strip().startswith("#")
                 ]
         except Exception as exc:  # pragma: no cover - defensive I/O guard
-            tprint_warning(
-                f"⚠️ [PRE_TRAINING_FACTORY] Failed to read extra modules file: {exc}"
+            _log_warning(
+                f"⚠️ [PRE_TRAINING_FACTORY] Failed to read extra modules file: {exc}",
+                file=str(cls.EXTRA_MODULES_FILE),
+                error=str(exc),
+                event='component_factory_module_file_failed',
             )
             return []
 

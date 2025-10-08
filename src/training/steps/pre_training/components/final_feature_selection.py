@@ -19,7 +19,7 @@ from src.training.common.artifact_persistence import SaveReport
 from src.training.common.component_result import ComponentError
 from .component_factory import register_component
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint
+from ..logging_utils import PreTrainingEventLogger, configure_pre_training_logging
 from ...market_analysis.logging_standards import (
     get_logger, log_info, log_warning, log_error, log_success, log_debug,
     LoggingContext, log_step_progress, log_data_info, log_validation_result
@@ -38,6 +38,64 @@ from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
 from src.utils.hardware.adaptive_optimization_engine import AdaptiveOptimizationEngine
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
 from src.training.config.data_locator import DataLocator
+
+
+component_logger = system_logger.getChild('FinalFeatureSelectionComponent')
+component_event_logger = PreTrainingEventLogger(configure_pre_training_logging())
+
+
+def _prepare_context(args: tuple[Any, ...], kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    context: Dict[str, Any] = {}
+    if args:
+        extra = args[0]
+        if isinstance(extra, dict):
+            context.update(extra)
+    for key, value in kwargs.items():
+        if key != 'color':
+            context[key] = value
+    context.setdefault('step', 'component.final_feature_selection')
+    context.setdefault('component', 'FinalFeatureSelection')
+    return context
+
+
+def _log_event(level: str, message: str, *args: Any, **kwargs: Any) -> None:
+    context = _prepare_context(args, kwargs)
+    if level == 'warning':
+        component_logger.warning(message)
+        component_event_logger.warning(message, context=context)
+    elif level == 'error':
+        component_logger.error(message)
+        component_event_logger.error(message, context=context)
+    elif level == 'debug':
+        component_logger.debug(message)
+        component_event_logger.info(message, context=context)
+    else:
+        component_logger.info(message)
+        component_event_logger.info(message, context=context)
+
+
+def tprint(message: str, *args: Any, **kwargs: Any) -> None:
+    _log_event('info', message, *args, **kwargs)
+
+
+def tprint_info(message: str, *args: Any, **kwargs: Any) -> None:
+    _log_event('info', message, *args, **kwargs)
+
+
+def tprint_warning(message: str, *args: Any, **kwargs: Any) -> None:
+    _log_event('warning', message, *args, **kwargs)
+
+
+def tprint_error(message: str, *args: Any, **kwargs: Any) -> None:
+    _log_event('error', message, *args, **kwargs)
+
+
+def tprint_success(message: str, *args: Any, **kwargs: Any) -> None:
+    _log_event('info', message, *args, **kwargs, status='success')
+
+
+def tprint_debug(message: str, *args: Any, **kwargs: Any) -> None:
+    _log_event('debug', message, *args, **kwargs)
 
 
 CONFIG_ROOT_ENV = "ARES_CONFIG_ROOT"

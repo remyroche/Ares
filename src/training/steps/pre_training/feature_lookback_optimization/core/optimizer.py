@@ -2955,7 +2955,8 @@ class CoreOptimizer:
         if locator is not None:
             config_path = locator.config_path('multi_horizon_labeling')
         else:
-            config_path = Path('src/config/multi_horizon_labeling_config.yaml')
+            default_locator = PipelineDataLocator()
+            config_path = default_locator.config_path('multi_horizon_labeling')
 
         if config_path.exists():
             try:

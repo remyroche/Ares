@@ -218,9 +218,13 @@ class BasePreTrainingComponent(ABC):
             logger=self.logger,
         )
 
-        tprint_success(
+        self._log_success(
             f"✅ Artifacts persisted for {component_name}",
             {'correlation_id': report.correlation_id, 'artifact_count': len(artifact_payload)}
+            correlation_id=report.correlation_id,
+            artifact_count=len(artifacts),
+            event='component_artifacts_persisted',
+            duration=report.duration,
         )
 
         return report

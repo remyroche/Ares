@@ -44,8 +44,9 @@ LABELED_DATASET_SCHEMA = pa.DataFrameSchema(
 
 
 ENGINEERED_FEATURE_SCHEMA = pa.DataFrameSchema(
-    columns={},
-    dtype=pa.Float64,
+    columns={
+        r"^.+$": pa.Column(pa.Float64, regex=True, required=False, coerce=True, nullable=False),
+    },
     index=pa.Index(pa.DateTime, coerce=True, nullable=False),
     strict=False,
     coerce=True,

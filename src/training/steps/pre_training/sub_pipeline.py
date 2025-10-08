@@ -99,6 +99,8 @@ class SubPipelineConfig:
     metrics_output_format: str = "csv"
     metrics_prometheus_enabled: bool = False
     step_time_budgets: Dict[str, float] = field(default_factory=lambda: DEFAULT_STEP_TIME_BUDGETS.copy())
+    market_data_batch_size: Optional[int] = None
+    market_data_window_days: Optional[int] = None
     data_locator_config: DataLocatorConfig = field(default_factory=DataLocatorConfig)
     data_locator: Optional[DataLocator] = None
     data_dir_key: str = "market_data"
@@ -1104,8 +1106,11 @@ class PreTrainingSubPipeline:
             'data_locator': locator,
             'custom_params': self._build_component_custom_params(config),
             'quality_thresholds': self._get_quality_thresholds(config),
+            'market_data_batch_size': config.market_data_batch_size,
+            'market_data_window_days': config.market_data_window_days,
         }
 
+        pipeline_state.update({k: v for k, v in self._current_pipeline_state.items() if k not in pipeline_state})
         if self._seeded_rngs is not None:
             pipeline_state['random_seed'] = self._seeded_rngs.seed
             pipeline_state['python_rng'] = self._seeded_rngs.python
@@ -1145,8 +1150,50 @@ class PreTrainingSubPipeline:
         if self._active_seed is not None:
             params.setdefault('random_seed', self._active_seed)
         params.setdefault('quality_thresholds', self._get_quality_thresholds(config))
+        if config.market_data_batch_size is not None:
+            params.setdefault('market_data_batch_size', config.market_data_batch_size)
+        if config.market_data_window_days is not None:
+            params.setdefault('market_data_window_days', config.market_data_window_days)
         return params
 
+    def _prepare_interactive_training_input(
+        self,
+        pipeline_state: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Prepare the training input dictionary for interaction feature generation."""
+
+        mh_result = pipeline_state.get('multi_horizon_labeling_result')
+        if mh_result is None:
+            mh_result = self._current_pipeline_state.get('multi_horizon_labeling_result', {})
+
+        if not mh_result:
+            raise ValueError("Multi-horizon labeling result is required for interactive feature generation")
+
+        market_data_batches = mh_result.get('market_data_batches')
+        market_data = mh_result.get('market_data')
+
+        if market_data is None and market_data_batches:
+            market_data = pd.concat(market_data_batches, axis=0).sort_index()
+
+        if market_data is None:
+            raise ValueError("Market data is missing from multi-horizon labeling result")
+
+        labels_df = mh_result.get('labeled_data')
+        if labels_df is None or (isinstance(labels_df, pd.DataFrame) and labels_df.empty):
+            labels_df = mh_result.get('labels')
+        targets: Dict[str, pd.Series] = {}
+        if isinstance(labels_df, pd.DataFrame):
+            targets = {column: labels_df[column] for column in labels_df.columns}
+
+        training_input: Dict[str, Any] = {
+            'data': market_data,
+            'targets': targets,
+        }
+
+        if market_data_batches:
+            training_input['data_batches'] = list(market_data_batches)
+
+        return training_input
     def _resolve_random_seed(self, config: SubPipelineConfig) -> int:
         """Resolve the seed for deterministic execution."""
         env_seed = os.environ.get('ARES_RANDOM_SEED')
@@ -1349,7 +1396,8 @@ class PreTrainingSubPipeline:
 
             # Execute component
             pipeline_state = self._prepare_component_pipeline_state(config)
-            component_result = await component.execute(None, pipeline_state)
+            training_input = self._prepare_interactive_training_input(pipeline_state)
+            component_result = await component.execute(training_input, pipeline_state)
             component_result.metadata = self._merge_run_metadata(component_result.metadata)
 
             result.status = SubPipelineStatus.COMPLETED if component_result.success else SubPipelineStatus.FAILED

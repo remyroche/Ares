@@ -49,6 +49,12 @@ from src.utils.random_seeding import SeededRNGs, seed_rngs
 from .components import ComponentFactory, ComponentConfig
 from .metrics_sink import MetricsSink, MetricsSinkConfig
 from src.training.config.data_locator import DataLocator, DataLocatorConfig
+from src.training.steps.pre_training.validation.data_contracts import (
+    DataContractValidationError,
+    validate_feature_artifact,
+    validate_multi_horizon_labeling_result,
+    validate_selection_artifact,
+)
 
 logger = system_logger.getChild('PreTrainingSubPipeline')
 
@@ -252,6 +258,29 @@ class PreTrainingSubPipeline:
             raw_exception=exception,
         )
         return failure
+
+    def _handle_contract_error(
+        self,
+        result: SubPipelineResult,
+        step_name: str,
+        error: DataContractValidationError,
+    ) -> SubPipelineResult:
+        """Convert a data contract validation error into a structured failure."""
+
+        result.status = SubPipelineStatus.FAILED
+        result.success = False
+        result.error_message = str(error)
+        result.error_code = f"{self._default_step_error_code(step_name)}_CONTRACT"
+        result.failure = self._create_failure(
+            step_name,
+            result.error_code,
+            result.error_message,
+            context={
+                'contract_context': error.context,
+                'contract_issues': error.errors,
+            },
+        )
+        return result
 
     def _resolve_failure_from_result(
         self,
@@ -1411,6 +1440,19 @@ class PreTrainingSubPipeline:
                 self._default_step_error_code('multi_horizon_profit_labeler'),
             )
             if component_result.success:
+                try:
+                    artifacts = component_result.artifacts or {}
+                    if 'multi_horizon_labeling_result' in artifacts:
+                        validated_contract = validate_multi_horizon_labeling_result(
+                            artifacts['multi_horizon_labeling_result'],
+                            context='sub_pipeline.multi_horizon_profit_labeler',
+                        )
+                        artifacts['multi_horizon_labeling_result'] = validated_contract
+                        result.artifacts = artifacts
+                except DataContractValidationError as contract_error:
+                    tprint_error(f"❌ {contract_error}")
+                    return self._handle_contract_error(result, 'multi_horizon_profit_labeler', contract_error)
+
                 quality_metrics, quality_alerts = self._analyze_component_quality(
                     'multi_horizon_profit_labeler',
                     result.artifacts,
@@ -1674,6 +1716,20 @@ class PreTrainingSubPipeline:
                 self._default_step_error_code('interactive_feature_generation'),
             )
             if component_result.success:
+                try:
+                    artifacts = component_result.artifacts or {}
+                    feature_payload = artifacts.get('interactive_feature_generation_result')
+                    if feature_payload:
+                        validated_features = validate_feature_artifact(
+                            feature_payload,
+                            context='sub_pipeline.interactive_feature_generation',
+                        )
+                        artifacts['interactive_feature_generation_result'] = validated_features
+                        result.artifacts = artifacts
+                except DataContractValidationError as contract_error:
+                    tprint_error(f"❌ {contract_error}")
+                    return self._handle_contract_error(result, 'interactive_feature_generation', contract_error)
+
                 quality_metrics, quality_alerts = self._analyze_component_quality(
                     'interactive_feature_generation',
                     result.artifacts,
@@ -1906,6 +1962,20 @@ class PreTrainingSubPipeline:
                 self._default_step_error_code('final_feature_selection'),
             )
             if component_result.success:
+                try:
+                    artifacts = component_result.artifacts or {}
+                    selection_payload = artifacts.get('final_feature_selection_result')
+                    if selection_payload and 'final_features' in selection_payload:
+                        validated_selection = validate_selection_artifact(
+                            selection_payload,
+                            context='sub_pipeline.final_feature_selection',
+                        )
+                        artifacts['final_feature_selection_result'] = validated_selection
+                        result.artifacts = artifacts
+                except DataContractValidationError as contract_error:
+                    tprint_error(f"❌ {contract_error}")
+                    return self._handle_contract_error(result, 'final_feature_selection', contract_error)
+
                 quality_metrics, quality_alerts = self._analyze_component_quality(
                     'final_feature_selection',
                     result.artifacts,

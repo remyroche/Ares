@@ -41,6 +41,10 @@ from src.utils.tprint import (
     tprint_warning,
 )
 from src.training.config.data_locator import DataLocator
+from src.training.steps.pre_training.validation.data_contracts import (
+    DataContractValidationError,
+    validate_selection_artifact,
+)
 
 class FinalFeatureSelectionStep:
     """Final feature selection step for market analysis pipeline."""
@@ -667,15 +671,40 @@ class FinalFeatureSelectionStep:
         # Run feature selection in a thread pool to avoid blocking
         loop = asyncio.get_event_loop()
         selection_result = await loop.run_in_executor(
-            None, 
-            self._run_selection_sync, 
+            None,
+            self._run_selection_sync,
             X, y
         )
-        
+
+        selection_payload = {
+            'final_features': list(getattr(selection_result, 'final_features', []) or []),
+            'stage_1_features': list(getattr(selection_result, 'stage_1_features', []) or []),
+            'stage_2_features': list(getattr(selection_result, 'stage_2_features', []) or []),
+            'stage_3_features': list(getattr(selection_result, 'stage_3_features', []) or []),
+            'feature_counts': dict(getattr(selection_result, 'feature_counts', {})),
+            'stage_scores': {
+                'stage_1': dict(getattr(selection_result, 'stage_1_scores', {})),
+                'stage_2': dict(getattr(selection_result, 'stage_2_scores', {})),
+                'stage_3': dict(getattr(selection_result, 'stage_3_scores', {})),
+                'final': dict(getattr(selection_result, 'final_scores', {})),
+            },
+            'selection_time': getattr(selection_result, 'selection_time', None),
+            'is_unsupervised': getattr(selection_result, 'is_unsupervised', None),
+        }
+
+        try:
+            validate_selection_artifact(
+                selection_payload,
+                context='final_feature_selection_step.selection_result',
+            )
+        except DataContractValidationError as contract_error:
+            tprint_error(f"❌ Selection result failed validation: {contract_error}")
+            raise
+
         tprint("✅ Multi-stage feature selection completed")
         tprint(f"   📊 Final features: {len(selection_result.final_features)}")
         tprint(f"   ⏱️ Selection time: {selection_result.selection_time:.3f} seconds")
-        
+
         return selection_result
     
     def _run_selection_sync(self, X: pd.DataFrame, y: Optional[pd.Series]) -> Any:

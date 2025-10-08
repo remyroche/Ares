@@ -48,7 +48,12 @@ from src.training.steps.pre_training.validation.schemas import (
     schema_metadata,
     validate_engineered_features,
     validate_labeled_dataset,
-    validate_raw_ohlcv
+    validate_raw_ohlcv,
+)
+from src.training.steps.pre_training.validation.data_contracts import (
+    DataContractValidationError,
+    validate_multi_horizon_labeling_result,
+)
 from src.training.steps.pre_training.column_naming import (
     ColumnNamespace,
     ensure_dataframe_namespace,
@@ -733,6 +738,15 @@ class MultiHorizonProfitLabeler:
                     }
                 }
             }
+
+            try:
+                artifacts['multi_horizon_labeling_result'] = validate_multi_horizon_labeling_result(
+                    artifacts['multi_horizon_labeling_result'],
+                    context='multi_horizon_profit_labeler.artifacts.multi_horizon_labeling_result',
+                )
+            except DataContractValidationError as contract_error:
+                tprint_error(f"❌ Data contract validation error: {contract_error}")
+                raise
 
             validation_metadata = {
                 'inputs': {

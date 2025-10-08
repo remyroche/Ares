@@ -22,6 +22,15 @@ from sklearn.gaussian_process.kernels import RBF, WhiteKernel
 import warnings
 warnings.filterwarnings('ignore')
 
+try:
+    from src.utils.tprint import tprint
+except ImportError:  # pragma: no cover - fallback for different package layouts
+    try:
+        from utils.tprint import tprint  # type: ignore
+    except ImportError:  # pragma: no cover - last resort fallback
+        def tprint(*args, **kwargs):
+            print(*args, **kwargs)
+
 # Local imports
 from .phase1_probe import HTFFeatureGenerator
 from .config import OptimizationConfig
@@ -76,7 +85,7 @@ class LocalGridGenerator:
         self.config = config
         self.logger = logging.getLogger(__name__)
     
-    def generate_local_grid(self, 
+    def generate_local_grid(self,
                           base_lookback: int,
                           family: str) -> List[int]:
         """
@@ -89,6 +98,9 @@ class LocalGridGenerator:
         Returns:
             List of lookback values for local optimization
         """
+        tprint(
+            f"[LocalGrid] Generating grid for family={family} base={base_lookback}"
+        )
         # Local grid factor determines spread around base
         factor = self.config.local_grid_factor
         
@@ -110,8 +122,13 @@ class LocalGridGenerator:
         # Add base lookback if not already included
         if base_lookback not in grid_points:
             grid_points.append(base_lookback)
-        
-        return sorted(list(set(grid_points)))
+
+        unique_grid = sorted(list(set(grid_points)))
+        tprint(
+            f"[LocalGrid] Generated grid for family={family} base={base_lookback}: {unique_grid}"
+        )
+
+        return unique_grid
 
 
 class ICSurfaceFitter:
@@ -121,7 +138,7 @@ class ICSurfaceFitter:
         self.method = method
         self.logger = logging.getLogger(__name__)
     
-    def fit_ic_surface(self, 
+    def fit_ic_surface(self,
                       lookbacks: List[int],
                       ics: List[float],
                       ses: List[float]) -> Dict[str, Any]:
@@ -136,6 +153,10 @@ class ICSurfaceFitter:
         Returns:
             Dictionary with fitted surface and optimization results
         """
+        tprint(
+            f"[ICSurface] Fitting method={self.method} with {len(lookbacks)} points"
+        )
+
         if len(lookbacks) < 3:
             return self._simple_fit(lookbacks, ics, ses)
         
@@ -162,8 +183,18 @@ class ICSurfaceFitter:
             spline = UnivariateSpline(log_lookbacks, ics, w=weights, s=len(ics))
             
             # Find optimal point
+            evaluation_counter = {'count': 0}
+
             def objective(log_lb):
-                return -spline(log_lb)
+                value = -spline(log_lb)
+                if evaluation_counter['count'] < 5:
+                    tprint(
+                        "[ICSurface][Spline] Objective evaluation",
+                        f"lookback={np.exp(log_lb):.2f}",
+                        f"value={value:.6f}",
+                    )
+                evaluation_counter['count'] += 1
+                return value
             
             result = optimize.minimize_scalar(objective, 
                                             bounds=(log_lookbacks.min(), log_lookbacks.max()),
@@ -179,6 +210,12 @@ class ICSurfaceFitter:
                 spline, log_lookbacks, ics, ses
             )
             
+            tprint(
+                "[ICSurface][Spline] Optimal",
+                f"lookback={optimal_lookback:.2f}",
+                f"ic={optimal_ic:.6f}",
+            )
+
             return {
                 'method': 'spline',
                 'spline': spline,
@@ -206,9 +243,20 @@ class ICSurfaceFitter:
             gp.fit(log_lookbacks.reshape(-1, 1), ics)
             
             # Find optimal point
+            evaluation_counter = {'count': 0}
+
             def objective(log_lb):
                 pred, std = gp.predict([[log_lb]], return_std=True)
-                return -pred[0]  # Minimize negative IC
+                value = -pred[0]  # Minimize negative IC
+                if evaluation_counter['count'] < 5:
+                    tprint(
+                        "[ICSurface][GP] Objective evaluation",
+                        f"lookback={np.exp(log_lb):.2f}",
+                        f"pred_ic={pred[0]:.6f}",
+                        f"value={value:.6f}",
+                    )
+                evaluation_counter['count'] += 1
+                return value
             
             result = optimize.minimize_scalar(objective,
                                             bounds=(log_lookbacks.min(), log_lookbacks.max()),
@@ -223,6 +271,13 @@ class ICSurfaceFitter:
             ci_lower = pred[0] - 1.96 * std[0]
             ci_upper = pred[0] + 1.96 * std[0]
             
+            tprint(
+                "[ICSurface][GP] Optimal",
+                f"lookback={optimal_lookback:.2f}",
+                f"ic={optimal_ic:.6f}",
+                f"ci=({ci_lower:.6f}, {ci_upper:.6f})",
+            )
+
             return {
                 'method': 'gp',
                 'gp': gp,
@@ -257,6 +312,12 @@ class ICSurfaceFitter:
         ci_lower = optimal_ic - 1.96 * ci_std
         ci_upper = optimal_ic + 1.96 * ci_std
         
+        tprint(
+            "[ICSurface][Simple] Weighted optimum",
+            f"lookback={optimal_lookback}",
+            f"ic={optimal_ic:.6f}",
+        )
+
         return {
             'method': 'simple',
             'optimal_lookback': optimal_lookback,
@@ -299,7 +360,7 @@ class HierarchicalShrinkage:
         self.config = config
         self.logger = logging.getLogger(__name__)
     
-    def fit_hierarchical_model(self, 
+    def fit_hierarchical_model(self,
                              feature_results: List[Dict[str, Any]],
                              regime_segments: List[Any]) -> Dict[str, Any]:
         """
@@ -312,15 +373,22 @@ class HierarchicalShrinkage:
         Returns:
             Hierarchical shrinkage results
         """
+        tprint(
+            f"[Hierarchical] Starting shrinkage across {len(feature_results)} features"
+        )
+
         if not feature_results:
             return {}
-        
+
         # Group results by feature family and regime
         grouped_results = self._group_results_by_family_regime(feature_results, regime_segments)
-        
+
         shrinkage_results = {}
-        
+
         for (family, regime), results in grouped_results.items():
+            tprint(
+                f"[Hierarchical] Processing family={family} regime={regime} count={len(results)}"
+            )
             if len(results) < 2:  # Need multiple symbols for shrinkage
                 continue
             
@@ -338,7 +406,10 @@ class HierarchicalShrinkage:
             )
             
             shrinkage_results[f"{family}_{regime}"] = shrinkage_result
-        
+
+        tprint(
+            f"[Hierarchical] Completed shrinkage with {len(shrinkage_results)} combinations"
+        )
         return shrinkage_results
     
     def _group_results_by_family_regime(self, 
@@ -367,10 +438,20 @@ class HierarchicalShrinkage:
         """Fit hierarchical model for a specific family-regime combination."""
         
         if PYMCMC_AVAILABLE and len(log_lookbacks) >= 3:
+            tprint(
+                "[Hierarchical] Using Bayesian model",
+                f"family={family}",
+                f"regime={regime}",
+            )
             return self._fit_bayesian_hierarchical_model(
                 family, regime, log_lookbacks, log_uncertainties, results
             )
         else:
+            tprint(
+                "[Hierarchical] Using empirical model",
+                f"family={family}",
+                f"regime={regime}",
+            )
             return self._fit_empirical_hierarchical_model(
                 family, regime, log_lookbacks, log_uncertainties, results
             )
@@ -409,7 +490,7 @@ class HierarchicalShrinkage:
             hdi = az.hdi(trace, var_names=['z_latent'])
             hdi_width = np.mean(hdi.z_latent.values[:, 1] - hdi.z_latent.values[:, 0])
             
-            return HierarchicalShrinkageResult(
+            shrinkage_summary = HierarchicalShrinkageResult(
                 feature_name=f"{family}_{regime}",
                 family=family,
                 regime=regime,
@@ -421,6 +502,16 @@ class HierarchicalShrinkage:
                 hdi_width=hdi_width,
                 metadata={'method': 'bayesian', 'n_samples': len(log_lookbacks)}
             )
+
+            tprint(
+                "[Hierarchical][Bayesian]",
+                f"family={family}",
+                f"regime={regime}",
+                f"shrinkage={shrinkage_summary.shrinkage_factor:.3f}",
+                f"hdi_width={shrinkage_summary.hdi_width:.3f}",
+            )
+
+            return shrinkage_summary
             
         except Exception as e:
             self.logger.warning(f"Bayesian hierarchical model failed: {e}, using empirical")
@@ -445,7 +536,7 @@ class HierarchicalShrinkage:
         # HDI approximation
         hdi_width = 2 * 1.96 * pooled_std
         
-        return HierarchicalShrinkageResult(
+        shrinkage_summary = HierarchicalShrinkageResult(
             feature_name=f"{family}_{regime}",
             family=family,
             regime=regime,
@@ -457,6 +548,16 @@ class HierarchicalShrinkage:
             hdi_width=hdi_width,
             metadata={'method': 'empirical', 'n_samples': len(log_lookbacks)}
         )
+
+        tprint(
+            "[Hierarchical][Empirical]",
+            f"family={family}",
+            f"regime={regime}",
+            f"shrinkage={shrinkage_summary.shrinkage_factor:.3f}",
+            f"hdi_width={shrinkage_summary.hdi_width:.3f}",
+        )
+
+        return shrinkage_summary
 
 
 class ExportDecisionMaker:
@@ -490,11 +591,19 @@ class ExportDecisionMaker:
         # Check if regime optima differ significantly
         regime_difference = 0.0
         if hierarchical_result:
-            regime_difference = abs(np.log(hierarchical_result.regime_optimal) - 
+            regime_difference = abs(np.log(hierarchical_result.regime_optimal) -
                                   np.log(hierarchical_result.pooled_optimal))
-        
+
         significant_regime_difference = regime_difference > 0.25
-        
+
+        tprint(
+            "[Export] Evaluating decision",
+            f"optimal={optimal_lookback:.2f}",
+            f"tight={tight_posterior}",
+            f"regime_diff={regime_difference:.3f}",
+            f"ci={confidence_interval}",
+        )
+
         # Decision logic
         if tight_posterior and not significant_regime_difference:
             # Discrete export
@@ -509,10 +618,10 @@ class ExportDecisionMaker:
         """Create discrete export strategy."""
         # Snap to canonical lookbacks
         canonical_lookbacks = [15, 30, 60, 90, 120, 180, 240, 298]
-        closest_canonical = min(canonical_lookbacks, 
+        closest_canonical = min(canonical_lookbacks,
                               key=lambda x: abs(x - optimal_lookback))
-        
-        return {
+
+        decision = {
             'export_type': 'discrete',
             'optimal_lookback': closest_canonical,
             'confidence_interval': ic_surface_result['confidence_interval'],
@@ -523,6 +632,14 @@ class ExportDecisionMaker:
                 'canonical_mapping': closest_canonical
             }
         }
+
+        tprint(
+            "[Export][Discrete]",
+            f"selected={closest_canonical}",
+            f"original={optimal_lookback}",
+        )
+
+        return decision
     
     def _create_blend_export(self, 
                            ic_surface_result: Dict[str, Any],
@@ -555,8 +672,8 @@ class ExportDecisionMaker:
         blend_weights = self._calculate_blend_weights(
             optimal_lookback, lower_lookback, upper_lookback
         )
-        
-        return {
+
+        decision = {
             'export_type': 'blend',
             'optimal_lookback': optimal_lookback,
             'confidence_interval': ic_surface_result['confidence_interval'],
@@ -567,6 +684,16 @@ class ExportDecisionMaker:
                 'upper_lookback': upper_lookback
             }
         }
+
+        tprint(
+            "[Export][Blend]",
+            f"optimal={optimal_lookback}",
+            f"lower={lower_lookback}",
+            f"upper={upper_lookback}",
+            f"weights={blend_weights}",
+        )
+
+        return decision
     
     def _calculate_blend_weights(self, 
                                optimal: int,
@@ -575,7 +702,9 @@ class ExportDecisionMaker:
         """Calculate blend weights using ridge regression."""
         # Simple linear interpolation weights
         if upper == lower:
-            return {lower: 1.0, upper: 0.0}
+            weights = {lower: 1.0, upper: 0.0}
+            tprint("[Export][BlendWeights] Degenerate range", weights)
+            return weights
         
         weight_lower = (upper - optimal) / (upper - lower)
         weight_upper = (optimal - lower) / (upper - lower)
@@ -590,7 +719,10 @@ class ExportDecisionMaker:
             weight_lower /= total_weight
             weight_upper /= total_weight
         
-        return {lower: weight_lower, upper: weight_upper}
+        weights = {lower: weight_lower, upper: weight_upper}
+        tprint("[Export][BlendWeights]", weights)
+
+        return weights
 
 
 class Phase2Optimization:
@@ -607,7 +739,7 @@ class Phase2Optimization:
         self.export_decision_maker = ExportDecisionMaker(config)
         self.htf_feature_generator: Optional[HTFFeatureGenerator] = None
     
-    def optimize_lookbacks(self, 
+    def optimize_lookbacks(self,
                          sessionized_data: Dict[str, Any],
                          phase1_results: Dict[str, Any],
                          regime_segments: Dict[str, Any],
@@ -625,26 +757,47 @@ class Phase2Optimization:
             Phase-2 optimization results
         """
         self.logger.info("Starting Phase-2 optimization")
-        
+        tprint("[Phase2] Starting optimization run")
+
         shortlisted_candidates = phase1_results.get('shortlisted_candidates', [])
-        
+
         if not shortlisted_candidates:
             self.logger.warning("No shortlisted candidates from Phase-1")
+            tprint("[Phase2] No shortlisted candidates available")
             return {'optimized_features': [], 'hierarchical_results': {}}
-        
+
         # Process each shortlisted candidate
         optimized_features = []
-        
+
         for candidate in shortlisted_candidates:
             try:
+                tprint(
+                    "[Phase2] Optimizing candidate",
+                    f"feature={candidate.base_feature}",
+                    f"lookback={getattr(candidate, 'lookback_minutes', 'n/a')}",
+                    f"family={getattr(candidate, 'family', 'unknown')}",
+                )
                 # Generate local grid
                 local_grid = self.local_grid_generator.generate_local_grid(
                     candidate.lookback_minutes, candidate.family
                 )
-                
+
+                tprint(
+                    "[Phase2] Local grid",
+                    f"feature={candidate.base_feature}",
+                    f"grid={local_grid}",
+                )
+
                 # Fit IC surface
                 ic_surface_result = self._fit_ic_surface_for_candidate(
                     candidate, local_grid, sessionized_data, targets
+                )
+
+                tprint(
+                    "[Phase2] IC surface result",
+                    f"feature={candidate.base_feature}",
+                    f"optimal={ic_surface_result.get('optimal_lookback')}",
+                    f"ic={ic_surface_result.get('optimal_ic'):.6f}",
                 )
 
                 optimal_lookback_value = int(round(ic_surface_result['optimal_lookback']))
@@ -675,19 +828,36 @@ class Phase2Optimization:
                     metadata=dict(ic_surface_result),
                     adaptive_score=adaptive_score,
                 )
-                
+
                 optimized_features.append(local_grid_result)
-                
+
+                tprint(
+                    "[Phase2] Candidate optimized",
+                    f"feature={candidate.base_feature}",
+                    f"optimal={optimal_lookback_value}",
+                    f"export={local_grid_result.export_type}",
+                )
+
             except Exception as e:
                 self.logger.warning(f"Failed to optimize {candidate.base_feature}: {e}")
+                tprint(
+                    "[Phase2] Candidate optimization failed",
+                    f"feature={getattr(candidate, 'base_feature', 'unknown')}",
+                    f"error={e}",
+                )
                 continue
-        
+
         # Apply hierarchical shrinkage
         hierarchical_results = self.hierarchical_shrinkage.fit_hierarchical_model(
             [self._local_grid_to_dict(f) for f in optimized_features],
             regime_segments.get('segments', [])
         )
-        
+
+        tprint(
+            "[Phase2] Hierarchical shrinkage completed",
+            f"groups={len(hierarchical_results)}",
+        )
+
         # Make export decisions
         final_features = []
         for feature in optimized_features:
@@ -702,21 +872,32 @@ class Phase2Optimization:
             export_decision = self.export_decision_maker.decide_export_strategy(
                 self._local_grid_to_dict(feature), hierarchical_result
             )
-            
+
             # Update feature with export decision
             feature.export_type = export_decision['export_type']
             feature.blend_weights = export_decision['blend_weights']
             feature.optimal_lookback = export_decision['optimal_lookback']
-            
+
             final_features.append(feature)
-        
+
+            tprint(
+                "[Phase2] Export decision",
+                f"feature={feature.feature_name}",
+                f"type={feature.export_type}",
+                f"lookback={feature.optimal_lookback}",
+            )
+
         results = {
             'optimized_features': final_features,
             'hierarchical_results': hierarchical_results,
             'export_decisions': [self._local_grid_to_dict(f) for f in final_features]
         }
-        
+
         self.logger.info(f"Phase-2 optimization completed: {len(final_features)} features optimized")
+        tprint(
+            "[Phase2] Optimization complete",
+            f"features={len(final_features)}",
+        )
         return results
     
     def _fit_ic_surface_for_candidate(self,
@@ -731,7 +912,13 @@ class Phase2Optimization:
         # Simulate IC surface (in practice, you'd compute actual HTF features)
         ics = []
         ses = []
-        
+
+        tprint(
+            "[Phase2][ICSurface] Simulating surface",
+            f"feature={candidate.base_feature}",
+            f"grid={local_grid}",
+        )
+
         for lookback in local_grid:
             # Simulate IC based on lookback (simplified)
             base_ic = candidate.ic_oos
@@ -750,7 +937,14 @@ class Phase2Optimization:
         # Add surface data
         ic_surface_result['ic_surface'] = dict(zip(local_grid, ics))
         ic_surface_result['se_surface'] = dict(zip(local_grid, ses))
-        
+
+        tprint(
+            "[Phase2][ICSurface] Completed",
+            f"feature={candidate.base_feature}",
+            f"optimal={ic_surface_result.get('optimal_lookback')}",
+            f"ic={ic_surface_result.get('optimal_ic'):.6f}",
+        )
+
         return ic_surface_result
 
     def _local_grid_to_dict(self, local_grid_result: LocalGridResult) -> Dict[str, Any]:
@@ -778,7 +972,14 @@ class Phase2Optimization:
     ) -> Optional[Dict[str, Any]]:
         """Regenerate series and score the refined candidate."""
 
+        tprint(
+            "[Phase2][Scoring] Starting",
+            f"feature={candidate.base_feature}",
+            f"lookback={optimal_lookback}",
+        )
+
         if self.scoring_system is None:
+            tprint("[Phase2][Scoring] Scoring system unavailable")
             return None
 
         target_series = self._ensure_target_series(targets)
@@ -786,6 +987,7 @@ class Phase2Optimization:
             self.logger.debug(
                 "Targets unavailable for adaptive scoring of %s", candidate.base_feature
             )
+            tprint("[Phase2][Scoring] Target series unavailable")
             return None
 
         aligned_data = self._extract_aligned_data(sessionized_data)
@@ -793,6 +995,7 @@ class Phase2Optimization:
             self.logger.warning(
                 "Aligned data unavailable for adaptive scoring of %s", candidate.base_feature
             )
+            tprint("[Phase2][Scoring] Aligned data unavailable or empty")
             return None
 
         feature_series = self._regenerate_feature_series(
@@ -800,6 +1003,7 @@ class Phase2Optimization:
         )
 
         if feature_series is None or feature_series.empty:
+            tprint("[Phase2][Scoring] Feature regeneration failed or empty")
             return None
 
         regime_list = regime_segments.get('segments') if isinstance(regime_segments, dict) else None
@@ -820,40 +1024,65 @@ class Phase2Optimization:
                 optimal_lookback,
                 exc,
             )
+            tprint(
+                "[Phase2][Scoring] Adaptive scoring failed",
+                f"feature={candidate.base_feature}",
+                f"error={exc}",
+            )
             return None
 
-        return self._scoring_result_to_dict(scoring_result)
+        result_dict = self._scoring_result_to_dict(scoring_result)
+        tprint(
+            "[Phase2][Scoring] Completed",
+            f"feature={candidate.base_feature}",
+            f"utility={result_dict.get('utility_score')}",
+        )
+
+        return result_dict
 
     def _ensure_target_series(self, targets: Optional[Union[pd.Series, pd.DataFrame]]) -> Optional[pd.Series]:
         """Normalize targets to a Series if possible."""
 
+        tprint("[Phase2][Scoring] Normalizing target series")
+
         if targets is None:
+            tprint("[Phase2][Scoring] Targets missing")
             return None
 
         if isinstance(targets, pd.Series):
+            tprint("[Phase2][Scoring] Targets already Series")
             return targets
 
         if isinstance(targets, pd.DataFrame):
             if targets.shape[1] == 0:
+                tprint("[Phase2][Scoring] Target DataFrame empty")
                 return None
+            tprint("[Phase2][Scoring] Converting DataFrame to Series")
             return targets.iloc[:, 0]
 
+        tprint("[Phase2][Scoring] Unsupported target type")
         return None
 
     def _extract_aligned_data(self, sessionized_data: Optional[Dict[str, Any]]) -> Optional[pd.DataFrame]:
         """Extract aligned base timeframe data from sessionized payload."""
 
+        tprint("[Phase2][Scoring] Extracting aligned data")
+
         if sessionized_data is None:
+            tprint("[Phase2][Scoring] Sessionized data missing")
             return None
 
         if isinstance(sessionized_data, pd.DataFrame):
+            tprint("[Phase2][Scoring] Sessionized data already DataFrame")
             return sessionized_data
 
         if isinstance(sessionized_data, dict):
             aligned = sessionized_data.get('aligned_data')
             if isinstance(aligned, pd.DataFrame):
+                tprint("[Phase2][Scoring] Extracted aligned DataFrame")
                 return aligned
 
+        tprint("[Phase2][Scoring] Unable to extract aligned data")
         return None
 
     def _regenerate_feature_series(
@@ -865,6 +1094,12 @@ class Phase2Optimization:
     ) -> Optional[pd.Series]:
         """Regenerate HTF series for the refined lookback."""
 
+        tprint(
+            "[Phase2][Scoring] Regenerating feature",
+            f"feature={base_feature}",
+            f"lookback={lookback}",
+        )
+
         if self.htf_feature_generator is None:
             try:
                 self.htf_feature_generator = HTFFeatureGenerator(self.config)
@@ -872,6 +1107,10 @@ class Phase2Optimization:
                 self.logger.warning(
                     "Failed to initialize HTF generator for adaptive scoring: %s",
                     exc,
+                )
+                tprint(
+                    "[Phase2][Scoring] HTF generator initialization failed",
+                    f"error={exc}",
                 )
                 return None
 
@@ -886,20 +1125,33 @@ class Phase2Optimization:
                 lookback,
                 exc,
             )
+            tprint(
+                "[Phase2][Scoring] HTF regeneration failed",
+                f"feature={base_feature}",
+                f"error={exc}",
+            )
             return None
 
+        tprint(
+            "[Phase2][Scoring] Feature regenerated",
+            f"feature={base_feature}",
+            f"length={len(feature_series) if hasattr(feature_series, '__len__') else 'n/a'}",
+        )
         return feature_series
 
     def _scoring_result_to_dict(self, scoring_result: Any) -> Dict[str, Any]:
         """Convert a ScoringResult into a serializable dictionary."""
 
+        tprint("[Phase2][Scoring] Serializing scoring result")
+
         if scoring_result is None:
+            tprint("[Phase2][Scoring] Scoring result missing")
             return {}
 
         metadata = dict(getattr(scoring_result, 'metadata', {}) or {})
         penalties = metadata.pop('penalties', {}) if isinstance(metadata, dict) else {}
 
-        return {
+        result = {
             'feature_name': getattr(scoring_result, 'feature_name', 'unknown'),
             'lookback': getattr(scoring_result, 'lookback', 0),
             'regime': getattr(scoring_result, 'regime', 'mixed'),
@@ -914,3 +1166,11 @@ class Phase2Optimization:
             'penalties': penalties,
             'metadata': metadata,
         }
+
+        tprint(
+            "[Phase2][Scoring] Serialized",
+            f"feature={result.get('feature_name')}",
+            f"utility={result.get('utility_score')}",
+        )
+
+        return result

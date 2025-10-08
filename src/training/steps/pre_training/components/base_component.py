@@ -94,6 +94,7 @@ class BasePreTrainingComponent(ABC):
         self.logger = logger.getChild(self.__class__.__name__)
         self.artifact_manager = get_artifact_manager()
         self.version_manager = get_version_manager()
+        self._run_metadata: Dict[str, Any] = {}
         tprint_success(
             f"🚀 Initialized {self.__class__.__name__}",
             {
@@ -102,6 +103,10 @@ class BasePreTrainingComponent(ABC):
                 'timeframe': self.config.timeframe
             }
         )
+
+    def set_run_metadata(self, metadata: Optional[Dict[str, Any]]) -> None:
+        """Store run metadata for later use."""
+        self._run_metadata = dict(metadata or {})
 
     @abstractmethod
     def get_required_artifacts(self) -> List[str]:
@@ -131,6 +136,9 @@ class BasePreTrainingComponent(ABC):
         Returns:
             Dictionary mapping artifact names to file paths
         """
+        metadata = dict(metadata or {})
+        metadata['run_metadata'] = dict(self._run_metadata)
+
         tprint_info(
             f"💾 Saving {len(artifacts)} artifacts for {self.__class__.__name__}",
             {'metadata_keys': list(metadata.keys())}
@@ -148,9 +156,14 @@ class BasePreTrainingComponent(ABC):
                 **metadata
             }
 
+            payload = {
+                'metadata': artifact_metadata,
+                'data': artifact_data,
+            }
+
             # Save artifact
             file_path = self.artifact_manager.save_artifact(
-                data=artifact_data,
+                data=payload,
                 base_name=artifact_name,
                 extension=".json"
             )

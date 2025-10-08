@@ -42,6 +42,7 @@ def _build_result(
     artifact_payload: Dict[str, Any],
     duration: float,
     metadata: Optional[Dict[str, Any]] = None,
+    run_metadata: Optional[Dict[str, Any]] = None,
 ) -> SubPipelineResult:
     result = SubPipelineResult(
         sub_pipeline_name=name,
@@ -52,14 +53,17 @@ def _build_result(
     result.end_time = result.start_time + timedelta(seconds=duration)
     result.duration_seconds = duration
     result.artifacts = {artifact_key: artifact_payload}
-    result.metadata = metadata or {}
+    merged_metadata = dict(metadata or {})
+    if run_metadata is not None:
+        merged_metadata['run_metadata'] = dict(run_metadata)
+    result.metadata = merged_metadata
     return result
 
 
 def _patch_pipeline_steps(monkeypatch, durations=None):
     durations = durations or {}
 
-    async def _mh(self, config):
+    async def _mh(self, config, run_metadata):
         df = pd.DataFrame({'value': [1, 2, 3]})
         metadata = {'label_distribution': {'positive': 2, 'negative': 1}}
         return _build_result(
@@ -68,9 +72,10 @@ def _patch_pipeline_steps(monkeypatch, durations=None):
             {'labeled_data': df},
             durations.get('mh', 5.0),
             metadata,
+            run_metadata,
         )
 
-    async def _flo(self, config):
+    async def _flo(self, config, run_metadata):
         df = pd.DataFrame({'value': [1, 2, 3, 4, 5]})
         payload = {
             'optimized_features': {'feature_a': 0.7},
@@ -83,9 +88,10 @@ def _patch_pipeline_steps(monkeypatch, durations=None):
             payload,
             durations.get('flo', 4.0),
             metadata,
+            run_metadata,
         )
 
-    async def _interactive(self, config):
+    async def _interactive(self, config, run_metadata):
         df = pd.DataFrame({'value': [1, 2]})
         payload = {'features': {'f1': 1}, 'generated_table': df}
         return _build_result(
@@ -94,9 +100,10 @@ def _patch_pipeline_steps(monkeypatch, durations=None):
             payload,
             durations.get('interactive', 3.0),
             {'label_distribution': {'positive': 1, 'neutral': 1}},
+            run_metadata,
         )
 
-    async def _ffs(self, config):
+    async def _ffs(self, config, run_metadata):
         df = pd.DataFrame({'value': [1, 2, 3, 4]})
         payload = {'selected_features': ['f1', 'f2'], 'evaluation': df}
         return _build_result(
@@ -105,6 +112,7 @@ def _patch_pipeline_steps(monkeypatch, durations=None):
             payload,
             durations.get('ffs', 2.0),
             {},
+            run_metadata,
         )
 
     monkeypatch.setattr(PreTrainingSubPipeline, "_execute_multi_horizon_profit_labeler", _mh)

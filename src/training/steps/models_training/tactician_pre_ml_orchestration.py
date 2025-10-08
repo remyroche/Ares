@@ -1474,11 +1474,21 @@ class TacticianPreMLOrchestrator:
             tprint_info(f"  - Samples after preparation: {len(prepared_data)}")
             tprint_info(f"  - Per-regime optimization: {self.config.enable_per_regime_optimization}")
             tprint_info(f"  - Per-cluster optimization: {self.config.enable_per_cluster_optimization}")
-            
+
+            run_metadata: Optional[Dict[str, Any]] = None
+            if self.pre_training_pipeline is not None:
+                run_metadata = getattr(self.pre_training_pipeline, '_run_metadata', None)
+                if not run_metadata:
+                    run_metadata = self.pre_training_pipeline._gather_run_metadata(sub_config)
+                self.pre_training_pipeline._run_metadata = dict(run_metadata)
+
             # Step 1: Entry Label Integration / Multi-Horizon compatibility layer
             tprint_info("📈 Step 1/5: Integrating entry labels with multi-horizon pipeline...")
             result.phase = OrchestrationPhase.HORIZON_LABELING
-            horizon_result = await self.pre_training_pipeline._execute_multi_horizon_profit_labeler(sub_config)
+            horizon_result = await self.pre_training_pipeline._execute_multi_horizon_profit_labeler(
+                sub_config,
+                run_metadata or {},
+            )
 
             if not horizon_result.success:
                 raise RuntimeError(f"Horizon labeling failed: {horizon_result.error_message}")
@@ -1489,7 +1499,10 @@ class TacticianPreMLOrchestrator:
             # Step 2: Feature Lookback Optimization (per-regime/cluster)
             tprint_info("⚙️ Step 2/5: Feature Lookback Optimization (per-regime/cluster)...")
             result.phase = OrchestrationPhase.LOOKBACK_OPTIMIZATION
-            lookback_result = await self.pre_training_pipeline._execute_feature_lookback_optimization(sub_config)
+            lookback_result = await self.pre_training_pipeline._execute_feature_lookback_optimization(
+                sub_config,
+                run_metadata or {},
+            )
 
             if not lookback_result.success:
                 raise RuntimeError(f"Lookback optimization failed: {lookback_result.error_message}")
@@ -1500,7 +1513,10 @@ class TacticianPreMLOrchestrator:
             # Step 3: Interactive Feature Generation
             tprint_info("🔧 Step 3/5: Interactive Feature Generation...")
             result.phase = OrchestrationPhase.INTERACTIVE_FEATURE_GENERATION
-            interactive_result = await self.pre_training_pipeline._execute_interactive_feature_generation(sub_config)
+            interactive_result = await self.pre_training_pipeline._execute_interactive_feature_generation(
+                sub_config,
+                run_metadata or {},
+            )
 
             if not interactive_result.success:
                 raise RuntimeError(
@@ -1524,7 +1540,10 @@ class TacticianPreMLOrchestrator:
             # Step 4: Final Feature Selection
             tprint_info("🎯 Step 4/5: Final Feature Selection (multi-stage)...")
             result.phase = OrchestrationPhase.FEATURE_SELECTION
-            selection_result = await self.pre_training_pipeline._execute_final_feature_selection(sub_config)
+            selection_result = await self.pre_training_pipeline._execute_final_feature_selection(
+                sub_config,
+                run_metadata or {},
+            )
 
             if not selection_result.success:
                 raise RuntimeError(f"Feature selection failed: {selection_result.error_message}")

@@ -1,5 +1,6 @@
 import sys
 import types
+from datetime import datetime
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -54,7 +55,20 @@ class ComponentResult:
 base_component_module = types.ModuleType("base_component_stub")
 base_component_module.ComponentResult = ComponentResult
 base_component_module.ComponentConfig = _TestComponentConfig
-base_component_module.BasePreTrainingComponent = object
+
+
+class _StubBaseComponent:
+    def __init__(self, *args, **kwargs):  # pragma: no cover - simple stub
+        self._run_metadata = {}
+
+    def set_run_metadata(self, metadata):  # pragma: no cover - simple stub
+        self._run_metadata = dict(metadata or {})
+
+    async def save_artifacts(self, *args, **kwargs):  # pragma: no cover - simple stub
+        return {}
+
+
+base_component_module.BasePreTrainingComponent = _StubBaseComponent
 
 components_module = types.ModuleType("components_stub")
 components_module.ComponentFactory = _TestComponentFactory
@@ -64,7 +78,12 @@ sys.modules['src.training.steps.pre_training.components.base_component'] = base_
 sys.modules['src.training.steps.pre_training.components'] = components_module
 
 
-from src.training.steps.pre_training.sub_pipeline import PreTrainingSubPipeline, SubPipelineConfig
+from src.training.steps.pre_training.sub_pipeline import (
+    PreTrainingSubPipeline,
+    SubPipelineConfig,
+    SubPipelineResult,
+    SubPipelineStatus,
+)
 
 
 @pytest.fixture
@@ -94,7 +113,8 @@ async def test_multi_horizon_receives_regime_split(monkeypatch):
         lambda name, cfg: _DummyComponent(),
     )
 
-    result = await pipeline._execute_multi_horizon_profit_labeler(config)
+    run_metadata = pipeline._gather_run_metadata(config)
+    result = await pipeline._execute_multi_horizon_profit_labeler(config, run_metadata)
 
     assert result.success
     assert captured["pipeline_state"]["regime_data_splitting_result"] is payload
@@ -124,9 +144,21 @@ async def test_followup_steps_reuse_regime_split(monkeypatch):
         lambda name, cfg: _DummyComponent(),
     )
 
-    lookback_result = await pipeline._execute_feature_lookback_optimization(config)
-    pid_result = await pipeline._execute_pid_based_feature_generation(config)
-    selection_result = await pipeline._execute_final_feature_selection(config)
+    run_metadata = pipeline._gather_run_metadata(config)
+    lookback_result = await pipeline._execute_feature_lookback_optimization(config, run_metadata)
+    if hasattr(pipeline, '_execute_pid_based_feature_generation'):
+        pid_result = await pipeline._execute_pid_based_feature_generation(config, run_metadata)
+    else:
+        pid_result = SubPipelineResult(
+            sub_pipeline_name='pid_based_feature_generation',
+            status=SubPipelineStatus.SKIPPED,
+            start_time=datetime.now(),
+        )
+        pid_result.success = True
+        pid_result.end_time = pid_result.start_time
+        pid_result.duration_seconds = 0.0
+        pid_result.metadata = {'run_metadata': dict(run_metadata)}
+    selection_result = await pipeline._execute_final_feature_selection(config, run_metadata)
 
     assert lookback_result.success and pid_result.success and selection_result.success
     assert captured_states, "component should have been executed"

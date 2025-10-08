@@ -1,8 +1,9 @@
 """
 Verification Script for Ares Launcher Updates
 
-This script verifies that all references to "cross_timeframe_analysis" have been
-properly updated to "pid_based_feature_generation" in the ares_launcher.py file.
+This script verifies that all references to the legacy "pid_based_feature_generation"
+stage have been properly updated to "interactive_feature_generation" in the
+ares_launcher.py file and related configuration files.
 """
 
 import os
@@ -40,13 +41,14 @@ def main():
     print("=" * 50)
     
     # File path
-    ares_launcher_file = "/workspace/src/launcher/ares_launcher.py"
+    ares_launcher_file = Path(__file__).resolve().parent / "ares_launcher.py"
     
     # Check 1: Verify old references are removed
     print("\n📋 Check 1: Verifying old references are removed...")
     old_patterns = [
-        r'cross_timeframe_analysis',
-        r'Cross timeframe interaction features'
+        r'pid_based_feature_generation',
+        r'PID-based feature generation with interaction, polynomial, and cross-timeframe features',
+        r'pid_based_features\\.parquet'
     ]
     
     try:
@@ -71,9 +73,9 @@ def main():
     # Check 2: Verify new references are present
     print("\n📋 Check 2: Verifying new references are present...")
     new_patterns = [
-        r'pid_based_feature_generation',
-        r'PID-based feature generation with interaction, polynomial, and cross-timeframe features',
-        r'pid_based_features\.parquet'
+        r'interactive_feature_generation',
+        r'Interactive feature generation with optimized lookbacks, cross-timeframe coverage, and matrix acceleration',
+        r'features_<symbol>_<timeframe>\\.parquet'
     ]
     
     all_new_found = True
@@ -88,55 +90,48 @@ def main():
     print("\n📋 Check 3: Verifying specific locations...")
     
     # Check sub_pipelines list
-    if "'pid_based_feature_generation'" in content:
+    if "'interactive_feature_generation'" in content:
         print("  ✅ Found in sub_pipelines list")
     else:
         print("  ❌ Missing from sub_pipelines list")
         all_new_found = False
-    
+
     # Check description
-    if "PID-based feature generation with interaction, polynomial, and cross-timeframe features" in content:
+    if "Interactive feature generation with optimized lookbacks, cross-timeframe coverage, and matrix acceleration" in content:
         print("  ✅ Found in description")
     else:
         print("  ❌ Missing from description")
         all_new_found = False
-    
+
     # Check dependencies
-    if "'pid_based_feature_generation': ['fractional_differentiation']" in content:
+    if "'interactive_feature_generation': ['feature_lookback_optimization']" in content:
         print("  ✅ Found in dependencies")
     else:
         print("  ❌ Missing from dependencies")
         all_new_found = False
-    
+
     # Check outputs
-    if "'pid_based_feature_generation': ['pid_based_features.parquet']" in content:
+    if "'interactive_feature_generation': [" in content and 'interactions_<symbol>_<timeframe>.parquet' in content:
         print("  ✅ Found in outputs")
     else:
         print("  ❌ Missing from outputs")
         all_new_found = False
-    
-    # Check required artifacts
-    if "'pid_based_features'" in content:
-        print("  ✅ Found in required artifacts")
-    else:
-        print("  ❌ Missing from required artifacts")
-        all_new_found = False
-    
+
     # Check 4: Verify migration config
     print("\n📋 Check 4: Verifying migration config...")
-    migration_config_file = "/workspace/config/migration_config.yaml"
+    migration_config_file = Path(__file__).resolve().parents[2] / "config" / "migration_config.yaml"
     
     try:
         with open(migration_config_file, 'r') as f:
             migration_content = f.read()
         
-        if "pid_based_feature_generation_integration.py" in migration_content:
+        if "interactive_feature_generation_component.py" in migration_content:
             print("  ✅ Found updated reference in migration config")
         else:
             print("  ❌ Missing updated reference in migration config")
             all_new_found = False
-            
-        if "cross_timeframe_analysis_integration.py" in migration_content:
+
+        if "pid_based_feature_generation_integration.py" in migration_content:
             print("  ❌ Found old reference in migration config")
             all_new_found = False
         else:
@@ -149,7 +144,7 @@ def main():
     print("\n" + "=" * 50)
     if all_new_found and not old_found:
         print("🎉 All verification checks passed!")
-        print("✅ Ares launcher has been successfully updated to use PID-based feature generation")
+        print("✅ Ares launcher has been successfully updated to use interactive feature generation")
         return True
     else:
         print("❌ Some verification checks failed")

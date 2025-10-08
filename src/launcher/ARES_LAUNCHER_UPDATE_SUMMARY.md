@@ -1,166 +1,135 @@
 # Ares Launcher Update Summary
 
-## ✅ **Successfully Updated Stage Name from "Cross Timeframe Analysis" to "PID-Based Feature Generation"**
+## ✅ **Successfully Updated Stage Name from "PID-Based Feature Generation" to "Interactive Feature Generation"**
 
-All references to `cross_timeframe_analysis` have been updated to `pid_based_feature_generation` in the `ares_launcher.py` file and related configuration files.
+All references to `pid_based_feature_generation` have been updated to `interactive_feature_generation` in the `ares_launcher.py` file and related configuration files.
 
 ## 🔄 **Changes Made**
 
 ### **1. Sub-Pipeline List Update**
 **File**: `src/launcher/ares_launcher.py`
-**Location**: Line 251
+**Location**: Stage requirement map
 ```python
 # OLD
-'sub_pipelines': ['sr_detection', 'sr_clustering', 'hmm_clustering',
-                'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
-                'feature_lookback_optimization', 'fractional_differentiation', 'cross_timeframe_analysis',
-                'sr_feature_integration']
+'sub_pipelines': ['multi_horizon_profit_labeler', 'feature_lookback_optimization', 'pid_based_feature_generation', 'final_feature_selection']
 
 # NEW
-'sub_pipelines': ['sr_detection', 'sr_clustering', 'hmm_clustering',
-                'hmm_regime_discovery', 'regime_data_splitting', 'triple_barrier_labeling',
-                'hybrid_nas_tas_regime_discovery', 'nas_tas_clustering', 'regime_models_training', 'regime_ensemble_training',
-                'regime_data_splitting', 'multi_horizon_profit_labeler', 'feature_lookback_optimization', 'pid_based_feature_generation', 'final_feature_selection',
-                'sr_feature_integration']
+'sub_pipelines': ['multi_horizon_profit_labeler', 'feature_lookback_optimization', 'interactive_feature_generation', 'final_feature_selection']
 ```
 
 ### **2. Sub-Pipeline Description Update**
 **File**: `src/launcher/ares_launcher.py`
-**Location**: Line 900
+**Location**: Sub-pipeline description map
 ```python
 # OLD
-'cross_timeframe_analysis': "Cross timeframe interaction features",
+'pid_based_feature_generation': "PID-based feature generation with interaction, polynomial, and cross-timeframe features",
 
 # NEW
-'pid_based_feature_generation': "PID-based feature generation with interaction, polynomial, and cross-timeframe features",
+'interactive_feature_generation': "Interactive feature generation with optimized lookbacks, cross-timeframe coverage, and matrix acceleration",
 ```
 
 ### **3. Dependencies Update**
 **File**: `src/launcher/ares_launcher.py`
-**Location**: Lines 951-952
+**Location**: Dependency map
 ```python
 # OLD
-'cross_timeframe_analysis': ['fractional_differentiation'],
-'sr_feature_integration': ['cross_timeframe_analysis'],
+'pid_based_feature_generation': ['feature_lookback_optimization']
+'final_feature_selection': ['pid_based_feature_generation']
 
 # NEW
-'pid_based_feature_generation': ['fractional_differentiation'],
-'sr_feature_integration': ['pid_based_feature_generation'],
+'interactive_feature_generation': ['feature_lookback_optimization']
+'final_feature_selection': ['interactive_feature_generation']
 ```
 
 ### **4. Output Files Update**
 **File**: `src/launcher/ares_launcher.py`
-**Location**: Line 1004
+**Location**: Expected outputs map
 ```python
 # OLD
-'cross_timeframe_analysis': ['cross_tf_features.parquet'],
+'pid_based_feature_generation': ['pid_based_features.parquet']
 
 # NEW
-'pid_based_feature_generation': ['pid_based_features.parquet'],
+'interactive_feature_generation': [
+    'features_<symbol>_<timeframe>.parquet',
+    'interactions_<symbol>_<timeframe>.parquet',
+    'cross_timeframe_<symbol>_<timeframe>.parquet'
+]
 ```
 
-### **5. Required Artifacts Update**
+### **5. CLI Help Text Update**
 **File**: `src/launcher/ares_launcher.py`
-**Location**: Line 248
-```python
+**Location**: Sub-pipeline argument help
+```text
 # OLD
-'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata', 'cross_timeframe_features'],
+... feature_lookback_optimization, pid_based_feature_generation, final_feature_selection ...
 
 # NEW
-'required_artifacts': ['sr_clusters', 'regime_model', 'feature_metadata', 'pid_based_features'],
+... feature_lookback_optimization, interactive_feature_generation, final_feature_selection ...
 ```
 
-### **6. Migration Config Update**
-**File**: `config/migration_config.yaml`
-**Location**: Line 62
-```yaml
-# OLD
-- "cross_timeframe_analysis_integration.py"
-
-# NEW
-- "pid_based_feature_generation_integration.py"
-```
+### **6. Configuration Updates**
+- **File**: `config/migration_config.yaml`
+  - Updated component reference from `pid_based_feature_generation_integration.py` to `interactive_feature_generation_component.py`.
+- **File**: `src/config/multi_horizon_labeling_config.yaml`
+  - Renamed integration section to `interactive_feature_generation`.
 
 ## 🎯 **Updated Features**
 
-### **Enhanced Description**
-The new description provides more comprehensive information:
-- **Old**: "Cross timeframe interaction features"
-- **New**: "PID-based feature generation with interaction, polynomial, and cross-timeframe features"
-
-### **Updated Output Files**
-- **Old**: `cross_tf_features.parquet`
-- **New**: `pid_based_features.parquet`
-
-### **Updated Artifacts**
-- **Old**: `cross_timeframe_features`
-- **New**: `pid_based_features`
+- The launcher now advertises the `interactive_feature_generation` sub-pipeline everywhere dependencies, outputs, and CLI documentation are displayed.
+- Pre-training orchestration now chains `final_feature_selection` after `interactive_feature_generation`, matching the `PreTrainingSubPipeline` implementation.
 
 ## 🔍 **Verification Results**
 
-All verification checks passed:
-- ✅ **No old references found**: All `cross_timeframe_analysis` references removed
-- ✅ **New references present**: All `pid_based_feature_generation` references added
-- ✅ **Sub-pipelines list updated**: Properly included in market analysis stage
-- ✅ **Description updated**: Comprehensive description with PID-based features
-- ✅ **Dependencies updated**: Proper dependency chain maintained
-- ✅ **Outputs updated**: Correct output file names
-- ✅ **Required artifacts updated**: Proper artifact names
-- ✅ **Migration config updated**: Configuration file references updated
+All verification checks confirm the update:
+- ✅ **No old references found**: `pid_based_feature_generation` references removed from launcher logic.
+- ✅ **New references present**: `interactive_feature_generation` referenced across descriptions, dependencies, outputs, and CLI help text.
+- ✅ **Migration config updated**: References now point to the interactive feature generation component.
 
 ## 🚀 **Usage Examples**
 
-### **Execute PID-Based Feature Generation Sub-Pipeline**
+### **Execute Interactive Feature Generation Sub-Pipeline**
 ```bash
 # Execute with full execution mode
-python ares_launcher.py --mode sub_pipeline --sub_pipeline pid_based_feature_generation --execution-mode full --symbol ETHUSDT
+python ares_launcher.py --mode sub_pipeline --sub_pipeline interactive_feature_generation --execution-mode full --symbol ETHUSDT
 
 # Execute with light execution mode
-python ares_launcher.py --mode sub_pipeline --sub_pipeline pid_based_feature_generation --execution-mode light --symbol ETHUSDT
+python ares_launcher.py --mode sub_pipeline --sub_pipeline interactive_feature_generation --execution-mode light --symbol ETHUSDT
 
 # Execute with blank execution mode (for testing)
-python ares_launcher.py --mode sub_pipeline --sub_pipeline pid_based_feature_generation --execution-mode blank --symbol ETHUSDT
+python ares_launcher.py --mode sub_pipeline --sub_pipeline interactive_feature_generation --execution-mode blank --symbol ETHUSDT
 ```
 
-### **Execute Market Analysis Stage (includes PID-based feature generation)**
+### **Execute Pre-Training Stage (includes Interactive Feature Generation)**
 ```bash
-# Execute entire market analysis stage
-python ares_launcher.py --mode stage --stage market_analysis --execution-mode full --symbol ETHUSDT
+# Execute entire pre-training stage
+python ares_launcher.py --mode stage --stage pre_training --execution-mode full --symbol ETHUSDT
 ```
 
-### **List Available Sub-Pipelines**
+### **List Available Pre-Training Sub-Pipelines**
 ```bash
-# List all sub-pipelines for market analysis stage
-python ares_launcher.py --list-sub-pipelines market_analysis
+# List all sub-pipelines for the pre-training stage
+python ares_launcher.py --list-sub-pipelines pre_training
 ```
 
 ## 📊 **Pipeline Flow**
 
-The updated pipeline flow now includes PID-based feature generation:
+The updated pre-training pipeline flow now includes interactive feature generation:
 
 ```
-Market Analysis Stage:
-├── sr_detection
-├── sr_clustering
-├── hmm_clustering
-├── hmm_regime_discovery
-├── regime_data_splitting
-├── triple_barrier_labeling
+Pre-Training Stage:
+├── multi_horizon_profit_labeler
 ├── feature_lookback_optimization
-├── fractional_differentiation
-├── pid_based_feature_generation  ← Updated stage name
-└── sr_feature_integration
+├── interactive_feature_generation  ← Updated stage name
+└── final_feature_selection
 ```
 
 ## 🎉 **Summary**
 
-The Ares Launcher has been successfully updated to use the new PID-based feature generation system:
+The Ares Launcher now exposes the interactive feature generation workflow end-to-end:
 
-- **Complete integration** with the new PID-based feature generation
-- **Backward compatibility** maintained through adapter pattern
-- **Enhanced functionality** with comprehensive feature generation
-- **Updated documentation** and descriptions
-- **Proper dependency chain** maintained
-- **Correct output files** and artifacts
+- **Complete integration** with the new interactive feature generation step.
+- **Accurate dependency chain** flowing from lookback optimization to final feature selection.
+- **Updated documentation** and CLI guidance reflecting the new sub-pipeline name.
+- **Consistent configuration** across launcher logic and supporting YAML files.
 
-The system now provides access to the advanced PID-based feature generation capabilities through the Ares Launcher, enabling users to execute the enhanced feature generation system with full control over execution modes and parameters.
+This ensures that users launching pre-training workflows reach the correct sub-pipeline without encountering `ValueError` due to stale names.

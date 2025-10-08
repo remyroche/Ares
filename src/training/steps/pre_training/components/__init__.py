@@ -4,12 +4,13 @@ Pre-Training Components Package.
 This package contains all the components for the pre-training pipeline stage.
 """
 
-from .base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+from .base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult, ComponentError
 
 __all__ = [
     'BasePreTrainingComponent',
     'ComponentConfig',
     'ComponentResult',
+    'ComponentError',
     'ComponentFactory',
     'FeatureLookbackOptimizationComponent',
     'FinalFeatureSelectionComponent'

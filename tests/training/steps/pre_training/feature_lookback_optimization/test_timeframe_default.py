@@ -48,14 +48,21 @@ class _ComponentResult:
         success: bool,
         artifacts=None,
         execution_time: float | None = None,
-        error_message: str | None = None,
+        error: Exception | None = None,
+        metrics: dict | None = None,
+        warnings: list | None = None,
         metadata=None,
     ):
         self.success = success
         self.artifacts = artifacts or {}
         self.execution_time = execution_time
-        self.error_message = error_message
+        self.error = error
+        self.metrics = metrics or {}
+        self.warnings = warnings or []
         self.metadata = metadata or {}
+
+        if (self.success and self.error is not None) or (not self.success and self.error is None):
+            raise ValueError("Invalid ComponentResult state for stub")
 
 
 base_component_module.BaseMarketAnalysisComponent = _BaseMarketAnalysisComponent

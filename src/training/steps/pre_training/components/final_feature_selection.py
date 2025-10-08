@@ -11,7 +11,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+from .base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult, ComponentError
+from .component_factory import register_component
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 from ...market_analysis.logging_standards import (
@@ -40,6 +41,7 @@ FEATURE_SELECTION_CONFIG_PATH = Path(
 """Resolved path to the feature selection YAML profile."""
 
 
+@register_component('final_feature_selection')
 class FinalFeatureSelectionComponent(BasePreTrainingComponent):
     """
     Final Feature Selection Component.
@@ -318,6 +320,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 persistence_error: Optional[str] = None
                 artifacts_saved_persistently = False
                 saved_files: Dict[str, str] = {}
+                failure_reason: Optional[str] = None
 
                 try:
                     saved_files = await self.save_artifacts(artifacts, {
@@ -342,16 +345,27 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                         
                 except Exception as e:
                     persistence_error = str(e)
+                    failure_reason = f"Artifact saving failed: {e}"
                     log_warning(f"⚠️ [FINAL_FEATURE_SELECTION] Exception while saving artifacts persistently: {e}")
                     tprint(f"⚠️ [FinalFeatureSelection] Artifact save error: {e}")
 
                 component_success = success and artifacts_saved_persistently
 
+                result_error: Optional[Exception] = None
+                warnings: List[str] = []
+                if not component_success:
+                    failure_reason = failure_reason or persistence_error or "Artifacts were not persisted"
+                    result_error = ComponentError(failure_reason)
+                    warnings.append(failure_reason)
+                    log_error(f"❌ [FINAL_FEATURE_SELECTION] {failure_reason}")
+
                 return ComponentResult(
                     success=component_success,
                     artifacts=artifacts,
-                    error_message=None,
+                    error=result_error,
+                    warnings=warnings,
                     execution_time=0.0,
+                    metrics={},
                     metadata={
                         'component_type': 'final_feature_selection',
                         'symbol': symbol,
@@ -370,11 +384,14 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 self.memory_optimizer._light_memory_cleanup()
                 tprint('🧹 [FinalFeatureSelection] Memory cleanup performed after failure')
 
+                failure_message = "Final feature selection execution failed"
                 return ComponentResult(
                     success=False,
                     artifacts={},
-                    error_message="Final feature selection execution failed",
+                    error=ComponentError(failure_message),
+                    warnings=[failure_message],
                     execution_time=0.0,
+                    metrics={},
                     metadata={
                         'component_type': 'final_feature_selection',
                         'symbol': symbol,
@@ -395,11 +412,14 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             except Exception as cleanup_error:
                 tprint(f'⚠️ [FinalFeatureSelection] Memory cleanup failed (non-critical): {cleanup_error}')
 
+            failure_message = str(e)
             return ComponentResult(
                 success=False,
                 artifacts={},
-                error_message=str(e),
+                error=ComponentError(failure_message),
+                warnings=[failure_message],
                 execution_time=0.0,
+                metrics={},
                 metadata={
                     'component_type': 'final_feature_selection',
                     'symbol': symbol if 'symbol' in locals() else 'unknown',

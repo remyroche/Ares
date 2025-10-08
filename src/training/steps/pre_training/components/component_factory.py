@@ -1,208 +1,321 @@
-"""
-Component Factory for Pre-Training Pipeline Components.
+"""Component factory and registry utilities for pre-training pipeline components."""
 
-This factory manages the creation and registration of all pre-training pipeline components.
-"""
+from __future__ import annotations
 
-from typing import Dict, Type, Any, Optional
+import importlib
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, Iterable, Optional, Set, Type
+
+try:  # Python 3.10+
+    from importlib import metadata as importlib_metadata
+except ImportError:  # pragma: no cover - fallback for older Python versions
+    import importlib_metadata  # type: ignore
+
 from src.utils.tprint import (
     tprint,
     tprint_debug,
-    tprint_info,
     tprint_warning,
-    tprint_error,
 )
 
-# Import base component classes
-from .base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
-
-# Import pre-training components
-from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
-from .final_feature_selection import FinalFeatureSelectionComponent
-
-# Import PID-based feature generation component
-try:
-    from ..pid_based_feature_generation.pid_based_feature_generation_component import PIDBasedFeatureGenerationComponent
-    PID_COMPONENT_AVAILABLE = True
-    tprint_debug("✅ PID-based feature generation component loaded successfully")
-except ImportError as e:
-    PID_COMPONENT_AVAILABLE = False
-    tprint_warning(f"⚠️ PID-based feature generation component not available: {e}")
-    tprint_info("ℹ️ Some advanced feature generation capabilities will be disabled")
-
-# Import optimized lookback component
-try:
-    from ..interaction_feature_generator.feature_interaction_generation.optimized_lookback_component import OptimizedLookbackComponent
-    OPTIMIZED_LOOKBACK_AVAILABLE = True
-    tprint_debug("✅ Optimized lookback component loaded successfully")
-except ImportError as e:
-    OPTIMIZED_LOOKBACK_AVAILABLE = False
-    tprint_warning(f"⚠️ Optimized lookback component not available: {e}")
-
-# Import multi-horizon profit labeler
-try:
-    from ..multi_horizon_profit_labeler import MultiHorizonProfitLabelerComponent
-    MULTI_HORIZON_AVAILABLE = True
-    tprint_debug("✅ Multi-horizon profit labeler component loaded successfully")
-except ImportError as e:
-    MULTI_HORIZON_AVAILABLE = False
-    tprint_error(f"❌ Multi-horizon profit labeler component not available: {e}")
-    tprint_error("❌ This is a CRITICAL component - pipeline may not function correctly")
+from .base_component import BasePreTrainingComponent, ComponentConfig
 
 
-class MultiHorizonComponentWrapper(BasePreTrainingComponent):
-    """Wrapper for Multi-Horizon Profit Labeler to work as a component."""
+@dataclass
+class ComponentRegistration:
+    """Container describing a registered pre-training component."""
 
-    def __init__(self, config: Optional[ComponentConfig] = None):
-        super().__init__(config)
-        self.component = None
-        tprint(
-            "🧩 [MULTI_HORIZON_WRAPPER] Initialized wrapper for multi-horizon component",
-            color="blue",
-        )
+    name: str
+    component_class: Optional[Type[BasePreTrainingComponent]]
+    available: bool = True
+    error: Optional[str] = None
+    extras: Optional[str] = None
+    source: Optional[str] = None
 
-    def get_required_artifacts(self) -> list[str]:
-        """Get list of required artifacts this component must produce."""
-        tprint(
-            "📦 [MULTI_HORIZON_WRAPPER] Retrieving required artifacts",
-            color="magenta",
-        )
-        return ['multi_horizon_labeling_result', 'labeling_report']
+    def instantiate(self, config: Optional[ComponentConfig]) -> BasePreTrainingComponent:
+        """Instantiate the registered component."""
 
-    async def execute(self, data, pipeline_state: Dict[str, Any]) -> 'ComponentResult':
-        """Execute multi-horizon labeling as a component."""
-        try:
-            tprint(
-                "🚀 [MULTI_HORIZON_WRAPPER] Executing multi-horizon profit labeler",
-                color="cyan",
+        if not self.available or self.component_class is None:
+            error_message = self.error or "Component is not available."
+            raise ValueError(
+                f"Component {self.name} is not available. {error_message}"
             )
-            # Create component instance if not exists
-            if self.component is None:
-                if not MULTI_HORIZON_AVAILABLE:
-                    tprint(
-                        "❌ [MULTI_HORIZON_WRAPPER] Multi-horizon profit labeler not available",
-                        color="red",
-                    )
-                    raise ImportError("Multi-horizon profit labeler not available")
+        return self.component_class(config)
 
-                self.component = MultiHorizonProfitLabelerComponent(self.config)
-                tprint(
-                    "🛠️ [MULTI_HORIZON_WRAPPER] Instantiated multi-horizon component",
-                    color="yellow",
+
+class ComponentRegistry:
+    """Runtime registry of pre-training pipeline components."""
+
+    def __init__(self) -> None:
+        self._components: Dict[str, ComponentRegistration] = {}
+        self._loaded_entry_point_groups: Set[str] = set()
+
+    def register(
+        self,
+        name: str,
+        component_class: Optional[Type[BasePreTrainingComponent]],
+        *,
+        available: bool = True,
+        error: Optional[str] = None,
+        extras: Optional[str] = None,
+        source: Optional[str] = None,
+        override: bool = False,
+    ) -> ComponentRegistration:
+        """Register a component in the registry."""
+
+        if name in self._components and not override:
+            raise ValueError(f"Component '{name}' is already registered")
+
+        if available and component_class is not None and not issubclass(
+            component_class, BasePreTrainingComponent
+        ):
+            raise ValueError(
+                "Component class must inherit from BasePreTrainingComponent"
+            )
+
+        registration = ComponentRegistration(
+            name=name,
+            component_class=component_class,
+            available=available and component_class is not None,
+            error=error,
+            extras=extras,
+            source=source or (component_class.__module__ if component_class else None),
+        )
+        self._components[name] = registration
+        status = "available" if registration.available else "unavailable"
+        tprint_debug(
+            f"🧾 [PRE_TRAINING_FACTORY] Registered component '{name}' ({status})"
+        )
+        return registration
+
+    def mark_unavailable(
+        self,
+        name: str,
+        *,
+        error: Optional[str] = None,
+        extras: Optional[str] = None,
+        source: Optional[str] = None,
+    ) -> ComponentRegistration:
+        """Register an unavailable component placeholder."""
+
+        return self.register(
+            name,
+            component_class=None,
+            available=False,
+            error=error,
+            extras=extras,
+            source=source,
+            override=True,
+        )
+
+    def get(self, name: str) -> Optional[ComponentRegistration]:
+        """Retrieve a component registration by name."""
+
+        return self._components.get(name)
+
+    def unregister(self, name: str) -> None:
+        """Remove a registration (used for testing)."""
+
+        self._components.pop(name, None)
+
+    def available_components(self) -> Dict[str, ComponentRegistration]:
+        """Return a mapping of available components."""
+
+        return {
+            name: registration
+            for name, registration in self._components.items()
+            if registration.available
+        }
+
+    def all_components(self) -> Dict[str, ComponentRegistration]:
+        """Return all registered components including unavailable ones."""
+
+        return dict(self._components)
+
+    def load_entry_points(self, group: str) -> None:
+        """Load additional component registrations from entry points."""
+
+        if group in self._loaded_entry_point_groups:
+            return
+
+        self._loaded_entry_point_groups.add(group)
+
+        try:
+            entry_points = importlib_metadata.entry_points()
+        except Exception as exc:  # pragma: no cover - very defensive
+            tprint_warning(
+                f"⚠️ [PRE_TRAINING_FACTORY] Could not load entry points: {exc}"
+            )
+            return
+
+        if hasattr(entry_points, "select"):
+            selected = entry_points.select(group=group)  # type: ignore[attr-defined]
+        else:  # pragma: no cover - Python <3.10
+            selected = [
+                ep for ep in entry_points  # type: ignore[assignment]
+                if getattr(ep, "group", None) == group
+            ]
+
+        for entry_point in selected:
+            try:
+                loaded = entry_point.load()
+            except Exception as exc:
+                self.mark_unavailable(
+                    entry_point.name,
+                    error=str(exc),
+                    extras=getattr(entry_point, "value", None),
+                    source=getattr(entry_point, "module", None),
+                )
+                continue
+
+            if (
+                isinstance(loaded, type)
+                and issubclass(loaded, BasePreTrainingComponent)
+                and entry_point.name not in self._components
+            ):
+                self.register(
+                    entry_point.name,
+                    loaded,
+                    extras=getattr(entry_point, "value", None),
+                    source=loaded.__module__,
                 )
 
-            # Execute component
-            result = await self.component.execute(data, pipeline_state)
-            tprint(
-                "✅ [MULTI_HORIZON_WRAPPER] Execution completed successfully",
-                color="green",
-            )
-            return result
 
-        except Exception as e:
-            tprint(
-                f"⚠️ [MULTI_HORIZON_WRAPPER] Execution failed: {e}",
-                color="red",
+_registry = ComponentRegistry()
+
+
+def register_component(
+    name: str,
+    *,
+    extras: Optional[str] = None,
+    available: bool = True,
+    error: Optional[str] = None,
+    override: bool = False,
+):
+    """Decorator used by components to register themselves with the factory."""
+
+    def decorator(component_class: Type[BasePreTrainingComponent]):
+        if not available:
+            _registry.mark_unavailable(
+                name,
+                error=error,
+                extras=extras,
+                source=component_class.__module__,
             )
-            return ComponentResult(
-                success=False,
-                artifacts={},
-                error_message=str(e),
-                metadata={'component_type': 'multi_horizon_profit_labeler'}
-            )
+            return component_class
+
+        _registry.register(
+            name,
+            component_class,
+            extras=extras,
+            override=override,
+        )
+        return component_class
+
+    return decorator
+
+
+def register_unavailable_component(
+    name: str,
+    *,
+    error: Optional[str] = None,
+    extras: Optional[str] = None,
+    source: Optional[str] = None,
+) -> None:
+    """Register a component placeholder when optional dependencies are missing."""
+
+    _registry.mark_unavailable(name, error=error, extras=extras, source=source)
 
 
 class ComponentFactory:
-    """
-    Factory for creating pre-training pipeline components.
-    
-    Provides centralized component creation and management.
-    """
-    
-    _components: Dict[str, Type[BasePreTrainingComponent]] = {
-        'multi_horizon_profit_labeler': MultiHorizonComponentWrapper if MULTI_HORIZON_AVAILABLE else None,
-        'feature_lookback_optimization': FeatureLookbackOptimizationComponent,
-        'pid_based_feature_generation': PIDBasedFeatureGenerationComponent if PID_COMPONENT_AVAILABLE else None,
-        'optimized_lookback_generation': OptimizedLookbackComponent if OPTIMIZED_LOOKBACK_AVAILABLE else None,
-        'final_feature_selection': FinalFeatureSelectionComponent
-    }
-    
+    """Factory for creating pre-training pipeline components."""
+
+    registry: ComponentRegistry = _registry
+
+    _initialized: bool = False
+    ENTRY_POINT_GROUP = "ares.pre_training.components"
+    EXTRA_MODULES_ENV = "ARES_PRETRAIN_COMPONENT_MODULES"
+    EXTRA_MODULES_FILE = (
+        Path(__file__).resolve().parents[4]
+        / "config"
+        / "pre_training_component_modules.txt"
+    )
+    BUILTIN_MODULES = (
+        "src.training.steps.pre_training.feature_lookback_optimization.feature_lookback_optimization",
+        "src.training.steps.pre_training.components.final_feature_selection",
+        "src.training.steps.pre_training.interaction_feature_generator.feature_interaction_generation.optimized_lookback_component",
+        "src.training.steps.pre_training.components.multi_horizon_component",
+        "src.training.steps.pre_training.components.pid_based_feature_generation_registration",
+    )
+
     @classmethod
     def create_component(
-        self, 
-        component_name: str, 
-        config: Optional[ComponentConfig] = None
+        cls,
+        component_name: str,
+        config: Optional[ComponentConfig] = None,
     ) -> BasePreTrainingComponent:
-        """
-        Create a component instance.
-        
-        Args:
-            component_name: Name of the component to create
-            config: Component configuration
-            
-        Returns:
-            Component instance
-            
-        Raises:
-            ValueError: If component name is not registered
-        """
-        tprint(f"🏭 [PRE_TRAINING_FACTORY] Creating component: {component_name}", color="cyan")
-        
-        if component_name not in self._components:
-            available_components = list(self._components.keys())
-            tprint(f"❌ [PRE_TRAINING_FACTORY] Unknown component: {component_name}", color="red")
-            tprint(f"📊 [PRE_TRAINING_FACTORY] Available components: {available_components}", color="cyan")
-            raise ValueError(
-                f"Unknown component: {component_name}. "
-                f"Available components: {available_components}"
-            )
+        """Create and return a registered component instance."""
 
-        tprint(f"🔧 [PRE_TRAINING_FACTORY] Creating {component_name} from registered components", color="yellow")
-        component_class = self._components[component_name]
-
-        # Handle None component classes
-        if component_class is None:
-            tprint(f"❌ [PRE_TRAINING_FACTORY] Component {component_name} is not available", color="red")
-            raise ValueError(f"Component {component_name} is not available. Required dependencies may be missing.")
-
-        component = component_class(config)
-        tprint(f"✅ [PRE_TRAINING_FACTORY] Successfully created {component_name}", color="green")
-        return component
-    
-    @classmethod
-    def register_component(
-        self, 
-        name: str, 
-        component_class: Type[BasePreTrainingComponent]
-    ) -> None:
-        """
-        Register a new component.
-        
-        Args:
-            name: Component name
-            component_class: Component class
-        """
-        if not issubclass(component_class, BasePreTrainingComponent):
-            raise ValueError("Component class must inherit from BasePreTrainingComponent")
-
-        self._components[name] = component_class
         tprint(
-            f"🧾 [PRE_TRAINING_FACTORY] Registered component: {name}",
-            color="blue",
+            f"🏭 [PRE_TRAINING_FACTORY] Creating component: {component_name}",
+            color="cyan",
         )
 
-    @classmethod
-    def get_available_components(self) -> list[str]:
-        """
-        Get list of available component names.
+        cls._ensure_initialized()
 
-        Returns:
-            List of component names
-        """
-        available = [
-            name for name, component in self._components.items()
-            if component is not None
-        ]
+        registration = cls.registry.get(component_name)
+        if registration is None:
+            available_components = list(cls.registry.available_components().keys())
+            tprint(
+                f"❌ [PRE_TRAINING_FACTORY] Unknown component: {component_name}",
+                color="red",
+            )
+            tprint(
+                f"📊 [PRE_TRAINING_FACTORY] Available components: {available_components}",
+                color="cyan",
+            )
+            raise ValueError(
+                f"Unknown component: {component_name}. Available components: {available_components}"
+            )
+
+        tprint(
+            f"🔧 [PRE_TRAINING_FACTORY] Creating {component_name} from registered components",
+            color="yellow",
+        )
+
+        try:
+            component = registration.instantiate(config)
+        except ValueError as exc:
+            tprint(
+                f"❌ [PRE_TRAINING_FACTORY] Component {component_name} is not available: {exc}",
+                color="red",
+            )
+            raise
+
+        tprint(
+            f"✅ [PRE_TRAINING_FACTORY] Successfully created {component_name}",
+            color="green",
+        )
+        return component
+
+    @classmethod
+    def register_component(
+        cls,
+        name: str,
+        component_class: Type[BasePreTrainingComponent],
+    ) -> None:
+        """Register a component class with the factory."""
+
+        cls.registry.register(name, component_class)
+        tprint(f"🧾 [PRE_TRAINING_FACTORY] Registered component: {name}", color="blue")
+
+    @classmethod
+    def get_available_components(cls) -> list[str]:
+        """Return a list of available component names."""
+
+        cls._ensure_initialized()
+        available = list(cls.registry.available_components().keys())
         tprint(
             f"📋 [PRE_TRAINING_FACTORY] Available components: {available}",
             color="magenta",
@@ -210,19 +323,88 @@ class ComponentFactory:
         return available
 
     @classmethod
-    def is_component_available(self, component_name: str) -> bool:
-        """
-        Check if a component is available.
-        
-        Args:
-            component_name: Name of the component
-            
-        Returns:
-            True if component is available
-        """
-        available = component_name in self._components and self._components[component_name] is not None
+    def is_component_available(cls, component_name: str) -> bool:
+        """Return True when the requested component can be instantiated."""
+
+        cls._ensure_initialized()
+        registration = cls.registry.get(component_name)
+        available = bool(registration and registration.available)
         tprint(
             f"🔍 [PRE_TRAINING_FACTORY] Component '{component_name}' available: {available}",
             color="yellow",
         )
         return available
+
+    @classmethod
+    def _ensure_initialized(cls) -> None:
+        """Ensure that built-in registrations and extras have been loaded."""
+
+        if cls._initialized:
+            return
+
+        for module_path in cls.BUILTIN_MODULES:
+            cls._import_module(module_path)
+
+        for module_path in cls._load_extra_modules_from_env():
+            cls._import_module(module_path)
+
+        for module_path in cls._load_extra_modules_from_file():
+            cls._import_module(module_path)
+
+        cls.registry.load_entry_points(cls.ENTRY_POINT_GROUP)
+        cls._initialized = True
+
+    @classmethod
+    def _import_module(cls, module_path: str) -> None:
+        """Import a module and log failures as warnings."""
+
+        if not module_path:
+            return
+
+        try:
+            importlib.import_module(module_path)
+            tprint_debug(
+                f"📦 [PRE_TRAINING_FACTORY] Imported component module '{module_path}'"
+            )
+        except Exception as exc:
+            tprint_warning(
+                f"⚠️ [PRE_TRAINING_FACTORY] Could not import '{module_path}': {exc}"
+            )
+
+    @classmethod
+    def _load_extra_modules_from_env(cls) -> Iterable[str]:
+        """Load additional component modules defined in environment variables."""
+
+        modules = os.environ.get(cls.EXTRA_MODULES_ENV)
+        if not modules:
+            return []
+
+        return [module.strip() for module in modules.split(",") if module.strip()]
+
+    @classmethod
+    def _load_extra_modules_from_file(cls) -> Iterable[str]:
+        """Load extra modules from an optional configuration file."""
+
+        if not cls.EXTRA_MODULES_FILE.exists():
+            return []
+
+        try:
+            with open(cls.EXTRA_MODULES_FILE, "r", encoding="utf-8") as handle:
+                lines = [
+                    line.strip()
+                    for line in handle.readlines()
+                    if line.strip() and not line.strip().startswith("#")
+                ]
+        except Exception as exc:  # pragma: no cover - defensive I/O guard
+            tprint_warning(
+                f"⚠️ [PRE_TRAINING_FACTORY] Failed to read extra modules file: {exc}"
+            )
+            return []
+
+        return lines
+
+    @classmethod
+    def _unregister_for_testing(cls, name: str) -> None:
+        """Remove a component registration (testing helper)."""
+
+        cls.registry.unregister(name)

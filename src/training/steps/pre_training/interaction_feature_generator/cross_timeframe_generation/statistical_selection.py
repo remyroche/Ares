@@ -21,7 +21,6 @@ from sklearn.linear_model import LassoCV, Ridge
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.feature_selection import SelectFromModel
 from scipy import stats
-from scipy.stats import permutation_test
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -234,15 +233,30 @@ class PermutationTester:
     def calculate_p_values(self,
                           features: pd.DataFrame,
                           targets: pd.Series,
-                          base_features: Optional[List[str]] = None) -> Dict[str, float]:
+                          base_features: Optional[List[str]] = None,
+                          cv_splitter: Optional[Any] = None,
+                          block_size: Optional[int] = None,
+                          n_permutations: Optional[int] = None,
+                          random_state: Optional[int] = None) -> Dict[str, float]:
         """
-        Calculate p-values using permutation testing.
-        
+        Calculate feature p-values using fold-aware permutation testing.
+
+        The provided ``cv_splitter`` must yield validation windows that already
+        respect any desired purge or embargo rules.  Permutations are performed
+        within each validation fold only so that permuted samples never
+        precede their evaluation window.  Temporal dependency is preserved by
+        shuffling contiguous blocks (with length at least the label horizon)
+        rather than individual observations.
+
         Args:
             features: Feature matrix
             targets: Target series
             base_features: Base features for conditional testing
-            
+            cv_splitter: Time-series aware splitter defining validation folds
+            block_size: Optional override for permutation block size
+            n_permutations: Optional override for number of permutations
+            random_state: Optional RNG seed for reproducibility
+
         Returns:
             Dictionary of p-values
         """
@@ -258,10 +272,17 @@ class PermutationTester:
         for feature_name in features.columns:
             try:
                 p_value = self._calculate_permutation_p_value(
-                    features, targets, feature_name, base_features
+                    features,
+                    targets,
+                    feature_name,
+                    base_features,
+                    cv_splitter=cv_splitter,
+                    block_size=block_size,
+                    n_permutations=n_permutations,
+                    random_state=random_state,
                 )
                 p_values[feature_name] = p_value
-                
+
             except Exception as e:
                 self.logger.warning(f"Failed to calculate p-value for {feature_name}: {e}")
                 tprint_warning(f"⚠️ Permutation test failed for {feature_name}: {e}")
@@ -274,44 +295,137 @@ class PermutationTester:
         )
         return p_values
     
-    def _calculate_permutation_p_value(self, 
+    def _calculate_permutation_p_value(self,
                                      features: pd.DataFrame,
                                      targets: pd.Series,
                                      feature_name: str,
-                                     base_features: Optional[List[str]] = None) -> float:
+                                     base_features: Optional[List[str]] = None,
+                                     cv_splitter: Optional[Any] = None,
+                                     block_size: Optional[int] = None,
+                                     n_permutations: Optional[int] = None,
+                                     random_state: Optional[int] = None) -> float:
         """Calculate permutation p-value for a single feature."""
         try:
-            # Calculate original correlation
-            original_corr = features[feature_name].corr(targets)
-            
-            if pd.isna(original_corr):
+            if len(features) < 3:
                 return 1.0
-            
-            # Perform permutation test
-            n_permutations = 1000
-            permuted_corrs = []
-            
-            for _ in range(n_permutations):
-                # Permute the feature
-                permuted_feature = features[feature_name].sample(frac=1).reset_index(drop=True)
-                
-                # Calculate permuted correlation
-                permuted_corr = permuted_feature.corr(targets)
-                
-                if not pd.isna(permuted_corr):
-                    permuted_corrs.append(abs(permuted_corr))
-            
-            if not permuted_corrs:
+
+            effective_block_size = self._resolve_block_size(len(features), block_size)
+            effective_n_permutations = self._resolve_n_permutations(n_permutations)
+            rng = np.random.default_rng(self._resolve_random_state(random_state))
+
+            splitter = self._resolve_splitter(features, targets, cv_splitter)
+            if splitter is None:
                 return 1.0
-            
-            # Calculate p-value
-            p_value = np.mean(np.array(permuted_corrs) >= abs(original_corr))
-            
-            return p_value
-            
+
+            fold_p_values = []
+            fold_weights = []
+
+            for train_idx, val_idx in splitter:
+                if len(val_idx) == 0:
+                    continue
+
+                feature_slice = features.iloc[val_idx][feature_name]
+                target_slice = targets.iloc[val_idx]
+
+                original_corr = feature_slice.corr(target_slice)
+
+                if pd.isna(original_corr):
+                    continue
+
+                permuted_corrs = []
+                for _ in range(effective_n_permutations):
+                    permuted_values = self._block_permute(
+                        feature_slice.to_numpy(), effective_block_size, rng
+                    )
+                    permuted_series = pd.Series(permuted_values, index=feature_slice.index)
+                    permuted_corr = permuted_series.corr(target_slice)
+                    if not pd.isna(permuted_corr):
+                        permuted_corrs.append(abs(permuted_corr))
+
+                if not permuted_corrs:
+                    continue
+
+                permuted_corrs = np.asarray(permuted_corrs)
+                greater_equal = np.sum(permuted_corrs >= abs(original_corr))
+                fold_p = (greater_equal + 1) / (len(permuted_corrs) + 1)
+                fold_p_values.append(fold_p)
+                fold_weights.append(len(val_idx))
+
+            if not fold_p_values:
+                return 1.0
+
+            weighted_p = np.average(fold_p_values, weights=fold_weights)
+            return float(weighted_p)
+
         except Exception as e:
             self.logger.warning(f"Permutation test failed for {feature_name}: {e}")
             return 1.0
+
+    def _resolve_block_size(self, n_samples: int, override: Optional[int]) -> int:
+        label_horizon = max(1, getattr(self.config, "label_horizon", 1))
+        config_block = getattr(self.config, "permutation_block_size", None)
+        block_size = override if override is not None else config_block
+
+        if block_size is None:
+            block_size = max(label_horizon, int(np.ceil(np.sqrt(n_samples))))
+
+        block_size = max(int(block_size), label_horizon, 1)
+        return block_size
+
+    def _resolve_n_permutations(self, override: Optional[int]) -> int:
+        config_n_perm = getattr(self.config, "permutation_n_permutations", 500)
+        n_permutations = override if override is not None else config_n_perm
+        return max(int(n_permutations), 1)
+
+    def _resolve_random_state(self, override: Optional[int]) -> Optional[int]:
+        if override is not None:
+            return override
+        return getattr(self.config, "permutation_random_state", None)
+
+    def _resolve_splitter(self,
+                          features: pd.DataFrame,
+                          targets: pd.Series,
+                          splitter: Optional[Any]) -> Optional[List[Tuple[np.ndarray, np.ndarray]]]:
+        if splitter is None:
+            requested_splits = getattr(self.config, "permutation_cv_folds", 5)
+            max_splits = min(requested_splits, max(len(features) - 1, 1))
+            if max_splits < 2 or max_splits >= len(features):
+                return None
+            splitter = TimeSeriesSplit(n_splits=max_splits)
+
+        try:
+            indices = np.arange(len(features))
+            splits = list(splitter.split(indices, targets.to_numpy() if targets is not None else None))
+            if not splits:
+                return None
+            return [(np.asarray(train), np.asarray(test)) for train, test in splits]
+        except Exception as exc:
+            self.logger.warning(f"Failed to generate CV splits for permutation testing: {exc}")
+            return None
+
+    def _block_permute(self,
+                       values: np.ndarray,
+                       block_size: int,
+                       rng: np.random.Generator) -> np.ndarray:
+        if len(values) == 0:
+            return values.copy()
+
+        block_size = max(1, min(block_size, len(values)))
+        n_blocks = int(np.ceil(len(values) / block_size))
+
+        if n_blocks <= 1:
+            if len(values) <= 1:
+                return values.copy()
+            min_shift = min(block_size, len(values) - 1)
+            if min_shift <= 0:
+                min_shift = 1
+            shift = int(rng.integers(min_shift, len(values)))
+            return np.roll(values, shift)
+
+        blocks = [values[i * block_size: (i + 1) * block_size] for i in range(n_blocks)]
+        block_order = rng.permutation(n_blocks)
+        permuted = np.concatenate([blocks[idx] for idx in block_order])
+        return permuted[:len(values)]
 
 
 class FDRController:
@@ -698,8 +812,19 @@ class StatisticalSelection:
         tprint_info("   → Stability selection computed", f"features={len(selection_frequencies)}")
 
         # Permutation testing
+        cv_folds = max(2, min(getattr(self.config, "permutation_cv_folds", 5), len(feature_matrix) - 1))
+        cv_splitter = None
+        if len(feature_matrix) > cv_folds:
+            cv_splitter = TimeSeriesSplit(n_splits=cv_folds)
+
         p_values = self.permutation_tester.calculate_p_values(
-            feature_matrix, targets, base_features
+            feature_matrix,
+            targets,
+            base_features,
+            cv_splitter=cv_splitter,
+            block_size=getattr(self.config, "permutation_block_size", None),
+            n_permutations=getattr(self.config, "permutation_n_permutations", None),
+            random_state=getattr(self.config, "permutation_random_state", None),
         )
         tprint_info("   → Permutation testing complete", f"features={len(p_values)}")
 

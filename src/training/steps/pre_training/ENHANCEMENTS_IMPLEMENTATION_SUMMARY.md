@@ -6,7 +6,32 @@ This document summarizes the comprehensive enhancements made to the pre-training
 
 **Implementation Date**: 2025-10-08  
 **Status**: ✅ Complete  
-**Files Modified**: 4 existing files + 7 new modules created
+**Files Modified**: 3 existing files enhanced + 5 new modules created  
+**Integration Strategy**: Enhancements integrated into existing pre-training components
+
+---
+
+## 🏗️ Integration Approach
+
+This implementation follows a **hybrid integration strategy**:
+
+1. **New Standalone Modules** (5 files) - Utility modules that don't duplicate existing functionality:
+   - `time_split_manager.py` - NEW temporal splitting with purging/embargo
+   - `quantitative_validation.py` - NEW 6 validation tests
+   - `feature_redundancy_control.py` - NEW VIF + drift monitoring
+   - `reproducibility_tracker.py` - NEW complete tracking system
+   - `pipeline_enhancements_integration.py` - NEW unified orchestrator
+
+2. **Enhanced Existing Files** (3 files) - Enhancements integrated directly:
+   - `profit_labeling/volatility_aware_labeler.py` - Enhanced with 9 new config params
+   - `feature_lookback_optimization/core/optimizer.py` - Enhanced with 12 new fields
+   - `final_feature_selection_step.py` - Enhanced with 8 new config params
+
+**Benefits of this approach**:
+- ✅ No code duplication
+- ✅ Backward compatible
+- ✅ Leverages existing battle-tested components
+- ✅ Minimal integration overhead
 
 ---
 
@@ -41,7 +66,8 @@ This document summarizes the comprehensive enhancements made to the pre-training
 **Issue**: Overlapping samples, ambiguous volatility scaling, no transaction cost adjustment, regime-independent labeling.
 
 **Solution Implemented**:
-- **Enhanced File**: `profit_labeling/volatility_aware_labeler.py`
+- **Enhanced Existing File**: `profit_labeling/volatility_aware_labeler.py`
+- **Integration**: Enhancements added directly to existing volatility-aware labeler
 - **New Configuration Parameters**:
   ```python
   enable_non_overlapping_sampling: bool = True
@@ -55,11 +81,11 @@ This document summarizes the comprehensive enhancements made to the pre-training
   adjust_labels_for_costs: bool = True
   ```
 
-**New Standalone Module**: `enhanced_label_design.py`
+**Key Enhancements Integrated**:
 - **Non-overlapping sampling**: Sample once per horizon to ensure independence
 - **Frozen volatility windows**: σ computed with fixed lookback (default: 48 bars)
-- **Transaction cost model**: Explicit maker/taker fees + slippage
-- **Triple-barrier method**: Profit target, stop loss, max horizon
+- **Transaction cost model**: Explicit maker/taker fees + slippage integration
+- **Triple-barrier method**: Profit target, stop loss, max horizon (configurable)
 - **Regime-dependent labeling**: Different thresholds per regime
 
 **Key Features**:
@@ -114,7 +140,8 @@ DriftConfig(
 **Issue**: Unclear objective function, no regularization, unstable lookback selection.
 
 **Solution Implemented**:
-- **Enhanced File**: `feature_lookback_optimization/core/optimizer.py`
+- **Enhanced Existing File**: `feature_lookback_optimization/core/optimizer.py`
+- **Integration**: Enhancements added to LookbackConstraints and OptimizationResult
 - **New Configuration Fields**:
   ```python
   optimization_objective: str = "max_ic"
@@ -126,7 +153,7 @@ DriftConfig(
   track_sensitivity: bool = True
   ```
 
-**New Standalone Module**: `enhanced_lookback_optimizer.py`
+**Key Enhancements Integrated**:
 - **Explicit objective functions**:
   - `MAX_IC`: Maximize information coefficient
   - `MAX_SHARPE`: Maximize Sharpe ratio
@@ -157,7 +184,8 @@ class OptimizationResult:
 **Issue**: Target-leaking selection, no stability check, no economic interpretability.
 
 **Solution Implemented**:
-- **Enhanced File**: `final_feature_selection_step.py`
+- **Enhanced Existing File**: `final_feature_selection_step.py`
+- **Integration**: Enhancements added to FinalFeatureSelectionStep configuration
 - **New Configuration Parameters**:
   ```python
   preserve_economic_themes: bool = True
@@ -170,7 +198,7 @@ class OptimizationResult:
   min_factor_sharpe: float = 0.3
   ```
 
-**New Standalone Module**: `enhanced_feature_selector.py`
+**Key Enhancements Integrated**:
 - **Bootstrap feature selection**: Run selection on N folds (default: 5)
 - **Selection frequency filtering**: Keep features selected in ≥60% of folds
 - **IC tracking over time**: Rolling window IC with t-statistic
@@ -182,12 +210,6 @@ class OptimizationResult:
   - VOLUME (VWAP)
 - **Factor portfolio validation**: Construct weighted portfolio, compute Sharpe
 - **Theme diversity preservation**: Ensure at least 1 feature per theme
-
-**Key Classes**:
-- `EnhancedFeatureSelector`: Main selection engine
-- `FeatureInfo`: Comprehensive feature metadata
-- `SelectionResult`: Results with stability metrics
-- `EconomicTheme`: Enum for feature categorization
 
 ---
 

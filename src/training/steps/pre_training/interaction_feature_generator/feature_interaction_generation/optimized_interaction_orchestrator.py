@@ -29,9 +29,12 @@ from pathlib import Path
 
 # Import tprint utilities
 from src.utils.tprint import (
-    tprint, tprint_info, tprint_success, tprint_warning, tprint_error, 
+    tprint, tprint_info, tprint_success, tprint_warning, tprint_error,
     tprint_debug, tprint_performance, tprint_progress
 )
+
+from src.feature_generation.core.feature_cache import FeatureCacheService
+from src.feature_generation.core.feature_bank import FeatureBank
 
 # Import common operations and utilities
 try:
@@ -262,10 +265,14 @@ class OptimizedInteractionConfig:
     # Validation configuration
     enable_validation: bool = True
     validation_threshold: float = 0.02
-    
+
     # Logging configuration
     verbose_logging: bool = True
     log_performance: bool = True
+
+    # Market data streaming configuration
+    market_data_batch_size: Optional[int] = None
+    market_data_window_days: Optional[int] = None
     
     def __post_init__(self):
         if self.lookback_config is None:
@@ -291,10 +298,11 @@ class OptimizedInteractionResult:
     memory_usage_mb: float = 0.0
     cpu_usage_percent: float = 0.0
     gpu_usage_percent: float = 0.0
-    
+    performance_metrics: Dict[str, Any] = field(default_factory=dict)
+
     # Stage results
     stage_results: Dict[PipelineStage, Dict[str, Any]] = field(default_factory=dict)
-    
+
     # Artifacts
     artifacts: Dict[str, Any] = field(default_factory=dict)
 
@@ -313,11 +321,23 @@ class OptimizedInteractionOrchestrator:
         self.stage_start_times = {}
         self.memory_usage_history = []
         self.gpu_usage_history = []
+
+        # Cache management
+        self.feature_cache = FeatureCacheService(subdirectory="interaction_orchestrator")
+        self.cache_metrics = {
+            'hits': 0,
+            'misses': 0,
+            'writes': 0,
+            'force_refreshes': 0,
+        }
+        self._active_cache_key: Optional[str] = None
+        self._current_lookback_hash: Optional[str] = None
+        self._force_cache_refresh: bool = False
         
         # Initialize components with extensive logging
         tprint_info("🔧 Initializing pipeline components...")
         self._initialize_components()
-        
+
         # Log initialization summary
         tprint_success("🚀 Optimized Interaction Orchestrator initialized successfully")
         tprint_info(f"📊 Configuration:")
@@ -337,9 +357,31 @@ class OptimizedInteractionOrchestrator:
         tprint_info(f"   - Hardware optimization: {'✅' if self.m1_gpu_manager else '❌'}")
         tprint_info(f"   - Memory optimization: {'✅' if self.m1_memory_optimizer else '❌'}")
         tprint_info(f"   - CPU optimization: {'✅' if self.m1_cpu_optimizer else '❌'}")
-        
+
         # Initialize performance monitoring
         self._initialize_performance_monitoring()
+
+    def _compute_cache_key(self, pipeline_state: Dict[str, Any]) -> Optional[str]:
+        if pipeline_state is None:
+            return None
+
+        symbol = pipeline_state.get('symbol', self.config.symbol)
+        timeframe = pipeline_state.get('timeframe', self.config.timeframe)
+        lookback_config = pipeline_state.get('lookback_config', self.config.lookback_config)
+        lookback_hash = FeatureCacheService.compute_config_hash(lookback_config)
+        self._current_lookback_hash = lookback_hash
+        pipeline_state['lookback_config_hash'] = lookback_hash
+
+        version = getattr(FeatureBank, 'VERSION', 'unknown')
+        cache_key = FeatureCacheService.build_key(symbol, timeframe, version, lookback_hash)
+        pipeline_state['feature_cache_key'] = cache_key
+        return cache_key
+
+    def _sync_cache_metrics(self) -> None:
+        self.performance_metrics.setdefault('cache_metrics', {})
+        self.performance_metrics['cache_metrics'] = dict(self.cache_metrics)
+        self.performance_metrics['feature_cache_key'] = self._active_cache_key
+        self.performance_metrics['feature_cache_force_refresh'] = self._force_cache_refresh
     
     def _initialize_components(self):
         """Initialize all pipeline components with comprehensive logging."""
@@ -545,10 +587,11 @@ class OptimizedInteractionOrchestrator:
         except Exception as e:
             tprint_warning(f"⚠️ Performance monitoring initialization failed: {e}")
     
-    async def generate_features(self, 
+    async def generate_features(self,
                               training_input: Dict[str, Any],
                               pipeline_state: Dict[str, Any]) -> OptimizedInteractionResult:
         """Generate optimized interaction features with comprehensive logging and monitoring."""
+        pipeline_state = dict(pipeline_state or {})
         start_time = time.time()
         tprint_success("🚀 Starting optimized interaction feature generation")
         tprint_info(f"📊 Pipeline configuration:")
@@ -563,6 +606,38 @@ class OptimizedInteractionOrchestrator:
         self.stage_start_times = {}
         self.performance_metrics['total_execution_time'] = 0.0
         self.performance_metrics['stage_times'] = {}
+
+        cache_key = self._compute_cache_key(pipeline_state)
+        self._active_cache_key = cache_key
+        force_refresh = bool(
+            pipeline_state.get('feature_cache_force_refresh')
+            or pipeline_state.get('force_feature_cache_refresh')
+            or pipeline_state.get('force_refresh_features')
+        )
+        self._force_cache_refresh = force_refresh
+        pipeline_state['feature_cache_force_refresh'] = force_refresh
+
+        if force_refresh:
+            self.cache_metrics['force_refreshes'] += 1
+            tprint_info(f"♻️ Force refresh enabled for cache key {cache_key}")
+        elif cache_key:
+            cached_interactions = self.feature_cache.load(cache_key, artifact_type="interactions")
+            cached_cross = self.feature_cache.load(cache_key, artifact_type="cross_timeframe")
+            if (
+                cached_interactions is not None
+                and not cached_interactions.empty
+                and cached_cross is not None
+                and not cached_cross.empty
+            ):
+                self.cache_metrics['hits'] += 1
+                pipeline_state['_cached_interaction_features'] = cached_interactions
+                pipeline_state['_cached_cross_timeframe_features'] = cached_cross
+                tprint_info(f"📦 Reusing cached interaction artifacts for key {cache_key}")
+            else:
+                self.cache_metrics['misses'] += 1
+                tprint_info(f"🔁 Cache miss for interaction artifacts using key {cache_key}")
+
+        self._sync_cache_metrics()
         
         try:
             # Stage 1: Initialization
@@ -1330,7 +1405,21 @@ class OptimizedInteractionOrchestrator:
         
         try:
             transformed_features = transform_result['transformed_features']
-            
+
+            cached_interactions = pipeline_state.get('_cached_interaction_features')
+            if cached_interactions is not None and not self._force_cache_refresh:
+                tprint_info("📦 Using cached interaction features")
+                stage_time = time.time() - stage_start
+                result = {
+                    'interactions': cached_interactions,
+                    'interaction_engine': None,
+                    'interaction_config': None,
+                    'stage_time': stage_time,
+                    'success': True,
+                }
+                self.stage_results[PipelineStage.INTERACTION_GENERATION] = result
+                return result
+
             # Create interaction configuration
             tprint_debug("Creating interaction configuration...")
             interaction_config = create_default_interaction_config()
@@ -1351,24 +1440,27 @@ class OptimizedInteractionOrchestrator:
             interactions = interaction_engine.build_interactions(transformed_features, patch_features)
             
             tprint_info(f"✅ Generated {len(interactions.columns)} interaction features")
-            
+
             # Log interaction types
             interaction_types = {}
             for col in interactions.columns:
                 interaction_type = col.split('/')[1] if '/' in col else 'unknown'
                 interaction_types[interaction_type] = interaction_types.get(interaction_type, 0) + 1
-            
+
             for interaction_type, count in interaction_types.items():
                 tprint_debug(f"  {interaction_type}: {count} features")
-            
+
             # Matrix optimization
             if self.vectorized_core and MATRIX_OPS_AVAILABLE:
                 tprint_debug("Applying matrix optimization to interactions...")
                 interactions = self.vectorized_core.optimize_dataframe_for_processing(interactions)
-            
+
+            if self._active_cache_key:
+                self.feature_cache.save(self._active_cache_key, interactions, artifact_type="interactions")
+
             stage_time = time.time() - stage_start
             tprint_performance("Interaction Generation", stage_time)
-            
+
             result = {
                 'interactions': interactions,
                 'interaction_engine': interaction_engine,
@@ -1395,24 +1487,43 @@ class OptimizedInteractionOrchestrator:
             transform_result = self.stage_results[PipelineStage.TRANSFORM_APPLICATION]
             transformed_features = transform_result['transformed_features']
             interactions = interaction_result['interactions']
-            
+
+            cached_cross = pipeline_state.get('_cached_cross_timeframe_features')
+            if cached_cross is not None and not self._force_cache_refresh:
+                tprint_info("📦 Using cached cross-timeframe features")
+                all_features = pd.concat([transformed_features, interactions], axis=1)
+                stage_time = time.time() - stage_start
+                result = {
+                    'cross_timeframe_features': cached_cross,
+                    'all_features': all_features,
+                    'stage_time': stage_time,
+                    'success': True,
+                }
+                self.stage_results[PipelineStage.CROSS_TIMEFRAME] = result
+                return result
+
             # Combine features
             all_features = pd.concat([transformed_features, interactions], axis=1)
-            
+
             # Generate cross-timeframe features
             tprint_debug("Generating cross-timeframe features...")
             cross_timeframe_features = self._generate_cross_timeframe_features(all_features)
-            
+
             tprint_info(f"✅ Generated {len(cross_timeframe_features.columns)} cross-timeframe features")
-            
+
             # Matrix optimization
             if self.vectorized_core and MATRIX_OPS_AVAILABLE:
                 tprint_debug("Applying matrix optimization to cross-timeframe features...")
                 cross_timeframe_features = self.vectorized_core.optimize_dataframe_for_processing(cross_timeframe_features)
-            
+
+            if self._active_cache_key:
+                self.feature_cache.save(self._active_cache_key, cross_timeframe_features, artifact_type="cross_timeframe")
+                self.cache_metrics['writes'] += 1
+                self._sync_cache_metrics()
+
             stage_time = time.time() - stage_start
             tprint_performance("Cross-timeframe Features", stage_time)
-            
+
             result = {
                 'cross_timeframe_features': cross_timeframe_features,
                 'all_features': all_features,
@@ -1522,7 +1633,10 @@ class OptimizedInteractionOrchestrator:
             final_result = self.stage_results[PipelineStage.FINAL_ASSEMBLY]
             interaction_result = self.stage_results[PipelineStage.INTERACTION_GENERATION]
             cross_timeframe_result = self.stage_results[PipelineStage.CROSS_TIMEFRAME]
-            
+
+            pipeline_state['feature_cache_metrics'] = dict(self.cache_metrics)
+            pipeline_state['feature_cache_key'] = self._active_cache_key
+
             # Extract features
             final_features = final_result['final_features']
             selected_features = final_result['selected_features']
@@ -1540,7 +1654,8 @@ class OptimizedInteractionOrchestrator:
                 'performance_metrics': self.performance_metrics,
                 'config': self.config,
                 'feature_registry': self.feature_registry,
-                'assembly_result': self.stage_results[PipelineStage.FEATURE_ENGINEERING].get('assembly_result')
+                'assembly_result': self.stage_results[PipelineStage.FEATURE_ENGINEERING].get('assembly_result'),
+                'cache_metrics': dict(self.cache_metrics),
             }
             
             stage_time = time.time() - stage_start
@@ -1554,7 +1669,9 @@ class OptimizedInteractionOrchestrator:
             tprint_info(f"⏰ Generated {len(cross_timeframe_features.columns)} cross-timeframe features")
             tprint_info(f"💾 Memory usage: {memory_usage_mb:.2f} MB")
             tprint_info(f"⏱️ Total execution time: {total_execution_time:.3f}s")
-            
+
+            self._sync_cache_metrics()
+
             return OptimizedInteractionResult(
                 features=final_features,
                 feature_names=all_feature_names,

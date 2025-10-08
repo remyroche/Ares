@@ -51,3 +51,16 @@ When adding tests for new utilities:
 2. Follow the naming convention: `test_<module_name>.py`
 3. Use the existing test structure as a template
 4. Update this README with the new test information
+
+## Column Namespace Linter
+
+Run the column namespace checker to ensure DataFrames use the approved
+double-underscore prefixes before committing changes:
+
+```bash
+python code_quality/check_column_prefixes.py
+```
+
+The script fails if it finds string literals that start with the legacy
+`target_`, `label_`, `feature_`, or `meta_` prefixes when assigning DataFrame
+columns.

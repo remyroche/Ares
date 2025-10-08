@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from .base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+from .component_factory import register_component
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint
 from ...market_analysis.logging_standards import (
@@ -33,6 +34,7 @@ from ..validation.schemas import (
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
 from src.utils.hardware.adaptive_optimization_engine import AdaptiveOptimizationEngine
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
+from src.training.config.data_locator import DataLocator
 
 
 CONFIG_ROOT_ENV = "ARES_CONFIG_ROOT"
@@ -47,6 +49,7 @@ FEATURE_SELECTION_CONFIG_PATH = Path(
 """Resolved path to the feature selection YAML profile."""
 
 
+@register_component('final_feature_selection')
 class FinalFeatureSelectionComponent(BasePreTrainingComponent):
     """
     Final Feature Selection Component.
@@ -255,12 +258,35 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             if timeframe is None:
                 timeframe = '15m'  # Default timeframe
 
-            # Resolve data directory from config or pipeline state
+            # Resolve data locator and directory information
+            data_locator: Optional[DataLocator] = getattr(self.config, 'data_locator', None)
+            if data_locator is None:
+                data_locator = pipeline_state.get('data_locator')
+
             data_dir = getattr(self.config, 'data_dir', None)
-            if data_dir is None and 'data_dir' in pipeline_state:
-                data_dir = pipeline_state['data_dir']
             if data_dir is None:
-                data_dir = 'historical_data'  # Default data directory
+                data_dir = pipeline_state.get('data_dir')
+
+            data_dir_key = getattr(self.config, 'data_dir_key', None) or pipeline_state.get('data_dir_key', 'market_data')
+            final_features_dir_key = (
+                getattr(self.config, 'final_feature_selection_dir_key', None)
+                or pipeline_state.get('final_feature_selection_dir_key', 'final_feature_selection')
+            )
+
+            if data_dir is None and isinstance(data_locator, DataLocator):
+                data_dir = str(data_locator.data_path(data_dir_key))
+
+            if data_dir is None:
+                raise ValueError("Data directory could not be resolved for final feature selection")
+
+            final_features_dir_override = (
+                getattr(self.config, 'final_feature_selection_dir', None)
+                or pipeline_state.get('final_feature_selection_dir')
+            )
+
+            output_directory_override = getattr(self.config, 'output_directory', None)
+            if output_directory_override is None:
+                output_directory_override = pipeline_state.get('generated_dir')
 
             tprint(
                 "📥 [FinalFeatureSelection] Resolved execution context "
@@ -301,12 +327,26 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             # Execute final feature selection with hardware optimization
             log_info(f'🚀 Executing feature selection with hardware optimizations...')
             tprint('🚀 [FinalFeatureSelection] Executing feature selection step')
+            runtime_config = dict(final_feature_selection_config)
+            runtime_config['data_dir_key'] = data_dir_key
+            runtime_config['final_features_dir_key'] = final_features_dir_key
+            if final_features_dir_override:
+                runtime_config['final_features_dir'] = final_features_dir_override
+            if output_directory_override and 'output_directory' not in runtime_config:
+                runtime_config['output_directory'] = output_directory_override
+            if isinstance(data_locator, DataLocator):
+                runtime_config['data_locator'] = data_locator
+                runtime_config.setdefault(
+                    'output_directory_key',
+                    pipeline_state.get('generated_dir_key', 'market_analysis'),
+                )
+
             success = await run_final_feature_selection_step(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
                 data_dir=data_dir,
-                config=final_feature_selection_config
+                config=runtime_config
             )
 
             if success:
@@ -354,6 +394,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 persistence_error: Optional[str] = None
                 artifacts_saved_persistently = False
                 saved_files: Dict[str, str] = {}
+                failure_reason: Optional[str] = None
 
                 try:
                     saved_files = await self.save_artifacts(artifacts, {
@@ -379,16 +420,27 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                         
                 except Exception as e:
                     persistence_error = str(e)
+                    failure_reason = f"Artifact saving failed: {e}"
                     log_warning(f"⚠️ [FINAL_FEATURE_SELECTION] Exception while saving artifacts persistently: {e}")
                     tprint(f"⚠️ [FinalFeatureSelection] Artifact save error: {e}")
 
                 component_success = success and artifacts_saved_persistently
 
+                result_error: Optional[Exception] = None
+                warnings: List[str] = []
+                if not component_success:
+                    failure_reason = failure_reason or persistence_error or "Artifacts were not persisted"
+                    result_error = ComponentError(failure_reason)
+                    warnings.append(failure_reason)
+                    log_error(f"❌ [FINAL_FEATURE_SELECTION] {failure_reason}")
+
                 return ComponentResult(
                     success=component_success,
                     artifacts=artifacts,
-                    error_message=None,
+                    error=result_error,
+                    warnings=warnings,
                     execution_time=0.0,
+                    metrics={},
                     metadata={
                         'component_type': 'final_feature_selection',
                         'symbol': symbol,
@@ -408,11 +460,14 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 self.memory_optimizer._light_memory_cleanup()
                 tprint('🧹 [FinalFeatureSelection] Memory cleanup performed after failure')
 
+                failure_message = "Final feature selection execution failed"
                 return ComponentResult(
                     success=False,
                     artifacts={},
-                    error_message="Final feature selection execution failed",
+                    error=ComponentError(failure_message),
+                    warnings=[failure_message],
                     execution_time=0.0,
+                    metrics={},
                     metadata={
                         'component_type': 'final_feature_selection',
                         'symbol': symbol,
@@ -454,11 +509,14 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             except Exception as cleanup_error:
                 tprint(f'⚠️ [FinalFeatureSelection] Memory cleanup failed (non-critical): {cleanup_error}')
 
+            failure_message = str(e)
             return ComponentResult(
                 success=False,
                 artifacts={},
-                error_message=str(e),
+                error=ComponentError(failure_message),
+                warnings=[failure_message],
                 execution_time=0.0,
+                metrics={},
                 metadata={
                     'component_type': 'final_feature_selection',
                     'symbol': symbol if 'symbol' in locals() else 'unknown',

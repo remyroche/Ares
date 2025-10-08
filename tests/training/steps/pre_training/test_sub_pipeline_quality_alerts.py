@@ -175,3 +175,36 @@ def test_validate_dataframe_respects_duplicate_threshold():
     assert not cleaned_high.index.duplicated().any()
     assert metrics_high['deduplicated'] is True
     assert metrics_high['duplicate_index_share'] == pytest.approx(1 / 3, rel=1e-6)
+
+
+def test_prepare_interactive_training_input_uses_batches():
+    sub_pipeline_module = _load_pre_training_sub_pipeline_module()
+    pipeline = sub_pipeline_module.PreTrainingSubPipeline()
+    config = sub_pipeline_module.SubPipelineConfig()
+
+    index = pd.date_range('2024-01-01', periods=10, freq='H')
+    market_data = pd.DataFrame(
+        {
+            'open': np.arange(10, dtype=float),
+            'high': np.arange(10, dtype=float) + 1,
+            'low': np.arange(10, dtype=float) - 1,
+            'close': np.arange(10, dtype=float) + 0.5,
+            'volume': np.arange(10, dtype=float) + 100,
+        },
+        index=index,
+    )
+    batches = [market_data.iloc[:5], market_data.iloc[5:]]
+    labels = pd.DataFrame({'target': np.arange(10)}, index=index)
+
+    pipeline._current_pipeline_state['multi_horizon_labeling_result'] = {
+        'market_data': market_data,
+        'market_data_batches': batches,
+        'labeled_data': labels,
+    }
+
+    pipeline_state = pipeline._prepare_component_pipeline_state(config)
+    training_input = pipeline._prepare_interactive_training_input(pipeline_state)
+
+    assert 'data_batches' in training_input
+    assert len(training_input['data_batches']) == 2
+    pd.testing.assert_frame_equal(training_input['data'], market_data)

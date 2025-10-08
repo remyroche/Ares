@@ -216,6 +216,11 @@ class ArtifactManager:
             return obj.isoformat()
         elif isinstance(obj, datetime):
             return obj.isoformat()
+        elif isinstance(obj, Exception):
+            return {
+                "type": obj.__class__.__name__,
+                "message": str(obj)
+            }
         elif hasattr(obj, '__dict__'):
             return obj.__dict__
         elif isinstance(obj, dict):

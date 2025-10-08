@@ -16,6 +16,16 @@ from src.utils.common_operations import safe_dataframe_operation
 from src.utils.common_utilities import CommonUtilities
 from src.utils.math_validation import safe_divide
 from src.utils.serialization_utils import UniversalSerializer
+from src.feature_generation.core.feature_cache import FeatureCacheService
+from src.training.steps.pre_training.column_naming import (
+    ColumnNamespace,
+    ensure_namespace,
+    filter_namespace_columns,
+    strip_namespace)
+from src.training.steps.pre_training.artifacts.manifest import (
+    ArtifactManifest,
+    DataLocator
+)
 
 # Import numpy for type checking
 from .dependency_manager import get_dependency
@@ -90,6 +100,7 @@ from ..validation.schemas import (
     validate_labeled_dataset,
     validate_raw_ohlcv,
 )
+from ..components.component_factory import register_component
 
 # Import optimized process engine
 from ...market_analysis.optimized_process_engines import OptimizedFeatureLookbackEngine, ProcessType
@@ -127,6 +138,7 @@ class OptimizationMetrics:
     error_rate: float
 
 
+@register_component('feature_lookback_optimization')
 class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
     """
     Modular Feature Lookback Optimization Component.
@@ -180,6 +192,18 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         self.start_time: Optional[float] = None
         self.metrics: Optional[OptimizationMetrics] = None
 
+        # Feature cache state
+        self.feature_cache = FeatureCacheService(subdirectory="feature_bank")
+        self.cache_metrics = {
+            'hits': 0,
+            'misses': 0,
+            'writes': 0,
+            'force_refreshes': 0
+        }
+        self._current_cache_key: Optional[str] = None
+        self._current_lookback_hash: Optional[str] = None
+        self._force_cache_refresh: bool = False
+
         # Performance monitoring (separate from PerformanceMonitor instance)
         self.performance_data = {
             'memory_usage': [],
@@ -220,6 +244,8 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         Returns:
             ComponentResult with optimization results
         """
+        pipeline_state = dict(pipeline_state or {})
+
         tprint("🚀 Starting modular feature lookback optimization execution...")
         start_time = self.performance_monitor.start_operation("execute")
 
@@ -232,6 +258,10 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         try:
             log_info("🚀 Starting feature lookback optimization with multi-horizon profit targets...")
             tprint("📊 Performance monitoring started for execute operation")
+
+            numpy_rng = pipeline_state.get('numpy_rng') if isinstance(pipeline_state, dict) else None
+            if numpy_rng is not None:
+                self.core_optimizer.set_rng(numpy_rng)
 
             # Validate inputs
             is_valid, validation_summary, cleaned_data = self.validator.validate_data(
@@ -259,6 +289,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
             # Extract execution mode parameters from pipeline configuration
             execution_mode_params = {}
+            lookback_config = None
             if self.execution_mode_config and hasattr(pipeline_state, 'get'):
                 try:
                     # Try to extract execution mode from pipeline state or config
@@ -271,6 +302,16 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 except Exception as e:
                     self.logger.warning(f"⚠️ Could not extract execution mode parameters: {e}")
                     execution_mode_params = {}
+            else:
+                execution_mode_params = {}
+
+            pipeline_state['lookback_config'] = lookback_config or pipeline_state.get('lookback_config', {})
+            cache_key = self._resolve_cache_key(pipeline_state, lookback_config)
+            self.logger.info(f"🗂️ Feature cache key resolved: {cache_key}")
+            self.set_run_metadata({
+                'feature_cache_key': cache_key,
+                'lookback_config_hash': self._current_lookback_hash,
+            })
 
             # Load required data
             tprint("📥 Loading market data for optimization")
@@ -389,6 +430,8 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             except Exception as e:
                 log_warning(f"⚠️ [FEATURE_LOOKBACK] Failed to save artifacts persistently: {e}")
 
+            pipeline_state['feature_cache_metrics'] = dict(self.cache_metrics)
+
             result = ComponentResult(
                 success=True,
                 artifacts=artifacts,
@@ -401,6 +444,9 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                     'artifacts_saved_persistently': True,
                     'pipeline_type': 'differentiated_long_short',
                     'validated_schemas': validation_metadata
+                    'feature_cache_metrics': dict(self.cache_metrics),
+                    'feature_cache_key': self._current_cache_key,
+                    'feature_cache_force_refresh': self._force_cache_refresh,
                 }
             )
 
@@ -450,6 +496,34 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 }
             }
         )
+    def _current_feature_bank_version(self) -> str:
+        try:
+            from src.feature_generation.core.feature_bank import FeatureBank
+            return getattr(FeatureBank, 'VERSION', 'unknown')
+        except Exception:
+            return 'unknown'
+
+    def _resolve_cache_key(self, pipeline_state: Dict[str, Any], lookback_config: Optional[Any] = None) -> Optional[str]:
+        if pipeline_state is None:
+            return None
+
+        symbol = pipeline_state.get('symbol', self.config.symbol)
+        timeframe = pipeline_state.get('timeframe', self.config.timeframe)
+        lookback_source = lookback_config or pipeline_state.get('lookback_config') or {}
+        lookback_hash = FeatureCacheService.compute_config_hash(lookback_source)
+
+        self._current_lookback_hash = lookback_hash
+        pipeline_state['lookback_config_hash'] = lookback_hash
+
+        version = self._current_feature_bank_version()
+        cache_key = FeatureCacheService.build_key(symbol, timeframe, version, lookback_hash)
+        pipeline_state['feature_cache_key'] = cache_key
+        self._current_cache_key = cache_key
+        return cache_key
+
+    def _sync_cache_metrics(self) -> None:
+        if hasattr(self.performance_monitor, 'update_cache_metrics'):
+            self.performance_monitor.update_cache_metrics(dict(self.cache_metrics))
 
     async def _load_market_data(self, data: Any) -> Optional[pd.DataFrame]:
         """Load market data for optimization."""
@@ -588,24 +662,56 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             self.logger.warning(f"⚠️ Failed to align data with regime assignments: {e}")
             return market_data
 
-    async def _generate_features_for_optimization(self, data: pd.DataFrame) -> List[str]:
-        """Generate features using the feature bank system to get 200+ engineered features."""
+    async def _generate_features_for_optimization(
+        self,
+        data: pd.DataFrame,
+        pipeline_state: Optional[Dict[str, Any]] = None,
+        *,
+        force_refresh: bool = False,
+    ) -> List[str]:
+        """Generate features using the feature bank system with caching support."""
+
+        pipeline_state = dict(pipeline_state or {})
+        cache_key = pipeline_state.get('feature_cache_key') or self._current_cache_key
+
         try:
+            cached_features = None
+            if cache_key:
+                if force_refresh:
+                    self.logger.info("♻️ Force refresh requested for feature cache key %s", cache_key)
+                    self.cache_metrics['force_refreshes'] += 1
+                    self.performance_monitor.record_cache_event('force_refresh', cache_key)
+                    self._sync_cache_metrics()
+                else:
+                    cached_features = self.feature_cache.load(cache_key)
+                    if cached_features is not None and not cached_features.empty:
+                        self.logger.info("📦 Reusing cached feature bank matrix for key %s", cache_key)
+                        self.cache_metrics['hits'] += 1
+                        self.performance_monitor.record_cache_event('hit', cache_key)
+                        aligned = cached_features.reindex(data.index)
+                        for col in aligned.columns:
+                            data[col] = aligned[col].values
+                        self._sync_cache_metrics()
+                        return aligned.columns.tolist()
+                    else:
+                        self.logger.info("🔁 Feature cache miss for key %s", cache_key)
+                        self.cache_metrics['misses'] += 1
+                        self.performance_monitor.record_cache_event('miss', cache_key)
+                        self._sync_cache_metrics()
+
             # Import the feature bank system
             from src.feature_generation.core.feature_bank import FeatureBank
-            
+
             self.logger.info("🔧 Generating features using feature bank system...")
-            
+
             # Initialize feature bank
             feature_bank = FeatureBank()
-            
+
             # Generate features using the feature bank directly
-            # This will create 200+ engineered features (RSI, MACD, Bollinger Bands, ATR, etc.)
-            # Include only the categories we want (exclude autoencoders and interaction features)
             from src.feature_generation.core.feature_generator import FeatureCategory
             included_categories = [
                 FeatureCategory.RETURNS,
-                FeatureCategory.MOMENTUM, 
+                FeatureCategory.MOMENTUM,
                 FeatureCategory.VOLUME,
                 FeatureCategory.VOLATILITY,
                 FeatureCategory.TREND,
@@ -616,57 +722,65 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 FeatureCategory.ENTROPY,
                 FeatureCategory.ORDER_FLOW,
                 FeatureCategory.ACCELERATION,
-                FeatureCategory.TIME
+                FeatureCategory.TIME,
             ]
             generated_features = feature_bank.generate_features(data, categories=included_categories)
-            
+
             if generated_features is not None and not generated_features.empty:
-                # Provide detailed information about generated features
                 total_features = generated_features.shape[1]
                 total_rows = generated_features.shape[0]
                 self.logger.info(f"✅ Generated {total_features} features from feature bank")
                 self.logger.info(f"📊 Feature matrix: {total_rows} rows × {total_features} columns")
-                
-                # Show feature categories breakdown
+
                 feature_categories = {}
                 for col in generated_features.columns:
                     if '_' in col:
                         category = col.split('_')[0]
                         feature_categories[category] = feature_categories.get(category, 0) + 1
-                
+
                 self.logger.info(f"📋 Feature breakdown: {dict(sorted(feature_categories.items()))}")
-                
-                # Get feature columns, excluding unwanted types
-                excluded_columns = ['regime_id', 'regime_prob', 'open', 'high', 'low', 'close', 'volume', 
-                                  'timestamp', 'symbol', 'open_time', 'close_time', 'interval', 'exchange', 'timeframe']
-                
+
+                excluded_columns = [
+                    'regime_id', 'regime_prob', 'open', 'high', 'low', 'close', 'volume',
+                    'timestamp', 'symbol', 'open_time', 'close_time', 'interval', 'exchange', 'timeframe'
+                ]
+
                 feature_columns = [col for col in generated_features.columns if col not in excluded_columns]
-                
-                # Filter out unwanted features: wavelets, autoencoders, NAS, TAS, interaction, cross-timeframe, regime-specific
-                # Also exclude bid/ask features that require missing data
-                feature_columns = [col for col in feature_columns 
-                                 if not any(unwanted in col.lower() for unwanted in [
-                                     'wavelet', 'autoencoder', 'regime_', 'nas_', 'tas_',
-                                     'interaction_', 'cross_timeframe_', 'cross_timeframe',
-                                     'bid_ask', 'bidask', 'market_depth', 'liquidity_proxy',
-                                     'order_flow', 'trade_intensity', 'volume_weighted'
-                                 ])]
-                
-                self.logger.info(f"🎯 Found {len(feature_columns)} engineered features for optimization (excluding unwanted types)")
-                
-                # Add the engineered features to the data
+                feature_columns = [
+                    col for col in feature_columns
+                    if not any(
+                        unwanted in col.lower()
+                        for unwanted in [
+                            'wavelet', 'autoencoder', 'regime_', 'nas_', 'tas_',
+                            'interaction_', 'cross_timeframe_', 'cross_timeframe',
+                            'bid_ask', 'bidask', 'market_depth', 'liquidity_proxy',
+                            'order_flow', 'trade_intensity', 'volume_weighted'
+                        ]
+                    )
+                ]
+
+                self.logger.info(
+                    f"🎯 Found {len(feature_columns)} engineered features for optimization (excluding unwanted types)"
+                )
+
                 for col in feature_columns:
-                    if col in generated_features.columns and col not in data.columns:
-                        data[col] = generated_features[col].values[:len(data)]  # Align with data length
-                
+                    if col in generated_features.columns:
+                        data[col] = generated_features[col].reindex(data.index).values
+
+                if cache_key:
+                    cached_matrix = generated_features[feature_columns].reindex(data.index)
+                    self.feature_cache.save(cache_key, cached_matrix)
+                    self.cache_metrics['writes'] += 1
+                    self.performance_monitor.record_cache_event('write', cache_key)
+                    self._sync_cache_metrics()
+
                 return feature_columns
-            else:
-                self.logger.warning("⚠️ Feature generation failed, falling back to basic features")
-                return []
-                
+
+            self.logger.warning("⚠️ Feature generation failed, falling back to basic features")
+            return []
+
         except Exception as e:
             self.logger.error(f"❌ Error generating features with feature bank: {e}")
-            # Fail fast - don't fallback to basic features
             raise RuntimeError(f"Failed to generate features using feature bank: {e}")
 
     def _coerce_to_dataframe(self, value: Any) -> Optional[pd.DataFrame]:
@@ -805,6 +919,69 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         timeframe: str
     ) -> Optional[Dict[str, Any]]:
         """Fallback loader that inspects saved outcomes for labeling results."""
+        manifest = ArtifactManifest()
+        artifact_base_name = 'market_analysis_multi_horizon_profit_labeler_outcome'
+        logical_name = DataLocator.build_logical_name(
+            artifact_base_name,
+            symbol=symbol,
+            exchange=exchange,
+            timeframe=timeframe,
+        )
+        entry = manifest.get_latest(logical_name)
+        fallback_allowed = False
+
+        if entry:
+            outcome_file = entry.resolved_path
+            if outcome_file.exists():
+                try:
+                    with open(outcome_file, 'r', encoding='utf-8') as handle:
+                        outcome_data = json.load(handle)
+                except json.JSONDecodeError as exc:
+                    self.logger.warning(
+                        f"⚠️ Failed to parse manifest outcome {outcome_file.name}: {exc}"
+                    )
+                    fallback_allowed = True
+                except OSError as exc:
+                    self.logger.warning(
+                        f"⚠️ Unable to read manifest outcome {outcome_file.name}: {exc}"
+                    )
+                    fallback_allowed = True
+                else:
+                    config_data = outcome_data.get('config', {})
+                    if (
+                        config_data and (
+                            (config_data.get('symbol') and config_data.get('symbol') != symbol)
+                            or (config_data.get('exchange') and config_data.get('exchange') != exchange)
+                            or (config_data.get('timeframe') and config_data.get('timeframe') != timeframe)
+                        )
+                    ):
+                        self.logger.warning(
+                            f"⚠️ Manifest outcome {outcome_file.name} metadata mismatch; ignoring entry"
+                        )
+                        fallback_allowed = True
+                    else:
+                        artifacts = outcome_data.get('artifacts', {}) if isinstance(outcome_data, dict) else {}
+                        mh_result = None
+                        if isinstance(artifacts, dict):
+                            mh_result = artifacts.get('multi_horizon_labeling_result')
+                        normalized = self._normalize_labeling_result(mh_result)
+                        if normalized:
+                            self.logger.info(
+                                f"📂 Loaded multi-horizon labeling result from manifest entry {outcome_file.name}"
+                            )
+                            return normalized
+                        fallback_allowed = True
+            else:
+                self.logger.warning(
+                    f"⚠️ Manifest referenced outcome file missing: {outcome_file}"
+                )
+                fallback_allowed = True
+        else:
+            fallback_allowed = True
+
+        if not fallback_allowed:
+            return None
+
         outcomes_dir = Path("outcomes")
         if not outcomes_dir.exists():
             return None
@@ -816,17 +993,17 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 return None
 
             latest_file = max(outcome_files, key=lambda f: f.stat().st_mtime)
-            with open(latest_file, 'r') as f:
-                outcome_data = json.load(f)
+            with open(latest_file, 'r', encoding='utf-8') as handle:
+                outcome_data = json.load(handle)
 
-            config_data = outcome_data.get('config', {})
+            config_data = outcome_data.get('config', {}) if isinstance(outcome_data, dict) else {}
             if (
                 config_data.get('symbol') == symbol and
                 config_data.get('exchange') == exchange and
                 config_data.get('timeframe') == timeframe
             ):
-                artifacts = outcome_data.get('artifacts', {})
-                mh_result = artifacts.get('multi_horizon_labeling_result')
+                artifacts = outcome_data.get('artifacts', {}) if isinstance(outcome_data, dict) else {}
+                mh_result = artifacts.get('multi_horizon_labeling_result') if isinstance(artifacts, dict) else None
                 normalized = self._normalize_labeling_result(mh_result)
                 if normalized:
                     self.logger.info(
@@ -914,7 +1091,20 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         try:
             # Generate features using PID-based feature generation system
             tprint("🧪 Generating features for optimization")
-            feature_columns = await self._generate_features_for_optimization(data)
+            force_refresh = bool(
+                pipeline_state.get('feature_cache_force_refresh')
+                or pipeline_state.get('force_feature_cache_refresh')
+                or pipeline_state.get('force_refresh_features')
+                or self.config.force_rerun
+            )
+            pipeline_state['feature_cache_force_refresh'] = force_refresh
+            self._force_cache_refresh = force_refresh
+
+            feature_columns = await self._generate_features_for_optimization(
+                data,
+                pipeline_state,
+                force_refresh=force_refresh,
+            )
 
             if not feature_columns:
                 # Fallback to basic features if feature generation fails
@@ -1204,9 +1394,19 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             str: Optimal target column name
         """
         try:
+            column_bases = {col: strip_namespace(col)[0] for col in data.columns}
+
+            def _resolve_candidate(name: str) -> Optional[str]:
+                namespaced = ensure_namespace(name, ColumnNamespace.TARGET)
+                if namespaced in data.columns:
+                    return namespaced
+                for col, base in column_bases.items():
+                    if base == name:
+                        return col
+                return None
+
             # If direction is specified, prioritize directional targets
             if direction == 'long':
-                # Priority 1: Long-specific directional targets
                 long_priority = [
                     'long_overall_opportunity',
                     'long_leverage_adjusted_score',
@@ -1215,12 +1415,12 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 ]
 
                 for target in long_priority:
-                    if target in data.columns:
-                        log_success(f"🎯 Selected long-specific target: {target}")
-                        return target
+                    resolved = _resolve_candidate(target)
+                    if resolved:
+                        log_success(f"🎯 Selected long-specific target: {resolved}")
+                        return resolved
 
             elif direction == 'short':
-                # Priority 1: Short-specific directional targets
                 short_priority = [
                     'short_overall_opportunity',
                     'short_leverage_adjusted_score',
@@ -1229,23 +1429,25 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 ]
 
                 for target in short_priority:
-                    if target in data.columns:
-                        log_success(f"🎯 Selected short-specific target: {target}")
-                        return target
+                    resolved = _resolve_candidate(target)
+                    if resolved:
+                        log_success(f"🎯 Selected short-specific target: {resolved}")
+                        return resolved
 
             # Priority 2: Multi-horizon composite targets (best overall signal)
             composite_priority = [
-                'leverage_adjusted_score',  # Primary target from config
-                'overall_opportunity',      # Secondary target
-                'immediate_opportunity',    # Short-term focused
-                'directional_confidence',   # Directional bias confidence
-                'opportunity_asymmetry'     # Long vs short opportunity difference
+                'leverage_adjusted_score',
+                'overall_opportunity',
+                'immediate_opportunity',
+                'directional_confidence',
+                'opportunity_asymmetry'
             ]
 
             for target in composite_priority:
-                if target in data.columns:
-                    log_success(f"🎯 Selected multi-horizon target: {target}")
-                    return target
+                resolved = _resolve_candidate(target)
+                if resolved:
+                    log_success(f"🎯 Selected multi-horizon target: {resolved}")
+                    return resolved
 
             # Priority 3: Remaining directional opportunity targets (if direction not already handled above)
             if direction != 'long' and direction != 'short':
@@ -1257,21 +1459,23 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 ]
 
                 for target in directional_priority:
-                    if target in data.columns:
-                        log_success(f"🎯 Selected directional opportunity target: {target}")
-                        return target
+                    resolved = _resolve_candidate(target)
+                    if resolved:
+                        log_success(f"🎯 Selected directional opportunity target: {resolved}")
+                        return resolved
 
             # Priority 3: Any multi-horizon probability target
-            prob_targets = [col for col in data.columns if '_prob' in col and ('long' in col or 'short' in col)]
+            prob_targets = [
+                col for col, base in column_bases.items()
+                if '_prob' in base and ('long' in base or 'short' in base)
+            ]
             if prob_targets:
-                # Prefer immediate probabilities
-                immediate_probs = [col for col in prob_targets if 'immediate' in col]
+                immediate_probs = [col for col in prob_targets if 'immediate' in strip_namespace(col)[0]]
                 if immediate_probs:
                     log_success(f"🎯 Selected multi-horizon probability target: {immediate_probs[0]}")
                     return immediate_probs[0]
-                else:
-                    log_success(f"🎯 Selected multi-horizon probability target: {prob_targets[0]}")
-                    return prob_targets[0]
+                log_success(f"🎯 Selected multi-horizon probability target: {prob_targets[0]}")
+                return prob_targets[0]
 
             # Priority 4: Fallback to price-based targets
             price_targets = ['close', 'returns', 'target']
@@ -1279,6 +1483,10 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 if target in data.columns:
                     log_warning(f"⚠️ Using fallback target (no multi-horizon targets found): {target}")
                     return target
+                for col, base in column_bases.items():
+                    if base == target:
+                        log_warning(f"⚠️ Using fallback target (no multi-horizon targets found): {col}")
+                        return col
 
             # Last resort: any numeric column
             numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()

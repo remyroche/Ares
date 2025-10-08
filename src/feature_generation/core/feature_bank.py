@@ -42,11 +42,13 @@ class FeatureBank:
     """
     Central feature bank that manages all feature generators and provides
     a unified interface for feature generation by category.
-    
+
     The FeatureBank serves as the single source of truth for feature generation,
     allowing scripts to easily select and generate features based on categories
     like returns, momentum, volume, support/resistance, etc.
     """
+
+    VERSION = "2024.09"
     
     def __init__(self, config: Optional[FeatureBankConfig] = None):
         """

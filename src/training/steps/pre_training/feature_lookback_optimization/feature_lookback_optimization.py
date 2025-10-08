@@ -1708,8 +1708,12 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 for key, value in flattened.items()
                 if key not in horizon_p_values and key not in lookback_p_values
             }
+            horizon_significance_metrics = {
+                key: {"p_value": value}
+                for key, value in horizon_p_values.items()
+            }
             hypothesis_report = track_and_control_hypotheses(
-                horizon_results=horizon_p_values,
+                horizon_results=horizon_significance_metrics if horizon_significance_metrics else horizon_p_values,
                 feature_results=feature_p_values,
                 lookback_results=lookback_p_values,
             )

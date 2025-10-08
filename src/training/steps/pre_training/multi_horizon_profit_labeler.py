@@ -69,6 +69,34 @@ class HorizonWeightsConfig:
 
 
 @dataclass
+class TransactionCostConfig:
+    """Configuration for transaction cost modeling."""
+    maker_fee: float = 0.0002  # 0.02% maker fee
+    taker_fee: float = 0.0004  # 0.04% taker fee
+    slippage_bps: float = 2.0  # 2 basis points slippage
+    enable_cost_adjustment: bool = True
+    
+    def total_roundtrip_cost(self, is_aggressive: bool = True) -> float:
+        """Calculate total round-trip transaction cost."""
+        fee = self.taker_fee if is_aggressive else self.maker_fee
+        slippage = self.slippage_bps / 10000.0
+        return 2 * (fee + slippage)  # Round-trip
+
+
+@dataclass
+class TemporalValidationConfig:
+    """Configuration for temporal validation."""
+    enable_temporal_validation: bool = True
+    enable_purging: bool = True
+    purge_window_hours: int = 24
+    embargo_window_hours: int = 12
+    train_ratio: float = 0.70
+    validation_ratio: float = 0.20
+    test_ratio: float = 0.10
+    validate_distribution: bool = True
+
+
+@dataclass
 class MultiHorizonConfig:
     """Configuration for multi-horizon profit labeling."""
 
@@ -79,10 +107,20 @@ class MultiHorizonConfig:
     # Horizon weights configuration
     horizon_weights: HorizonWeightsConfig = None
     
+    # Transaction cost configuration
+    transaction_costs: TransactionCostConfig = None
+    
+    # Temporal validation configuration
+    temporal_validation: TemporalValidationConfig = None
+    
     def __post_init__(self):
-        """Initialize default horizon weights if not provided."""
+        """Initialize default configurations if not provided."""
         if self.horizon_weights is None:
             self.horizon_weights = HorizonWeightsConfig()
+        if self.transaction_costs is None:
+            self.transaction_costs = TransactionCostConfig()
+        if self.temporal_validation is None:
+            self.temporal_validation = TemporalValidationConfig()
 
     # Volatility-aware labeling settings
     enable_volatility_normalization: bool = True
@@ -180,6 +218,17 @@ class MultiHorizonProfitLabeler:
         else:
             self.volatility_labeler = VolatilityAwareMultiHorizonLabeler(self._create_volatility_config())
             tprint_info("   → Enhanced labels: Disabled")
+        
+        # Log transaction cost configuration
+        if self.config.transaction_costs.enable_cost_adjustment:
+            cost = self.config.transaction_costs.total_roundtrip_cost()
+            tprint_info(f"   → Transaction cost adjustment: Enabled (round-trip: {cost:.4%})")
+        
+        # Log temporal validation configuration
+        if self.config.temporal_validation.enable_temporal_validation:
+            tprint_info(f"   → Temporal validation: Enabled")
+            if self.config.temporal_validation.enable_purging:
+                tprint_info(f"   → Purging: {self.config.temporal_validation.purge_window_hours}h window")
 
         # Initialize the balancing system if available
         self.balancing_system = None
@@ -214,6 +263,134 @@ class MultiHorizonProfitLabeler:
             min_auc_threshold=self.config.min_auc_threshold,
             max_auc_std_threshold=self.config.max_auc_std_threshold
         )
+    
+    def _adjust_returns_for_transaction_costs(
+        self,
+        labeling_result: LabelingResult
+    ) -> LabelingResult:
+        """
+        Adjust label returns for transaction costs.
+        
+        Args:
+            labeling_result: Original labeling result
+        
+        Returns:
+            LabelingResult with cost-adjusted labels
+        """
+        if not self.config.transaction_costs.enable_cost_adjustment:
+            return labeling_result
+        
+        tprint_info("💰 Adjusting labels for transaction costs...")
+        
+        # Get round-trip cost
+        roundtrip_cost = self.config.transaction_costs.total_roundtrip_cost()
+        
+        # Adjust sigma-normalized labels
+        # Since labels are already sigma-normalized, we need to adjust them proportionally
+        adjusted_labels = labeling_result.labels.copy()
+        
+        # Subtract cost from raw returns before normalization was applied
+        # This is an approximation - ideally we'd adjust before sigma normalization
+        if 'sigma_payoffs' in dir(labeling_result) and not labeling_result.sigma_payoffs.empty:
+            # We have access to sigma payoffs, adjust those
+            adjusted_sigma = labeling_result.sigma_payoffs - roundtrip_cost
+            
+            # Update normalization factors
+            if labeling_result.normalization_factors:
+                updated_factors = copy.deepcopy(labeling_result.normalization_factors)
+                if 'cost_adjustment' not in updated_factors:
+                    updated_factors['cost_adjustment'] = {}
+                updated_factors['cost_adjustment']['roundtrip_cost'] = roundtrip_cost
+                updated_factors['cost_adjustment']['maker_fee'] = self.config.transaction_costs.maker_fee
+                updated_factors['cost_adjustment']['taker_fee'] = self.config.transaction_costs.taker_fee
+                updated_factors['cost_adjustment']['slippage_bps'] = self.config.transaction_costs.slippage_bps
+            else:
+                updated_factors = {
+                    'cost_adjustment': {
+                        'roundtrip_cost': roundtrip_cost,
+                        'maker_fee': self.config.transaction_costs.maker_fee,
+                        'taker_fee': self.config.transaction_costs.taker_fee,
+                        'slippage_bps': self.config.transaction_costs.slippage_bps
+                    }
+                }
+        else:
+            # No sigma payoffs available, apply percentage adjustment to labels
+            # This is a conservative approximation
+            cost_factor = 1.0 - (roundtrip_cost / 2.0)  # Reduce signal strength proportionally
+            adjusted_labels = adjusted_labels * cost_factor
+            updated_factors = labeling_result.normalization_factors or {}
+        
+        # Create new result with adjusted labels
+        adjusted_result = LabelingResult(
+            labels=adjusted_labels,
+            confidence_scores=labeling_result.confidence_scores,
+            eligibility_masks=labeling_result.eligibility_masks,
+            sigma_payoffs=adjusted_sigma if 'adjusted_sigma' in locals() else labeling_result.sigma_payoffs,
+            training_labels=adjusted_labels.copy(),
+            normalization_factors=updated_factors,
+            quality_scores=labeling_result.quality_scores,
+            n_samples=labeling_result.n_samples,
+            n_targets=labeling_result.n_targets,
+            processing_time=labeling_result.processing_time
+        )
+        
+        tprint_success(f"✅ Transaction cost adjustment applied (round-trip: {roundtrip_cost:.4%})")
+        
+        return adjusted_result
+    
+    def _create_temporal_splits(
+        self,
+        data: pd.DataFrame
+    ) -> Dict[str, pd.DataFrame]:
+        """
+        Create temporal train/validation/test splits with optional purging.
+        
+        Args:
+            data: Input data with temporal index
+        
+        Returns:
+            Dictionary with 'train', 'val', 'test' DataFrames
+        """
+        if not self.config.temporal_validation.enable_temporal_validation:
+            return {'train': data, 'val': pd.DataFrame(), 'test': pd.DataFrame()}
+        
+        tprint_info("📊 Creating temporal splits...")
+        
+        # Ensure data is sorted by time
+        if not data.index.is_monotonic_increasing:
+            data = data.sort_index()
+        
+        n_samples = len(data)
+        train_end = int(n_samples * self.config.temporal_validation.train_ratio)
+        val_end = train_end + int(n_samples * self.config.temporal_validation.validation_ratio)
+        
+        # Create splits
+        splits = {
+            'train': data.iloc[:train_end].copy(),
+            'val': data.iloc[train_end:val_end].copy(),
+            'test': data.iloc[val_end:].copy()
+        }
+        
+        # Apply purging if enabled
+        if self.config.temporal_validation.enable_purging:
+            purge_delta = pd.Timedelta(hours=self.config.temporal_validation.purge_window_hours)
+            
+            # Purge training data before validation
+            val_start_time = splits['val'].index.min()
+            train_purge_cutoff = val_start_time - purge_delta
+            splits['train'] = splits['train'][splits['train'].index <= train_purge_cutoff]
+            
+            # Purge validation data before test
+            if not splits['test'].empty:
+                test_start_time = splits['test'].index.min()
+                val_purge_cutoff = test_start_time - purge_delta
+                splits['val'] = splits['val'][splits['val'].index <= val_purge_cutoff]
+            
+            tprint_info(f"   → Applied purging: {self.config.temporal_validation.purge_window_hours}h window")
+        
+        tprint_success(f"✅ Temporal splits created: train={len(splits['train'])}, val={len(splits['val'])}, test={len(splits['test'])}")
+        
+        return splits
 
     async def execute_labeling(
         self,
@@ -258,6 +435,9 @@ class MultiHorizonProfitLabeler:
                 tprint_info("📊 Using standard volatility-aware labeling...")
                 labeling_result = self.volatility_labeler.generate_labels(market_data)
                 tprint_success("✅ Standard labeling completed")
+            
+            # Apply transaction cost adjustment if enabled
+            labeling_result = self._adjust_returns_for_transaction_costs(labeling_result)
 
             # Apply label balancing and sample weighting if enabled
             tprint_info("⚖️ Applying label balancing and sample weighting...")

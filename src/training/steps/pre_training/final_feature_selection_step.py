@@ -193,95 +193,106 @@ class FinalFeatureSelectionStep:
     async def _load_target_data_from_standardized_format(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
         """Load target data from standardized format from multi_horizon_profit_labeler."""
         try:
-            self.logger.info("🎯 Loading target data from standardized format")
-            tprint("🔍 Attempting to load standardized target data artifacts")
-
-            # First try to load from outcomes directory (most recent results)
-            outcomes_dir = Path("outcomes")
-            if outcomes_dir.exists():
-                # Look for the most recent multi_horizon_profit_labeler outcome
-                pattern = f"market_analysis_multi_horizon_profit_labeler_outcome_{symbol}_{exchange}_{timeframe}_*.json"
-                outcome_files = list(outcomes_dir.glob(pattern))
-
-                if outcome_files:
-                    latest_outcome_file = max(outcome_files, key=lambda f: f.stat().st_mtime)
-                    self.logger.info(f"📂 Loading target data from: {latest_outcome_file}")
-
-                    import json
-                    with open(latest_outcome_file, 'r') as f:
-                        outcome_data = json.load(f)
-
-                    # Extract standardized output
-                    artifacts = outcome_data.get('artifacts', {})
-                    if 'standardized_output' in artifacts:
-                        standardized_output = artifacts['standardized_output']
-                        target_data = standardized_output.get('labels')
-                        weights = standardized_output.get('weights', {})
-                        target_columns = standardized_output.get('target_columns', [])
-                        sample_weights = standardized_output.get('sample_weights', None)
-                        quality_scores = standardized_output.get('quality_scores', {})
-                        validation_results = standardized_output.get('validation_results', {})
-
-                        if target_data is not None:
-                            self.logger.info("✅ Successfully loaded target data from standardized format")
-                            tprint_info(f"🎯 Target columns: {target_columns}")
-                            tprint_info(f"⚖️ Horizon weights: {weights}")
-                            tprint_info(f"📊 Sample weights: {'Available' if sample_weights is not None else 'Not available'}")
-                            tprint_info(f"🔍 Quality scores: {'Available' if quality_scores else 'Not available'}")
-                            tprint_info(f"✅ Validation status: {'Passed' if validation_results.get('is_valid', False) else 'Failed'}")
-                            
-                            if isinstance(target_data, dict):
-                                # Convert dict to DataFrame if needed
-                                target_df = pd.DataFrame(target_data)
-                            elif isinstance(target_data, pd.DataFrame):
-                                target_df = target_data
-                            else:
-                                self.logger.warning("⚠️ Target data in unexpected format")
-                                tprint_warning(f"⚠️ Target data has unexpected type: {type(target_data)}")
-                                return None
-
-                            # Validate target DataFrame schema
-                            is_valid, issues = validate_dataframe_schema(
-                                target_df,
-                                required_columns=target_columns if target_columns else None,
-                                min_rows=100,  # Require at least 100 samples
-                                allow_nulls=True  # Nulls may be present in targets
-                            )
-                            
-                            if not is_valid:
-                                tprint_warning(f"⚠️ Target DataFrame schema validation failed:")
-                                for issue in issues:
-                                    tprint_warning(f"  - {issue}")
-                                # Continue anyway, but log the issues
-                            
-                            assert_labels_sigma_scaled(target_df)
-
-                            # Select the best target based on weights
-                            best_target = self._select_best_target_with_weights(target_df, weights, target_columns)
-                            if best_target:
-                                tprint_success(f"✅ Selected best target for feature selection: {best_target}")
-                                # Return DataFrame with the selected target
-                                selected_target_df = pd.DataFrame({best_target: target_df[best_target]})
-                                self.logger.info(f"📊 Target data loaded: {len(selected_target_df)} rows, 1 target column")
-                                return selected_target_df
-                            else:
-                                # Fallback to all targets
-                                self.logger.info("📊 Using all available targets")
-                                self.logger.info(f"📊 Target data loaded: {len(target_df)} rows, {len(target_df.columns)} columns")
-                                return target_df
-                        else:
-                            self.logger.warning("⚠️ No labels found in standardized output")
-                    else:
-                        self.logger.warning("⚠️ No standardized output found in outcome file")
-
-            # Fallback: try to load from data_cache or other locations
+            result = await asyncio.to_thread(
+                self._load_target_data_from_standardized_format_sync,
+                symbol,
+                exchange,
+                timeframe,
+                data_dir,
+            )
+            if result is not None:
+                return result
             return await self._load_target_data(symbol, exchange, timeframe, data_dir)
-
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to load target data from standardized format: {e}")
             tprint_warning(f"⚠️ Standardized target data loading failed: {e}")
-            # Fallback to original method
             return await self._load_target_data(symbol, exchange, timeframe, data_dir)
+
+    def _load_target_data_from_standardized_format_sync(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
+        """Synchronous helper for loading standardized target data."""
+        self.logger.info("🎯 Loading target data from standardized format")
+        tprint("🔍 Attempting to load standardized target data artifacts")
+
+        # First try to load from outcomes directory (most recent results)
+        outcomes_dir = Path("outcomes")
+        if outcomes_dir.exists():
+            # Look for the most recent multi_horizon_profit_labeler outcome
+            pattern = f"market_analysis_multi_horizon_profit_labeler_outcome_{symbol}_{exchange}_{timeframe}_*.json"
+            outcome_files = list(outcomes_dir.glob(pattern))
+
+            if outcome_files:
+                latest_outcome_file = max(outcome_files, key=lambda f: f.stat().st_mtime)
+                self.logger.info(f"📂 Loading target data from: {latest_outcome_file}")
+
+                import json
+                with open(latest_outcome_file, 'r') as f:
+                    outcome_data = json.load(f)
+
+                # Extract standardized output
+                artifacts = outcome_data.get('artifacts', {})
+                if 'standardized_output' in artifacts:
+                    standardized_output = artifacts['standardized_output']
+                    target_data = standardized_output.get('labels')
+                    weights = standardized_output.get('weights', {})
+                    target_columns = standardized_output.get('target_columns', [])
+                    sample_weights = standardized_output.get('sample_weights', None)
+                    quality_scores = standardized_output.get('quality_scores', {})
+                    validation_results = standardized_output.get('validation_results', {})
+
+                    if target_data is not None:
+                        self.logger.info("✅ Successfully loaded target data from standardized format")
+                        tprint_info(f"🎯 Target columns: {target_columns}")
+                        tprint_info(f"⚖️ Horizon weights: {weights}")
+                        tprint_info(f"📊 Sample weights: {'Available' if sample_weights is not None else 'Not available'}")
+                        tprint_info(f"🔍 Quality scores: {'Available' if quality_scores else 'Not available'}")
+                        tprint_info(f"✅ Validation status: {'Passed' if validation_results.get('is_valid', False) else 'Failed'}")
+
+                        if isinstance(target_data, dict):
+                            # Convert dict to DataFrame if needed
+                            target_df = pd.DataFrame(target_data)
+                        elif isinstance(target_data, pd.DataFrame):
+                            target_df = target_data
+                        else:
+                            self.logger.warning("⚠️ Target data in unexpected format")
+                            tprint_warning(f"⚠️ Target data has unexpected type: {type(target_data)}")
+                            return None
+
+                        # Validate target DataFrame schema
+                        is_valid, issues = validate_dataframe_schema(
+                            target_df,
+                            required_columns=target_columns if target_columns else None,
+                            min_rows=100,  # Require at least 100 samples
+                            allow_nulls=True  # Nulls may be present in targets
+                        )
+
+                        if not is_valid:
+                            tprint_warning(f"⚠️ Target DataFrame schema validation failed:")
+                            for issue in issues:
+                                tprint_warning(f"  - {issue}")
+                            # Continue anyway, but log the issues
+
+                        assert_labels_sigma_scaled(target_df)
+
+                        # Select the best target based on weights
+                        best_target = self._select_best_target_with_weights(target_df, weights, target_columns)
+                        if best_target:
+                            tprint_success(f"✅ Selected best target for feature selection: {best_target}")
+                            # Return DataFrame with the selected target
+                            selected_target_df = pd.DataFrame({best_target: target_df[best_target]})
+                            self.logger.info(f"📊 Target data loaded: {len(selected_target_df)} rows, 1 target column")
+                            return selected_target_df
+                        else:
+                            # Fallback to all targets
+                            self.logger.info("📊 Using all available targets")
+                            self.logger.info(f"📊 Target data loaded: {len(target_df)} rows, {len(target_df.columns)} columns")
+                            return target_df
+                    else:
+                        self.logger.warning("⚠️ No labels found in standardized output")
+                else:
+                    self.logger.warning("⚠️ No standardized output found in outcome file")
+
+        # Fallback: try to load from data_cache or other locations
+        return None
 
     def _select_best_target_with_weights(self, labels: pd.DataFrame, weights: Dict[str, float], target_columns: List[str]) -> Optional[str]:
         """Select the best target based on horizon weights and availability for feature selection."""
@@ -329,123 +340,143 @@ class FinalFeatureSelectionStep:
         """Load feature data from previous pipeline steps."""
 
         try:
-            tprint("📥 Loading feature data for final selection")
-            tprint(f"   📊 Context: symbol={symbol}, exchange={exchange}, timeframe={timeframe}")
-            # Try different possible file locations and formats
-            possible_files = [
-                f"{symbol.lower()}_{timeframe}_features.parquet",
-                f"{symbol.lower()}_{timeframe}_engineered_features.parquet",
-                f"{symbol.lower()}_{timeframe}_final_features.parquet",
-                f"{symbol.lower()}_{timeframe}_matrix_features.parquet"
-            ]
-            
-            data_path = Path(data_dir)
-            
-            for filename in possible_files:
-                file_path = data_path / filename
-                if file_path.exists():
-                    self.logger.info(f"📂 Loading feature data from: {file_path}")
-                    tprint_success(f"   📂 Found feature file: {file_path.name}")
-                    data = pd.read_parquet(file_path)
-
-                    # 🔧 INTEGRATE DATA CLEANING UTILITY
-                    # Clean corrupted data before final feature selection
-                    try:
-                        from src.utils.ml_common.data_processing.data_cleaning_utils import exclude_corrupted_periods
-
-                        # Ensure datetime column exists
-                        if 'timestamp' in data.columns and data['timestamp'].dtype == 'int64':
-                            data['datetime'] = pd.to_datetime(data['timestamp'], unit='s')
-                        elif 'datetime' not in data.columns:
-                            # Try to infer datetime column
-                            datetime_cols = [col for col in data.columns if 'time' in col.lower()]
-                            if datetime_cols:
-                                data['datetime'] = pd.to_datetime(data[datetime_cols[0]])
-                            else:
-                                data['datetime'] = data.index
-
-                        # Apply data cleaning
-                        original_count = len(data)
-                        data = exclude_corrupted_periods(data)
-                        cleaned_count = len(data)
-
-                        if original_count != cleaned_count:
-                            excluded_count = original_count - cleaned_count
-                            self.logger.info(f"🧹 Final Feature Selection Data cleaning applied: Excluded {excluded_count:,} corrupted rows ({100*excluded_count/original_count:.4f}%)")
-
-                    except ImportError as e:
-                        self.logger.warning(f"⚠️ Data cleaning utility not available for final feature selection: {e}")
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Data cleaning failed for final feature selection, proceeding with original data: {e}")
-                        tprint_warning(f"   ⚠️ Data cleaning issues encountered: {e}")
-
-                    self.logger.info(f"✅ Loaded {len(data)} samples with {len(data.columns)} features")
-                    tprint_success(f"   ✅ Loaded feature data with shape {data.shape}")
-                    return data
-            
-            # If no specific feature file found, try to load from matrix operations
-            matrix_file = data_path / f"{symbol.lower()}_{timeframe}_matrix_operations.parquet"
-            if matrix_file.exists():
-                self.logger.info(f"📂 Loading matrix operations data from: {matrix_file}")
-                tprint_info(f"   📂 Falling back to matrix operations file: {matrix_file.name}")
-                data = pd.read_parquet(matrix_file)
-                self.logger.info(f"✅ Loaded {len(data)} samples with {len(data.columns)} features from matrix operations")
-                tprint_success(f"   ✅ Loaded matrix operations data with shape {data.shape}")
-                return data
-
-            self.logger.warning("⚠️ No feature data files found")
-            tprint_warning("⚠️ No feature data files located for final selection")
-            return None
-
+            return await asyncio.to_thread(
+                self._load_feature_data_sync,
+                symbol,
+                exchange,
+                timeframe,
+                data_dir,
+            )
         except Exception as e:
             self.logger.error(f"❌ Failed to load feature data: {e}")
             tprint_error(f"❌ Feature data loading failed: {e}")
             return None
+
+    def _load_feature_data_sync(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.DataFrame]:
+        """Synchronous helper for loading feature data."""
+
+        tprint("📥 Loading feature data for final selection")
+        tprint(f"   📊 Context: symbol={symbol}, exchange={exchange}, timeframe={timeframe}")
+        # Try different possible file locations and formats
+        possible_files = [
+            f"{symbol.lower()}_{timeframe}_features.parquet",
+            f"{symbol.lower()}_{timeframe}_engineered_features.parquet",
+            f"{symbol.lower()}_{timeframe}_final_features.parquet",
+            f"{symbol.lower()}_{timeframe}_matrix_features.parquet"
+        ]
+
+        data_path = Path(data_dir)
+
+        for filename in possible_files:
+            file_path = data_path / filename
+            if file_path.exists():
+                self.logger.info(f"📂 Loading feature data from: {file_path}")
+                tprint_success(f"   📂 Found feature file: {file_path.name}")
+                data = pd.read_parquet(file_path)
+
+                # 🔧 INTEGRATE DATA CLEANING UTILITY
+                # Clean corrupted data before final feature selection
+                try:
+                    from src.utils.ml_common.data_processing.data_cleaning_utils import exclude_corrupted_periods
+
+                    # Ensure datetime column exists
+                    if 'timestamp' in data.columns and data['timestamp'].dtype == 'int64':
+                        data['datetime'] = pd.to_datetime(data['timestamp'], unit='s')
+                    elif 'datetime' not in data.columns:
+                        # Try to infer datetime column
+                        datetime_cols = [col for col in data.columns if 'time' in col.lower()]
+                        if datetime_cols:
+                            data['datetime'] = pd.to_datetime(data[datetime_cols[0]])
+                        else:
+                            data['datetime'] = data.index
+
+                    # Apply data cleaning
+                    original_count = len(data)
+                    data = exclude_corrupted_periods(data)
+                    cleaned_count = len(data)
+
+                    if original_count != cleaned_count:
+                        excluded_count = original_count - cleaned_count
+                        self.logger.info(f"🧹 Final Feature Selection Data cleaning applied: Excluded {excluded_count:,} corrupted rows ({100*excluded_count/original_count:.4f}%)")
+
+                except ImportError as e:
+                    self.logger.warning(f"⚠️ Data cleaning utility not available for final feature selection: {e}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Data cleaning failed for final feature selection, proceeding with original data: {e}")
+                    tprint_warning(f"   ⚠️ Data cleaning issues encountered: {e}")
+
+                self.logger.info(f"✅ Loaded {len(data)} samples with {len(data.columns)} features")
+                tprint_success(f"   ✅ Loaded feature data with shape {data.shape}")
+                return data
+
+        # If no specific feature file found, try to load from matrix operations
+        matrix_file = data_path / f"{symbol.lower()}_{timeframe}_matrix_operations.parquet"
+        if matrix_file.exists():
+            self.logger.info(f"📂 Loading matrix operations data from: {matrix_file}")
+            tprint_info(f"   📂 Falling back to matrix operations file: {matrix_file.name}")
+            data = pd.read_parquet(matrix_file)
+            self.logger.info(f"✅ Loaded {len(data)} samples with {len(data.columns)} features from matrix operations")
+            tprint_success(f"   ✅ Loaded matrix operations data with shape {data.shape}")
+            return data
+
+        self.logger.warning("⚠️ No feature data files found")
+        tprint_warning("⚠️ No feature data files located for final selection")
+        return None
     
     async def _load_target_data(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.Series]:
         """Load target data if available."""
 
         try:
-            tprint("📥 Attempting fallback target data load")
-            # Try to load target data from labeling step
-            possible_target_files = [
-                f"{symbol.lower()}_{timeframe}_labels.parquet",
-                f"{symbol.lower()}_{timeframe}_triple_barrier_labels.parquet",
-                f"{symbol.lower()}_{timeframe}_target.parquet"
-            ]
-            
-            data_path = Path(data_dir)
-            
-            for filename in possible_target_files:
-                file_path = data_path / filename
-                if file_path.exists():
-                    self.logger.info(f"📂 Loading target data from: {file_path}")
-                    tprint_success(f"   📂 Found target file: {file_path.name}")
-                    data = pd.read_parquet(file_path)
-                    
-                    # Try to find target column
-                    target_columns = ['target', 'label', 'y', 'return', 'triple_barrier_label']
-                    target_col = None
-                    
-                    for col in target_columns:
-                        if col in data.columns:
-                            target_col = col
-                            break
-                    
-                    if target_col:
-                        target_data = data[target_col]
-                        self.logger.info(f"✅ Loaded target data: {target_col} with {len(target_data)} samples")
-                        tprint_success(f"   ✅ Loaded target column '{target_col}' with {len(target_data)} samples")
-                        return target_data
-
-            self.logger.info("ℹ️ No target data found - will perform unsupervised feature selection")
-            tprint_warning("⚠️ No target data located, defaulting to unsupervised selection")
-            return None
-
+            return await asyncio.to_thread(
+                self._load_target_data_sync,
+                symbol,
+                exchange,
+                timeframe,
+                data_dir,
+            )
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to load target data: {e}")
             tprint_warning(f"⚠️ Target data loading encountered an error: {e}")
             return None
+
+    def _load_target_data_sync(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> Optional[pd.Series]:
+        """Synchronous helper for loading fallback target data."""
+
+        tprint("📥 Attempting fallback target data load")
+        # Try to load target data from labeling step
+        possible_target_files = [
+            f"{symbol.lower()}_{timeframe}_labels.parquet",
+            f"{symbol.lower()}_{timeframe}_triple_barrier_labels.parquet",
+            f"{symbol.lower()}_{timeframe}_target.parquet"
+        ]
+
+        data_path = Path(data_dir)
+
+        for filename in possible_target_files:
+            file_path = data_path / filename
+            if file_path.exists():
+                self.logger.info(f"📂 Loading target data from: {file_path}")
+                tprint_success(f"   📂 Found target file: {file_path.name}")
+                data = pd.read_parquet(file_path)
+
+                # Try to find target column
+                target_columns = ['target', 'label', 'y', 'return', 'triple_barrier_label']
+                target_col = None
+
+                for col in target_columns:
+                    if col in data.columns:
+                        target_col = col
+                        break
+
+                if target_col:
+                    target_data = data[target_col]
+                    self.logger.info(f"✅ Loaded target data: {target_col} with {len(target_data)} samples")
+                    tprint_success(f"   ✅ Loaded target column '{target_col}' with {len(target_data)} samples")
+                    return target_data
+
+        self.logger.info("ℹ️ No target data found - will perform unsupervised feature selection")
+        tprint_warning("⚠️ No target data located, defaulting to unsupervised selection")
+        return None
     
     def _prepare_data(self, feature_data: pd.DataFrame, target_data: Optional[pd.Series]) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
         """Prepare data for feature selection with comprehensive logging."""
@@ -557,59 +588,70 @@ class FinalFeatureSelectionStep:
     async def _save_selection_results(self, selection_result: Any, symbol: str, exchange: str,
                                     timeframe: str, data_dir: str) -> None:
         """Save feature selection results."""
-        
+
         try:
-            output_dir = Path("generated/market_analysis") / "final_feature_selection"
-            output_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Save final selected features
-            final_features_file = output_dir / f"{symbol.lower()}_{timeframe}_final_features.json"
-            final_features = selection_result.final_features
-            
-            import json
-            with open(final_features_file, 'w') as f:
-                json.dump({
-                    'symbol': symbol,
-                    'exchange': exchange,
-                    'timeframe': timeframe,
-                    'final_features': final_features,
-                    'feature_count': len(final_features),
-                    'selection_method': 'multi_stage_rf_shap',
-                    'stages': {
-                        'stage_1': len(selection_result.stage_1_features),
-                        'stage_2': len(selection_result.stage_2_features),
-                        'stage_3': len(selection_result.stage_3_features),
-                        'final': len(selection_result.final_features)
-                    }
-                }, f, indent=2)
-            
-            self.logger.info(f"💾 Final features saved to: {final_features_file}")
-            
-            # Save detailed results
-            detailed_results_file = output_dir / f"{symbol.lower()}_{timeframe}_selection_results.json"
-            
-            results_dict = {
+            await asyncio.to_thread(
+                self._save_selection_results_sync,
+                selection_result,
+                symbol,
+                exchange,
+                timeframe,
+            )
+        except Exception as e:
+            self.logger.error(f"❌ Failed to save selection results: {e}")
+
+    def _save_selection_results_sync(self, selection_result: Any, symbol: str, exchange: str,
+                                     timeframe: str) -> None:
+        """Synchronous helper for saving feature selection results."""
+
+        output_dir = Path("generated/market_analysis") / "final_feature_selection"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save final selected features
+        final_features_file = output_dir / f"{symbol.lower()}_{timeframe}_final_features.json"
+        final_features = selection_result.final_features
+
+        import json
+        with open(final_features_file, 'w') as f:
+            json.dump({
                 'symbol': symbol,
                 'exchange': exchange,
                 'timeframe': timeframe,
-                'feature_counts': selection_result.feature_counts,
-                'scores': {
-                    'stage_1': selection_result.stage_1_scores,
-                    'stage_2': selection_result.stage_2_scores,
-                    'stage_3': selection_result.stage_3_scores,
-                    'final': selection_result.final_scores
-                },
-                'selection_time': selection_result.selection_time,
-                'is_unsupervised': getattr(selection_result, 'is_unsupervised', False)
-            }
-            
-            with open(detailed_results_file, 'w') as f:
-                json.dump(results_dict, f, indent=2, default=str)
-            
-            self.logger.info(f"💾 Detailed results saved to: {detailed_results_file}")
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to save selection results: {e}")
+                'final_features': final_features,
+                'feature_count': len(final_features),
+                'selection_method': 'multi_stage_rf_shap',
+                'stages': {
+                    'stage_1': len(selection_result.stage_1_features),
+                    'stage_2': len(selection_result.stage_2_features),
+                    'stage_3': len(selection_result.stage_3_features),
+                    'final': len(selection_result.final_features)
+                }
+            }, f, indent=2)
+
+        self.logger.info(f"💾 Final features saved to: {final_features_file}")
+
+        # Save detailed results
+        detailed_results_file = output_dir / f"{symbol.lower()}_{timeframe}_selection_results.json"
+
+        results_dict = {
+            'symbol': symbol,
+            'exchange': exchange,
+            'timeframe': timeframe,
+            'feature_counts': selection_result.feature_counts,
+            'scores': {
+                'stage_1': selection_result.stage_1_scores,
+                'stage_2': selection_result.stage_2_scores,
+                'stage_3': selection_result.stage_3_scores,
+                'final': selection_result.final_scores
+            },
+            'selection_time': selection_result.selection_time,
+            'is_unsupervised': getattr(selection_result, 'is_unsupervised', False)
+        }
+
+        with open(detailed_results_file, 'w') as f:
+            json.dump(results_dict, f, indent=2, default=str)
+
+        self.logger.info(f"💾 Detailed results saved to: {detailed_results_file}")
     
     async def _generate_summary_report(self, selection_result: Any, symbol: str,
                                      exchange: str, timeframe: str) -> None:

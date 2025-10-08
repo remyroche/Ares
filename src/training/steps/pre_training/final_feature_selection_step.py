@@ -376,7 +376,7 @@ class FinalFeatureSelectionStep:
                 return data
 
             self.logger.warning("⚠️ No feature data files found")
-            tprint_warning("❌ No feature data files located for final selection")
+            tprint_warning("⚠️ No feature data files located for final selection")
             return None
 
         except Exception as e:

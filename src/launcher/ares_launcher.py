@@ -256,7 +256,7 @@ class AresLauncher:
                 'next_stage': 'model_training',
                 'required_files': ['labels.parquet', 'features.parquet'],
                 'required_artifacts': ['feature_metadata'],
-                'sub_pipelines': ['multi_horizon_profit_labeler', 'feature_lookback_optimization', 'pid_based_feature_generation', 'final_feature_selection']
+                'sub_pipelines': ['multi_horizon_profit_labeler', 'feature_lookback_optimization', 'interactive_feature_generation', 'final_feature_selection']
             },
             'model_training': {
                 'next_stage': 'backtesting',
@@ -1017,7 +1017,7 @@ class AresLauncher:
             'multi_horizon_profit_labeler': "Multi-horizon profit probability labeling (replacement for triple barrier)",
             'triple_barrier_labeling': "Apply triple barrier method",
             'feature_lookback_optimization': "Optimize feature lookback periods",
-            'pid_based_feature_generation': "PID-based feature generation with interaction, polynomial, and cross-timeframe features",
+            'interactive_feature_generation': "Interactive feature generation with optimized lookbacks, cross-timeframe coverage, and matrix acceleration",
             'sr_feature_integration': "Integrate SR-specific features into feature set",
             
             # Model Training (6 sub-pipelines - Analyst & Tactician orchestration)
@@ -1082,8 +1082,8 @@ class AresLauncher:
             # Pre-Training dependencies
             'multi_horizon_profit_labeler': ['regime_data_splitting'],
             'feature_lookback_optimization': ['multi_horizon_profit_labeler'],
-            'pid_based_feature_generation': ['feature_lookback_optimization'],
-            'final_feature_selection': ['pid_based_feature_generation'],
+            'interactive_feature_generation': ['feature_lookback_optimization'],
+            'final_feature_selection': ['interactive_feature_generation'],
             
             # Model Training dependencies (Analyst → Tactician pipeline)
             'analyst_pre_ml_orchestration': ['final_feature_selection'],  # From PRE_TRAINING stage
@@ -1147,7 +1147,11 @@ class AresLauncher:
             # Pre-Training outputs
             'multi_horizon_profit_labeler': ['multi_horizon_labels.parquet'],
             'feature_lookback_optimization': ['optimized_features.parquet'],
-            'pid_based_feature_generation': ['pid_based_features.parquet'],
+            'interactive_feature_generation': [
+                'features_<symbol>_<timeframe>.parquet',
+                'interactions_<symbol>_<timeframe>.parquet',
+                'cross_timeframe_<symbol>_<timeframe>.parquet'
+            ],
             'final_feature_selection': ['final_features.parquet'],
 
             # Model Training outputs
@@ -1379,7 +1383,7 @@ Examples:
 
     parser.add_argument(
         '--sub-pipeline', '--sub_pipeline',
-        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: analyst_pre_ml_orchestration, analyst_models_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_models_training, tactician_ensemble_training, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, feature_lookback_optimization, pid_based_feature_generation, final_feature_selection, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc. You can also use shortcut flags like --analyst-pre-ml or --tactician-ensemble.'
+        help='Specific sub-pipeline to execute (for sub_pipeline mode). Available: analyst_pre_ml_orchestration, analyst_models_training, analyst_ensemble_training, tactician_pre_ml_orchestration, tactician_models_training, tactician_ensemble_training, nas_tas_regime_discovery, nas_tas_clustering, multi_horizon_profit_labeler, feature_lookback_optimization, interactive_feature_generation, final_feature_selection, basic_backtesting_pre, basic_backtesting_post, walk_forward_validation, etc. You can also use shortcut flags like --analyst-pre-ml or --tactician-ensemble.'
     )
     
     parser.add_argument(

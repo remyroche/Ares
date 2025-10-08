@@ -137,6 +137,7 @@ class PipelineStage(Enum):
     """Pipeline execution stages."""
     DATA_COLLECTION = "data_collection"
     MARKET_ANALYSIS = "market_analysis"
+    PRE_TRAINING = "pre_training"
     MODEL_TRAINING = "model_training"
     BACKTESTING = "backtesting"
 
@@ -182,7 +183,7 @@ class MainPipelineConfig:
         ],
         PipelineStage.PRE_TRAINING: [
             'multi_horizon_profit_labeler', 'feature_lookback_optimization',
-            'pid_based_feature_generation', 'final_feature_selection'
+            'interactive_feature_generation', 'final_feature_selection'
         ],
         PipelineStage.MODEL_TRAINING: [
             'analyst_pre_ml_orchestration', 'analyst_models_training', 'analyst_ensemble_training',
@@ -1048,7 +1049,7 @@ def get_full_pipeline_config(
             ],
             PipelineStage.PRE_TRAINING: [
                 'multi_horizon_profit_labeler', 'feature_lookback_optimization',
-                'pid_based_feature_generation', 'final_feature_selection'
+                'interactive_feature_generation', 'final_feature_selection'
             ],
             PipelineStage.MODEL_TRAINING: [
                 'analyst_model_training', 'analyst_ensemble_training', 
@@ -1149,7 +1150,7 @@ def get_light_pipeline_config(
                 'sr_parameter_optimization', 'sr_detection', 'sr_clustering',
                 'hmm_regime_discovery', 'hmm_clustering', 'hmm_models_training', 'hmm_ensemble_training',
                 'regime_data_splitting', 'feature_lookback_optimization',
-                'pid_based_feature_generation', 'multi_horizon_profit_labeler'
+                'interactive_feature_generation', 'multi_horizon_profit_labeler'
             ],
             PipelineStage.MODEL_TRAINING: [
                 'analyst_model_training', 'analyst_ensemble_training', 'tactician_lookback_optimization', 'tactician_models_training', 'tactician_ensemble_training'

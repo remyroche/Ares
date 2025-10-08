@@ -119,8 +119,8 @@ feature_lookback_optimization:
     - "immediate_opportunity"
     - "reversal_capture_score"
 
-# Integration with PID-Based Feature Generation
-pid_based_feature_generation:
+# Integration with Interactive Feature Generation
+interactive_feature_generation:
   # Multi-horizon compatibility with ENHANCED directional support
   target_columns:
     # LONG direction targets

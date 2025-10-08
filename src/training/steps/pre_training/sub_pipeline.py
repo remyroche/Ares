@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple, TypedDict
 from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass, field
+from pathlib import Path
 import pandas as pd
 import numpy as np
 
@@ -301,6 +302,15 @@ class PreTrainingSubPipeline:
             'data_dir': config.data_dir,
             'custom_params': config.custom_params,
         }
+
+        regime_cache_path = config.custom_params.get('regime_cache_path') if config.custom_params else None
+        if not regime_cache_path:
+            data_cache_dir = config.custom_params.get('data_cache_dir') if config.custom_params else None
+            if data_cache_dir:
+                regime_cache_path = str((Path(data_cache_dir).expanduser() / 'nas_tas_clustering').resolve(strict=False))
+
+        if regime_cache_path:
+            pipeline_state['regime_cache_path'] = regime_cache_path
 
         regime_split = config.custom_params.get('regime_data_splitting_result')
         if regime_split is None:

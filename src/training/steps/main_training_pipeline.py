@@ -1018,7 +1018,15 @@ def get_full_pipeline_config(
     
     # Set intensity percentage for full mode
     intensity_pct = 1.0  # 100% intensity for full mode
-    
+
+    data_dir_path = Path(data_dir).expanduser()
+    cache_base = data_dir_path if 'cache' in data_dir_path.name.lower() else data_dir_path.parent / 'data_cache'
+    cache_base = cache_base.expanduser()
+    pre_training_stage_params = {
+        'regime_cache_path': str((cache_base / 'nas_tas_clustering')),
+        'data_cache_dir': str(cache_base)
+    }
+
     return MainPipelineConfig(
         mode=ExecutionMode.FULL,
         symbol=symbol,
@@ -1059,8 +1067,12 @@ def get_full_pipeline_config(
                 'model_persistence', 'performance_analytics',
                 'risk_analysis', 'trade_analysis', 'portfolio_analysis', 'reporting'
             ]
+        },
+        stage_params={
+            PipelineStage.PRE_TRAINING: pre_training_stage_params
         }
     )
+
 
 def get_light_pipeline_config(
     symbol: str = "ETHUSDT",
@@ -1123,7 +1135,15 @@ def get_light_pipeline_config(
     
     # Set intensity percentage for light mode
     intensity_pct = 0.5  # 50% intensity for light mode
-    
+
+    data_dir_path = Path(data_dir).expanduser()
+    cache_base = data_dir_path if 'cache' in data_dir_path.name.lower() else data_dir_path.parent / 'data_cache'
+    cache_base = cache_base.expanduser()
+    pre_training_stage_params = {
+        'regime_cache_path': str((cache_base / 'nas_tas_clustering')),
+        'data_cache_dir': str(cache_base)
+    }
+
     return MainPipelineConfig(
         mode=ExecutionMode.LIGHT,
         symbol=symbol,
@@ -1157,6 +1177,9 @@ def get_light_pipeline_config(
             PipelineStage.BACKTESTING: [
                 'walk_forward_validation', 'performance_analytics'
             ]
+        },
+        stage_params={
+            PipelineStage.PRE_TRAINING: pre_training_stage_params
         }
     )
 
@@ -1221,7 +1244,15 @@ def get_blank_pipeline_config(
     
     # Set intensity percentage for blank mode
     intensity_pct = 0.1  # 10% intensity for blank mode
-    
+
+    data_dir_path = Path(data_dir).expanduser()
+    cache_base = data_dir_path if 'cache' in data_dir_path.name.lower() else data_dir_path.parent / 'data_cache'
+    cache_base = cache_base.expanduser()
+    pre_training_stage_params = {
+        'regime_cache_path': str((cache_base / 'nas_tas_clustering')),
+        'data_cache_dir': str(cache_base)
+    }
+
     return MainPipelineConfig(
         mode=ExecutionMode.BLANK,
         symbol=symbol,
@@ -1244,5 +1275,8 @@ def get_blank_pipeline_config(
             PipelineStage.MARKET_ANALYSIS: ['sr_parameter_optimization', 'sr_detection', 'hmm_regime_discovery', 'hmm_models_training', 'hmm_ensemble_training'],
             PipelineStage.MODEL_TRAINING: ['analyst_model_training'],
             PipelineStage.BACKTESTING: ['walk_forward_validation']
+        },
+        stage_params={
+            PipelineStage.PRE_TRAINING: pre_training_stage_params
         }
     )

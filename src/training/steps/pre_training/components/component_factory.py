@@ -288,6 +288,7 @@ class ComponentFactory:
         "src.training.steps.pre_training.feature_lookback_optimization.feature_lookback_optimization",
         "src.training.steps.pre_training.components.final_feature_selection",
         "src.training.steps.pre_training.interaction_feature_generator.feature_interaction_generation.optimized_lookback_component",
+        "src.training.steps.pre_training.interaction_feature_generator.feature_interaction_generation.interactive_feature_generation_component",
         "src.training.steps.pre_training.components.multi_horizon_component",
         "src.training.steps.pre_training.components.pid_based_feature_generation_registration",
     )

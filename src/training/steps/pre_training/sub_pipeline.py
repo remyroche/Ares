@@ -14,7 +14,7 @@ Each step can receive a timeframe parameter, with default 15m.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, TypedDict
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple, TypedDict
 from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass, field
@@ -468,11 +468,46 @@ class PreTrainingSubPipeline:
         self._data_locator: Optional[DataLocator] = None
         self._seeded_rngs: Optional[SeededRNGs] = None
         self._active_seed: Optional[int] = None
+        self._missing_components: Set[str] = set()
+
+        self._refresh_component_registry()
 
     @staticmethod
     def _get_step_spec(step_name: str) -> Optional[StepSpec]:
         """Return the registry specification for a step."""
         return STEP_REGISTRY.get(step_name)
+
+    def _refresh_component_registry(self) -> None:
+        """Synchronize component availability with the registered step list."""
+
+        available_components = set(ComponentFactory.get_available_components())
+        step_components = {spec.component_key for spec in STEP_REGISTRY.values()}
+
+        missing_components = step_components - available_components
+        extra_components = available_components - step_components
+
+        if missing_components and missing_components != self._missing_components:
+            message = (
+                "Some pre-training steps are unavailable because their components "
+                f"are not registered: {sorted(missing_components)}"
+            )
+            self.logger.warning(message)
+            self.event_logger.warning(
+                message,
+                context={
+                    'step': 'component_registry',
+                    'missing_components': sorted(missing_components),
+                    'available_components': sorted(available_components),
+                },
+            )
+
+        if extra_components:
+            self.logger.debug(
+                "📋 Component factory exposes additional components not in the step registry: %s",
+                sorted(extra_components),
+            )
+
+        self._missing_components = missing_components
 
     def _get_ordered_step_specs(
         self,
@@ -482,6 +517,8 @@ class PreTrainingSubPipeline:
     ) -> List[StepSpec]:
         """Return registry specs ordered by execution priority."""
 
+        self._refresh_component_registry()
+
         specs = [
             spec
             for spec in STEP_REGISTRY.values()
@@ -490,6 +527,13 @@ class PreTrainingSubPipeline:
 
         if sequence_only:
             specs = [spec for spec in specs if spec.include_in_default_sequence]
+
+        if not include_disabled:
+            specs = [
+                spec
+                for spec in specs
+                if spec.component_key not in self._missing_components
+            ]
 
         return sorted(specs, key=lambda spec: (spec.order, spec.name))
 
@@ -2765,45 +2809,18 @@ class PreTrainingSubPipeline:
         result.error_code = self._default_step_error_code('interactive_feature_generation')
 
         try:
-            # Import the new interactive feature generation component
-            try:
-                from .interaction_feature_generator.feature_interaction_generation.interactive_feature_generation_component import (
-                    create_interactive_feature_generation_component, InteractiveFeatureGenerationConfig
-                )
-                self.logger.info("🔧 Using optimized interactive feature generation component")
-            except ImportError as import_error:
-                self.logger.error(f"❌ Required component not found: {import_error}")
-                result.status = SubPipelineStatus.FAILED
-                result.error_message = f"Missing interactive feature generation component: {str(import_error)}"
-                result.end_time = datetime.now()
-                result.duration_seconds = (result.end_time - result.start_time).total_seconds()
-                result.error_code = f"{self._default_step_error_code('interactive_feature_generation')}_IMPORT"
-                result.failure = self._create_failure(
-                    'interactive_feature_generation',
-                    result.error_code,
-                    result.error_message,
-                    exception=import_error,
-                )
-                return result
-            
-            # Create component configuration
-            component_config = InteractiveFeatureGenerationConfig(
+            component_config = ComponentConfig(
                 symbol=config.symbol,
                 exchange=config.exchange,
                 timeframe=config.timeframe,
                 data_dir=config.data_dir,
-                feature_budget_pre=config.custom_params.get('feature_budget_pre', 120),
-                feature_budget_post=config.custom_params.get('feature_budget_post', (30, 60)),
-                interactions_cap=config.custom_params.get('interactions_cap', 15),
-                enable_matrix_optimization=config.custom_params.get('enable_matrix_optimization', True),
-                enable_hardware_optimization=config.custom_params.get('enable_hardware_optimization', True),
-                enable_parallel_processing=config.parallel_processing,
-                max_workers=config.max_workers,
-                verbose_logging=config.custom_params.get('verbose_logging', True)
+                custom_params=self._build_component_custom_params(config),
             )
 
-            # Create component
-            component = create_interactive_feature_generation_component(component_config)
+            component = ComponentFactory.create_component(
+                'interactive_feature_generation',
+                component_config,
+            )
             if hasattr(component, 'set_run_metadata'):
                 component.set_run_metadata(run_metadata)
 
@@ -2876,6 +2893,21 @@ class PreTrainingSubPipeline:
                 if result.error_message:
                     self._extend_messages(result.errors, [result.error_message])
 
+        except ValueError as e:
+            result.status = SubPipelineStatus.FAILED
+            result.error_message = str(e)
+            result.end_time = datetime.now()
+            result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+            self.logger.error(f"❌ Interactive feature generation unavailable: {e}")
+            result.metadata = self._merge_run_metadata(result.metadata)
+            result.error_code = f"{self._default_step_error_code('interactive_feature_generation')}_UNAVAILABLE"
+            result.failure = self._create_failure(
+                'interactive_feature_generation',
+                result.error_code,
+                result.error_message,
+                exception=e,
+            )
+            self._extend_messages(result.errors, [result.error_message])
         except ImportError as e:
             result.status = SubPipelineStatus.FAILED
             result.error_message = f"Missing dependencies: {str(e)}"
@@ -3206,6 +3238,49 @@ class PreTrainingSubPipeline:
         """Execute a specific sub-pipeline."""
         if not self._run_metadata:
             self._run_metadata = self._gather_run_metadata(config)
+
+        self._refresh_component_registry()
+
+        spec = STEP_REGISTRY.get(sub_pipeline_name)
+        if spec and spec.component_key in self._missing_components:
+            available_components = ComponentFactory.get_available_components()
+            message = (
+                f"Component '{spec.component_key}' required for '{sub_pipeline_name}' is not registered."
+            )
+            error_code = f"{self._default_step_error_code(sub_pipeline_name)}_UNAVAILABLE"
+            now = datetime.now()
+            result = SubPipelineResult(
+                sub_pipeline_name=sub_pipeline_name,
+                status=SubPipelineStatus.FAILED,
+                start_time=now,
+                end_time=now,
+                duration_seconds=0.0,
+                success=False,
+                error_message=message,
+                error_code=error_code,
+            )
+            result.metadata = self._merge_run_metadata({'available_components': available_components})
+            result.failure = self._create_failure(
+                sub_pipeline_name,
+                error_code,
+                message,
+                context={
+                    'requested_component': spec.component_key,
+                    'available_components': available_components,
+                },
+            )
+            self.event_logger.error(
+                message,
+                context={
+                    'run_id': self._run_metadata.get('run_id'),
+                    'step': sub_pipeline_name,
+                    'symbol': config.symbol,
+                    'timeframe': config.timeframe,
+                    'requested_component': spec.component_key,
+                    'available_components': available_components,
+                },
+            )
+            return result
 
         if sub_pipeline_name == 'multi_horizon_profit_labeler':
             return await self._execute_multi_horizon_profit_labeler(config, self._run_metadata)

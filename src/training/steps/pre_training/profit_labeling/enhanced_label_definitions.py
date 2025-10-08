@@ -27,6 +27,7 @@ from src.utils.common_operations import (
     validate_finite, validate_positive, validate_range, safe_correlation
 )
 from src.utils.math_validation import MathValidation
+from collections import defaultdict
 
 
 class LabelDefinitionType(Enum):
@@ -205,6 +206,16 @@ class AnalystLabelConfig:
     max_position_size_pct: float = 0.05  # 5% of portfolio
     max_drawdown_pct: float = 0.02      # 2% max drawdown
 
+    # Capacity management
+    enforce_capacity_limits: bool = True
+    min_holding_minutes: int = 0
+    max_turnover_per_day: Optional[float] = None
+    capacity_violation_action: str = "scale_confidence"  # "scale_confidence" or "zero_out"
+    capacity_scaling_factor: float = 0.5
+    impact_cost_per_unit_turnover: float = 0.0
+    impact_penalty_exponent: float = 1.0
+    max_impact_cost_pct: Optional[float] = None
+
     # Regime conditioning
     enable_regime_conditioning: bool = True
     volatility_scaling_factor: float = 1.0
@@ -355,6 +366,7 @@ class EnhancedLabelDefinitions:
         self.stability_config = stability_config or StabilityCheckConfig()
 
         self.logger = logging.getLogger('EnhancedLabelDefinitions')
+        self._latest_analyst_diagnostics: Dict[str, Any] = {}
 
         tprint_success("🚀 Enhanced Label Definitions initialized")
         tprint_info("   → Analyst labels: Should we trade?")
@@ -425,7 +437,30 @@ class EnhancedLabelDefinitions:
             confident_mask = confidence_scores >= self.analyst_config.min_confidence_threshold
             analyst_labels[~confident_mask] = 0
 
-            tprint_success(f"✅ Analyst labels generated: {analyst_labels.sum()}/{len(analyst_labels)} positive trades")
+            # Apply capacity and turnover constraints
+            (
+                analyst_labels,
+                confidence_scores,
+                capacity_diagnostics
+            ) = self._apply_capacity_constraints(
+                analyst_labels,
+                confidence_scores,
+                cleaned_data.index,
+                net_profits
+            )
+            self._latest_analyst_diagnostics = capacity_diagnostics
+
+            tprint_success(
+                "✅ Analyst labels generated: "
+                f"{analyst_labels.sum()}/{len(analyst_labels)} positive trades"
+            )
+            tprint_info(
+                "   → Capacity score: "
+                f"{capacity_diagnostics['capacity_score']:.2f}, "
+                f"turnover: {capacity_diagnostics['realized_turnover']:.2f}"
+            )
+            if capacity_diagnostics.get('violations_flagged'):
+                tprint_warning("   ⚠️ Capacity or impact limits triggered; labels adjusted")
 
             return analyst_labels, confidence_scores
 
@@ -640,6 +675,180 @@ class EnhancedLabelDefinitions:
         except Exception as e:
             tprint_error(f"❌ Error applying risk awareness: {e}")
             return base_labels
+
+    def get_latest_analyst_diagnostics(self) -> Dict[str, Any]:
+        """Return the most recent analyst label capacity diagnostics."""
+        return dict(self._latest_analyst_diagnostics)
+
+    def _apply_capacity_constraints(
+        self,
+        analyst_labels: pd.Series,
+        confidence_scores: pd.Series,
+        index: pd.Index,
+        net_profits: pd.Series
+    ) -> Tuple[pd.Series, pd.Series, Dict[str, Any]]:
+        """Apply capacity, turnover, and holding period constraints."""
+
+        config = self.analyst_config
+        diagnostics: Dict[str, Any] = {
+            'enforce_capacity_limits': config.enforce_capacity_limits,
+            'min_holding_minutes': config.min_holding_minutes,
+            'max_turnover_per_day': config.max_turnover_per_day,
+            'capacity_violation_action': config.capacity_violation_action,
+            'capacity_scaling_factor': config.capacity_scaling_factor,
+            'min_holding_violations': 0,
+            'turnover_violations': 0,
+            'impact_violations': 0,
+            'violating_timestamps': [],
+            'scaled_timestamps': []
+        }
+
+        if analyst_labels.empty:
+            diagnostics.update({
+                'realized_turnover': 0.0,
+                'daily_turnover': {},
+                'capacity_score': 1.0,
+                'violations_flagged': False,
+                'capacity_utilization': 0.0,
+                'impact_cost': 0.0,
+                'trading_days_evaluated': 0
+            })
+            return analyst_labels, confidence_scores, diagnostics
+
+        labels_adjusted = analyst_labels.copy().astype(int)
+        confidence_adjusted = confidence_scores.reindex(labels_adjusted.index)
+        if confidence_adjusted.isnull().any():
+            confidence_adjusted = confidence_adjusted.fillna(method='ffill').fillna(method='bfill').fillna(0.0)
+
+        if (
+            config.enforce_capacity_limits and
+            config.min_holding_minutes > 0 and
+            isinstance(index, pd.DatetimeIndex) and
+            len(labels_adjusted) > 1
+        ):
+            min_hold_delta = pd.Timedelta(minutes=config.min_holding_minutes)
+            last_change_time = index[0]
+
+            for i in range(1, len(labels_adjusted)):
+                ts = index[i]
+                prev_value = labels_adjusted.iat[i - 1]
+                proposed_value = labels_adjusted.iat[i]
+
+                if proposed_value != prev_value:
+                    elapsed = ts - last_change_time
+                    if elapsed < min_hold_delta:
+                        labels_adjusted.iat[i] = prev_value
+                        confidence_adjusted.iat[i] *= np.clip(config.capacity_scaling_factor, 0.0, 1.0)
+                        diagnostics['min_holding_violations'] += 1
+                        diagnostics['scaled_timestamps'].append(ts)
+                    else:
+                        last_change_time = ts
+
+        if config.enforce_capacity_limits:
+            daily_usage: Dict[Any, float] = defaultdict(float)
+            cumulative_turnover = 0.0
+            scaling_factor = np.clip(config.capacity_scaling_factor, 0.0, 1.0)
+            violation_action = (config.capacity_violation_action or 'scale_confidence').lower()
+
+            for i in range(len(labels_adjusted)):
+                prev_value = labels_adjusted.iat[i - 1] if i > 0 else 0
+                current_value = labels_adjusted.iat[i]
+                turnover_delta = abs(current_value - prev_value)
+
+                if turnover_delta == 0:
+                    continue
+
+                timestamp = index[i] if i < len(index) else index[-1]
+                day_key: Any
+                if isinstance(index, pd.DatetimeIndex):
+                    day_key = timestamp.normalize()
+                else:
+                    day_key = i
+
+                proposed_daily = daily_usage[day_key] + turnover_delta
+                potential_cumulative = cumulative_turnover + turnover_delta
+                impact_cost = (
+                    safe_power(potential_cumulative, config.impact_penalty_exponent)
+                    * config.impact_cost_per_unit_turnover
+                ) if config.impact_cost_per_unit_turnover else 0.0
+
+                violation_detected = False
+
+                if (
+                    config.max_turnover_per_day is not None and
+                    proposed_daily > config.max_turnover_per_day
+                ):
+                    diagnostics['turnover_violations'] += 1
+                    violation_detected = True
+
+                if (
+                    config.max_impact_cost_pct is not None and
+                    impact_cost > config.max_impact_cost_pct
+                ):
+                    diagnostics['impact_violations'] += 1
+                    violation_detected = True
+
+                if violation_detected and violation_action == 'zero_out':
+                    labels_adjusted.iat[i] = prev_value
+                    confidence_adjusted.iat[i] = 0.0
+                    diagnostics['violating_timestamps'].append(timestamp)
+                    continue
+
+                if violation_detected:
+                    confidence_adjusted.iat[i] *= scaling_factor
+                    diagnostics['scaled_timestamps'].append(timestamp)
+
+                daily_usage[day_key] = proposed_daily
+                cumulative_turnover = potential_cumulative
+
+        turnover_series = labels_adjusted.diff().abs().fillna(0.0)
+        if not turnover_series.empty:
+            turnover_series.iloc[0] = abs(labels_adjusted.iloc[0])
+
+        realized_turnover = float(turnover_series.sum())
+        daily_turnover: Dict[Any, float] = {}
+        if isinstance(index, pd.DatetimeIndex) and not turnover_series.empty:
+            daily_turnover = turnover_series.groupby(index.normalize()).sum().to_dict()
+
+        trading_days = len(daily_turnover) if daily_turnover else (1 if realized_turnover > 0 else 0)
+        capacity_utilization = 0.0
+        if config.max_turnover_per_day and trading_days > 0:
+            capacity_utilization = realized_turnover / (trading_days * config.max_turnover_per_day)
+
+        impact_cost_total = (
+            safe_power(realized_turnover, config.impact_penalty_exponent)
+            * config.impact_cost_per_unit_turnover
+        ) if config.impact_cost_per_unit_turnover else 0.0
+
+        violations_total = (
+            diagnostics['min_holding_violations'] +
+            diagnostics['turnover_violations'] +
+            diagnostics['impact_violations']
+        )
+
+        turnover_events = int((turnover_series > 0).sum()) or 1
+        violation_penalty = min(1.0, violations_total / turnover_events)
+        capacity_score = 1.0 - violation_penalty if config.enforce_capacity_limits else 1.0
+
+        # Bound values within reasonable ranges
+        capacity_score = float(np.clip(capacity_score, 0.0, 1.0))
+        capacity_utilization = float(max(0.0, capacity_utilization))
+
+        diagnostics.update({
+            'realized_turnover': realized_turnover,
+            'daily_turnover': daily_turnover,
+            'capacity_utilization': capacity_utilization,
+            'impact_cost': float(impact_cost_total),
+            'capacity_score': capacity_score,
+            'violations_flagged': violations_total > 0,
+            'trading_days_evaluated': trading_days,
+            'total_turnover_events': turnover_events,
+            'net_profit_sum': float(net_profits.reindex(labels_adjusted.index).fillna(0.0).sum())
+        })
+
+        confidence_adjusted = confidence_adjusted.clip(lower=0.0, upper=1.0)
+
+        return labels_adjusted.astype(int), confidence_adjusted, diagnostics
 
     def _apply_data_cleaning(self, market_data: pd.DataFrame) -> pd.DataFrame:
         """Apply data cleaning according to configuration."""
@@ -1166,6 +1375,12 @@ def create_trading_aware_config() -> Dict[str, Any]:
                 },
                 active_stress_scenario="base"
             ),
+            min_holding_minutes=30,
+            max_turnover_per_day=12,
+            capacity_violation_action="scale_confidence",
+            capacity_scaling_factor=0.5,
+            impact_cost_per_unit_turnover=0.0,
+            impact_penalty_exponent=1.0,
             enable_regime_conditioning=True,
             volatility_scaling_factor=1.0
         ),

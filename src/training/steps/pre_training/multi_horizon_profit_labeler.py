@@ -16,10 +16,13 @@ from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 from dataclasses import dataclass, asdict
 import logging
-from pathlib import Path
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.logger import system_logger
+from src.training.steps.pre_training.artifacts.manifest import (
+    ArtifactManifest,
+    DataLocator,
+)
 
 try:
     from src.utils.data.klines_parquet import get_klines_manager
@@ -331,6 +334,10 @@ class MultiHorizonProfitLabeler:
             tprint_success("✅ Label balancing system initialized")
         else:
             tprint_info("ℹ️ Label balancing system disabled or not available")
+
+        # Initialize artifact helpers
+        self.data_locator = DataLocator()
+        self.artifact_manifest = ArtifactManifest()
 
         tprint_success("🚀 Multi-Horizon Profit Labeler initialized")
         tprint_info(f"   → Timeframe: {self.config.timeframe}")
@@ -1871,15 +1878,33 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                     'metadata': outcome_metadata
                 }
 
-                # Save as a single outcome file that matches the expected pattern
-                outcomes_dir = Path("outcomes")
-                outcomes_dir.mkdir(exist_ok=True)
-                outcome_file = outcomes_dir / filename
+                import json
 
-                with open(outcome_file, 'w') as f:
-                    json.dump(outcome_data, f, indent=2, sort_keys=True, default=_json_default)
+                artifact_base_name = 'market_analysis_multi_horizon_profit_labeler_outcome'
+                artifact_path, version = self.data_locator.resolve_artifact_path(
+                    artifact_base_name,
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                )
+                artifact_path.parent.mkdir(parents=True, exist_ok=True)
 
-                tprint_info(f"💾 Labeling outcome saved to {outcome_file}")
+                with open(artifact_path, 'w', encoding='utf-8') as f:
+                    json.dump(outcome_data, f, indent=2, default=str)
+
+                logical_name = DataLocator.build_logical_name(
+                    artifact_base_name,
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                )
+                self.artifact_manifest.register(
+                    logical_name=logical_name,
+                    path=artifact_path,
+                    version=version,
+                )
+
+                tprint_info(f"💾 Labeling outcome saved to {artifact_path}")
                 artifacts_saved = True
                 artifact_path = str(outcome_file)
 

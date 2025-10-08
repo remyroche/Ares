@@ -9,7 +9,10 @@ that were moved from market_analysis:
 3. interactive_feature_generation - End-to-end interactive feature generation with comprehensive approach
 4. final_feature_selection - Final multi-stage feature selection (120→100→80→60)
 
-Each step can receive a timeframe parameter, with default 15m.
+Each step can receive a timeframe parameter. Unless explicitly provided the timeframe is
+resolved from runtime overrides, then the global primary timeframe configuration, and
+finally falls back to ``'15m'``. Analyst orchestrations automatically elevate to ``'60m'``
+to align with their higher granularity requirements.
 """
 
 from __future__ import annotations
@@ -138,6 +141,7 @@ from src.training.steps.pre_training.validation.data_contracts import (
 )
 from .settings import get_pre_training_settings
 from src.training.common.component_result import ComponentError
+from src.utils.ml_common.config.universal_timeframe_config import get_primary_timeframe
 
 logger = system_logger.getChild('PreTrainingSubPipeline')
 
@@ -292,12 +296,23 @@ class LoggingConfig:
 
 @dataclass
 class SubPipelineConfig:
-    """Configuration for sub-pipeline execution."""
+    """Configuration for sub-pipeline execution.
+
+    The timeframe is resolved in the following priority order:
+
+    1. Explicit ``timeframe`` argument supplied to the config
+    2. Overrides supplied via ``custom_params`` or ``pipeline`` metadata
+    3. The globally configured primary timeframe
+    4. A final fallback to ``'15m'``
+
+    Analyst-oriented runs (identified by their role metadata) are always promoted to
+    ``'60m'`` regardless of the earlier sources to preserve expected aggregation.
+    """
 
     mode: ExecutionMode = ExecutionMode.FULL
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
-    timeframe: str = "1h"  # Default timeframe for pre-training steps (analyst)
+    timeframe: Optional[str] = None  # Resolved during initialization
     data_dir: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
@@ -337,6 +352,96 @@ class SubPipelineConfig:
         metrics_output_format: ``csv``
         metrics_prometheus_enabled: ``False``
     """
+
+    def __post_init__(self) -> None:
+        custom_params_map = self._normalise_mapping(self.custom_params)
+        pipeline_map = self._normalise_mapping(self.pipeline)
+
+        resolved_timeframe = self.resolve_timeframe(
+            explicit=self.timeframe,
+            custom_params=custom_params_map,
+            pipeline_overrides=pipeline_map,
+        )
+
+        self.custom_params = custom_params_map
+        self.pipeline = pipeline_map
+        self.timeframe = resolved_timeframe
+        self.custom_params.setdefault('timeframe', resolved_timeframe)
+        self.pipeline['timeframe'] = resolved_timeframe
+
+    @staticmethod
+    def _normalise_mapping(source: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
+        if isinstance(source, dict):
+            return source
+        if isinstance(source, Mapping):
+            return dict(source)
+        return {}
+
+    @classmethod
+    def resolve_timeframe(
+        cls,
+        *,
+        explicit: Optional[str] = None,
+        custom_params: Optional[Mapping[str, Any]] = None,
+        pipeline_overrides: Optional[Mapping[str, Any]] = None,
+    ) -> str:
+        custom_map = dict(custom_params) if isinstance(custom_params, Mapping) else {}
+        pipeline_map = dict(pipeline_overrides) if isinstance(pipeline_overrides, Mapping) else {}
+
+        candidates = (
+            explicit,
+            custom_map.get('timeframe'),
+            pipeline_map.get('timeframe'),
+            get_primary_timeframe(),
+            '15m',
+        )
+
+        timeframe = next((str(candidate) for candidate in candidates if candidate), '15m')
+
+        if cls._is_analyst_run(custom_map, pipeline_map):
+            timeframe = '60m'
+
+        return timeframe
+
+    @staticmethod
+    def _is_truthy_flag(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value != 0
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            return normalized in {'1', 'true', 'yes', 'y', 'on', 'enabled'}
+        return False
+
+    @classmethod
+    def _is_analyst_run(
+        cls,
+        *sources: Mapping[str, Any],
+    ) -> bool:
+        role_keys = (
+            'role',
+            'pipeline_role',
+            'execution_role',
+            'run_role',
+        )
+        analyst_flags = (
+            'analyst_mode',
+            'is_analyst_run',
+        )
+
+        for source in sources:
+            if not isinstance(source, Mapping):
+                continue
+            for key in role_keys:
+                value = source.get(key)
+                if isinstance(value, str) and value.strip().lower() == 'analyst':
+                    return True
+            for key in analyst_flags:
+                value = source.get(key)
+                if cls._is_truthy_flag(value):
+                    return True
+        return False
 
     def attach_locator(self, locator: DataLocator) -> None:
         """Attach a :class:`DataLocator` instance to the configuration."""
@@ -1170,6 +1275,9 @@ class PreTrainingSubPipeline:
 
         run_metadata = self._gather_run_metadata(config, seed)
         self._run_metadata = dict(run_metadata)
+        self._current_pipeline_state['symbol'] = config.symbol
+        self._current_pipeline_state['exchange'] = config.exchange
+        self._current_pipeline_state['timeframe'] = config.timeframe
         self._current_pipeline_state['random_seed'] = seed
         if self._seeded_rngs is not None:
             self._current_pipeline_state['seeded_rngs'] = self._seeded_rngs
@@ -1424,14 +1532,14 @@ class PreTrainingSubPipeline:
                 results['error_code'] = failure.error_code
                 step_failures.append(('feature_lookback_optimization', failure, flo_result))
                 if not continue_on_error:
-                return self._apply_failure_to_results(
-                    results,
-                    failure,
-                    start_time,
-                    metrics_sink,
-                    step_metric_records,
-                    config,
-                )
+                    return self._apply_failure_to_results(
+                        results,
+                        failure,
+                        start_time,
+                        metrics_sink,
+                        step_metric_records,
+                        config,
+                    )
 
             flo_artifacts = flo_result.artifacts or {}
 
@@ -2320,16 +2428,40 @@ class PreTrainingSubPipeline:
             except (TypeError, ValueError):
                 resolved_seed = None
 
+        pipeline_overrides: Dict[str, Any] = {}
+        if isinstance(pipeline_state, Mapping):
+            for key in (
+                'timeframe',
+                'role',
+                'pipeline_role',
+                'execution_role',
+                'run_role',
+                'analyst_mode',
+                'is_analyst_run',
+            ):
+                if key in pipeline_state:
+                    pipeline_overrides[key] = pipeline_state[key]
+
+        resolved_timeframe = SubPipelineConfig.resolve_timeframe(
+            explicit=None,
+            custom_params=custom_params,
+            pipeline_overrides=pipeline_overrides,
+        )
+        pipeline_overrides['timeframe'] = resolved_timeframe
+
+        custom_params.setdefault('timeframe', resolved_timeframe)
+
         config = SubPipelineConfig(
             symbol=pipeline_state.get('symbol', 'ETHUSDT'),
             exchange=pipeline_state.get('exchange', 'binance'),
-            timeframe=pipeline_state.get('timeframe', '1h'),  # Default 1h for pre-training (analyst)
+            timeframe=resolved_timeframe,
             data_dir=data_dir,
             mode=ExecutionMode.FULL,  # Default to full mode
             custom_params=custom_params,
             random_seed=resolved_seed,
             data_locator=locator if isinstance(locator, DataLocator) else None,
             data_dir_key=data_dir_key,
+            pipeline=pipeline_overrides,
         )
 
         # Execute the pipeline

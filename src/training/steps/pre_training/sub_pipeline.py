@@ -87,6 +87,9 @@ class SubPipelineConfig:
     fast_mode: bool = False
     skip_next_pipeline: bool = False
     custom_params: Dict[str, Any] = field(default_factory=dict)
+    label_imbalance_warning_threshold: float = 0.75
+    nan_rate_warning_threshold: float = 0.05
+    duplicate_index_warning_threshold: float = 0.02
     metrics_output_path: Optional[str] = None
     metrics_output_format: str = "csv"
     metrics_prometheus_enabled: bool = False
@@ -567,7 +570,8 @@ class PreTrainingSubPipeline:
             'exchange': config.exchange,
             'timeframe': config.timeframe,
             'data_dir': config.data_dir,
-            'custom_params': config.custom_params,
+            'custom_params': self._build_component_custom_params(config),
+            'quality_thresholds': self._get_quality_thresholds(config),
         }
 
         regime_cache_path = config.custom_params.get('regime_cache_path') if config.custom_params else None
@@ -589,6 +593,147 @@ class PreTrainingSubPipeline:
 
         return pipeline_state
 
+    def _get_quality_thresholds(self, config: SubPipelineConfig) -> Dict[str, float]:
+        """Return the data quality thresholds configured for the pipeline."""
+        return {
+            'label_imbalance': float(config.label_imbalance_warning_threshold),
+            'nan_rate': float(config.nan_rate_warning_threshold),
+            'duplicate_index': float(config.duplicate_index_warning_threshold),
+        }
+
+    def _build_component_custom_params(self, config: SubPipelineConfig) -> Dict[str, Any]:
+        """Augment component custom parameters with quality thresholds."""
+        params = dict(config.custom_params or {})
+        params.setdefault('quality_thresholds', self._get_quality_thresholds(config))
+        return params
+
+    def _extend_with_quality_metadata(
+        self,
+        metadata: Optional[Dict[str, Any]],
+        metrics: Dict[str, Any],
+        alerts: List[str],
+        config: SubPipelineConfig,
+    ) -> Dict[str, Any]:
+        """Merge computed quality metrics and alerts into metadata."""
+        merged_metadata: Dict[str, Any] = dict(metadata or {})
+        if metrics:
+            merged_metadata['quality_metrics'] = metrics
+        if alerts:
+            merged_metadata['quality_alerts'] = alerts
+        merged_metadata.setdefault('quality_thresholds', self._get_quality_thresholds(config))
+        return merged_metadata
+
+    def _analyze_component_quality(
+        self,
+        component_name: str,
+        artifacts: Dict[str, Any],
+        config: SubPipelineConfig,
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        """Inspect component artifacts and compute quality metrics and alerts."""
+        thresholds = self._get_quality_thresholds(config)
+        metrics: Dict[str, Any] = {}
+        alerts: List[str] = []
+        visited_frames: Dict[int, Dict[str, Any]] = {}
+
+        def log_warning(message: str) -> None:
+            alerts.append(message)
+            tprint_warning(message)
+            self.logger.warning(message)
+
+        def handle_dataframe(dataset_name: str, df: pd.DataFrame) -> None:
+            if df is None or df.empty:
+                return
+            df_id = id(df)
+            if df_id in visited_frames:
+                metrics[dataset_name] = visited_frames[df_id]
+                return
+
+            dataset_metrics, dataset_alerts = self._compute_dataframe_quality_metrics(
+                component_name,
+                dataset_name,
+                df,
+                thresholds,
+            )
+            visited_frames[df_id] = dataset_metrics
+            metrics[dataset_name] = dataset_metrics
+            for alert in dataset_alerts:
+                log_warning(alert)
+
+        def traverse(prefix: str, value: Any) -> None:
+            if isinstance(value, pd.DataFrame):
+                handle_dataframe(prefix, value)
+            elif isinstance(value, dict):
+                for key, nested_value in value.items():
+                    nested_prefix = f"{prefix}.{key}" if prefix else key
+                    traverse(nested_prefix, nested_value)
+
+        traverse('', artifacts)
+        return metrics, alerts
+
+    def _compute_dataframe_quality_metrics(
+        self,
+        component_name: str,
+        dataset_name: str,
+        df: pd.DataFrame,
+        thresholds: Dict[str, float],
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        """Compute quality statistics for a DataFrame and build alert messages."""
+        dataset_metrics: Dict[str, Any] = {}
+        alerts: List[str] = []
+
+        total_cells = int(df.size)
+        nan_rate = float(df.isna().sum().sum() / total_cells) if total_cells else 0.0
+        dataset_metrics['nan_rate'] = nan_rate
+        if nan_rate >= thresholds['nan_rate'] > 0:
+            alerts.append(
+                f"⚠️ [{component_name}] {dataset_name} NaN rate {nan_rate:.2%} exceeds threshold {thresholds['nan_rate']:.2%}"
+            )
+
+        duplicate_share = 0.0
+        if len(df.index) > 0:
+            duplicate_mask = df.index.duplicated()
+            duplicate_share = float(duplicate_mask.mean()) if duplicate_mask.any() else 0.0
+        dataset_metrics['duplicate_index_share'] = duplicate_share
+        if duplicate_share > thresholds['duplicate_index'] > 0:
+            alerts.append(
+                f"⚠️ [{component_name}] {dataset_name} duplicate index share {duplicate_share:.2%} exceeds threshold {thresholds['duplicate_index']:.2%}"
+            )
+
+        column_metrics: Dict[str, Any] = {}
+        max_dominant_share = 0.0
+        max_dominant_column: Optional[str] = None
+        for column in df.columns:
+            series = df[column].dropna()
+            unique_count = series.nunique(dropna=True)
+            if unique_count == 0 or unique_count > 20:
+                continue
+            counts = series.value_counts(dropna=True, normalize=True)
+            if counts.empty:
+                continue
+            dominant_value = counts.index[0]
+            dominant_share = float(counts.iloc[0])
+            column_metrics[str(column)] = {
+                'dominant_value': str(dominant_value),
+                'dominant_share': dominant_share,
+                'distribution': {str(k): float(v) for k, v in counts.items()},
+            }
+            if dominant_share > max_dominant_share:
+                max_dominant_share = dominant_share
+                max_dominant_column = str(column)
+            if dominant_share >= thresholds['label_imbalance'] > 0:
+                alerts.append(
+                    f"⚠️ [{component_name}] {dataset_name}.{column} dominant label share {dominant_share:.2%} exceeds threshold {thresholds['label_imbalance']:.2%}"
+                )
+
+        if column_metrics:
+            dataset_metrics['label_balance'] = {
+                'columns': column_metrics,
+                'max_dominant_share': max_dominant_share,
+                'max_dominant_column': max_dominant_column,
+            }
+
+        return dataset_metrics, alerts
+
     async def _execute_multi_horizon_profit_labeler(self, config: SubPipelineConfig) -> SubPipelineResult:
         """Execute multi-horizon profit labeler with timeframe support."""
         result = SubPipelineResult(
@@ -608,11 +753,22 @@ class PreTrainingSubPipeline:
                 result.end_time = datetime.now()
                 result.duration_seconds = (result.end_time - result.start_time).total_seconds()
                 result.artifacts = precomputed_result
-                result.metadata = {
+                base_metadata = {
                     'component_type': 'multi_horizon_profit_labeler',
                     'source': 'precomputed',
                     'labeling_method': precomputed_result.get('multi_horizon_labeling_result', {}).get('method', 'tactician_entry_labeling')
                 }
+                quality_metrics, quality_alerts = self._analyze_component_quality(
+                    'multi_horizon_profit_labeler',
+                    precomputed_result,
+                    config,
+                )
+                result.metadata = self._extend_with_quality_metadata(
+                    base_metadata,
+                    quality_metrics,
+                    quality_alerts,
+                    config,
+                )
                 return result
 
             # Convert config to component config
@@ -621,7 +777,7 @@ class PreTrainingSubPipeline:
                 exchange=config.exchange,
                 timeframe=config.timeframe,
                 data_dir=config.data_dir,
-                custom_params=config.custom_params
+                custom_params=self._build_component_custom_params(config)
             )
 
             # Create component using factory
@@ -637,6 +793,22 @@ class PreTrainingSubPipeline:
             result.duration_seconds = (result.end_time - result.start_time).total_seconds()
             result.artifacts = component_result.artifacts
             result.error_message = component_result.error_message
+            if component_result.success:
+                quality_metrics, quality_alerts = self._analyze_component_quality(
+                    'multi_horizon_profit_labeler',
+                    result.artifacts,
+                    config,
+                )
+                result.metadata = self._extend_with_quality_metadata(
+                    component_result.metadata,
+                    quality_metrics,
+                    quality_alerts,
+                    config,
+                )
+            else:
+                result.metadata = component_result.metadata or {
+                    'component_type': 'multi_horizon_profit_labeler'
+                }
 
         except ImportError as e:
             result.status = SubPipelineStatus.FAILED
@@ -676,7 +848,7 @@ class PreTrainingSubPipeline:
                 exchange=config.exchange,
                 timeframe=config.timeframe,
                 data_dir=config.data_dir,
-                custom_params=config.custom_params
+                custom_params=self._build_component_custom_params(config)
             )
 
             # Create component using factory
@@ -692,6 +864,20 @@ class PreTrainingSubPipeline:
             result.duration_seconds = (result.end_time - result.start_time).total_seconds()
             result.artifacts = component_result.artifacts
             result.error_message = component_result.error_message
+            if component_result.success:
+                quality_metrics, quality_alerts = self._analyze_component_quality(
+                    'feature_lookback_optimization',
+                    result.artifacts,
+                    config,
+                )
+                result.metadata = self._extend_with_quality_metadata(
+                    component_result.metadata,
+                    quality_metrics,
+                    quality_alerts,
+                    config,
+                )
+            else:
+                result.metadata = component_result.metadata or {}
 
         except ImportError as e:
             result.status = SubPipelineStatus.FAILED
@@ -768,8 +954,21 @@ class PreTrainingSubPipeline:
             result.duration_seconds = (result.end_time - result.start_time).total_seconds()
             result.artifacts = component_result.artifacts
             result.output_files = component_result.output_files
-            result.metadata = component_result.metadata
             result.error_message = component_result.error_message
+            if component_result.success:
+                quality_metrics, quality_alerts = self._analyze_component_quality(
+                    'interactive_feature_generation',
+                    result.artifacts,
+                    config,
+                )
+                result.metadata = self._extend_with_quality_metadata(
+                    component_result.metadata,
+                    quality_metrics,
+                    quality_alerts,
+                    config,
+                )
+            else:
+                result.metadata = component_result.metadata or {}
 
         except ImportError as e:
             result.status = SubPipelineStatus.FAILED
@@ -809,7 +1008,7 @@ class PreTrainingSubPipeline:
                 exchange=config.exchange,
                 timeframe=config.timeframe,
                 data_dir=config.data_dir,
-                custom_params=config.custom_params
+                custom_params=self._build_component_custom_params(config)
             )
 
             # Create component using factory
@@ -825,6 +1024,20 @@ class PreTrainingSubPipeline:
             result.duration_seconds = (result.end_time - result.start_time).total_seconds()
             result.artifacts = component_result.artifacts
             result.error_message = component_result.error_message
+            if component_result.success:
+                quality_metrics, quality_alerts = self._analyze_component_quality(
+                    'optimized_lookback_generation',
+                    result.artifacts,
+                    config,
+                )
+                result.metadata = self._extend_with_quality_metadata(
+                    component_result.metadata,
+                    quality_metrics,
+                    quality_alerts,
+                    config,
+                )
+            else:
+                result.metadata = component_result.metadata or {}
 
         except ImportError as e:
             result.status = SubPipelineStatus.FAILED
@@ -864,7 +1077,7 @@ class PreTrainingSubPipeline:
                 exchange=config.exchange,
                 timeframe=config.timeframe,
                 data_dir=config.data_dir,
-                custom_params=config.custom_params
+                custom_params=self._build_component_custom_params(config)
             )
 
             # Create component using factory
@@ -880,6 +1093,20 @@ class PreTrainingSubPipeline:
             result.duration_seconds = (result.end_time - result.start_time).total_seconds()
             result.artifacts = component_result.artifacts
             result.error_message = component_result.error_message
+            if component_result.success:
+                quality_metrics, quality_alerts = self._analyze_component_quality(
+                    'final_feature_selection',
+                    result.artifacts,
+                    config,
+                )
+                result.metadata = self._extend_with_quality_metadata(
+                    component_result.metadata,
+                    quality_metrics,
+                    quality_alerts,
+                    config,
+                )
+            else:
+                result.metadata = component_result.metadata
 
         except ImportError as e:
             result.status = SubPipelineStatus.FAILED

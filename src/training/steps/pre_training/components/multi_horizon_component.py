@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from src.utils.logger import system_logger
 
 from .base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
 from .component_factory import register_component, register_unavailable_component
+from .contracts import MultiHorizonArtifacts, PipelineState
 from ..logging_utils import PreTrainingEventLogger, configure_pre_training_logging
 
 module_logger = system_logger.getChild('MultiHorizonComponent')
@@ -61,8 +62,10 @@ else:
             )
             return ['multi_horizon_labeling_result', 'labeling_report']
 
-        async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
+        async def execute(self, data: Any, pipeline_state: PipelineState) -> ComponentResult:
             """Execute multi-horizon labeling as a component."""
+
+            pipeline_state = PipelineState.ensure(pipeline_state)
 
             if self.component is None:
                 try:
@@ -79,7 +82,7 @@ else:
                     )
                     return ComponentResult(
                         success=False,
-                        artifacts={},
+                        artifacts=MultiHorizonArtifacts(),
                         error_message=str(exc),
                         metadata={'component_type': 'multi_horizon_profit_labeler'},
                     )
@@ -99,7 +102,7 @@ else:
                 )
                 return ComponentResult(
                     success=False,
-                    artifacts={},
+                    artifacts=MultiHorizonArtifacts(),
                     error_message=str(exc),
                     metadata={'component_type': 'multi_horizon_profit_labeler'},
                 )

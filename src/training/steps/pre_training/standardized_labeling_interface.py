@@ -108,6 +108,10 @@ def assert_labels_sigma_scaled(labels: pd.DataFrame, tolerance: float = 0.35) ->
         if series.empty:
             continue
 
+        if len(series) < 2:
+            # Need at least two observations to compute a finite sample variance; skip otherwise.
+            continue
+
         # Use sample variance (ddof=1) for σ-normalized labels
         variance = float(series.var(ddof=1))
         if not np.isfinite(variance):

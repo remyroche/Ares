@@ -51,25 +51,54 @@ class MultiHorizonComponentWrapper(BasePreTrainingComponent):
     def __init__(self, config: Optional[ComponentConfig] = None):
         super().__init__(config)
         self.component = None
+        tprint(
+            "🧩 [MULTI_HORIZON_WRAPPER] Initialized wrapper for multi-horizon component",
+            color="blue",
+        )
 
     def get_required_artifacts(self) -> list[str]:
         """Get list of required artifacts this component must produce."""
+        tprint(
+            "📦 [MULTI_HORIZON_WRAPPER] Retrieving required artifacts",
+            color="magenta",
+        )
         return ['multi_horizon_labeling_result', 'labeling_report']
 
     async def execute(self, data, pipeline_state: Dict[str, Any]) -> 'ComponentResult':
         """Execute multi-horizon labeling as a component."""
         try:
+            tprint(
+                "🚀 [MULTI_HORIZON_WRAPPER] Executing multi-horizon profit labeler",
+                color="cyan",
+            )
             # Create component instance if not exists
             if self.component is None:
                 if not MULTI_HORIZON_AVAILABLE:
+                    tprint(
+                        "❌ [MULTI_HORIZON_WRAPPER] Multi-horizon profit labeler not available",
+                        color="red",
+                    )
                     raise ImportError("Multi-horizon profit labeler not available")
 
                 self.component = MultiHorizonProfitLabelerComponent(self.config)
+                tprint(
+                    "🛠️ [MULTI_HORIZON_WRAPPER] Instantiated multi-horizon component",
+                    color="yellow",
+                )
 
             # Execute component
-            return await self.component.execute(data, pipeline_state)
+            result = await self.component.execute(data, pipeline_state)
+            tprint(
+                "✅ [MULTI_HORIZON_WRAPPER] Execution completed successfully",
+                color="green",
+            )
+            return result
 
         except Exception as e:
+            tprint(
+                f"⚠️ [MULTI_HORIZON_WRAPPER] Execution failed: {e}",
+                color="red",
+            )
             return ComponentResult(
                 success=False,
                 artifacts={},
@@ -152,19 +181,28 @@ class ComponentFactory:
             raise ValueError(
                 f"Component class must inherit from BasePreTrainingComponent"
             )
-        
+
         self._components[name] = component_class
-    
+        tprint(
+            f"🧾 [PRE_TRAINING_FACTORY] Registered component: {name}",
+            color="blue",
+        )
+
     @classmethod
     def get_available_components(self) -> list[str]:
         """
         Get list of available component names.
-        
+
         Returns:
             List of component names
         """
-        return list(self._components.keys())
-    
+        available = list(self._components.keys())
+        tprint(
+            f"📋 [PRE_TRAINING_FACTORY] Available components: {available}",
+            color="magenta",
+        )
+        return available
+
     @classmethod
     def is_component_available(self, component_name: str) -> bool:
         """
@@ -176,4 +214,9 @@ class ComponentFactory:
         Returns:
             True if component is available
         """
-        return component_name in self._components and self._components[component_name] is not None
+        available = component_name in self._components and self._components[component_name] is not None
+        tprint(
+            f"🔍 [PRE_TRAINING_FACTORY] Component '{component_name}' available: {available}",
+            color="yellow",
+        )
+        return available

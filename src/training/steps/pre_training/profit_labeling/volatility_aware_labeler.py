@@ -113,6 +113,21 @@ class VolatilityAwareConfig:
     # Temporal validation settings (optional wiring from multi-horizon labeler)
     temporal_validation: Optional[Any] = None
     
+    # ENHANCEMENTS: Non-overlapping sampling and explicit volatility
+    enable_non_overlapping_sampling: bool = True  # Ensure sample independence
+    volatility_lookback_frozen: int = 48  # Fixed lookback for volatility (no future leak)
+    volatility_estimation_method: str = "std"  # 'std', 'ewm', 'parkinson', 'garman_klass'
+    
+    # ENHANCEMENTS: Triple-barrier method
+    enable_triple_barrier: bool = False  # Use triple-barrier labeling
+    profit_target_sigma: float = 2.0  # Upper barrier in σ units
+    stop_loss_sigma: float = 2.0  # Lower barrier in σ units
+    max_horizon_bars: int = 48  # Maximum holding period
+    
+    # ENHANCEMENTS: Transaction cost explicit adjustment
+    transaction_cost_bps: float = 6.0  # Total roundtrip cost in basis points (default: 6 bps)
+    adjust_labels_for_costs: bool = True  # Subtract costs from profit calculations
+    
     # Label quality thresholds
     min_auc_threshold: float = 0.55
     max_auc_std_threshold: float = 0.03

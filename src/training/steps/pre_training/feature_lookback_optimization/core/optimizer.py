@@ -81,6 +81,15 @@ class LookbackConstraints:
     regularization_strength: float = 0.1
     preferred_lookback: int = 50
     min_stability_score: float = 0.7
+    
+    # ENHANCEMENTS: Explicit objective function and stability tracking
+    optimization_objective: str = "max_ic"  # 'max_ic', 'max_sharpe', 'min_rmse', 'max_label_corr'
+    preferred_min: float = 40.0  # Preferred minimum lookback
+    preferred_max: float = 80.0  # Preferred maximum lookback
+    penalty_exponent: float = 2.0  # Penalty exponent for regularization
+    enable_bootstrap_stability: bool = True  # Enable bootstrap resampling for stability
+    n_bootstrap_samples: int = 10  # Number of bootstrap samples
+    track_sensitivity: bool = True  # Track lookback sensitivity
 
 
 @dataclass
@@ -95,6 +104,13 @@ class OptimizationResult:
     metadata: Dict[str, Any]
     stability_score: float = 0.0  # Added for validation
     lookback_sensitivity: float = 0.0  # Added for validation
+    
+    # ENHANCEMENTS: Extended stability and robustness metrics
+    resampled_lookbacks: List[int] = None  # Bootstrap resampled lookbacks
+    objective_name: str = "unknown"  # Explicit objective function name
+    regularization_penalty: float = 0.0  # Regularization penalty applied
+    raw_objective_value: float = 0.0  # Raw objective before regularization
+    is_stable: bool = False  # Whether lookback meets stability criteria
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert result to dictionary."""
@@ -111,7 +127,7 @@ class OptimizationResult:
             else:
                 return obj
 
-        return {
+        result_dict = {
             'best_lookback_period': int(self.best_lookback_period) if isinstance(self.best_lookback_period, np.int64) else self.best_lookback_period,
             'best_score': self.best_score,
             'optimization_method': self.optimization_method,
@@ -120,8 +136,15 @@ class OptimizationResult:
             'convergence_achieved': self.convergence_achieved,
             'stability_score': self.stability_score,
             'lookback_sensitivity': self.lookback_sensitivity,
-            'metadata': convert_metadata(self.metadata)
+            'metadata': convert_metadata(self.metadata),
+            # ENHANCEMENTS: Add new fields
+            'resampled_lookbacks': self.resampled_lookbacks if self.resampled_lookbacks is not None else [],
+            'objective_name': self.objective_name,
+            'regularization_penalty': self.regularization_penalty,
+            'raw_objective_value': self.raw_objective_value,
+            'is_stable': self.is_stable
         }
+        return result_dict
 
 
 class CoreOptimizer:

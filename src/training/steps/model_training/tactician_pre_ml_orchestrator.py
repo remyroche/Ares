@@ -3,18 +3,16 @@ Tactician Pre-ML Training Orchestrator
 
 This orchestrator handles the complete pre-ML training pipeline for Tactician models:
 
-1. Separate long & short signals from Analyst with confidence >= 0.5
-2. Extract data from subsequent 45 minutes
-3. Optimize features lookback periods
-4. Generate PID-based features
-5. Apply multi-horizon profit labeling
-6. Select final features
-7. Train Tactician models twice (longs and shorts) with differentiated features and horizon labeling
-8. Wire to existing models_training sub_pipeline
+1. Optimize features lookback periods
+2. Generate interaction and cross-timeframe features (uses interactive_feature_generation)
+3. Apply multi-horizon profit labeling
+4. Select final features
+5. Train Tactician models with Analyst predictions as input features
+6. Wire to existing models_training sub_pipeline
 
-The orchestrator calls existing scripts and orchestrates the entire process for both
-long and short signals separately, ensuring differentiated feature engineering and
-horizon labeling for each direction.
+The orchestrator calls the PRE_TRAINING pipeline (same as Analyst) on 15m timeframe data,
+with Analyst predictions included as additional features. No filtering or confidence
+thresholds are applied.
 """
 
 import asyncio
@@ -110,20 +108,14 @@ class SignalDirection(Enum):
 @dataclass
 class OrchestratorConfig:
     """Configuration for Tactician pre-ML orchestrator."""
-    # Signal filtering parameters
-    min_analyst_confidence: float = 0.5
-    subsequent_minutes: int = 45
-
-    # Feature processing parameters
+    # Timeframe configuration
+    timeframe: str = "15m"  # Tactician uses 15m timeframe
+    
+    # Feature processing parameters (for PRE_TRAINING pipeline)
     max_lookback_periods: int = 20
     max_interaction_features: int = 100
     max_polynomial_features: int = 50
     max_cross_timeframe_features: int = 50
-
-    # PID configuration
-    synergy_threshold: float = 0.1
-    redundancy_threshold: float = 0.15
-    unique_info_threshold: float = 0.05
 
     # Horizon labeling parameters
     profit_targets: Dict[str, float] = field(default_factory=lambda: {
@@ -144,14 +136,6 @@ class OrchestratorConfig:
     stage_2_target: int = 80
     stage_3_target: int = 60
 
-    # NEW: Directional processing modes
-    direction_mode: str = 'both'  # 'both', 'long_only', 'short_only'
-    separate_directional_features: bool = True  # Create completely separate feature sets for long/short
-    directional_feature_prefixes: Dict[str, str] = field(default_factory=lambda: {
-        'long': 'long_',
-        'short': 'short_'
-    })
-
     # Hardware optimization
     enable_parallel_processing: bool = True
     enable_gpu_acceleration: bool = True
@@ -161,9 +145,8 @@ class OrchestratorConfig:
     output_directory: str = "generated/tactician_pre_ml"
     save_intermediate_results: bool = True
 
-    # Execution control
+    # Execution control (uses PRE_TRAINING pipeline)
     enable_feature_optimization: bool = True
-    enable_pid_generation: bool = True
     enable_horizon_labeling: bool = True
     enable_feature_selection: bool = True
 
@@ -171,44 +154,28 @@ class OrchestratorConfig:
 @dataclass
 class OrchestratorResult:
     """Result of Tactician pre-ML orchestration."""
-    # Signal separation results
-    long_signals: pd.DataFrame = field(default_factory=pd.DataFrame)
-    short_signals: pd.DataFrame = field(default_factory=pd.DataFrame)
-    combined_signals: pd.DataFrame = field(default_factory=pd.DataFrame)
-
     # Feature processing results
-    long_optimized_lookbacks: Dict[str, int] = field(default_factory=dict)
-    short_optimized_lookbacks: Dict[str, int] = field(default_factory=dict)
-
-    long_pid_features: Optional[Any] = None
-    short_pid_features: Optional[Any] = None
-
-    long_labeled_targets: Dict[str, np.ndarray] = field(default_factory=dict)
-    short_labeled_targets: Dict[str, np.ndarray] = field(default_factory=dict)
-
-    long_selected_features: List[str] = field(default_factory=list)
-    short_selected_features: List[str] = field(default_factory=list)
-
-    # Combined results for training
-    long_training_data: pd.DataFrame = field(default_factory=pd.DataFrame)
-    short_training_data: pd.DataFrame = field(default_factory=pd.DataFrame)
+    optimized_lookbacks: Dict[str, int] = field(default_factory=dict)
+    
+    # Final features and targets
+    labeled_targets: Dict[str, np.ndarray] = field(default_factory=dict)
+    selected_features: List[str] = field(default_factory=list)
+    final_features: Optional[pd.DataFrame] = None
 
     # Metadata
     execution_time: float = 0.0
-    total_long_samples: int = 0
-    total_short_samples: int = 0
+    total_samples: int = 0
     feature_generation_status: str = "pending"
-
+    
     # Quality metrics
-    long_data_quality_score: float = 0.0
-    short_data_quality_score: float = 0.0
-
+    data_quality_score: float = 0.0
+    
     # Status tracking
-    signal_separation_completed: bool = False
     feature_optimization_completed: bool = False
-    pid_generation_completed: bool = False
     horizon_labeling_completed: bool = False
     feature_selection_completed: bool = False
+    success: bool = False
+    error_message: Optional[str] = None
 
 
 class TacticianPreMLOrchestrator:
@@ -216,39 +183,36 @@ class TacticianPreMLOrchestrator:
     Tactician Pre-ML Training Orchestrator.
 
     Orchestrates the complete pre-ML training pipeline for Tactician models by:
-    1. Separating Analyst signals into long/short with confidence filtering
-    2. Extracting subsequent 45-minute data
-    3. Optimizing feature lookback periods
-    4. Generating PID-based features
-    5. Applying multi-horizon profit labeling
-    6. Selecting final features
-    7. Preparing data for dual training (longs and shorts)
+    1. Loading 15m market data
+    2. Optimizing feature lookback periods
+    3. Generating interaction and cross-timeframe features
+    4. Applying multi-horizon profit labeling
+    5. Selecting final features
+    6. Including Analyst predictions as additional features
+    
+    Uses the same PRE_TRAINING pipeline as Analyst, but on 15m timeframe.
+    No filtering or confidence thresholds applied.
     """
 
     COMPONENT_FACTORY_KEYS: Dict[str, str] = {
-        'feature_optimization': 'tactician_feature_optimization',
-        'pid_generation': 'tactician_pid_generation',
-        'horizon_labeling': 'tactician_horizon_labeling',
-        'feature_selection': 'tactician_feature_selection',
+        'feature_optimization': 'feature_lookback_optimization',
+        'interactive_feature_generation': 'interactive_feature_generation',
+        'horizon_labeling': 'multi_horizon_profit_labeler',
+        'feature_selection': 'final_feature_selection',
     }
 
     COMPONENT_HINTS: Dict[str, str] = {
         'feature_optimization': (
-            "Ensure the 'tactician_feature_optimization' alias is registered in the ComponentFactory. "
-            "It maps to the 'feature_lookback_optimization' implementation—verify optional extras or "
-            "config/pre_training_component_modules.txt if missing."
+            "Ensure the 'feature_lookback_optimization' component is available in the PRE_TRAINING pipeline."
         ),
-        'pid_generation': (
-            "Ensure the 'tactician_pid_generation' alias is available in the ComponentFactory. It maps to "
-            "'pid_based_feature_generation'; install the PID extras or disable PID generation if unavailable."
+        'interactive_feature_generation': (
+            "Ensure the 'interactive_feature_generation' component is available in the PRE_TRAINING pipeline."
         ),
         'horizon_labeling': (
-            "Ensure the 'tactician_horizon_labeling' alias is registered (maps to 'multi_horizon_profit_labeler'). "
-            "Install the labeling extras or disable horizon labeling when missing."
+            "Ensure the 'multi_horizon_profit_labeler' component is available in the PRE_TRAINING pipeline."
         ),
         'feature_selection': (
-            "Ensure the 'tactician_feature_selection' alias resolves in the ComponentFactory (backed by "
-            "'final_feature_selection') or disable final feature selection in the configuration."
+            "Ensure the 'final_feature_selection' component is available in the PRE_TRAINING pipeline."
         ),
     }
 

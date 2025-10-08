@@ -326,48 +326,26 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                         'exchange': exchange,
                         'timeframe': timeframe
                     })
+                    
+                    if saved_files:
+                        artifacts_saved_persistently = True
+                        log_success(
+                            f"💾 [FINAL_FEATURE_SELECTION] Artifacts saved persistently: {list(saved_files.keys())}"
+                        )
+                        tprint(
+                            "💾 [FinalFeatureSelection] Artifacts saved successfully: "
+                            f"{list(saved_files.keys())}"
+                        )
+                    else:
+                        log_error("❌ [FINAL_FEATURE_SELECTION] Artifact manager returned no file paths")
+                        tprint("❌ [FinalFeatureSelection] Failed to persist artifacts: no file paths returned")
+                        
                 except Exception as e:
                     persistence_error = str(e)
                     log_warning(f"⚠️ [FINAL_FEATURE_SELECTION] Exception while saving artifacts persistently: {e}")
-
-                if saved_files:
-                    artifacts_saved_persistently = True
-                    log_success(
-                        f"💾 [FINAL_FEATURE_SELECTION] Artifacts saved persistently: {list(saved_files.keys())}"
-                    )
-                    tprint(
-                        "💾 [FinalFeatureSelection] Artifacts saved: "
-                        f"{list(saved_files.keys())}"
-                    )
-                else:
-                    failure_reason = (
-                        persistence_error
-                        or "artifact manager returned no file paths"
-                    )
-                    log_error(
-                        "❌ [FINAL_FEATURE_SELECTION] Artifacts were not saved persistently: "
-                        f"{failure_reason}"
-                    )
-                    tprint(
-                        "❌ [FinalFeatureSelection] Failed to persist artifacts: "
-                        f"{failure_reason}"
-                    )
+                    tprint(f"⚠️ [FinalFeatureSelection] Artifact save error: {e}")
 
                 component_success = success and artifacts_saved_persistently
-
-                saved_files = await self.save_artifacts(artifacts, {
-                    'component_type': 'final_feature_selection',
-                    'symbol': symbol,
-                    'exchange': exchange,
-                    'timeframe': timeframe
-                })
-                log_success(
-                    f"💾 [FINAL_FEATURE_SELECTION] Artifacts saved persistently: {list(saved_files.keys())}"
-                )
-                tprint(
-                    "💾 [FinalFeatureSelection] Artifacts saved on second attempt: "
-                    f"{list(saved_files.keys())}"
-                )
 
                 return ComponentResult(
                     success=component_success,
@@ -413,10 +391,9 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             # Clean up memory on exception
             try:
                 self.memory_optimizer._light_memory_cleanup()
-            except:
-                pass  # Ignore cleanup errors
-            else:
                 tprint('🧹 [FinalFeatureSelection] Memory cleanup performed after exception')
+            except Exception as cleanup_error:
+                tprint(f'⚠️ [FinalFeatureSelection] Memory cleanup failed (non-critical): {cleanup_error}')
 
             return ComponentResult(
                 success=False,

@@ -20,29 +20,39 @@ from .final_feature_selection import FinalFeatureSelectionComponent
 try:
     from ..pid_based_feature_generation.pid_based_feature_generation_component import PIDBasedFeatureGenerationComponent
     PID_COMPONENT_AVAILABLE = True
-except ImportError:
+    tprint_debug("✅ PID-based feature generation component loaded successfully")
+except ImportError as e:
     PID_COMPONENT_AVAILABLE = False
+    tprint_warning(f"⚠️ PID-based feature generation component not available: {e}")
+    tprint_info("ℹ️ Some advanced feature generation capabilities will be disabled")
 
 # Import optimized lookback component
 try:
     from ..interaction_feature_generator.feature_interaction_generation.optimized_lookback_component import OptimizedLookbackComponent
     OPTIMIZED_LOOKBACK_AVAILABLE = True
-except ImportError:
+    tprint_debug("✅ Optimized lookback component loaded successfully")
+except ImportError as e:
     OPTIMIZED_LOOKBACK_AVAILABLE = False
+    tprint_warning(f"⚠️ Optimized lookback component not available: {e}")
 
 # Import interactive feature generation component
 try:
     from ..interaction_feature_generator.feature_interaction_generation.interactive_feature_generation_component import InteractiveFeatureGenerationComponent
     INTERACTIVE_COMPONENT_AVAILABLE = True
-except ImportError:
+    tprint_debug("✅ Interactive feature generation component loaded successfully")
+except ImportError as e:
     INTERACTIVE_COMPONENT_AVAILABLE = False
+    tprint_warning(f"⚠️ Interactive feature generation component not available: {e}")
 
 # Import multi-horizon profit labeler
 try:
     from ..multi_horizon_profit_labeler import MultiHorizonProfitLabelerComponent
     MULTI_HORIZON_AVAILABLE = True
-except ImportError:
+    tprint_debug("✅ Multi-horizon profit labeler component loaded successfully")
+except ImportError as e:
     MULTI_HORIZON_AVAILABLE = False
+    tprint_error(f"❌ Multi-horizon profit labeler component not available: {e}")
+    tprint_error("❌ This is a CRITICAL component - pipeline may not function correctly")
 
 
 class MultiHorizonComponentWrapper(BasePreTrainingComponent):

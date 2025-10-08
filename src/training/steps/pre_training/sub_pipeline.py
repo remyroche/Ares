@@ -12,12 +12,22 @@ that were moved from market_analysis:
 Each step can receive a timeframe parameter, with default 15m.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, TypedDict
 from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass, field
 import pandas as pd
 import numpy as np
+
+
+class PipelineResultDict(TypedDict, total=False):
+    """Type definition for pipeline execution results."""
+    success: bool
+    execution_time: float
+    total_steps: int
+    completed_steps: int
+    results: Dict[str, Any]
+    error_message: Optional[str]
 
 from src.utils.logger import system_logger
 from src.utils.enhanced_artifact_manager import get_artifact_manager
@@ -101,7 +111,7 @@ class PreTrainingSubPipeline:
         self.results: List[SubPipelineResult] = []
         self._current_pipeline_state: Dict[str, Any] = {}
 
-    async def execute_pipeline(self, config: SubPipelineConfig) -> Dict[str, Any]:
+    async def execute_pipeline(self, config: SubPipelineConfig) -> PipelineResultDict:
         """
         Execute the complete pre-training pipeline.
 
@@ -109,7 +119,7 @@ class PreTrainingSubPipeline:
             config: Configuration for pipeline execution
 
         Returns:
-            Dictionary containing execution results
+            PipelineResultDict containing execution results with typed fields
         """
         self.logger.info('🚀 Starting Pre-Training Sub-Pipeline execution')
         self.logger.info(f'📊 Symbol: {config.symbol}, Exchange: {config.exchange}')
@@ -139,9 +149,20 @@ class PreTrainingSubPipeline:
                 return results
 
             tprint(f"✅ Multi-horizon profit labeling completed for {config.symbol}")
-            tprint(f"   → Labels generated: {len(mh_result.artifacts.get('multi_horizon_labeling_result', {}).get('labeled_data', pd.DataFrame()).columns)}")
-            results['results']['multi_horizon_profit_labeler'] = mh_result.artifacts
-            self._current_pipeline_state.update(mh_result.artifacts)
+            
+            # Validate artifacts before updating state
+            if 'multi_horizon_labeling_result' in mh_result.artifacts:
+                labeled_data = mh_result.artifacts.get('multi_horizon_labeling_result', {}).get('labeled_data', pd.DataFrame())
+                if isinstance(labeled_data, pd.DataFrame) and not labeled_data.empty:
+                    tprint(f"   → Labels generated: {len(labeled_data.columns)} columns")
+                    results['results']['multi_horizon_profit_labeler'] = mh_result.artifacts
+                    self._current_pipeline_state.update(mh_result.artifacts)
+                else:
+                    tprint_error("❌ Multi-horizon labeling artifact validation failed: labeled_data is empty or invalid")
+                    return results
+            else:
+                tprint_error("❌ Multi-horizon labeling artifact validation failed: missing 'multi_horizon_labeling_result'")
+                return results
 
             # Step 2: Feature Lookback Optimization
             tprint("⚙️ Step 2: Feature Lookback Optimization")
@@ -153,9 +174,17 @@ class PreTrainingSubPipeline:
                 return results
 
             tprint(f"✅ Feature lookback optimization completed for {config.symbol}")
-            tprint(f"   → Features optimized: {len(flo_result.artifacts.get('feature_lookback_optimization_result', {}).get('optimized_features', {}))}")
-            results['results']['feature_lookback_optimization'] = flo_result.artifacts
-            self._current_pipeline_state.update(flo_result.artifacts)
+            
+            # Validate artifacts before updating state
+            if 'feature_lookback_optimization_result' in flo_result.artifacts:
+                optimized_features = flo_result.artifacts.get('feature_lookback_optimization_result', {}).get('optimized_features', {})
+                tprint(f"   → Features optimized: {len(optimized_features)}")
+                results['results']['feature_lookback_optimization'] = flo_result.artifacts
+                self._current_pipeline_state.update(flo_result.artifacts)
+            else:
+                tprint_warning("⚠️ Feature lookback optimization completed but artifact structure unexpected")
+                results['results']['feature_lookback_optimization'] = flo_result.artifacts
+                self._current_pipeline_state.update(flo_result.artifacts)
 
             # Step 3: Interactive Feature Generation
             tprint("🔧 Step 3: Interactive Feature Generation")
@@ -167,9 +196,17 @@ class PreTrainingSubPipeline:
                 return results
 
             tprint(f"✅ Interactive feature generation completed for {config.symbol}")
-            tprint(f"   → Features generated: {len(interactive_result.artifacts.get('interactive_feature_generation_result', {}).get('features', {}))}")
-            results['results']['interactive_feature_generation'] = interactive_result.artifacts
-            self._current_pipeline_state.update(interactive_result.artifacts)
+            
+            # Validate artifacts before updating state
+            if 'interactive_feature_generation_result' in interactive_result.artifacts:
+                features = interactive_result.artifacts.get('interactive_feature_generation_result', {}).get('features', {})
+                tprint(f"   → Features generated: {len(features)}")
+                results['results']['interactive_feature_generation'] = interactive_result.artifacts
+                self._current_pipeline_state.update(interactive_result.artifacts)
+            else:
+                tprint_warning("⚠️ Interactive feature generation completed but artifact structure unexpected")
+                results['results']['interactive_feature_generation'] = interactive_result.artifacts
+                self._current_pipeline_state.update(interactive_result.artifacts)
 
             # Step 4: Final Feature Selection
             tprint("🎯 Step 4: Final Feature Selection")
@@ -181,9 +218,17 @@ class PreTrainingSubPipeline:
                 return results
 
             tprint(f"✅ Final feature selection completed for {config.symbol}")
-            tprint(f"   → Final features: {len(ffs_result.artifacts.get('final_feature_selection_result', {}).get('selected_features', []))}")
-            results['results']['final_feature_selection'] = ffs_result.artifacts
-            self._current_pipeline_state.update(ffs_result.artifacts)
+            
+            # Validate artifacts before updating state
+            if 'final_feature_selection_result' in ffs_result.artifacts:
+                selected_features = ffs_result.artifacts.get('final_feature_selection_result', {}).get('selected_features', [])
+                tprint(f"   → Final features: {len(selected_features)}")
+                results['results']['final_feature_selection'] = ffs_result.artifacts
+                self._current_pipeline_state.update(ffs_result.artifacts)
+            else:
+                tprint_warning("⚠️ Final feature selection completed but artifact structure unexpected")
+                results['results']['final_feature_selection'] = ffs_result.artifacts
+                self._current_pipeline_state.update(ffs_result.artifacts)
 
             # Success
             end_time = datetime.now()
@@ -404,11 +449,18 @@ class PreTrainingSubPipeline:
 
         try:
             # Import the new interactive feature generation component
-            from .interaction_feature_generator.feature_interaction_generation.interactive_feature_generation_component import (
-                create_interactive_feature_generation_component, InteractiveFeatureGenerationConfig
-            )
-            
-            tprint("🔧 Using optimized interactive feature generation component")
+            try:
+                from .interaction_feature_generator.feature_interaction_generation.interactive_feature_generation_component import (
+                    create_interactive_feature_generation_component, InteractiveFeatureGenerationConfig
+                )
+                tprint("🔧 Using optimized interactive feature generation component")
+            except ImportError as import_error:
+                tprint_error(f"❌ Required component not found: {import_error}")
+                result.status = SubPipelineStatus.FAILED
+                result.error_message = f"Missing interactive feature generation component: {str(import_error)}"
+                result.end_time = datetime.now()
+                result.duration_seconds = (result.end_time - result.start_time).total_seconds()
+                return result
             
             # Create component configuration
             component_config = InteractiveFeatureGenerationConfig(
@@ -580,8 +632,7 @@ class PreTrainingSubPipeline:
         return [
             'multi_horizon_profit_labeler',
             'feature_lookback_optimization', 
-            'pid_based_feature_generation',
-            'optimized_lookback_generation',
+            'interactive_feature_generation',
             'final_feature_selection'
         ]
 
@@ -591,8 +642,6 @@ class PreTrainingSubPipeline:
             return await self._execute_multi_horizon_profit_labeler(config)
         elif sub_pipeline_name == 'feature_lookback_optimization':
             return await self._execute_feature_lookback_optimization(config)
-        elif sub_pipeline_name == 'pid_based_feature_generation':
-            return await self._execute_pid_based_feature_generation(config)
         elif sub_pipeline_name == 'optimized_lookback_generation':
             return await self._execute_optimized_lookback_generation(config)
         elif sub_pipeline_name == 'interactive_feature_generation':
@@ -600,6 +649,8 @@ class PreTrainingSubPipeline:
         elif sub_pipeline_name == 'final_feature_selection':
             return await self._execute_final_feature_selection(config)
         else:
+            tprint_error(f"❌ Unknown sub-pipeline requested: {sub_pipeline_name}")
+            tprint(f"📋 Available sub-pipelines: {self.get_available_sub_pipelines()}")
             raise ValueError(f"Unknown sub-pipeline: {sub_pipeline_name}")
 
     async def execute_sub_pipeline_with_next(self, sub_pipeline_name: str, config: SubPipelineConfig) -> SubPipelineResult:

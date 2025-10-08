@@ -32,7 +32,10 @@ from src.training.steps.pre_training.profit_labeling.volatility_aware_labeler im
     create_enhanced_tactician_labeler,
     LabelDefinitionType
 )
-from src.training.steps.pre_training.standardized_labeling_interface import assert_labels_sigma_scaled
+from src.training.steps.pre_training.standardized_labeling_interface import (
+    assert_labels_sigma_scaled,
+    validate_dataframe_schema
+)
 
 # Import the label balancing system
 try:
@@ -56,12 +59,29 @@ from src.training.steps.pre_training.components.base_component import BasePreTra
 
 
 @dataclass
+class HorizonWeightsConfig:
+    """Configuration for horizon weights in multi-horizon labeling."""
+    micro: float = 0.0   # 0% - disabled for now
+    small: float = 0.5   # 50% - immediate opportunities
+    medium: float = 0.3  # 30% - short-term opportunities
+    high: float = 0.2    # 20% - longer-term opportunities
+
+
+@dataclass
 class MultiHorizonConfig:
     """Configuration for multi-horizon profit labeling."""
 
     # Timeframe settings
     timeframe: str = "1h"  # Updated to 1h for analyst
     base_period_minutes: float = 60.0  # Updated to 60 minutes for 1h timeframe
+    
+    # Horizon weights configuration
+    horizon_weights: HorizonWeightsConfig = None
+    
+    def __post_init__(self):
+        """Initialize default horizon weights if not provided."""
+        if self.horizon_weights is None:
+            self.horizon_weights = HorizonWeightsConfig()
 
     # Volatility-aware labeling settings
     enable_volatility_normalization: bool = True
@@ -100,6 +120,36 @@ class MultiHorizonConfig:
     weighting_config: WeightingConfig = None
     regime_config: RegimeConfig = None
     fairness_config: ValidationFairnessConfig = None
+
+
+def validate_and_prepare_dataframe(df: pd.DataFrame, name: str = "DataFrame") -> pd.DataFrame:
+    """
+    Validate and prepare a DataFrame for processing.
+    
+    Args:
+        df: DataFrame to validate and prepare
+        name: Name of the DataFrame for logging
+        
+    Returns:
+        Cleaned and validated DataFrame
+    """
+    if df is None or df.empty:
+        tprint_warning(f"⚠️ {name} is empty or None")
+        return df
+    
+    # Check for duplicate indices
+    if df.index.has_duplicates:
+        dup_count = df.index.duplicated().sum()
+        tprint_warning(f"⚠️ {name} has {dup_count} duplicate indices, removing duplicates (keeping first)")
+        df = df[~df.index.duplicated(keep='first')]
+    
+    # Ensure index is sorted
+    if not df.index.is_monotonic_increasing:
+        tprint_info(f"📊 Sorting {name} by index")
+        df = df.sort_index()
+    
+    tprint(f"✅ {name} validated: {len(df)} rows, {len(df.columns)} columns")
+    return df
 
 
 class MultiHorizonProfitLabeler:
@@ -544,6 +594,8 @@ class MultiHorizonProfitLabeler:
                 additional_features['volatility'] = market_data[volatility_cols[0]]
 
             # Apply balancing and weighting
+            tprint_warning("⚠️ IMPORTANT: Balancing is applied to the entire dataset. In production, apply balancing "
+                          "separately to train/validation splits to avoid data leakage during cross-validation.")
             tprint_info("🔄 Executing balancing algorithm...")
             X_balanced, y_balanced, final_weights = self.balancing_system.balance_and_weight(
                 X, y, sample_weight, additional_features
@@ -921,6 +973,8 @@ class MultiHorizonProfitLabeler:
                 tprint_warning("⚠️ No labels to map for feature optimization compatibility")
                 return labels_df
 
+            # Validate and prepare the DataFrame
+            labels_df = validate_and_prepare_dataframe(labels_df, "labels_df for mapping")
             mapped_df = labels_df.copy()
             tprint_info(f"🔄 Mapping {len(labels_df.columns)} target columns for feature optimization compatibility")
 
@@ -1045,13 +1099,14 @@ class MultiHorizonProfitLabeler:
 
             weights = {}
 
-            # Base weights for different horizons
+            # Get base weights from configuration
             base_weights = {
-                'micro': 0.0,   # 0% - disabled for now
-                'small': 0.5,   # 50% - immediate opportunities
-                'medium': 0.3,  # 30% - short-term opportunities
-                'high': 0.2     # 20% - longer-term opportunities
+                'micro': self.config.horizon_weights.micro,
+                'small': self.config.horizon_weights.small,
+                'medium': self.config.horizon_weights.medium,
+                'high': self.config.horizon_weights.high
             }
+            tprint_info(f"📊 Using base horizon weights from config: {base_weights}")
 
             # Adjust weights based on quality scores if available
             if labeling_result.quality_scores:

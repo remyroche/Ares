@@ -8,12 +8,83 @@ flow and proper error handling.
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, Tuple
 from datetime import datetime
 from dataclasses import dataclass
 from enum import Enum
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+
+
+def validate_dataframe_schema(
+    df: pd.DataFrame,
+    required_columns: Optional[List[str]] = None,
+    expected_dtypes: Optional[Dict[str, type]] = None,
+    min_rows: int = 0,
+    allow_nulls: bool = True
+) -> Tuple[bool, List[str]]:
+    """
+    Validate DataFrame schema against expected structure.
+    
+    Args:
+        df: DataFrame to validate
+        required_columns: List of columns that must be present
+        expected_dtypes: Dictionary mapping column names to expected dtypes
+        min_rows: Minimum number of rows required
+        allow_nulls: Whether null values are acceptable
+    
+    Returns:
+        Tuple of (is_valid, list_of_issues)
+    """
+    issues = []
+    
+    if df is None:
+        issues.append("DataFrame is None")
+        return False, issues
+    
+    if df.empty:
+        issues.append("DataFrame is empty")
+        return False, issues
+    
+    # Check minimum rows
+    if len(df) < min_rows:
+        issues.append(f"DataFrame has {len(df)} rows, minimum required: {min_rows}")
+    
+    # Check required columns
+    if required_columns:
+        missing_columns = set(required_columns) - set(df.columns)
+        if missing_columns:
+            issues.append(f"Missing required columns: {missing_columns}")
+    
+    # Check dtypes
+    if expected_dtypes:
+        for col, expected_dtype in expected_dtypes.items():
+            if col in df.columns:
+                actual_dtype = df[col].dtype
+                if not pd.api.types.is_dtype_equal(actual_dtype, expected_dtype):
+                    issues.append(f"Column '{col}' has dtype {actual_dtype}, expected {expected_dtype}")
+    
+    # Check for nulls if not allowed
+    if not allow_nulls:
+        null_columns = df.columns[df.isnull().any()].tolist()
+        if null_columns:
+            issues.append(f"Columns with null values: {null_columns}")
+    
+    # Check for duplicate indices
+    if df.index.has_duplicates:
+        dup_count = df.index.duplicated().sum()
+        issues.append(f"DataFrame has {dup_count} duplicate index values")
+    
+    is_valid = len(issues) == 0
+    
+    if is_valid:
+        tprint(f"✅ DataFrame schema validation passed: {len(df)} rows, {len(df.columns)} columns")
+    else:
+        tprint_warning(f"⚠️ DataFrame schema validation found {len(issues)} issues:")
+        for issue in issues:
+            tprint_warning(f"  - {issue}")
+    
+    return is_valid, issues
 
 
 def assert_labels_sigma_scaled(labels: pd.DataFrame, tolerance: float = 0.35) -> None:
@@ -37,13 +108,15 @@ def assert_labels_sigma_scaled(labels: pd.DataFrame, tolerance: float = 0.35) ->
         if series.empty:
             continue
 
-        variance = float(series.var(ddof=0))
+        # Use sample variance (ddof=1) for σ-normalized labels
+        variance = float(series.var(ddof=1))
         if not np.isfinite(variance):
             raise ValueError(f"Variance for label column '{col}' is not finite.")
 
         if variance < lower_bound or variance > upper_bound:
             raise ValueError(
-                f"Label column '{col}' variance {variance:.3f} deviates from expected σ-normalized scale."
+                f"Label column '{col}' variance {variance:.3f} deviates from expected σ-normalized scale "
+                f"(expected ~1.0 ± {tolerance})."
             )
 
 

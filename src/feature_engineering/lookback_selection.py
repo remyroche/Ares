@@ -130,10 +130,20 @@ class LookbackSelector:
         family_features = [f for f in feature_list if f in features.columns]
         if not family_features:
             return 0.0
-        
-        X = features[family_features]
-        y = targets
-        
+
+        if lookback <= 0:
+            raise ValueError("lookback must be positive")
+
+        min_periods = max(1, lookback // 2)
+        X = features[family_features].rolling(window=lookback, min_periods=min_periods).mean().shift(1)
+        X = X.dropna()
+        y = targets.reindex(X.index).dropna()
+
+        X, y = X.align(y, join='inner', axis=0)
+
+        if X.empty or y.empty:
+            return 0.0
+
         # Create time series splits with embargo
         n_samples = len(X)
         embargo_size = int(n_samples * self.embargo_pct)
@@ -182,7 +192,8 @@ class LookbackSelector:
         choices.sort(key=lambda x: x[1], reverse=True)
         
         # Get current selection from history
-        current_selection = self.history.get(family, None)
+        family_history = self.history.get(family, [])
+        current_selection = family_history[-1] if family_history else None
         
         # Apply simplicity prior
         best_lookback, best_score = choices[0]
@@ -208,7 +219,7 @@ class LookbackSelector:
         # Update history
         if family not in self.history:
             self.history[family] = []
-        
+
         self.history[family].append(best_lookback)
         
         # Keep only recent history for hysteresis

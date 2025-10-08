@@ -7,7 +7,7 @@ disagreement features, that can be called from training steps and trading module
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Tuple, Any, Optional, Union
+from typing import Dict, List, Any, Optional, Union
 import logging
 
 # Import disagreement meta-features
@@ -88,17 +88,17 @@ class EnsembleMetaFeatureGenerator:
                 disagreement_features = self.disagreement_calculator.calculate_disagreement_features_for_ensemble(
                     ensemble_predictions, is_live=is_live
                 )
-                
+
                 # Add disagreement features to meta-features
                 for feature_name, feature_value in disagreement_features.items():
-                    meta_features[feature_name] = feature_value
-                
+                    meta_features[feature_name] = np.asarray(feature_value, dtype=float)
+
                 self.logger.info(f"Added {len(disagreement_features)} disagreement features to analyst ensemble")
             else:
                 # Add default disagreement features
-                default_disagreement = self.disagreement_calculator._get_default_disagreement_features()
+                default_disagreement = self.disagreement_calculator._get_default_disagreement_features(meta_features.index)
                 for feature_name, feature_value in default_disagreement.items():
-                    meta_features[feature_name] = feature_value
+                    meta_features[feature_name] = np.asarray(feature_value, dtype=float)
             
             # Ensure all features are numeric and handle any NaN values
             meta_features = meta_features.fillna(0.0)
@@ -171,17 +171,17 @@ class EnsembleMetaFeatureGenerator:
                 disagreement_features = self.disagreement_calculator.calculate_disagreement_features_for_ensemble(
                     ensemble_predictions, is_live=is_live
                 )
-                
+
                 # Add disagreement features to meta-features
                 for feature_name, feature_value in disagreement_features.items():
-                    meta_features[feature_name] = feature_value
-                
+                    meta_features[feature_name] = np.asarray(feature_value, dtype=float)
+
                 self.logger.info(f"Added {len(disagreement_features)} disagreement features to tactician ensemble")
             else:
                 # Add default disagreement features
-                default_disagreement = self.disagreement_calculator._get_default_disagreement_features()
+                default_disagreement = self.disagreement_calculator._get_default_disagreement_features(meta_features.index)
                 for feature_name, feature_value in default_disagreement.items():
-                    meta_features[feature_name] = feature_value
+                    meta_features[feature_name] = np.asarray(feature_value, dtype=float)
             
             # Ensure all features are numeric and handle any NaN values
             meta_features = meta_features.fillna(0.0)
@@ -253,17 +253,17 @@ class EnsembleMetaFeatureGenerator:
                 disagreement_features = self.disagreement_calculator.calculate_disagreement_features_for_ensemble(
                     ensemble_predictions, is_live=is_live
                 )
-                
+
                 # Add disagreement features to meta-features
                 for feature_name, feature_value in disagreement_features.items():
-                    meta_features[feature_name] = feature_value
-                
+                    meta_features[feature_name] = np.asarray(feature_value, dtype=float)
+
                 self.logger.info(f"Added {len(disagreement_features)} disagreement features to volatile regime ensemble")
             else:
                 # Add default disagreement features
-                default_disagreement = self.disagreement_calculator._get_default_disagreement_features()
+                default_disagreement = self.disagreement_calculator._get_default_disagreement_features(meta_features.index)
                 for feature_name, feature_value in default_disagreement.items():
-                    meta_features[feature_name] = feature_value
+                    meta_features[feature_name] = np.asarray(feature_value, dtype=float)
             
             # Ensure all features are numeric and handle any NaN values
             meta_features = meta_features.fillna(0.0)
@@ -311,22 +311,27 @@ class EnsembleMetaFeatureGenerator:
                     continue
                     
                 try:
-                    # Get prediction from model
                     if hasattr(model, 'predict_proba'):
                         proba = model.predict_proba(features_df.values)
-                        prediction = np.argmax(proba, axis=1)[0] if len(proba) > 0 else 0.5
-                        confidence = np.max(proba, axis=1)[0] if len(proba) > 0 else 0.5
+                        proba = np.asarray(proba, dtype=float)
+                        if proba.ndim == 1:
+                            proba = proba.reshape(-1, 1)
+                        prediction = proba[:, -1]
+                        confidence = np.max(proba, axis=1)
+                        probability_payload: Union[np.ndarray, List[float]] = proba
                     elif hasattr(model, 'predict'):
-                        prediction = model.predict(features_df.values)[0] if hasattr(model, 'predict') else 0.5
-                        confidence = 0.7  # Default confidence
+                        prediction = np.asarray(model.predict(features_df.values), dtype=float)
+                        confidence = np.full_like(prediction, 0.7, dtype=float)
+                        probability_payload = prediction
                     else:
-                        prediction = 0.5
-                        confidence = 0.0
-                    
+                        prediction = np.full(len(features_df), 0.5)
+                        confidence = np.zeros(len(features_df))
+                        probability_payload = prediction
+
                     base_predictions[model_name] = {
-                        'prediction': float(prediction),
-                        'probability': float(prediction),
-                        'confidence': float(confidence)
+                        'prediction': prediction,
+                        'probability': probability_payload,
+                        'confidence': confidence
                     }
                     
                 except Exception as model_error:

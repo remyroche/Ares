@@ -13,10 +13,10 @@ Orchestrates the complete feature engineering pipeline:
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 from enum import Enum
+import logging
+
 import pandas as pd
 import numpy as np
-import warnings
-from pathlib import Path
 
 # Import our modules
 from .data_contracts import InputBar, FeatureStore, ArtifactsRegistry
@@ -75,17 +75,25 @@ class CalendarSessionizer:
     def sessionize(self, bars: pd.DataFrame) -> pd.DataFrame:
         """Add session information to bars."""
         result = bars.copy()
-        
+
         # Simple sessionization (would be more complex in practice)
         if 'timestamp' in result.columns:
-            result['session_id'] = result['timestamp'].dt.date
+            timestamp_series = pd.to_datetime(result['timestamp'])
         else:
-            result['session_id'] = result.index.date
-        
-        # Add session timing flags
-        result['open30'] = 0  # Placeholder - would need proper session timing
-        result['last30'] = 0  # Placeholder
-        
+            timestamp_series = pd.to_datetime(result.index)
+
+        timestamp_series = pd.Series(timestamp_series.values, index=result.index)
+        result['session_id'] = timestamp_series.dt.tz_localize(None).dt.date
+
+        session_starts = timestamp_series.groupby(result['session_id']).transform('min')
+        session_ends = timestamp_series.groupby(result['session_id']).transform('max')
+
+        minutes_from_open = (timestamp_series - session_starts).dt.total_seconds() / 60.0
+        minutes_to_close = (session_ends - timestamp_series).dt.total_seconds() / 60.0
+
+        result['open30'] = (minutes_from_open <= 30).astype(int)
+        result['last30'] = (minutes_to_close <= 30).astype(int)
+
         return result
 
 
@@ -158,6 +166,10 @@ class ParentFeatureBuilder:
         return features_df
 
 
+class AssemblyError(RuntimeError):
+    """Raised when assembly fails."""
+
+
 class AssemblyDAG:
     """Main assembly DAG orchestrator."""
     
@@ -168,6 +180,7 @@ class AssemblyDAG:
         self.feature_builder = ParentFeatureBuilder(self.registry)
         self.status = AssemblyStatus.PENDING
         self.artifacts = None
+        self.logger = logging.getLogger(__name__)
     
     def assemble(self, 
                  bars: pd.DataFrame,
@@ -175,7 +188,8 @@ class AssemblyDAG:
         """Assemble complete feature pipeline."""
         
         self.status = AssemblyStatus.IN_PROGRESS
-        
+        rotation_metadata: Dict[str, Any] = {}
+
         try:
             # Step 1: Sessionize bars
             bars_sessionized = self.sessionizer.sessionize(bars)
@@ -202,21 +216,24 @@ class AssemblyDAG:
             val_features = parent_features.iloc[split_idx:]
             
             transformed_results = transform_router.fit_transform(train_features, val_features)
-            
-            # Combine transformed features
-            all_transformed = []
+
+            # Combine transformed features and restore original order
+            combined_transformed = []
             for feature_name, results in transformed_results.items():
-                all_transformed.append(results['train'])
-            
-            if all_transformed:
-                transformed_features = pd.concat(all_transformed, axis=1)
+                train_df = results.get('train', pd.DataFrame(index=train_features.index))
+                val_df = results.get('val', pd.DataFrame(index=val_features.index))
+                feature_df = pd.concat([train_df, val_df], axis=0).sort_index()
+                combined_transformed.append(feature_df)
+
+            if combined_transformed:
+                transformed_features = pd.concat(combined_transformed, axis=1)
+                transformed_features = transformed_features.reindex(parent_features.index)
             else:
                 transformed_features = pd.DataFrame(index=parent_features.index)
             
             # Apply winsorization
             transformed_features = apply_winsorization(transformed_features)
 
-            rotation_metadata = {}
             if not transformed_features.empty:
                 transformed_features, rotation_metadata = self._orthogonalize_correlated_features(
                     transformed_features
@@ -285,19 +302,10 @@ class AssemblyDAG:
                 }
             )
             
-        except Exception as e:
+        except Exception as exc:
             self.status = AssemblyStatus.FAILED
-            warnings.warn(f"Assembly failed: {e}")
-            
-            return AssemblyResult(
-                features=pd.DataFrame(),
-                feature_names=[],
-                selected_features=[],
-                patch_features={},
-                artifacts=ArtifactsRegistry({}, {}, {}, {}, rotation_metadata={}),
-                status=self.status,
-                metadata={'error': str(e)}
-            )
+            self.logger.exception("Assembly failed")
+            raise AssemblyError("Feature assembly failed") from exc
 
     def _select_features(self,
                         features: pd.DataFrame,

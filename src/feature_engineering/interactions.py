@@ -35,6 +35,11 @@ class InteractionConfig:
     description: str
 
 
+def _matching_columns(data: pd.DataFrame, prefix: str) -> List[str]:
+    """Return columns whose name matches a given prefix ignoring transform suffix."""
+    return [col for col in data.columns if col == prefix or col.startswith(f"{prefix}/")]
+
+
 class RegimeFlags:
     """Regime flags derived from transformed parents."""
     
@@ -47,18 +52,16 @@ class RegimeFlags:
         quantiles = {}
         
         # High volatility regime
-        if 't/sigma_ew' in data.columns:
-            sigma_cols = [col for col in data.columns if col.startswith('t/sigma_ew')]
-            if sigma_cols:
-                sigma_values = data[sigma_cols].mean(axis=1)
-                quantiles['high_vol_q70'] = sigma_values.quantile(0.7)
-        
+        sigma_cols = _matching_columns(data, 't/p/sigma_ew')
+        if sigma_cols:
+            sigma_values = data[sigma_cols].mean(axis=1)
+            quantiles['high_vol_q70'] = sigma_values.quantile(0.7)
+
         # Wide spread regime
-        if 't/spread_z18' in data.columns:
-            spread_cols = [col for col in data.columns if col.startswith('t/spread_z18')]
-            if spread_cols:
-                spread_values = data[spread_cols].mean(axis=1)
-                quantiles['wide_spread_q70'] = spread_values.quantile(0.7)
+        spread_cols = _matching_columns(data, 't/p/spread_z18')
+        if spread_cols:
+            spread_values = data[spread_cols].mean(axis=1)
+            quantiles['wide_spread_q70'] = spread_values.quantile(0.7)
         
         self.quantiles = quantiles
         return quantiles
@@ -68,7 +71,7 @@ class RegimeFlags:
         if 'high_vol_q70' not in self.quantiles:
             return pd.Series(0, index=data.index)
         
-        sigma_cols = [col for col in data.columns if col.startswith('t/sigma_ew')]
+        sigma_cols = _matching_columns(data, 't/p/sigma_ew')
         if not sigma_cols:
             return pd.Series(0, index=data.index)
         
@@ -80,7 +83,7 @@ class RegimeFlags:
         if 'wide_spread_q70' not in self.quantiles:
             return pd.Series(0, index=data.index)
         
-        spread_cols = [col for col in data.columns if col.startswith('t/spread_z18')]
+        spread_cols = _matching_columns(data, 't/p/spread_z18')
         if not spread_cols:
             return pd.Series(0, index=data.index)
         
@@ -96,20 +99,22 @@ class InteractionEngine:
         self.regime_flags = RegimeFlags()
         self.interaction_cache = {}
     
-    def build_interactions(self, 
+    def build_interactions(self,
                           transformed_data: pd.DataFrame,
                           patch_features: Optional[Dict[str, pd.Series]] = None) -> pd.DataFrame:
         """Build all interactions from transformed data."""
-        
+
+        patch_df = pd.DataFrame(patch_features) if patch_features else pd.DataFrame(index=transformed_data.index)
+
         # Calculate regime flags
         self.regime_flags.calculate_quantiles(transformed_data)
-        
+
         interactions = {}
-        
+
         for interaction_id, config in self.config.items():
             try:
                 interaction = self._create_interaction(
-                    interaction_id, config, transformed_data, patch_features
+                    interaction_id, config, transformed_data, patch_df
                 )
                 if interaction is not None:
                     interactions[interaction_id] = interaction
@@ -122,15 +127,16 @@ class InteractionEngine:
         else:
             return pd.DataFrame(index=transformed_data.index)
     
-    def _create_interaction(self, 
+    def _create_interaction(self,
                            interaction_id: str,
                            config: InteractionConfig,
                            data: pd.DataFrame,
-                           patch_features: Optional[Dict[str, pd.Series]] = None) -> Optional[pd.Series]:
+                           patch_features: Optional[pd.DataFrame] = None) -> Optional[pd.Series]:
         """Create a specific interaction."""
-        
+
         # Check required fields
-        missing_fields = set(config.required_fields) - set(data.columns)
+        missing_fields = [field for field in config.required_fields
+                          if not self._has_required_field(field, data, patch_features)]
         if missing_fields:
             warnings.warn(f"Missing fields for {interaction_id}: {missing_fields}")
             return None
@@ -175,12 +181,32 @@ class InteractionEngine:
         else:
             warnings.warn(f"Unknown interaction ID: {interaction_id}")
             return None
+
+    def _has_required_field(self,
+                             field: str,
+                             data: pd.DataFrame,
+                             patch_features: Optional[pd.DataFrame]) -> bool:
+        if field.startswith('model/'):
+            if patch_features is None or patch_features.empty:
+                return False
+            column = field.replace('model/', '')
+            return column in patch_features.columns
+
+        if field in data.columns:
+            return True
+
+        if field.startswith('t/p/'):
+            parent_field = field.replace('t/p/', 'p/', 1)
+            if parent_field in data.columns or any(col.startswith(f"{parent_field}/") for col in data.columns):
+                return True
+
+        return any(col.startswith(f"{field}/") for col in data.columns)
     
     # Tension interactions
     def _tension_mom5_x_negmom20(self, data: pd.DataFrame) -> pd.Series:
         """t/mom5/* × (-t/mom20/*)"""
-        mom5_cols = [col for col in data.columns if 't/mom5' in col]
-        mom20_cols = [col for col in data.columns if 't/mom20' in col]
+        mom5_cols = _matching_columns(data, 't/p/mom5')
+        mom20_cols = _matching_columns(data, 't/p/mom20')
         
         if not mom5_cols or not mom20_cols:
             return pd.Series(0, index=data.index)
@@ -192,7 +218,7 @@ class InteractionEngine:
     
     def _tension_rsi14_x_highvol(self, data: pd.DataFrame) -> pd.Series:
         """t/rsi14/* × 1[high_vol]"""
-        rsi14_cols = [col for col in data.columns if 't/rsi14' in col]
+        rsi14_cols = _matching_columns(data, 't/p/rsi14')
         if not rsi14_cols:
             return pd.Series(0, index=data.index)
         
@@ -203,7 +229,7 @@ class InteractionEngine:
     
     def _tension_bollz_x_widespread(self, data: pd.DataFrame) -> pd.Series:
         """t/bollz20/* × 1[wide_spread]"""
-        bollz_cols = [col for col in data.columns if 't/bollz20' in col]
+        bollz_cols = _matching_columns(data, 't/p/bollz20')
         if not bollz_cols:
             return pd.Series(0, index=data.index)
         
@@ -214,8 +240,8 @@ class InteractionEngine:
     
     def _tension_vwapdist_x_open30(self, data: pd.DataFrame) -> pd.Series:
         """t/vwap_session_dist/* × p/open30"""
-        vwap_cols = [col for col in data.columns if 't/vwap_session_dist' in col]
-        open30_cols = [col for col in data.columns if 'p/open30' in col]
+        vwap_cols = _matching_columns(data, 't/p/vwap_session_dist')
+        open30_cols = _matching_columns(data, 't/p/open30') + _matching_columns(data, 'p/open30')
         
         if not vwap_cols or not open30_cols:
             return pd.Series(0, index=data.index)
@@ -228,8 +254,8 @@ class InteractionEngine:
     # Microstructure interactions
     def _micro_ofi_x_spread(self, data: pd.DataFrame) -> pd.Series:
         """t/ofi_proxy/* × t/spread_z18/*"""
-        ofi_cols = [col for col in data.columns if 't/ofi_proxy' in col]
-        spread_cols = [col for col in data.columns if 't/spread_z18' in col]
+        ofi_cols = _matching_columns(data, 't/p/ofi_proxy')
+        spread_cols = _matching_columns(data, 't/p/spread_z18')
         
         if not ofi_cols or not spread_cols:
             return pd.Series(0, index=data.index)
@@ -241,8 +267,8 @@ class InteractionEngine:
     
     def _micro_tradecount_x_spread(self, data: pd.DataFrame) -> pd.Series:
         """t/tradecount_z18/* × t/spread_z18/*"""
-        tc_cols = [col for col in data.columns if 't/tradecount_z18' in col]
-        spread_cols = [col for col in data.columns if 't/spread_z18' in col]
+        tc_cols = _matching_columns(data, 't/p/tradecount_z18')
+        spread_cols = _matching_columns(data, 't/p/spread_z18')
         
         if not tc_cols or not spread_cols:
             return pd.Series(0, index=data.index)
@@ -254,8 +280,8 @@ class InteractionEngine:
     
     def _micro_microprice_x_ofi(self, data: pd.DataFrame) -> pd.Series:
         """t/microprice_dev/* × t/ofi_proxy/*"""
-        microprice_cols = [col for col in data.columns if 't/microprice_dev' in col]
-        ofi_cols = [col for col in data.columns if 't/ofi_proxy' in col]
+        microprice_cols = _matching_columns(data, 't/p/microprice_dev')
+        ofi_cols = _matching_columns(data, 't/p/ofi_proxy')
         
         if not microprice_cols or not ofi_cols:
             return pd.Series(0, index=data.index)
@@ -267,7 +293,7 @@ class InteractionEngine:
     
     def _micro_dollarvol_x_widespread(self, data: pd.DataFrame) -> pd.Series:
         """t/dollarvol_z18/* × 1[wide_spread]"""
-        dollarvol_cols = [col for col in data.columns if 't/dollarvol_z18' in col]
+        dollarvol_cols = _matching_columns(data, 't/p/dollarvol_z18')
         if not dollarvol_cols:
             return pd.Series(0, index=data.index)
         
@@ -279,8 +305,8 @@ class InteractionEngine:
     # Volatility interactions
     def _vol_r1_x_rvshort(self, data: pd.DataFrame) -> pd.Series:
         """t/r1/* × t/rv_short_3/*"""
-        r1_cols = [col for col in data.columns if 't/r1' in col]
-        rv_cols = [col for col in data.columns if 't/rv_short_3' in col]
+        r1_cols = _matching_columns(data, 't/p/r1')
+        rv_cols = _matching_columns(data, 't/p/rv_short_3')
         
         if not r1_cols or not rv_cols:
             return pd.Series(0, index=data.index)
@@ -292,8 +318,8 @@ class InteractionEngine:
     
     def _vol_r3_x_rvshort(self, data: pd.DataFrame) -> pd.Series:
         """t/r3/* × t/rv_short_3/*"""
-        r3_cols = [col for col in data.columns if 't/r3' in col]
-        rv_cols = [col for col in data.columns if 't/rv_short_3' in col]
+        r3_cols = _matching_columns(data, 't/p/r3')
+        rv_cols = _matching_columns(data, 't/p/rv_short_3')
         
         if not r3_cols or not rv_cols:
             return pd.Series(0, index=data.index)
@@ -305,8 +331,8 @@ class InteractionEngine:
     
     def _vol_vwapdist_x_rvshort(self, data: pd.DataFrame) -> pd.Series:
         """t/vwap_session_dist/* × t/rv_short_3/*"""
-        vwap_cols = [col for col in data.columns if 't/vwap_session_dist' in col]
-        rv_cols = [col for col in data.columns if 't/rv_short_3' in col]
+        vwap_cols = _matching_columns(data, 't/p/vwap_session_dist')
+        rv_cols = _matching_columns(data, 't/p/rv_short_3')
         
         if not vwap_cols or not rv_cols:
             return pd.Series(0, index=data.index)
@@ -318,8 +344,8 @@ class InteractionEngine:
     
     def _vol_autocorr_x_rvshort(self, data: pd.DataFrame) -> pd.Series:
         """t/autocorr_r1_w/* × t/rv_short_3/*"""
-        autocorr_cols = [col for col in data.columns if 't/autocorr_r1_w' in col]
-        rv_cols = [col for col in data.columns if 't/rv_short_3' in col]
+        autocorr_cols = _matching_columns(data, 't/p/autocorr_r1_w')
+        rv_cols = _matching_columns(data, 't/p/rv_short_3')
 
         if not autocorr_cols or not rv_cols:
             return pd.Series(0, index=data.index)
@@ -331,8 +357,8 @@ class InteractionEngine:
 
     def _vol_sigmaew_x_posmom5_guard(self, data: pd.DataFrame) -> pd.Series:
         """t/sigma_ew/* × max(t/mom5/*, 0)"""
-        sigma_cols = [col for col in data.columns if 't/sigma_ew' in col]
-        mom_cols = [col for col in data.columns if 't/mom5' in col]
+        sigma_cols = _matching_columns(data, 't/p/sigma_ew')
+        mom_cols = _matching_columns(data, 't/p/mom5')
 
         if not sigma_cols or not mom_cols:
             return pd.Series(0, index=data.index)
@@ -344,8 +370,8 @@ class InteractionEngine:
 
     def _vol_sigmaew_x_negmom5_guard(self, data: pd.DataFrame) -> pd.Series:
         """t/sigma_ew/* × max(-t/mom5/*, 0)"""
-        sigma_cols = [col for col in data.columns if 't/sigma_ew' in col]
-        mom_cols = [col for col in data.columns if 't/mom5' in col]
+        sigma_cols = _matching_columns(data, 't/p/sigma_ew')
+        mom_cols = _matching_columns(data, 't/p/mom5')
 
         if not sigma_cols or not mom_cols:
             return pd.Series(0, index=data.index)
@@ -357,11 +383,11 @@ class InteractionEngine:
 
     def _vol_sigmaslope_x_trendguard(self, data: pd.DataFrame) -> pd.Series:
         """t/sigma_slope_6/* × |t/price_ema10_pct/*| (with EMA20 fallback)"""
-        sigmaslope_cols = [col for col in data.columns if 't/sigma_slope_6' in col]
-        trend_cols = [col for col in data.columns if 't/price_ema10_pct' in col]
+        sigmaslope_cols = _matching_columns(data, 't/p/sigma_slope_6')
+        trend_cols = _matching_columns(data, 't/p/price_ema10_pct')
 
         if not trend_cols:
-            trend_cols = [col for col in data.columns if 't/price_ema20_pct' in col]
+            trend_cols = _matching_columns(data, 't/p/price_ema20_pct')
 
         if not sigmaslope_cols or not trend_cols:
             return pd.Series(0, index=data.index)
@@ -372,12 +398,12 @@ class InteractionEngine:
         return sigmaslope * trend_guard
 
     # Model interactions
-    def _model_yhat1_x_rvshort(self, data: pd.DataFrame, patch_features: Optional[Dict[str, pd.Series]]) -> pd.Series:
+    def _model_yhat1_x_rvshort(self, data: pd.DataFrame, patch_features: Optional[pd.DataFrame]) -> pd.Series:
         """y_hat_h1 × t/rv_short_3/*"""
-        if not patch_features or 'y_hat_h1' not in patch_features:
+        if patch_features is None or 'y_hat_h1' not in patch_features:
             return pd.Series(0, index=data.index)
-        
-        rv_cols = [col for col in data.columns if 't/rv_short_3' in col]
+
+        rv_cols = _matching_columns(data, 't/p/rv_short_3')
         if not rv_cols:
             return pd.Series(0, index=data.index)
         
@@ -386,12 +412,12 @@ class InteractionEngine:
         
         return yhat1 * rv
     
-    def _model_yhat1_x_vwapdist(self, data: pd.DataFrame, patch_features: Optional[Dict[str, pd.Series]]) -> pd.Series:
+    def _model_yhat1_x_vwapdist(self, data: pd.DataFrame, patch_features: Optional[pd.DataFrame]) -> pd.Series:
         """y_hat_h1 × t/vwap_session_dist/*"""
-        if not patch_features or 'y_hat_h1' not in patch_features:
+        if patch_features is None or 'y_hat_h1' not in patch_features:
             return pd.Series(0, index=data.index)
-        
-        vwap_cols = [col for col in data.columns if 't/vwap_session_dist' in col]
+
+        vwap_cols = _matching_columns(data, 't/p/vwap_session_dist')
         if not vwap_cols:
             return pd.Series(0, index=data.index)
         
@@ -400,9 +426,9 @@ class InteractionEngine:
         
         return yhat1 * vwap_dist
     
-    def _model_yhatconf_x_widespread(self, data: pd.DataFrame, patch_features: Optional[Dict[str, pd.Series]]) -> pd.Series:
+    def _model_yhatconf_x_widespread(self, data: pd.DataFrame, patch_features: Optional[pd.DataFrame]) -> pd.Series:
         """y_hat_conf × 1[wide_spread]"""
-        if not patch_features or 'y_hat_conf' not in patch_features:
+        if patch_features is None or 'y_hat_conf' not in patch_features:
             return pd.Series(0, index=data.index)
         
         yhat_conf = patch_features['y_hat_conf']
@@ -419,7 +445,7 @@ def create_default_interaction_config() -> Dict[str, InteractionConfig]:
     config['i/tension/mom5_x_negmom20'] = InteractionConfig(
         interaction_id='i/tension/mom5_x_negmom20',
         formula='t/mom5/* × (-t/mom20/*)',
-        required_fields=['t/mom5', 't/mom20'],
+        required_fields=['t/p/mom5', 't/p/mom20'],
         regime_dependent=False,
         interaction_type=InteractionType.TENSION,
         description='Momentum tension: short vs long momentum'
@@ -428,7 +454,7 @@ def create_default_interaction_config() -> Dict[str, InteractionConfig]:
     config['i/tension/rsi14_x_highvol'] = InteractionConfig(
         interaction_id='i/tension/rsi14_x_highvol',
         formula='t/rsi14/* × 1[high_vol]',
-        required_fields=['t/rsi14', 't/sigma_ew'],
+        required_fields=['t/p/rsi14', 't/p/sigma_ew'],
         regime_dependent=True,
         interaction_type=InteractionType.TENSION,
         description='RSI in high volatility regime'
@@ -437,7 +463,7 @@ def create_default_interaction_config() -> Dict[str, InteractionConfig]:
     config['i/tension/bollz_x_widespread'] = InteractionConfig(
         interaction_id='i/tension/bollz_x_widespread',
         formula='t/bollz20/* × 1[wide_spread]',
-        required_fields=['t/bollz20', 't/spread_z18'],
+        required_fields=['t/p/bollz20', 't/p/spread_z18'],
         regime_dependent=True,
         interaction_type=InteractionType.TENSION,
         description='Bollinger z-score in wide spread regime'
@@ -446,7 +472,7 @@ def create_default_interaction_config() -> Dict[str, InteractionConfig]:
     config['i/tension/vwapdist_x_open30'] = InteractionConfig(
         interaction_id='i/tension/vwapdist_x_open30',
         formula='t/vwap_session_dist/* × p/open30',
-        required_fields=['t/vwap_session_dist', 'p/open30'],
+        required_fields=['t/p/vwap_session_dist', 't/p/open30'],
         regime_dependent=False,
         interaction_type=InteractionType.TENSION,
         description='VWAP distance during opening period'
@@ -456,7 +482,7 @@ def create_default_interaction_config() -> Dict[str, InteractionConfig]:
     config['i/micro/ofi_x_spread'] = InteractionConfig(
         interaction_id='i/micro/ofi_x_spread',
         formula='t/ofi_proxy/* × t/spread_z18/*',
-        required_fields=['t/ofi_proxy', 't/spread_z18'],
+        required_fields=['t/p/ofi_proxy', 't/p/spread_z18'],
         regime_dependent=False,
         interaction_type=InteractionType.MICRO,
         description='Order flow imbalance vs spread'
@@ -465,7 +491,7 @@ def create_default_interaction_config() -> Dict[str, InteractionConfig]:
     config['i/micro/tradecount_x_spread'] = InteractionConfig(
         interaction_id='i/micro/tradecount_x_spread',
         formula='t/tradecount_z18/* × t/spread_z18/*',
-        required_fields=['t/tradecount_z18', 't/spread_z18'],
+        required_fields=['t/p/tradecount_z18', 't/p/spread_z18'],
         regime_dependent=False,
         interaction_type=InteractionType.MICRO,
         description='Trade count vs spread'
@@ -474,7 +500,7 @@ def create_default_interaction_config() -> Dict[str, InteractionConfig]:
     config['i/micro/microprice_x_ofi'] = InteractionConfig(
         interaction_id='i/micro/microprice_x_ofi',
         formula='t/microprice_dev/* × t/ofi_proxy/*',
-        required_fields=['t/microprice_dev', 't/ofi_proxy'],
+        required_fields=['t/p/microprice_dev', 't/p/ofi_proxy'],
         regime_dependent=False,
         interaction_type=InteractionType.MICRO,
         description='Microprice deviation vs OFI'
@@ -483,7 +509,7 @@ def create_default_interaction_config() -> Dict[str, InteractionConfig]:
     config['i/micro/dollarvol_x_widespread'] = InteractionConfig(
         interaction_id='i/micro/dollarvol_x_widespread',
         formula='t/dollarvol_z18/* × 1[wide_spread]',
-        required_fields=['t/dollarvol_z18', 't/spread_z18'],
+        required_fields=['t/p/dollarvol_z18', 't/p/spread_z18'],
         regime_dependent=True,
         interaction_type=InteractionType.MICRO,
         description='Dollar volume in wide spread regime'
@@ -493,7 +519,7 @@ def create_default_interaction_config() -> Dict[str, InteractionConfig]:
     config['i/vol/r1_x_rvshort'] = InteractionConfig(
         interaction_id='i/vol/r1_x_rvshort',
         formula='t/r1/* × t/rv_short_3/*',
-        required_fields=['t/r1', 't/rv_short_3'],
+        required_fields=['t/p/r1', 't/p/rv_short_3'],
         regime_dependent=False,
         interaction_type=InteractionType.VOL,
         description='1-bar return vs short-term volatility'
@@ -502,7 +528,7 @@ def create_default_interaction_config() -> Dict[str, InteractionConfig]:
     config['i/vol/r3_x_rvshort'] = InteractionConfig(
         interaction_id='i/vol/r3_x_rvshort',
         formula='t/r3/* × t/rv_short_3/*',
-        required_fields=['t/r3', 't/rv_short_3'],
+        required_fields=['t/p/r3', 't/p/rv_short_3'],
         regime_dependent=False,
         interaction_type=InteractionType.VOL,
         description='3-bar return vs short-term volatility'
@@ -511,7 +537,7 @@ def create_default_interaction_config() -> Dict[str, InteractionConfig]:
     config['i/vol/vwapdist_x_rvshort'] = InteractionConfig(
         interaction_id='i/vol/vwapdist_x_rvshort',
         formula='t/vwap_session_dist/* × t/rv_short_3/*',
-        required_fields=['t/vwap_session_dist', 't/rv_short_3'],
+        required_fields=['t/p/vwap_session_dist', 't/p/rv_short_3'],
         regime_dependent=False,
         interaction_type=InteractionType.VOL,
         description='VWAP distance vs short-term volatility'
@@ -520,7 +546,7 @@ def create_default_interaction_config() -> Dict[str, InteractionConfig]:
     config['i/vol/autocorr_x_rvshort'] = InteractionConfig(
         interaction_id='i/vol/autocorr_x_rvshort',
         formula='t/autocorr_r1_w/* × t/rv_short_3/*',
-        required_fields=['t/autocorr_r1_w', 't/rv_short_3'],
+        required_fields=['t/p/autocorr_r1_w', 't/p/rv_short_3'],
         regime_dependent=False,
         interaction_type=InteractionType.VOL,
         description='Return autocorrelation vs short-term volatility'
@@ -529,7 +555,7 @@ def create_default_interaction_config() -> Dict[str, InteractionConfig]:
     config['i/vol/sigmaew_x_posmom5_guard'] = InteractionConfig(
         interaction_id='i/vol/sigmaew_x_posmom5_guard',
         formula='t/sigma_ew/* × max(t/mom5/*, 0)',
-        required_fields=['t/sigma_ew', 't/mom5'],
+        required_fields=['t/p/sigma_ew', 't/p/mom5'],
         regime_dependent=False,
         interaction_type=InteractionType.VOL,
         description='Volatility with positive momentum guard'
@@ -538,7 +564,7 @@ def create_default_interaction_config() -> Dict[str, InteractionConfig]:
     config['i/vol/sigmaew_x_negmom5_guard'] = InteractionConfig(
         interaction_id='i/vol/sigmaew_x_negmom5_guard',
         formula='t/sigma_ew/* × max(-t/mom5/*, 0)',
-        required_fields=['t/sigma_ew', 't/mom5'],
+        required_fields=['t/p/sigma_ew', 't/p/mom5'],
         regime_dependent=False,
         interaction_type=InteractionType.VOL,
         description='Volatility with negative momentum guard'
@@ -547,7 +573,7 @@ def create_default_interaction_config() -> Dict[str, InteractionConfig]:
     config['i/vol/sigmaslope_x_trendguard'] = InteractionConfig(
         interaction_id='i/vol/sigmaslope_x_trendguard',
         formula='t/sigma_slope_6/* × |t/price_ema10_pct/*|',
-        required_fields=['t/sigma_slope_6', 't/price_ema10_pct'],
+        required_fields=['t/p/sigma_slope_6', 't/p/price_ema10_pct'],
         regime_dependent=False,
         interaction_type=InteractionType.VOL,
         description='Volatility slope gated by trend strength'
@@ -557,7 +583,7 @@ def create_default_interaction_config() -> Dict[str, InteractionConfig]:
     config['i/model/yhat1_x_rvshort'] = InteractionConfig(
         interaction_id='i/model/yhat1_x_rvshort',
         formula='y_hat_h1 × t/rv_short_3/*',
-        required_fields=['t/rv_short_3'],
+        required_fields=['model/y_hat_h1', 't/p/rv_short_3'],
         regime_dependent=False,
         interaction_type=InteractionType.MODEL,
         description='Model prediction vs short-term volatility'
@@ -566,7 +592,7 @@ def create_default_interaction_config() -> Dict[str, InteractionConfig]:
     config['i/model/yhat1_x_vwapdist'] = InteractionConfig(
         interaction_id='i/model/yhat1_x_vwapdist',
         formula='y_hat_h1 × t/vwap_session_dist/*',
-        required_fields=['t/vwap_session_dist'],
+        required_fields=['model/y_hat_h1', 't/p/vwap_session_dist'],
         regime_dependent=False,
         interaction_type=InteractionType.MODEL,
         description='Model prediction vs VWAP distance'
@@ -575,7 +601,7 @@ def create_default_interaction_config() -> Dict[str, InteractionConfig]:
     config['i/model/yhatconf_x_widespread'] = InteractionConfig(
         interaction_id='i/model/yhatconf_x_widespread',
         formula='y_hat_conf × 1[wide_spread]',
-        required_fields=['t/spread_z18'],
+        required_fields=['model/y_hat_conf', 't/p/spread_z18'],
         regime_dependent=True,
         interaction_type=InteractionType.MODEL,
         description='Model confidence in wide spread regime'

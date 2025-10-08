@@ -47,21 +47,23 @@ class OnlineEWZ:
     def fit_transform(self, data: pd.Series) -> pd.Series:
         """Fit and transform data with online state."""
         result = pd.Series(index=data.index, dtype=float)
-        
+
         for i, value in enumerate(data):
             if pd.isna(value):
                 result.iloc[i] = np.nan
                 continue
-                
+
             # Online update
             self.count += 1
+            previous_mean = self.mean_state
             self.mean_state = (1 - self.alpha) * self.mean_state + self.alpha * value
-            
+
             if self.count > 1:
-                # Online variance update (Welford's algorithm)
-                delta = value - self.mean_state
-                self.var_state = (1 - self.alpha) * self.var_state + self.alpha * delta**2
-            
+                # Online variance update (Welford-style) using the previous mean
+                delta = value - previous_mean
+                updated_delta = value - self.mean_state
+                self.var_state = (1 - self.alpha) * self.var_state + self.alpha * delta * updated_delta
+
             # Z-score
             if self.var_state > 0:
                 result.iloc[i] = (value - self.mean_state) / np.sqrt(self.var_state)

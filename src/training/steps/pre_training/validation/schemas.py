@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Any, Callable, Dict, Optional, Union
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
 
+import numpy as np
 import pandas as pd
+from pandas import Series
 
 try:
     import pandera as pa
@@ -14,6 +16,14 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for test environments
     from ._pandera_stub import pandera_stub as pa
     from ._pandera_stub import errors as pa_errors
 
+try:  # pragma: no cover - optional utility import
+    from ..quantitative_validation import calculate_information_coefficient
+except Exception:  # pragma: no cover - guard against circular imports or absence
+    calculate_information_coefficient = None  # type: ignore[assignment]
+
+# ---------------------------------------------------------------------------
+# Schema definitions
+# ---------------------------------------------------------------------------
 try:
     from statsmodels.stats.multitest import multipletests
 except ModuleNotFoundError:  # pragma: no cover - optional dependency for multiple testing adjustments
@@ -265,4 +275,103 @@ def schema_metadata(*schema_keys: str) -> Dict[str, Dict[str, str]]:
         if key in SCHEMA_REGISTRY:
             metadata[key] = dict(SCHEMA_REGISTRY[key])
     return metadata
+
+
+_RNGInput = Union[int, np.random.Generator, np.random.RandomState]
+
+
+def _build_validation_series(series: Union[pd.Series, Series, np.ndarray], index: pd.Index) -> Series:
+    if isinstance(series, pd.Series):
+        return series.reindex(index)
+    return Series(series, index=index)
+
+
+def _default_ic_scorer(model: Any, X: pd.DataFrame, y: Series) -> float:
+    predictions = model.predict(X)
+    prediction_series = _build_validation_series(predictions, X.index)
+    target_series = _build_validation_series(y, X.index)
+    aligned_predictions, aligned_targets = prediction_series.align(target_series, join="inner")
+    if aligned_predictions.empty or aligned_targets.empty:
+        return 0.0
+
+    if calculate_information_coefficient is not None:
+        try:
+            return float(calculate_information_coefficient(aligned_predictions, aligned_targets))
+        except Exception:
+            pass
+
+    ranked_predictions = aligned_predictions.rank(method="average")
+    ranked_targets = aligned_targets.rank(method="average")
+    correlation = ranked_predictions.corr(ranked_targets)
+    if correlation is None or np.isnan(correlation):
+        return 0.0
+    return float(correlation)
+
+
+def _get_rng(random_state: Optional[_RNGInput]) -> np.random.Generator:
+    if isinstance(random_state, np.random.Generator):
+        return random_state
+    if isinstance(random_state, np.random.RandomState):  # pragma: no branch - compatibility guard
+        seed = random_state.randint(0, 2**32 - 1)
+        return np.random.default_rng(seed)
+    return np.random.default_rng(random_state)
+
+
+def block_permutation_importance(
+    model: Any,
+    X_val: pd.DataFrame,
+    y_val: Series,
+    *,
+    block_size: int,
+    n_repeats: int = 10,
+    scoring_func: Optional[Callable[[Any, pd.DataFrame, Series], float]] = None,
+    random_state: Optional[_RNGInput] = None,
+) -> Series:
+    """Compute block-wise permutation importance on validation data.
+
+    The helper preserves temporal ordering inside each permuted block and aggregates
+    repeated score drops into a feature-importance series.
+    """
+
+    if block_size <= 0:
+        raise ValueError("block_size must be a positive integer")
+    if n_repeats <= 0:
+        raise ValueError("n_repeats must be a positive integer")
+    if X_val.empty:
+        return Series(dtype=float)
+
+    scorer = scoring_func or _default_ic_scorer
+    y_series = _build_validation_series(y_val, X_val.index)
+    baseline_score = scorer(model, X_val, y_series)
+
+    rng = _get_rng(random_state)
+    importance_scores: Dict[str, float] = {}
+
+    n_samples = len(X_val)
+    block_starts = list(range(0, n_samples, block_size))
+    block_slices = [slice(start, min(start + block_size, n_samples)) for start in block_starts]
+
+    for column in X_val.columns:
+        drops: list[float] = []
+        column_values = X_val[column].to_numpy(copy=True)
+        if len(column_values) == 0:
+            importance_scores[column] = 0.0
+            continue
+
+        for _ in range(n_repeats):
+            permuted_frame = X_val.copy()
+            permutation_order = rng.permutation(len(block_slices))
+            permuted_blocks = [column_values[block_slices[idx]] for idx in permutation_order]
+            permuted_column = (
+                np.concatenate(permuted_blocks)
+                if permuted_blocks
+                else column_values.copy()
+            )
+            permuted_frame[column] = permuted_column
+            permuted_score = scorer(model, permuted_frame, y_series)
+            drops.append(baseline_score - permuted_score)
+
+        importance_scores[column] = float(np.mean(drops)) if drops else 0.0
+
+    return Series(importance_scores).sort_values(ascending=False)
 

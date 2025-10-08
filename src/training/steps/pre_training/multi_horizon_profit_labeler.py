@@ -81,6 +81,7 @@ except ImportError:
 
 # Import base component
 from src.training.steps.pre_training.components.base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+from src.training.steps.pre_training.components.contracts import MultiHorizonArtifacts, PipelineState
 
 
 def _normalize_for_hash(value: Any) -> Any:
@@ -579,24 +580,25 @@ class MultiHorizonProfitLabeler:
                 market_data,
                 context="multi_horizon_profit_labeler.market_data"
             )
-            if market_data is None or market_data.empty:
             market_data_batches: List[pd.DataFrame] = []
-            async for batch in self._load_market_data(
-                symbol,
-                exchange,
-                timeframe,
-                data_dir,
-                batch_size=self.config.market_data_batch_size,
-                window_days=self.config.market_data_window_days,
-            ):
-                market_data_batches.append(batch)
 
-            if not market_data_batches:
-                tprint_error(f"❌ No market data available for {symbol} {timeframe}")
-                raise ValueError(f"No market data available for {symbol} {timeframe}")
+            if market_data is None or market_data.empty:
+                async for batch in self._load_market_data(
+                    symbol,
+                    exchange,
+                    timeframe,
+                    data_dir,
+                    batch_size=self.config.market_data_batch_size,
+                    window_days=self.config.market_data_window_days,
+                ):
+                    market_data_batches.append(batch)
 
-            market_data = pd.concat(market_data_batches, axis=0).sort_index()
-            market_data = market_data[~market_data.index.duplicated(keep="first")]
+                if not market_data_batches:
+                    tprint_error(f"❌ No market data available for {symbol} {timeframe}")
+                    raise ValueError(f"No market data available for {symbol} {timeframe}")
+
+                market_data = pd.concat(market_data_batches, axis=0).sort_index()
+                market_data = market_data[~market_data.index.duplicated(keep="first")]
 
             tprint_success(
                 f"✅ Market data loaded: {len(market_data)} rows, {len(market_data.columns)} columns"
@@ -2171,7 +2173,7 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
         """Get list of required artifacts this component must produce."""
         return ['multi_horizon_labeling_result', 'labeling_report']
 
-    async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
+    async def execute(self, data: Any, pipeline_state: PipelineState) -> ComponentResult:
         """
         Execute multi-horizon profit labeling as a component.
 
@@ -2183,6 +2185,7 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
             ComponentResult with labeling results
         """
         try:
+            pipeline_state = PipelineState.ensure(pipeline_state)
             # Extract parameters from pipeline state
             symbol = pipeline_state.get('symbol', 'ETHUSDT')
             exchange = pipeline_state.get('exchange', 'binance')
@@ -2284,9 +2287,28 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
                 tprint_warning(f"⚠️ Failed to save outcome: {e}")
                 artifact_save_error = str(e)
 
+            artifacts_bundle = MultiHorizonArtifacts(
+                multi_horizon_labeling_result=labeling_result.get('multi_horizon_labeling_result', {}),
+                labeling_report=labeling_result.get('labeling_report', {}),
+                standardized_output=labeling_result.get('standardized_output'),
+                validated_schemas=labeling_result.get('validated_schemas'),
+            )
+            extras = {
+                key: value
+                for key, value in labeling_result.items()
+                if key not in {
+                    'multi_horizon_labeling_result',
+                    'labeling_report',
+                    'standardized_output',
+                    'validated_schemas',
+                }
+            }
+            if extras:
+                artifacts_bundle.extra.update(extras)
+
             return ComponentResult(
                 success=True,
-                artifacts=labeling_result,
+                artifacts=artifacts_bundle,
                 metadata={
                     'component_type': 'multi_horizon_profit_labeler',
                     'symbol': symbol,
@@ -2305,7 +2327,7 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
             tprint_error(f"❌ Schema validation error in multi-horizon labeler: {error_message}")
             return ComponentResult(
                 success=False,
-                artifacts={},
+                artifacts=MultiHorizonArtifacts(),
                 error_message=error_message,
                 metadata={
                     'component_type': 'multi_horizon_profit_labeler',
@@ -2321,14 +2343,14 @@ class MultiHorizonProfitLabelerComponent(BasePreTrainingComponent):
             tprint_error(f"❌ Multi-horizon profit labeler component failed: {e}")
             return ComponentResult(
                 success=False,
-                artifacts={
-                    'multi_horizon_labeling_result': {},
-                    'labeling_report': {
+                artifacts=MultiHorizonArtifacts(
+                    multi_horizon_labeling_result={},
+                    labeling_report={
                         'status': 'failed',
                         'error': str(e),
-                        'timestamp': datetime.now().isoformat()
-                    }
-                },
+                        'timestamp': datetime.now().isoformat(),
+                    },
+                ),
                 error_message=str(e),
                 metadata={'component_type': 'multi_horizon_profit_labeler'}
             )

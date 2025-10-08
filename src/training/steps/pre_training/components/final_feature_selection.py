@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from .base_component import BasePreTrainingComponent, ComponentConfig, ComponentResult
+from .contracts import FinalFeatureSelectionArtifacts, PipelineState
 from src.training.common.artifact_persistence import SaveReport
 from src.training.common.component_result import ComponentError
 from .component_factory import register_component
@@ -199,7 +200,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 'priority_categories': ['momentum', 'volatility', 'microstructure']
             }
 
-    async def execute(self, data: Any, pipeline_state: Dict[str, Any]) -> ComponentResult:
+    async def execute(self, data: Any, pipeline_state: PipelineState) -> ComponentResult:
         """
         Execute final feature selection.
 
@@ -210,6 +211,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
         Returns:
             ComponentResult with feature selection results
         """
+        pipeline_state = PipelineState.ensure(pipeline_state)
         log_info('🎯 Starting Final Feature Selection')
         self._log_info(
             '🚀 [FinalFeatureSelection] Starting execute routine',
@@ -238,11 +240,10 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     if isinstance(candidate, pd.DataFrame) and not candidate.empty:
                         data[key] = _record_validated_frame(key, candidate)
 
-            if isinstance(pipeline_state, dict):
-                for key in ('feature_matrix', 'final_feature_candidates'):
-                    candidate = pipeline_state.get(key)
-                    if isinstance(candidate, pd.DataFrame) and not candidate.empty:
-                        pipeline_state[key] = _record_validated_frame(key, candidate)
+            for key in ('feature_matrix', 'final_feature_candidates'):
+                candidate = pipeline_state.get(key)
+                if isinstance(candidate, pd.DataFrame) and not candidate.empty:
+                    pipeline_state[key] = _record_validated_frame(key, candidate)
 
             # Check memory pressure and apply optimizations
             memory_pressure = getattr(self.memory_optimizer, 'memory_pressure', 0.0)
@@ -410,8 +411,8 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     'adaptive_strategy_used': adaptive_strategy
                 }
 
-                artifacts = {
-                    'final_feature_selection_result': {
+                artifacts_bundle = FinalFeatureSelectionArtifacts(
+                    final_feature_selection_result={
                         'symbol': symbol,
                         'exchange': exchange,
                         'timeframe': timeframe,
@@ -426,10 +427,10 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                             'stage_3': 60
                         },
                         'hardware_performance': performance_metrics,
-                        'validated_schemas': validation_metadata
-                    }
-                }
-                artifacts.setdefault('validated_schemas', validation_metadata)
+                        'validated_schemas': validation_metadata,
+                    },
+                    validated_schemas=validation_metadata,
+                )
 
                 log_success(f'✅ Final feature selection completed successfully with hardware optimizations')
                 log_info(f'📊 Performance metrics: {performance_metrics}')
@@ -454,7 +455,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 failure_reason: Optional[str] = None
 
                 try:
-                    save_report = await self.save_artifacts(artifacts, {
+                    save_report = await self.save_artifacts(artifacts_bundle, {
                         'component_type': 'final_feature_selection',
                         'symbol': symbol,
                         'exchange': exchange,
@@ -502,7 +503,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
 
                 return ComponentResult(
                     success=component_success,
-                    artifacts=artifacts,
+                    artifacts=artifacts_bundle,
                     error=result_error,
                     warnings=warnings,
                     execution_time=0.0,
@@ -536,7 +537,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 failure_message = "Final feature selection execution failed"
                 return ComponentResult(
                     success=False,
-                    artifacts={},
+                    artifacts=FinalFeatureSelectionArtifacts(),
                     error=ComponentError(failure_message),
                     warnings=[failure_message],
                     execution_time=0.0,
@@ -561,7 +562,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             )
             return ComponentResult(
                 success=False,
-                artifacts={},
+                artifacts=FinalFeatureSelectionArtifacts(),
                 error_message=error_message,
                 execution_time=0.0,
                 metadata={
@@ -601,7 +602,7 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
             failure_message = str(e)
             return ComponentResult(
                 success=False,
-                artifacts={},
+                artifacts=FinalFeatureSelectionArtifacts(),
                 error=ComponentError(failure_message),
                 warnings=[failure_message],
                 execution_time=0.0,

@@ -21,6 +21,45 @@ from itertools import combinations, product
 import warnings
 warnings.filterwarnings('ignore')
 
+try:
+    from src.utils.tprint import (
+        tprint,
+        tprint_info,
+        tprint_warning,
+        tprint_error,
+        tprint_success,
+        tprint_debug,
+        tprint_progress,
+        tprint_performance,
+    )
+    TPRINT_AVAILABLE = True
+except ImportError:  # pragma: no cover - fallback for standalone usage
+    TPRINT_AVAILABLE = False
+
+    def tprint(*args, **kwargs):
+        print(*args, **kwargs)
+
+    def tprint_info(*args, **kwargs):
+        print("INFO:", *args, **kwargs)
+
+    def tprint_warning(*args, **kwargs):
+        print("WARNING:", *args, **kwargs)
+
+    def tprint_error(*args, **kwargs):
+        print("ERROR:", *args, **kwargs)
+
+    def tprint_success(*args, **kwargs):
+        print("SUCCESS:", *args, **kwargs)
+
+    def tprint_debug(*args, **kwargs):
+        print("DEBUG:", *args, **kwargs)
+
+    def tprint_progress(*args, **kwargs):
+        print("PROGRESS:", *args, **kwargs)
+
+    def tprint_performance(*args, **kwargs):
+        print("PERFORMANCE:", *args, **kwargs)
+
 
 @dataclass
 class InteractionTemplate:
@@ -53,6 +92,13 @@ class CoreInteractionTemplates:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.templates = self._create_core_templates()
+        tprint_info(
+            "Initialized core interaction templates | count=%d | types=%s"
+            % (
+                len(self.templates),
+                sorted({template.template_type for template in self.templates}),
+            )
+        )
     
     def _create_core_templates(self) -> List[InteractionTemplate]:
         """Create core interaction templates."""
@@ -238,6 +284,10 @@ class CoreInteractionTemplates:
             )
         ]
         
+        tprint_debug(
+            "Constructed core template catalogue | total=%d | names=%s"
+            % (len(templates), [template.name for template in templates])
+        )
         return templates
 
 
@@ -247,6 +297,10 @@ class HTFAwareTemplates:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.templates = self._create_htf_aware_templates()
+        tprint_info(
+            "Initialized HTF-aware templates | count=%d | names=%s"
+            % (len(self.templates), [template.name for template in self.templates])
+        )
     
     def _create_htf_aware_templates(self) -> List[InteractionTemplate]:
         """Create HTF-aware interaction templates."""
@@ -312,6 +366,10 @@ class HTFAwareTemplates:
             )
         ]
         
+        tprint_debug(
+            "Constructed HTF-aware template set | total=%d | names=%s"
+            % (len(templates), [template.name for template in templates])
+        )
         return templates
 
 
@@ -321,6 +379,13 @@ class CrossAssetTemplates:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         self.templates = self._create_cross_asset_templates()
+        tprint_info(
+            "Initialized cross-asset templates | count=%d | supports_lag=%s"
+            % (
+                len(self.templates),
+                any('lag' in template.optional_features for template in self.templates),
+            )
+        )
     
     def _create_cross_asset_templates(self) -> List[InteractionTemplate]:
         """Create cross-asset HTF interaction templates."""
@@ -362,6 +427,10 @@ class CrossAssetTemplates:
             )
         ]
         
+        tprint_debug(
+            "Constructed cross-asset template catalogue | total=%d | names=%s"
+            % (len(templates), [template.name for template in templates])
+        )
         return templates
 
 
@@ -371,10 +440,18 @@ class InteractionGenerator:
     def __init__(self, config):
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
+
         self.core_templates = CoreInteractionTemplates()
         self.htf_aware_templates = HTFAwareTemplates()
         self.cross_asset_templates = CrossAssetTemplates()
+        tprint_debug(
+            "InteractionGenerator initialized | core=%d | htf=%d | cross_asset=%d"
+            % (
+                len(self.core_templates.templates),
+                len(self.htf_aware_templates.templates),
+                len(self.cross_asset_templates.templates),
+            )
+        )
     
     def generate_interactions(self,
                             materialized_htfs: Dict[str, Any],
@@ -392,11 +469,38 @@ class InteractionGenerator:
             List of generated interactions
         """
         self.logger.info("Starting interaction generation")
-        
+        htf_feature_count = len(materialized_htfs) if hasattr(materialized_htfs, '__len__') else 0
+        if isinstance(base_features, pd.DataFrame):
+            base_feature_count = len(base_features.columns)
+        elif hasattr(base_features, '__len__') and not isinstance(base_features, (pd.Series, pd.Index)):
+            try:
+                base_feature_count = len(base_features)
+            except TypeError:
+                base_feature_count = 0
+        else:
+            base_feature_count = 0
+
+        tprint_info(
+            "Interaction generation started | htf_features=%d | base_features=%d | targets=%s"
+            % (htf_feature_count, base_feature_count, targets is not None)
+        )
+
         normalized_base_features = self._normalize_base_features(base_features)
+        tprint_debug(
+            "Normalized base features | columns=%d"
+            % (len(normalized_base_features))
+        )
 
         # Determine budget allocation
         budget_allocation = self._determine_budget_allocation(materialized_htfs)
+        tprint_debug(
+            "Budget allocation computed | core=%d | htf=%d | cross_asset=%d"
+            % (
+                budget_allocation['core'],
+                budget_allocation['htf_aware'],
+                budget_allocation['cross_asset'],
+            )
+        )
 
         # Generate core interactions
         core_interactions = self._generate_core_interactions(
@@ -422,21 +526,34 @@ class InteractionGenerator:
         filtered_interactions = self._apply_interaction_heredity(all_interactions)
         
         self.logger.info(f"Interaction generation completed: {len(filtered_interactions)} interactions generated")
+        tprint_success(
+            "Interaction generation completed | total=%d | core=%d | htf=%d | cross_asset=%d"
+            % (
+                len(filtered_interactions),
+                len(core_interactions),
+                len(htf_interactions),
+                len(cross_asset_interactions),
+            )
+        )
         return filtered_interactions
-    
+
     def _determine_budget_allocation(self, materialized_htfs: Dict[str, Any]) -> Dict[str, int]:
         """Determine budget allocation for different interaction types."""
         # Base budget
         total_budget = 30  # Maximum interactions
-        
+
         # Calculate HTF performance
         htf_utilities = []
         for feature_name, feature in materialized_htfs.items():
             if hasattr(feature, 'utility_score'):
                 htf_utilities.append(feature.utility_score)
-        
+
         avg_htf_utility = np.mean(htf_utilities) if htf_utilities else 0.0
-        
+        tprint_debug(
+            "Average HTF utility computed | count=%d | avg=%.4f"
+            % (len(htf_utilities), avg_htf_utility)
+        )
+
         # Allocate budget based on HTF performance
         if avg_htf_utility > 0.1:  # Top-quartile performance
             # Allow more HTF-aware interactions
@@ -449,11 +566,16 @@ class InteractionGenerator:
             htf_aware_budget = 7
             cross_asset_budget = 3
         
-        return {
+        allocation = {
             'core': core_budget,
             'htf_aware': htf_aware_budget,
             'cross_asset': cross_asset_budget
         }
+        tprint_info(
+            "Budget allocation finalized | total=%d | breakdown=%s"
+            % (sum(allocation.values()), allocation)
+        )
+        return allocation
     
     def _generate_core_interactions(self,
                                   base_features: Dict[str, pd.Series],
@@ -461,10 +583,14 @@ class InteractionGenerator:
                                   budget: int) -> List[GeneratedInteraction]:
         """Generate core interactions."""
         interactions = []
-        
+
         # Group features by type
         feature_groups = self._group_features_by_type(base_features)
-        
+        tprint_debug(
+            "Generating core interactions | budget=%d | templates=%d"
+            % (budget, len(self.core_templates.templates))
+        )
+
         # Generate interactions for each template
         for template in self.core_templates.templates:
             if len(interactions) >= budget:
@@ -473,11 +599,15 @@ class InteractionGenerator:
             template_interactions = self._generate_template_interactions(
                 template, feature_groups, targets
             )
-            
+            tprint_debug(
+                "Template processed | name=%s | generated=%d"
+                % (template.name, len(template_interactions))
+            )
+
             # Limit by template max_instances
             template_interactions = template_interactions[:template.max_instances]
             interactions.extend(template_interactions)
-        
+
         return interactions[:budget]
     
     def _generate_htf_aware_interactions(self,
@@ -491,20 +621,32 @@ class InteractionGenerator:
         # Group HTF features by type
         htf_groups = self._group_htf_features_by_type(materialized_htfs)
         base_groups = self._group_features_by_type(base_features)
-        
+        tprint_debug(
+            "Generating HTF-aware interactions | budget=%d | templates=%d | htf_feature_count=%d"
+            % (
+                budget,
+                len(self.htf_aware_templates.templates),
+                sum(len(v) for v in htf_groups.values()),
+            )
+        )
+
         # Generate interactions for each template
         for template in self.htf_aware_templates.templates:
             if len(interactions) >= budget:
                 break
-            
+
             template_interactions = self._generate_htf_template_interactions(
                 template, htf_groups, base_groups, targets
             )
-            
+            tprint_debug(
+                "HTF template processed | name=%s | generated=%d"
+                % (template.name, len(template_interactions))
+            )
+
             # Limit by template max_instances
             template_interactions = template_interactions[:template.max_instances]
             interactions.extend(template_interactions)
-        
+
         return interactions[:budget]
     
     def _generate_cross_asset_interactions(self, 
@@ -516,20 +658,32 @@ class InteractionGenerator:
         
         # Group HTF features by asset
         asset_groups = self._group_htf_features_by_asset(materialized_htfs)
-        
+        tprint_debug(
+            "Generating cross-asset interactions | budget=%d | templates=%d | assets=%d"
+            % (
+                budget,
+                len(self.cross_asset_templates.templates),
+                len(asset_groups),
+            )
+        )
+
         # Generate interactions for each template
         for template in self.cross_asset_templates.templates:
             if len(interactions) >= budget:
                 break
-            
+
             template_interactions = self._generate_cross_asset_template_interactions(
                 template, asset_groups, targets
             )
-            
+            tprint_debug(
+                "Cross-asset template processed | name=%s | generated=%d"
+                % (template.name, len(template_interactions))
+            )
+
             # Limit by template max_instances
             template_interactions = template_interactions[:template.max_instances]
             interactions.extend(template_interactions)
-        
+
         return interactions[:budget]
     
     def _group_features_by_type(self, features: Dict[str, pd.Series]) -> Dict[str, List[str]]:
@@ -601,6 +755,10 @@ class InteractionGenerator:
             'base_feature': base_feature_pool
         })
 
+        tprint_debug(
+            "Grouped base features | counts=%s"
+            % {key: len(value) if isinstance(value, list) else len(value) for key, value in groups.items()}
+        )
         return groups
 
     def _normalize_base_features(self,
@@ -610,6 +768,7 @@ class InteractionGenerator:
         normalized: Dict[str, pd.Series] = {}
 
         if base_features is None:
+            tprint_warning("No base features provided; normalization skipped")
             return normalized
 
         if isinstance(base_features, pd.DataFrame):
@@ -627,6 +786,10 @@ class InteractionGenerator:
                 type(base_features)
             )
 
+        tprint_debug(
+            "Normalized base feature mapping | total=%d"
+            % len(normalized)
+        )
         return normalized
     
     def _group_htf_features_by_type(self, materialized_htfs: Dict[str, Any]) -> Dict[str, List[str]]:
@@ -695,6 +858,10 @@ class InteractionGenerator:
                 if name not in groups['htf_regime_feature']:
                     groups['htf_regime_feature'].append(name)
 
+        tprint_debug(
+            "Grouped HTF features by type | counts=%s"
+            % {key: len(value) for key, value in groups.items()}
+        )
         return groups
     
     def _group_htf_features_by_asset(self, materialized_htfs: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -721,7 +888,12 @@ class InteractionGenerator:
             asset_key = asset_name or 'asset1'
             groups[asset_key][feature_name] = feature
 
-        return dict(groups)
+        grouped = dict(groups)
+        tprint_debug(
+            "Grouped HTF features by asset | assets=%d"
+            % len(grouped)
+        )
+        return grouped
     
     def _generate_template_interactions(self, 
                                      template: InteractionTemplate,
@@ -738,7 +910,11 @@ class InteractionGenerator:
         feature_combinations = self._generate_feature_combinations(
             required_features, optional_features, feature_groups
         )
-        
+        tprint_debug(
+            "Evaluating template combinations | template=%s | candidates=%d"
+            % (template.name, len(feature_combinations))
+        )
+
         for combination in feature_combinations:
             if len(interactions) >= template.max_instances:
                 break
@@ -755,7 +931,11 @@ class InteractionGenerator:
             except Exception as e:
                 self.logger.warning(f"Failed to generate interaction {template.name}: {e}")
                 continue
-        
+
+        tprint_debug(
+            "Template evaluation complete | template=%s | accepted=%d"
+            % (template.name, len(interactions))
+        )
         return interactions
     
     def _generate_htf_template_interactions(self, 
@@ -773,7 +953,11 @@ class InteractionGenerator:
         feature_combinations = self._generate_htf_feature_combinations(
             required_features, htf_groups, base_groups
         )
-        
+        tprint_debug(
+            "Evaluating HTF template combinations | template=%s | candidates=%d"
+            % (template.name, len(feature_combinations))
+        )
+
         for combination in feature_combinations:
             if len(interactions) >= template.max_instances:
                 break
@@ -790,7 +974,11 @@ class InteractionGenerator:
             except Exception as e:
                 self.logger.warning(f"Failed to generate HTF interaction {template.name}: {e}")
                 continue
-        
+
+        tprint_debug(
+            "HTF template evaluation complete | template=%s | accepted=%d"
+            % (template.name, len(interactions))
+        )
         return interactions
     
     def _generate_cross_asset_template_interactions(self,
@@ -807,6 +995,10 @@ class InteractionGenerator:
         ]
 
         if len(asset_items) < 2:
+            tprint_warning(
+                "Cross-asset template skipped due to insufficient assets | available=%d"
+                % len(asset_items)
+            )
             return interactions
 
         lag_values: List[Optional[int]] = [None]
@@ -975,6 +1167,10 @@ class InteractionGenerator:
                 if len(interactions) >= template.max_instances:
                     break
 
+        tprint_debug(
+            "Cross-asset template evaluation complete | template=%s | accepted=%d"
+            % (template.name, len(interactions))
+        )
         return interactions
     
     def _generate_feature_combinations(self, 
@@ -990,14 +1186,18 @@ class InteractionGenerator:
         # Generate Cartesian product
         for combo in product(*required_lists):
             combination = dict(zip(required_features, combo))
-            
+
             # Add optional features if available
             for opt in optional_features:
                 if opt in feature_groups and feature_groups[opt]:
                     combination[opt] = feature_groups[opt][0]  # Take first available
             
             combinations.append(combination)
-        
+
+        tprint_debug(
+            "Feature combinations built | required=%s | optional=%s | total=%d"
+            % (required_features, optional_features, len(combinations))
+        )
         return combinations
     
     def _generate_htf_feature_combinations(self, 
@@ -1019,7 +1219,11 @@ class InteractionGenerator:
         for combo in product(*required_lists):
             combination = dict(zip(required_features, combo))
             combinations.append(combination)
-        
+
+        tprint_debug(
+            "HTF feature combinations built | required=%s | total=%d"
+            % (required_features, len(combinations))
+        )
         return combinations
     
     def _create_interaction(self, 
@@ -1027,10 +1231,11 @@ class InteractionGenerator:
                           feature_combination: Dict[str, str],
                           targets: Optional[pd.Series]) -> Optional[GeneratedInteraction]:
         """Create a specific interaction from template and combination."""
+        success = False
         try:
             # This is a simplified implementation
             # In practice, you'd evaluate the formula with actual feature data
-            
+
             # Create interaction name
             interaction_name = f"int_{template.name}_{'_'.join(feature_combination.values())}"
             
@@ -1049,6 +1254,7 @@ class InteractionGenerator:
                 if pd.isna(utility_score):
                     utility_score = 0.0
             
+            success = True
             return GeneratedInteraction(
                 name=interaction_name,
                 formula=formula,
@@ -1062,15 +1268,28 @@ class InteractionGenerator:
                     'priority': template.priority
                 }
             )
-            
+
         except Exception as e:
             self.logger.warning(f"Failed to create interaction: {e}")
             return None
+        finally:
+            tprint_debug(
+                "Interaction instantiation attempted | template=%s | name=%s | success=%s"
+                % (
+                    template.name,
+                    locals().get('interaction_name', 'unknown'),
+                    success,
+                )
+            )
     
     def _apply_interaction_heredity(self, interactions: List[GeneratedInteraction]) -> List[GeneratedInteraction]:
         """Apply interaction heredity (keep ≥1 parent if interaction survives)."""
         # For now, return all interactions
         # In practice, you'd implement heredity rules
+        tprint_info(
+            "Interaction heredity applied | retained=%d"
+            % len(interactions)
+        )
         return interactions
 
 
@@ -1080,9 +1299,10 @@ class HTFInteractionTemplates:
     def __init__(self, config):
         self.config = config
         self.logger = logging.getLogger(__name__)
-        
+
         self.interaction_generator = InteractionGenerator(config)
-    
+        tprint_info("HTFInteractionTemplates initialized")
+
     def generate_interactions(self,
                             materialized_htfs: Dict[str, Any],
                             base_features: Union[pd.DataFrame, Mapping[str, pd.Series], None],
@@ -1098,22 +1318,48 @@ class HTFInteractionTemplates:
         Returns:
             List of generated interactions
         """
-        return self.interaction_generator.generate_interactions(
+        htf_feature_count = len(materialized_htfs) if hasattr(materialized_htfs, '__len__') else 0
+        if isinstance(base_features, pd.DataFrame):
+            base_feature_count = len(base_features.columns)
+        elif hasattr(base_features, '__len__') and not isinstance(base_features, (pd.Series, pd.Index)):
+            try:
+                base_feature_count = len(base_features)
+            except TypeError:
+                base_feature_count = 0
+        else:
+            base_feature_count = 0
+
+        tprint_info(
+            "HTF interaction generation requested | htf=%d | base=%d"
+            % (htf_feature_count, base_feature_count)
+        )
+
+        interactions = self.interaction_generator.generate_interactions(
             materialized_htfs, base_features, targets
         )
-    
+        tprint_success(
+            "HTF interaction generation finished | produced=%d"
+            % len(interactions)
+        )
+        return interactions
+
     def get_interaction_summary(self, interactions: List[GeneratedInteraction]) -> Dict[str, Any]:
         """Get summary of generated interactions."""
         type_counts = {}
         for interaction in interactions:
             interaction_type = interaction.interaction_type
             type_counts[interaction_type] = type_counts.get(interaction_type, 0) + 1
-        
+
         avg_utility = np.mean([i.utility_score for i in interactions]) if interactions else 0.0
-        
-        return {
+
+        summary = {
             'total_interactions': len(interactions),
             'type_counts': type_counts,
             'avg_utility': avg_utility,
             'interaction_names': [i.name for i in interactions]
         }
+        tprint_info(
+            "Generated interaction summary | total=%d | avg_utility=%.4f"
+            % (summary['total_interactions'], summary['avg_utility'])
+        )
+        return summary

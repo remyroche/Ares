@@ -362,11 +362,39 @@ class GridSearchStrategy(OptimizationStrategy):
             log_debug(f"Generating feature '{feature_name}' using rolling mean with lookback={lookback_period}")
             return data[feature_name].rolling(window=lookback_period).mean().values
         else:
-            # Default to simple moving average of close price
+            # Default to stationary transform of close price
             log_warning(
-                f"Feature '{feature_name}' not found. Falling back to 'close' column for lookback={lookback_period}"
+                f"Feature '{feature_name}' not found. Falling back to stationary transform of 'close' for lookback={lookback_period}"
             )
-            return data['close'].rolling(window=lookback_period).mean().values
+            if 'close' not in data.columns:
+                log_error("Fallback column 'close' missing from data. Returning zeros for safety.")
+                return np.zeros(len(data))
+
+            return self._compute_stationary_close_transform(data['close'], lookback_period)
+
+    @staticmethod
+    def _compute_stationary_close_transform(close_series: pd.Series, lookback_period: int) -> np.ndarray:
+        """Generate a stationary fallback series using log returns or price spreads."""
+        safe_close = close_series.astype(float).replace([np.inf, -np.inf], np.nan)
+        if safe_close.dropna().empty:
+            return np.zeros(len(close_series))
+
+        # Prefer log returns when prices are strictly positive, otherwise fall back to percent change
+        if (safe_close > 0).all():
+            returns = np.log(safe_close).diff()
+        else:
+            returns = safe_close.pct_change()
+
+        returns = returns.replace([np.inf, -np.inf], np.nan)
+
+        if returns.dropna().empty:
+            # As a last resort, use simple differencing
+            returns = safe_close.diff()
+
+        window = max(2, min(lookback_period, len(returns)))
+        stationary = returns.rolling(window=window, min_periods=1).mean()
+
+        return stationary.fillna(0.0).values
 
 
 class OptimizationStrategyFactory:

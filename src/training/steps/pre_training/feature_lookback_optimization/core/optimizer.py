@@ -24,6 +24,14 @@ from src.utils.common_operations import safe_dataframe_operation, validate_dataf
 from src.utils.common_utilities import CommonUtilities
 from src.utils.math_validation import safe_divide, safe_correlation
 
+try:
+    from statsmodels.tsa.stattools import adfuller, kpss
+    STATIONARITY_TESTS_AVAILABLE = True
+except ImportError:
+    adfuller = None  # type: ignore
+    kpss = None  # type: ignore
+    STATIONARITY_TESTS_AVAILABLE = False
+
 # Import matrix operations for vectorized processing
 try:
     from src.utils.matrix_operations.unified_operations import get_unified_matrix_operations
@@ -304,6 +312,7 @@ class CoreOptimizer:
             best_score = -float('inf')
             best_lookback = min_lookback
             trials = 0
+            stationarity_audit: Dict[int, Dict[str, Any]] = {}
 
             # Use time series cross-validation to avoid data leakage
             # Split data: use first 70% for training, last 30% for testing
@@ -331,9 +340,31 @@ class CoreOptimizer:
                     train_features = self._calculate_feature_for_lookback(train_data, feature_name, lookback)
                     test_features = self._calculate_feature_for_lookback(test_data, feature_name, lookback)
 
+                    train_features, train_stationarity = self._ensure_stationary_series(
+                        train_features, lookback, context='train'
+                    )
+                    test_features, test_stationarity = self._ensure_stationary_series(
+                        test_features, lookback, context='test'
+                    )
+
+                    stationarity_audit[lookback] = {
+                        'train': train_stationarity,
+                        'test': test_stationarity,
+                    }
+
+                    if train_stationarity.get('transformed') or test_stationarity.get('transformed'):
+                        self.logger.debug(
+                            f"   → Applied stationarity transform for {feature_name} (lookback={lookback})"
+                        )
+
                     # Align data lengths (features might be shorter due to rolling windows)
                     min_length = min(len(train_features), len(test_features), len(train_data[target_column]), len(test_data[target_column]))
                     if min_length <= 1:
+                        stationarity_audit[lookback]['skipped'] = 'insufficient_length'
+                        continue
+
+                    if np.nanstd(test_features[:min_length]) == 0:
+                        stationarity_audit[lookback]['skipped'] = 'no_variance'
                         continue
 
                     # Calculate correlation on test data to avoid overfitting
@@ -371,13 +402,97 @@ class CoreOptimizer:
                     'correlation_method': 'pearson',
                     'cross_validation': True,
                     'train_size': len(train_data),
-                    'test_size': len(test_data)
+                    'test_size': len(test_data),
+                    'stationarity_audit': stationarity_audit,
+                    'stationarity_tests_available': STATIONARITY_TESTS_AVAILABLE,
+                    'non_stationary_lookbacks': sum(
+                        1
+                        for audit in stationarity_audit.values()
+                        if audit['train'].get('transformed') or audit['test'].get('transformed')
+                    )
                 }
             )
 
         except Exception as e:
             self.logger.error(f"MRMR optimization failed: {e}")
             return self._create_failed_result("mrmr", 0.0)
+
+    def _ensure_stationary_series(
+        self,
+        values: Union[np.ndarray, pd.Series],
+        lookback: int,
+        context: str,
+        significance: float = 0.05
+    ) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """Ensure a feature series is stationary, returning transformed values and metadata."""
+        series = pd.Series(values).astype(float)
+        series = series.replace([np.inf, -np.inf], np.nan)
+
+        info: Dict[str, Any] = {
+            'context': context,
+            'tests_available': STATIONARITY_TESTS_AVAILABLE,
+            'adf_pvalue': None,
+            'kpss_pvalue': None,
+            'transformed': False,
+            'lookback': lookback,
+        }
+
+        clean_series = series.dropna()
+        if clean_series.empty or len(clean_series) < 5:
+            info['insufficient_samples'] = len(clean_series)
+            return series.fillna(0.0).values, info
+
+        is_stationary = False
+
+        if STATIONARITY_TESTS_AVAILABLE and len(clean_series) >= 8:
+            try:
+                info['adf_pvalue'] = float(adfuller(clean_series, autolag='AIC')[1])
+            except Exception as exc:  # pragma: no cover - defensive
+                info['adf_error'] = str(exc)
+
+            try:
+                info['kpss_pvalue'] = float(kpss(clean_series, regression='c', nlags='auto')[1])
+            except Exception as exc:  # pragma: no cover - defensive
+                info['kpss_error'] = str(exc)
+
+            adf_pass = info['adf_pvalue'] is not None and info['adf_pvalue'] < significance
+            kpss_pass = info['kpss_pvalue'] is None or info['kpss_pvalue'] > significance
+            is_stationary = adf_pass and kpss_pass
+        else:
+            diff_values = np.diff(clean_series.values)
+            base_std = float(np.nanstd(clean_series.values))
+            diff_std = float(np.nanstd(diff_values)) if len(diff_values) else 0.0
+            ratio = diff_std / (base_std + 1e-12)
+            info['heuristic_ratio'] = ratio
+            is_stationary = base_std > 0 and diff_std > 0 and 0.1 <= ratio <= 10
+
+        if not is_stationary:
+            transformed = self._stationary_transform(series, lookback)
+            info['transformed'] = True
+            return transformed.values, info
+
+        return series.fillna(0.0).values, info
+
+    def _stationary_transform(self, series: pd.Series, lookback: int) -> pd.Series:
+        """Apply a stationary transform using log returns/percent changes and demeaning."""
+        safe_series = series.astype(float).replace([np.inf, -np.inf], np.nan)
+        if safe_series.dropna().empty:
+            return pd.Series(np.zeros(len(series)), index=series.index)
+
+        if (safe_series > 0).all():
+            diff_series = np.log(safe_series).diff()
+        else:
+            diff_series = safe_series.pct_change()
+
+        diff_series = diff_series.replace([np.inf, -np.inf], np.nan)
+
+        if diff_series.dropna().empty:
+            diff_series = safe_series.diff()
+
+        window = max(2, min(max(lookback, 2), len(diff_series)))
+        demeaned = diff_series - diff_series.rolling(window=window, min_periods=1).mean()
+
+        return demeaned.fillna(0.0)
 
     def _optimize_grid_search(
         self,
@@ -788,12 +903,12 @@ class CoreOptimizer:
             feature_generator = self._create_feature_generator(feature_name, lookback)
 
             if feature_generator is None:
-                # Fallback to rolling mean for unknown features
+                # Fallback to stationary transform for unknown features
                 if feature_name in data.columns:
                     tprint_warning(
-                        f"⚠️ No generator found for '{feature_name}', using rolling mean fallback"
+                        f"⚠️ No generator found for '{feature_name}', using stationary fallback"
                     )
-                    return data[feature_name].rolling(window=lookback, min_periods=1).mean().values
+                    return self._stationary_transform(data[feature_name], lookback).values
                 else:
                     tprint_warning(
                         f"⚠️ Feature '{feature_name}' not in dataframe, returning zeros"
@@ -855,12 +970,12 @@ class CoreOptimizer:
 
         except ImportError as e:
             self.logger.warning(f"Feature engineering modules not available: {e}, using fallback")
-            # Fallback to rolling mean
+            # Fallback to stationary transform
             if feature_name in data.columns:
                 tprint_warning(
-                    f"⚠️ Feature modules missing ({e}), using rolling mean for '{feature_name}'"
+                    f"⚠️ Feature modules missing ({e}), using stationary fallback for '{feature_name}'"
                 )
-                return data[feature_name].rolling(window=lookback, min_periods=1).mean().values
+                return self._stationary_transform(data[feature_name], lookback).values
             else:
                 tprint_error(
                     f"❌ Feature modules missing and '{feature_name}' not in data, returning zeros"

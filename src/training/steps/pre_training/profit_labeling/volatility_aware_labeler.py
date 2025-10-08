@@ -1387,7 +1387,21 @@ def create_enhanced_analyst_labeler() -> VolatilityAwareMultiHorizonLabeler:
                 trading_costs=TradingCosts(
                     maker_fee=0.001,
                     taker_fee=0.002,
-                    slippage_pct=0.001
+                    slippage_pct=0.001,
+                    default_asset_class="crypto",
+                    borrow_fees={
+                        "crypto": {"long": 0.00005, "short": 0.0006}
+                    },
+                    funding_rates={
+                        "crypto": {"long": 0.0002, "short": -0.0002}
+                    },
+                    stress_scenarios={
+                        "crypto": {
+                            "base": {"long": 1.0, "short": 1.0},
+                            "liquidity_crunch": {"long": 1.15, "short": 1.3}
+                        }
+                    },
+                    active_stress_scenario="base"
                 ),
                 enable_regime_conditioning=True,
                 volatility_scaling_factor=1.0

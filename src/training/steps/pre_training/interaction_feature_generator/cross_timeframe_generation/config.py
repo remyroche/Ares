@@ -104,6 +104,11 @@ class EvaluationConfig:
     embargo_minutes: int = 60
     walk_forward_folds: int = 5
     spa_test: bool = True
+    bootstrap_block_size: Optional[int] = None
+    bootstrap_resamples: int = 1000
+    bootstrap_confidence_level: float = 0.95
+    bootstrap_random_seed: Optional[int] = None
+    hac_max_lag: Optional[int] = None
 
 
 @dataclass

@@ -774,9 +774,12 @@ class RealBacktestingEngine:
             equity_series = pd.Series(equity_curve)
             returns = equity_series.pct_change().dropna()
 
-            total_return = (equity_curve[-1] - equity_curve[0]) / equity_curve[0]
-            annualized_return = (1 + total_return) ** (252 / len(equity_curve)) - 1
+            total_return_raw = (equity_curve[-1] - equity_curve[0]) / equity_curve[0]
             volatility = returns.std() * np.sqrt(252)
+            turnover_metrics = self._calculate_turnover_metrics(trade_log, equity_curve)
+
+            total_return = total_return_raw - turnover_metrics['market_impact_cost']
+            annualized_return = (1 + total_return) ** (252 / len(equity_curve)) - 1
             sharpe_ratio = annualized_return / volatility if volatility > 0 else 0
 
             peak = equity_series.expanding().max()
@@ -815,6 +818,12 @@ class RealBacktestingEngine:
                 'avg_win': avg_win,
                 'avg_loss': avg_loss,
                 'risk_reward_ratio': risk_reward_ratio,
+                'turnover': turnover_metrics['turnover'],
+                'average_holding_period_days': turnover_metrics['average_holding_period_days'],
+                'capacity_utilization': turnover_metrics['capacity_utilization'],
+                'capacity_limit': turnover_metrics['capacity_limit'],
+                'market_impact_cost': turnover_metrics['market_impact_cost'],
+                'raw_total_return': total_return_raw,
             }
 
             if latency_metrics:
@@ -827,6 +836,78 @@ class RealBacktestingEngine:
         except Exception as e:
             self.logger.error(f"❌ Failed to calculate performance metrics: {e}")
             return {}
+
+    def _calculate_turnover_metrics(
+        self,
+        trade_log: List[Dict[str, Any]],
+        equity_curve: List[float]
+    ) -> Dict[str, float]:
+        """Calculate turnover, holding period, and capacity diagnostics."""
+        capacity_limit = getattr(self.config.backtesting, 'capacity_limit', 1.0)
+        impact_coefficient = getattr(self.config.backtesting, 'market_impact_coefficient', 0.0005)
+        warning_threshold = getattr(self.config.backtesting, 'turnover_warning_threshold', 0.8)
+
+        if not trade_log:
+            return {
+                'turnover': 0.0,
+                'average_holding_period_days': 0.0,
+                'capacity_utilization': 0.0,
+                'capacity_limit': capacity_limit,
+                'market_impact_cost': 0.0
+            }
+
+        total_notional = 0.0
+        holding_periods: List[float] = []
+        open_positions: List[Dict[str, Any]] = []
+
+        sorted_trades = sorted(trade_log, key=lambda t: t.get('timestamp'))
+
+        for trade in sorted_trades:
+            price = float(trade.get('price', 0.0))
+            shares = float(trade.get('shares', 0.0))
+            total_notional += abs(price * shares)
+
+            action = str(trade.get('action', '')).lower()
+            if action == 'buy':
+                open_positions.append(trade)
+            elif action == 'sell' and open_positions:
+                entry_trade = open_positions.pop(0)
+                entry_time = entry_trade.get('timestamp')
+                exit_time = trade.get('timestamp')
+
+                if isinstance(entry_time, pd.Timestamp) and isinstance(exit_time, pd.Timestamp):
+                    holding_period = max((exit_time - entry_time).total_seconds() / 86400, 0.0)
+                    holding_periods.append(holding_period)
+
+        initial_equity = float(equity_curve[0]) if equity_curve else getattr(self.config.backtesting, 'initial_capital', 1.0)
+        final_equity = float(equity_curve[-1]) if equity_curve else initial_equity
+        average_equity = (initial_equity + final_equity) / 2 if final_equity > 0 else initial_equity
+        turnover = total_notional / average_equity if average_equity > 0 else 0.0
+
+        capacity_utilization = turnover / capacity_limit if capacity_limit else turnover
+        market_impact_cost = turnover * impact_coefficient
+
+        if capacity_limit:
+            if capacity_utilization > 1.0:
+                self.logger.warning(
+                    "⚠️ Backtest capacity limit exceeded: %.2f%% utilization",
+                    capacity_utilization * 100
+                )
+            elif capacity_utilization > warning_threshold:
+                self.logger.warning(
+                    "⚠️ Backtest capacity utilization high: %.2f%% of limit",
+                    capacity_utilization * 100
+                )
+
+        average_holding_period = float(np.mean(holding_periods)) if holding_periods else 0.0
+
+        return {
+            'turnover': turnover,
+            'average_holding_period_days': average_holding_period,
+            'capacity_utilization': capacity_utilization,
+            'capacity_limit': capacity_limit,
+            'market_impact_cost': market_impact_cost
+        }
 
     def _calculate_rsi(self, prices: pd.Series, window: int = 14) -> pd.Series:
         """Calculate RSI indicator."""

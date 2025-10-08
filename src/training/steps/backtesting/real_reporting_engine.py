@@ -164,40 +164,51 @@ class RealReportingEngine:
             if 'performance_metrics' in backtest_results:
                 basic_metrics = backtest_results['performance_metrics']
                 metrics.update(basic_metrics)
-            
+
             # Calculate additional metrics
             if 'equity_curve' in backtest_results:
                 equity_curve = backtest_results['equity_curve']
                 if isinstance(equity_curve, list):
                     equity_curve = np.array(equity_curve)
-                
+
                 # Calculate returns
                 returns = np.diff(equity_curve) / equity_curve[:-1]
-                
+
                 # Performance metrics
-                metrics['total_return'] = (equity_curve[-1] - equity_curve[0]) / equity_curve[0]
-                metrics['annualized_return'] = (1 + metrics['total_return']) ** (252 / len(equity_curve)) - 1
-                metrics['volatility'] = np.std(returns) * np.sqrt(252)
-                metrics['sharpe_ratio'] = metrics['annualized_return'] / metrics['volatility'] if metrics['volatility'] > 0 else 0
-                
+                calculated_total_return = (equity_curve[-1] - equity_curve[0]) / equity_curve[0]
+                metrics.setdefault('total_return', calculated_total_return)
+                metrics.setdefault('annualized_return', (1 + metrics['total_return']) ** (252 / len(equity_curve)) - 1)
+                metrics.setdefault('volatility', np.std(returns) * np.sqrt(252))
+                volatility = metrics.get('volatility', 0)
+                annualized_return = metrics.get('annualized_return', 0)
+                metrics.setdefault('sharpe_ratio', annualized_return / volatility if volatility > 0 else 0)
+
                 # Drawdown analysis
                 peak = np.maximum.accumulate(equity_curve)
                 drawdown = (equity_curve - peak) / peak
-                metrics['max_drawdown'] = np.min(drawdown)
-                metrics['avg_drawdown'] = np.mean(drawdown[drawdown < 0])
-                
+                metrics.setdefault('max_drawdown', np.min(drawdown))
+                metrics.setdefault('avg_drawdown', np.mean(drawdown[drawdown < 0]))
+
                 # Calmar ratio
-                metrics['calmar_ratio'] = metrics['annualized_return'] / abs(metrics['max_drawdown']) if metrics['max_drawdown'] != 0 else 0
-                
+                max_dd = metrics.get('max_drawdown', 0)
+                annualized_return = metrics.get('annualized_return', 0)
+                metrics.setdefault('calmar_ratio', annualized_return / abs(max_dd) if max_dd != 0 else 0)
+
                 # Sortino ratio
                 downside_returns = returns[returns < 0]
                 downside_std = np.std(downside_returns) if len(downside_returns) > 0 else 0
-                metrics['sortino_ratio'] = metrics['annualized_return'] / (downside_std * np.sqrt(252)) if downside_std > 0 else 0
-                
+                metrics.setdefault(
+                    'sortino_ratio',
+                    metrics.get('annualized_return', 0) / (downside_std * np.sqrt(252)) if downside_std > 0 else 0
+                )
+
                 # Information ratio (assuming risk-free rate of 2%)
                 risk_free_rate = 0.02
                 excess_returns = returns - risk_free_rate / 252
-                metrics['information_ratio'] = np.mean(excess_returns) / np.std(excess_returns) if np.std(excess_returns) > 0 else 0
+                metrics.setdefault(
+                    'information_ratio',
+                    np.mean(excess_returns) / np.std(excess_returns) if np.std(excess_returns) > 0 else 0
+                )
             
             # Trade-based metrics
             if 'trade_log' in backtest_results:
@@ -205,12 +216,23 @@ class RealReportingEngine:
                 if trade_log:
                     profits = [t.get('profit', 0) for t in trade_log if 'profit' in t]
                     if profits:
-                        metrics['win_rate'] = len([p for p in profits if p > 0]) / len(profits)
-                        metrics['profit_factor'] = abs(sum([p for p in profits if p > 0]) / sum([p for p in profits if p < 0])) if any(p < 0 for p in profits) else 0
-                        metrics['avg_win'] = np.mean([p for p in profits if p > 0]) if any(p > 0 for p in profits) else 0
-                        metrics['avg_loss'] = np.mean([p for p in profits if p < 0]) if any(p < 0 for p in profits) else 0
-                        metrics['total_trades'] = len(profits)
-            
+                        metrics.setdefault('win_rate', len([p for p in profits if p > 0]) / len(profits))
+                        profit_factor = (
+                            abs(sum([p for p in profits if p > 0]) / sum([p for p in profits if p < 0]))
+                            if any(p < 0 for p in profits) else 0
+                        )
+                        metrics.setdefault('profit_factor', profit_factor)
+                        metrics.setdefault('avg_win', np.mean([p for p in profits if p > 0]) if any(p > 0 for p in profits) else 0)
+                        metrics.setdefault('avg_loss', np.mean([p for p in profits if p < 0]) if any(p < 0 for p in profits) else 0)
+                        metrics.setdefault('total_trades', len(profits))
+
+            if 'turnover' not in metrics and 'performance_metrics' in backtest_results:
+                turnover_metrics = backtest_results['performance_metrics']
+                metrics.setdefault('turnover', turnover_metrics.get('turnover', 0.0))
+                metrics.setdefault('average_holding_period_days', turnover_metrics.get('average_holding_period_days', 0.0))
+                metrics.setdefault('capacity_utilization', turnover_metrics.get('capacity_utilization', 0.0))
+                metrics.setdefault('market_impact_cost', turnover_metrics.get('market_impact_cost', 0.0))
+
             return {
                 'metrics': metrics,
                 'timestamp': datetime.now().isoformat()
@@ -319,18 +341,24 @@ class RealReportingEngine:
                             durations = []
                             for i in range(1, len(trade_log)):
                                 if 'timestamp' in trade_log[i]:
-                                    duration = (pd.to_datetime(trade_log[i]['timestamp']) - 
+                                    duration = (pd.to_datetime(trade_log[i]['timestamp']) -
                                               pd.to_datetime(trade_log[i-1]['timestamp'])).total_seconds() / 3600
                                     durations.append(duration)
-                            
+
                             if durations:
                                 trade_analysis['avg_trade_duration_hours'] = np.mean(durations)
                                 trade_analysis['median_trade_duration_hours'] = np.median(durations)
-                    
-                    # Trade distribution analysis
-                    if profits:
-                        trade_analysis['profit_distribution'] = {
-                            'mean': np.mean(profits),
+
+                        if 'performance_metrics' in backtest_results:
+                            turnover_metrics = backtest_results['performance_metrics']
+                            for key in ['turnover', 'average_holding_period_days', 'capacity_utilization', 'market_impact_cost']:
+                                if key in turnover_metrics:
+                                    trade_analysis[key] = turnover_metrics[key]
+
+                # Trade distribution analysis
+                if profits:
+                    trade_analysis['profit_distribution'] = {
+                        'mean': np.mean(profits),
                             'std': np.std(profits),
                             'min': np.min(profits),
                             'max': np.max(profits),
@@ -563,9 +591,13 @@ class RealReportingEngine:
                     'total_return': metrics.get('total_return', 0),
                     'sharpe_ratio': metrics.get('sharpe_ratio', 0),
                     'max_drawdown': metrics.get('max_drawdown', 0),
-                    'volatility': metrics.get('volatility', 0)
+                    'volatility': metrics.get('volatility', 0),
+                    'turnover': metrics.get('turnover', 0),
+                    'capacity_utilization': metrics.get('capacity_utilization', 0),
+                    'average_holding_period_days': metrics.get('average_holding_period_days', 0),
+                    'market_impact_cost': metrics.get('market_impact_cost', 0)
                 })
-            
+
             if 'trade_analysis' in sections and 'trade_statistics' in sections['trade_analysis']:
                 trade_stats = sections['trade_analysis']['trade_statistics']
                 summary['key_metrics'].update({
@@ -639,6 +671,22 @@ class RealReportingEngine:
                     <div class="metric">
                         <span class="metric-label">Max Drawdown:</span>
                         <span class="metric-value">{report.get('summary', {}).get('key_metrics', {}).get('max_drawdown', 'N/A')}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Turnover:</span>
+                        <span class="metric-value">{report.get('summary', {}).get('key_metrics', {}).get('turnover', 'N/A')}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Capacity Utilization:</span>
+                        <span class="metric-value">{report.get('summary', {}).get('key_metrics', {}).get('capacity_utilization', 'N/A')}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Avg Holding Period (days):</span>
+                        <span class="metric-value">{report.get('summary', {}).get('key_metrics', {}).get('average_holding_period_days', 'N/A')}</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Market Impact Cost:</span>
+                        <span class="metric-value">{report.get('summary', {}).get('key_metrics', {}).get('market_impact_cost', 'N/A')}</span>
                     </div>
                 </div>
                 

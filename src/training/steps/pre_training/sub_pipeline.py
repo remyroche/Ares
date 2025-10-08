@@ -23,6 +23,7 @@ import json
 import socket
 import subprocess
 import hashlib
+import os
 
 DEFAULT_STEP_TIME_BUDGETS: Dict[str, float] = {
     'multi_horizon_profit_labeler': 600.0,
@@ -50,6 +51,7 @@ from src.utils.logger import system_logger
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.version_manager import get_version_manager
 from src.utils.tprint import tprint, tprint_error, tprint_warning
+from src.utils.random_seeding import SeededRNGs, seed_rngs
 
 # Import component system
 from .components import ComponentFactory, ComponentConfig
@@ -145,11 +147,13 @@ class PreTrainingSubPipeline:
         self._current_pipeline_state: Dict[str, Any] = {}
         self._metrics_sink: Optional[MetricsSink] = None
         self._run_metadata: Dict[str, Any] = {}
+        self._seeded_rngs: Optional[SeededRNGs] = None
+        self._active_seed: Optional[int] = None
 
     # ------------------------------------------------------------------
     # Run metadata helpers
     # ------------------------------------------------------------------
-    def _gather_run_metadata(self, config: SubPipelineConfig) -> Dict[str, Any]:
+    def _gather_run_metadata(self, config: SubPipelineConfig, seed: int) -> Dict[str, Any]:
         """Collect reproducibility metadata for the current run."""
 
         def _safe_git_sha() -> str:
@@ -187,19 +191,7 @@ class PreTrainingSubPipeline:
             return 'unknown'
 
         def _rng_seed() -> Any:
-            custom_params = config.custom_params or {}
-            for key in ('rng_seed', 'seed', 'random_seed'):
-                if key in custom_params and custom_params[key] is not None:
-                    return custom_params[key]
-            try:
-                import numpy.random as _np_random
-
-                state = _np_random.get_state()
-                if state and len(state) > 1 and len(state[1]) > 0:
-                    return int(state[1][0])
-            except Exception:
-                pass
-            return 'unknown'
+            return seed
 
         start_timestamp = datetime.utcnow().isoformat() + 'Z'
 
@@ -230,8 +222,17 @@ class PreTrainingSubPipeline:
         Returns:
             PipelineResultDict containing execution results with typed fields
         """
-        run_metadata = self._gather_run_metadata(config)
+        seed = self._resolve_random_seed(config)
+        self._seeded_rngs = seed_rngs(seed)
+        self._active_seed = seed
+
+        run_metadata = self._gather_run_metadata(config, seed)
         self._run_metadata = dict(run_metadata)
+        self._current_pipeline_state['random_seed'] = seed
+        if self._seeded_rngs is not None:
+            self._current_pipeline_state['seeded_rngs'] = self._seeded_rngs
+            self._current_pipeline_state['numpy_rng'] = self._seeded_rngs.numpy
+            self._current_pipeline_state['python_rng'] = self._seeded_rngs.python
 
         metadata_block = json.dumps(self._run_metadata, indent=2, sort_keys=True)
 
@@ -261,6 +262,7 @@ class PreTrainingSubPipeline:
                 'steps': {},
             },
         }
+        results['metrics']['random_seed'] = seed
 
         try:
             # Step 1: Multi-Horizon Profit Labeler
@@ -402,7 +404,7 @@ class PreTrainingSubPipeline:
             tprint(f"   ⚙️ Feature optimization: ✅ Complete")
             tprint(f"   🔧 Roadmap features: ✅ Complete")
             tprint(f"   🎯 Final selection: ✅ Complete")
-            tprint(f"🎉 Pre-Training Sub-Pipeline completed successfully in {results["execution_time"]:.2f}s")
+            tprint(f"🎉 Pre-Training Sub-Pipeline completed successfully in {results['execution_time']:.2f}s")
             tprint(f"🧾 Run metadata summary:\n{completion_block}")
             tprint(results)
 
@@ -791,6 +793,12 @@ class PreTrainingSubPipeline:
             'quality_thresholds': self._get_quality_thresholds(config),
         }
 
+        if self._seeded_rngs is not None:
+            pipeline_state['random_seed'] = self._seeded_rngs.seed
+            pipeline_state['python_rng'] = self._seeded_rngs.python
+            pipeline_state['numpy_rng'] = self._seeded_rngs.numpy
+            pipeline_state['seeded_rngs'] = self._seeded_rngs
+
         regime_cache_path = config.custom_params.get('regime_cache_path') if config.custom_params else None
         if not regime_cache_path:
             data_cache_dir = config.custom_params.get('data_cache_dir') if config.custom_params else None
@@ -821,8 +829,27 @@ class PreTrainingSubPipeline:
     def _build_component_custom_params(self, config: SubPipelineConfig) -> Dict[str, Any]:
         """Augment component custom parameters with quality thresholds."""
         params = dict(config.custom_params or {})
+        if self._active_seed is not None:
+            params.setdefault('random_seed', self._active_seed)
         params.setdefault('quality_thresholds', self._get_quality_thresholds(config))
         return params
+
+    def _resolve_random_seed(self, config: SubPipelineConfig) -> int:
+        """Resolve the seed for deterministic execution."""
+        env_seed = os.environ.get('ARES_RANDOM_SEED')
+        if env_seed is not None:
+            try:
+                return int(env_seed)
+            except (TypeError, ValueError):
+                pass
+        custom_params = config.custom_params or {}
+        for key in ('rng_seed', 'seed', 'random_seed'):
+            if key in custom_params and custom_params[key] is not None:
+                try:
+                    return int(custom_params[key])
+                except (TypeError, ValueError):
+                    continue
+        return 42
 
     def _extend_with_quality_metadata(
         self,

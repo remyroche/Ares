@@ -20,7 +20,15 @@ import os
 # Add the src directory to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../../..'))
 
-from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
+from src.utils.tprint import (
+    tprint,
+    tprint_info,
+    tprint_warning,
+    tprint_error,
+    tprint_success,
+    tprint_logged,
+    LogLevel,
+)
 from src.training.steps.pre_training.feature_lookback_optimization.feature_lookback_optimization_optimized import (
     OptimizedFeatureLookbackOptimizationComponent,
     OptimizedFeatureLookbackConfig
@@ -31,6 +39,7 @@ from src.training.steps.pre_training.multi_horizon_profit_labeler import (
 )
 
 
+@tprint_logged(LogLevel.INFO, include_args=True)
 def create_test_data(n_samples: int = 1000) -> pd.DataFrame:
     """Create synthetic test data for validation."""
     tprint("🔧 Creating synthetic test data...")
@@ -77,6 +86,7 @@ def create_test_data(n_samples: int = 1000) -> pd.DataFrame:
     return df
 
 
+@tprint_logged(LogLevel.INFO)
 def create_mock_pipeline_state() -> dict:
     """Create mock pipeline state with multi_horizon_profit_labeler results."""
     tprint("🔧 Creating mock pipeline state...")
@@ -166,6 +176,7 @@ def create_mock_pipeline_state() -> dict:
     return pipeline_state
 
 
+@tprint_logged(LogLevel.INFO)
 async def test_forward_returns_calculation(component, test_data, pipeline_state):
     """Test forward returns calculation in detail."""
     tprint("🔍 Testing forward returns calculation in detail...")
@@ -194,6 +205,7 @@ async def test_forward_returns_calculation(component, test_data, pipeline_state)
     tprint_success("✅ Forward returns calculation detailed testing passed")
 
 
+@tprint_logged(LogLevel.INFO)
 async def test_optimized_implementation():
     """Test the optimized feature lookback optimization implementation."""
     tprint("🚀 Starting test of optimized feature lookback optimization implementation")
@@ -354,6 +366,7 @@ async def test_optimized_implementation():
         return False
 
 
+@tprint_logged(LogLevel.INFO, include_result=True)
 async def main():
     """Main test function."""
     tprint("🧪 Starting comprehensive test of optimized feature lookback optimization")

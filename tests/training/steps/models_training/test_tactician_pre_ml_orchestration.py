@@ -127,8 +127,12 @@ async def test_tactician_orchestrator_passes_regime_split(monkeypatch):
     class _StubPipeline:
         def __init__(self):
             self._current_pipeline_state: Dict[str, Any] = {}
+            self._run_metadata: Dict[str, Any] = {}
 
-        async def _execute_multi_horizon_profit_labeler(self, config):
+        def _gather_run_metadata(self, _config):
+            return {}
+
+        async def _execute_multi_horizon_profit_labeler(self, config, run_metadata):
             captured_configs["multi"] = config
             return SubPipelineResult(
                 sub_pipeline_name="multi_horizon_profit_labeler",
@@ -139,7 +143,7 @@ async def test_tactician_orchestrator_passes_regime_split(monkeypatch):
                 artifacts={"labels": pd.DataFrame()},
             )
 
-        async def _execute_feature_lookback_optimization(self, config):
+        async def _execute_feature_lookback_optimization(self, config, run_metadata):
             captured_configs["lookback"] = config
             return SubPipelineResult(
                 sub_pipeline_name="feature_lookback_optimization",
@@ -150,7 +154,7 @@ async def test_tactician_orchestrator_passes_regime_split(monkeypatch):
                 artifacts={"lookback_windows": []},
             )
 
-        async def _execute_interactive_feature_generation(self, config):
+        async def _execute_interactive_feature_generation(self, config, run_metadata):
             captured_configs["interactive"] = config
             return SubPipelineResult(
                 sub_pipeline_name="interactive_feature_generation",
@@ -170,7 +174,7 @@ async def test_tactician_orchestrator_passes_regime_split(monkeypatch):
                 },
             )
 
-        async def _execute_final_feature_selection(self, config):
+        async def _execute_final_feature_selection(self, config, run_metadata):
             captured_configs["selection"] = config
             return SubPipelineResult(
                 sub_pipeline_name="final_feature_selection",

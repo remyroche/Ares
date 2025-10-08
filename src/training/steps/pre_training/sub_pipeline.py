@@ -1220,6 +1220,8 @@ class PreTrainingSubPipeline:
             'interactive_feature_generation',
             'final_feature_selection',
         ):
+            pass
+
         tprint("📈 Step duration summary:")
         for spec in self._get_ordered_step_specs(sequence_only=True):
             step_name = spec.name

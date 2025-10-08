@@ -271,6 +271,16 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
 
                 component_success = success and artifacts_saved_persistently
 
+                saved_files = await self.save_artifacts(artifacts, {
+                    'component_type': 'final_feature_selection',
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe
+                })
+                log_success(
+                    f"💾 [FINAL_FEATURE_SELECTION] Artifacts saved persistently: {list(saved_files.keys())}"
+                )
+                
                 return ComponentResult(
                     success=component_success,
                     artifacts=artifacts,

@@ -87,35 +87,30 @@ class BasePreTrainingComponent(ABC):
         Returns:
             Dictionary mapping artifact names to file paths
         """
-        try:
-            saved_files = {}
-            
-            for artifact_name, artifact_data in artifacts.items():
-                # Create artifact metadata
-                artifact_metadata = {
-                    'component': self.__class__.__name__,
-                    'timestamp': datetime.now().isoformat(),
-                    'symbol': self.config.symbol,
-                    'exchange': self.config.exchange,
-                    'timeframe': self.config.timeframe,
-                    **metadata
-                }
-                
-                # Save artifact
-                file_path = self.artifact_manager.save_artifact(
-                    data=artifact_data,
-                    base_name=artifact_name,
-                    extension=".json"
-                )
-                
-                saved_files[artifact_name] = file_path
-                self.logger.info(f"💾 Saved artifact {artifact_name} to {file_path}")
-            
-            return saved_files
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to save artifacts: {e}")
-            return {}
+        saved_files = {}
+
+        for artifact_name, artifact_data in artifacts.items():
+            # Create artifact metadata
+            artifact_metadata = {
+                'component': self.__class__.__name__,
+                'timestamp': datetime.now().isoformat(),
+                'symbol': self.config.symbol,
+                'exchange': self.config.exchange,
+                'timeframe': self.config.timeframe,
+                **metadata
+            }
+
+            # Save artifact
+            file_path = self.artifact_manager.save_artifact(
+                data=artifact_data,
+                base_name=artifact_name,
+                extension=".json"
+            )
+
+            saved_files[artifact_name] = file_path
+            self.logger.info(f"💾 Saved artifact {artifact_name} to {file_path}")
+
+        return saved_files
     
     def validate_config(self) -> bool:
         """Validate the component configuration."""

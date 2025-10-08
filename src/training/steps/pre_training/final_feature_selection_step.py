@@ -17,7 +17,7 @@ from src.training.steps.pre_training.standardized_labeling_interface import asse
 
 # Import the final feature selection pipeline
 from .final_feature_selection_pipeline import (
-    MultiStageFeatureSelector, FeatureSelectionConfig, 
+    MultiStageFeatureSelector, FeatureSelectionConfig,
     run_final_feature_selection, get_final_features
 )
 
@@ -25,6 +25,13 @@ from .final_feature_selection_pipeline import (
 from src.utils.logger import get_logger
 from src.utils.comprehensive_function_logger import log_all_calls
 from src.core.decorators import handles_errors, traced, log_execution_time, validates
+from src.utils.tprint import (
+    tprint,
+    tprint_error,
+    tprint_info,
+    tprint_success,
+    tprint_warning,
+)
 
 class FinalFeatureSelectionStep:
     """Final feature selection step for market analysis pipeline."""
@@ -109,8 +116,6 @@ class FinalFeatureSelectionStep:
         Returns:
             bool: True if successful, False otherwise
         """
-        
-        from src.utils.tprint import tprint
         
         tprint("🔍 Starting Final Feature Selection Step")
         tprint(f"   📊 Symbol: {symbol}")
@@ -402,8 +407,6 @@ class FinalFeatureSelectionStep:
     def _prepare_data(self, feature_data: pd.DataFrame, target_data: Optional[pd.Series]) -> Tuple[pd.DataFrame, Optional[pd.Series]]:
         """Prepare data for feature selection with comprehensive logging."""
         
-        from src.utils.tprint import tprint
-        
         tprint("🔄 Preparing data for feature selection...")
         tprint(f"   📊 Input features: {feature_data.shape[0]} samples, {feature_data.shape[1]} columns")
         
@@ -457,8 +460,6 @@ class FinalFeatureSelectionStep:
     async def _run_feature_selection(self, X: pd.DataFrame, y: Optional[pd.Series],
                                    symbol: str, exchange: str, timeframe: str) -> Any:
         """Run the multi-stage feature selection with comprehensive logging."""
-        
-        from src.utils.tprint import tprint
         
         tprint("🔍 Running Multi-Stage Feature Selection")
         tprint(f"   📊 Input: {len(X)} samples, {len(X.columns)} features")
@@ -566,8 +567,6 @@ class FinalFeatureSelectionStep:
     async def _generate_summary_report(self, selection_result: Any, symbol: str,
                                      exchange: str, timeframe: str) -> None:
         """Generate comprehensive summary report of feature selection."""
-        
-        from src.utils.tprint import tprint
         
         try:
             tprint("📊 FEATURE SELECTION SUMMARY REPORT")

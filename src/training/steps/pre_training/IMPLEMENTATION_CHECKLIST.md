@@ -1,442 +1,383 @@
-# Pre-Training Validation Implementation Checklist
+# Pre-Training Pipeline - Implementation Checklist
+## ML Best Practices & Data Science Fixes
 
-## ✅ Completed Implementation
-
-### 📁 New Files Created
-
-| File | Purpose | Status |
-|------|---------|--------|
-| `time_split_manager.py` | Temporal data splitting with purging | ✅ Complete |
-| `enhanced_label_design.py` | Transaction cost-adjusted labels | ✅ Complete |
-| `feature_drift_monitor.py` | Feature drift detection and nested CV | ✅ Complete |
-| `enhanced_lookback_optimizer.py` | Constrained lookback optimization | ✅ Complete |
-| `enhanced_feature_selection.py` | Bootstrap-based feature selection | ✅ Complete |
-| `pre_training_validation_framework.py` | Comprehensive validation framework | ✅ Complete |
-| `PRE_TRAINING_VALIDATION_INTEGRATION.md` | Integration guide | ✅ Complete |
-| `VALIDATION_IMPLEMENTATION_SUMMARY.md` | Implementation summary | ✅ Complete |
-| `example_comprehensive_validation.py` | Working example script | ✅ Complete |
-| `IMPLEMENTATION_CHECKLIST.md` | This file | ✅ Complete |
-
-**Total:** 10 new files, ~5,000 lines of production-ready code
+**Based on**: DATA_SCIENCE_CODE_REVIEW.md  
+**Date**: 2025-10-08  
+**Status**: 0/49 Complete
 
 ---
 
-## 🎯 Features Implemented
+## 🔴 P0: CRITICAL (Must Fix Before Production)
 
-### 1. Data Integrity & Representativeness ✅
+### 1. Target Alignment & Label Semantics
+- [ ] **1.1** Add `enforce_feature_temporal_alignment()` to `validation/schemas.py`
+- [ ] **1.2** Create unit test `test_no_contemporaneous_feature_access()`
+- [ ] **1.3** Add `feature_metadata` tracking with `lag` field to all features
+- [ ] **1.4** Audit all feature families for `shift >= 1` compliance
+- [ ] **1.5** Add `target_shift=h` field validation to label configs
+- [ ] **1.6** Document minimum lag requirements in feature engineering guide
 
-- [x] TimeSplitManager with configurable ratios
-- [x] Chronological splitting (70/20/10 default)
-- [x] Purged K-fold cross-validation
-- [x] Embargo window support
-- [x] Lookahead bias detection
-- [x] Distribution validation per segment
-- [x] Regime-aware splitting support
-- [x] Temporal order validation
-- [x] Split metadata export (JSON)
-
-**Key Methods:**
-```python
-create_temporal_split()
-create_purged_kfold_cv()
-validate_no_lookahead()
-export_split_metadata()
-```
+**Priority**: P0  
+**Estimated Time**: 2 days  
+**Risk if Skipped**: Lookahead bias in features → Invalid results
 
 ---
 
-### 2. Label Design & Target Quality ✅
+### 2. Ex-Post Scaling Leakage
+- [ ] **2.1** Add `closed='left'` to all `rolling()` operations in volatility modeling
+- [ ] **2.2** Implement `_enforce_past_only_windows()` helper function
+- [ ] **2.3** Add `_validate_no_future_leakage()` to volatility module
+- [ ] **2.4** Add test: `test_volatility_no_contemporaneous_correlation()`
+- [ ] **2.5** Document embargo zones around label horizons
+- [ ] **2.6** Verify no volatility window overlaps with label window
 
-- [x] Transaction cost configuration (maker/taker fees)
-- [x] Slippage modeling
-- [x] Triple-barrier method implementation
-- [x] Profit/stop-loss barriers (σ-based)
-- [x] Time-based barriers
-- [x] Regime-dependent labeling
-- [x] Non-overlapping sample generation
-- [x] Meta-labeling support
-- [x] Volatility estimation with EWM/rolling
-- [x] Volatility freezing (prevent lookahead)
-- [x] Cost-adjusted returns
-- [x] Label quality validation
-
-**Key Methods:**
-```python
-calculate_volatility()
-adjust_returns_for_costs()
-create_triple_barrier_labels()
-create_non_overlapping_samples()
-create_regime_dependent_labels()
-create_meta_labels()
-validate_label_quality()
-```
+**Priority**: P0  
+**Estimated Time**: 1.5 days  
+**Risk if Skipped**: Volatility estimates leak future → Overfitting
 
 ---
 
-### 3. Feature Engineering & Selection ✅
+### 3. Multiple Comparisons Correction
+- [ ] **3.1** Implement `HypothesisTracker` class
+- [ ] **3.2** Add `apply_multiple_testing_correction()` function
+- [ ] **3.3** Add `report_hypothesis_count()` to all selection pipelines
+- [ ] **3.4** Apply Benjamini-Hochberg FDR correction by default
+- [ ] **3.5** Log `n_hypotheses` in all selection artifacts
+- [ ] **3.6** Add warning if total hypotheses > 100
+- [ ] **3.7** Update all p-value reporting to show adjusted values
 
-- [x] KL divergence drift detection
-- [x] Jensen-Shannon distance calculation
-- [x] KS test for regime stability
-- [x] Nested cross-validation (outer/inner loops)
-- [x] Feature correlation clustering
-- [x] VIF analysis for multicollinearity
-- [x] Temporal stability tracking
-- [x] Drift report export
-- [x] Selection frequency tracking
-- [x] Feature stability metrics
-
-**Key Methods:**
-```python
-detect_feature_drift()
-perform_nested_cv()
-cluster_correlated_features()
-calculate_vif()
-track_feature_stability_over_time()
-export_drift_report()
-```
+**Priority**: P0  
+**Estimated Time**: 1 day  
+**Risk if Skipped**: P-hacking → False discoveries
 
 ---
 
-### 4. Lookback Optimization Strategy ✅
+### 4. Time-Series CV Implementation
+- [ ] **4.1** Implement `purged_walk_forward_cv()` function
+- [ ] **4.2** Add `validate_cv_no_leakage()` validation
+- [ ] **4.3** Replace all `KFold` with purged walk-forward
+- [ ] **4.4** Add test: `test_purged_cv_no_overlap()`
+- [ ] **4.5** Add test: `test_embargo_enforced()`
+- [ ] **4.6** Verify embargo >= label horizon in all CV
+- [ ] **4.7** Document CV strategy in pipeline README
 
-- [x] Constrained search space (min/max bounds)
-- [x] Configurable step size
-- [x] Multiple objective functions (Sharpe, IC, R²)
-- [x] Regularization to penalize extremes
-- [x] Preferred lookback bias
-- [x] Stability score calculation
-- [x] Cross-validation evaluation
-- [x] Stability across time segments
-- [x] Sensitivity analysis
-- [x] Bootstrap resampling validation
-
-**Key Methods:**
-```python
-optimize_lookback()
-sensitivity_analysis()
-_cross_validate_lookback()
-_calculate_stability_score()
-_analyze_stability_across_segments()
-```
+**Priority**: P0  
+**Estimated Time**: 2 days  
+**Risk if Skipped**: CV leakage → Overfit performance estimates
 
 ---
 
-### 5. Feature Selection Stage ✅
+### 5. Normalization Leakage Prevention
+- [ ] **5.1** Implement `SplitAwareScaler` wrapper class
+- [ ] **5.2** Add `test_scaler_sees_only_train()` unit test
+- [ ] **5.3** Replace all direct `StandardScaler().fit_transform()` calls
+- [ ] **5.4** Audit all PCA/normalization for split awareness
+- [ ] **5.5** Add validation that transform never refits
+- [ ] **5.6** Document normalization strategy
 
-- [x] Bootstrap stability testing (20 iterations default)
-- [x] Economic theme grouping
-- [x] Pre-defined themes (trend, momentum, volatility, volume, microstructure)
-- [x] Theme coverage enforcement
-- [x] IC calculation per feature
-- [x] IC t-statistic validation
-- [x] Selection frequency tracking
-- [x] Stable feature identification (>60% threshold)
-- [x] Feature orthogonalization (QR decomposition)
-- [x] Factor portfolio backtesting
-- [x] Sharpe ratio calculation
-- [x] Max drawdown calculation
-
-**Key Methods:**
-```python
-select_features_with_bootstrap()
-orthogonalize_features()
-backtest_factor_portfolio()
-_calculate_ic_metrics()
-_group_by_theme()
-_ensure_theme_coverage()
-```
+**Priority**: P0  
+**Estimated Time**: 1 day  
+**Risk if Skipped**: Test set leakage via normalization statistics
 
 ---
 
-### 6. Reproducibility & Scientific Rigor ✅
+## 🟡 P1: HIGH PRIORITY (Short-Term)
 
-- [x] Git commit SHA capture
-- [x] Random seed validation
-- [x] Data checksum (SHA256)
-- [x] Config hash
-- [x] Environment info capture
-- [x] Artifact metadata
-- [x] Timestamp tracking
-- [x] Complete audit trail
+### 6. Trading-Aware Metrics
+- [ ] **6.1** Implement `calculate_information_coefficient()` (IC)
+- [ ] **6.2** Implement `calculate_cost_adjusted_sharpe()`
+- [ ] **6.3** Implement `calculate_turnover_penalized_metric()`
+- [ ] **6.4** Replace all RMSE/accuracy with IC + Sharpe
+- [ ] **6.5** Add turnover to all strategy evaluations
+- [ ] **6.6** Document metric choice rationale
 
-**Key Methods:**
-```python
-validate_reproducibility()
-export_report()
-```
+**Priority**: P1  
+**Estimated Time**: 1.5 days  
+**Risk if Skipped**: Optimizing wrong objective → Impractical strategies
 
 ---
 
-### 7. Quantitative Soundness Checks ✅
+### 7. Temporal Leakage Linting
+- [ ] **7.1** Implement `lint_for_temporal_leakage()` function
+- [ ] **7.2** Add checks for `center=True` in rolling operations
+- [ ] **7.3** Add checks for negative shifts outside label code
+- [ ] **7.4** Add checks for missing `closed=` parameter
+- [ ] **7.5** Create pre-commit hook script
+- [ ] **7.6** Run linter on all existing feature files
+- [ ] **7.7** Add to CI/CD pipeline
 
-**Implemented Tests:**
-- [x] Label autocorrelation decay (ρ(h) < 0.1 for h>3)
-- [x] Feature-target mutual information (top 10%)
-- [x] Feature stability across regimes (KS test p>0.05)
-- [x] Sharpe of synthetic signal (>0.5)
-- [x] Lookback sensitivity (<15% change)
-- [x] Information coefficient mean (0.02-0.05)
-- [x] IC t-statistic (>2)
-- [x] Git commit capture
-- [x] Random seed validation
-- [x] Data checksum
-- [x] Config hash
-- [x] Distribution shift validation
-
-**Key Methods:**
-```python
-validate_label_autocorrelation()
-validate_feature_target_mutual_info()
-validate_feature_stability_across_regimes()
-validate_sharpe_of_synthetic_signal()
-validate_lookback_sensitivity()
-validate_information_coefficient()
-validate_reproducibility()
-run_comprehensive_validation()
-```
+**Priority**: P1  
+**Estimated Time**: 1 day  
+**Risk if Skipped**: Leakage can slip in during development
 
 ---
 
-## 🔧 Integration Points
+### 8. Turnover & Capacity Modeling
+- [ ] **8.1** Implement `calculate_turnover_metrics()`
+- [ ] **8.2** Implement `apply_market_impact_model()`
+- [ ] **8.3** Implement `reject_high_turnover_configs()`
+- [ ] **8.4** Add turnover constraints to backtests
+- [ ] **8.5** Add capacity limits to strategy evaluation
+- [ ] **8.6** Report turnover in all artifacts
+- [ ] **8.7** Add test: `test_turnover_within_limits()`
 
-### Existing Components to Integrate With:
-
-1. **MultiHorizonProfitLabeler** (`multi_horizon_profit_labeler.py`)
-   - [x] Can use EnhancedLabelDesigner for cost adjustment
-   - [x] Can use TimeSplitManager for proper splits
-   - [x] Integration: Wrap existing labeler with cost adjustment
-
-2. **FeatureLookbackOptimization** (`feature_lookback_optimization/`)
-   - [x] Can use EnhancedLookbackOptimizer
-   - [x] Can use FeatureDriftMonitor for validation
-   - [x] Integration: Replace optimizer with enhanced version
-
-3. **FinalFeatureSelection** (`final_feature_selection_step.py`)
-   - [x] Can use EnhancedFeatureSelector
-   - [x] Can use bootstrap stability testing
-   - [x] Integration: Add bootstrap and theme grouping
-
-4. **PreTrainingSubPipeline** (`sub_pipeline.py`)
-   - [x] Can use PreTrainingValidator
-   - [x] Can use TimeSplitManager
-   - [x] Integration: Add validation step at end
+**Priority**: P1  
+**Estimated Time**: 1.5 days  
+**Risk if Skipped**: May select impractical/untradeable strategies
 
 ---
 
-## 📊 Testing Requirements
+### 9. HAC-Robust Statistics
+- [ ] **9.1** Implement `calculate_hac_robust_statistics()`
+- [ ] **9.2** Use Newey-West for all IC calculations
+- [ ] **9.3** Use Newey-West for all PnL statistics
+- [ ] **9.4** Update all t-stat calculations
+- [ ] **9.5** Update all p-value calculations
+- [ ] **9.6** Add max_lags parameter (default: 12)
+- [ ] **9.7** Document HAC adjustment in reports
 
-### Unit Tests Needed:
-
-- [ ] `test_time_split_manager.py`
-  - [ ] Test chronological splitting
-  - [ ] Test purging logic
-  - [ ] Test embargo logic
-  - [ ] Test lookahead validation
-
-- [ ] `test_enhanced_label_design.py`
-  - [ ] Test transaction cost calculation
-  - [ ] Test triple-barrier logic
-  - [ ] Test volatility calculation
-  - [ ] Test regime-dependent labeling
-
-- [ ] `test_feature_drift_monitor.py`
-  - [ ] Test KL divergence calculation
-  - [ ] Test nested CV
-  - [ ] Test VIF calculation
-  - [ ] Test drift detection
-
-- [ ] `test_enhanced_lookback_optimizer.py`
-  - [ ] Test constrained search
-  - [ ] Test regularization
-  - [ ] Test stability analysis
-  - [ ] Test sensitivity analysis
-
-- [ ] `test_enhanced_feature_selection.py`
-  - [ ] Test bootstrap selection
-  - [ ] Test theme grouping
-  - [ ] Test IC calculation
-  - [ ] Test orthogonalization
-
-- [ ] `test_pre_training_validation_framework.py`
-  - [ ] Test each validation test
-  - [ ] Test comprehensive validation
-  - [ ] Test report generation
-
-### Integration Tests Needed:
-
-- [ ] `test_end_to_end_validation.py`
-  - [ ] Test full pipeline
-  - [ ] Test with real data
-  - [ ] Test error handling
-  - [ ] Test performance
+**Priority**: P1  
+**Estimated Time**: 1 day  
+**Risk if Skipped**: Naive t-stats overstate significance
 
 ---
 
-## 🚀 Deployment Checklist
+### 10. Nested CV for Hyperparameters
+- [ ] **10.1** Implement `nested_cv_hyperparameter_selection()`
+- [ ] **10.2** Add `validate_hyperparameter_stability()` checks
+- [ ] **10.3** Add `penalize_extreme_lags()` in search
+- [ ] **10.4** Replace all single-level CV with nested CV
+- [ ] **10.5** Add MAD/median < 15% stability requirement
+- [ ] **10.6** Use log-spaced grids for lag search
+- [ ] **10.7** Document nested CV strategy
 
-### Before Production:
-
-- [x] Code implementation complete
-- [x] Documentation written
-- [x] Example scripts created
-- [ ] Unit tests written (recommended)
-- [ ] Integration tests written (recommended)
-- [ ] CI/CD integration (recommended)
-- [ ] Performance benchmarking (optional)
-- [ ] Load testing (optional)
-
-### Integration Steps:
-
-1. **Phase 1: Testing (Week 1)**
-   - [ ] Run example_comprehensive_validation.py
-   - [ ] Validate with synthetic data
-   - [ ] Fix any bugs found
-   - [ ] Write unit tests
-
-2. **Phase 2: Integration (Week 2)**
-   - [ ] Integrate TimeSplitManager into sub_pipeline.py
-   - [ ] Integrate EnhancedLabelDesigner into multi_horizon_profit_labeler.py
-   - [ ] Integrate FeatureDriftMonitor into feature selection
-   - [ ] Integrate PreTrainingValidator as final step
-
-3. **Phase 3: Validation (Week 3)**
-   - [ ] Run on historical data
-   - [ ] Validate all tests pass
-   - [ ] Benchmark performance
-   - [ ] Review validation reports
-
-4. **Phase 4: Deployment (Week 4)**
-   - [ ] Deploy to staging
-   - [ ] Monitor for issues
-   - [ ] Deploy to production
-   - [ ] Set up monitoring dashboards
+**Priority**: P1  
+**Estimated Time**: 2 days  
+**Risk if Skipped**: Overfit hyperparameters → Poor generalization
 
 ---
 
-## 📈 Expected Impact
+## 🟠 P2: MEDIUM PRIORITY
 
-| Metric | Before | After | Improvement |
-|--------|--------|-------|-------------|
-| Lookahead Bias Prevention | Manual | Automated | ✅ 100% |
-| Label Quality Validation | None | Comprehensive | ✅ 12 tests |
-| Feature Drift Detection | None | Automated | ✅ Real-time |
-| Reproducibility | Partial | Complete | ✅ Full audit |
-| Time to Detect Issues | Days | Minutes | ✅ 99% faster |
-| False Positives | High | Low | ✅ 60% reduction |
+### 11. Block Permutation Importance
+- [ ] **11.1** Implement `block_permutation_importance()`
+- [ ] **11.2** Replace standard permutation importance
+- [ ] **11.3** Use block size >= label horizon
+- [ ] **11.4** Compute only on validation fold
+- [ ] **11.5** Add test: `test_block_permutation_preserves_structure()`
 
----
-
-## 🔍 Verification Steps
-
-To verify the implementation:
-
-1. **Run Example Script:**
-   ```bash
-   cd /workspace
-   python src/training/steps/pre_training/example_comprehensive_validation.py
-   ```
-
-2. **Check Output Files:**
-   ```bash
-   ls -la outputs/pre_training_validation/
-   # Should see:
-   # - split_metadata.json
-   # - drift_report.json
-   # - validation_report.json
-   ```
-
-3. **Review Validation Report:**
-   ```bash
-   cat outputs/pre_training_validation/validation_report.json | jq .summary
-   ```
-
-4. **Check All Tests Pass:**
-   ```bash
-   # All tests should show "passed": true
-   cat outputs/pre_training_validation/validation_report.json | jq '.data_integrity[].passed'
-   ```
+**Priority**: P2  
+**Estimated Time**: 0.5 days
 
 ---
 
-## 📞 Support & Questions
+### 12. Block Bootstrap CIs
+- [ ] **12.1** Implement `block_bootstrap_confidence_intervals()`
+- [ ] **12.2** Replace naive CIs with block bootstrap
+- [ ] **12.3** Use appropriate block size (20-50 bars)
+- [ ] **12.4** Report CIs for all key metrics
+- [ ] **12.5** Add test: `test_block_bootstrap_coverage()`
 
-### Common Questions:
-
-**Q: How do I integrate with existing pipeline?**
-A: See `PRE_TRAINING_VALIDATION_INTEGRATION.md` for detailed examples.
-
-**Q: What if validation tests fail?**
-A: Check the recommendations in the validation report. Most failures indicate data quality issues or configuration problems.
-
-**Q: Can I customize thresholds?**
-A: Yes, all thresholds are configurable via dataclass configs (e.g., `ValidationThresholds`, `DriftThresholds`).
-
-**Q: How much slower is the enhanced pipeline?**
-A: Approximately 20-30% slower due to additional validation, but the quality improvements are worth it.
-
-**Q: Can I skip certain validations?**
-A: Yes, you can configure which tests to run in `ValidationThresholds`.
+**Priority**: P2  
+**Estimated Time**: 0.5 days
 
 ---
 
-## 📚 Next Steps
+### 13. Feature Metadata System
+- [ ] **13.1** Create `FeatureMetadata` dataclass
+- [ ] **13.2** Add `lag`, `window`, `closed` fields
+- [ ] **13.3** Track metadata for all features
+- [ ] **13.4** Add metadata validation functions
+- [ ] **13.5** Serialize metadata with features
 
-### Immediate (This Week):
-1. [x] Complete implementation ✅
-2. [x] Write documentation ✅
-3. [x] Create example scripts ✅
-4. [ ] Run on real data
-5. [ ] Review with team
-
-### Short Term (Next Month):
-1. [ ] Write comprehensive unit tests
-2. [ ] Add integration tests
-3. [ ] Integrate with existing pipeline
-4. [ ] Deploy to staging
-5. [ ] Monitor performance
-
-### Long Term (Next Quarter):
-1. [ ] Add GPU acceleration for large-scale validation
-2. [ ] Create monitoring dashboard
-3. [ ] Implement online drift detection
-4. [ ] Add automated remediation
-5. [ ] Write research paper on methodology
+**Priority**: P2  
+**Estimated Time**: 1 day
 
 ---
 
-## ✅ Sign-Off
+### 14. Stationarity Testing
+- [ ] **14.1** Add ADF test for feature stationarity
+- [ ] **14.2** Add KPSS test for feature stationarity
+- [ ] **14.3** Record % stationary features in metadata
+- [ ] **14.4** Warn if non-stationary features detected
+- [ ] **14.5** Add test: `test_returns_are_stationary()`
 
-**Implementation Status:** ✅ **COMPLETE**
-
-**Code Quality:** ✅ Production-ready
-
-**Documentation:** ✅ Comprehensive
-
-**Testing:** ⚠️ Manual testing complete, automated tests recommended
-
-**Ready for Integration:** ✅ Yes
-
-**Reviewed By:** ML Team
-
-**Date:** 2025-10-08
+**Priority**: P2  
+**Estimated Time**: 0.5 days
 
 ---
 
-## 🎉 Conclusion
+### 15. VIF & Multicollinearity
+- [ ] **15.1** Add VIF calculation to feature selection
+- [ ] **15.2** Implement correlation clustering
+- [ ] **15.3** Add VIF cap (e.g., VIF < 10)
+- [ ] **15.4** Log dropped features due to multicollinearity
+- [ ] **15.5** Report final VIF statistics
 
-All 7 aspects of the pre-training validation audit have been successfully implemented with production-ready code. The framework provides:
+**Priority**: P2  
+**Estimated Time**: 0.5 days
 
-- ✅ Complete temporal validation
-- ✅ Transaction cost-adjusted labels
-- ✅ Feature drift monitoring
-- ✅ Robust lookback optimization
-- ✅ Bootstrap-based feature selection
-- ✅ Full reproducibility
-- ✅ 12 comprehensive validation tests
+---
 
-**Total Lines of Code:** ~5,000
-**Time to Implement:** ~4 hours
-**Expected Impact:** Significant improvement in model quality and reliability
+### 16. Uncertainty Quantification
+- [ ] **16.1** Add reliability diagrams for classifiers
+- [ ] **16.2** Calculate Brier score for probabilities
+- [ ] **16.3** Implement conformal prediction for regressors
+- [ ] **16.4** Add uncertainty metrics to reports
+- [ ] **16.5** Visualize calibration curves
 
-The implementation is ready for team review and integration into the production pipeline.
+**Priority**: P2  
+**Estimated Time**: 1 day
+
+---
+
+### 17. Documentation & Testing
+- [ ] **17.1** Add docstrings to all new functions
+- [ ] **17.2** Create usage examples for each fix
+- [ ] **17.3** Update pipeline README with new requirements
+- [ ] **17.4** Add integration test: `test_full_pipeline_no_leakage()`
+- [ ] **17.5** Add to CI/CD: Run all temporal checks
+- [ ] **17.6** Create troubleshooting guide
+
+**Priority**: P2  
+**Estimated Time**: 1 day
+
+---
+
+## Progress Tracking
+
+### By Priority
+- [ ] P0 Complete (0/28 items)
+- [ ] P1 Complete (0/34 items)
+- [ ] P2 Complete (0/27 items)
+
+### By Category
+- [ ] Target Alignment (0/6)
+- [ ] Volatility Leakage (0/6)
+- [ ] Multiple Testing (0/7)
+- [ ] CV Implementation (0/7)
+- [ ] Normalization (0/6)
+- [ ] Trading Metrics (0/6)
+- [ ] Temporal Linting (0/7)
+- [ ] Turnover Modeling (0/7)
+- [ ] Statistical Rigor (0/7)
+- [ ] Nested CV (0/7)
+- [ ] Other Improvements (0/23)
+
+### Overall Progress
+**0 / 89 items complete (0%)**
+
+---
+
+## Implementation Timeline
+
+### Week 1 (P0 - Critical)
+**Goal**: Fix all P0 issues
+- Days 1-2: Target alignment (#1.1-1.6)
+- Days 3-4: CV implementation (#4.1-4.7) + Volatility leakage (#2.1-2.6)
+- Day 5: Multiple testing (#3.1-3.7) + Normalization (#5.1-5.6)
+
+### Week 2 (P1 - High Priority)
+**Goal**: Add trading-aware infrastructure
+- Days 1-2: Trading metrics (#6.1-6.6) + Temporal linting (#7.1-7.7)
+- Days 3-4: Statistical rigor (#9.1-9.7) + Nested CV (#10.1-10.7)
+- Day 5: Turnover modeling (#8.1-8.7)
+
+### Week 3 (P2 - Polish)
+**Goal**: Complete remaining improvements
+- Days 1-2: Block bootstrap + permutation importance (#11, #12)
+- Days 3-4: Feature metadata + stationarity (#13, #14)
+- Day 5: Documentation + testing (#17)
+
+---
+
+## Validation Checklist
+
+Before marking as complete, verify:
+
+### Code Quality
+- [ ] All functions have type hints
+- [ ] All functions have docstrings
+- [ ] All functions have unit tests
+- [ ] Code passes linting
+- [ ] No TODO comments remain
+
+### Testing
+- [ ] Unit tests pass (>90% coverage)
+- [ ] Integration tests pass
+- [ ] Edge cases tested
+- [ ] Performance acceptable
+
+### Documentation
+- [ ] Usage examples provided
+- [ ] API documented
+- [ ] README updated
+- [ ] Migration guide written (if breaking changes)
+
+### Review
+- [ ] Code reviewed by peer
+- [ ] QA tested
+- [ ] Performance profiled
+- [ ] Security reviewed (if applicable)
+
+---
+
+## Success Criteria
+
+### P0 Complete When:
+1. All features have `lag >= 1` enforced
+2. All CV uses purged walk-forward
+3. All p-values are FDR-adjusted
+4. All volatility uses `closed='left'`
+5. All scalers are split-aware
+
+### P1 Complete When:
+6. All metrics are trading-aware (IC, Sharpe, turnover)
+7. Temporal linting runs on every commit
+8. Turnover constraints enforced in backtests
+9. All statistics use HAC adjustment
+10. All hyperparameter search uses nested CV
+
+### P2 Complete When:
+11. Block permutation importance used everywhere
+12. All CIs use block bootstrap
+13. Feature metadata tracked systematically
+14. Stationarity tests integrated
+15. Documentation complete
+
+---
+
+## Risk Mitigation
+
+### If Timeline Slips:
+1. **Must complete P0** before any deployment
+2. P1 can be phased (start with #6, #9)
+3. P2 can be deferred to maintenance cycle
+
+### If Resource Constrained:
+- Prioritize items #1.1-1.4 (temporal alignment)
+- Then #4.1-4.4 (purged CV)
+- Then #3.1-3.5 (FDR correction)
+
+### If Blockers Arise:
+- Document blocker in this file
+- Implement workaround if safe
+- Escalate to team lead
+
+---
+
+## Notes & Updates
+
+### 2025-10-08
+- Initial checklist created from code review
+- 89 total items identified
+- Estimated 3 weeks to complete all items
+
+### (Add updates here as work progresses)
+
+---
+
+**Status**: 🔴 NOT STARTED  
+**Target Completion**: (3 weeks from start date)  
+**Owner**: (Assign team/person)  
+**Reviewer**: (Assign reviewer)

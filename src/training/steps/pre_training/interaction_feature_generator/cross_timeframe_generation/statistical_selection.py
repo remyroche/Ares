@@ -11,7 +11,7 @@ Implements rigorous statistical selection with:
 """
 
 from typing import Dict, List, Optional, Any, Tuple, Union
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -25,6 +25,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from .config import SelectionConfig
+from ...validation.schemas import track_and_control_hypotheses
 
 # Import tprint for enhanced logging
 try:
@@ -80,6 +81,8 @@ class CrossTimeframeStatisticalSelectionResult:
     group_lasso_groups: Dict[str, List[str]]
     selection_method: str
     metadata: Dict[str, Any]
+    hypothesis_report: Dict[str, Any] = field(default_factory=dict)
+    adjusted_p_values: Dict[str, Dict[str, float]] = field(default_factory=dict)
 
 
 class StabilitySelector:
@@ -1016,6 +1019,22 @@ class StatisticalSelection:
                 'selection_threshold': 0.6,  # Minimum selection frequency
                 'fdr_threshold': self.config.fdr_q,
                 'conditional_ic_threshold': self.config.min_conditional_ic
+            }
+        )
+
+        hypothesis_report = track_and_control_hypotheses(
+            feature_results=result.p_values,
+        )
+        if hypothesis_report.get("warning"):
+            tprint_warning(hypothesis_report["warning"])
+        result.hypothesis_report = hypothesis_report
+        result.adjusted_p_values = hypothesis_report.get("adjusted_p_values", {})
+        result.metadata = dict(result.metadata)
+        result.metadata.update(
+            {
+                'hypothesis_report': hypothesis_report,
+                'total_hypotheses': hypothesis_report.get('total_hypotheses', 0),
+                'adjusted_feature_p_values': result.adjusted_p_values.get('features', {}),
             }
         )
 

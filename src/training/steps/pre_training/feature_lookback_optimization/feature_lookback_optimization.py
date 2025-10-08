@@ -138,11 +138,12 @@ pd, _ = get_dependency('pandas')
 
 # Import logger
 from src.utils.logger import system_logger
-from src.utils.tprint import tprint
+from src.utils.tprint import tprint, tprint_warning
 from ...market_analysis.logging_standards import (
     get_logger, log_info, log_warning, log_error, log_success, log_debug,
     LoggingContext, log_step_progress, log_data_info, log_validation_result
 )
+from ..validation.schemas import extract_p_value_mapping, track_and_control_hypotheses
 
 
 @dataclass
@@ -1658,6 +1659,26 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         """Create artifacts from optimization results."""
         tprint("🗄️ Creating feature lookback optimization artifacts")
         try:
+            flattened = extract_p_value_mapping(optimization_results)
+            horizon_p_values = {
+                key: value for key, value in flattened.items() if "horizon" in key.lower()
+            }
+            lookback_p_values = {
+                key: value for key, value in flattened.items() if "lookback" in key.lower()
+            }
+            feature_p_values = {
+                key: value
+                for key, value in flattened.items()
+                if key not in horizon_p_values and key not in lookback_p_values
+            }
+            hypothesis_report = track_and_control_hypotheses(
+                horizon_results=horizon_p_values,
+                feature_results=feature_p_values,
+                lookback_results=lookback_p_values,
+            )
+            if hypothesis_report.get("warning"):
+                tprint_warning(hypothesis_report["warning"])
+
             # Create optimization summary artifact
             summary = {
                 'timestamp': pd.Timestamp.now().isoformat(),
@@ -1667,6 +1688,16 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 'optimization_results': convert_int64_to_int(optimization_results)
             }
 
+            summary.update(
+                {
+                    'hypothesis_report': hypothesis_report,
+                    'horizon_p_values': horizon_p_values,
+                    'feature_p_values': feature_p_values,
+                    'lookback_p_values': lookback_p_values,
+                    'adjusted_p_values': hypothesis_report.get('adjusted_p_values', {}),
+                }
+            )
+
             artifacts_bundle = FeatureLookbackArtifacts(
                 feature_lookback_optimization_summary=summary,
                 feature_lookback_optimization_result={
@@ -1674,6 +1705,11 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                     'summary': summary,
                     'component_type': 'feature_lookback_optimization',
                     'timestamp': pd.Timestamp.now().isoformat(),
+                    'hypothesis_report': hypothesis_report,
+                    'horizon_p_values': horizon_p_values,
+                    'feature_p_values': feature_p_values,
+                    'lookback_p_values': lookback_p_values,
+                    'adjusted_p_values': hypothesis_report.get('adjusted_p_values', {}),
                 },
             )
 

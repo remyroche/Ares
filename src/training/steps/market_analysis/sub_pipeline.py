@@ -14,10 +14,12 @@ This module provides the complete market analysis sub-pipeline with exactly 9 re
 9. sr_feature_integration - Integrate SR-specific features into feature set
 """
 
+import json
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass, field
+from pathlib import Path
 import pandas as pd
 import numpy as np
 
@@ -25,6 +27,7 @@ from src.utils.logger import system_logger
 from src.utils.enhanced_artifact_manager import get_artifact_manager
 from src.utils.version_manager import get_version_manager
 from src.utils.tprint import tprint
+from src.training.config.data_locator import DataLocator, DataLocatorConfig, LocatorPaths
 from .logging_standards import (
     get_logger, log_info, log_warning, log_error, log_success, log_debug,
     LoggingContext, log_step_progress, log_data_info, log_validation_result
@@ -77,6 +80,9 @@ class LoggingConfig:
     enable_file: bool = False
     log_file: Optional[str] = None
 
+DEFAULT_DATA_DIR = "historical_data"
+
+
 @dataclass
 class SubPipelineConfig:
     """Configuration for sub-pipeline execution."""
@@ -84,7 +90,7 @@ class SubPipelineConfig:
     symbol: str = "ETHUSDT"
     exchange: str = "binance"
     timeframe: str = "4h"  # Updated default timeframe for regime detection
-    data_dir: str = "historical_data"
+    data_dir: str = DEFAULT_DATA_DIR
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     force_rerun: bool = False
@@ -109,6 +115,63 @@ class SubPipelineConfig:
     enable_pre_clustering_analysis: bool = True
     enable_post_clustering_analysis: bool = True
     enable_regime_characterization: bool = True
+    data_locator_config: DataLocatorConfig = field(default_factory=DataLocatorConfig)
+    data_locator: Optional[DataLocator] = None
+    data_dir_key: str = "market_data"
+    cache_dir_key: str = "default"
+    artifacts_dir_key: str = "default"
+    generated_dir_key: str = "market_analysis"
+    config_dir_key: str = "multi_horizon_labeling"
+    _path_view: Optional[LocatorPaths] = field(default=None, init=False, repr=False)
+
+    def attach_locator(self, locator: DataLocator) -> None:
+        """Attach a :class:`DataLocator` instance to the configuration."""
+
+        self.data_locator = locator
+        self._path_view = LocatorPaths(locator)
+
+    def _ensure_paths(self) -> LocatorPaths:
+        if self.data_locator is None:
+            self.attach_locator(DataLocator(self.data_locator_config))
+        elif self._path_view is None or self._path_view.locator is not self.data_locator:
+            self._path_view = LocatorPaths(self.data_locator)
+        return self._path_view
+
+    @property
+    def paths(self) -> LocatorPaths:
+        return self._ensure_paths()
+
+    @property
+    def data(self):
+        return self.paths.data
+
+    @property
+    def cache(self):
+        return self.paths.cache
+
+    @property
+    def artifacts(self):
+        return self.paths.artifacts
+
+    @property
+    def generated(self):
+        return self.paths.generated
+
+    @property
+    def config_paths(self):
+        return self.paths.config
+
+    @property
+    def config_files(self):
+        return self.paths.config
+
+    @property
+    def config_root(self) -> Path:
+        return self.paths.config.root
+
+    @property
+    def config(self):
+        return self.paths.config
 
 @dataclass
 class SubPipelineResult:
@@ -197,10 +260,15 @@ class MarketAnalysisSubPipeline:
         # Use standardized logging
         self.logger = get_logger('MarketAnalysisSubPipeline')
         self.results: List[SubPipelineResult] = []
-        
+
         # Apply logging configuration
         self._apply_logging_config(self.config.logging)
-        
+
+        # Locator state for filesystem management
+        self._data_locator: Optional[DataLocator] = None
+        self._configuration_logged = False
+        self._prepare_filesystem(self.config)
+
         # Initialize artifact and version managers
         self.artifact_manager = get_artifact_manager()
         self.version_manager = get_version_manager()
@@ -294,6 +362,48 @@ class MarketAnalysisSubPipeline:
             fast_mode=sub_config.fast_mode,
             custom_params=sub_config.custom_params
         )
+
+    def _resolve_data_locator(self, config: SubPipelineConfig) -> DataLocator:
+        if isinstance(config.data_locator, DataLocator):
+            locator = config.data_locator
+        else:
+            locator = DataLocator(config.data_locator_config)
+            config.data_locator = locator
+        config.attach_locator(locator)
+        self._data_locator = locator
+        return locator
+
+    def _ensure_data_directory(self, config: SubPipelineConfig, locator: DataLocator) -> None:
+        data_value = config.data_dir
+        default_key = config.data_dir_key or "market_data"
+
+        if data_value:
+            candidate = Path(data_value).expanduser()
+            if candidate.is_absolute():
+                resolved = candidate
+            elif data_value == DEFAULT_DATA_DIR:
+                resolved = locator.data_path(default_key, ensure_exists=True)
+            else:
+                resolved = locator.data_path(default=data_value, ensure_exists=True)
+        else:
+            resolved = locator.data_path(default_key, ensure_exists=True)
+
+        resolved.mkdir(parents=True, exist_ok=True)
+        config.data_dir = str(resolved)
+
+    def _emit_effective_configuration(self, config: SubPipelineConfig) -> None:
+        summary = config.paths.summary()
+        summary_json = json.dumps(summary, indent=2, sort_keys=True)
+        self.logger.info('📁 Effective filesystem configuration:\n%s', summary_json)
+        tprint(f"📁 Effective filesystem configuration:\n{summary_json}")
+        self._configuration_logged = True
+
+    def _prepare_filesystem(self, config: SubPipelineConfig) -> DataLocator:
+        locator = self._resolve_data_locator(config)
+        self._ensure_data_directory(config, locator)
+        if not self._configuration_logged:
+            self._emit_effective_configuration(config)
+        return locator
     
     def _convert_old_config(self, config: Dict[str, Any]) -> SubPipelineConfig:
         """Convert old config format to SubPipelineConfig."""
@@ -623,10 +733,12 @@ class MarketAnalysisSubPipeline:
         """
         if config is None:
             config = self.config
-        
+
         # Reset results for a fresh run
         self.results = []
-            
+
+        self._prepare_filesystem(config)
+
         log_info('🚀 Starting automatic execution of all 13 market analysis steps')
         log_info('=' * 80)
         log_info('📋 Steps to be executed automatically:')
@@ -684,7 +796,9 @@ class MarketAnalysisSubPipeline:
         tprint("🎯 [MARKET_ANALYSIS] Starting Market Analysis Sub-Pipeline execution", color="cyan", bold=True)
         # Reset results for a fresh run
         self.results = []
-        
+
+        self._prepare_filesystem(self.config)
+
         try:
             # Extract data from pipeline state
             data = pipeline_state.get('dataframe')
@@ -1139,6 +1253,7 @@ class MarketAnalysisSubPipeline:
         Returns:
             SubPipelineResult with execution details
         """
+        self._prepare_filesystem(config)
         start_time = datetime.now()
         self.logger.info(f'🚀 Starting {sub_pipeline_name} sub-pipeline')
         
@@ -1325,6 +1440,7 @@ class MarketAnalysisSubPipeline:
         Returns:
             SubPipelineResult with execution details
         """
+        self._prepare_filesystem(config)
         self.logger.info(f'🚀 Starting {sub_pipeline_name} sub-pipeline')
         
         # Check if we should execute only a single stage

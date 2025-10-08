@@ -114,7 +114,7 @@ from .logging_utils import (
 # Import component system
 from .components import ComponentFactory, ComponentConfig
 from .metrics_sink import MetricsSink, MetricsSinkConfig
-from src.training.config.data_locator import DataLocator, DataLocatorConfig
+from src.training.config.data_locator import DataLocator, DataLocatorConfig, LocatorPaths
 from src.training.steps.pre_training.validation.data_contracts import (
     DataContractValidationError,
     validate_feature_artifact,
@@ -210,27 +210,27 @@ class SubPipelineConfig:
         return self._ensure_paths()
 
     @property
-    def data(self) -> _LocatorCategoryView:
+    def data(self) -> Any:
         return self.paths.data
 
     @property
-    def cache(self) -> _LocatorCategoryView:
+    def cache(self) -> Any:
         return self.paths.cache
 
     @property
-    def artifacts(self) -> _LocatorCategoryView:
+    def artifacts(self) -> Any:
         return self.paths.artifacts
 
     @property
-    def generated(self) -> _LocatorCategoryView:
+    def generated(self) -> Any:
         return self.paths.generated
 
     @property
-    def config_paths(self) -> _LocatorCategoryView:
+    def config_paths(self) -> Any:
         return self.paths.config
 
     @property
-    def config_files(self) -> _LocatorCategoryView:
+    def config_files(self) -> Any:
         """Alias for backwards compatibility with callers expecting ``config``."""
 
         return self.paths.config
@@ -240,7 +240,7 @@ class SubPipelineConfig:
         return self.paths.config.root
 
     @property
-    def config(self) -> _LocatorCategoryView:
+    def config(self) -> Any:
         """Expose configuration files via ``config`` attribute for convenience."""
 
         return self.paths.config
@@ -2502,57 +2502,3 @@ async def execute_pre_training_pipeline(config: SubPipelineConfig) -> Dict[str, 
     """
     pipeline = PreTrainingSubPipeline()
     return await pipeline.execute_pipeline(config)
-class _LocatorCategoryView:
-    """Attribute-access helper that proxies lookups to a :class:`DataLocator`."""
-
-    def __init__(self, locator: DataLocator, category: str) -> None:
-        self._locator = locator
-        self._category = category
-
-    @property
-    def root(self) -> Path:
-        return getattr(self._locator, f"base_{self._category}_dir")
-
-    def path(
-        self,
-        key: Optional[str] = None,
-        *,
-        default: Optional[str] = None,
-        ensure_exists: bool = False,
-    ) -> Path:
-        resolver = getattr(self._locator, f"{self._category}_path")
-        return resolver(key, default=default, ensure_exists=ensure_exists)
-
-    def __getattr__(self, item: str) -> Path:
-        if item == "root":
-            return self.root
-        return self.path(item)
-
-    def __getitem__(self, item: str) -> Path:
-        return self.path(item)
-
-    def __repr__(self) -> str:  # pragma: no cover - debug helper
-        return f"LocatorCategoryView(category={self._category!r}, root={self.root!s})"
-
-
-class LocatorPaths:
-    """Collection of category views backed by a :class:`DataLocator`."""
-
-    def __init__(self, locator: DataLocator) -> None:
-        self._locator = locator
-        self.data = _LocatorCategoryView(locator, "data")
-        self.cache = _LocatorCategoryView(locator, "cache")
-        self.artifacts = _LocatorCategoryView(locator, "artifacts")
-        self.generated = _LocatorCategoryView(locator, "generated")
-        self.config = _LocatorCategoryView(locator, "config")
-
-    @property
-    def locator(self) -> DataLocator:
-        return self._locator
-
-    def summary(self) -> Dict[str, Dict[str, str]]:
-        return self._locator.resolved_paths()
-
-    def __repr__(self) -> str:  # pragma: no cover - debug helper
-        return f"LocatorPaths(locator={self._locator!r})"
-

@@ -49,30 +49,49 @@ class AresLauncherInteractiveFeatureGenerator:
         Returns:
             Detected mode ("light", "blank", "full")
         """
+        tprint("🔍 [ARES_GENERATOR] Detecting execution mode from pipeline state")
+        tprint_debug(f"   → Pipeline state keys: {list(pipeline_state.keys())}")
+        
         # Check for explicit mode in pipeline state
-        mode = pipeline_state.get('execution_mode', pipeline_state.get('mode', 'light'))
+        explicit_mode = pipeline_state.get('execution_mode', pipeline_state.get('mode', None))
+        tprint_debug(f"   → Explicit mode: {explicit_mode}")
+        
+        mode = explicit_mode or 'light'  # Default to light mode
+        detection_method = "explicit"
         
         # Check for lookback_days to infer mode
         lookback_days = pipeline_state.get('lookback_days')
         if lookback_days is not None:
+            tprint_debug(f"   → Lookback days found: {lookback_days}")
             if lookback_days <= 30:  # Light mode typically uses 20 days
                 mode = 'light'
+                detection_method = "lookback_days (light)"
             elif lookback_days <= 200:  # Blank mode typically uses 180 days
                 mode = 'blank'
+                detection_method = "lookback_days (blank)"
             else:  # Full mode uses 1460 days
                 mode = 'full'
+                detection_method = "lookback_days (full)"
         
         # Check for intensity percentage
         intensity = pipeline_state.get('intensity_percentage')
         if intensity is not None:
+            tprint_debug(f"   → Intensity percentage found: {intensity}")
             if intensity <= 0.05:  # Light mode
                 mode = 'light'
+                detection_method = "intensity (light)"
             elif intensity <= 0.15:  # Blank mode
                 mode = 'blank'
+                detection_method = "intensity (blank)"
             else:  # Full mode
                 mode = 'full'
+                detection_method = "intensity (full)"
         
-        tprint_info(f"🔍 Detected execution mode: {mode.upper()}")
+        tprint_success(f"✅ [ARES_GENERATOR] Detected execution mode: {mode.upper()}")
+        tprint_info(f"🔍 [ARES_GENERATOR] Detection method: {detection_method}")
+        tprint_debug(f"   → Final mode: {mode}")
+        tprint_debug(f"   → Detection confidence: {'high' if detection_method == 'explicit' else 'medium'}")
+        
         return mode
     
     def load_data_for_generation(

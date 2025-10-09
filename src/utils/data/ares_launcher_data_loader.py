@@ -44,23 +44,32 @@ class AresLauncherDataLoader:
         Returns:
             Tuple of (start_date, end_date)
         """
+        tprint("🔍 [ARES_DATA_LOADER] Getting lookback dates for mode configuration")
+        tprint_debug(f"   → Requested mode: {mode}")
+        
         # Get mode configuration
         if mode == "light":
             config = get_light_mode_config()
+            tprint_info("📊 [ARES_DATA_LOADER] Using LIGHT mode configuration")
         elif mode == "blank":
             config = get_blank_mode_config()
+            tprint_info("📊 [ARES_DATA_LOADER] Using BLANK mode configuration")
         elif mode == "full":
             config = get_full_mode_config()
+            tprint_info("📊 [ARES_DATA_LOADER] Using FULL mode configuration")
         else:
-            tprint_warning(f"⚠️ Unknown mode '{mode}', defaulting to light mode")
+            tprint_warning(f"⚠️ [ARES_DATA_LOADER] Unknown mode '{mode}', defaulting to light mode")
             config = get_light_mode_config()
         
         # Calculate dates
         end_date = datetime.now()
         start_date = end_date - timedelta(days=config.lookback_days)
         
-        tprint_info(f"📅 {mode.upper()} mode: {config.lookback_days} days lookback")
-        tprint_info(f"📅 Date range: {start_date.date()} to {end_date.date()}")
+        tprint_success(f"✅ [ARES_DATA_LOADER] {mode.upper()} mode: {config.lookback_days} days lookback")
+        tprint_info(f"📅 [ARES_DATA_LOADER] Date range: {start_date.date()} to {end_date.date()}")
+        tprint_debug(f"   → Start timestamp: {start_date}")
+        tprint_debug(f"   → End timestamp: {end_date}")
+        tprint_debug(f"   → Total duration: {config.lookback_days} days")
         
         return start_date, end_date
     
@@ -89,17 +98,35 @@ class AresLauncherDataLoader:
         Returns:
             Loaded DataFrame or None
         """
-        tprint(f"📊 Loading data for {symbol} ({interval}) in {mode.upper()} mode")
+        tprint("🚀 [ARES_DATA_LOADER] Starting data loading with mode configuration")
+        tprint_info(f"📊 [ARES_DATA_LOADER] Loading data for {symbol} ({interval}) in {mode.upper()} mode")
+        tprint_debug(f"   → Symbol: {symbol}")
+        tprint_debug(f"   → Interval: {interval}")
+        tprint_debug(f"   → Mode: {mode}")
+        tprint_debug(f"   → Data type: {data_type}")
+        tprint_debug(f"   → Columns: {columns}")
         
         # Get dates based on mode
         if custom_start_date is not None and custom_end_date is not None:
             start_date = custom_start_date
             end_date = custom_end_date
-            tprint_info(f"📅 Using custom date range: {start_date.date()} to {end_date.date()}")
+            tprint_info(f"📅 [ARES_DATA_LOADER] Using custom date range: {start_date.date()} to {end_date.date()}")
+            tprint_debug(f"   → Custom start: {start_date}")
+            tprint_debug(f"   → Custom end: {end_date}")
         else:
+            tprint_debug("🔍 [ARES_DATA_LOADER] Calculating dates based on mode configuration")
             start_date, end_date = self.get_lookback_dates(mode)
         
         try:
+            tprint("📥 [ARES_DATA_LOADER] Loading data using KlinesParquetManager")
+            tprint_debug(f"   → Calling read_data with parameters:")
+            tprint_debug(f"     - symbol: {symbol}")
+            tprint_debug(f"     - interval: {interval}")
+            tprint_debug(f"     - start_date: {start_date}")
+            tprint_debug(f"     - end_date: {end_date}")
+            tprint_debug(f"     - data_type: {data_type}")
+            tprint_debug(f"     - columns: {columns}")
+            
             # Load data using KlinesParquetManager
             data = self.klines_manager.read_data(
                 symbol=symbol,
@@ -111,15 +138,25 @@ class AresLauncherDataLoader:
             )
             
             if data is not None and not data.empty:
-                tprint_success(f"✅ Loaded {len(data)} records for {symbol} ({interval})")
-                tprint_info(f"📅 Data range: {data.index.min().date()} to {data.index.max().date()}")
+                tprint_success(f"✅ [ARES_DATA_LOADER] Loaded {len(data)} records for {symbol} ({interval})")
+                tprint_info(f"📅 [ARES_DATA_LOADER] Data range: {data.index.min().date()} to {data.index.max().date()}")
+                tprint_debug(f"   → Data shape: {data.shape}")
+                tprint_debug(f"   → Data columns: {list(data.columns)}")
+                tprint_debug(f"   → Data index type: {type(data.index)}")
+                tprint_debug(f"   → Memory usage: {data.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
                 return data
             else:
-                tprint_warning(f"⚠️ No data found for {symbol} ({interval}) in {mode.upper()} mode")
+                tprint_warning(f"⚠️ [ARES_DATA_LOADER] No data found for {symbol} ({interval}) in {mode.upper()} mode")
+                tprint_debug(f"   → This could be due to:")
+                tprint_debug(f"     - No data available for the specified date range")
+                tprint_debug(f"     - Symbol/interval combination not found")
+                tprint_debug(f"     - Data type '{data_type}' not available")
                 return None
                 
         except Exception as e:
-            tprint_error(f"❌ Failed to load data for {symbol} ({interval}): {e}")
+            tprint_error(f"❌ [ARES_DATA_LOADER] Failed to load data for {symbol} ({interval}): {e}")
+            tprint_debug(f"   → Exception type: {type(e).__name__}")
+            tprint_debug(f"   → Exception details: {str(e)}")
             return None
     
     async def load_data_async(

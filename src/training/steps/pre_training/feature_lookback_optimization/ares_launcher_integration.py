@@ -49,30 +49,49 @@ class AresLauncherFeatureLookbackOptimizer:
         Returns:
             Detected mode ("light", "blank", "full")
         """
+        tprint("🔍 [ARES_OPTIMIZER] Detecting execution mode from pipeline state")
+        tprint_debug(f"   → Pipeline state keys: {list(pipeline_state.keys())}")
+        
         # Check for explicit mode in pipeline state
-        mode = pipeline_state.get('execution_mode', pipeline_state.get('mode', 'light'))
+        explicit_mode = pipeline_state.get('execution_mode', pipeline_state.get('mode', None))
+        tprint_debug(f"   → Explicit mode: {explicit_mode}")
+        
+        mode = explicit_mode or 'light'  # Default to light mode
+        detection_method = "explicit"
         
         # Check for lookback_days to infer mode
         lookback_days = pipeline_state.get('lookback_days')
         if lookback_days is not None:
+            tprint_debug(f"   → Lookback days found: {lookback_days}")
             if lookback_days <= 30:  # Light mode typically uses 20 days
                 mode = 'light'
+                detection_method = "lookback_days (light)"
             elif lookback_days <= 200:  # Blank mode typically uses 180 days
                 mode = 'blank'
+                detection_method = "lookback_days (blank)"
             else:  # Full mode uses 1460 days
                 mode = 'full'
+                detection_method = "lookback_days (full)"
         
         # Check for intensity percentage
         intensity = pipeline_state.get('intensity_percentage')
         if intensity is not None:
+            tprint_debug(f"   → Intensity percentage found: {intensity}")
             if intensity <= 0.05:  # Light mode
                 mode = 'light'
+                detection_method = "intensity (light)"
             elif intensity <= 0.15:  # Blank mode
                 mode = 'blank'
+                detection_method = "intensity (blank)"
             else:  # Full mode
                 mode = 'full'
+                detection_method = "intensity (full)"
         
-        tprint_info(f"🔍 Detected execution mode: {mode.upper()}")
+        tprint_success(f"✅ [ARES_OPTIMIZER] Detected execution mode: {mode.upper()}")
+        tprint_info(f"🔍 [ARES_OPTIMIZER] Detection method: {detection_method}")
+        tprint_debug(f"   → Final mode: {mode}")
+        tprint_debug(f"   → Detection confidence: {'high' if detection_method == 'explicit' else 'medium'}")
+        
         return mode
     
     def load_data_for_optimization(
@@ -96,15 +115,33 @@ class AresLauncherFeatureLookbackOptimizer:
         Returns:
             Loaded DataFrame or None
         """
+        tprint("🚀 [ARES_OPTIMIZER] Starting data loading for feature lookback optimization")
+        tprint_info(f"📊 [ARES_OPTIMIZER] Loading data for feature lookback optimization")
+        tprint_debug(f"   → Symbol: {symbol}")
+        tprint_debug(f"   → Timeframe: {timeframe}")
+        tprint_debug(f"   → Custom start date: {custom_start_date}")
+        tprint_debug(f"   → Custom end date: {custom_end_date}")
+        
         # Detect execution mode
+        tprint("🔍 [ARES_OPTIMIZER] Detecting execution mode...")
         mode = self.detect_execution_mode(pipeline_state)
         
-        tprint(f"📊 Loading data for feature lookback optimization")
+        tprint_info(f"📊 [ARES_OPTIMIZER] Configuration summary:")
         tprint_info(f"   → Symbol: {symbol}")
         tprint_info(f"   → Timeframe: {timeframe}")
         tprint_info(f"   → Mode: {mode.upper()}")
+        tprint_debug(f"   → Pipeline state keys: {list(pipeline_state.keys())}")
         
         # Load data using ares launcher data loader
+        tprint("📥 [ARES_OPTIMIZER] Loading data using ares launcher data loader")
+        tprint_debug(f"   → Calling data_loader.load_data_with_mode with:")
+        tprint_debug(f"     - symbol: {symbol}")
+        tprint_debug(f"     - interval: {timeframe}")
+        tprint_debug(f"     - mode: {mode}")
+        tprint_debug(f"     - data_type: raw")
+        tprint_debug(f"     - custom_start_date: {custom_start_date}")
+        tprint_debug(f"     - custom_end_date: {custom_end_date}")
+        
         data = self.data_loader.load_data_with_mode(
             symbol=symbol,
             interval=timeframe,
@@ -115,17 +152,32 @@ class AresLauncherFeatureLookbackOptimizer:
         )
         
         if data is not None and not data.empty:
-            tprint_success(f"✅ Data loaded successfully for optimization")
+            tprint_success(f"✅ [ARES_OPTIMIZER] Data loaded successfully for optimization")
+            tprint_info(f"📊 [ARES_OPTIMIZER] Data summary:")
             tprint_info(f"   → Records: {len(data)}")
             tprint_info(f"   → Date range: {data.index.min().date()} to {data.index.max().date()}")
+            tprint_debug(f"   → Data shape: {data.shape}")
+            tprint_debug(f"   → Data columns: {list(data.columns)}")
+            tprint_debug(f"   → Memory usage: {data.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
             
             # Add mode information to data
+            lookback_days = self._get_mode_lookback_days(mode)
             data.attrs['ares_mode'] = mode
-            data.attrs['lookback_days'] = self._get_mode_lookback_days(mode)
+            data.attrs['lookback_days'] = lookback_days
+            
+            tprint_info(f"🏷️ [ARES_OPTIMIZER] Added metadata to data:")
+            tprint_info(f"   → ares_mode: {mode}")
+            tprint_info(f"   → lookback_days: {lookback_days}")
+            tprint_debug(f"   → Data attributes: {list(data.attrs.keys())}")
             
             return data
         else:
-            tprint_error(f"❌ Failed to load data for optimization")
+            tprint_error(f"❌ [ARES_OPTIMIZER] Failed to load data for optimization")
+            tprint_debug(f"   → Data is None or empty")
+            tprint_debug(f"   → This could be due to:")
+            tprint_debug(f"     - No data available for the specified parameters")
+            tprint_debug(f"     - Data loading error in ares launcher data loader")
+            tprint_debug(f"     - Invalid symbol/timeframe combination")
             return None
     
     async def load_data_async_for_optimization(

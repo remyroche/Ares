@@ -9,6 +9,7 @@ import json
 import logging
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from ..settings import get_pre_training_settings
 
@@ -788,21 +789,35 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             return self._schema_failure_result(schema_error)
 
         except Exception as e:
+            # Create detailed error information
+            import traceback
+            error_details = {
+                'error_type': type(e).__name__,
+                'error_message': str(e),
+                'traceback': traceback.format_exc(),
+                'component': 'feature_lookback_optimization',
+                'timestamp': datetime.now().isoformat()
+            }
+            
             self.error_handler.handle_error(
                 e,
                 "execute",
-                return_value=self._create_failed_result()
+                return_value=self._create_failed_result(error_details)
             )
             self.performance_monitor.end_operation("execute", start_time, success=False)
-            tprint("❌ Feature lookback optimization execution failed")
-            return self._create_failed_result()
+            tprint(f"❌ Feature lookback optimization execution failed: {e}")
+            return self._create_failed_result(error_details)
 
-    def _create_failed_result(self) -> ComponentResult:
+    def _create_failed_result(self, error_details: Optional[Dict] = None) -> ComponentResult:
         """Create a failed component result."""
+        metadata = {'optimization_status': 'failed'}
+        if error_details:
+            metadata['error_details'] = error_details
+            
         return ComponentResult(
             success=False,
             artifacts=FeatureLookbackArtifacts(),
-            metadata={'optimization_status': 'failed'}
+            metadata=metadata
         )
 
     def _schema_failure_result(self, error: SchemaValidationException) -> ComponentResult:

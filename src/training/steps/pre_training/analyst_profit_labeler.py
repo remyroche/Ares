@@ -90,9 +90,9 @@ except (ImportError, SyntaxError):
     LabelDefinitionType = None
     create_enhanced_analyst_labeler = None
 
-# Import advanced filters for 15m timeframe
+# Import advanced filters for 15m timeframe from feature engineering
 try:
-    from src.training.steps.pre_training.profit_labeling.advanced_filters_15m import (
+    from src.training.steps.feature_engineering.filters.advanced_filters_15m import (
         AdvancedFilters15m,
         AdvancedFiltersConfig,
         FilterResult,
@@ -100,11 +100,21 @@ try:
     )
     ADVANCED_FILTERS_AVAILABLE = True
 except (ImportError, SyntaxError):
-    ADVANCED_FILTERS_AVAILABLE = False
-    AdvancedFilters15m = None
-    AdvancedFiltersConfig = None
-    FilterResult = None
-    apply_advanced_filters_15m = None
+    # Fallback to old location for backward compatibility
+    try:
+        from src.training.steps.pre_training.profit_labeling.advanced_filters_15m import (
+            AdvancedFilters15m,
+            AdvancedFiltersConfig,
+            FilterResult,
+            apply_advanced_filters_15m,
+        )
+        ADVANCED_FILTERS_AVAILABLE = True
+    except (ImportError, SyntaxError):
+        ADVANCED_FILTERS_AVAILABLE = False
+        AdvancedFilters15m = None
+        AdvancedFiltersConfig = None
+        FilterResult = None
+        apply_advanced_filters_15m = None
 
 
 @dataclass

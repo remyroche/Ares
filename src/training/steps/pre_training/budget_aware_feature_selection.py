@@ -70,6 +70,7 @@ class FeatureTypeBudget:
     feature_type: str  # 'base', 'interaction', 'cross_timeframe'
     min_features: int = 0
     max_features: int = 100
+    target_features: int = 60  # Target number of features
     budget_ms: float = 50.0  # Budget in milliseconds
     priority_weight: float = 1.0  # Priority weight for this feature type
     cost_per_feature_ms: float = 1.0  # Estimated cost per feature in ms

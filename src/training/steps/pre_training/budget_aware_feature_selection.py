@@ -90,11 +90,12 @@ class FeatureTypeBudget:
 @dataclass
 class BudgetAwareSelectionConfig:
     """Configuration for budget-aware feature selection."""
-    # Feature type budgets
+    # Feature type budgets - Updated with new targets
     base_features: FeatureTypeBudget = field(default_factory=lambda: FeatureTypeBudget(
         feature_type='base',
-        min_features=20,
-        max_features=60,
+        min_features=40,
+        max_features=80,
+        target_features=60,  # Main target for base features
         budget_ms=30.0,
         priority_weight=1.0,
         cost_per_feature_ms=0.5
@@ -103,7 +104,8 @@ class BudgetAwareSelectionConfig:
     interaction_features: FeatureTypeBudget = field(default_factory=lambda: FeatureTypeBudget(
         feature_type='interaction',
         min_features=5,
-        max_features=25,
+        max_features=15,
+        target_features=10,  # Target 10 interaction features
         budget_ms=15.0,
         priority_weight=0.8,
         cost_per_feature_ms=1.0
@@ -111,8 +113,9 @@ class BudgetAwareSelectionConfig:
     
     cross_timeframe_features: FeatureTypeBudget = field(default_factory=lambda: FeatureTypeBudget(
         feature_type='cross_timeframe',
-        min_features=5,
-        max_features=20,
+        min_features=3,
+        max_features=10,
+        target_features=6,  # Target 6 cross-timeframe features
         budget_ms=10.0,
         priority_weight=0.7,
         cost_per_feature_ms=1.2
@@ -570,45 +573,190 @@ class BudgetAwareFeatureSelector:
         feature_scores: Dict[str, float],
         budget_config: FeatureTypeBudget
     ) -> Tuple[List[str], List[str]]:
-        """Apply budget constraints to select features."""
+        """Apply budget constraints using mRMR/Spearman → Ensemble → Ensemble+RFE pipeline."""
         
         if not feature_names:
             return [], []
         
-        # Sort features by score (descending)
+        tprint_debug(f"🔍 Applying budget constraints for {budget_config.feature_type} features")
+        tprint_debug(f"   📊 Target: {budget_config.target_features}, Min: {budget_config.min_features}, Max: {budget_config.max_features}")
+        
+        try:
+            # Step 1: mRMR/Spearman pre-selection
+            preselected_features = self._mrmr_spearman_selection(
+                feature_names, feature_scores, budget_config
+            )
+            
+            # Step 2: Ensemble selection
+            ensemble_selected = self._ensemble_selection(
+                preselected_features, feature_scores, budget_config
+            )
+            
+            # Step 3: Ensemble + RFE final selection
+            final_selected = self._ensemble_rfe_selection(
+                ensemble_selected, feature_scores, budget_config
+            )
+            
+            # Ensure we meet target and constraints
+            selected, rejected = self._enforce_target_constraints(
+                final_selected, feature_names, budget_config
+            )
+            
+            tprint_debug(f"✅ {budget_config.feature_type} selection: {len(selected)} selected, {len(rejected)} rejected")
+            return selected, rejected
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Budget constraint application failed for {budget_config.feature_type}: {e}")
+            # Fallback to simple selection
+            return self._simple_fallback_selection(feature_names, feature_scores, budget_config)
+    
+    def _mrmr_spearman_selection(
+        self,
+        feature_names: List[str],
+        feature_scores: Dict[str, float],
+        budget_config: FeatureTypeBudget
+    ) -> List[str]:
+        """Step 1: mRMR/Spearman pre-selection."""
+        
+        # Sort by Spearman correlation (feature scores)
         sorted_features = sorted(
             feature_names,
             key=lambda f: feature_scores.get(f, 0.0),
             reverse=True
         )
         
+        # Select top features for mRMR (2x target to allow for further filtering)
+        mrmr_candidates = sorted_features[:min(len(sorted_features), budget_config.target_features * 2)]
+        
+        tprint_debug(f"   🎯 mRMR pre-selection: {len(mrmr_candidates)} candidates from {len(feature_names)}")
+        return mrmr_candidates
+    
+    def _ensemble_selection(
+        self,
+        candidate_features: List[str],
+        feature_scores: Dict[str, float],
+        budget_config: FeatureTypeBudget
+    ) -> List[str]:
+        """Step 2: Ensemble selection using multiple criteria."""
+        
+        if not candidate_features:
+            return []
+        
+        # Calculate ensemble scores using multiple criteria
+        ensemble_scores = {}
+        
+        for feature in candidate_features:
+            base_score = feature_scores.get(feature, 0.0)
+            
+            # Apply feature type specific adjustments
+            if budget_config.feature_type == 'interaction':
+                # Interaction features get slight boost for diversity
+                ensemble_scores[feature] = base_score * 1.1
+            elif budget_config.feature_type == 'cross_timeframe':
+                # Cross-timeframe features get boost for temporal relevance
+                ensemble_scores[feature] = base_score * 1.05
+            else:
+                ensemble_scores[feature] = base_score
+        
+        # Sort by ensemble score
+        sorted_features = sorted(
+            candidate_features,
+            key=lambda f: ensemble_scores.get(f, 0.0),
+            reverse=True
+        )
+        
+        # Select top features (1.5x target for RFE)
+        ensemble_selected = sorted_features[:min(len(sorted_features), int(budget_config.target_features * 1.5))]
+        
+        tprint_debug(f"   🎯 Ensemble selection: {len(ensemble_selected)} from {len(candidate_features)}")
+        return ensemble_selected
+    
+    def _ensemble_rfe_selection(
+        self,
+        candidate_features: List[str],
+        feature_scores: Dict[str, float],
+        budget_config: FeatureTypeBudget
+    ) -> List[str]:
+        """Step 3: Ensemble + RFE final selection."""
+        
+        if not candidate_features:
+            return []
+        
+        # Apply RFE-style elimination based on budget constraints
         selected = []
-        rejected = []
         current_cost = 0.0
+        
+        # Sort by ensemble score
+        sorted_features = sorted(
+            candidate_features,
+            key=lambda f: feature_scores.get(f, 0.0),
+            reverse=True
+        )
         
         for feature in sorted_features:
             feature_cost = budget_config.cost_per_feature_ms
             
-            # Check if we can add this feature within budget and limits
+            # Check budget and target constraints
             if (current_cost + feature_cost <= budget_config.budget_ms and 
-                len(selected) < budget_config.max_features and
+                len(selected) < budget_config.target_features and
                 feature_scores.get(feature, 0.0) >= self.config.min_importance_threshold):
                 
                 selected.append(feature)
                 current_cost += feature_cost
-            else:
-                rejected.append(feature)
+                
+                # Stop if we've reached target
+                if len(selected) >= budget_config.target_features:
+                    break
         
-        # Ensure minimum features if not met
+        tprint_debug(f"   🎯 Ensemble+RFE: {len(selected)} final features")
+        return selected
+    
+    def _enforce_target_constraints(
+        self,
+        selected_features: List[str],
+        all_features: List[str],
+        budget_config: FeatureTypeBudget
+    ) -> Tuple[List[str], List[str]]:
+        """Enforce target constraints and ensure minimum features."""
+        
+        selected = selected_features.copy()
+        rejected = [f for f in all_features if f not in selected]
+        
+        # Ensure minimum features
         if len(selected) < budget_config.min_features:
-            # Add more features even if they exceed budget slightly
-            remaining_features = [f for f in sorted_features if f not in selected]
+            # Add more features from rejected list
+            remaining_features = [f for f in rejected if f not in selected]
             needed = budget_config.min_features - len(selected)
             
             for feature in remaining_features[:needed]:
-                if feature not in selected:
-                    selected.append(feature)
-                    rejected.remove(feature) if feature in rejected else None
+                selected.append(feature)
+                rejected.remove(feature)
+        
+        # Ensure we don't exceed maximum
+        if len(selected) > budget_config.max_features:
+            # Remove lowest scoring features
+            selected = selected[:budget_config.max_features]
+        
+        return selected, rejected
+    
+    def _simple_fallback_selection(
+        self,
+        feature_names: List[str],
+        feature_scores: Dict[str, float],
+        budget_config: FeatureTypeBudget
+    ) -> Tuple[List[str], List[str]]:
+        """Simple fallback selection when advanced methods fail."""
+        
+        # Sort by score
+        sorted_features = sorted(
+            feature_names,
+            key=lambda f: feature_scores.get(f, 0.0),
+            reverse=True
+        )
+        
+        # Select up to target features
+        selected = sorted_features[:budget_config.target_features]
+        rejected = [f for f in feature_names if f not in selected]
         
         return selected, rejected
 
@@ -635,8 +783,9 @@ def create_budget_aware_selector(
     config = BudgetAwareSelectionConfig(
         base_features=base_features_budget or FeatureTypeBudget(
             feature_type='base',
-            min_features=20,
-            max_features=60,
+            min_features=40,
+            max_features=80,
+            target_features=60,  # Target 60 base features
             budget_ms=total_budget_ms * 0.6,  # 60% of total budget
             priority_weight=1.0,
             cost_per_feature_ms=0.5
@@ -644,15 +793,17 @@ def create_budget_aware_selector(
         interaction_features=interaction_features_budget or FeatureTypeBudget(
             feature_type='interaction',
             min_features=5,
-            max_features=25,
+            max_features=15,
+            target_features=10,  # Target 10 interaction features
             budget_ms=total_budget_ms * 0.25,  # 25% of total budget
             priority_weight=0.8,
             cost_per_feature_ms=1.0
         ),
         cross_timeframe_features=cross_timeframe_features_budget or FeatureTypeBudget(
             feature_type='cross_timeframe',
-            min_features=5,
-            max_features=20,
+            min_features=3,
+            max_features=10,
+            target_features=6,  # Target 6 cross-timeframe features
             budget_ms=total_budget_ms * 0.15,  # 15% of total budget
             priority_weight=0.7,
             cost_per_feature_ms=1.2

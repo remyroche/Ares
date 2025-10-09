@@ -173,13 +173,16 @@ class InteractiveFeatureGenerationConfig:
     interaction_features_budget_ms: float = 25.0  # 25% of total budget
     cross_timeframe_features_budget_ms: float = 15.0  # 15% of total budget
     
-    # Feature type constraints
-    base_features_min: int = 20
-    base_features_max: int = 60
+    # Feature type constraints - Updated for new pipeline
+    base_features_min: int = 40
+    base_features_max: int = 80
+    base_features_target: int = 60  # Target 60 base features
     interaction_features_min: int = 5
-    interaction_features_max: int = 25
-    cross_timeframe_features_min: int = 5
-    cross_timeframe_features_max: int = 20
+    interaction_features_max: int = 15
+    interaction_features_target: int = 10  # Target 10 interaction features
+    cross_timeframe_features_min: int = 3
+    cross_timeframe_features_max: int = 10
+    cross_timeframe_features_target: int = 6  # Target 6 cross-timeframe features
     
     # Optimization configuration
     enable_matrix_optimization: bool = True
@@ -305,6 +308,22 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
             maintain_backward_compatibility=bool(params.get('maintain_backward_compatibility', InteractiveFeatureGenerationConfig.maintain_backward_compatibility)),
             market_data_batch_size=params.get('market_data_batch_size', InteractiveFeatureGenerationConfig.market_data_batch_size),
             market_data_window_days=params.get('market_data_window_days', InteractiveFeatureGenerationConfig.market_data_window_days),
+            # Budget constraints
+            enable_budget_constraints=bool(params.get('enable_budget_constraints', InteractiveFeatureGenerationConfig.enable_budget_constraints)),
+            total_budget_ms=float(params.get('total_budget_ms', InteractiveFeatureGenerationConfig.total_budget_ms)),
+            base_features_budget_ms=float(params.get('base_features_budget_ms', InteractiveFeatureGenerationConfig.base_features_budget_ms)),
+            interaction_features_budget_ms=float(params.get('interaction_features_budget_ms', InteractiveFeatureGenerationConfig.interaction_features_budget_ms)),
+            cross_timeframe_features_budget_ms=float(params.get('cross_timeframe_features_budget_ms', InteractiveFeatureGenerationConfig.cross_timeframe_features_budget_ms)),
+            # Feature type constraints
+            base_features_min=int(params.get('base_features_min', InteractiveFeatureGenerationConfig.base_features_min)),
+            base_features_max=int(params.get('base_features_max', InteractiveFeatureGenerationConfig.base_features_max)),
+            base_features_target=int(params.get('base_features_target', InteractiveFeatureGenerationConfig.base_features_target)),
+            interaction_features_min=int(params.get('interaction_features_min', InteractiveFeatureGenerationConfig.interaction_features_min)),
+            interaction_features_max=int(params.get('interaction_features_max', InteractiveFeatureGenerationConfig.interaction_features_max)),
+            interaction_features_target=int(params.get('interaction_features_target', InteractiveFeatureGenerationConfig.interaction_features_target)),
+            cross_timeframe_features_min=int(params.get('cross_timeframe_features_min', InteractiveFeatureGenerationConfig.cross_timeframe_features_min)),
+            cross_timeframe_features_max=int(params.get('cross_timeframe_features_max', InteractiveFeatureGenerationConfig.cross_timeframe_features_max)),
+            cross_timeframe_features_target=int(params.get('cross_timeframe_features_target', InteractiveFeatureGenerationConfig.cross_timeframe_features_target)),
         )
 
     def _initialize_orchestrator(self):

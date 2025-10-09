@@ -403,17 +403,17 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                             model_type=model_type,
                         )
 
-                        # Map YAML config to expected format
+                        # Map YAML config to expected format - Updated for new pipeline
                         stage_targets = [
-                            model_config.get('target_features', 80) - 20,  # stage_1_target
-                            model_config.get('target_features', 80) - 15,  # stage_2_target
-                            model_config.get('target_features', 80) - 10   # stage_3_target
+                            model_config.get('target_features', 60) + 20,  # stage_1_target (80)
+                            model_config.get('target_features', 60) + 10,  # stage_2_target (70)
+                            model_config.get('target_features', 60)        # stage_3_target (60)
                         ]
 
                         return {
-                            'target_features': model_config.get('target_features', 80),
-                            'min_features': model_config.get('min_features', 60),
-                            'max_features': model_config.get('max_features', 100),
+                            'target_features': model_config.get('target_features', 60),  # Updated default to 60
+                            'min_features': model_config.get('min_features', 50),
+                            'max_features': model_config.get('max_features', 80),
                             'stage_targets': stage_targets,
                             'priority_categories': model_config.get('priority_categories', ['momentum', 'volatility', 'microstructure'])
                         }
@@ -421,10 +421,10 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     # Use default settings if no model profile found
                     elif model_type == 'default':
                         return {
-                            'target_features': fs_config.get('target_features', 80),
-                            'min_features': fs_config.get('min_features', 60),
-                            'max_features': fs_config.get('max_features', 100),
-                            'stage_targets': [95, 75, 65],
+                            'target_features': fs_config.get('target_features', 60),  # Updated default to 60
+                            'min_features': fs_config.get('min_features', 50),
+                            'max_features': fs_config.get('max_features', 80),
+                            'stage_targets': [80, 70, 60],  # Updated for new pipeline
                             'priority_categories': ['momentum', 'volatility', 'microstructure']
                         }
 
@@ -717,6 +717,16 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     budget_selector = create_budget_aware_selector(
                         total_budget_ms=final_feature_selection_config.get('total_budget_ms', 100.0)
                     )
+                    
+                    # Update budget targets based on interactive feature generation config
+                    if isinstance(pipeline_state, dict) and 'interactive_feature_generation_result' in pipeline_state:
+                        interactive_config = pipeline_state.get('interactive_feature_generation_config', {})
+                        if interactive_config:
+                            # Update targets from interactive generation config
+                            budget_selector.config.base_features.target_features = interactive_config.get('base_features_target', 60)
+                            budget_selector.config.interaction_features.target_features = interactive_config.get('interaction_features_target', 10)
+                            budget_selector.config.cross_timeframe_features.target_features = interactive_config.get('cross_timeframe_features_target', 6)
+                            tprint_info(f"🎯 Updated budget targets: Base={budget_selector.config.base_features.target_features}, Interaction={budget_selector.config.interaction_features.target_features}, Cross-timeframe={budget_selector.config.cross_timeframe_features.target_features}")
                     
                     # Extract target data if available
                     target_data = None

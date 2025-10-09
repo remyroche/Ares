@@ -409,44 +409,62 @@ class NegativeLearningFeatureGenerator:
         Returns:
             DataFrame with additional negative learning features
         """
-        self.logger.info("🔄 Generating negative learning features...")
+        from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_debug
+        
+        tprint_info("🔄 Generating negative learning features...")
+        tprint_info(f"📊 Input features: {features_df.shape[1]}")
+        tprint_info(f"🎯 Features with failure contexts: {len(failure_contexts)}")
+        
         self.failure_contexts = failure_contexts
         
         result_df = features_df.copy()
         negative_features = []
         
         # Generate features for each feature with failure contexts
+        total_gates_generated = 0
+        total_gates_selected = 0
+        
         for feature_name, contexts in failure_contexts.items():
             if feature_name not in features_df.columns:
+                tprint_warning(f"⚠️ Feature {feature_name} not found in input data, skipping")
                 continue
                 
-            self.logger.debug(f"Generating negative features for {feature_name}")
+            tprint_info(f"🎯 Processing {feature_name} with {len(contexts)} failure contexts")
             
             # Calculate combined failure probability
             p_fail = self._calculate_failure_probability(features_df, contexts)
+            tprint_debug(f"📈 Failure probability range: {p_fail.min():.3f} - {p_fail.max():.3f}")
             
             # Generate all possible gate features first
             all_gate_features = {}
+            gate_types_generated = []
             
             if self.config.enable_gated_twins:
                 twin_features = self._generate_gated_twins(
                     features_df[feature_name], p_fail, feature_name
                 )
                 all_gate_features.update(twin_features.to_dict('series'))
+                gate_types_generated.append(f"twins({len(twin_features.columns)})")
             
             if self.config.enable_exception_interactions:
                 interaction_features = self._generate_exception_interactions(
                     features_df[feature_name], p_fail, feature_name
                 )
                 all_gate_features.update(interaction_features.to_dict('series'))
+                gate_types_generated.append(f"interactions({len(interaction_features.columns)})")
             
             if self.config.enable_context_indicators:
                 context_features = self._generate_context_indicators(
                     features_df, contexts, feature_name
                 )
                 all_gate_features.update(context_features.to_dict('series'))
+                gate_types_generated.append(f"contexts({len(context_features.columns)})")
+            
+            total_gates_generated += len(all_gate_features)
+            tprint_info(f"🔧 Generated {len(all_gate_features)} gates: {', '.join(gate_types_generated)}")
             
             # Smart selection: Keep only top 5 most impactful gates
+            tprint_info(f"🎯 Selecting top {self.config.max_gates_per_base_feature} gates for {feature_name}...")
             selected_gates = self._select_top_gates(
                 all_gate_features, 
                 features_df[feature_name], 
@@ -459,10 +477,18 @@ class NegativeLearningFeatureGenerator:
                 selected_df = pd.DataFrame(selected_gates, index=features_df.index)
                 result_df = pd.concat([result_df, selected_df], axis=1)
                 negative_features.extend(selected_df.columns.tolist())
+                total_gates_selected += len(selected_gates)
                 
-                self.logger.debug(f"Selected {len(selected_gates)} gates for {feature_name}: {list(selected_gates.keys())}")
+                tprint_success(f"✅ Selected {len(selected_gates)}/{len(all_gate_features)} gates for {feature_name}")
+                tprint_debug(f"📋 Selected gates: {list(selected_gates.keys())}")
+            else:
+                tprint_warning(f"⚠️ No gates selected for {feature_name} (failed thresholds)")
         
-        self.logger.info(f"✅ Generated {len(negative_features)} negative learning features")
+        tprint_success(f"🎉 Gate generation complete!")
+        tprint_info(f"📊 Generated: {total_gates_generated} total gates")
+        tprint_info(f"🎯 Selected: {total_gates_selected} gates ({total_gates_selected/total_gates_generated*100:.1f}% selection rate)")
+        tprint_info(f"📈 Final features: {result_df.shape[1]} ({features_df.shape[1]} base + {len(negative_features)} gates)")
+        
         return result_df
     
     def _select_top_gates(
@@ -810,10 +836,19 @@ class NegativeLearningFeatureGenerator:
                 0.3 * non_linearity_score         # Non-linearity (difference from base)
             )
             
+            # Log detailed calculation for debugging
+            from src.utils.tprint import tprint_debug
+            tprint_debug(f"📊 IC uplift calculation:")
+            tprint_debug(f"   Variance: gate={gate_variance:.3f}, base={base_variance:.3f}, improvement={variance_improvement:.3f}")
+            tprint_debug(f"   Stability: gate={gate_stability:.3f}, base={base_stability:.3f}, improvement={stability_improvement:.3f}")
+            tprint_debug(f"   Non-linearity: diff={feature_diff:.3f}, base_std={base_std:.3f}, score={non_linearity_score:.3f}")
+            tprint_debug(f"   Final IC uplift: {ic_uplift:.3f}")
+            
             return max(0.0, ic_uplift)
             
         except Exception as e:
-            self.logger.warning(f"Error calculating IC uplift: {e}")
+            from src.utils.tprint import tprint_warning
+            tprint_warning(f"⚠️ Error calculating IC uplift: {e}")
             return 0.0
     
     def _calculate_stability_frequency(self, gate_series: pd.Series) -> float:

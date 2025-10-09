@@ -2618,7 +2618,7 @@ class TacticianModelsTrainingStep:
         sample_weight: np.ndarray,
         **kwargs,
     ) -> Dict[str, np.ndarray]:
-        """Construct regime/context features required by the gating head with enhanced probabilistic regime features."""
+        """Construct regime/context features required by the gating head with regime probabilities."""
 
         n_samples = X.shape[0]
         feature_map: Dict[str, np.ndarray] = {}
@@ -2631,7 +2631,7 @@ class TacticianModelsTrainingStep:
             'regime_context',
             'additional_context',
             'regime_feature_map',
-            'comprehensive_regime_info',  # New: comprehensive regime information
+            'regime_probabilities_info',  # Simplified: only regime probabilities
         ):
             value = kwargs.get(key)
             if isinstance(value, dict):
@@ -2652,57 +2652,20 @@ class TacticianModelsTrainingStep:
                         return frame[name].values
             return None
 
-        # Enhanced regime features from probabilistic outputs
-        comprehensive_regime_info = _lookup('comprehensive_regime_info')
-        if comprehensive_regime_info and comprehensive_regime_info.get('has_probabilistic_outputs'):
-            tprint_info("📊 Using enhanced probabilistic regime features for Tactician models")
+        # Regime probabilities from probabilistic outputs
+        regime_probabilities_info = _lookup('regime_probabilities_info')
+        if regime_probabilities_info and regime_probabilities_info.get('has_probabilistic_outputs'):
+            tprint_info("📊 Using regime probabilities for Tactician models")
             
-            # Extract regime features from comprehensive regime information
-            regime_features = comprehensive_regime_info.get('regime_features', {})
-            if regime_features:
-                # Add probabilistic regime features
-                for feature_name, feature_values in regime_features.items():
-                    if feature_values is not None and len(feature_values) == n_samples:
-                        feature_map[f'regime_{feature_name}'] = self._ensure_feature_array(feature_values, n_samples)
-                        tprint_info(f"✅ Added regime feature: regime_{feature_name}")
-                
-                # Add regime probability features
-                regime_probabilities = comprehensive_regime_info.get('regime_probabilities')
-                if regime_probabilities is not None and len(regime_probabilities) == n_samples:
-                    n_regimes = regime_probabilities.shape[1] if len(regime_probabilities.shape) > 1 else 1
-                    for i in range(n_regimes):
-                        feature_map[f'regime_prob_{i}'] = self._ensure_feature_array(regime_probabilities[:, i], n_samples)
-                    tprint_info(f"✅ Added {n_regimes} regime probability features")
-                
-                # Add ensemble probability features
-                ensemble_probabilities = comprehensive_regime_info.get('ensemble_probabilities', {})
-                if ensemble_probabilities:
-                    for model_name, model_probs in ensemble_probabilities.items():
-                        if model_probs is not None and len(model_probs) == n_samples:
-                            n_model_regimes = model_probs.shape[1] if len(model_probs.shape) > 1 else 1
-                            for i in range(n_model_regimes):
-                                feature_map[f'ensemble_{model_name}_prob_{i}'] = self._ensure_feature_array(model_probs[:, i], n_samples)
-                    tprint_info(f"✅ Added ensemble probability features from {len(ensemble_probabilities)} models")
-            
-            # Add regime analysis features
-            regime_analysis = comprehensive_regime_info.get('regime_analysis', {})
-            if regime_analysis:
-                uncertainty_metrics = regime_analysis.get('uncertainty_metrics', {})
-                if uncertainty_metrics:
-                    # Add uncertainty features
-                    if 'mean_entropy' in uncertainty_metrics:
-                        feature_map['regime_uncertainty_mean'] = np.full(n_samples, uncertainty_metrics['mean_entropy'])
-                    if 'std_entropy' in uncertainty_metrics:
-                        feature_map['regime_uncertainty_std'] = np.full(n_samples, uncertainty_metrics['std_entropy'])
-                
-                dominance_analysis = regime_analysis.get('dominance_analysis', {})
-                if dominance_analysis:
-                    if 'mean_dominance' in dominance_analysis:
-                        feature_map['regime_dominance_mean'] = np.full(n_samples, dominance_analysis['mean_dominance'])
-                    if 'std_dominance' in dominance_analysis:
-                        feature_map['regime_dominance_std'] = np.full(n_samples, dominance_analysis['std_dominance'])
+            # Add regime probability features
+            regime_probabilities = regime_probabilities_info.get('regime_probabilities')
+            if regime_probabilities is not None and len(regime_probabilities) == n_samples:
+                n_regimes = regime_probabilities.shape[1] if len(regime_probabilities.shape) > 1 else 1
+                for i in range(n_regimes):
+                    feature_map[f'regime_prob_{i}'] = self._ensure_feature_array(regime_probabilities[:, i], n_samples)
+                tprint_info(f"✅ Added {n_regimes} regime probability features")
         else:
-            tprint_warning("⚠️ No comprehensive regime information available, using fallback features")
+            tprint_warning("⚠️ No regime probabilities available, using fallback features")
 
         # Legacy regime features (fallback)
         volatility = _lookup('volatility_level', 'volatility', 'volatility_score')

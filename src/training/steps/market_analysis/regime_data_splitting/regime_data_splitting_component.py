@@ -1484,47 +1484,24 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             self.logger.info(f"✅ Generated regime probabilities: {regime_probabilities.shape}")
             return regime_probabilities
 
-    def get_comprehensive_regime_information(self) -> Dict[str, Any]:
-        """Get comprehensive regime information for downstream models (Analyst & Tactician)."""
+    def get_regime_probabilities(self) -> Dict[str, Any]:
+        """Get regime probabilities for downstream models (Analyst & Tactician)."""
         try:
-            self.logger.info("📊 Providing comprehensive regime information for downstream models")
+            self.logger.info("📊 Providing regime probabilities for downstream models")
             
             regime_info = {
                 'regime_probabilities': getattr(self, '_cached_regime_probabilities', None),
-                'regime_analysis': getattr(self, '_cached_regime_analysis', {}),
-                'ensemble_probabilities': getattr(self, '_cached_ensemble_probabilities', {}),
                 'has_probabilistic_outputs': hasattr(self, '_cached_regime_probabilities') and self._cached_regime_probabilities is not None,
                 'timestamp': datetime.now().isoformat()
             }
             
-            # Add regime-specific features for models
-            if regime_info['regime_probabilities'] is not None:
-                regime_probs = regime_info['regime_probabilities']
-                n_regimes = regime_probs.shape[1] if len(regime_probs.shape) > 1 else 1
-                
-                # Calculate additional regime features
-                regime_info['regime_features'] = {
-                    'regime_entropy': -np.sum(regime_probs * np.log(regime_probs + 1e-10), axis=1),
-                    'regime_confidence': np.max(regime_probs, axis=1),
-                    'regime_dominance': regime_probs[:, -1] - regime_probs[:, -2] if n_regimes > 1 else np.ones(len(regime_probs)),
-                    'regime_uncertainty': 1.0 - np.max(regime_probs, axis=1),
-                    'regime_balance': np.std(regime_probs, axis=1)
-                }
-                
-                # Add regime transition features
-                if hasattr(self, '_cached_regime_analysis') and self._cached_regime_analysis:
-                    regime_info['regime_transitions'] = self._cached_regime_analysis.get('regime_transitions', {})
-                    regime_info['regime_persistence'] = self._cached_regime_analysis.get('regime_persistence', {})
-            
-            self.logger.info("✅ Comprehensive regime information prepared for downstream models")
+            self.logger.info("✅ Regime probabilities prepared for downstream models")
             return regime_info
             
         except Exception as e:
-            self.logger.error(f"❌ Error providing comprehensive regime information: {e}")
+            self.logger.error(f"❌ Error providing regime probabilities: {e}")
             return {
                 'regime_probabilities': None,
-                'regime_analysis': {},
-                'ensemble_probabilities': {},
                 'has_probabilistic_outputs': False,
                 'error': str(e),
                 'timestamp': datetime.now().isoformat()
@@ -1766,8 +1743,8 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 # Calculate regime statistics using memory-optimized utilities
                 regime_stats = self._calculate_regime_statistics_memory_optimized(market_data_aligned)
                 
-                # Get comprehensive regime information for downstream models
-                comprehensive_regime_info = self.get_comprehensive_regime_information()
+                # Get regime probabilities for downstream models
+                regime_probabilities_info = self.get_regime_probabilities()
                 
                 # Create regime data dictionary
                 regime_data = {
@@ -1775,36 +1752,27 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                     'regime_states': regime_states_aligned,
                     'regime_probabilities': regime_probabilities_aligned,
                     'regime_statistics': regime_stats,
-                    'comprehensive_regime_info': comprehensive_regime_info
+                    'regime_probabilities_info': regime_probabilities_info
                 }
                 
-                # Add regime features to market data for downstream models
-                if comprehensive_regime_info.get('regime_features'):
-                    regime_features = comprehensive_regime_info['regime_features']
-                    for feature_name, feature_values in regime_features.items():
-                        market_data_aligned[f'regime_{feature_name}'] = feature_values
-                
-                # Add ensemble probabilities if available
-                if comprehensive_regime_info.get('ensemble_probabilities'):
-                    ensemble_probs = comprehensive_regime_info['ensemble_probabilities']
-                    for model_name, model_probs in ensemble_probs.items():
-                        if model_probs is not None and len(model_probs) == len(market_data_aligned):
-                            # Add individual model probabilities as features
-                            for i in range(model_probs.shape[1]):
-                                market_data_aligned[f'ensemble_{model_name}_prob_{i}'] = model_probs[:, i]
+                # Add regime probability features to market data for downstream models
+                if regime_probabilities_aligned is not None:
+                    n_regimes = regime_probabilities_aligned.shape[1] if len(regime_probabilities_aligned.shape) > 1 else 1
+                    for i in range(n_regimes):
+                        market_data_aligned[f'regime_prob_{i}'] = regime_probabilities_aligned[:, i]
                 
                 # Optimize final DataFrame for M1 if available
                 if is_m1_available():
                     regime_data['market_data'] = optimize_dataframe_for_m1(regime_data['market_data'])
                 
                 self.logger.info(f"✅ Regime splitting completed: {len(np.unique(regime_states_aligned))} regimes")
-                self.logger.info(f"📊 Added {len([col for col in market_data_aligned.columns if 'regime_' in col or 'ensemble_' in col])} regime features for downstream models")
+                self.logger.info(f"📊 Added {n_regimes} regime probability features for downstream models")
                 
                 return {
                     'success': True,
                     'data': regime_data,
                     'regime_stats': regime_stats,
-                    'comprehensive_regime_info': comprehensive_regime_info,
+                    'regime_probabilities_info': regime_probabilities_info,
                     'errors': []
                 }
 

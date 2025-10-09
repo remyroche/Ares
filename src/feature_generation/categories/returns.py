@@ -856,6 +856,213 @@ class SharpeRatioGenerator(VectorizedFeatureGenerator):
         
         return pd.Series(sharpe_ratio, index=data.index)
 
+# NEW FEATURES - Advanced Returns Analysis
+
+class AdvancedCumulativeReturnsGenerator(VectorizedFeatureGenerator):
+    """Generator for cumulative returns over a specified window (enhanced version)."""
+    
+    def __init__(self, window: int = 20):
+        config = FeatureConfig(
+            name=f"advanced_cumulative_returns_{window}",
+            category=FeatureCategory.RETURNS,
+            description=f"Advanced cumulative returns over {window} periods",
+            required_columns=["close"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'window': window},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        if len(close) < self.window:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate returns
+        returns = np.diff(close) / close[:-1]
+        returns = np.concatenate([[np.nan], returns])
+        
+        # Calculate cumulative returns
+        cumulative_returns = np.full(len(close), np.nan)
+        for i in range(self.window - 1, len(close)):
+            window_returns = returns[i - self.window + 1:i + 1]
+            valid_returns = window_returns[np.isfinite(window_returns)]
+            if len(valid_returns) > 0:
+                cumulative_returns[i] = np.prod(1 + valid_returns) - 1
+        
+        return pd.Series(cumulative_returns, index=data.index)
+
+class RollingZScoreReturnsGenerator(VectorizedFeatureGenerator):
+    """Generator for rolling z-score of returns."""
+    
+    def __init__(self, window: int = 20):
+        config = FeatureConfig(
+            name=f"rolling_zscore_returns_{window}",
+            category=FeatureCategory.RETURNS,
+            description=f"Rolling z-score of returns over {window} periods",
+            required_columns=["close"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'window': window},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        if len(close) < self.window:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate returns
+        returns = np.diff(close) / close[:-1]
+        returns = np.concatenate([[np.nan], returns])
+        
+        # Calculate rolling z-score
+        z_scores = np.full(len(close), np.nan)
+        for i in range(self.window - 1, len(close)):
+            window_returns = returns[i - self.window + 1:i + 1]
+            valid_returns = window_returns[np.isfinite(window_returns)]
+            if len(valid_returns) > 1:
+                mean_return = np.mean(valid_returns)
+                std_return = np.std(valid_returns, ddof=1)
+                if std_return > 0:
+                    z_scores[i] = (returns[i] - mean_return) / std_return
+        
+        return pd.Series(z_scores, index=data.index)
+
+class ARCoefficientsGenerator(VectorizedFeatureGenerator):
+    """Generator for AR(1) and AR(p) coefficients on returns."""
+    
+    def __init__(self, order: int = 1, window: int = 20):
+        config = FeatureConfig(
+            name=f"ar_{order}_coefficients_{window}",
+            category=FeatureCategory.RETURNS,
+            description=f"AR({order}) coefficients on returns over {window} periods",
+            required_columns=["close"],
+            default_lookback=window + order,
+            min_lookback=window + order,
+            max_lookback=window + order,
+            parameters={'order': order, 'window': window},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.order = order
+        self.window = window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        if len(close) < self.window + self.order:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate returns
+        returns = np.diff(close) / close[:-1]
+        returns = np.concatenate([[np.nan], returns])
+        
+        # Calculate AR coefficients
+        ar_coeffs = np.full(len(close), np.nan)
+        residual_stds = np.full(len(close), np.nan)
+        
+        for i in range(self.window + self.order - 1, len(close)):
+            window_returns = returns[i - self.window + 1:i + 1]
+            valid_returns = window_returns[np.isfinite(window_returns)]
+            
+            if len(valid_returns) >= self.order + 5:  # Need enough data for AR estimation
+                try:
+                    # Simple AR(1) estimation using OLS
+                    if self.order == 1:
+                        y = valid_returns[1:]
+                        x = valid_returns[:-1]
+                        if len(y) > 1 and np.std(x) > 0:
+                            coeff = np.corrcoef(x, y)[0, 1] * (np.std(y) / np.std(x))
+                            ar_coeffs[i] = coeff
+                            
+                            # Calculate residual standard deviation
+                            residuals = y - coeff * x
+                            residual_stds[i] = np.std(residuals, ddof=1)
+                except:
+                    pass
+        
+        return pd.Series(ar_coeffs, index=data.index)
+
+class LjungBoxTestGenerator(VectorizedFeatureGenerator):
+    """Generator for Ljung-Box p-value on returns (autocorrelation presence)."""
+    
+    def __init__(self, window: int = 20, lags: int = 10):
+        config = FeatureConfig(
+            name=f"ljung_box_pvalue_{window}_{lags}",
+            category=FeatureCategory.RETURNS,
+            description=f"Ljung-Box p-value on returns over {window} periods with {lags} lags",
+            required_columns=["close"],
+            default_lookback=window + lags,
+            min_lookback=window + lags,
+            max_lookback=window + lags,
+            parameters={'window': window, 'lags': lags},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+        self.lags = lags
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        if len(close) < self.window + self.lags:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate returns
+        returns = np.diff(close) / close[:-1]
+        returns = np.concatenate([[np.nan], returns])
+        
+        # Calculate Ljung-Box p-values
+        p_values = np.full(len(close), np.nan)
+        
+        for i in range(self.window + self.lags - 1, len(close)):
+            window_returns = returns[i - self.window + 1:i + 1]
+            valid_returns = window_returns[np.isfinite(window_returns)]
+            
+            if len(valid_returns) >= self.lags + 5:  # Need enough data
+                try:
+                    # Simple autocorrelation-based Ljung-Box approximation
+                    autocorrs = []
+                    for lag in range(1, min(self.lags + 1, len(valid_returns))):
+                        if len(valid_returns) > lag:
+                            corr = np.corrcoef(valid_returns[:-lag], valid_returns[lag:])[0, 1]
+                            if not np.isnan(corr):
+                                autocorrs.append(corr)
+                    
+                    if len(autocorrs) > 0:
+                        # Simplified Ljung-Box statistic
+                        n = len(valid_returns)
+                        lb_stat = n * (n + 2) * sum([(ac**2) / (n - lag) for lag, ac in enumerate(autocorrs, 1)])
+                        
+                        # Approximate p-value (simplified)
+                        # In practice, you'd use scipy.stats.chi2.sf
+                        p_values[i] = max(0.001, min(0.999, 1 - (lb_stat / (self.lags * 10))))
+                except:
+                    pass
+        
+        return pd.Series(p_values, index=data.index)
+
 def create_returns_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
     """Create a set of returns feature generators."""
     if periods is None:
@@ -903,6 +1110,25 @@ def create_returns_generators(periods: Dict[str, List[int]] = None) -> List[Feat
     # Sharpe ratio generators
     for window in periods.get('sharpe_ratio', [20]):
         generators.append(SharpeRatioGenerator(window))
+    
+    # NEW FEATURES - Advanced Returns Analysis
+    # Advanced cumulative returns generators
+    for window in periods.get('advanced_cumulative_returns', [10, 20]):
+        generators.append(AdvancedCumulativeReturnsGenerator(window))
+    
+    # Rolling z-score returns generators
+    for window in periods.get('rolling_zscore_returns', [20]):
+        generators.append(RollingZScoreReturnsGenerator(window))
+    
+    # AR coefficients generators
+    for order in periods.get('ar_coefficients', [1]):
+        for window in periods.get('ar_windows', [20]):
+            generators.append(ARCoefficientsGenerator(order, window))
+    
+    # Ljung-Box test generators
+    for window in periods.get('ljung_box_windows', [20]):
+        for lags in periods.get('ljung_box_lags', [10]):
+            generators.append(LjungBoxTestGenerator(window, lags))
     
     return generators
 

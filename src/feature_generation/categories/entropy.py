@@ -804,6 +804,413 @@ class RegimeEntropyGenerator(VectorizedFeatureGenerator):
         # OPTIMIZED: Use vectorized entropy calculation instead of rolling apply
         return calculate_vectorized_entropy(regime, self.window)
 
+# NEW FEATURES - Advanced Entropy Analysis
+
+class ShannonEntropyGenerator(VectorizedFeatureGenerator):
+    """Generator for Shannon entropy of discretized returns."""
+    
+    def __init__(self, window: int = 20, q_bins: int = 10):
+        config = FeatureConfig(
+            name=f"shannon_entropy_{window}_{q_bins}",
+            category=FeatureCategory.ENTROPY,
+            description=f"Shannon entropy of discretized returns over {window} periods with {q_bins} bins",
+            required_columns=["close"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'window': window, 'q_bins': q_bins},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+        self.q_bins = q_bins
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        if len(close) < self.window + 1:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate returns
+        returns = np.diff(close) / close[:-1]
+        returns = np.concatenate([[np.nan], returns])
+        
+        # Calculate Shannon entropy
+        shannon_entropy = np.full(len(close), np.nan)
+        for i in range(self.window, len(close)):
+            window_returns = returns[i - self.window + 1:i + 1]
+            valid_returns = window_returns[np.isfinite(window_returns)]
+            
+            if len(valid_returns) > 1:
+                # Discretize returns into q_bins
+                bins = np.linspace(np.min(valid_returns), np.max(valid_returns), self.q_bins + 1)
+                digitized = np.digitize(valid_returns, bins) - 1
+                digitized = np.clip(digitized, 0, self.q_bins - 1)
+                
+                # Calculate probabilities
+                counts = np.bincount(digitized, minlength=self.q_bins)
+                probabilities = counts / len(valid_returns)
+                
+                # Calculate Shannon entropy
+                entropy = 0
+                for p in probabilities:
+                    if p > 0:
+                        entropy -= p * np.log2(p)
+                
+                shannon_entropy[i] = entropy
+        
+        return pd.Series(shannon_entropy, index=data.index)
+
+class PermutationEntropyGenerator(VectorizedFeatureGenerator):
+    """Generator for permutation entropy on returns."""
+    
+    def __init__(self, window: int = 20, embedding_dim: int = 3, delay: int = 1):
+        config = FeatureConfig(
+            name=f"permutation_entropy_{window}_{embedding_dim}_{delay}",
+            category=FeatureCategory.ENTROPY,
+            description=f"Permutation entropy over {window} periods (embedding dim {embedding_dim}, delay {delay})",
+            required_columns=["close"],
+            default_lookback=window + embedding_dim * delay,
+            min_lookback=window + embedding_dim * delay,
+            max_lookback=window + embedding_dim * delay,
+            parameters={'window': window, 'embedding_dim': embedding_dim, 'delay': delay},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+        self.embedding_dim = embedding_dim
+        self.delay = delay
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        if len(close) < self.window + self.embedding_dim * self.delay:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate returns
+        returns = np.diff(close) / close[:-1]
+        returns = np.concatenate([[np.nan], returns])
+        
+        # Calculate permutation entropy
+        perm_entropy = np.full(len(close), np.nan)
+        for i in range(self.window + self.embedding_dim * self.delay - 1, len(close)):
+            window_returns = returns[i - self.window + 1:i + 1]
+            valid_returns = window_returns[np.isfinite(window_returns)]
+            
+            if len(valid_returns) >= self.embedding_dim:
+                # Create embedding vectors
+                vectors = []
+                for j in range(len(valid_returns) - (self.embedding_dim - 1) * self.delay):
+                    vector = valid_returns[j:j + self.embedding_dim * self.delay:self.delay]
+                    if len(vector) == self.embedding_dim:
+                        vectors.append(vector)
+                
+                if len(vectors) > 0:
+                    # Calculate permutation patterns
+                    patterns = []
+                    for vector in vectors:
+                        # Get permutation pattern
+                        pattern = np.argsort(vector)
+                        patterns.append(tuple(pattern))
+                    
+                    # Calculate probabilities
+                    unique_patterns, counts = np.unique(patterns, return_counts=True)
+                    probabilities = counts / len(patterns)
+                    
+                    # Calculate permutation entropy
+                    entropy = 0
+                    for p in probabilities:
+                        if p > 0:
+                            entropy -= p * np.log2(p)
+                    
+                    perm_entropy[i] = entropy
+        
+        return pd.Series(perm_entropy, index=data.index)
+
+class SampleEntropyGenerator(VectorizedFeatureGenerator):
+    """Generator for sample entropy on returns."""
+    
+    def __init__(self, window: int = 20, m: int = 2, r: float = 0.2):
+        config = FeatureConfig(
+            name=f"sample_entropy_{window}_{m}_{r}",
+            category=FeatureCategory.ENTROPY,
+            description=f"Sample entropy over {window} periods (m={m}, r={r})",
+            required_columns=["close"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'window': window, 'm': m, 'r': r},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+        self.m = m
+        self.r = r
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        if len(close) < self.window + self.m:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate returns
+        returns = np.diff(close) / close[:-1]
+        returns = np.concatenate([[np.nan], returns])
+        
+        # Calculate sample entropy
+        sample_entropy = np.full(len(close), np.nan)
+        for i in range(self.window + self.m - 1, len(close)):
+            window_returns = returns[i - self.window + 1:i + 1]
+            valid_returns = window_returns[np.isfinite(window_returns)]
+            
+            if len(valid_returns) >= self.m + 1:
+                # Calculate sample entropy
+                entropy = self._calculate_sample_entropy(valid_returns, self.m, self.r)
+                sample_entropy[i] = entropy
+        
+        return pd.Series(sample_entropy, index=data.index)
+    
+    def _calculate_sample_entropy(self, data: np.ndarray, m: int, r: float) -> float:
+        """Calculate sample entropy."""
+        N = len(data)
+        if N < m + 1:
+            return 0.0
+        
+        # Create template vectors
+        def _maxdist(xi, xj, m):
+            return max([abs(ua - va) for ua, va in zip(xi, xj)])
+        
+        def _get_template_vectors(data, m):
+            return [data[i:i + m] for i in range(N - m + 1)]
+        
+        # Calculate phi(m) and phi(m+1)
+        def _calculate_phi(data, m):
+            template_vectors = _get_template_vectors(data, m)
+            N = len(template_vectors)
+            C = np.zeros(N)
+            
+            for i in range(N):
+                template_i = template_vectors[i]
+                for j in range(N):
+                    if i != j:
+                        if _maxdist(template_i, template_vectors[j], m) <= r:
+                            C[i] += 1
+            
+            phi = np.sum(np.log(C / (N - 1))) / N
+            return phi
+        
+        phi_m = _calculate_phi(data, m)
+        phi_m1 = _calculate_phi(data, m + 1)
+        
+        return phi_m - phi_m1
+
+class LempelZivComplexityGenerator(VectorizedFeatureGenerator):
+    """Generator for Lempel-Ziv complexity of up/down sequence."""
+    
+    def __init__(self, window: int = 20):
+        config = FeatureConfig(
+            name=f"lempel_ziv_complexity_{window}",
+            category=FeatureCategory.ENTROPY,
+            description=f"Lempel-Ziv complexity of up/down sequence over {window} periods",
+            required_columns=["close"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'window': window},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        if len(close) < self.window + 1:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate returns and up/down sequence
+        returns = np.diff(close) / close[:-1]
+        up_down = np.where(returns > 0, 1, 0)  # 1 for up, 0 for down
+        up_down = np.concatenate([[0], up_down])  # Add initial value
+        
+        # Calculate Lempel-Ziv complexity
+        lz_complexity = np.full(len(close), np.nan)
+        for i in range(self.window, len(close)):
+            sequence = up_down[i - self.window + 1:i + 1]
+            complexity = self._calculate_lz_complexity(sequence)
+            lz_complexity[i] = complexity
+        
+        return pd.Series(lz_complexity, index=data.index)
+    
+    def _calculate_lz_complexity(self, sequence: np.ndarray) -> float:
+        """Calculate Lempel-Ziv complexity."""
+        if len(sequence) == 0:
+            return 0.0
+        
+        # Convert to string for LZ algorithm
+        s = ''.join(map(str, sequence))
+        n = len(s)
+        
+        # Lempel-Ziv complexity calculation
+        c = 1
+        i = 0
+        while i + c <= n:
+            substring = s[i:i + c]
+            if substring in s[:i + c - 1]:
+                c += 1
+            else:
+                i += c
+                c = 1
+        
+        return c
+
+class EntropyRateGenerator(VectorizedFeatureGenerator):
+    """Generator for entropy rate of 2-state Markov chain for sign(returns)."""
+    
+    def __init__(self, window: int = 20):
+        config = FeatureConfig(
+            name=f"entropy_rate_{window}",
+            category=FeatureCategory.ENTROPY,
+            description=f"Entropy rate of 2-state Markov chain over {window} periods",
+            required_columns=["close"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'window': window},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        if len(close) < self.window + 1:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate returns and signs
+        returns = np.diff(close) / close[:-1]
+        signs = np.sign(returns)
+        signs = np.concatenate([[0], signs])  # Add initial value
+        
+        # Calculate entropy rate
+        entropy_rate = np.full(len(close), np.nan)
+        for i in range(self.window, len(close)):
+            sequence = signs[i - self.window + 1:i + 1]
+            rate = self._calculate_entropy_rate(sequence)
+            entropy_rate[i] = rate
+        
+        return pd.Series(entropy_rate, index=data.index)
+    
+    def _calculate_entropy_rate(self, sequence: np.ndarray) -> float:
+        """Calculate entropy rate of 2-state Markov chain."""
+        if len(sequence) < 2:
+            return 0.0
+        
+        # Count transitions
+        transitions = {
+            (1, 1): 0, (1, -1): 0, (1, 0): 0,
+            (-1, 1): 0, (-1, -1): 0, (-1, 0): 0,
+            (0, 1): 0, (0, -1): 0, (0, 0): 0
+        }
+        
+        for i in range(len(sequence) - 1):
+            transition = (int(sequence[i]), int(sequence[i + 1]))
+            if transition in transitions:
+                transitions[transition] += 1
+        
+        # Calculate transition probabilities
+        total_transitions = sum(transitions.values())
+        if total_transitions == 0:
+            return 0.0
+        
+        # Calculate entropy rate
+        entropy_rate = 0.0
+        for count in transitions.values():
+            if count > 0:
+                p = count / total_transitions
+                entropy_rate -= p * np.log2(p)
+        
+        return entropy_rate
+
+class SpectralEntropyGenerator(VectorizedFeatureGenerator):
+    """Generator for spectral entropy of returns (normalized PSD)."""
+    
+    def __init__(self, window: int = 20):
+        config = FeatureConfig(
+            name=f"spectral_entropy_{window}",
+            category=FeatureCategory.ENTROPY,
+            description=f"Spectral entropy of returns over {window} periods",
+            required_columns=["close"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'window': window},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        if len(close) < self.window + 1:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate returns
+        returns = np.diff(close) / close[:-1]
+        returns = np.concatenate([[np.nan], returns])
+        
+        # Calculate spectral entropy
+        spectral_entropy = np.full(len(close), np.nan)
+        for i in range(self.window, len(close)):
+            window_returns = returns[i - self.window + 1:i + 1]
+            valid_returns = window_returns[np.isfinite(window_returns)]
+            
+            if len(valid_returns) > 4:  # Need enough data for FFT
+                entropy = self._calculate_spectral_entropy(valid_returns)
+                spectral_entropy[i] = entropy
+        
+        return pd.Series(spectral_entropy, index=data.index)
+    
+    def _calculate_spectral_entropy(self, data: np.ndarray) -> float:
+        """Calculate spectral entropy from power spectral density."""
+        try:
+            # Calculate FFT
+            fft = np.fft.fft(data)
+            psd = np.abs(fft) ** 2
+            
+            # Normalize PSD
+            psd = psd / np.sum(psd)
+            
+            # Calculate spectral entropy
+            entropy = 0.0
+            for p in psd:
+                if p > 0:
+                    entropy -= p * np.log2(p)
+            
+            return entropy
+        except:
+            return 0.0
+
 def create_default_entropy_generators() -> List[FeatureGenerator]:
     """Create default entropy feature generators."""
     windows = [5, 10, 20]
@@ -826,6 +1233,36 @@ def create_default_entropy_generators() -> List[FeatureGenerator]:
                 VolumeEntropyMAGenerator(window, ma_window),
                 ReturnEntropyMAGenerator(window, ma_window),
             ])
+    
+    # NEW FEATURES - Advanced Entropy Analysis
+    # Shannon entropy generators
+    for window in [20]:
+        for q_bins in [10]:
+            generators.append(ShannonEntropyGenerator(window, q_bins))
+    
+    # Permutation entropy generators
+    for window in [20]:
+        for embedding_dim in [3]:
+            for delay in [1]:
+                generators.append(PermutationEntropyGenerator(window, embedding_dim, delay))
+    
+    # Sample entropy generators
+    for window in [20]:
+        for m in [2]:
+            for r in [0.2]:
+                generators.append(SampleEntropyGenerator(window, m, r))
+    
+    # Lempel-Ziv complexity generators
+    for window in [20]:
+        generators.append(LempelZivComplexityGenerator(window))
+    
+    # Entropy rate generators
+    for window in [20]:
+        generators.append(EntropyRateGenerator(window))
+    
+    # Spectral entropy generators
+    for window in [20]:
+        generators.append(SpectralEntropyGenerator(window))
     
     return generators
 

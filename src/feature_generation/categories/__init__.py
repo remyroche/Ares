@@ -32,6 +32,11 @@ from .returns import (
     ReturnsKurtosisGenerator,
     ReturnGenerator,
     SharpeRatioGenerator,
+    # NEW FEATURES - Advanced Returns Analysis
+    AdvancedCumulativeReturnsGenerator,
+    RollingZScoreReturnsGenerator,
+    ARCoefficientsGenerator,
+    LjungBoxTestGenerator,
     create_returns_generators,
     create_default_returns_generators
 )
@@ -46,11 +51,38 @@ from .momentum import (
     AdvancedMomentumGenerator,
     PriceAccelerationGenerator,
     VolumeMomentumGenerator,
+    # NEW FEATURES - Advanced Momentum Analysis
+    MomentumEndpointsGenerator,
+    MACDDeltaGenerator,
+    RSIZScoreGenerator,
+    StochasticKDGenerator,
+    DonchianChannelGenerator,
     create_momentum_generators,
     create_default_momentum_generators
 )
-from .volume import VolumeFeatureGenerator, create_default_volume_generators
-from .volatility import VolatilityFeatureGenerator
+from .volume import (
+    VolumeFeatureGenerator,
+    # NEW FEATURES - Enhanced Volume Analysis
+    VolumeZScoreGenerator,
+    VolumeMARatiosGenerator,
+    CMFGenerator,
+    VWAPDeviationsGenerator,
+    OrderFlowImbalanceGenerator,
+    VolumeVolatilityElasticityGenerator,
+    create_default_volume_generators
+)
+from .volatility import (
+    VolatilityFeatureGenerator,
+    # NEW FEATURES - Advanced Volatility Analysis
+    RealizedVolatilityGenerator,
+    ParkinsonVolatilityGenerator,
+    GarmanKlassVolatilityGenerator,
+    RogersSatchellVolatilityGenerator,
+    VolOfVolGenerator,
+    DownsideSemivolGenerator,
+    create_volatility_generators,
+    create_default_volatility_generators
+)
 from .normalization import (
     NormalizationFeatureGenerator,
     RollingZScoreGenerator,
@@ -126,6 +158,13 @@ from .entropy import (
     BollingerBandsEntropyGenerator,
     CrossAssetEntropyGenerator,
     RegimeEntropyGenerator,
+    # NEW FEATURES - Advanced Entropy Analysis
+    ShannonEntropyGenerator,
+    PermutationEntropyGenerator,
+    SampleEntropyGenerator,
+    LempelZivComplexityGenerator,
+    EntropyRateGenerator,
+    SpectralEntropyGenerator,
     create_entropy_generators,
     create_default_entropy_generators
 )
@@ -153,6 +192,26 @@ from .cross_timeframe import create_default_cross_timeframe_generators
 from .legacy import create_default_legacy_generators
 from .time import create_default_time_generators
 
+# NEW CATEGORIES - Advanced Statistical and Spectral/Wavelet
+from .advanced_statistical import (
+    HurstExponentGenerator,
+    JumpIndicatorsGenerator,
+    CVaRGenerator,
+    MaxDrawdownGenerator,
+    RollingSkewnessKurtosisGenerator,
+    TrendPersistenceGenerator,
+    create_default_advanced_statistical_generators
+)
+
+from .spectral_wavelet import (
+    WaveletEnergyGenerator,
+    BandLimitedVolatilityGenerator,
+    CycleLengthGenerator,
+    FractalDimensionGenerator,
+    DFASlopesGenerator,
+    create_default_spectral_wavelet_generators
+)
+
 # Regime feature integration
 from .regime_feature_integration import (
     RegimeFeatureIntegration,
@@ -172,6 +231,11 @@ __all__ = [
     "ReturnsKurtosisGenerator",
     "ReturnGenerator",
     "SharpeRatioGenerator",
+    # NEW FEATURES - Advanced Returns Analysis
+    "AdvancedCumulativeReturnsGenerator",
+    "RollingZScoreReturnsGenerator",
+    "ARCoefficientsGenerator",
+    "LjungBoxTestGenerator",
     "MomentumFeatureGenerator",
     "RSIGenerator",
     "MACDGenerator",
@@ -179,8 +243,28 @@ __all__ = [
     "WilliamsRGenerator",
     "MomentumOscillatorGenerator",
     "RateOfChangeGenerator",
+    # NEW FEATURES - Advanced Momentum Analysis
+    "MomentumEndpointsGenerator",
+    "MACDDeltaGenerator",
+    "RSIZScoreGenerator",
+    "StochasticKDGenerator",
+    "DonchianChannelGenerator",
     "VolumeFeatureGenerator",
+    # NEW FEATURES - Enhanced Volume Analysis
+    "VolumeZScoreGenerator",
+    "VolumeMARatiosGenerator",
+    "CMFGenerator",
+    "VWAPDeviationsGenerator",
+    "OrderFlowImbalanceGenerator",
+    "VolumeVolatilityElasticityGenerator",
     "VolatilityFeatureGenerator",
+    # NEW FEATURES - Advanced Volatility Analysis
+    "RealizedVolatilityGenerator",
+    "ParkinsonVolatilityGenerator",
+    "GarmanKlassVolatilityGenerator",
+    "RogersSatchellVolatilityGenerator",
+    "VolOfVolGenerator",
+    "DownsideSemivolGenerator",
     "GARCHFeatureGenerator",
     "NormalizationFeatureGenerator",
     "RollingZScoreGenerator",
@@ -244,6 +328,13 @@ __all__ = [
     "BollingerBandsEntropyGenerator",
     "CrossAssetEntropyGenerator",
     "RegimeEntropyGenerator",
+    # NEW FEATURES - Advanced Entropy Analysis
+    "ShannonEntropyGenerator",
+    "PermutationEntropyGenerator",
+    "SampleEntropyGenerator",
+    "LempelZivComplexityGenerator",
+    "EntropyRateGenerator",
+    "SpectralEntropyGenerator",
     "create_entropy_generators",
     
     # Legacy interaction generators
@@ -272,6 +363,20 @@ __all__ = [
     "create_default_cross_timeframe_generators",
     "create_default_legacy_generators",
     "create_default_time_generators",
+    # NEW CATEGORIES - Advanced Statistical and Spectral/Wavelet
+    "HurstExponentGenerator",
+    "JumpIndicatorsGenerator",
+    "CVaRGenerator",
+    "MaxDrawdownGenerator",
+    "RollingSkewnessKurtosisGenerator",
+    "TrendPersistenceGenerator",
+    "create_default_advanced_statistical_generators",
+    "WaveletEnergyGenerator",
+    "BandLimitedVolatilityGenerator",
+    "CycleLengthGenerator",
+    "FractalDimensionGenerator",
+    "DFASlopesGenerator",
+    "create_default_spectral_wavelet_generators",
     # Regime feature integration
     "RegimeFeatureIntegration",
     "RegimeFeatureConfig",

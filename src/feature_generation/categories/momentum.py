@@ -805,6 +805,296 @@ class RateOfChangeGenerator(VectorizedFeatureGenerator):
 
         return roc_series
 
+# NEW FEATURES - Advanced Momentum Analysis
+
+class MomentumEndpointsGenerator(VectorizedFeatureGenerator):
+    """Generator for momentum endpoints - price distance to moving averages as percentage."""
+    
+    def __init__(self, ma_period: int = 20, ma_type: str = 'SMA'):
+        config = FeatureConfig(
+            name=f"momentum_endpoints_{ma_type.lower()}_{ma_period}",
+            category=FeatureCategory.MOMENTUM,
+            description=f"Price distance to {ma_type} as percentage over {ma_period} periods",
+            required_columns=["close"],
+            default_lookback=ma_period,
+            min_lookback=ma_period,
+            max_lookback=ma_period,
+            parameters={'ma_period': ma_period, 'ma_type': ma_type},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.ma_period = ma_period
+        self.ma_type = ma_type
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        if len(close) < self.ma_period:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate moving average
+        if self.ma_type.upper() == 'SMA':
+            ma = self._calculate_sma(close, self.ma_period)
+        elif self.ma_type.upper() == 'EMA':
+            ma = self._calculate_ema(close, self.ma_period)
+        else:  # KAMA
+            ma = self._calculate_kama(close, self.ma_period)
+        
+        # Calculate percentage distance
+        momentum_endpoints = np.full(len(close), np.nan)
+        for i in range(self.ma_period - 1, len(close)):
+            if not np.isnan(ma[i]) and ma[i] != 0:
+                momentum_endpoints[i] = ((close[i] - ma[i]) / ma[i]) * 100
+        
+        return pd.Series(momentum_endpoints, index=data.index)
+    
+    def _calculate_sma(self, prices: np.ndarray, period: int) -> np.ndarray:
+        """Calculate Simple Moving Average."""
+        sma = np.full(len(prices), np.nan)
+        for i in range(period - 1, len(prices)):
+            sma[i] = np.mean(prices[i - period + 1:i + 1])
+        return sma
+    
+    def _calculate_ema(self, prices: np.ndarray, period: int) -> np.ndarray:
+        """Calculate Exponential Moving Average."""
+        alpha = 2.0 / (period + 1)
+        ema = np.full(len(prices), np.nan)
+        ema[period - 1] = np.mean(prices[:period])
+        for i in range(period, len(prices)):
+            ema[i] = alpha * prices[i] + (1 - alpha) * ema[i - 1]
+        return ema
+    
+    def _calculate_kama(self, prices: np.ndarray, period: int) -> np.ndarray:
+        """Calculate Kaufman's Adaptive Moving Average (simplified)."""
+        # Simplified KAMA implementation
+        return self._calculate_ema(prices, period)
+
+class MACDDeltaGenerator(VectorizedFeatureGenerator):
+    """Generator for MACD delta and signal crossover flags."""
+    
+    def __init__(self, fast: int = 12, slow: int = 26, signal: int = 9):
+        config = FeatureConfig(
+            name=f"macd_delta_{fast}_{slow}_{signal}",
+            category=FeatureCategory.MOMENTUM,
+            description=f"MACD delta and signal crossover flags ({fast}, {slow}, {signal})",
+            required_columns=["close"],
+            default_lookback=slow + signal,
+            min_lookback=slow + signal,
+            max_lookback=slow + signal,
+            parameters={'fast': fast, 'slow': slow, 'signal': signal},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.fast = fast
+        self.slow = slow
+        self.signal = signal
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        if len(close) < self.slow + self.signal:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate MACD
+        ema_fast = self._calculate_ema(close, self.fast)
+        ema_slow = self._calculate_ema(close, self.slow)
+        macd_line = ema_fast - ema_slow
+        
+        # Calculate signal line
+        signal_line = self._calculate_ema(macd_line, self.signal)
+        
+        # Calculate MACD delta
+        macd_delta = macd_line - signal_line
+        
+        # Calculate crossover flags
+        crossover_flags = np.zeros(len(close))
+        for i in range(1, len(close)):
+            if not (np.isnan(macd_line[i]) or np.isnan(signal_line[i]) or 
+                   np.isnan(macd_line[i-1]) or np.isnan(signal_line[i-1])):
+                # Bullish crossover
+                if macd_line[i-1] <= signal_line[i-1] and macd_line[i] > signal_line[i]:
+                    crossover_flags[i] = 1
+                # Bearish crossover
+                elif macd_line[i-1] >= signal_line[i-1] and macd_line[i] < signal_line[i]:
+                    crossover_flags[i] = -1
+        
+        return pd.Series(macd_delta, index=data.index)
+    
+    def _calculate_ema(self, prices: np.ndarray, period: int) -> np.ndarray:
+        """Calculate Exponential Moving Average."""
+        alpha = 2.0 / (period + 1)
+        ema = np.full(len(prices), np.nan)
+        ema[period - 1] = np.mean(prices[:period])
+        for i in range(period, len(prices)):
+            ema[i] = alpha * prices[i] + (1 - alpha) * ema[i - 1]
+        return ema
+
+class RSIZScoreGenerator(VectorizedFeatureGenerator):
+    """Generator for RSI z-score (enhancement to existing RSI)."""
+    
+    def __init__(self, rsi_period: int = 14, zscore_window: int = 20):
+        config = FeatureConfig(
+            name=f"rsi_zscore_{rsi_period}_{zscore_window}",
+            category=FeatureCategory.MOMENTUM,
+            description=f"RSI z-score over {zscore_window} periods (RSI period {rsi_period})",
+            required_columns=["close"],
+            default_lookback=rsi_period + zscore_window,
+            min_lookback=rsi_period + zscore_window,
+            max_lookback=rsi_period + zscore_window,
+            parameters={'rsi_period': rsi_period, 'zscore_window': zscore_window},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.rsi_period = rsi_period
+        self.zscore_window = zscore_window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        if len(close) < self.rsi_period + self.zscore_window:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate RSI
+        rsi = self._calculate_rsi(close, self.rsi_period)
+        
+        # Calculate RSI z-score
+        rsi_zscore = np.full(len(close), np.nan)
+        for i in range(self.rsi_period + self.zscore_window - 1, len(close)):
+            window_rsi = rsi[i - self.zscore_window + 1:i + 1]
+            valid_rsi = window_rsi[np.isfinite(window_rsi)]
+            if len(valid_rsi) > 1:
+                mean_rsi = np.mean(valid_rsi)
+                std_rsi = np.std(valid_rsi, ddof=1)
+                if std_rsi > 0:
+                    rsi_zscore[i] = (rsi[i] - mean_rsi) / std_rsi
+        
+        return pd.Series(rsi_zscore, index=data.index)
+    
+    def _calculate_rsi(self, prices: np.ndarray, period: int) -> np.ndarray:
+        """Calculate RSI."""
+        if len(prices) < period + 1:
+            return np.full(len(prices), np.nan)
+        
+        delta = np.diff(prices, prepend=prices[0])
+        gains = np.where(delta > 0, delta, 0)
+        losses = np.where(delta < 0, -delta, 0)
+        
+        avg_gains = self._rolling_mean(gains, period)
+        avg_losses = self._rolling_mean(losses, period)
+        
+        rs = np.divide(avg_gains, avg_losses, out=np.ones_like(avg_gains), where=avg_losses!=0)
+        rsi = 100 - (100 / (1 + rs))
+        
+        return rsi
+    
+    def _rolling_mean(self, data: np.ndarray, window: int) -> np.ndarray:
+        """Calculate rolling mean."""
+        if len(data) < window:
+            return np.full(len(data), np.nan)
+        
+        rolling_mean = np.full(len(data), np.nan)
+        for i in range(window - 1, len(data)):
+            rolling_mean[i] = np.mean(data[i - window + 1:i + 1])
+        return rolling_mean
+
+class StochasticKDGenerator(VectorizedFeatureGenerator):
+    """Generator for Stochastic %K and %D oscillators."""
+    
+    def __init__(self, k_period: int = 14, d_period: int = 3):
+        config = FeatureConfig(
+            name=f"stochastic_kd_{k_period}_{d_period}",
+            category=FeatureCategory.MOMENTUM,
+            description=f"Stochastic %K and %D oscillators ({k_period}, {d_period})",
+            required_columns=["close", "high", "low"],
+            default_lookback=k_period + d_period,
+            min_lookback=k_period + d_period,
+            max_lookback=k_period + d_period,
+            parameters={'k_period': k_period, 'd_period': d_period},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.k_period = k_period
+        self.d_period = d_period
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        high = data['high'].values
+        low = data['low'].values
+        
+        if len(close) < self.k_period + self.d_period:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate %K
+        k_percent = np.full(len(close), np.nan)
+        for i in range(self.k_period - 1, len(close)):
+            period_high = np.max(high[i - self.k_period + 1:i + 1])
+            period_low = np.min(low[i - self.k_period + 1:i + 1])
+            if period_high != period_low:
+                k_percent[i] = ((close[i] - period_low) / (period_high - period_low)) * 100
+        
+        # Calculate %D (smoothed %K)
+        d_percent = np.full(len(close), np.nan)
+        for i in range(self.k_period + self.d_period - 2, len(close)):
+            k_window = k_percent[i - self.d_period + 1:i + 1]
+            valid_k = k_window[np.isfinite(k_window)]
+            if len(valid_k) > 0:
+                d_percent[i] = np.mean(valid_k)
+        
+        return pd.Series(k_percent, index=data.index)
+
+class DonchianChannelGenerator(VectorizedFeatureGenerator):
+    """Generator for Donchian channel %b (position within rolling min-max)."""
+    
+    def __init__(self, period: int = 20):
+        config = FeatureConfig(
+            name=f"donchian_channel_{period}",
+            category=FeatureCategory.MOMENTUM,
+            description=f"Donchian channel %b over {period} periods",
+            required_columns=["close", "high", "low"],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={'period': period},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.period = period
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        high = data['high'].values
+        low = data['low'].values
+        
+        if len(close) < self.period:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate Donchian channel %b
+        donchian_b = np.full(len(close), np.nan)
+        for i in range(self.period - 1, len(close)):
+            period_high = np.max(high[i - self.period + 1:i + 1])
+            period_low = np.min(low[i - self.period + 1:i + 1])
+            if period_high != period_low:
+                donchian_b[i] = (close[i] - period_low) / (period_high - period_low)
+        
+        return pd.Series(donchian_b, index=data.index)
+
 def create_momentum_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
     """Create a set of momentum feature generators."""
     if periods is None:
@@ -846,6 +1136,32 @@ def create_momentum_generators(periods: Dict[str, List[int]] = None) -> List[Fea
     # ROC generators
     for period in periods.get('roc', [10]):
         generators.append(RateOfChangeGenerator(period))
+    
+    # NEW FEATURES - Advanced Momentum Analysis
+    # Momentum endpoints generators
+    for ma_type in periods.get('momentum_endpoints_types', ['SMA', 'EMA']):
+        for ma_period in periods.get('momentum_endpoints_periods', [20]):
+            generators.append(MomentumEndpointsGenerator(ma_period, ma_type))
+    
+    # MACD delta generators
+    for fast in periods.get('macd_delta_fast', [12]):
+        for slow in periods.get('macd_delta_slow', [26]):
+            for signal in periods.get('macd_delta_signal', [9]):
+                generators.append(MACDDeltaGenerator(fast, slow, signal))
+    
+    # RSI z-score generators
+    for rsi_period in periods.get('rsi_zscore_periods', [14]):
+        for zscore_window in periods.get('rsi_zscore_windows', [20]):
+            generators.append(RSIZScoreGenerator(rsi_period, zscore_window))
+    
+    # Stochastic KD generators
+    for k_period in periods.get('stochastic_k_periods', [14]):
+        for d_period in periods.get('stochastic_d_periods', [3]):
+            generators.append(StochasticKDGenerator(k_period, d_period))
+    
+    # Donchian channel generators
+    for period in periods.get('donchian_periods', [20]):
+        generators.append(DonchianChannelGenerator(period))
     
     return generators
 

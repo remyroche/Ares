@@ -90,18 +90,35 @@ except (ImportError, SyntaxError):
     LabelDefinitionType = None
     create_enhanced_analyst_labeler = None
 
+# Import advanced filters for 15m timeframe
+try:
+    from src.training.steps.pre_training.profit_labeling.advanced_filters_15m import (
+        AdvancedFilters15m,
+        AdvancedFiltersConfig,
+        FilterResult,
+        apply_advanced_filters_15m,
+    )
+    ADVANCED_FILTERS_AVAILABLE = True
+except (ImportError, SyntaxError):
+    ADVANCED_FILTERS_AVAILABLE = False
+    AdvancedFilters15m = None
+    AdvancedFiltersConfig = None
+    FilterResult = None
+    apply_advanced_filters_15m = None
+
 
 @dataclass
 class AnalystProfitLabelerConfig:
     """Configuration for Analyst profit labeling."""
 
-    # Timeframe settings (Analyst operates on 60m)
-    timeframe: str = "60m"
-    base_period_minutes: int = 60
+    # Timeframe settings (Analyst operates on 15m by default)
+    timeframe: str = "15m"
+    base_period_minutes: int = 15
 
     # Horizon settings for Analyst (strategic decision-making)
     # Horizons are in MINUTES (must be >= timeframe period)
-    horizons: List[int] = field(default_factory=lambda: [60, 120, 240, 360])  # 1h, 2h, 4h, 6h in minutes
+    # Updated for 15m timeframe: 1h, 2h, 4h, 6h, 12h, 24h
+    horizons: List[int] = field(default_factory=lambda: [60, 120, 240, 360, 720, 1440])  # 1h, 2h, 4h, 6h, 12h, 24h in minutes
 
     # Profit targets (percentage) - Realistic for hourly crypto movements after fees
     # ETH typically moves 0.4% per hour on average (0.26% median)
@@ -123,6 +140,10 @@ class AnalystProfitLabelerConfig:
     # Trading direction settings
     enable_long_positions: bool = True   # Include long opportunities (buy when expecting price increase)
     enable_short_positions: bool = False  # Include short opportunities (sell when expecting price decrease)
+
+    # Advanced filtering for 15m timeframe
+    enable_advanced_filters: bool = True
+    advanced_filters_config: Optional[AdvancedFiltersConfig] = None
 
     # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
@@ -270,6 +291,15 @@ class AnalystProfitLabeler:
                 "VolatilityAwareMultiHorizonLabeler is not available. "
                 "Please ensure the profit_labeling module is properly installed."
             )
+        
+        # Initialize advanced filters if available and enabled
+        self.advanced_filters = None
+        if self.config.enable_advanced_filters and ADVANCED_FILTERS_AVAILABLE:
+            filters_config = self.config.advanced_filters_config or AdvancedFiltersConfig()
+            self.advanced_filters = AdvancedFilters15m(filters_config)
+            tprint_info("🔍 Advanced 15m filters initialized")
+        elif self.config.enable_advanced_filters and not ADVANCED_FILTERS_AVAILABLE:
+            tprint_warning("⚠️ Advanced filters requested but not available")
 
         # Create the underlying labeler with Analyst-specific config
         self.labeler = self._create_labeler()
@@ -399,11 +429,47 @@ class AnalystProfitLabeler:
             if regime_assignments is not None:
                 tprint_info(f"📊 Regime assignments provided but not yet integrated into labeling logic")
 
+            # Apply advanced filters if enabled
+            filter_result = None
+            if self.advanced_filters is not None:
+                tprint_info("🔍 Applying advanced 15m filters before labeling")
+                filter_result = self.advanced_filters.apply_filters(data)
+                
+                # Log filter results
+                tprint_info(f"   → Filter eligibility: {filter_result.eligibility_ratio:.1%} ({filter_result.n_eligible_samples}/{filter_result.n_total_samples})")
+                
+                # Apply filter mask to data (optional - can be used to pre-filter data)
+                if filter_result.eligibility_ratio < 0.5:
+                    tprint_warning(f"⚠️ Low filter eligibility: {filter_result.eligibility_ratio:.1%}")
+                else:
+                    tprint_success(f"✅ Filter eligibility good: {filter_result.eligibility_ratio:.1%}")
+
             # Use memory optimization context for label generation
             with memory_checkpoint("analyst_label_generation"):
                 # Generate labels using the underlying labeler
                 # Note: VolatilityAwareMultiHorizonLabeler.generate_labels only takes market_data
                 result = self.labeler.generate_labels(data)
+                
+                # Apply filter mask to results if filters were used
+                if filter_result is not None and hasattr(result, 'labels') and result.labels is not None:
+                    # Apply eligibility mask to labels
+                    if isinstance(result.labels, pd.DataFrame):
+                        result.labels = result.labels[filter_result.eligibility_mask]
+                    
+                    # Apply eligibility mask to confidence scores if available
+                    if hasattr(result, 'confidence_scores') and result.confidence_scores is not None:
+                        if isinstance(result.confidence_scores, pd.DataFrame):
+                            result.confidence_scores = result.confidence_scores[filter_result.eligibility_mask]
+                    
+                    # Apply eligibility mask to eligibility masks if available
+                    if hasattr(result, 'eligibility_masks') and result.eligibility_masks is not None:
+                        if isinstance(result.eligibility_masks, pd.DataFrame):
+                            result.eligibility_masks = result.eligibility_masks[filter_result.eligibility_mask]
+                    
+                    # Update sample counts
+                    result.n_samples = len(result.labels) if hasattr(result.labels, '__len__') else result.n_samples
+                    
+                    tprint_info(f"🔍 Applied filter mask: {result.n_samples} samples after filtering")
 
             # Validate minimum sample count for training
             self._validate_labeling_result(result)
@@ -502,9 +568,17 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                     analyst_config.base_period_minutes = int(analyst_config.timeframe[:-1]) * 60
             
             # Update other parameters
-            for key in ['horizons', 'target_profits', 'min_label_quality', 'min_predictability']:
+            for key in ['horizons', 'target_profits', 'min_label_quality', 'min_predictability', 'enable_advanced_filters']:
                 if key in custom_params:
                     setattr(analyst_config, key, custom_params[key])
+            
+            # Update advanced filters configuration if provided
+            if 'advanced_filters_config' in custom_params and ADVANCED_FILTERS_AVAILABLE:
+                filters_config_dict = custom_params['advanced_filters_config']
+                if isinstance(filters_config_dict, dict):
+                    analyst_config.advanced_filters_config = AdvancedFiltersConfig(**filters_config_dict)
+                elif isinstance(filters_config_dict, AdvancedFiltersConfig):
+                    analyst_config.advanced_filters_config = filters_config_dict
             
             # Store all custom params for the underlying labeler
             analyst_config.custom_params = custom_params

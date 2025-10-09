@@ -17,11 +17,11 @@ analytical_process:
     
   # Analyst Configuration  
   analyst:
-    timeframe: "1h"           # Analyst operates on 1-hour timeframe
+    timeframe: "15m"          # Analyst operates on 15-minute timeframe
     run_frequency: "15m"      # Runs every 15 minutes
-    description: "Strategic decision making (IF we trade) using 1h timeframe data, executed every 15 minutes"
+    description: "Strategic decision making (IF we trade) using 15m timeframe data, executed every 15 minutes"
     data_requirements:
-      min_bars: 12            # Minimum 12 bars (12 hours) for analyst decisions
+      min_bars: 48            # Minimum 48 bars (12 hours) for analyst decisions
       lookback_days: 7        # 7 days of historical data
     model_types:
       - "elastic_net"
@@ -77,7 +77,7 @@ data_pipeline:
   # Data collection frequencies
   data_collection:
     regime_detection_data: "4h"   # Collect 4h data for regime detection
-    analyst_data: "1h"            # Collect 1h data for analyst
+    analyst_data: "15m"           # Collect 15m data for analyst
     tactician_data: "15m"         # Collect 15m data for tactician
     
   # Feature engineering timeframes
@@ -86,8 +86,8 @@ data_pipeline:
       base_timeframe: "4h"
       additional_timeframes: ["1h", "1d"]  # Additional timeframes for context
     analyst:
-      base_timeframe: "1h" 
-      additional_timeframes: ["15m", "4h"]  # Additional timeframes for context
+      base_timeframe: "15m" 
+      additional_timeframes: ["5m", "1h", "4h"]  # Additional timeframes for context
     tactician:
       base_timeframe: "15m"
       additional_timeframes: ["5m", "1h"]   # Additional timeframes for context
@@ -103,7 +103,7 @@ model_training:
     
   # Analyst models  
   analyst:
-    training_timeframe: "1h"
+    training_timeframe: "15m"
     retrain_frequency: "12h"      # Retrain every 12 hours
     validation_split: 0.2
     cross_validation_folds: 5

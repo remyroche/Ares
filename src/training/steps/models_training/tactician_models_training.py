@@ -10,7 +10,7 @@ This module handles training of individual Tactician base models:
 
 The Tactician operates on the 15m timeframe and decides WHEN to trade using only
 Analyst-provided green-signal filtered windows (>0.4% confidence threshold), refining entries after the
-1h Analyst approval. Integrates with Analyst ensemble outputs and regime features for enhanced 15m timeframe tactical decisions.
+15m Analyst approval. Integrates with Analyst ensemble outputs and regime features for enhanced 15m timeframe tactical decisions.
 
 ENHANCED FEATURES:
 - Comprehensive error handling with detailed failure reporting

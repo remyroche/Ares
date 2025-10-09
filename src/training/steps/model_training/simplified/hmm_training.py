@@ -5,7 +5,7 @@ This module provides an enhanced HMM training pipeline for regime detection
 with 15-25 regimes, 100 features, and proper model integration.
 
 Features:
-- 1h base timeframe with 15-25 regime detection
+- 15m base timeframe with 15-25 regime detection
 - 100 features for comprehensive regime analysis
 - LightGBM + CatBoost + ElasticNet_CV base models with FinancialResNet meta-learner
 - Runs every 15 minutes for live trading
@@ -123,7 +123,7 @@ class HMMTrainingPipeline:
         }
 
         try:
-            # Load 1h timeframe data
+            # Load 15m timeframe data
             regime_data = await self._load_1h_regime_data(data_dir, symbol, exchange)
             if not regime_data:
                 tprint_error("❌ No 1h regime data available - HMM training requires actual market data")
@@ -184,13 +184,13 @@ class HMMTrainingPipeline:
         symbol: str,
         exchange: str
     ) -> Optional[Dict[str, Any]]:
-        """Load 1h timeframe regime data for HMM training."""
+        """Load 15m timeframe regime data for HMM training."""
         try:
-            # Try to load 1h timeframe data
+            # Try to load 15m timeframe data
             possible_paths = [
-                f"{data_dir}/regime_data_{symbol}_{exchange}_1h.json",
-                f"{data_dir}/processed/regime_data_{symbol}_{exchange}_1h.json",
-                f"{data_dir}/training/regime_data_{symbol}_{exchange}_1h.json"
+                f"{data_dir}/regime_data_{symbol}_{exchange}_15m.json",
+                f"{data_dir}/processed/regime_data_{symbol}_{exchange}_15m.json",
+                f"{data_dir}/training/regime_data_{symbol}_{exchange}_15m.json"
             ]
 
             for path in possible_paths:

@@ -36,14 +36,14 @@ from src.utils.common_operations import (
 """Model Training Package for Trading Pipeline.
 
 This package contains all the components for model training:
-- HMM-based training and multi-timeframe ensembles (1h timeframe, 15-25 regimes)
+- HMM-based training and multi-timeframe ensembles (15m timeframe, 15-25 regimes)
 - Unified regime intelligence
 - Analyst creation, enhancement, and ensemble creation (5m timeframe, per-regime training)
 - Tactician labeling and specialist training (1m timeframe, unified training on green-light periods)
 - Model persistence and validation components
 
 REGIME HANDLING STRATEGY:
-- HMM Models: Detect 15-25 regimes on 1h timeframe for macro market state
+- HMM Models: Detect 15-25 regimes on 15m timeframe for macro market state
 - Analyst Models: Per-regime training on 5m timeframe for regime-specific patterns
 - Tactician Models: Unified training on 1m timeframe for precise entry timing
 - This design is intentional: different components optimize for different aspects of trading

@@ -5,8 +5,11 @@ This module provides a specialized profit labeling component for Analyst models,
 using the VolatilityAwareMultiHorizonLabeler with Analyst-specific configurations.
 
 Key Features:
-- 60m timeframe optimization for strategic decision-making
-- Multi-horizon profit labeling (1h, 4h, 12h, 24h horizons)
+- 15m timeframe optimization for strategic decision-making
+- Multi-horizon profit labeling (15m to 150m, up to 10 rolling windows)
+- Optimal entry point detection - analyzes price variation over rolling windows
+- Local extrema entry - finds local minima/maxima BEFORE price action as optimal entry point
+- Multi-size opportunity logic (0.5%, 0.7%, 1.0%, 1.5% thresholds) - compatible with model_training/
 - Volatility-aware target bands
 - Enhanced label quality scoring
 - Per-regime/cluster optimization support
@@ -121,7 +124,7 @@ except (ImportError, SyntaxError):
 class AnalystProfitLabelerConfig:
     """Configuration for Analyst profit labeling."""
 
-    # Timeframe settings (Analyst operates on 15m by default)
+    # Timeframe settings (Analyst operates on 15m)
     timeframe: str = "15m"
     base_period_minutes: int = 15
 
@@ -130,10 +133,10 @@ class AnalystProfitLabelerConfig:
     # Updated for 15m timeframe: 1h, 2h, 4h, 6h
     horizons: List[int] = field(default_factory=lambda: [60, 120, 240, 360])  # 1h, 2h, 4h, 6h in minutes
 
-    # Profit targets (percentage) - Realistic for hourly crypto movements after fees
-    # ETH typically moves 0.4% per hour on average (0.26% median)
-    # Starting at 0.5% provides buffer above typical trading costs (~0.1% roundtrip)
-    target_profits: List[float] = field(default_factory=lambda: [0.5, 1.0, 1.5, 2.0])
+    # Profit targets (percentage) - Multi-size opportunity logic
+    # 0.5% minimum entry threshold, with 0.7% and 1.0% as higher confidence levels
+    # Aligned with multi-size opportunity detection logic
+    target_profits: List[float] = field(default_factory=lambda: [0.5, 0.7, 1.0, 1.5, 2.0, 2.5])
 
     # Volatility-aware settings
     # Disable volatility normalization for simpler percentage-based targets
@@ -154,6 +157,24 @@ class AnalystProfitLabelerConfig:
     # Advanced filtering for 15m timeframe
     enable_advanced_filters: bool = True
     advanced_filters_config: Optional[AdvancedFiltersConfig] = None
+    # Optimal entry point detection
+    # Strategy: Analyze price variation over rolling windows to find optimal entry points
+    # 1. Check price variation over rolling windows (15m to 150m, up to 10 windows)
+    # 2. If price variation clears opportunity threshold (0.5%), find local minima/maxima
+    # 3. Flag the bar with highest price gap BEFORE the price action as optimal entry point
+    enable_optimal_entry_detection: bool = True  # Enable optimal entry point detection
+    entry_threshold: float = 0.5  # Minimum price variation to consider an opportunity (0.5%)
+    find_highest_gap_entry: bool = True  # Find bar with highest price gap as entry point
+    entry_point_strategy: str = "local_extrema"  # Find local minima/maxima before price action
+    
+    # Multi-size opportunity detection (compatible with model_training/)
+    multi_size_thresholds: Dict[str, float] = field(default_factory=lambda: {
+        'micro': 0.5,    # 0.5% minimum for micro opportunities
+        'small': 0.7,    # 0.7% minimum for small opportunities  
+        'medium': 1.0,   # 1.0% minimum for medium opportunities
+        'good': 1.5      # 1.5% minimum for good opportunities
+    })
+    max_windows: int = 10  # Support up to 10 rolling windows
 
     # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
@@ -345,7 +366,7 @@ class AnalystProfitLabeler:
         # TIME bars with bar_size = timeframe period will pass through the data as-is
         from src.training.steps.pre_training.profit_labeling.bar_construction import BarType
         labeler_config.bar_construction.bar_type = BarType.TIME
-        labeler_config.bar_construction.bar_size = float(self.config.base_period_minutes)  # 60 minutes for 1h data
+        labeler_config.bar_construction.bar_size = float(self.config.base_period_minutes)  # 15 minutes for 15m data
         labeler_config.bar_construction.min_bars_required = 10  # Lower threshold for OHLCV data
         
         # Configure noise gating to be less aggressive for OHLCV data
@@ -371,6 +392,17 @@ class AnalystProfitLabeler:
         
         # Configure regime adaptation
         labeler_config.regime_config.enabled = self.config.enable_regime_adaptation
+        
+        # Configure optimal entry point detection
+        if hasattr(labeler_config, 'optimal_entry_detection'):
+            labeler_config.optimal_entry_detection.enabled = self.config.enable_optimal_entry_detection
+            labeler_config.optimal_entry_detection.entry_threshold = self.config.entry_threshold
+            labeler_config.optimal_entry_detection.find_highest_gap_entry = self.config.find_highest_gap_entry
+            labeler_config.optimal_entry_detection.entry_point_strategy = self.config.entry_point_strategy
+            labeler_config.optimal_entry_detection.horizons = self.config.horizons
+            labeler_config.optimal_entry_detection.target_profits = self.config.target_profits
+            labeler_config.optimal_entry_detection.multi_size_thresholds = self.config.multi_size_thresholds
+            labeler_config.optimal_entry_detection.max_windows = self.config.max_windows
         
         # Apply custom parameters
         if self.config.custom_params:

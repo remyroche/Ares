@@ -64,6 +64,56 @@ from .dimensionality import (
     create_vif_module,
 )
 
+# Enhanced capabilities
+from .caching import (
+    IntelligentFeatureCache,
+    FeatureSelectionCacheManager,
+    cached_feature_selection,
+    create_feature_cache,
+)
+
+from .error_handling import (
+    FeatureSelectionError,
+    InsufficientDataError,
+    SelectionConvergenceError,
+    ConfigurationError,
+    EnhancedErrorHandler,
+    robust_feature_selection,
+    create_error_handler,
+)
+
+from .memory import (
+    MemoryEfficientFeatureSelector,
+    ChunkedFeatureProcessor,
+    SparseFeatureSelector,
+    create_memory_efficient_selector,
+)
+
+from .parallel import (
+    ParallelFeatureSelector,
+    ParallelSelectionManager,
+    create_parallel_selector,
+)
+
+from .optimizations import (
+    VectorizedFeatureSelector,
+    OptimizedCorrelationFilter,
+    OptimizedVarianceFilter,
+    create_vectorized_selector,
+)
+
+from .sparse import (
+    SparseFeatureSelector as SparseMatrixSelector,
+    SparseMatrixProcessor,
+    create_sparse_selector,
+)
+
+from .chunked import (
+    ChunkedFeatureProcessor as ChunkedProcessor,
+    AdaptiveChunkProcessor,
+    create_chunked_processor,
+)
+
 __all__ = [
     # Core framework
     'get_feature_selection_framework',
@@ -95,6 +145,42 @@ __all__ = [
     'create_pca_module',
     'VIFModule',
     'create_vif_module',
+    
+    # Enhanced capabilities
+    'IntelligentFeatureCache',
+    'FeatureSelectionCacheManager',
+    'cached_feature_selection',
+    'create_feature_cache',
+    
+    'FeatureSelectionError',
+    'InsufficientDataError',
+    'SelectionConvergenceError',
+    'ConfigurationError',
+    'EnhancedErrorHandler',
+    'robust_feature_selection',
+    'create_error_handler',
+    
+    'MemoryEfficientFeatureSelector',
+    'ChunkedFeatureProcessor',
+    'SparseFeatureSelector',
+    'create_memory_efficient_selector',
+    
+    'ParallelFeatureSelector',
+    'ParallelSelectionManager',
+    'create_parallel_selector',
+    
+    'VectorizedFeatureSelector',
+    'OptimizedCorrelationFilter',
+    'OptimizedVarianceFilter',
+    'create_vectorized_selector',
+    
+    'SparseMatrixSelector',
+    'SparseMatrixProcessor',
+    'create_sparse_selector',
+    
+    'ChunkedProcessor',
+    'AdaptiveChunkProcessor',
+    'create_chunked_processor',
 ]
 
 # Version info

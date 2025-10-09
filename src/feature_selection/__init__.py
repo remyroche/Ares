@@ -134,6 +134,16 @@ from .advanced import (
     create_permutation_calculator,
 )
 
+# Enhanced advanced methods
+from .advanced import (
+    EnhancedEnsembleAdvancedSelector,
+    EnhancedAdvancedFeatureSelector,
+    EnhancedEnsembleConfig,
+    EnhancedAdvancedConfig,
+    create_enhanced_ensemble_selector,
+    create_enhanced_advanced_selector,
+)
+
 __all__ = [
     # Core framework
     'get_feature_selection_framework',
@@ -219,6 +229,14 @@ __all__ = [
     'PermutationImportanceCalculator',
     'PermutationConfig',
     'create_permutation_calculator',
+    
+    # Enhanced advanced methods
+    'EnhancedEnsembleAdvancedSelector',
+    'EnhancedAdvancedFeatureSelector',
+    'EnhancedEnsembleConfig',
+    'EnhancedAdvancedConfig',
+    'create_enhanced_ensemble_selector',
+    'create_enhanced_advanced_selector',
 ]
 
 # Version info

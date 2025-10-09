@@ -14,6 +14,53 @@ from .advanced_selector import (
     create_advanced_selector
 )
 
+# Enhanced components
+from .enhanced_config import (
+    EnhancedEnsembleConfig,
+    EnhancedAdvancedConfig,
+    AdaptiveWeightingConfig,
+    ConfidenceScoringConfig,
+    NativeValidationConfig,
+    DynamicFeatureSelectionConfig,
+    ElbowMethodConfig,
+    StatisticalThresholdingConfig
+)
+
+from .enhanced_ensemble_selector import (
+    EnhancedEnsembleAdvancedSelector
+)
+
+from .enhanced_advanced_selector import (
+    EnhancedAdvancedFeatureSelector
+)
+
+from .adaptive_weighting import (
+    AdaptiveWeightingSystem
+)
+
+from .confidence_scoring import (
+    ConfidenceScoringSystem
+)
+
+from .native_validation import (
+    NativeValidationFramework
+)
+
+from .dynamic_selection import (
+    DynamicFeatureSelector
+)
+
+# Factory functions
+from typing import Optional
+
+def create_enhanced_ensemble_selector(config: Optional[EnhancedEnsembleConfig] = None) -> EnhancedEnsembleAdvancedSelector:
+    """Create an enhanced ensemble advanced selector."""
+    return EnhancedEnsembleAdvancedSelector(config)
+
+def create_enhanced_advanced_selector(config: Optional[EnhancedAdvancedConfig] = None) -> EnhancedAdvancedFeatureSelector:
+    """Create an enhanced advanced feature selector."""
+    return EnhancedAdvancedFeatureSelector(config)
+
 from .validation_framework import (
     FeatureSelectionValidator,
     CrossValidationFramework,
@@ -44,5 +91,26 @@ __all__ = [
     
     'PermutationImportanceCalculator',
     'PermutationConfig',
-    'create_permutation_calculator'
+    'create_permutation_calculator',
+    
+    # Enhanced components
+    'EnhancedEnsembleConfig',
+    'EnhancedAdvancedConfig',
+    'AdaptiveWeightingConfig',
+    'ConfidenceScoringConfig',
+    'NativeValidationConfig',
+    'DynamicFeatureSelectionConfig',
+    'ElbowMethodConfig',
+    'StatisticalThresholdingConfig',
+    
+    'EnhancedEnsembleAdvancedSelector',
+    'EnhancedAdvancedFeatureSelector',
+    'AdaptiveWeightingSystem',
+    'ConfidenceScoringSystem',
+    'NativeValidationFramework',
+    'DynamicFeatureSelector',
+    
+    # Factory functions
+    'create_enhanced_ensemble_selector',
+    'create_enhanced_advanced_selector'
 ]

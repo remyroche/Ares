@@ -650,31 +650,31 @@ class BudgetAwareFeatureSelector:
         feature_scores: Dict[str, float],
         budget_config: FeatureTypeBudget
     ) -> List[str]:
-        """Step 2: Multiple ensemble selection steps for trading performance."""
+        """Step 2: LASSO + SHAP/LGBM + Random Forest ensemble selection."""
         
         if not candidate_features:
             return []
         
-        tprint_debug(f"   🔄 Running multi-step ensemble selection for {budget_config.feature_type}")
+        tprint_debug(f"   🔄 Running LASSO + SHAP/LGBM + Random Forest ensemble for {budget_config.feature_type}")
         
         current_features = candidate_features.copy()
         
-        # Step 2a: Diversity-based ensemble
-        current_features = self._diversity_ensemble_selection(
+        # Step 2a: LASSO selection
+        current_features = self._lasso_ensemble_selection(
             current_features, feature_scores, budget_config
         )
         
-        # Step 2b: Stability-based ensemble
-        current_features = self._stability_ensemble_selection(
+        # Step 2b: SHAP/LGBM selection
+        current_features = self._shap_lgbm_ensemble_selection(
             current_features, feature_scores, budget_config
         )
         
-        # Step 2c: Trading performance ensemble
-        current_features = self._trading_performance_ensemble_selection(
+        # Step 2c: Random Forest ensemble
+        current_features = self._random_forest_ensemble_selection(
             current_features, feature_scores, budget_config
         )
         
-        tprint_debug(f"   🎯 Multi-step ensemble: {len(current_features)} from {len(candidate_features)}")
+        tprint_debug(f"   🎯 LASSO + SHAP/LGBM + RF ensemble: {len(current_features)} from {len(candidate_features)}")
         return current_features
     
     def _diversity_ensemble_selection(

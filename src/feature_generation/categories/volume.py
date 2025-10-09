@@ -833,6 +833,33 @@ def create_default_volume_generators() -> List[FeatureGenerator]:
     # Analyst Features - Volume patterns
     generators.append(AnalystVolumePressureGenerator())
     generators.append(AnalystVolumeTrendGenerator())
+    
+    # NEW FEATURES - Enhanced Volume Analysis
+    # Volume z-score generators
+    for short_window in [60]:
+        for long_window in [252]:
+            generators.append(VolumeZScoreGenerator(short_window, long_window))
+    
+    # Volume MA ratios generators
+    for ma_period in [20]:
+        for surprise_window in [10]:
+            generators.append(VolumeMARatiosGenerator(ma_period, surprise_window))
+    
+    # CMF generators
+    for period in [20]:
+        generators.append(CMFGenerator(period))
+    
+    # VWAP deviations generators
+    for vwap_window in [20]:
+        generators.append(VWAPDeviationsGenerator(vwap_window))
+    
+    # Order flow imbalance generators
+    for window in [20]:
+        generators.append(OrderFlowImbalanceGenerator(window))
+    
+    # Volume-volatility elasticity generators
+    for window in [20]:
+        generators.append(VolumeVolatilityElasticityGenerator(window))
 
     return generators
 
@@ -960,4 +987,329 @@ __all__ = [
     'AnalystVolumeTrendGenerator',
     'create_default_volume_generators'
 ]
+
+# NEW FEATURES - Enhanced Volume Analysis
+
+class VolumeZScoreGenerator(VectorizedFeatureGenerator):
+    """Generator for volume z-score vs 60/252-bar history."""
+    
+    def __init__(self, short_window: int = 60, long_window: int = 252):
+        config = FeatureConfig(
+            name=f"volume_zscore_{short_window}_{long_window}",
+            category=FeatureCategory.VOLUME,
+            description=f"Volume z-score vs {short_window}/{long_window}-bar history",
+            required_columns=["volume"],
+            default_lookback=long_window,
+            min_lookback=long_window,
+            max_lookback=long_window,
+            parameters={'short_window': short_window, 'long_window': long_window},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.short_window = short_window
+        self.long_window = long_window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        volume = data['volume'].values
+        if len(volume) < self.long_window:
+            return pd.Series(np.full(len(volume), np.nan), index=data.index)
+        
+        # Calculate volume z-score
+        volume_zscore = np.full(len(volume), np.nan)
+        for i in range(self.long_window - 1, len(volume)):
+            # Short-term mean and std
+            short_window_vol = volume[i - self.short_window + 1:i + 1]
+            short_mean = np.mean(short_window_vol)
+            short_std = np.std(short_window_vol, ddof=1)
+            
+            # Long-term mean and std
+            long_window_vol = volume[i - self.long_window + 1:i + 1]
+            long_mean = np.mean(long_window_vol)
+            long_std = np.std(long_window_vol, ddof=1)
+            
+            if long_std > 0:
+                volume_zscore[i] = (volume[i] - long_mean) / long_std
+        
+        return pd.Series(volume_zscore, index=data.index)
+
+class VolumeMARatiosGenerator(VectorizedFeatureGenerator):
+    """Generator for volume MA ratios and volume surprise."""
+    
+    def __init__(self, ma_period: int = 20, surprise_window: int = 10):
+        config = FeatureConfig(
+            name=f"volume_ma_ratios_{ma_period}_{surprise_window}",
+            category=FeatureCategory.VOLUME,
+            description=f"Volume MA ratios and surprise over {ma_period}/{surprise_window} periods",
+            required_columns=["volume"],
+            default_lookback=ma_period + surprise_window,
+            min_lookback=ma_period + surprise_window,
+            max_lookback=ma_period + surprise_window,
+            parameters={'ma_period': ma_period, 'surprise_window': surprise_window},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.ma_period = ma_period
+        self.surprise_window = surprise_window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        volume = data['volume'].values
+        if len(volume) < self.ma_period + self.surprise_window:
+            return pd.Series(np.full(len(volume), np.nan), index=data.index)
+        
+        # Calculate volume MA ratios
+        volume_ma_ratios = np.full(len(volume), np.nan)
+        volume_surprise = np.full(len(volume), np.nan)
+        
+        for i in range(self.ma_period + self.surprise_window - 1, len(volume)):
+            # Volume MA ratio
+            ma_window = volume[i - self.ma_period + 1:i + 1]
+            ma_volume = np.mean(ma_window)
+            if ma_volume > 0:
+                volume_ma_ratios[i] = volume[i] / ma_volume
+            
+            # Volume surprise (actual - expected)
+            if i >= self.surprise_window:
+                expected_window = volume[i - self.surprise_window:i]
+                expected_volume = np.mean(expected_window)
+                volume_surprise[i] = volume[i] - expected_volume
+        
+        return pd.Series(volume_ma_ratios, index=data.index)
+
+class CMFGenerator(VectorizedFeatureGenerator):
+    """Generator for Chaikin Money Flow (CMF)."""
+    
+    def __init__(self, period: int = 20):
+        config = FeatureConfig(
+            name=f"cmf_{period}",
+            category=FeatureCategory.VOLUME,
+            description=f"Chaikin Money Flow over {period} periods",
+            required_columns=["close", "high", "low", "volume"],
+            default_lookback=period,
+            min_lookback=period,
+            max_lookback=period,
+            parameters={'period': period},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.period = period
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        high = data['high'].values
+        low = data['low'].values
+        volume = data['volume'].values
+        
+        if len(close) < self.period:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate CMF
+        cmf = np.full(len(close), np.nan)
+        for i in range(self.period - 1, len(close)):
+            # Money Flow Multiplier
+            mfm = ((close[i] - low[i]) - (high[i] - close[i])) / (high[i] - low[i])
+            mfm = np.nan_to_num(mfm, nan=0.0)  # Handle division by zero
+            
+            # Money Flow Volume
+            mfv = mfm * volume[i]
+            
+            # CMF = sum(MFV) / sum(Volume) over period
+            period_mfv = []
+            period_vol = []
+            for j in range(i - self.period + 1, i + 1):
+                if high[j] != low[j]:  # Avoid division by zero
+                    period_mfm = ((close[j] - low[j]) - (high[j] - close[j])) / (high[j] - low[j])
+                    period_mfm = np.nan_to_num(period_mfm, nan=0.0)
+                    period_mfv.append(period_mfm * volume[j])
+                    period_vol.append(volume[j])
+            
+            if len(period_vol) > 0 and sum(period_vol) > 0:
+                cmf[i] = sum(period_mfv) / sum(period_vol)
+        
+        return pd.Series(cmf, index=data.index)
+
+class VWAPDeviationsGenerator(VectorizedFeatureGenerator):
+    """Generator for VWAP deviations and closing-VWAP gap."""
+    
+    def __init__(self, vwap_window: int = 20):
+        config = FeatureConfig(
+            name=f"vwap_deviations_{vwap_window}",
+            category=FeatureCategory.VOLUME,
+            description=f"VWAP deviations and closing-VWAP gap over {vwap_window} periods",
+            required_columns=["close", "high", "low", "volume"],
+            default_lookback=vwap_window,
+            min_lookback=vwap_window,
+            max_lookback=vwap_window,
+            parameters={'vwap_window': vwap_window},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.vwap_window = vwap_window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        high = data['high'].values
+        low = data['low'].values
+        volume = data['volume'].values
+        
+        if len(close) < self.vwap_window:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate VWAP deviations
+        vwap_deviations = np.full(len(close), np.nan)
+        closing_vwap_gap = np.full(len(close), np.nan)
+        
+        for i in range(self.vwap_window - 1, len(close)):
+            # Calculate VWAP for the window
+            window_high = high[i - self.vwap_window + 1:i + 1]
+            window_low = low[i - self.vwap_window + 1:i + 1]
+            window_close = close[i - self.vwap_window + 1:i + 1]
+            window_volume = volume[i - self.vwap_window + 1:i + 1]
+            
+            # Typical price
+            typical_price = (window_high + window_low + window_close) / 3
+            
+            # VWAP
+            vwap = np.sum(typical_price * window_volume) / np.sum(window_volume)
+            
+            if vwap > 0:
+                # VWAP deviation
+                vwap_deviations[i] = (close[i] - vwap) / vwap
+                
+                # Closing-VWAP gap
+                closing_vwap_gap[i] = close[i] - vwap
+        
+        return pd.Series(vwap_deviations, index=data.index)
+
+class OrderFlowImbalanceGenerator(VectorizedFeatureGenerator):
+    """Generator for order flow imbalance (signed volume)."""
+    
+    def __init__(self, window: int = 20):
+        config = FeatureConfig(
+            name=f"order_flow_imbalance_{window}",
+            category=FeatureCategory.VOLUME,
+            description=f"Order flow imbalance over {window} periods",
+            required_columns=["close", "volume"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'window': window},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        volume = data['volume'].values
+        
+        if len(close) < self.window + 1:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate order flow imbalance
+        ofi = np.full(len(close), np.nan)
+        
+        for i in range(1, len(close)):
+            # Price change direction
+            price_change = close[i] - close[i-1]
+            
+            # Signed volume (positive for buying pressure, negative for selling pressure)
+            if price_change > 0:
+                signed_volume = volume[i]
+            elif price_change < 0:
+                signed_volume = -volume[i]
+            else:
+                signed_volume = 0
+            
+            # Rolling sum of signed volume
+            if i >= self.window:
+                window_signed_vol = []
+                for j in range(i - self.window + 1, i + 1):
+                    if j > 0:
+                        price_chg = close[j] - close[j-1]
+                        if price_chg > 0:
+                            window_signed_vol.append(volume[j])
+                        elif price_chg < 0:
+                            window_signed_vol.append(-volume[j])
+                        else:
+                            window_signed_vol.append(0)
+                
+                ofi[i] = sum(window_signed_vol)
+        
+        return pd.Series(ofi, index=data.index)
+
+class VolumeVolatilityElasticityGenerator(VectorizedFeatureGenerator):
+    """Generator for volume-volatility elasticity."""
+    
+    def __init__(self, window: int = 20):
+        config = FeatureConfig(
+            name=f"volume_volatility_elasticity_{window}",
+            category=FeatureCategory.VOLUME,
+            description=f"Volume-volatility elasticity over {window} periods",
+            required_columns=["close", "volume"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window,
+            parameters={'window': window},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        volume = data['volume'].values
+        
+        if len(close) < self.window + 1:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate returns and absolute returns
+        returns = np.diff(close) / close[:-1]
+        abs_returns = np.abs(returns)
+        returns = np.concatenate([[np.nan], returns])
+        abs_returns = np.concatenate([[np.nan], abs_returns])
+        
+        # Calculate volume-volatility elasticity
+        elasticity = np.full(len(close), np.nan)
+        
+        for i in range(self.window, len(close)):
+            window_abs_returns = abs_returns[i - self.window + 1:i + 1]
+            window_volume = volume[i - self.window + 1:i + 1]
+            
+            # Filter out NaN values
+            valid_mask = np.isfinite(window_abs_returns) & np.isfinite(window_volume)
+            if np.sum(valid_mask) > 1:
+                valid_abs_returns = window_abs_returns[valid_mask]
+                valid_volume = window_volume[valid_mask]
+                
+                # Calculate correlation
+                if len(valid_abs_returns) > 1 and np.std(valid_abs_returns) > 0 and np.std(valid_volume) > 0:
+                    correlation = np.corrcoef(valid_abs_returns, valid_volume)[0, 1]
+                    if not np.isnan(correlation):
+                        elasticity[i] = correlation
+        
+        return pd.Series(elasticity, index=data.index)
 

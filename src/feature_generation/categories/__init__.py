@@ -60,7 +60,17 @@ from .momentum import (
     create_momentum_generators,
     create_default_momentum_generators
 )
-from .volume import VolumeFeatureGenerator, create_default_volume_generators
+from .volume import (
+    VolumeFeatureGenerator,
+    # NEW FEATURES - Enhanced Volume Analysis
+    VolumeZScoreGenerator,
+    VolumeMARatiosGenerator,
+    CMFGenerator,
+    VWAPDeviationsGenerator,
+    OrderFlowImbalanceGenerator,
+    VolumeVolatilityElasticityGenerator,
+    create_default_volume_generators
+)
 from .volatility import (
     VolatilityFeatureGenerator,
     # NEW FEATURES - Advanced Volatility Analysis
@@ -148,6 +158,13 @@ from .entropy import (
     BollingerBandsEntropyGenerator,
     CrossAssetEntropyGenerator,
     RegimeEntropyGenerator,
+    # NEW FEATURES - Advanced Entropy Analysis
+    ShannonEntropyGenerator,
+    PermutationEntropyGenerator,
+    SampleEntropyGenerator,
+    LempelZivComplexityGenerator,
+    EntropyRateGenerator,
+    SpectralEntropyGenerator,
     create_entropy_generators,
     create_default_entropy_generators
 )
@@ -174,6 +191,26 @@ from .cross_timeframe import create_default_cross_timeframe_generators
 # regime.py deleted - replaced by advanced HMM regime system
 from .legacy import create_default_legacy_generators
 from .time import create_default_time_generators
+
+# NEW CATEGORIES - Advanced Statistical and Spectral/Wavelet
+from .advanced_statistical import (
+    HurstExponentGenerator,
+    JumpIndicatorsGenerator,
+    CVaRGenerator,
+    MaxDrawdownGenerator,
+    RollingSkewnessKurtosisGenerator,
+    TrendPersistenceGenerator,
+    create_default_advanced_statistical_generators
+)
+
+from .spectral_wavelet import (
+    WaveletEnergyGenerator,
+    BandLimitedVolatilityGenerator,
+    CycleLengthGenerator,
+    FractalDimensionGenerator,
+    DFASlopesGenerator,
+    create_default_spectral_wavelet_generators
+)
 
 # Regime feature integration
 from .regime_feature_integration import (
@@ -213,6 +250,13 @@ __all__ = [
     "StochasticKDGenerator",
     "DonchianChannelGenerator",
     "VolumeFeatureGenerator",
+    # NEW FEATURES - Enhanced Volume Analysis
+    "VolumeZScoreGenerator",
+    "VolumeMARatiosGenerator",
+    "CMFGenerator",
+    "VWAPDeviationsGenerator",
+    "OrderFlowImbalanceGenerator",
+    "VolumeVolatilityElasticityGenerator",
     "VolatilityFeatureGenerator",
     # NEW FEATURES - Advanced Volatility Analysis
     "RealizedVolatilityGenerator",
@@ -284,6 +328,13 @@ __all__ = [
     "BollingerBandsEntropyGenerator",
     "CrossAssetEntropyGenerator",
     "RegimeEntropyGenerator",
+    # NEW FEATURES - Advanced Entropy Analysis
+    "ShannonEntropyGenerator",
+    "PermutationEntropyGenerator",
+    "SampleEntropyGenerator",
+    "LempelZivComplexityGenerator",
+    "EntropyRateGenerator",
+    "SpectralEntropyGenerator",
     "create_entropy_generators",
     
     # Legacy interaction generators
@@ -312,6 +363,20 @@ __all__ = [
     "create_default_cross_timeframe_generators",
     "create_default_legacy_generators",
     "create_default_time_generators",
+    # NEW CATEGORIES - Advanced Statistical and Spectral/Wavelet
+    "HurstExponentGenerator",
+    "JumpIndicatorsGenerator",
+    "CVaRGenerator",
+    "MaxDrawdownGenerator",
+    "RollingSkewnessKurtosisGenerator",
+    "TrendPersistenceGenerator",
+    "create_default_advanced_statistical_generators",
+    "WaveletEnergyGenerator",
+    "BandLimitedVolatilityGenerator",
+    "CycleLengthGenerator",
+    "FractalDimensionGenerator",
+    "DFASlopesGenerator",
+    "create_default_spectral_wavelet_generators",
     # Regime feature integration
     "RegimeFeatureIntegration",
     "RegimeFeatureConfig",

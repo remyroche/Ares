@@ -186,7 +186,9 @@ class FeatureBank:
                 FeatureCategory.REGIME,
                 FeatureCategory.TIME,
                 FeatureCategory.NORMALIZATION,
-                FeatureCategory.REPRESENTATION_LEARNING
+                FeatureCategory.REPRESENTATION_LEARNING,
+                FeatureCategory.ADVANCED_STATISTICAL,
+                FeatureCategory.SPECTRAL_WAVELET
             ]
 
             registered_count = 0
@@ -265,7 +267,9 @@ class FeatureBank:
                 FeatureCategory.REGIME: self._create_regime_generators,
                 FeatureCategory.TIME: self._create_time_generators,
                 FeatureCategory.NORMALIZATION: self._create_normalization_generators,
-                FeatureCategory.REPRESENTATION_LEARNING: self._create_representation_learning_generators
+                FeatureCategory.REPRESENTATION_LEARNING: self._create_representation_learning_generators,
+                FeatureCategory.ADVANCED_STATISTICAL: self._create_advanced_statistical_generators,
+                FeatureCategory.SPECTRAL_WAVELET: self._create_spectral_wavelet_generators
             }
 
             creator_func = category_creators.get(category)
@@ -741,6 +745,28 @@ class FeatureBank:
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to create representation learning generators: {e}")
 
+        return generators
+
+    def _create_advanced_statistical_generators(self) -> List[FeatureGenerator]:
+        """Create advanced statistical feature generators."""
+        generators = []
+        try:
+            from ..categories.advanced_statistical import create_default_advanced_statistical_generators
+            advanced_generators = create_default_advanced_statistical_generators()
+            generators.extend(advanced_generators)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create advanced statistical generators: {e}")
+        return generators
+
+    def _create_spectral_wavelet_generators(self) -> List[FeatureGenerator]:
+        """Create spectral/wavelet feature generators."""
+        generators = []
+        try:
+            from ..categories.spectral_wavelet import create_default_spectral_wavelet_generators
+            spectral_generators = create_default_spectral_wavelet_generators()
+            generators.extend(spectral_generators)
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create spectral/wavelet generators: {e}")
         return generators
 
     def register_generator(self, generator: FeatureGenerator) -> None:

@@ -41,6 +41,8 @@ class FeatureCategory(Enum):
     CUSTOM = "custom"
     ACCELERATION = "acceleration"
     INTERACTION = "interaction"
+    ADVANCED_STATISTICAL = "advanced_statistical"
+    SPECTRAL_WAVELET = "spectral_wavelet"
 
 @dataclass
 class FeatureConfig:

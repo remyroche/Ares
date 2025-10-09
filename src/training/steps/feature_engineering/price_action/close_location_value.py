@@ -19,6 +19,9 @@ from src.utils.tprint import tprint_info, tprint_warning, tprint_error
 from src.utils.common_operations import safe_divide, safe_mean, safe_std
 from src.utils.matrix_operations import vectorized_rolling_features
 
+# Import framework components
+from src.feature_generation.core.feature_generator import FeatureGenerator, FeatureCategory, FeatureConfig, FeatureResult, VectorizedFeatureGenerator
+
 
 @dataclass
 class CLVConfig:
@@ -192,7 +195,7 @@ class CloseLocationValueFeature:
         }
 
 
-class CloseLocationValueGenerator(FeatureGenerator):
+class CloseLocationValueGenerator(VectorizedFeatureGenerator):
     """
     Framework-compatible Close-Location Value feature generator.
     
@@ -233,7 +236,7 @@ class CloseLocationValueGenerator(FeatureGenerator):
             enable_feature_selection=True
         )
         
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         
         # Initialize the feature engine
         feature_config = CLVConfig(

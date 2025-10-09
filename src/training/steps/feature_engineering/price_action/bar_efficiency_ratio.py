@@ -21,7 +21,7 @@ from src.utils.common_operations import safe_divide, safe_mean, safe_std
 from src.utils.matrix_operations import vectorized_rolling_features
 
 # Import framework components
-from src.feature_generation.core.feature_generator import FeatureGenerator, FeatureCategory, FeatureConfig, FeatureResult
+from src.feature_generation.core.feature_generator import FeatureGenerator, FeatureCategory, FeatureConfig, FeatureResult, VectorizedFeatureGenerator
 
 
 @dataclass
@@ -165,7 +165,7 @@ class BarEfficiencyRatioFeature:
         }
 
 
-class BarEfficiencyRatioGenerator(FeatureGenerator):
+class BarEfficiencyRatioGenerator(VectorizedFeatureGenerator):
     """
     Framework-compatible Bar Efficiency Ratio feature generator.
     
@@ -203,7 +203,7 @@ class BarEfficiencyRatioGenerator(FeatureGenerator):
             enable_feature_selection=True
         )
         
-        super().__init__(config)
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         
         # Initialize the feature engine
         feature_config = BarEfficiencyConfig(

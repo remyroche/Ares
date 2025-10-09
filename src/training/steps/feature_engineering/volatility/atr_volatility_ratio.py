@@ -19,6 +19,9 @@ from src.utils.tprint import tprint_info, tprint_warning, tprint_error
 from src.utils.common_operations import safe_divide, safe_mean, safe_std
 from src.utils.matrix_operations import vectorized_rolling_features
 
+# Import framework components
+from src.feature_generation.core.feature_generator import FeatureGenerator, FeatureCategory, FeatureConfig, FeatureResult, VectorizedFeatureGenerator
+
 
 @dataclass
 class ATRVolatilityRatioConfig:
@@ -184,6 +187,146 @@ class ATRVolatilityRatioFeature:
                 'interpretation': 'Categorical classification based on thresholds'
             }
         }
+
+
+class ATRVolatilityRatioGenerator(VectorizedFeatureGenerator):
+    """
+    Framework-compatible ATR Volatility Ratio feature generator.
+    
+    Implements the FeatureGenerator interface for integration with the feature bank
+    and period lookback optimization system.
+    """
+    
+    def __init__(self, lookback: int = 4, **kwargs):
+        """
+        Initialize the ATR Volatility Ratio feature generator.
+        
+        Args:
+            lookback: Number of periods for short-term ATR calculation
+            **kwargs: Additional configuration parameters
+        """
+        config = FeatureConfig(
+            name="atr_volatility_ratio",
+            category=FeatureCategory.VOLATILITY,
+            description="ATR volatility ratio for adaptive volatility filtering",
+            required_columns=['open', 'high', 'low', 'close'],
+            optional_columns=['volume'],
+            default_lookback=lookback,
+            min_lookback=1,
+            max_lookback=50,
+            parameters={
+                'short_window': lookback,
+                'long_window': kwargs.get('long_window', 20),
+                'high_ratio_threshold': kwargs.get('high_ratio_threshold', 1.5),
+                'include_atr_short': kwargs.get('include_atr_short', True),
+                'include_atr_long': kwargs.get('include_atr_long', True),
+                'include_atr_ratio': kwargs.get('include_atr_ratio', True),
+                'include_atr_grade': kwargs.get('include_atr_grade', True),
+                'include_atr_class': kwargs.get('include_atr_class', True)
+            },
+            matrix_optimized=True,
+            gpu_accelerated=False,
+            enable_feature_selection=True
+        )
+        
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize the feature engine
+        feature_config = ATRVolatilityRatioConfig(
+            short_window=lookback,
+            long_window=kwargs.get('long_window', 20),
+            high_ratio_threshold=kwargs.get('high_ratio_threshold', 1.5),
+            include_atr_short=kwargs.get('include_atr_short', True),
+            include_atr_long=kwargs.get('include_atr_long', True),
+            include_atr_ratio=kwargs.get('include_atr_ratio', True),
+            include_atr_grade=kwargs.get('include_atr_grade', True),
+            include_atr_class=kwargs.get('include_atr_class', True)
+        )
+        self.feature_engine = ATRVolatilityRatioFeature(feature_config)
+    
+    def generate(self, data: pd.DataFrame, lookback: Optional[int] = None) -> FeatureResult:
+        """
+        Generate ATR Volatility Ratio features.
+        
+        Args:
+            data: OHLCV data with required columns
+            lookback: Override default lookback period
+            
+        Returns:
+            FeatureResult with generated features
+        """
+        start_time = time.time()
+        
+        try:
+            # Use provided lookback or default
+            effective_lookback = lookback or self.config.default_lookback
+            
+            # Update feature engine configuration if lookback changed
+            if effective_lookback != self.config.default_lookback:
+                self.feature_engine.config.short_window = effective_lookback
+            
+            # Generate features
+            features = self.feature_engine.calculate_features(data)
+            
+            # Select the primary feature (ATR ratio)
+            if 'atr_ratio' in features:
+                primary_feature = features['atr_ratio']
+            elif 'atr_short' in features:
+                primary_feature = features['atr_short']
+            else:
+                raise ValueError("No primary ATR feature generated")
+            
+            computation_time = time.time() - start_time
+            
+            return FeatureResult(
+                name=self.config.name,
+                data=primary_feature,
+                config=self.config,
+                computation_time=computation_time,
+                success=True,
+                metadata={
+                    'lookback_used': effective_lookback,
+                    'all_features': list(features.keys()),
+                    'feature_stats': {
+                        'mean': float(primary_feature.mean()),
+                        'std': float(primary_feature.std()),
+                        'min': float(primary_feature.min()),
+                        'max': float(primary_feature.max())
+                    }
+                }
+            )
+            
+        except Exception as e:
+            computation_time = time.time() - start_time
+            return FeatureResult(
+                name=self.config.name,
+                data=pd.Series(dtype=float),
+                config=self.config,
+                computation_time=computation_time,
+                success=False,
+                error_message=str(e)
+            )
+    
+    def get_all_features(self, data: pd.DataFrame, lookback: Optional[int] = None) -> Dict[str, pd.Series]:
+        """
+        Generate all ATR Volatility Ratio features.
+        
+        Args:
+            data: OHLCV data with required columns
+            lookback: Override default lookback period
+            
+        Returns:
+            Dictionary of all generated features
+        """
+        # Use provided lookback or default
+        effective_lookback = lookback or self.config.default_lookback
+        
+        # Update feature engine configuration if lookback changed
+        if effective_lookback != self.config.default_lookback:
+            self.feature_engine.config.short_window = effective_lookback
+        
+        # Generate all features
+        return self.feature_engine.calculate_features(data)
 
 
 # Convenience function for external usage

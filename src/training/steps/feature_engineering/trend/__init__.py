@@ -5,10 +5,14 @@ This module contains features related to trend analysis including:
 - Trend Coherence: Ensures trend continuity and direction consistency
 """
 
-from .trend_coherence import TrendCoherenceFeature, TrendCoherenceConfig, calculate_trend_coherence_features
+from .trend_coherence import (
+    TrendCoherenceFeature, TrendCoherenceConfig, TrendCoherenceGenerator,
+    calculate_trend_coherence_features
+)
 
 __all__ = [
     'TrendCoherenceFeature',
     'TrendCoherenceConfig',
+    'TrendCoherenceGenerator',
     'calculate_trend_coherence_features'
 ]

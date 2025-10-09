@@ -13,10 +13,8 @@ from src.feature_generation.core.feature_registry import FeatureRegistry
 # Import the new feature generators
 from src.training.steps.feature_engineering.price_action.bar_efficiency_ratio import BarEfficiencyRatioGenerator
 from src.training.steps.feature_engineering.price_action.close_location_value import CloseLocationValueGenerator
-
-# Import other feature generators (to be added)
-# from src.training.steps.feature_engineering.volatility.atr_volatility_ratio import ATRVolatilityRatioGenerator
-# from src.training.steps.feature_engineering.trend.trend_coherence import TrendCoherenceGenerator
+from src.training.steps.feature_engineering.volatility.atr_volatility_ratio import ATRVolatilityRatioGenerator
+from src.training.steps.feature_engineering.trend.trend_coherence import TrendCoherenceGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +57,34 @@ def register_advanced_features(feature_bank: FeatureBank) -> None:
                 'include_clv_class': True
             }
         },
-        # Add more features as they are implemented
+        {
+            'generator_class': ATRVolatilityRatioGenerator,
+            'name': 'atr_volatility_ratio',
+            'lookback': 4,
+            'parameters': {
+                'long_window': 20,
+                'high_ratio_threshold': 1.5,
+                'include_atr_short': True,
+                'include_atr_long': True,
+                'include_atr_ratio': True,
+                'include_atr_grade': True,
+                'include_atr_class': True
+            }
+        },
+        {
+            'generator_class': TrendCoherenceGenerator,
+            'name': 'trend_coherence',
+            'lookback': 8,
+            'parameters': {
+                'ema_period': 12,
+                'min_direction_consistency': 0.6,
+                'min_slope_threshold': 0.001,
+                'include_direction_consistency': True,
+                'include_ema_slope': True,
+                'include_trend_coherence_grade': True,
+                'include_trend_class': True
+            }
+        }
     ]
     
     # Register each feature generator
@@ -94,7 +119,8 @@ def get_advanced_feature_generators() -> Dict[str, Type]:
     return {
         'bar_efficiency_ratio': BarEfficiencyRatioGenerator,
         'close_location_value': CloseLocationValueGenerator,
-        # Add more as they are implemented
+        'atr_volatility_ratio': ATRVolatilityRatioGenerator,
+        'trend_coherence': TrendCoherenceGenerator
     }
 
 
@@ -142,10 +168,10 @@ def get_advanced_features_by_category() -> Dict[str, List[str]]:
             'close_location_value'
         ],
         'volatility': [
-            # 'atr_volatility_ratio'  # To be added
+            'atr_volatility_ratio'
         ],
         'trend': [
-            # 'trend_coherence'  # To be added
+            'trend_coherence'
         ]
     }
 

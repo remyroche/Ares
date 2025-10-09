@@ -19,6 +19,9 @@ from src.utils.tprint import tprint_info, tprint_warning, tprint_error
 from src.utils.common_operations import safe_divide, safe_mean, safe_std
 from src.utils.matrix_operations import vectorized_rolling_features
 
+# Import framework components
+from src.feature_generation.core.feature_generator import FeatureGenerator, FeatureCategory, FeatureConfig, FeatureResult, VectorizedFeatureGenerator
+
 
 @dataclass
 class TrendCoherenceConfig:
@@ -175,6 +178,146 @@ class TrendCoherenceFeature:
                 'interpretation': 'Categorical classification of trend state'
             }
         }
+
+
+class TrendCoherenceGenerator(VectorizedFeatureGenerator):
+    """
+    Framework-compatible Trend Coherence feature generator.
+    
+    Implements the FeatureGenerator interface for integration with the feature bank
+    and period lookback optimization system.
+    """
+    
+    def __init__(self, lookback: int = 8, **kwargs):
+        """
+        Initialize the Trend Coherence feature generator.
+        
+        Args:
+            lookback: Number of periods for direction consistency check
+            **kwargs: Additional configuration parameters
+        """
+        config = FeatureConfig(
+            name="trend_coherence",
+            category=FeatureCategory.TREND,
+            description="Trend coherence ensuring trend continuity and direction consistency",
+            required_columns=['open', 'high', 'low', 'close'],
+            optional_columns=['volume'],
+            default_lookback=lookback,
+            min_lookback=1,
+            max_lookback=20,
+            parameters={
+                'direction_window': lookback,
+                'ema_period': kwargs.get('ema_period', 12),
+                'min_direction_consistency': kwargs.get('min_direction_consistency', 0.6),
+                'min_slope_threshold': kwargs.get('min_slope_threshold', 0.001),
+                'include_direction_consistency': kwargs.get('include_direction_consistency', True),
+                'include_ema_slope': kwargs.get('include_ema_slope', True),
+                'include_trend_coherence_grade': kwargs.get('include_trend_coherence_grade', True),
+                'include_trend_class': kwargs.get('include_trend_class', True)
+            },
+            matrix_optimized=True,
+            gpu_accelerated=False,
+            enable_feature_selection=True
+        )
+        
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize the feature engine
+        feature_config = TrendCoherenceConfig(
+            direction_window=lookback,
+            ema_period=kwargs.get('ema_period', 12),
+            min_direction_consistency=kwargs.get('min_direction_consistency', 0.6),
+            min_slope_threshold=kwargs.get('min_slope_threshold', 0.001),
+            include_direction_consistency=kwargs.get('include_direction_consistency', True),
+            include_ema_slope=kwargs.get('include_ema_slope', True),
+            include_trend_coherence_grade=kwargs.get('include_trend_coherence_grade', True),
+            include_trend_class=kwargs.get('include_trend_class', True)
+        )
+        self.feature_engine = TrendCoherenceFeature(feature_config)
+    
+    def generate(self, data: pd.DataFrame, lookback: Optional[int] = None) -> FeatureResult:
+        """
+        Generate Trend Coherence features.
+        
+        Args:
+            data: OHLCV data with required columns
+            lookback: Override default lookback period
+            
+        Returns:
+            FeatureResult with generated features
+        """
+        start_time = time.time()
+        
+        try:
+            # Use provided lookback or default
+            effective_lookback = lookback or self.config.default_lookback
+            
+            # Update feature engine configuration if lookback changed
+            if effective_lookback != self.config.default_lookback:
+                self.feature_engine.config.direction_window = effective_lookback
+            
+            # Generate features
+            features = self.feature_engine.calculate_features(data)
+            
+            # Select the primary feature (trend coherence grade)
+            if 'trend_coherence_grade' in features:
+                primary_feature = features['trend_coherence_grade']
+            elif 'trend_direction_consistency' in features:
+                primary_feature = features['trend_direction_consistency']
+            else:
+                raise ValueError("No primary trend coherence feature generated")
+            
+            computation_time = time.time() - start_time
+            
+            return FeatureResult(
+                name=self.config.name,
+                data=primary_feature,
+                config=self.config,
+                computation_time=computation_time,
+                success=True,
+                metadata={
+                    'lookback_used': effective_lookback,
+                    'all_features': list(features.keys()),
+                    'feature_stats': {
+                        'mean': float(primary_feature.mean()),
+                        'std': float(primary_feature.std()),
+                        'min': float(primary_feature.min()),
+                        'max': float(primary_feature.max())
+                    }
+                }
+            )
+            
+        except Exception as e:
+            computation_time = time.time() - start_time
+            return FeatureResult(
+                name=self.config.name,
+                data=pd.Series(dtype=float),
+                config=self.config,
+                computation_time=computation_time,
+                success=False,
+                error_message=str(e)
+            )
+    
+    def get_all_features(self, data: pd.DataFrame, lookback: Optional[int] = None) -> Dict[str, pd.Series]:
+        """
+        Generate all Trend Coherence features.
+        
+        Args:
+            data: OHLCV data with required columns
+            lookback: Override default lookback period
+            
+        Returns:
+            Dictionary of all generated features
+        """
+        # Use provided lookback or default
+        effective_lookback = lookback or self.config.default_lookback
+        
+        # Update feature engine configuration if lookback changed
+        if effective_lookback != self.config.default_lookback:
+            self.feature_engine.config.direction_window = effective_lookback
+        
+        # Generate all features
+        return self.feature_engine.calculate_features(data)
 
 
 # Convenience function for external usage

@@ -91,7 +91,7 @@ class AdvancedFiltersConfig:
     
     # Bar Efficiency Ratio settings
     enable_efficiency_ratio: bool = True
-    efficiency_window: int = 6  # Rolling window for efficiency (4-8 bars = 1-2 hours)
+    efficiency_window: int = 3  # Rolling window for efficiency (2-4 bars = 30-60 minutes)
     efficiency_threshold_high: float = 0.6  # High efficiency = directional
     efficiency_threshold_low: float = 0.3   # Low efficiency = choppy
     
@@ -107,7 +107,7 @@ class AdvancedFiltersConfig:
     atr_short_window: int = 4   # Short-term ATR window (1 hour)
     atr_long_window: int = 20   # Long-term ATR window (5 hours)
     atr_ratio_threshold_high: float = 1.5  # Too jumpy
-    atr_ratio_threshold_low: float = 0.5   # Too quiet
+    # Removed atr_ratio_threshold_low - no "too quiet" filter
     
     # Trend Coherence settings
     enable_trend_coherence: bool = True
@@ -116,7 +116,17 @@ class AdvancedFiltersConfig:
     ema_period: int = 12        # EMA period for slope calculation
     min_slope_threshold: float = 0.001  # Minimum slope for trend continuity
     
-    # Combined filtering
+    # Grading system (replaces cumulative filtering)
+    use_grading_system: bool = True  # Use average grade instead of cumulative filters
+    grade_threshold: float = 0.5  # Minimum average grade to pass (0.0-1.0)
+    grade_weights: Dict[str, float] = field(default_factory=lambda: {
+        'efficiency': 0.25,
+        'clv': 0.25,
+        'atr_ratio': 0.25,
+        'trend_coherence': 0.25
+    })
+    
+    # Legacy combined filtering (for backward compatibility)
     filter_type: FilterType = FilterType.COMBINED
     min_eligibility_ratio: float = 0.3  # Minimum ratio of eligible samples
     strict_mode: bool = False  # Use strict eligibility criteria
@@ -134,11 +144,15 @@ class FilterResult:
     eligibility_mask: pd.Series
     eligibility_ratio: float
     
-    # Filter-specific results
+    # Filter-specific results (legacy)
     efficiency_mask: Optional[pd.Series] = None
     clv_mask: Optional[pd.Series] = None
     atr_ratio_mask: Optional[pd.Series] = None
     trend_coherence_mask: Optional[pd.Series] = None
+    
+    # Grading system results
+    average_grade: Optional[pd.Series] = None
+    individual_grades: Dict[str, pd.Series] = field(default_factory=dict)
     
     # Statistics
     n_total_samples: int = 0
@@ -244,29 +258,70 @@ class AdvancedFilters15m:
         try:
             # Use memory optimization context
             with memory_checkpoint("advanced_filters_15m"):
-                # Apply individual filters
-                if self.config.enable_efficiency_ratio:
-                    tprint_info("📊 Applying efficiency ratio filter")
-                    result.efficiency_mask = self._apply_efficiency_ratio_filter(data)
-                    result.filter_statistics['efficiency'] = self._calculate_efficiency_stats(data, result.efficiency_mask)
+                if self.config.use_grading_system:
+                    # Use grading system instead of cumulative filters
+                    tprint_info("📊 Using grading system for filter evaluation")
+                    grades = {}
+                    
+                    if self.config.enable_efficiency_ratio:
+                        tprint_info("📊 Calculating efficiency ratio grade")
+                        grades['efficiency'] = self._calculate_efficiency_grade(data)
+                    
+                    if self.config.enable_clv:
+                        tprint_info("📊 Calculating CLV grade")
+                        grades['clv'] = self._calculate_clv_grade(data)
+                    
+                    if self.config.enable_atr_ratio:
+                        tprint_info("📊 Calculating ATR ratio grade")
+                        grades['atr_ratio'] = self._calculate_atr_ratio_grade(data)
+                    
+                    if self.config.enable_trend_coherence:
+                        tprint_info("📊 Calculating trend coherence grade")
+                        grades['trend_coherence'] = self._calculate_trend_coherence_grade(data)
+                    
+                    # Calculate weighted average grade
+                    if grades:
+                        weights = self.config.grade_weights
+                        weighted_grades = []
+                        for filter_name, grade in grades.items():
+                            weight = weights.get(filter_name, 0.0)
+                            weighted_grades.append(grade * weight)
+                        
+                        average_grade = pd.concat(weighted_grades, axis=1).sum(axis=1)
+                        result.eligibility_mask = average_grade >= self.config.grade_threshold
+                        result.average_grade = average_grade
+                        result.individual_grades = grades
+                    else:
+                        result.eligibility_mask = pd.Series(True, index=data.index)
+                        result.average_grade = pd.Series(1.0, index=data.index)
+                        result.individual_grades = {}
+                else:
+                    # Use legacy cumulative filtering
+                    tprint_info("📊 Using legacy cumulative filtering")
+                    # Apply individual filters
+                    if self.config.enable_efficiency_ratio:
+                        tprint_info("📊 Applying efficiency ratio filter")
+                        result.efficiency_mask = self._apply_efficiency_ratio_filter(data)
+                        result.filter_statistics['efficiency'] = self._calculate_efficiency_stats(data, result.efficiency_mask)
+                    
+                    if self.config.enable_clv:
+                        tprint_info("📊 Applying CLV filter")
+                        result.clv_mask = self._apply_clv_filter(data)
+                        result.filter_statistics['clv'] = self._calculate_clv_stats(data, result.clv_mask)
+                    
+                    if self.config.enable_atr_ratio:
+                        tprint_info("📊 Applying ATR ratio filter")
+                        result.atr_ratio_mask = self._apply_atr_ratio_filter(data)
+                        result.filter_statistics['atr_ratio'] = self._calculate_atr_ratio_stats(data, result.atr_ratio_mask)
+                    
+                    if self.config.enable_trend_coherence:
+                        tprint_info("📊 Applying trend coherence filter")
+                        result.trend_coherence_mask = self._apply_trend_coherence_filter(data)
+                        result.filter_statistics['trend_coherence'] = self._calculate_trend_coherence_stats(data, result.trend_coherence_mask)
+                    
+                    # Combine filters based on configuration
+                    result.eligibility_mask = self._combine_filters(result)
                 
-                if self.config.enable_clv:
-                    tprint_info("📊 Applying CLV filter")
-                    result.clv_mask = self._apply_clv_filter(data)
-                    result.filter_statistics['clv'] = self._calculate_clv_stats(data, result.clv_mask)
-                
-                if self.config.enable_atr_ratio:
-                    tprint_info("📊 Applying ATR ratio filter")
-                    result.atr_ratio_mask = self._apply_atr_ratio_filter(data)
-                    result.filter_statistics['atr_ratio'] = self._calculate_atr_ratio_stats(data, result.atr_ratio_mask)
-                
-                if self.config.enable_trend_coherence:
-                    tprint_info("📊 Applying trend coherence filter")
-                    result.trend_coherence_mask = self._apply_trend_coherence_filter(data)
-                    result.filter_statistics['trend_coherence'] = self._calculate_trend_coherence_stats(data, result.trend_coherence_mask)
-                
-                # Combine filters based on configuration
-                result.eligibility_mask = self._combine_filters(result)
                 result.eligibility_ratio = result.eligibility_mask.mean()
                 result.n_eligible_samples = result.eligibility_mask.sum()
                 result.n_filtered_samples = result.n_total_samples - result.n_eligible_samples
@@ -377,6 +432,34 @@ class AdvancedFilters15m:
         
         return efficiency_mask
     
+    def _calculate_efficiency_grade(self, data: pd.DataFrame) -> pd.Series:
+        """Calculate efficiency ratio grade (0.0-1.0) for grading system."""
+        # Calculate efficiency ratio for each bar using safe operations
+        price_range = data['high'] - data['low']
+        price_range = price_range.replace(0, np.nan)  # Avoid division by zero
+        
+        # Use safe division for efficiency calculation
+        efficiency = np.abs(data['close'] - data['open'])
+        efficiency = efficiency / price_range
+        efficiency = efficiency.fillna(0)  # Set to 0 for zero-range bars
+        efficiency = efficiency.replace([np.inf, -np.inf], 0)  # Replace infinite values with 0
+        
+        # Use vectorized rolling operations
+        rolling_efficiency = vectorized_rolling_features(
+            efficiency.values, 
+            windows=self.config.efficiency_window, 
+            operation='mean'
+        )
+        rolling_efficiency = pd.Series(rolling_efficiency, index=data.index)
+        
+        # Convert to grade (0.0-1.0) where higher efficiency = higher grade
+        # Normalize efficiency to 0-1 range, with 0.6+ efficiency = 1.0 grade
+        efficiency_grade = np.clip(rolling_efficiency / 0.6, 0.0, 1.0)
+        
+        tprint_info(f"   → Efficiency grade: mean={efficiency_grade.mean():.3f}, std={efficiency_grade.std():.3f}")
+        
+        return efficiency_grade
+    
     def _apply_clv_filter(self, data: pd.DataFrame) -> pd.Series:
         """
         Apply Close-Location Value (CLV) filter using matrix operations.
@@ -423,6 +506,42 @@ class AdvancedFilters15m:
         
         return clv_mask
     
+    def _calculate_clv_grade(self, data: pd.DataFrame) -> pd.Series:
+        """Calculate CLV grade (0.0-1.0) for grading system."""
+        # Calculate CLV for each bar using safe operations
+        price_range = data['high'] - data['low']
+        price_range = price_range.replace(0, np.nan)  # Avoid division by zero
+        
+        clv_numerator = 2 * data['close'] - data['high'] - data['low']
+        clv = clv_numerator / price_range
+        clv = clv.fillna(0)  # Set to 0 for zero-range bars
+        clv = clv.replace([np.inf, -np.inf], 0)  # Replace infinite values with 0
+        
+        # Use vectorized rolling operations for mean and std
+        rolling_clv = vectorized_rolling_features(
+            clv.values, 
+            windows=self.config.clv_window, 
+            operation='mean'
+        )
+        rolling_clv = pd.Series(rolling_clv, index=data.index)
+        
+        clv_volatility = vectorized_rolling_features(
+            clv.values, 
+            windows=self.config.clv_window, 
+            operation='std'
+        )
+        clv_volatility = pd.Series(clv_volatility, index=data.index)
+        
+        # Convert to grade (0.0-1.0) based on directional strength and stability
+        # Higher grade for stronger directional CLV and lower volatility
+        clv_strength = np.abs(rolling_clv)
+        clv_stability = 1.0 - np.clip(clv_volatility / self.config.clv_volatility_threshold, 0.0, 1.0)
+        clv_grade = (clv_strength * clv_stability).clip(0.0, 1.0)
+        
+        tprint_info(f"   → CLV grade: mean={clv_grade.mean():.3f}, std={clv_grade.std():.3f}")
+        
+        return clv_grade
+    
     def _apply_atr_ratio_filter(self, data: pd.DataFrame) -> pd.Series:
         """
         Apply ATR volatility ratio filter using matrix operations.
@@ -457,15 +576,50 @@ class AdvancedFilters15m:
         atr_ratio = atr_ratio.fillna(1.0)  # Fill NaN values with 1.0
         atr_ratio = atr_ratio.replace([np.inf, -np.inf], 1.0)  # Replace infinite values with 1.0
         
-        # Create eligibility mask using math validation
+        # Create eligibility mask using math validation (only check upper bound - no "too quiet" filter)
         atr_ratio_mask = self.math_validator.validate_finite(
-            (atr_ratio >= self.config.atr_ratio_threshold_low) & 
-            (atr_ratio <= self.config.atr_ratio_threshold_high)
+            atr_ratio <= self.config.atr_ratio_threshold_high
         )
         
         tprint_info(f"   → ATR ratio filter: {atr_ratio_mask.sum()}/{len(atr_ratio_mask)} samples passed")
         
         return atr_ratio_mask
+    
+    def _calculate_atr_ratio_grade(self, data: pd.DataFrame) -> pd.Series:
+        """Calculate ATR ratio grade (0.0-1.0) for grading system."""
+        # Calculate True Range using vectorized operations
+        tr1 = data['high'] - data['low']
+        tr2 = np.abs(data['high'] - data['close'].shift(1))
+        tr3 = np.abs(data['low'] - data['close'].shift(1))
+        true_range = np.maximum(tr1, np.maximum(tr2, tr3))
+        
+        # Use vectorized rolling operations for ATR calculation
+        atr_short = vectorized_rolling_features(
+            true_range.values, 
+            windows=self.config.atr_short_window, 
+            operation='mean'
+        )
+        atr_short = pd.Series(atr_short, index=data.index)
+        
+        atr_long = vectorized_rolling_features(
+            true_range.values, 
+            windows=self.config.atr_long_window, 
+            operation='mean'
+        )
+        atr_long = pd.Series(atr_long, index=data.index)
+        
+        # Calculate ATR ratio using safe division
+        atr_ratio = atr_short / atr_long
+        atr_ratio = atr_ratio.fillna(1.0)  # Fill NaN values with 1.0
+        atr_ratio = atr_ratio.replace([np.inf, -np.inf], 1.0)  # Replace infinite values with 1.0
+        
+        # Convert to grade (0.0-1.0) where moderate volatility = higher grade
+        # Grade decreases as ratio approaches the threshold (too jumpy)
+        atr_grade = np.clip(1.0 - (atr_ratio / self.config.atr_ratio_threshold_high), 0.0, 1.0)
+        
+        tprint_info(f"   → ATR ratio grade: mean={atr_grade.mean():.3f}, std={atr_grade.std():.3f}")
+        
+        return atr_grade
     
     def _apply_trend_coherence_filter(self, data: pd.DataFrame) -> pd.Series:
         """
@@ -501,6 +655,32 @@ class AdvancedFilters15m:
         tprint_info(f"   → Trend coherence filter: {trend_coherence_mask.sum()}/{len(trend_coherence_mask)} samples passed")
         
         return trend_coherence_mask
+    
+    def _calculate_trend_coherence_grade(self, data: pd.DataFrame) -> pd.Series:
+        """Calculate trend coherence grade (0.0-1.0) for grading system."""
+        # Calculate direction consistency using vectorized operations
+        close_direction = np.sign(data['close'].diff())
+        
+        # Use vectorized rolling operations for direction consistency
+        direction_consistency = vectorized_rolling_features(
+            close_direction.values, 
+            windows=self.config.direction_window, 
+            operation='consistency'
+        )
+        direction_consistency = pd.Series(direction_consistency, index=data.index)
+        
+        # Calculate EMA slope using vectorized operations
+        ema = data['close'].ewm(span=self.config.ema_period, min_periods=1).mean()
+        ema_slope = ema.diff()
+        
+        # Convert to grade (0.0-1.0) based on direction consistency and slope strength
+        direction_grade = np.clip(direction_consistency, 0.0, 1.0)
+        slope_grade = np.clip(ema_slope / self.config.min_slope_threshold, 0.0, 1.0)
+        trend_coherence_grade = (direction_grade * slope_grade).clip(0.0, 1.0)
+        
+        tprint_info(f"   → Trend coherence grade: mean={trend_coherence_grade.mean():.3f}, std={trend_coherence_grade.std():.3f}")
+        
+        return trend_coherence_grade
     
     def cleanup(self) -> None:
         """Clean up resources and optimize memory."""

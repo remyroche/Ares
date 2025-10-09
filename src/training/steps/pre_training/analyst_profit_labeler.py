@@ -8,7 +8,8 @@ Key Features:
 - 15m timeframe optimization for strategic decision-making
 - Multi-horizon profit labeling (15m, 30m, 45m, 60m, 75m, 90m horizons)
 - Optimal entry point detection - analyzes price variation over rolling windows
-- Highest gap entry - finds bar with highest price gap as optimal entry point
+- Local extrema entry - finds local minima/maxima BEFORE price action as optimal entry point
+- Multi-size opportunity logic (0.5%, 0.7%, 1.0% thresholds)
 - Volatility-aware target bands
 - Enhanced label quality scoring
 - Per-regime/cluster optimization support
@@ -107,10 +108,10 @@ class AnalystProfitLabelerConfig:
     # System finds optimal entry point (highest price gap) within each window
     horizons: List[int] = field(default_factory=lambda: [15, 30, 45, 60, 75, 90])  # Rolling window sizes in minutes
 
-    # Profit targets (percentage) - Realistic for 15m crypto movements after fees
-    # ETH typically moves 0.1% per 15m on average (0.07% median)
-    # Starting at 0.2% provides buffer above typical trading costs (~0.1% roundtrip)
-    target_profits: List[float] = field(default_factory=lambda: [0.2, 0.4, 0.6, 0.8, 1.0, 1.2])
+    # Profit targets (percentage) - Multi-size opportunity logic
+    # 0.5% minimum entry threshold, with 0.7% and 1.0% as higher confidence levels
+    # Aligned with multi-size opportunity detection logic
+    target_profits: List[float] = field(default_factory=lambda: [0.5, 0.7, 1.0, 1.5, 2.0, 2.5])
 
     # Volatility-aware settings
     # Disable volatility normalization for simpler percentage-based targets
@@ -131,11 +132,12 @@ class AnalystProfitLabelerConfig:
     # Optimal entry point detection
     # Strategy: Analyze price variation over rolling windows to find optimal entry points
     # 1. Check price variation over rolling windows (15m, 30m, 45m, 60m, 75m, 90m)
-    # 2. If price variation clears opportunity threshold, find bar with highest price gap
-    # 3. Flag that bar as the optimal entry point
+    # 2. If price variation clears opportunity threshold (0.5%), find local minima/maxima
+    # 3. Flag the bar with highest price gap BEFORE the price action as optimal entry point
     enable_optimal_entry_detection: bool = True  # Enable optimal entry point detection
-    entry_threshold: float = 0.2  # Minimum price variation to consider an opportunity
+    entry_threshold: float = 0.5  # Minimum price variation to consider an opportunity (0.5%)
     find_highest_gap_entry: bool = True  # Find bar with highest price gap as entry point
+    entry_point_strategy: str = "local_extrema"  # Find local minima/maxima before price action
 
     # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
@@ -350,7 +352,9 @@ class AnalystProfitLabeler:
             labeler_config.optimal_entry_detection.enabled = self.config.enable_optimal_entry_detection
             labeler_config.optimal_entry_detection.entry_threshold = self.config.entry_threshold
             labeler_config.optimal_entry_detection.find_highest_gap_entry = self.config.find_highest_gap_entry
+            labeler_config.optimal_entry_detection.entry_point_strategy = self.config.entry_point_strategy
             labeler_config.optimal_entry_detection.horizons = self.config.horizons
+            labeler_config.optimal_entry_detection.target_profits = self.config.target_profits
         
         # Apply custom parameters
         if self.config.custom_params:

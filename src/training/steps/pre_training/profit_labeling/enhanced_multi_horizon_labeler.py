@@ -52,8 +52,9 @@ class EnhancedMultiHorizonConfig(MultiHorizonConfig):
     
     # Optimal entry point detection
     enable_optimal_entry_detection: bool = True
-    entry_threshold: float = 0.2
+    entry_threshold: float = 0.5  # 0.5% minimum entry threshold
     find_highest_gap_entry: bool = True
+    entry_point_strategy: str = "local_extrema"  # Find local minima/maxima before price action
     
     # Data quality thresholds
     min_data_quality_score: float = 0.7
@@ -639,8 +640,9 @@ def create_trading_optimized_multi_horizon_config() -> EnhancedMultiHorizonConfi
         enable_regime_conditioning=True,
         enable_risk_awareness=True,
         enable_optimal_entry_detection=True,
-        entry_threshold=0.2,
+        entry_threshold=0.5,
         find_highest_gap_entry=True,
+        entry_point_strategy="local_extrema",
         min_data_quality_score=0.8,
         min_label_stability_score=0.7,
         enhanced_config=create_trading_optimized_config()
@@ -658,8 +660,9 @@ def create_research_optimized_multi_horizon_config() -> EnhancedMultiHorizonConf
         enable_regime_conditioning=True,
         enable_risk_awareness=False,
         enable_optimal_entry_detection=True,
-        entry_threshold=0.2,
+        entry_threshold=0.5,
         find_highest_gap_entry=True,
+        entry_point_strategy="local_extrema",
         min_data_quality_score=0.6,
         min_label_stability_score=0.5,
         enhanced_config=create_research_optimized_config()

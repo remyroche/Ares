@@ -7,9 +7,8 @@ using the VolatilityAwareMultiHorizonLabeler with Analyst-specific configuration
 Key Features:
 - 15m timeframe optimization for strategic decision-making
 - Multi-horizon profit labeling (15m, 30m, 45m, 60m, 75m, 90m horizons)
-- Adversarial price movement analysis - checks ALL bars in opportunity window
-- Optimal entry timing - flags opportunities when adversarial movements stop (no waiting)
-- Spanning opportunities - allows opportunities that span multiple bars with adversarial movements
+- Optimal entry point detection - analyzes price variation over rolling windows
+- Highest gap entry - finds bar with highest price gap as optimal entry point
 - Volatility-aware target bands
 - Enhanced label quality scoring
 - Per-regime/cluster optimization support
@@ -104,9 +103,9 @@ class AnalystProfitLabelerConfig:
 
     # Horizon settings for Analyst (strategic decision-making)
     # Horizons are in MINUTES (must be >= timeframe period)
-    # Looking for opportunities on up to 6 15m bars (90 minutes total)
-    # Adversarial analysis checks ALL bars in opportunity window to ensure optimal entry timing
-    horizons: List[int] = field(default_factory=lambda: [15, 30, 45, 60, 75, 90])  # 1, 2, 3, 4, 5, 6 bars in minutes
+    # Rolling windows for price variation analysis: 15m, 30m, 45m, 60m, 75m, 90m
+    # System finds optimal entry point (highest price gap) within each window
+    horizons: List[int] = field(default_factory=lambda: [15, 30, 45, 60, 75, 90])  # Rolling window sizes in minutes
 
     # Profit targets (percentage) - Realistic for 15m crypto movements after fees
     # ETH typically moves 0.1% per 15m on average (0.07% median)
@@ -129,18 +128,14 @@ class AnalystProfitLabelerConfig:
     enable_long_positions: bool = True   # Include long opportunities (buy when expecting price increase)
     enable_short_positions: bool = False  # Include short opportunities (sell when expecting price decrease)
 
-    # Adversarial price movement settings
-    # Strategy: Check ALL bars in opportunity window for adversarial movements
-    # Flag opportunity when adversarial movements stop (no waiting period)
-    # Don't discount opportunities that span multiple bars with adversarial movements
-    # This trains models to enter at optimal peak/bottom prices, not before small bumps
-    enable_adversarial_analysis: bool = True  # Consider adversarial price movements
-    adversarial_threshold: float = 0.1  # 0.1% threshold for adversarial movements
-    check_all_bars_for_adversarial: bool = True  # Check all bars in opportunity window for adversarial movements
-    wait_for_adversarial_clearance: bool = True  # Only flag opportunity after adversarial movements stop
-    adversarial_clearance_bars: int = 0  # No waiting - start opportunity immediately when adversarial stops
-    adversarial_weight: float = 0.0  # No weight - binary decision: opportunity only if no adversarial movements
-    allow_spanning_opportunities: bool = True  # Allow opportunities that span multiple bars with adversarial movements
+    # Optimal entry point detection
+    # Strategy: Analyze price variation over rolling windows to find optimal entry points
+    # 1. Check price variation over rolling windows (15m, 30m, 45m, 60m, 75m, 90m)
+    # 2. If price variation clears opportunity threshold, find bar with highest price gap
+    # 3. Flag that bar as the optimal entry point
+    enable_optimal_entry_detection: bool = True  # Enable optimal entry point detection
+    entry_threshold: float = 0.2  # Minimum price variation to consider an opportunity
+    find_highest_gap_entry: bool = True  # Find bar with highest price gap as entry point
 
     # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
@@ -350,15 +345,12 @@ class AnalystProfitLabeler:
         # Configure regime adaptation
         labeler_config.regime_config.enabled = self.config.enable_regime_adaptation
         
-        # Configure adversarial analysis
-        if hasattr(labeler_config, 'adversarial_analysis'):
-            labeler_config.adversarial_analysis.enabled = self.config.enable_adversarial_analysis
-            labeler_config.adversarial_analysis.threshold = self.config.adversarial_threshold
-            labeler_config.adversarial_analysis.check_all_bars = self.config.check_all_bars_for_adversarial
-            labeler_config.adversarial_analysis.wait_for_clearance = self.config.wait_for_adversarial_clearance
-            labeler_config.adversarial_analysis.clearance_bars = self.config.adversarial_clearance_bars
-            labeler_config.adversarial_analysis.weight = self.config.adversarial_weight
-            labeler_config.adversarial_analysis.allow_spanning_opportunities = self.config.allow_spanning_opportunities
+        # Configure optimal entry point detection
+        if hasattr(labeler_config, 'optimal_entry_detection'):
+            labeler_config.optimal_entry_detection.enabled = self.config.enable_optimal_entry_detection
+            labeler_config.optimal_entry_detection.entry_threshold = self.config.entry_threshold
+            labeler_config.optimal_entry_detection.find_highest_gap_entry = self.config.find_highest_gap_entry
+            labeler_config.optimal_entry_detection.horizons = self.config.horizons
         
         # Apply custom parameters
         if self.config.custom_params:

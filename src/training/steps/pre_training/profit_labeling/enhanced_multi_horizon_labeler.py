@@ -50,11 +50,10 @@ class EnhancedMultiHorizonConfig(MultiHorizonConfig):
     enable_regime_conditioning: bool = True
     enable_risk_awareness: bool = True
     
-    # Adversarial analysis for optimal entry timing
-    enable_adversarial_analysis: bool = True
-    check_all_bars_for_adversarial: bool = True
-    wait_for_adversarial_clearance: bool = True
-    allow_spanning_opportunities: bool = True
+    # Optimal entry point detection
+    enable_optimal_entry_detection: bool = True
+    entry_threshold: float = 0.2
+    find_highest_gap_entry: bool = True
     
     # Data quality thresholds
     min_data_quality_score: float = 0.7
@@ -639,10 +638,9 @@ def create_trading_optimized_multi_horizon_config() -> EnhancedMultiHorizonConfi
         tactician_horizon_minutes=15,
         enable_regime_conditioning=True,
         enable_risk_awareness=True,
-        enable_adversarial_analysis=True,
-        check_all_bars_for_adversarial=True,
-        wait_for_adversarial_clearance=True,
-        allow_spanning_opportunities=True,
+        enable_optimal_entry_detection=True,
+        entry_threshold=0.2,
+        find_highest_gap_entry=True,
         min_data_quality_score=0.8,
         min_label_stability_score=0.7,
         enhanced_config=create_trading_optimized_config()
@@ -659,10 +657,9 @@ def create_research_optimized_multi_horizon_config() -> EnhancedMultiHorizonConf
         tactician_horizon_minutes=15,
         enable_regime_conditioning=True,
         enable_risk_awareness=False,
-        enable_adversarial_analysis=True,
-        check_all_bars_for_adversarial=True,
-        wait_for_adversarial_clearance=True,
-        allow_spanning_opportunities=True,
+        enable_optimal_entry_detection=True,
+        entry_threshold=0.2,
+        find_highest_gap_entry=True,
         min_data_quality_score=0.6,
         min_label_stability_score=0.5,
         enhanced_config=create_research_optimized_config()

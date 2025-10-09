@@ -105,22 +105,22 @@ class FinalFeatureSelectionStep:
         self.model_profiles = {
             'AdvancedMambaHybrid': {
                 'min_features': 50, 'target_features': 60, 'max_features': 80,
-                'stage_targets': [80, 70, 60],  # Updated for mRMR/Ensemble/RFE pipeline
+                'stage_targets': [70, 60],  # Updated for mRMR/Ensemble/RFE pipeline (variable start)
                 'priority_categories': ['momentum', 'interaction', 'microstructure']
             },
             'FinancialResNet': {
                 'min_features': 60, 'target_features': 70, 'max_features': 90,
-                'stage_targets': [90, 80, 70],
+                'stage_targets': [80, 70],
                 'priority_categories': ['regime', 'temporal', 'volatility']
             },
             'DeepScaler': {
                 'min_features': 40, 'target_features': 60, 'max_features': 80,
-                'stage_targets': [80, 70, 60],  # Updated for new pipeline
+                'stage_targets': [70, 60],  # Updated for new pipeline
                 'priority_categories': ['statistical', 'momentum', 'volatility']
             },
             'NBEATS': {
                 'min_features': 40, 'target_features': 60, 'max_features': 80,
-                'stage_targets': [80, 70, 60],  # Updated for new pipeline
+                'stage_targets': [70, 60],  # Updated for new pipeline
                 'priority_categories': ['temporal', 'trend', 'seasonality']
             }
         }
@@ -165,7 +165,7 @@ class FinalFeatureSelectionStep:
         model_type = self.config.get('model_type', 'default')
         profile = self.model_profiles.get(model_type, {
             'min_features': 50, 'target_features': 60, 'max_features': 80,  # Updated for new pipeline
-            'stage_targets': [80, 70, 60],  # Updated for mRMR/Ensemble/RFE pipeline
+            'stage_targets': [70, 60],  # Updated for mRMR/Ensemble/RFE pipeline (variable start)
             'priority_categories': ['momentum', 'volatility', 'microstructure']
         })
 
@@ -189,10 +189,10 @@ class FinalFeatureSelectionStep:
         FeatureSelectionConfig = _FeatureSelectionConfig
 
         self.feature_config = FeatureSelectionConfig(
-            initial_features=self.config.get('initial_features', 80),  # Updated for new pipeline
+            initial_features=self.config.get('initial_features', 120),  # Variable starting point
             stage_1_target=self.config.get('stage_1_target', profile['stage_targets'][0]),
             stage_2_target=self.config.get('stage_2_target', profile['stage_targets'][1]),
-            stage_3_target=self.config.get('stage_3_target', profile['stage_targets'][2]),
+            stage_3_target=self.config.get('stage_3_target', profile.get('stage_targets', [60])[-1]),  # Use last target or default to 60
             rf_n_estimators=self.config.get('rf_n_estimators', 100),
             cv_folds=self.config.get('cv_folds', 5),
             save_analysis=self.config.get('save_analysis', True),
@@ -257,7 +257,7 @@ class FinalFeatureSelectionStep:
         tprint(f"   🏢 Exchange: {exchange}")
         tprint(f"   ⏰ Timeframe: {timeframe}")
         tprint(f"   📁 Data directory: {data_dir}")
-        tprint(f"   🎯 Target: 80→70→60 features (mRMR/Ensemble/RFE pipeline)")
+        tprint(f"   🎯 Target: Variable→70→60 features (mRMR/Ensemble/RFE pipeline)")
         
         try:
             # Load feature data
@@ -741,7 +741,7 @@ class FinalFeatureSelectionStep:
 
         tprint("🔍 Running Multi-Stage Feature Selection")
         tprint(f"   📊 Input: {len(X)} samples, {len(X.columns)} features")
-        tprint(f"   🎯 Target: 80→70→60 features (mRMR/Ensemble/RFE pipeline)")
+        tprint(f"   🎯 Target: Variable→70→60 features (mRMR/Ensemble/RFE pipeline)")
         
         if y is not None:
             tprint(f"   🎯 Target: {len(y)} samples (supervised learning)")
@@ -1083,7 +1083,7 @@ class FinalFeatureSelectionStep:
             tprint("   ✅ Vectorized operations: Enabled")
             tprint("   ✅ Caching: Enabled")
             tprint("   ✅ Comprehensive logging: Enabled")
-            tprint("   ✅ Multi-stage reduction: 80→70→60 (mRMR/Ensemble/RFE)")
+            tprint("   ✅ Multi-stage reduction: Variable→70→60 (mRMR/Ensemble/RFE)")
             
             tprint("=" * 60)
             

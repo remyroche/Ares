@@ -169,9 +169,10 @@ class InteractiveFeatureGenerationConfig:
     # Budget constraints for final feature selection
     enable_budget_constraints: bool = True
     total_budget_ms: float = 100.0
-    base_features_budget_ms: float = 60.0  # 60% of total budget
-    interaction_features_budget_ms: float = 25.0  # 25% of total budget
-    cross_timeframe_features_budget_ms: float = 15.0  # 15% of total budget
+    base_features_budget_ms: float = 68.0  # 68% of total budget
+    interaction_features_budget_ms: float = 15.0  # 15% of total budget
+    cross_timeframe_features_budget_ms: float = 10.0  # 10% of total budget
+    gate_features_budget_ms: float = 7.0  # 7% of total budget
     
     # Feature type constraints - Updated for new pipeline
     base_features_min: int = 40
@@ -183,6 +184,9 @@ class InteractiveFeatureGenerationConfig:
     cross_timeframe_features_min: int = 3
     cross_timeframe_features_max: int = 10
     cross_timeframe_features_target: int = 6  # Target 6 cross-timeframe features
+    gate_features_min: int = 2
+    gate_features_max: int = 8
+    gate_features_target: int = 5  # Target 5 gate features
     
     # Optimization configuration
     enable_matrix_optimization: bool = True
@@ -314,6 +318,7 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
             base_features_budget_ms=float(params.get('base_features_budget_ms', InteractiveFeatureGenerationConfig.base_features_budget_ms)),
             interaction_features_budget_ms=float(params.get('interaction_features_budget_ms', InteractiveFeatureGenerationConfig.interaction_features_budget_ms)),
             cross_timeframe_features_budget_ms=float(params.get('cross_timeframe_features_budget_ms', InteractiveFeatureGenerationConfig.cross_timeframe_features_budget_ms)),
+            gate_features_budget_ms=float(params.get('gate_features_budget_ms', InteractiveFeatureGenerationConfig.gate_features_budget_ms)),
             # Feature type constraints
             base_features_min=int(params.get('base_features_min', InteractiveFeatureGenerationConfig.base_features_min)),
             base_features_max=int(params.get('base_features_max', InteractiveFeatureGenerationConfig.base_features_max)),
@@ -324,6 +329,9 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
             cross_timeframe_features_min=int(params.get('cross_timeframe_features_min', InteractiveFeatureGenerationConfig.cross_timeframe_features_min)),
             cross_timeframe_features_max=int(params.get('cross_timeframe_features_max', InteractiveFeatureGenerationConfig.cross_timeframe_features_max)),
             cross_timeframe_features_target=int(params.get('cross_timeframe_features_target', InteractiveFeatureGenerationConfig.cross_timeframe_features_target)),
+            gate_features_min=int(params.get('gate_features_min', InteractiveFeatureGenerationConfig.gate_features_min)),
+            gate_features_max=int(params.get('gate_features_max', InteractiveFeatureGenerationConfig.gate_features_max)),
+            gate_features_target=int(params.get('gate_features_target', InteractiveFeatureGenerationConfig.gate_features_target)),
         )
 
     def _initialize_orchestrator(self):

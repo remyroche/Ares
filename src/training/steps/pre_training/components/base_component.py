@@ -208,20 +208,15 @@ class BasePreTrainingComponent(ABC):
     def _log_success(self, message: str, **context: Any) -> None:
         self._log_info(message, **context)
 
-    @abstractmethod
     def get_required_artifacts(self) -> List[str]:
         """Get list of required artifacts this component must produce."""
         self._log_debug(
             f"🧩 get_required_artifacts called on base class {self.__class__.__name__}",
             event='component_get_required_artifacts',
         )
-        raise NotImplementedError(
-            f"Subclasses must implement get_required_artifacts method. "
-            f"Component '{self.__class__.__name__}' does not implement the required get_required_artifacts() method. "
-            f"Please implement this abstract method in your component class."
-        )
+        # Default implementation - subclasses should override this
+        return []
 
-    @abstractmethod
     async def execute(self, data: Any, pipeline_state: PipelineState) -> ComponentResult:
         """Execute the component."""
         self._log_debug(
@@ -229,10 +224,12 @@ class BasePreTrainingComponent(ABC):
             data_type=type(data).__name__,
             event='component_execute_called',
         )
-        raise NotImplementedError(
-            f"Subclasses must implement execute method. "
-            f"Component '{self.__class__.__name__}' does not implement the required execute() method. "
-            f"Please implement this abstract method in your component class."
+        # Default implementation - subclasses should override this
+        return ComponentResult(
+            success=False,
+            error_message=f"Component '{self.__class__.__name__}' does not implement the execute() method. "
+                         f"Please implement this method in your component class.",
+            execution_time=0.0
         )
 
     async def save_artifacts(

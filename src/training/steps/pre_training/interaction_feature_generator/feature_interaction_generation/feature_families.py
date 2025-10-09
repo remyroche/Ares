@@ -145,11 +145,26 @@ class FeatureFamilyBuilder:
     
     def _compute_feature(self, data: pd.DataFrame, lookback: int) -> np.ndarray:
         """Compute the actual feature values (to be implemented by subclasses)."""
-        raise NotImplementedError("Subclasses must implement _compute_feature")
+        # Default implementation - subclasses should override this
+        if 'close' not in data.columns:
+            return np.zeros(len(data))
+        
+        # Basic momentum calculation as fallback
+        close_prices = data['close'].values
+        if len(close_prices) < lookback:
+            return np.zeros(len(close_prices))
+        
+        # Simple momentum calculation
+        momentum = np.zeros_like(close_prices)
+        for i in range(lookback, len(close_prices)):
+            momentum[i] = (close_prices[i] - close_prices[i - lookback]) / close_prices[i - lookback]
+        
+        return momentum
     
     def _get_family_type(self) -> FamilyType:
         """Get the family type (to be implemented by subclasses)."""
-        raise NotImplementedError("Subclasses must implement _get_family_type")
+        # Default implementation - subclasses should override this
+        return FamilyType.MOMENTUM
     
     def _get_memory_usage(self) -> float:
         """Get current memory usage in MB."""

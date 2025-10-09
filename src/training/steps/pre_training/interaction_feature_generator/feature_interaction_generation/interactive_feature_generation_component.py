@@ -110,10 +110,10 @@ from ...column_naming import (
     ensure_namespace,
 )
 
-# Import the optimized orchestrator
-from .optimized_interaction_orchestrator import (
-    OptimizedInteractionOrchestrator,
-    OptimizedInteractionConfig,
+# Import the enhanced optimized orchestrator
+from .enhanced_optimized_orchestrator import (
+    EnhancedOptimizedInteractionOrchestrator,
+    EnhancedOptimizedConfig,
     OptimizedInteractionResult,
     PipelineStage,
 )
@@ -170,8 +170,40 @@ class InteractiveFeatureGenerationConfig:
     enable_matrix_optimization: bool = True
     enable_hardware_optimization: bool = True
     enable_parallel_processing: bool = True
-    max_workers: int = 4
+    max_workers: int = 8
     batch_size: int = 1000
+    
+    # Enhanced optimization settings
+    enable_early_filtering: bool = True
+    enable_interaction_pruning: bool = True
+    enable_budgeted_optimization: bool = True
+    enable_caching: bool = True
+    
+    # Memory optimization settings
+    max_memory_gb: float = 16.0
+    chunk_size_mb: float = 200.0
+    use_parquet: bool = True
+    use_memmap: bool = True
+    
+    # Cache settings
+    l1_max_size_mb: float = 200.0
+    l2_max_size_mb: float = 2000.0
+    enable_dependency_tracking: bool = True
+    
+    # Early filtering settings
+    downsample_ratio: float = 0.1
+    variance_threshold: float = 1e-6
+    top_k_per_family: int = 5
+    
+    # Interaction pruning settings
+    max_interactions_per_domain: int = 6
+    min_delta_ic: float = 0.01
+    min_stability_score: float = 0.7
+    
+    # Budgeted optimization settings
+    coarse_grid_points: int = 10
+    fine_search_evals: int = 16
+    early_stop_patience: int = 5
     
     # Validation configuration
     enable_validation: bool = True
@@ -296,32 +328,52 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
         """Initialize the optimized interaction orchestrator."""
         tprint_debug("🔧 Initializing optimized interaction orchestrator...")
 
-        # Convert config to orchestrator config
-        orchestrator_config = OptimizedInteractionConfig(
-            symbol=self._interactive_config.symbol,
-            exchange=self._interactive_config.exchange,
-            timeframe=self._interactive_config.timeframe,
-            data_dir=self._interactive_config.data_dir,
-            feature_budget_pre=self._interactive_config.feature_budget_pre,
-            feature_budget_post=self._interactive_config.feature_budget_post,
-            interactions_cap=self._interactive_config.interactions_cap,
-            transforms_per_parent=self._interactive_config.transforms_per_parent,
-            lookback_ceiling_minutes=self._interactive_config.lookback_ceiling_minutes,
-            latency_budget_ms=self._interactive_config.latency_budget_ms,
-            enable_matrix_optimization=self._interactive_config.enable_matrix_optimization,
-            enable_hardware_optimization=self._interactive_config.enable_hardware_optimization,
+        # Convert config to enhanced orchestrator config
+        orchestrator_config = EnhancedOptimizedConfig(
+            # Core settings
+            enable_early_filtering=self._interactive_config.enable_early_filtering,
+            enable_interaction_pruning=self._interactive_config.enable_interaction_pruning,
+            enable_budgeted_optimization=self._interactive_config.enable_budgeted_optimization,
+            enable_caching=self._interactive_config.enable_caching,
             enable_parallel_processing=self._interactive_config.enable_parallel_processing,
+            
+            # DAG executor settings
             max_workers=self._interactive_config.max_workers,
-            batch_size=self._interactive_config.batch_size,
-            enable_validation=self._interactive_config.enable_validation,
-            validation_threshold=self._interactive_config.validation_threshold,
-            verbose_logging=self._interactive_config.verbose_logging,
-            log_performance=self._interactive_config.log_performance,
-            market_data_batch_size=self._interactive_config.market_data_batch_size,
-            market_data_window_days=self._interactive_config.market_data_window_days,
+            use_processes=True,
+            
+            # Memory optimization settings
+            max_memory_gb=self._interactive_config.max_memory_gb,
+            chunk_size_mb=self._interactive_config.chunk_size_mb,
+            use_parquet=self._interactive_config.use_parquet,
+            use_memmap=self._interactive_config.use_memmap,
+            
+            # Cache settings
+            l1_max_size_mb=self._interactive_config.l1_max_size_mb,
+            l2_max_size_mb=self._interactive_config.l2_max_size_mb,
+            enable_dependency_tracking=self._interactive_config.enable_dependency_tracking,
+            
+            # Early filtering settings
+            downsample_ratio=self._interactive_config.downsample_ratio,
+            variance_threshold=self._interactive_config.variance_threshold,
+            top_k_per_family=self._interactive_config.top_k_per_family,
+            
+            # Interaction pruning settings
+            max_interactions_per_domain=self._interactive_config.max_interactions_per_domain,
+            min_delta_ic=self._interactive_config.min_delta_ic,
+            min_stability_score=self._interactive_config.min_stability_score,
+            
+            # Budgeted optimization settings
+            coarse_grid_points=self._interactive_config.coarse_grid_points,
+            fine_search_evals=self._interactive_config.fine_search_evals,
+            early_stop_patience=self._interactive_config.early_stop_patience,
+            
+            # Performance monitoring
+            enable_performance_monitoring=self._interactive_config.log_performance,
+            log_level="INFO" if self._interactive_config.verbose_logging else "WARNING",
+            save_intermediate_results=False
         )
 
-        self.orchestrator = OptimizedInteractionOrchestrator(orchestrator_config)
+        self.orchestrator = EnhancedOptimizedInteractionOrchestrator(orchestrator_config)
         tprint_debug("✅ Optimized interaction orchestrator initialized")
     
     async def execute(self,
@@ -929,28 +981,48 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
 
         self._interactive_config = self._build_interactive_config(self.config)
 
+        # Update enhanced orchestrator configuration
         orchestrator_config = self.orchestrator.config
-        orchestrator_config.symbol = self._interactive_config.symbol
-        orchestrator_config.exchange = self._interactive_config.exchange
-        orchestrator_config.timeframe = self._interactive_config.timeframe
-        orchestrator_config.data_dir = self._interactive_config.data_dir
-        orchestrator_config.feature_budget_pre = self._interactive_config.feature_budget_pre
-        orchestrator_config.feature_budget_post = self._interactive_config.feature_budget_post
-        orchestrator_config.interactions_cap = self._interactive_config.interactions_cap
-        orchestrator_config.transforms_per_parent = self._interactive_config.transforms_per_parent
-        orchestrator_config.lookback_ceiling_minutes = self._interactive_config.lookback_ceiling_minutes
-        orchestrator_config.latency_budget_ms = self._interactive_config.latency_budget_ms
-        orchestrator_config.enable_matrix_optimization = self._interactive_config.enable_matrix_optimization
-        orchestrator_config.enable_hardware_optimization = self._interactive_config.enable_hardware_optimization
+        
+        # Core settings
+        orchestrator_config.enable_early_filtering = self._interactive_config.enable_early_filtering
+        orchestrator_config.enable_interaction_pruning = self._interactive_config.enable_interaction_pruning
+        orchestrator_config.enable_budgeted_optimization = self._interactive_config.enable_budgeted_optimization
+        orchestrator_config.enable_caching = self._interactive_config.enable_caching
         orchestrator_config.enable_parallel_processing = self._interactive_config.enable_parallel_processing
+        
+        # DAG executor settings
         orchestrator_config.max_workers = self._interactive_config.max_workers
-        orchestrator_config.batch_size = self._interactive_config.batch_size
-        orchestrator_config.enable_validation = self._interactive_config.enable_validation
-        orchestrator_config.validation_threshold = self._interactive_config.validation_threshold
-        orchestrator_config.verbose_logging = self._interactive_config.verbose_logging
-        orchestrator_config.log_performance = self._interactive_config.log_performance
-        orchestrator_config.market_data_batch_size = self._interactive_config.market_data_batch_size
-        orchestrator_config.market_data_window_days = self._interactive_config.market_data_window_days
+        
+        # Memory optimization settings
+        orchestrator_config.max_memory_gb = self._interactive_config.max_memory_gb
+        orchestrator_config.chunk_size_mb = self._interactive_config.chunk_size_mb
+        orchestrator_config.use_parquet = self._interactive_config.use_parquet
+        orchestrator_config.use_memmap = self._interactive_config.use_memmap
+        
+        # Cache settings
+        orchestrator_config.l1_max_size_mb = self._interactive_config.l1_max_size_mb
+        orchestrator_config.l2_max_size_mb = self._interactive_config.l2_max_size_mb
+        orchestrator_config.enable_dependency_tracking = self._interactive_config.enable_dependency_tracking
+        
+        # Early filtering settings
+        orchestrator_config.downsample_ratio = self._interactive_config.downsample_ratio
+        orchestrator_config.variance_threshold = self._interactive_config.variance_threshold
+        orchestrator_config.top_k_per_family = self._interactive_config.top_k_per_family
+        
+        # Interaction pruning settings
+        orchestrator_config.max_interactions_per_domain = self._interactive_config.max_interactions_per_domain
+        orchestrator_config.min_delta_ic = self._interactive_config.min_delta_ic
+        orchestrator_config.min_stability_score = self._interactive_config.min_stability_score
+        
+        # Budgeted optimization settings
+        orchestrator_config.coarse_grid_points = self._interactive_config.coarse_grid_points
+        orchestrator_config.fine_search_evals = self._interactive_config.fine_search_evals
+        orchestrator_config.early_stop_patience = self._interactive_config.early_stop_patience
+        
+        # Performance monitoring
+        orchestrator_config.enable_performance_monitoring = self._interactive_config.log_performance
+        orchestrator_config.log_level = "INFO" if self._interactive_config.verbose_logging else "WARNING"
 
         tprint_debug("✅ Orchestrator configuration updated")
 

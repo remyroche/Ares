@@ -50,6 +50,22 @@ from .dynamic_selection import (
     DynamicFeatureSelector
 )
 
+from .prefiltering import (
+    MRMRSpearmanPreFilter,
+    create_mrmr_spearman_prefilter
+)
+
+from .improved_mrmr import (
+    ImprovedMRMR,
+    create_improved_mrmr
+)
+
+from .enhanced_multi_stage_rfe import (
+    EnhancedMultiStageRFE,
+    PlateauDetector,
+    create_enhanced_multi_stage_rfe
+)
+
 # Factory functions
 from typing import Optional
 
@@ -112,5 +128,16 @@ __all__ = [
     
     # Factory functions
     'create_enhanced_ensemble_selector',
-    'create_enhanced_advanced_selector'
+    'create_enhanced_advanced_selector',
+    
+    # Pre-filtering and improved mRMR
+    'MRMRSpearmanPreFilter',
+    'create_mrmr_spearman_prefilter',
+    'ImprovedMRMR',
+    'create_improved_mrmr',
+    
+    # Enhanced multi-stage RFE
+    'EnhancedMultiStageRFE',
+    'PlateauDetector',
+    'create_enhanced_multi_stage_rfe'
 ]

@@ -144,6 +144,17 @@ from .advanced import (
     create_enhanced_advanced_selector,
 )
 
+# Pre-filtering and improved mRMR
+from .advanced import (
+    MRMRSpearmanPreFilter,
+    create_mrmr_spearman_prefilter,
+    ImprovedMRMR,
+    create_improved_mrmr,
+    EnhancedMultiStageRFE,
+    PlateauDetector,
+    create_enhanced_multi_stage_rfe,
+)
+
 __all__ = [
     # Core framework
     'get_feature_selection_framework',
@@ -237,6 +248,17 @@ __all__ = [
     'EnhancedAdvancedConfig',
     'create_enhanced_ensemble_selector',
     'create_enhanced_advanced_selector',
+    
+    # Pre-filtering and improved mRMR
+    'MRMRSpearmanPreFilter',
+    'create_mrmr_spearman_prefilter',
+    'ImprovedMRMR',
+    'create_improved_mrmr',
+    
+    # Enhanced multi-stage RFE
+    'EnhancedMultiStageRFE',
+    'PlateauDetector',
+    'create_enhanced_multi_stage_rfe',
 ]
 
 # Version info

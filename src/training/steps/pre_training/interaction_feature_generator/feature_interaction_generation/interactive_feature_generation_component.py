@@ -166,6 +166,21 @@ class InteractiveFeatureGenerationConfig:
     lookback_ceiling_minutes: int = 118
     latency_budget_ms: int = 50
     
+    # Budget constraints for final feature selection
+    enable_budget_constraints: bool = True
+    total_budget_ms: float = 100.0
+    base_features_budget_ms: float = 60.0  # 60% of total budget
+    interaction_features_budget_ms: float = 25.0  # 25% of total budget
+    cross_timeframe_features_budget_ms: float = 15.0  # 15% of total budget
+    
+    # Feature type constraints
+    base_features_min: int = 20
+    base_features_max: int = 60
+    interaction_features_min: int = 5
+    interaction_features_max: int = 25
+    cross_timeframe_features_min: int = 5
+    cross_timeframe_features_max: int = 20
+    
     # Optimization configuration
     enable_matrix_optimization: bool = True
     enable_hardware_optimization: bool = True

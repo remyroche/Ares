@@ -83,6 +83,17 @@ except ImportError:
     HPOTrialResult = dict  # Fallback to dict if not available
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 
+# Import budget-aware feature selection
+try:
+    from ..budget_aware_feature_selection import (
+        BudgetAwareFeatureSelector, BudgetAwareSelectionConfig, 
+        FeatureTypeBudget, create_budget_aware_selector
+    )
+    BUDGET_AWARE_SELECTION_AVAILABLE = True
+except ImportError:
+    BUDGET_AWARE_SELECTION_AVAILABLE = False
+    tprint_warning("⚠️ Budget-aware feature selection not available")
+
 
 CONFIG_ROOT_ENV = "ARES_CONFIG_ROOT"
 """Environment variable that can override the repo-relative config root."""
@@ -676,6 +687,18 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 event='final_feature_selection.execute',
             )
 
+            # Check if we have interactive feature generation results for budget-aware selection
+            interactive_features = None
+            if isinstance(pipeline_state, dict):
+                interactive_result = pipeline_state.get('interactive_feature_generation_result')
+                if interactive_result and isinstance(interactive_result, dict):
+                    interactive_features = {
+                        'base_features': interactive_result.get('features'),
+                        'interaction_features': interactive_result.get('interaction_features'),
+                        'cross_timeframe_features': interactive_result.get('cross_timeframe_features')
+                    }
+                    tprint_info("🔧 Found interactive feature generation results - will use budget-aware selection")
+
             # First, apply bayesian optimization to enhance feature selection parameters
             tprint_info("🔬 Applying bayesian optimization to feature selection parameters")
             optimized_config = await self._optimize_feature_selection_config(
@@ -684,10 +707,50 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 pipeline_state
             )
 
+            # Apply budget-aware selection if interactive features are available
+            budget_aware_result = None
+            if interactive_features and BUDGET_AWARE_SELECTION_AVAILABLE:
+                tprint_info("💰 Applying budget-aware feature selection for interaction and cross-timeframe features")
+                
+                try:
+                    # Create budget-aware selector with custom budgets
+                    budget_selector = create_budget_aware_selector(
+                        total_budget_ms=final_feature_selection_config.get('total_budget_ms', 100.0)
+                    )
+                    
+                    # Extract target data if available
+                    target_data = None
+                    if isinstance(data, pd.DataFrame) and 'target' in data.columns:
+                        target_data = data['target']
+                    elif isinstance(pipeline_state, dict) and 'target' in pipeline_state:
+                        target_data = pipeline_state['target']
+                    
+                    # Perform budget-aware selection
+                    budget_aware_result = budget_selector.select_features(
+                        base_features=interactive_features['base_features'],
+                        interaction_features=interactive_features['interaction_features'],
+                        cross_timeframe_features=interactive_features['cross_timeframe_features'],
+                        target=target_data
+                    )
+                    
+                    tprint_success(f"✅ Budget-aware selection completed: {len(budget_aware_result.total_selected_features)} features selected")
+                    tprint_info(f"📊 Base: {len(budget_aware_result.base_features_result.selected_features)}")
+                    tprint_info(f"🔗 Interaction: {len(budget_aware_result.interaction_features_result.selected_features)}")
+                    tprint_info(f"⏰ Cross-timeframe: {len(budget_aware_result.cross_timeframe_features_result.selected_features)}")
+                    
+                except Exception as e:
+                    tprint_warning(f"⚠️ Budget-aware selection failed, falling back to standard selection: {e}")
+                    budget_aware_result = None
+
             runtime_config = dict(optimized_config)
             runtime_config['data_dir_key'] = data_dir_key
             runtime_config['final_features_dir_key'] = final_features_dir_key
             runtime_config['bayesian_optimization_applied'] = True
+            
+            # Add budget-aware results to config if available
+            if budget_aware_result:
+                runtime_config['budget_aware_selection'] = budget_aware_result.to_dict()
+                runtime_config['selected_features'] = budget_aware_result.total_selected_features
 
             if final_features_dir_override:
                 runtime_config['final_features_dir'] = final_features_dir_override
@@ -700,13 +763,19 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     pipeline_state.get('generated_dir_key', 'market_analysis'),
                 )
 
-            success = await run_final_feature_selection_step(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=data_dir,
-                config=runtime_config
-            )
+            # Use budget-aware results if available, otherwise run standard selection
+            if budget_aware_result:
+                tprint_info("🎯 Using budget-aware selection results")
+                success = True  # Budget-aware selection already completed
+            else:
+                tprint_info("🎯 Running standard final feature selection")
+                success = await run_final_feature_selection_step(
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                    data_dir=data_dir,
+                    config=runtime_config
+                )
 
             if success:
                 # Create result artifacts with hardware performance metrics
@@ -717,24 +786,39 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     'adaptive_strategy_used': adaptive_strategy
                 }
 
-                artifacts_bundle = FinalFeatureSelectionArtifacts(
-                    final_feature_selection_result={
-                        'symbol': symbol,
-                        'exchange': exchange,
-                        'timeframe': timeframe,
-                        'data_dir': data_dir,
-                        'feature_selection_config': final_feature_selection_config,
-                        'execution_mode': 'component',
-                        'success': True,
-                        'stage_reduction': {
-                            'initial': 120,
-                            'stage_1': 100,
-                            'stage_2': 80,
-                            'stage_3': 60
-                        },
-                        'hardware_performance': performance_metrics,
-                        'validated_schemas': validation_metadata,
+                # Prepare final feature selection result
+                final_selection_result = {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'timeframe': timeframe,
+                    'data_dir': data_dir,
+                    'feature_selection_config': final_feature_selection_config,
+                    'execution_mode': 'component',
+                    'success': True,
+                    'stage_reduction': {
+                        'initial': 120,
+                        'stage_1': 100,
+                        'stage_2': 80,
+                        'stage_3': 60
                     },
+                    'hardware_performance': performance_metrics,
+                    'validated_schemas': validation_metadata,
+                }
+                
+                # Add budget-aware selection results if available
+                if budget_aware_result:
+                    final_selection_result['budget_aware_selection'] = budget_aware_result.to_dict()
+                    final_selection_result['selected_features'] = budget_aware_result.total_selected_features
+                    final_selection_result['feature_type_breakdown'] = {
+                        'base_features': len(budget_aware_result.base_features_result.selected_features),
+                        'interaction_features': len(budget_aware_result.interaction_features_result.selected_features),
+                        'cross_timeframe_features': len(budget_aware_result.cross_timeframe_features_result.selected_features)
+                    }
+                    final_selection_result['budget_utilization'] = budget_aware_result.total_budget_utilization
+                    tprint_info(f"💰 Budget utilization: {budget_aware_result.total_budget_utilization:.1%}")
+
+                artifacts_bundle = FinalFeatureSelectionArtifacts(
+                    final_feature_selection_result=final_selection_result,
                     validated_schemas=validation_metadata,
                 )
 

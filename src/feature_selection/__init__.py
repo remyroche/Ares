@@ -114,6 +114,26 @@ from .chunked import (
     create_chunked_processor,
 )
 
+# Advanced selection methods
+from .advanced import (
+    AdvancedFeatureSelector,
+    LASSOFeatureSelector,
+    RandomForestFeatureSelector,
+    LightGBMFeatureSelector,
+    EnsembleAdvancedSelector,
+    create_advanced_selector,
+    
+    FeatureSelectionValidator,
+    CrossValidationFramework,
+    RegressionTestFramework,
+    ValidationMetrics,
+    create_validation_framework,
+    
+    PermutationImportanceCalculator,
+    PermutationConfig,
+    create_permutation_calculator,
+)
+
 __all__ = [
     # Core framework
     'get_feature_selection_framework',
@@ -181,6 +201,24 @@ __all__ = [
     'ChunkedProcessor',
     'AdaptiveChunkProcessor',
     'create_chunked_processor',
+    
+    # Advanced selection methods
+    'AdvancedFeatureSelector',
+    'LASSOFeatureSelector',
+    'RandomForestFeatureSelector',
+    'LightGBMFeatureSelector',
+    'EnsembleAdvancedSelector',
+    'create_advanced_selector',
+    
+    'FeatureSelectionValidator',
+    'CrossValidationFramework',
+    'RegressionTestFramework',
+    'ValidationMetrics',
+    'create_validation_framework',
+    
+    'PermutationImportanceCalculator',
+    'PermutationConfig',
+    'create_permutation_calculator',
 ]
 
 # Version info

@@ -37,6 +37,15 @@ except ImportError:
     CUPY_AVAILABLE = False
     cp = None
 
+# Import hardware optimization tools
+from src.utils.hardware.unified_hardware_manager import (
+    UnifiedHardwareManager, WorkloadType, OptimizationLevel, HardwareConfig
+)
+from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
+from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+from src.utils.hardware.m1_gpu_utils import M1GPUManager
+from src.utils.hardware.advanced_memory_optimizer import get_advanced_memory_optimizer
+
 from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_error, tprint_debug
 from src.utils.logger import get_logger
 from src.utils.matrix_operations import get_unified_matrix_operations, get_batch_matrix_processor
@@ -44,7 +53,7 @@ from src.utils.matrix_operations import get_unified_matrix_operations, get_batch
 
 @dataclass
 class ParallelConfig:
-    """Configuration for parallel processing."""
+    """Configuration for parallel processing with hardware optimization."""
     max_workers: int = None
     chunk_size: int = 1000
     use_joblib: bool = True
@@ -54,6 +63,16 @@ class ParallelConfig:
     enable_compression: bool = True
     pin_memory: bool = True  # For GPU transfers
     l3_cache_size_mb: int = 32  # L3 cache size for chunk tuning
+    
+    # Hardware optimization settings
+    workload_type: WorkloadType = WorkloadType.FEATURE_ENGINEERING
+    optimization_level: OptimizationLevel = OptimizationLevel.BALANCED
+    enable_hardware_optimization: bool = True
+    enable_memory_pooling: bool = True
+    enable_gpu_acceleration: bool = False
+    memory_limit_gb: float = 8.0
+    enable_thermal_monitoring: bool = True
+    enable_adaptive_optimization: bool = True
 
 
 @dataclass
@@ -75,19 +94,37 @@ class ParallelFeatureOptimizer:
     """
     
     def __init__(self, config: Optional[ParallelConfig] = None, logger=None):
-        """Initialize the parallel optimizer."""
+        """Initialize the parallel optimizer with hardware optimization."""
         self.config = config or ParallelConfig()
         self.logger = logger or get_logger('ParallelFeatureOptimizer')
         
-        # Determine optimal number of workers
-        if self.config.max_workers is None:
-            self.config.max_workers = min(mp.cpu_count(), 8)  # Cap at 8 for memory reasons
+        tprint(f"🚀 Initializing Hardware-Optimized Parallel Feature Optimizer")
         
-        tprint(f"🚀 Initializing Parallel Feature Optimizer")
+        # Initialize hardware optimization components
+        if self.config.enable_hardware_optimization:
+            self._initialize_hardware_optimization()
+        else:
+            self.hardware_manager = None
+            self.cpu_optimizer = None
+            self.memory_optimizer = None
+            self.gpu_manager = None
+        
+        # Determine optimal number of workers using hardware optimization
+        if self.config.max_workers is None:
+            if self.cpu_optimizer:
+                self.config.max_workers = self.cpu_optimizer.get_optimal_worker_count()
+            else:
+                self.config.max_workers = min(mp.cpu_count(), 8)  # Cap at 8 for memory reasons
+        
+        # Optimize chunk size based on L3 cache
+        if self.config.l3_cache_size_mb > 0:
+            self.config.chunk_size = self._optimize_chunk_size()
+        
         tprint_info(f"   → Max workers: {self.config.max_workers}")
         tprint_info(f"   → Chunk size: {self.config.chunk_size}")
         tprint_info(f"   → Joblib available: {JOBLIB_AVAILABLE}")
         tprint_info(f"   → CuPy available: {CUPY_AVAILABLE}")
+        tprint_info(f"   → Hardware optimization: {self.config.enable_hardware_optimization}")
         
         # Initialize joblib memory cache if available
         if JOBLIB_AVAILABLE and self.config.use_joblib:
@@ -97,7 +134,7 @@ class ParallelFeatureOptimizer:
             self.memory = None
             self._cached_optimize_feature = self._optimize_single_feature
         
-        # Initialize matrix operations
+        # Initialize matrix operations with hardware optimization
         self.matrix_ops = get_unified_matrix_operations()
         self.batch_processor = get_batch_matrix_processor()
         
@@ -109,13 +146,76 @@ class ParallelFeatureOptimizer:
             'total_time': 0.0,
             'parallel_efficiency': 0.0,
             'memory_peak_mb': 0.0,
-            'gpu_utilization': 0.0
+            'gpu_utilization': 0.0,
+            'cpu_utilization': 0.0,
+            'thermal_state': 'normal'
         }
         
         # Feature groups for intelligent batching
         self.feature_groups: List[FeatureGroup] = []
         
-        tprint_success("✅ Parallel Feature Optimizer initialized")
+        tprint_success("✅ Hardware-Optimized Parallel Feature Optimizer initialized")
+    
+    def _initialize_hardware_optimization(self):
+        """Initialize hardware optimization components."""
+        tprint("🔧 Initializing hardware optimization components...")
+        
+        try:
+            # Create hardware configuration
+            hw_config = HardwareConfig(
+                cpu_optimization_level=self.config.optimization_level,
+                gpu_optimization_level=self.config.optimization_level,
+                memory_optimization_level=self.config.optimization_level,
+                memory_limit_gb=self.config.memory_limit_gb,
+                enable_gpu_memory_pooling=self.config.enable_memory_pooling,
+                enable_thermal_monitoring=self.config.enable_thermal_monitoring,
+                enable_adaptive_optimization=self.config.enable_adaptive_optimization
+            )
+            
+            # Initialize unified hardware manager
+            self.hardware_manager = UnifiedHardwareManager(hw_config)
+            
+            # Initialize individual optimizers
+            self.cpu_optimizer = M1CPUOptimizer()
+            self.memory_optimizer = M1MemoryOptimizer(self.config.memory_limit_gb)
+            
+            if self.config.enable_gpu_acceleration:
+                self.gpu_manager = M1GPUManager()
+            else:
+                self.gpu_manager = None
+            
+            # Optimize for feature engineering workload
+            if self.hardware_manager:
+                self.hardware_manager.optimize_for_workload(
+                    self.config.workload_type, 
+                    self.config.optimization_level
+                )
+            
+            # Start memory monitoring
+            if self.memory_optimizer:
+                self.memory_optimizer.start_monitoring()
+            
+            tprint_success("✅ Hardware optimization components initialized")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Hardware optimization initialization failed: {e}")
+            self.hardware_manager = None
+            self.cpu_optimizer = None
+            self.memory_optimizer = None
+            self.gpu_manager = None
+    
+    def _optimize_chunk_size(self) -> int:
+        """Optimize chunk size based on L3 cache size and data characteristics."""
+        # Estimate optimal chunk size based on L3 cache
+        # Assume each feature uses ~8 bytes (float64) + overhead
+        bytes_per_feature = 8 * 1.5  # 8 bytes + 50% overhead
+        optimal_chunk_size = int((self.config.l3_cache_size_mb * 1024 * 1024) / bytes_per_feature)
+        
+        # Ensure reasonable bounds
+        optimal_chunk_size = max(100, min(optimal_chunk_size, 10000))
+        
+        tprint_info(f"   → Optimized chunk size: {optimal_chunk_size} (L3 cache: {self.config.l3_cache_size_mb}MB)")
+        return optimal_chunk_size
     
     def create_feature_groups(self, features: List[str], 
                             group_size: int = 10,
@@ -312,35 +412,50 @@ class ParallelFeatureOptimizer:
                                      shared_data: Dict[str, Any],
                                      method: str,
                                      **kwargs) -> Dict[str, Any]:
-        """Optimize using multiprocessing.Pool."""
-        tprint("🔧 Using multiprocessing.Pool for parallel optimization...")
+        """Optimize using hardware-optimized multiprocessing.Pool."""
+        tprint("🔧 Using hardware-optimized multiprocessing.Pool for parallel optimization...")
         
         results = {}
         
-        with ProcessPoolExecutor(max_workers=self.config.max_workers) as executor:
-            # Submit all tasks
-            future_to_group = {}
-            for group in groups:
-                for feature in group.features:
-                    future = executor.submit(
-                        self._optimize_single_feature,
-                        feature, lookback_range, shared_data, method, **kwargs
-                    )
-                    future_to_group[future] = (group.group_id, feature)
-            
-            # Collect results
-            for future in as_completed(future_to_group):
-                group_id, feature = future_to_group[future]
-                try:
-                    result = future.result()
-                    if group_id not in results:
-                        results[group_id] = {}
-                    results[group_id][feature] = result
-                except Exception as e:
-                    tprint_error(f"❌ Feature {feature} optimization failed: {e}")
-                    if group_id not in results:
-                        results[group_id] = {}
-                    results[group_id][feature] = {'success': False, 'error': str(e)}
+        # Use hardware-optimized process pool if available
+        if self.cpu_optimizer:
+            executor = self.cpu_optimizer.create_optimized_process_pool(self.config.max_workers)
+        else:
+            executor = ProcessPoolExecutor(max_workers=self.config.max_workers)
+        
+        try:
+            with executor:
+                # Submit all tasks
+                future_to_group = {}
+                for group in groups:
+                    for feature in group.features:
+                        future = executor.submit(
+                            self._optimize_single_feature,
+                            feature, lookback_range, shared_data, method, **kwargs
+                        )
+                        future_to_group[future] = (group.group_id, feature)
+                
+                # Collect results with hardware monitoring
+                for future in as_completed(future_to_group):
+                    group_id, feature = future_to_group[future]
+                    try:
+                        result = future.result()
+                        if group_id not in results:
+                            results[group_id] = {}
+                        results[group_id][feature] = result
+                        
+                        # Update performance stats
+                        self._update_performance_stats()
+                        
+                    except Exception as e:
+                        tprint_error(f"❌ Feature {feature} optimization failed: {e}")
+                        if group_id not in results:
+                            results[group_id] = {}
+                        results[group_id][feature] = {'success': False, 'error': str(e)}
+        
+        except Exception as e:
+            tprint_error(f"❌ Multiprocessing execution failed: {e}")
+            raise
         
         return results
     
@@ -439,7 +554,7 @@ class ParallelFeatureOptimizer:
         return result
     
     def _calculate_ic(self, feature_data: np.ndarray, labels: np.ndarray) -> float:
-        """Calculate information coefficient between feature and labels."""
+        """Calculate information coefficient between feature and labels with hardware optimization."""
         # Remove NaN values
         mask = ~(np.isnan(feature_data) | np.isnan(labels))
         if np.sum(mask) < 10:  # Need minimum samples
@@ -448,19 +563,81 @@ class ParallelFeatureOptimizer:
         feature_clean = feature_data[mask]
         labels_clean = labels[mask]
         
-        # Calculate correlation
+        # Use GPU acceleration if available
+        if self.gpu_manager and CUPY_AVAILABLE:
+            try:
+                # Convert to GPU arrays
+                feature_gpu = cp.asarray(feature_clean)
+                labels_gpu = cp.asarray(labels_clean)
+                
+                # Calculate correlation on GPU
+                correlation = cp.corrcoef(feature_gpu, labels_gpu)[0, 1]
+                correlation = float(correlation)  # Convert back to CPU
+                
+                return correlation if not np.isnan(correlation) else -np.inf
+            except Exception as e:
+                tprint_debug(f"GPU correlation calculation failed, falling back to CPU: {e}")
+        
+        # Fallback to CPU calculation
         correlation = np.corrcoef(feature_clean, labels_clean)[0, 1]
         return correlation if not np.isnan(correlation) else -np.inf
+    
+    def _update_performance_stats(self):
+        """Update performance statistics with hardware monitoring."""
+        if self.hardware_manager:
+            try:
+                # Get current hardware metrics
+                metrics = self.hardware_manager.get_current_metrics()
+                
+                # Update performance stats
+                self.performance_stats['cpu_utilization'] = metrics.cpu_usage
+                self.performance_stats['memory_peak_mb'] = metrics.memory_usage_mb
+                self.performance_stats['gpu_utilization'] = metrics.gpu_usage
+                self.performance_stats['thermal_state'] = metrics.thermal_state
+                
+            except Exception as e:
+                tprint_debug(f"Failed to update performance stats: {e}")
+    
+    def _optimize_data_for_hardware(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for hardware processing."""
+        if self.memory_optimizer:
+            try:
+                # Use M1 memory optimizer
+                optimized_data = self.memory_optimizer.optimize_dataframe(data)
+                tprint_debug("✅ Data optimized for M1 memory architecture")
+                return optimized_data
+            except Exception as e:
+                tprint_debug(f"Memory optimization failed, using original data: {e}")
+        
+        return data
     
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get current performance statistics."""
         return self.performance_stats.copy()
     
     def cleanup(self):
-        """Cleanup resources."""
+        """Cleanup resources and stop hardware monitoring."""
+        tprint("🧹 Cleaning up hardware-optimized parallel optimizer...")
+        
+        # Stop hardware monitoring
+        if self.memory_optimizer:
+            self.memory_optimizer.stop_monitoring()
+        
+        # Cleanup hardware managers
+        if self.hardware_manager:
+            try:
+                self.hardware_manager.cleanup()
+            except Exception as e:
+                tprint_warning(f"Hardware manager cleanup failed: {e}")
+        
+        # Cleanup joblib memory
         if self.memory:
             self.memory.clear()
+        
+        # Force garbage collection
         gc.collect()
+        
+        tprint_success("✅ Hardware-optimized parallel optimizer cleanup completed")
 
 
 # Convenience function for easy usage

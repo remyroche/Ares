@@ -209,6 +209,28 @@ class InteractiveFeatureGenerationConfig:
     enable_validation: bool = True
     validation_threshold: float = 0.02
 
+    # Budget constraints for final feature selection
+    enable_budget_constraints: bool = True
+    total_budget_ms: float = 100.0
+    base_features_budget_ms: float = 68.0  # 68% of total budget
+    interaction_features_budget_ms: float = 15.0  # 15% of total budget
+    cross_timeframe_features_budget_ms: float = 10.0  # 10% of total budget
+    gate_features_budget_ms: float = 7.0  # 7% of total budget
+
+    # Feature type constraints - Updated for new pipeline
+    base_features_min: int = 40
+    base_features_max: int = 80
+    base_features_target: int = 60  # Target 60 base features
+    interaction_features_min: int = 5
+    interaction_features_max: int = 15
+    interaction_features_target: int = 10  # Target 10 interaction features
+    cross_timeframe_features_min: int = 3
+    cross_timeframe_features_max: int = 10
+    cross_timeframe_features_target: int = 6  # Target 6 cross-timeframe features
+    gate_features_min: int = 2
+    gate_features_max: int = 8
+    gate_features_target: int = 5  # Target 5 gate features
+
     # Logging configuration
     verbose_logging: bool = True
     log_performance: bool = True
@@ -316,6 +338,26 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
             batch_size=int(params.get('batch_size', InteractiveFeatureGenerationConfig.batch_size)),
             enable_validation=bool(params.get('enable_validation', InteractiveFeatureGenerationConfig.enable_validation)),
             validation_threshold=float(params.get('validation_threshold', InteractiveFeatureGenerationConfig.validation_threshold)),
+            # Budget constraints for final feature selection
+            enable_budget_constraints=bool(params.get('enable_budget_constraints', InteractiveFeatureGenerationConfig.enable_budget_constraints)),
+            total_budget_ms=float(params.get('total_budget_ms', InteractiveFeatureGenerationConfig.total_budget_ms)),
+            base_features_budget_ms=float(params.get('base_features_budget_ms', InteractiveFeatureGenerationConfig.base_features_budget_ms)),
+            interaction_features_budget_ms=float(params.get('interaction_features_budget_ms', InteractiveFeatureGenerationConfig.interaction_features_budget_ms)),
+            cross_timeframe_features_budget_ms=float(params.get('cross_timeframe_features_budget_ms', InteractiveFeatureGenerationConfig.cross_timeframe_features_budget_ms)),
+            gate_features_budget_ms=float(params.get('gate_features_budget_ms', InteractiveFeatureGenerationConfig.gate_features_budget_ms)),
+            # Feature type constraints
+            base_features_min=int(params.get('base_features_min', InteractiveFeatureGenerationConfig.base_features_min)),
+            base_features_max=int(params.get('base_features_max', InteractiveFeatureGenerationConfig.base_features_max)),
+            base_features_target=int(params.get('base_features_target', InteractiveFeatureGenerationConfig.base_features_target)),
+            interaction_features_min=int(params.get('interaction_features_min', InteractiveFeatureGenerationConfig.interaction_features_min)),
+            interaction_features_max=int(params.get('interaction_features_max', InteractiveFeatureGenerationConfig.interaction_features_max)),
+            interaction_features_target=int(params.get('interaction_features_target', InteractiveFeatureGenerationConfig.interaction_features_target)),
+            cross_timeframe_features_min=int(params.get('cross_timeframe_features_min', InteractiveFeatureGenerationConfig.cross_timeframe_features_min)),
+            cross_timeframe_features_max=int(params.get('cross_timeframe_features_max', InteractiveFeatureGenerationConfig.cross_timeframe_features_max)),
+            cross_timeframe_features_target=int(params.get('cross_timeframe_features_target', InteractiveFeatureGenerationConfig.cross_timeframe_features_target)),
+            gate_features_min=int(params.get('gate_features_min', InteractiveFeatureGenerationConfig.gate_features_min)),
+            gate_features_max=int(params.get('gate_features_max', InteractiveFeatureGenerationConfig.gate_features_max)),
+            gate_features_target=int(params.get('gate_features_target', InteractiveFeatureGenerationConfig.gate_features_target)),
             verbose_logging=bool(params.get('verbose_logging', InteractiveFeatureGenerationConfig.verbose_logging)),
             log_performance=bool(params.get('log_performance', InteractiveFeatureGenerationConfig.log_performance)),
             integrate_with_ares_launcher=bool(params.get('integrate_with_ares_launcher', InteractiveFeatureGenerationConfig.integrate_with_ares_launcher)),
@@ -608,6 +650,26 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
                     'enable_parallel_processing': self._interactive_config.enable_parallel_processing,
                     'max_workers': self._interactive_config.max_workers,
                     'batch_size': self._interactive_config.batch_size,
+                    # Budget constraints for final feature selection
+                    'enable_budget_constraints': self._interactive_config.enable_budget_constraints,
+                    'total_budget_ms': self._interactive_config.total_budget_ms,
+                    'base_features_budget_ms': self._interactive_config.base_features_budget_ms,
+                    'interaction_features_budget_ms': self._interactive_config.interaction_features_budget_ms,
+                    'cross_timeframe_features_budget_ms': self._interactive_config.cross_timeframe_features_budget_ms,
+                    'gate_features_budget_ms': self._interactive_config.gate_features_budget_ms,
+                    # Feature type constraints
+                    'base_features_min': self._interactive_config.base_features_min,
+                    'base_features_max': self._interactive_config.base_features_max,
+                    'base_features_target': self._interactive_config.base_features_target,
+                    'interaction_features_min': self._interactive_config.interaction_features_min,
+                    'interaction_features_max': self._interactive_config.interaction_features_max,
+                    'interaction_features_target': self._interactive_config.interaction_features_target,
+                    'cross_timeframe_features_min': self._interactive_config.cross_timeframe_features_min,
+                    'cross_timeframe_features_max': self._interactive_config.cross_timeframe_features_max,
+                    'cross_timeframe_features_target': self._interactive_config.cross_timeframe_features_target,
+                    'gate_features_min': self._interactive_config.gate_features_min,
+                    'gate_features_max': self._interactive_config.gate_features_max,
+                    'gate_features_target': self._interactive_config.gate_features_target,
                 },
                 'results': {
                     'summary': {

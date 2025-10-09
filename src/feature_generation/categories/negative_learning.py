@@ -64,7 +64,8 @@ class NegativeLearningConfig:
     spread_quantile: float = 0.7
     
     # Feature generation
-    max_negative_features: int = 10
+    max_negative_features: int = 5  # Cap gates to 5 max per base feature
+    max_gates_per_base_feature: int = 5  # Explicit cap for clarity
     enable_gated_twins: bool = True
     enable_exception_interactions: bool = True
     enable_context_indicators: bool = True
@@ -411,27 +412,42 @@ class NegativeLearningFeatureGenerator:
             # Calculate combined failure probability
             p_fail = self._calculate_failure_probability(features_df, contexts)
             
-            # Generate different types of negative learning features
+            # Generate all possible gate features first
+            all_gate_features = {}
+            
             if self.config.enable_gated_twins:
                 twin_features = self._generate_gated_twins(
                     features_df[feature_name], p_fail, feature_name
                 )
-                result_df = pd.concat([result_df, twin_features], axis=1)
-                negative_features.extend(twin_features.columns.tolist())
+                all_gate_features.update(twin_features.to_dict('series'))
             
             if self.config.enable_exception_interactions:
                 interaction_features = self._generate_exception_interactions(
                     features_df[feature_name], p_fail, feature_name
                 )
-                result_df = pd.concat([result_df, interaction_features], axis=1)
-                negative_features.extend(interaction_features.columns.tolist())
+                all_gate_features.update(interaction_features.to_dict('series'))
             
             if self.config.enable_context_indicators:
                 context_features = self._generate_context_indicators(
                     features_df, contexts, feature_name
                 )
-                result_df = pd.concat([result_df, context_features], axis=1)
-                negative_features.extend(context_features.columns.tolist())
+                all_gate_features.update(context_features.to_dict('series'))
+            
+            # Smart selection: Keep only top 5 most impactful gates
+            selected_gates = self._select_top_gates(
+                all_gate_features, 
+                features_df[feature_name], 
+                p_fail,
+                max_gates=self.config.max_gates_per_base_feature
+            )
+            
+            # Add selected gates to result
+            if selected_gates:
+                selected_df = pd.DataFrame(selected_gates, index=features_df.index)
+                result_df = pd.concat([result_df, selected_df], axis=1)
+                negative_features.extend(selected_df.columns.tolist())
+                
+                self.logger.debug(f"Selected {len(selected_gates)} gates for {feature_name}: {list(selected_gates.keys())}")
         
         self.logger.info(f"✅ Generated {len(negative_features)} negative learning features")
         return result_df
@@ -863,6 +879,135 @@ class NegativeLearningPlugin:
         weights = base_weights * (0.7 + 0.3 * (1 - p_fail_max))
         
         return weights
+    
+    def _select_top_gates(
+        self, 
+        all_gate_features: Dict[str, pd.Series], 
+        base_feature: pd.Series,
+        p_fail: pd.Series,
+        max_gates: int = 5
+    ) -> Dict[str, pd.Series]:
+        """
+        Select top N most impactful gate features based on multiple criteria.
+        
+        Args:
+            all_gate_features: All generated gate features
+            base_feature: Original base feature
+            p_fail: Failure probability
+            max_gates: Maximum number of gates to select
+            
+        Returns:
+            Selected gate features
+        """
+        if len(all_gate_features) <= max_gates:
+            return all_gate_features
+        
+        # Calculate impact scores for each gate
+        gate_scores = {}
+        
+        for gate_name, gate_series in all_gate_features.items():
+            try:
+                # Calculate multiple impact metrics
+                ic_score = self._calculate_gate_ic_score(gate_series, base_feature)
+                stability_score = self._calculate_gate_stability(gate_series)
+                uniqueness_score = self._calculate_gate_uniqueness(gate_series, all_gate_features)
+                context_score = self._calculate_gate_context_score(gate_name, p_fail)
+                
+                # Weighted composite score
+                composite_score = (
+                    0.4 * ic_score +           # IC improvement
+                    0.3 * stability_score +    # Stability
+                    0.2 * uniqueness_score +   # Uniqueness
+                    0.1 * context_score        # Context relevance
+                )
+                
+                gate_scores[gate_name] = composite_score
+                
+            except Exception as e:
+                self.logger.warning(f"Error scoring gate {gate_name}: {e}")
+                gate_scores[gate_name] = 0.0
+        
+        # Select top N gates by score
+        sorted_gates = sorted(gate_scores.items(), key=lambda x: x[1], reverse=True)
+        selected_gates = dict(sorted_gates[:max_gates])
+        
+        self.logger.debug(f"Gate selection scores: {dict(sorted_gates)}")
+        
+        return {name: all_gate_features[name] for name in selected_gates.keys()}
+    
+    def _calculate_gate_ic_score(self, gate_series: pd.Series, base_feature: pd.Series) -> float:
+        """Calculate IC improvement score for a gate feature"""
+        try:
+            # Calculate IC for gate vs base feature
+            gate_ic = abs(gate_series.corr(base_feature))
+            base_ic = abs(base_feature.corr(base_feature))  # Should be 1.0
+            
+            # IC improvement (higher is better)
+            ic_improvement = max(0, gate_ic - base_ic)
+            return min(1.0, ic_improvement * 10)  # Scale to 0-1
+            
+        except Exception:
+            return 0.0
+    
+    def _calculate_gate_stability(self, gate_series: pd.Series) -> float:
+        """Calculate stability score for a gate feature"""
+        try:
+            # Rolling correlation stability
+            window = min(100, len(gate_series) // 4)
+            if window < 10:
+                return 0.5
+            
+            rolling_corr = gate_series.rolling(window).corr(gate_series.shift(1))
+            stability = 1.0 - rolling_corr.std()
+            return max(0.0, min(1.0, stability))
+            
+        except Exception:
+            return 0.5
+    
+    def _calculate_gate_uniqueness(self, gate_series: pd.Series, all_gates: Dict[str, pd.Series]) -> float:
+        """Calculate uniqueness score (low correlation with other gates)"""
+        try:
+            if len(all_gates) <= 1:
+                return 1.0
+            
+            correlations = []
+            for other_name, other_series in all_gates.items():
+                if other_name != gate_series.name:
+                    corr = abs(gate_series.corr(other_series))
+                    if not np.isnan(corr):
+                        correlations.append(corr)
+            
+            if not correlations:
+                return 1.0
+            
+            # Uniqueness = 1 - average correlation with other gates
+            avg_corr = np.mean(correlations)
+            return max(0.0, 1.0 - avg_corr)
+            
+        except Exception:
+            return 0.5
+    
+    def _calculate_gate_context_score(self, gate_name: str, p_fail: pd.Series) -> float:
+        """Calculate context relevance score based on gate name and failure probability"""
+        try:
+            # Higher score for gates that align with high failure probability
+            if 'pos' in gate_name or 'positive' in gate_name:
+                # Positive gates should be active when failure prob is low
+                context_score = 1.0 - p_fail.mean()
+            elif 'neg' in gate_name or 'negative' in gate_name:
+                # Negative gates should be active when failure prob is high
+                context_score = p_fail.mean()
+            elif 'fail' in gate_name or 'exception' in gate_name:
+                # Exception gates should align with failure probability
+                context_score = p_fail.mean()
+            else:
+                # Context indicators - check if they're meaningful
+                context_score = 0.5 if p_fail.std() > 0.1 else 0.2
+            
+            return max(0.0, min(1.0, context_score))
+            
+        except Exception:
+            return 0.5
     
     def get_feature_importance_scores(self) -> Dict[str, float]:
         """Get feature importance scores for negative learning features"""

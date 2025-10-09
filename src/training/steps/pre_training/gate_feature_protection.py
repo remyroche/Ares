@@ -39,7 +39,7 @@ class GateFeatureConfig:
     """Configuration for gate feature protection."""
     # Protection settings
     protect_gate_features: bool = True
-    max_gate_features_per_base: int = 3  # Max gates per base feature
+    max_gate_features_per_base: int = 5  # Max gates per base feature (updated cap)
     min_gate_ic_improvement: float = 0.005  # Must improve IC by this amount
     min_gate_stability: float = 0.4  # Minimum stability score
     

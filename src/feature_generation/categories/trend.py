@@ -190,7 +190,7 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
             )
         return data
 
-class ADXGenerator(FeatureGenerator):
+class ADXGenerator(VectorizedFeatureGenerator):
     """Generator for Average Directional Index (ADX)."""
 
     def __init__(self, period: int = 14):
@@ -277,7 +277,7 @@ class ADXGenerator(FeatureGenerator):
             )
         return data
 
-class DirectionalSignalGenerator(FeatureGenerator):
+class DirectionalSignalGenerator(VectorizedFeatureGenerator):
     """Generator for Directional Signal (EMA_8 - EMA_20)."""
 
     def __init__(self):
@@ -340,7 +340,7 @@ class DirectionalSignalGenerator(FeatureGenerator):
             )
         return data
 
-class TrendScoreGenerator(FeatureGenerator):
+class TrendScoreGenerator(VectorizedFeatureGenerator):
     """Generator for Trend Score (normalized directional signal * ADX)."""
 
     def __init__(self, adx_period: int = 14):
@@ -467,7 +467,7 @@ class TrendScoreGenerator(FeatureGenerator):
             )
         return data
 
-class SMAGenerator(FeatureGenerator):
+class SMAGenerator(VectorizedFeatureGenerator):
     """Generator for Simple Moving Average with different base calculations."""
 
     def __init__(self,
@@ -539,7 +539,7 @@ class SMAGenerator(FeatureGenerator):
             )
         return data
 
-class EMAGenerator(FeatureGenerator):
+class EMAGenerator(VectorizedFeatureGenerator):
     """Generator for Exponential Moving Average with different base calculations."""
 
     def __init__(self,
@@ -635,7 +635,7 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
             )
         return data
 
-class WMAGenerator(FeatureGenerator):
+class WMAGenerator(VectorizedFeatureGenerator):
     """Generator for WMA (Weighted Moving Average) with different base calculations."""
     
     def __init__(self, 
@@ -710,7 +710,7 @@ class WMAGenerator(FeatureGenerator):
             )
         return data
 
-class DEMAGenerator(FeatureGenerator):
+class DEMAGenerator(VectorizedFeatureGenerator):
     """Generator for DEMA (Double Exponential Moving Average) with different base calculations."""
     
     def __init__(self, 
@@ -784,7 +784,7 @@ class DEMAGenerator(FeatureGenerator):
             )
         return data
 
-class TEMAGenerator(FeatureGenerator):
+class TEMAGenerator(VectorizedFeatureGenerator):
     """Generator for TEMA (Triple Exponential Moving Average) with different base calculations."""
     
     def __init__(self, 
@@ -859,7 +859,7 @@ class TEMAGenerator(FeatureGenerator):
             )
         return data
 
-class TRIMAGenerator(FeatureGenerator):
+class TRIMAGenerator(VectorizedFeatureGenerator):
     """Generator for TRIMA (Triangular Moving Average) with different base calculations."""
     
     def __init__(self, 
@@ -932,7 +932,7 @@ class TRIMAGenerator(FeatureGenerator):
             )
         return data
 
-class MAMAGenerator(FeatureGenerator):
+class MAMAGenerator(VectorizedFeatureGenerator):
     """Generator for MAMA (MESA Adaptive Moving Average) with different base calculations."""
     
     def __init__(self, 
@@ -1008,7 +1008,7 @@ class MAMAGenerator(FeatureGenerator):
             )
         return data
 
-class VWMAGenerator(FeatureGenerator):
+class VWMAGenerator(VectorizedFeatureGenerator):
     """Generator for VWMA (Volume Weighted Moving Average) with different base calculations."""
     
     def __init__(self, 
@@ -1083,7 +1083,7 @@ class VWMAGenerator(FeatureGenerator):
             )
         return data
 
-class KeltnerChannelsGenerator(FeatureGenerator):
+class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
     """Generator for Keltner Channels with different base calculations."""
     
     def __init__(self,

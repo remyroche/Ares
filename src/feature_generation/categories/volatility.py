@@ -165,7 +165,7 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
             )
         return data
 
-class BollingerBandsGenerator(FeatureGenerator):
+class BollingerBandsGenerator(VectorizedFeatureGenerator):
     """Generator for Bollinger Bands with different base calculations and batch processing."""
     
     def __init__(self,
@@ -308,7 +308,7 @@ class BollingerBandsGenerator(FeatureGenerator):
             )
         return data
 
-class ATRGenerator(FeatureGenerator):
+class ATRGenerator(VectorizedFeatureGenerator):
     """Generator for Average True Range with different base calculations and batch processing."""
     
     def __init__(self,
@@ -451,7 +451,7 @@ class ATRGenerator(FeatureGenerator):
             )
         return data
 
-class VolatilityBandsGenerator(FeatureGenerator):
+class VolatilityBandsGenerator(VectorizedFeatureGenerator):
     """Generator for Volatility Bands with different base calculations."""
     
     def __init__(self,
@@ -532,7 +532,7 @@ class VolatilityBandsGenerator(FeatureGenerator):
             )
         return data
 
-class GARCHFeatureGenerator(FeatureGenerator):
+class GARCHFeatureGenerator(VectorizedFeatureGenerator):
     """Generator for GARCH-based volatility features."""
 
     def __init__(self,

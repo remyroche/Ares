@@ -817,5 +817,282 @@ def create_volatility_generators(periods: Dict[str, List[int]] = None) -> List[F
 
     return generators
 
+# NEW FEATURES - Advanced Volatility Analysis
+
+class RealizedVolatilityGenerator(VectorizedFeatureGenerator):
+    """Generator for realized volatility (standard deviation of returns over window)."""
+    
+    def __init__(self, window: int = 20):
+        config = FeatureConfig(
+            name=f"realized_volatility_{window}",
+            category=FeatureCategory.VOLATILITY,
+            description=f"Realized volatility (std of returns) over {window} periods",
+            required_columns=["close"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
+            parameters={'window': window},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        if len(close) < self.window + 1:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate returns
+        returns = np.diff(close) / close[:-1]
+        returns = np.concatenate([[np.nan], returns])
+        
+        # Calculate realized volatility
+        realized_vol = np.full(len(close), np.nan)
+        for i in range(self.window, len(close)):
+            window_returns = returns[i - self.window + 1:i + 1]
+            valid_returns = window_returns[np.isfinite(window_returns)]
+            
+            if len(valid_returns) > 1:
+                realized_vol[i] = np.std(valid_returns, ddof=1)
+        
+        return pd.Series(realized_vol, index=data.index)
+
+class ParkinsonVolatilityGenerator(VectorizedFeatureGenerator):
+    """Generator for Parkinson volatility estimator (uses OHLC)."""
+    
+    def __init__(self, window: int = 20):
+        config = FeatureConfig(
+            name=f"parkinson_volatility_{window}",
+            category=FeatureCategory.VOLATILITY,
+            description=f"Parkinson volatility estimator over {window} periods",
+            required_columns=["high", "low"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
+            parameters={'window': window},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        high = data['high'].values
+        low = data['low'].values
+        
+        if len(high) < self.window:
+            return pd.Series(np.full(len(high), np.nan), index=data.index)
+        
+        # Calculate Parkinson volatility
+        parkinson_vol = np.full(len(high), np.nan)
+        for i in range(self.window - 1, len(high)):
+            window_high = high[i - self.window + 1:i + 1]
+            window_low = low[i - self.window + 1:i + 1]
+            
+            # Parkinson estimator: sqrt(1/(4*ln(2)) * sum(ln(H/L)^2))
+            log_hl = np.log(window_high / window_low)
+            parkinson_vol[i] = np.sqrt(np.mean(log_hl ** 2) / (4 * np.log(2)))
+        
+        return pd.Series(parkinson_vol, index=data.index)
+
+class GarmanKlassVolatilityGenerator(VectorizedFeatureGenerator):
+    """Generator for Garman-Klass volatility estimator (uses OHLC)."""
+    
+    def __init__(self, window: int = 20):
+        config = FeatureConfig(
+            name=f"garman_klass_volatility_{window}",
+            category=FeatureCategory.VOLATILITY,
+            description=f"Garman-Klass volatility estimator over {window} periods",
+            required_columns=["open", "high", "low", "close"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
+            parameters={'window': window},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        open_price = data['open'].values
+        high = data['high'].values
+        low = data['low'].values
+        close = data['close'].values
+        
+        if len(open_price) < self.window:
+            return pd.Series(np.full(len(open_price), np.nan), index=data.index)
+        
+        # Calculate Garman-Klass volatility
+        gk_vol = np.full(len(open_price), np.nan)
+        for i in range(self.window - 1, len(open_price)):
+            window_open = open_price[i - self.window + 1:i + 1]
+            window_high = high[i - self.window + 1:i + 1]
+            window_low = low[i - self.window + 1:i + 1]
+            window_close = close[i - self.window + 1:i + 1]
+            
+            # Garman-Klass estimator
+            log_hl = np.log(window_high / window_low)
+            log_co = np.log(window_close / window_open)
+            
+            gk_vol[i] = np.sqrt(np.mean(0.5 * log_hl ** 2 - (2 * np.log(2) - 1) * log_co ** 2))
+        
+        return pd.Series(gk_vol, index=data.index)
+
+class RogersSatchellVolatilityGenerator(VectorizedFeatureGenerator):
+    """Generator for Rogers-Satchell volatility estimator (uses OHLC)."""
+    
+    def __init__(self, window: int = 20):
+        config = FeatureConfig(
+            name=f"rogers_satchell_volatility_{window}",
+            category=FeatureCategory.VOLATILITY,
+            description=f"Rogers-Satchell volatility estimator over {window} periods",
+            required_columns=["open", "high", "low", "close"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
+            parameters={'window': window},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        open_price = data['open'].values
+        high = data['high'].values
+        low = data['low'].values
+        close = data['close'].values
+        
+        if len(open_price) < self.window:
+            return pd.Series(np.full(len(open_price), np.nan), index=data.index)
+        
+        # Calculate Rogers-Satchell volatility
+        rs_vol = np.full(len(open_price), np.nan)
+        for i in range(self.window - 1, len(open_price)):
+            window_open = open_price[i - self.window + 1:i + 1]
+            window_high = high[i - self.window + 1:i + 1]
+            window_low = low[i - self.window + 1:i + 1]
+            window_close = close[i - self.window + 1:i + 1]
+            
+            # Rogers-Satchell estimator
+            log_ho = np.log(window_high / window_open)
+            log_hc = np.log(window_high / window_close)
+            log_lo = np.log(window_low / window_open)
+            log_lc = np.log(window_low / window_close)
+            
+            rs_vol[i] = np.sqrt(np.mean(log_ho * log_hc + log_lo * log_lc))
+        
+        return pd.Series(rs_vol, index=data.index)
+
+class VolOfVolGenerator(VectorizedFeatureGenerator):
+    """Generator for volatility of volatility (rolling std of realized volatility)."""
+    
+    def __init__(self, vol_window: int = 20, vol_of_vol_window: int = 10):
+        config = FeatureConfig(
+            name=f"vol_of_vol_{vol_window}_{vol_of_vol_window}",
+            category=FeatureCategory.VOLATILITY,
+            description=f"Volatility of volatility over {vol_of_vol_window} periods (vol window {vol_window})",
+            required_columns=["close"],
+            default_lookback=vol_window + vol_of_vol_window,
+            min_lookback=vol_window + vol_of_vol_window,
+            max_lookback=(vol_window + vol_of_vol_window) * 3,  # Allow up to 3x window for optimization
+            parameters={'vol_window': vol_window, 'vol_of_vol_window': vol_of_vol_window},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.vol_window = vol_window
+        self.vol_of_vol_window = vol_of_vol_window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        if len(close) < self.vol_window + self.vol_of_vol_window + 1:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate returns
+        returns = np.diff(close) / close[:-1]
+        returns = np.concatenate([[np.nan], returns])
+        
+        # Calculate realized volatility
+        realized_vol = np.full(len(close), np.nan)
+        for i in range(self.vol_window, len(close)):
+            window_returns = returns[i - self.vol_window + 1:i + 1]
+            valid_returns = window_returns[np.isfinite(window_returns)]
+            
+            if len(valid_returns) > 1:
+                realized_vol[i] = np.std(valid_returns, ddof=1)
+        
+        # Calculate volatility of volatility
+        vol_of_vol = np.full(len(close), np.nan)
+        for i in range(self.vol_window + self.vol_of_vol_window, len(close)):
+            vol_window = realized_vol[i - self.vol_of_vol_window + 1:i + 1]
+            valid_vol = vol_window[np.isfinite(vol_window)]
+            
+            if len(valid_vol) > 1:
+                vol_of_vol[i] = np.std(valid_vol, ddof=1)
+        
+        return pd.Series(vol_of_vol, index=data.index)
+
+class DownsideSemivolGenerator(VectorizedFeatureGenerator):
+    """Generator for downside semivolatility (std of min(returns, 0))."""
+    
+    def __init__(self, window: int = 20):
+        config = FeatureConfig(
+            name=f"downside_semivol_{window}",
+            category=FeatureCategory.VOLATILITY,
+            description=f"Downside semivolatility over {window} periods",
+            required_columns=["close"],
+            default_lookback=window,
+            min_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
+            parameters={'window': window},
+            matrix_optimized=True,
+            gpu_accelerated=False
+        )
+        super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.window = window
+    
+    def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
+        if hasattr(self, 'optimize_dataframe_processing'):
+            data = self.optimize_dataframe_processing(data)
+        
+        close = data['close'].values
+        if len(close) < self.window + 1:
+            return pd.Series(np.full(len(close), np.nan), index=data.index)
+        
+        # Calculate returns
+        returns = np.diff(close) / close[:-1]
+        returns = np.concatenate([[np.nan], returns])
+        
+        # Calculate downside semivolatility
+        downside_semivol = np.full(len(close), np.nan)
+        for i in range(self.window, len(close)):
+            window_returns = returns[i - self.window + 1:i + 1]
+            valid_returns = window_returns[np.isfinite(window_returns)]
+            
+            if len(valid_returns) > 1:
+                # Only negative returns
+                negative_returns = np.minimum(valid_returns, 0)
+                downside_semivol[i] = np.std(negative_returns, ddof=1)
+        
+        return pd.Series(downside_semivol, index=data.index)
+
 def create_default_volatility_generators() -> List[FeatureGenerator]:
     return create_volatility_generators()

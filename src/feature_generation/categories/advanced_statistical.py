@@ -31,7 +31,7 @@ class HurstExponentGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -111,7 +111,7 @@ class JumpIndicatorsGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window, 'k_multiplier': k_multiplier},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -175,7 +175,7 @@ class CVaRGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window, 'confidence_level': confidence_level},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -239,7 +239,7 @@ class MaxDrawdownGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -291,7 +291,7 @@ class RollingSkewnessKurtosisGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window, 'stat_type': stat_type},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -363,7 +363,7 @@ class TrendPersistenceGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window},
             matrix_optimized=True,
             gpu_accelerated=False

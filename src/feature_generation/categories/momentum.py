@@ -818,7 +818,7 @@ class MomentumEndpointsGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=ma_period,
             min_lookback=ma_period,
-            max_lookback=ma_period,
+            max_lookback=ma_period * 3,  # Allow up to 3x window for optimization
             parameters={'ma_period': ma_period, 'ma_type': ma_type},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -883,7 +883,7 @@ class MACDDeltaGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=slow + signal,
             min_lookback=slow + signal,
-            max_lookback=slow + signal,
+            max_lookback=(slow + signal) * 3,  # Allow up to 3x window for optimization
             parameters={'fast': fast, 'slow': slow, 'signal': signal},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -946,7 +946,7 @@ class RSIZScoreGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=rsi_period + zscore_window,
             min_lookback=rsi_period + zscore_window,
-            max_lookback=rsi_period + zscore_window,
+            max_lookback=(rsi_period + zscore_window) * 3,  # Allow up to 3x window for optimization
             parameters={'rsi_period': rsi_period, 'zscore_window': zscore_window},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -1017,7 +1017,7 @@ class StochasticKDGenerator(VectorizedFeatureGenerator):
             required_columns=["close", "high", "low"],
             default_lookback=k_period + d_period,
             min_lookback=k_period + d_period,
-            max_lookback=k_period + d_period,
+            max_lookback=(k_period + d_period) * 3,  # Allow up to 3x window for optimization
             parameters={'k_period': k_period, 'd_period': d_period},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -1066,7 +1066,7 @@ class DonchianChannelGenerator(VectorizedFeatureGenerator):
             required_columns=["close", "high", "low"],
             default_lookback=period,
             min_lookback=period,
-            max_lookback=period,
+            max_lookback=period * 3,  # Allow up to 3x window for optimization
             parameters={'period': period},
             matrix_optimized=True,
             gpu_accelerated=False

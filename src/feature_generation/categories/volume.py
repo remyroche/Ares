@@ -1001,7 +1001,7 @@ class VolumeZScoreGenerator(VectorizedFeatureGenerator):
             required_columns=["volume"],
             default_lookback=long_window,
             min_lookback=long_window,
-            max_lookback=long_window,
+            max_lookback=long_window * 3,  # Allow up to 3x window for optimization
             parameters={'short_window': short_window, 'long_window': long_window},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -1047,7 +1047,7 @@ class VolumeMARatiosGenerator(VectorizedFeatureGenerator):
             required_columns=["volume"],
             default_lookback=ma_period + surprise_window,
             min_lookback=ma_period + surprise_window,
-            max_lookback=ma_period + surprise_window,
+            max_lookback=(ma_period + surprise_window) * 3,  # Allow up to 3x window for optimization
             parameters={'ma_period': ma_period, 'surprise_window': surprise_window},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -1094,7 +1094,7 @@ class CMFGenerator(VectorizedFeatureGenerator):
             required_columns=["close", "high", "low", "volume"],
             default_lookback=period,
             min_lookback=period,
-            max_lookback=period,
+            max_lookback=period * 3,  # Allow up to 3x window for optimization
             parameters={'period': period},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -1150,7 +1150,7 @@ class VWAPDeviationsGenerator(VectorizedFeatureGenerator):
             required_columns=["close", "high", "low", "volume"],
             default_lookback=vwap_window,
             min_lookback=vwap_window,
-            max_lookback=vwap_window,
+            max_lookback=vwap_window * 3,  # Allow up to 3x window for optimization
             parameters={'vwap_window': vwap_window},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -1207,7 +1207,7 @@ class OrderFlowImbalanceGenerator(VectorizedFeatureGenerator):
             required_columns=["close", "volume"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -1268,7 +1268,7 @@ class VolumeVolatilityElasticityGenerator(VectorizedFeatureGenerator):
             required_columns=["close", "volume"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window},
             matrix_optimized=True,
             gpu_accelerated=False

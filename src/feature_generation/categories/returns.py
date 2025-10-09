@@ -869,7 +869,7 @@ class AdvancedCumulativeReturnsGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -910,7 +910,7 @@ class RollingZScoreReturnsGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -954,7 +954,7 @@ class ARCoefficientsGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window + order,
             min_lookback=window + order,
-            max_lookback=window + order,
+            max_lookback=(window + order) * 3,  # Allow up to 3x window for optimization
             parameters={'order': order, 'window': window},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -1012,7 +1012,7 @@ class LjungBoxTestGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window + lags,
             min_lookback=window + lags,
-            max_lookback=window + lags,
+            max_lookback=(window + lags) * 3,  # Allow up to 3x window for optimization
             parameters={'window': window, 'lags': lags},
             matrix_optimized=True,
             gpu_accelerated=False

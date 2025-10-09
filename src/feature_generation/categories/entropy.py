@@ -817,7 +817,7 @@ class ShannonEntropyGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window, 'q_bins': q_bins},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -875,7 +875,7 @@ class PermutationEntropyGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window + embedding_dim * delay,
             min_lookback=window + embedding_dim * delay,
-            max_lookback=window + embedding_dim * delay,
+            max_lookback=(window + embedding_dim * delay) * 3,  # Allow up to 3x window for optimization
             parameters={'window': window, 'embedding_dim': embedding_dim, 'delay': delay},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -944,7 +944,7 @@ class SampleEntropyGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window, 'm': m, 'r': r},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -1024,7 +1024,7 @@ class LempelZivComplexityGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -1087,7 +1087,7 @@ class EntropyRateGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -1159,7 +1159,7 @@ class SpectralEntropyGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window},
             matrix_optimized=True,
             gpu_accelerated=False

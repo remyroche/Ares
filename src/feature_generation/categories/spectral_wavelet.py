@@ -31,7 +31,7 @@ class WaveletEnergyGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window, 'levels': levels},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -105,7 +105,7 @@ class BandLimitedVolatilityGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window, 'low_freq_cutoff': low_freq_cutoff},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -172,7 +172,7 @@ class CycleLengthGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window, 'min_period': min_period, 'max_period': max_period},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -249,7 +249,7 @@ class FractalDimensionGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window},
             matrix_optimized=True,
             gpu_accelerated=False
@@ -311,7 +311,7 @@ class DFASlopesGenerator(VectorizedFeatureGenerator):
             required_columns=["close"],
             default_lookback=window,
             min_lookback=window,
-            max_lookback=window,
+            max_lookback=window * 3,  # Allow up to 3x window for optimization
             parameters={'window': window, 'min_box_size': min_box_size, 'max_box_size': max_box_size},
             matrix_optimized=True,
             gpu_accelerated=False

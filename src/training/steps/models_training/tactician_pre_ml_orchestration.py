@@ -44,6 +44,16 @@ except ImportError as e:
     print(f"❌ CRITICAL: Failed to import PreTrainingSubPipeline: {e}")
     PRE_TRAINING_AVAILABLE = False
 
+# Import gate feature protection
+try:
+    from ...pre_training.gate_feature_integration import (
+        GateFeaturePipelineManager, enable_gate_protection
+    )
+    GATE_PROTECTION_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: Gate feature protection not available: {e}")
+    GATE_PROTECTION_AVAILABLE = False
+
 # Enhanced imports
 try:
     from src.utils.logger import system_logger
@@ -154,6 +164,10 @@ class TacticianPreMLConfig:
     # Analyst signal filtering (DEPRECATED - now trains on ALL data)
     analyst_confidence_threshold: float = 0.004  # 0.4% threshold for "green" signals (legacy)
     require_analyst_signals: bool = False  # CHANGE: Now False - trains on ALL data
+
+    # Gate feature protection
+    enable_gate_protection: bool = True
+    gate_protection_config: Optional[Dict[str, Any]] = None
 
     # Differentiated labeling configuration
     labeling_config: TacticianLabelingConfig = field(default_factory=TacticianLabelingConfig)
@@ -1486,6 +1500,23 @@ class TacticianPreMLOrchestrator:
                 # Step 4: Final Feature Selection for this regime
                 tprint_info(f"🎯 Step 4/5: Regime-specific feature selection for {regime_name}...")
                 result.phase = OrchestrationPhase.FEATURE_SELECTION
+                
+                # Enable gate feature protection for regime-specific selection
+                if GATE_PROTECTION_AVAILABLE and self.config.enable_gate_protection:
+                    tprint_info(f"🛡️ Enabling gate feature protection for regime {regime_name}...")
+                    enable_gate_protection()
+                    
+                    # Add gate protection config to regime_config
+                    if self.config.gate_protection_config:
+                        regime_config.custom_params['gate_protection'] = self.config.gate_protection_config
+                    else:
+                        regime_config.custom_params['gate_protection'] = {
+                            'enabled': True,
+                            'max_gate_features_per_base': 3,
+                            'min_gate_ic_improvement': 0.005,
+                            'min_gate_stability': 0.4
+                        }
+                
                 selection_result = await self.pre_training_pipeline._execute_final_feature_selection(regime_config)
 
                 if not selection_result.success:
@@ -1781,6 +1812,23 @@ class TacticianPreMLOrchestrator:
             # Step 4: Final Feature Selection
             tprint_info("🎯 Step 4/5: Final Feature Selection (multi-stage)...")
             result.phase = OrchestrationPhase.FEATURE_SELECTION
+            
+            # Enable gate feature protection if available
+            if GATE_PROTECTION_AVAILABLE and self.config.enable_gate_protection:
+                tprint_info("🛡️ Enabling gate feature protection for final feature selection...")
+                enable_gate_protection()
+                
+                # Add gate protection config to sub_config
+                if self.config.gate_protection_config:
+                    sub_config.custom_params['gate_protection'] = self.config.gate_protection_config
+                else:
+                    sub_config.custom_params['gate_protection'] = {
+                        'enabled': True,
+                        'max_gate_features_per_base': 3,
+                        'min_gate_ic_improvement': 0.005,
+                        'min_gate_stability': 0.4
+                    }
+            
             selection_result = await self.pre_training_pipeline._execute_final_feature_selection(
                 sub_config,
                 run_metadata or {},

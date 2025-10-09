@@ -36,6 +36,16 @@ except ImportError as e:
     print(f"❌ CRITICAL: Failed to import PreTrainingSubPipeline: {e}")
     PRE_TRAINING_AVAILABLE = False
 
+# Import gate feature protection
+try:
+    from ..pre_training.gate_feature_integration import (
+        GateFeaturePipelineManager, enable_gate_protection
+    )
+    GATE_PROTECTION_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: Gate feature protection not available: {e}")
+    GATE_PROTECTION_AVAILABLE = False
+
 # Enhanced imports with utility integration
 try:
     from src.utils.logger import system_logger
@@ -92,6 +102,10 @@ class AnalystPreMLConfig:
     # Execution parameters
     enable_per_regime_optimization: bool = False  # Disabled - using regime probabilities as features instead
     enable_per_cluster_optimization: bool = True
+
+    # Gate feature protection
+    enable_gate_protection: bool = True
+    gate_protection_config: Optional[Dict[str, Any]] = None
 
     # Output configuration
     output_directory: str = "generated/analyst_pre_ml"
@@ -631,6 +645,22 @@ class AnalystPreMLOrchestrator:
             result.phase = OrchestrationPhase.FEATURE_SELECTION
 
             try:
+                # Enable gate feature protection if available
+                if GATE_PROTECTION_AVAILABLE and self.config.enable_gate_protection:
+                    tprint_info("🛡️ Enabling gate feature protection for final feature selection...")
+                    enable_gate_protection()
+                    
+                    # Add gate protection config to sub_config
+                    if self.config.gate_protection_config:
+                        sub_config.custom_params['gate_protection'] = self.config.gate_protection_config
+                    else:
+                        sub_config.custom_params['gate_protection'] = {
+                            'enabled': True,
+                            'max_gate_features_per_base': 3,
+                            'min_gate_ic_improvement': 0.005,
+                            'min_gate_stability': 0.4
+                        }
+
                 # Use Bayesian TPE optimization for feature selection if available
                 if self.tpe_optimizer and self.config.enable_bayesian_optimization:
                     tprint_debug("🔬 Using Bayesian TPE optimization for feature selection")

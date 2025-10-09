@@ -1,0 +1,154 @@
+# Feature Lookback Optimization Configuration - 60m Timeframe
+# Optimized for 60-minute intervals with appropriate parameters
+
+optimized_feature_lookback_optimization:
+  # Timeframe settings - 60m optimized
+  default_timeframe: "60m"
+  base_period_minutes: 60.0
+  
+  # Lookback optimization settings (adjusted for 60m)
+  min_lookback: 2      # 2 hours (2 * 60m)
+  max_lookback: 24     # 24 hours (24 * 60m)
+  lookback_step: 1     # 1-hour steps
+  
+  # Feature selection settings - exclude specified categories
+  excluded_categories:
+    - "interaction"
+    - "cross_timeframe" 
+    - "autoencoder"
+    - "regime"
+  
+  excluded_features:
+    - "wavelets"
+    - "autoencoder"
+    - "interaction"
+    - "cross_timeframe"
+    - "regime_"
+  
+  # Forward return calculation settings (fully aligned with multi_horizon_profit_labeler)
+  enable_volatility_normalization: true
+  enable_multi_target_scheme: true
+  enable_enhanced_labels: true
+  label_definition_type: "analyst"  # 60m is typically analyst timeframe
+  
+  # Multi-target scheme configuration (adjusted for 60m)
+  multi_target_scheme:
+    small_band: [0.5, 1.0]    # k_s range (wider for longer timeframe)
+    medium_band: [1.0, 1.5]   # k_m range
+    high_band: [1.5, 2.5]     # k_h range (wider for 60m)
+  
+  # Optimization settings (more thorough for 60m)
+  optimization_metric: "information_coefficient"
+  cv_folds: 5  # Standard for 60m
+  max_optimization_time: 600  # 10 minutes (more time for 60m)
+  
+  # Output settings
+  save_results: true
+  generate_reports: true
+  output_directory: "feature_lookback_optimization_60m_results"
+  
+  # Logging settings
+  enable_detailed_logging: true
+  log_level: "INFO"
+  log_optimization_steps: true
+  log_performance_metrics: true
+  
+  # Error handling settings
+  enable_graceful_failures: true
+  max_retries: 3  # Standard for 60m
+  fallback_to_simple_returns: true
+  
+  # Performance settings (optimized for 60m)
+  enable_memory_optimization: true
+  enable_parallel_processing: true
+  max_workers: 4  # Standard for 60m
+  chunk_size: 1000  # Standard chunks for 60m
+  
+  # Validation settings (adjusted for 60m)
+  min_samples_for_ic: 100  # Fewer samples needed for 60m
+  min_ic_threshold: 0.01   # Standard threshold for 60m
+  max_feature_std: 10.0
+  max_forward_returns_std: 5.0
+
+# Integration with multi_horizon_profit_labeler
+multi_horizon_integration:
+  # Ensure perfect alignment with multi_horizon_profit_labeler
+  use_precomputed_labels: true
+  prefer_standardized_output: true
+  fallback_to_generation: true
+  
+  # Label mapping for feature optimization (60m specific)
+  label_mapping:
+    immediate_opportunity: "small_band_targets"
+    short_term_opportunity: "medium_band_targets" 
+    leverage_adjusted_score: "high_band_targets"
+  
+  # Quality thresholds (adjusted for 60m)
+  min_confidence_score: 0.5  # Standard confidence for 60m
+  min_eligibility_ratio: 0.8
+  min_quality_score: 0.6
+
+# Feature bank integration
+feature_bank_integration:
+  # Categories to optimize (excludes interaction, cross-timeframe, wavelets, auto encoders, regime-specific)
+  included_categories:
+    - "price_returns"
+    - "volatility"
+    - "mean_reversion"
+    - "liquidity_micro"
+    - "anchors_tod"
+    - "context"
+  
+  # Feature validation
+  validate_feature_metadata: true
+  check_required_fields: true
+  validate_lookback_ranges: true
+  
+  # Performance optimization
+  enable_feature_caching: true
+  enable_batch_processing: true
+  memory_efficient_mode: true
+
+# Reporting and monitoring
+reporting:
+  # Generate comprehensive reports
+  generate_optimization_report: true
+  generate_performance_report: true
+  generate_alignment_report: true
+  
+  # Report formats
+  output_formats:
+    - "json"
+    - "csv"
+    - "html"
+  
+  # Report content
+  include_detailed_metrics: true
+  include_feature_analysis: true
+  include_performance_analysis: true
+  include_alignment_analysis: true
+  
+  # Visualization
+  generate_plots: true
+  plot_types:
+    - "ic_distribution"
+    - "lookback_optimization"
+    - "feature_performance"
+    - "alignment_metrics"
+
+# Quality assurance
+quality_assurance:
+  # Validation checks
+  validate_input_data: true
+  validate_pipeline_state: true
+  validate_optimization_results: true
+  
+  # Quality thresholds (adjusted for 60m)
+  min_success_rate: 0.8  # Standard for 60m
+  min_average_ic: 0.05   # Standard for 60m
+  max_optimization_time: 900  # 15 minutes max
+  
+  # Error handling
+  fail_fast_on_critical_errors: true
+  log_all_errors: true
+  preserve_partial_results: true

@@ -20,6 +20,7 @@ from src.utils.math_validation import safe_divide, validate_finite
 from src.utils.serialization_utils import UniversalSerializer, JSONSerializer, PickleSerializer
 from src.utils.hardware.m1_gpu_utils import M1GPUManager
 from src.utils.data.klines_parquet import KlinesParquetManager
+from .ares_launcher_integration import AresLauncherFeatureLookbackOptimizer
 from src.utils.matrix_operations import (
     get_unified_matrix_operations,
     get_vectorized_processing_core,
@@ -502,7 +503,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
             # Load required data
             tprint("📥 Loading market data for optimization")
-            market_data = await self._load_market_data(cleaned_data)
+            market_data = await self._load_market_data(cleaned_data, pipeline_state)
             market_data = validate_raw_ohlcv(
                 market_data,
                 context="feature_lookback_optimization.market_data"
@@ -931,61 +932,115 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             self.logger.error(f"❌ {error_msg}")
             return False, error_msg
 
-    async def _load_market_data(self, data: Any) -> pd.DataFrame:
-        """Load market data for optimization."""
+    async def _load_market_data(self, data: Any, pipeline_state: Dict[str, Any] = None) -> pd.DataFrame:
+        """Load market data for optimization using ares launcher integration."""
+        tprint("🚀 [FEATURE_OPTIMIZER] Starting market data loading for optimization")
+        tprint_debug(f"   → Input data type: {type(data)}")
+        tprint_debug(f"   → Input data empty: {data.empty if hasattr(data, 'empty') else 'N/A'}")
+        tprint_debug(f"   → Pipeline state provided: {pipeline_state is not None}")
+        
         try:
             if isinstance(data, pd.DataFrame) and not data.empty:
-                tprint_success(f"✅ Market data loaded: {data.shape[0]} rows, {data.shape[1]} columns")
+                tprint_success(f"✅ [FEATURE_OPTIMIZER] Market data already provided: {data.shape[0]} rows, {data.shape[1]} columns")
+                tprint_info(f"📊 [FEATURE_OPTIMIZER] Data summary:")
+                tprint_info(f"   → Shape: {data.shape}")
+                tprint_info(f"   → Columns: {list(data.columns)}")
+                tprint_info(f"   → Index type: {type(data.index)}")
+                tprint_info(f"   → Memory usage: {data.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
                 return data
             
-            # If no data provided, try to load from KlinesParquetManager
-            tprint("📥 No data provided, attempting to load from KlinesParquetManager...")
+            # If no data provided, use ares launcher integration for data loading
+            tprint("📥 [FEATURE_OPTIMIZER] No data provided, using ares launcher integration for data loading...")
+            tprint_debug("   → Will attempt to load data using ares launcher integration")
             
             # Get symbol, exchange, and timeframe from pipeline state or config
             symbol = None
             exchange = None
             timeframe = None
             
+            tprint("🔍 [FEATURE_OPTIMIZER] Extracting configuration parameters...")
+            
             # Try to get from execution context
             if hasattr(self, '_current_execution_context'):
                 ctx = self._current_execution_context
+                tprint_debug(f"   → Execution context found: {ctx}")
                 if isinstance(ctx, dict):
                     symbol = ctx.get('symbol')
                     exchange = ctx.get('exchange')
                     timeframe = ctx.get('timeframe')
+                    tprint_debug(f"   → From execution context: {symbol}, {exchange}, {timeframe}")
             
             # Fallback to config
             if not symbol:
                 symbol = getattr(self.config, 'symbol', 'ETHUSDT') if hasattr(self, 'config') else 'ETHUSDT'
+                tprint_debug(f"   → Symbol from config: {symbol}")
             if not exchange:
                 exchange = getattr(self.config, 'exchange', 'binance') if hasattr(self, 'config') else 'binance'
+                tprint_debug(f"   → Exchange from config: {exchange}")
             if not timeframe:
                 timeframe = getattr(self.config, 'timeframe', '15m') if hasattr(self, 'config') else '15m'
+                tprint_debug(f"   → Timeframe from config: {timeframe}")
             
-            tprint(f"📊 Loading data for {symbol} on {exchange} ({timeframe})...")
+            tprint_info(f"📊 [FEATURE_OPTIMIZER] Configuration resolved:")
+            tprint_info(f"   → Symbol: {symbol}")
+            tprint_info(f"   → Exchange: {exchange}")
+            tprint_info(f"   → Timeframe: {timeframe}")
             
-            # Use data_manager (KlinesParquetManager) to load data
-            if hasattr(self, 'data_manager') and self.data_manager is not None:
-                loaded_data = await self.data_manager.load_klines_async(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe
-                )
-                
-                if loaded_data is not None and not loaded_data.empty:
-                    tprint_success(f"✅ Market data loaded from cache: {loaded_data.shape[0]} rows, {loaded_data.shape[1]} columns")
-                    return loaded_data
-                else:
-                    error_msg = f"No cached data found for {symbol}/{exchange}/{timeframe}"
-                    tprint_error(f"❌ {error_msg}")
-                    raise ValueError(error_msg)
+            tprint(f"📊 [FEATURE_OPTIMIZER] Loading data for {symbol} on {exchange} ({timeframe}) using ares launcher integration...")
+            
+            # Use ares launcher integration for data loading
+            if not hasattr(self, 'ares_integration'):
+                tprint("🔧 [FEATURE_OPTIMIZER] Initializing ares launcher integration...")
+                self.ares_integration = AresLauncherFeatureLookbackOptimizer()
+                tprint_success("✅ [FEATURE_OPTIMIZER] Ares launcher integration initialized")
             else:
-                error_msg = "KlinesParquetManager not initialized"
-                tprint_error(f"❌ {error_msg}")
+                tprint_debug("🔧 [FEATURE_OPTIMIZER] Ares launcher integration already initialized")
+            
+            # Create pipeline state for ares integration
+            ares_pipeline_state = pipeline_state or {}
+            ares_pipeline_state.update({
+                'symbol': symbol,
+                'exchange': exchange,
+                'timeframe': timeframe
+            })
+            
+            tprint("📋 [FEATURE_OPTIMIZER] Pipeline state for ares integration:")
+            tprint_debug(f"   → Original pipeline state keys: {list(pipeline_state.keys()) if pipeline_state else 'None'}")
+            tprint_debug(f"   → Ares pipeline state keys: {list(ares_pipeline_state.keys())}")
+            tprint_debug(f"   → Ares pipeline state: {ares_pipeline_state}")
+            
+            # Load data using ares launcher integration
+            tprint("📥 [FEATURE_OPTIMIZER] Loading data using ares launcher integration...")
+            loaded_data = await self.ares_integration.load_data_async_for_optimization(
+                symbol=symbol,
+                timeframe=timeframe,
+                pipeline_state=ares_pipeline_state
+            )
+            
+            if loaded_data is not None and not loaded_data.empty:
+                tprint_success(f"✅ [FEATURE_OPTIMIZER] Market data loaded via ares launcher: {loaded_data.shape[0]} rows, {loaded_data.shape[1]} columns")
+                tprint_info(f"📊 [FEATURE_OPTIMIZER] Loaded data summary:")
+                tprint_info(f"   → Shape: {loaded_data.shape}")
+                tprint_info(f"   → Date range: {loaded_data.index.min().date()} to {loaded_data.index.max().date()}")
+                tprint_info(f"   → Data mode: {loaded_data.attrs.get('ares_mode', 'Unknown')}")
+                tprint_info(f"   → Lookback days: {loaded_data.attrs.get('lookback_days', 'Unknown')}")
+                tprint_debug(f"   → Data columns: {list(loaded_data.columns)}")
+                tprint_debug(f"   → Memory usage: {loaded_data.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+                tprint_debug(f"   → Data attributes: {list(loaded_data.attrs.keys())}")
+                return loaded_data
+            else:
+                error_msg = f"No data found for {symbol}/{exchange}/{timeframe} using ares launcher integration"
+                tprint_error(f"❌ [FEATURE_OPTIMIZER] {error_msg}")
+                tprint_debug(f"   → This could be due to:")
+                tprint_debug(f"     - No data available for the specified parameters")
+                tprint_debug(f"     - Data loading error in ares launcher integration")
+                tprint_debug(f"     - Invalid symbol/timeframe combination")
                 raise ValueError(error_msg)
                 
         except Exception as e:
-            tprint_error(f"❌ Critical error loading market data: {e}")
+            tprint_error(f"❌ [FEATURE_OPTIMIZER] Critical error loading market data via ares launcher: {e}")
+            tprint_debug(f"   → Exception type: {type(e).__name__}")
+            tprint_debug(f"   → Exception details: {str(e)}")
             raise
 
     def _align_data_with_regime_assignments(self, market_data: pd.DataFrame, pipeline_state: Dict[str, Any]) -> pd.DataFrame:

@@ -4010,8 +4010,8 @@ class PreTrainingSubPipeline:
             if hasattr(component, 'set_run_metadata'):
                 component.set_run_metadata(run_metadata)
 
-            # Load market data for feature lookback optimization
-            from src.utils.data.klines_parquet import KlinesParquetManager
+            # Load market data for feature lookback optimization using ares launcher integration
+            from src.training.steps.pre_training.feature_lookback_optimization.ares_launcher_integration import AresLauncherFeatureLookbackOptimizer
             import pandas as pd
             
             # Normalize timeframe for data loading (60m -> 1h)
@@ -4019,29 +4019,74 @@ class PreTrainingSubPipeline:
             normalized_timeframe = timeframe_map.get(config.timeframe, config.timeframe)
             
             try:
-                klines_manager = KlinesParquetManager()
-                market_data = klines_manager.read_data(
+                # Use ares launcher integration for data loading
+                tprint("🔧 [SUB_PIPELINE] Initializing ares launcher integration for feature lookback optimization...")
+                ares_optimizer = AresLauncherFeatureLookbackOptimizer()
+                tprint_success("✅ [SUB_PIPELINE] Ares launcher integration initialized")
+                
+                # Create pipeline state for ares integration
+                ares_pipeline_state = {
+                    'symbol': config.symbol,
+                    'exchange': config.exchange,
+                    'timeframe': normalized_timeframe,
+                    'execution_mode': getattr(config, 'execution_mode', 'light'),  # Default to light mode
+                    'lookback_days': getattr(config, 'lookback_days', None),
+                    'intensity_percentage': getattr(config, 'intensity_percentage', None)
+                }
+                
+                tprint("📋 [SUB_PIPELINE] Pipeline state for ares integration:")
+                tprint_info(f"   → Symbol: {config.symbol}")
+                tprint_info(f"   → Exchange: {config.exchange}")
+                tprint_info(f"   → Timeframe: {normalized_timeframe}")
+                tprint_info(f"   → Execution mode: {ares_pipeline_state['execution_mode']}")
+                tprint_debug(f"   → Lookback days: {ares_pipeline_state['lookback_days']}")
+                tprint_debug(f"   → Intensity percentage: {ares_pipeline_state['intensity_percentage']}")
+                tprint_debug(f"   → Full pipeline state: {ares_pipeline_state}")
+                
+                # Load data using ares launcher integration
+                tprint("📥 [SUB_PIPELINE] Loading data using ares launcher integration...")
+                market_data = ares_optimizer.load_data_for_optimization(
                     symbol=config.symbol,
-                    interval=normalized_timeframe,
-                    start_date=None,
-                    end_date=None
+                    timeframe=normalized_timeframe,
+                    pipeline_state=ares_pipeline_state
                 )
+                
                 if market_data is not None and not market_data.empty:
-                    self.logger.info(f"✅ Loaded {len(market_data)} rows of market data for feature lookback optimization")
+                    tprint_success(f"✅ [SUB_PIPELINE] Loaded {len(market_data)} rows of market data via ares launcher integration")
+                    tprint_info(f"📊 [SUB_PIPELINE] Data summary:")
+                    tprint_info(f"   → Shape: {market_data.shape}")
+                    tprint_info(f"   → Date range: {market_data.index.min().date()} to {market_data.index.max().date()}")
+                    tprint_info(f"   → Data mode: {market_data.attrs.get('ares_mode', 'Unknown')}")
+                    tprint_info(f"   → Lookback days: {market_data.attrs.get('lookback_days', 'Unknown')}")
+                    tprint_debug(f"   → Data columns: {list(market_data.columns)}")
+                    tprint_debug(f"   → Memory usage: {market_data.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+                    
                     # Basic data transformation
+                    tprint("🔄 [SUB_PIPELINE] Applying basic data transformations...")
                     if 'open_time' in market_data.columns and not isinstance(market_data.index, pd.DatetimeIndex):
+                        tprint_debug("   → Setting 'open_time' as index")
                         market_data = market_data.set_index('open_time')
                     elif not isinstance(market_data.index, pd.DatetimeIndex):
                         try:
+                            tprint_debug("   → Converting index to datetime")
                             market_data.index = pd.to_datetime(market_data.index)
                         except Exception as e:
                             # Keep original dtype if conversion fails
-                            self.logger.debug(f"Could not convert index to datetime: {e}")
+                            tprint_debug(f"   → Could not convert index to datetime: {e}")
+                    else:
+                        tprint_debug("   → Index is already datetime, no conversion needed")
                 else:
-                    self.logger.warning("⚠️ No market data loaded, will pass None to component")
+                    tprint_warning("⚠️ [SUB_PIPELINE] No market data loaded via ares launcher integration, will pass None to component")
+                    tprint_debug("   → This could be due to:")
+                    tprint_debug("     - No data available for the specified parameters")
+                    tprint_debug("     - Data loading error in ares launcher integration")
+                    tprint_debug("     - Invalid symbol/timeframe combination")
                     market_data = None
             except Exception as e:
-                self.logger.warning(f"⚠️ Could not load market data: {e}, will pass None to component")
+                tprint_warning(f"⚠️ [SUB_PIPELINE] Could not load market data via ares launcher integration: {e}")
+                tprint_debug(f"   → Exception type: {type(e).__name__}")
+                tprint_debug(f"   → Exception details: {str(e)}")
+                tprint_debug("   → Will pass None to component and let it handle data loading")
                 market_data = None
 
             # Execute component

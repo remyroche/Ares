@@ -48,6 +48,7 @@ try:
         get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
         optimize_memory_usage, parallel_processing_optimizer
     )
+    from .ares_launcher_integration import AresLauncherInteractiveFeatureGenerator
     COMMON_OPS_AVAILABLE = True
     tprint_success("✅ Common operations imported successfully")
 except ImportError as e:
@@ -704,7 +705,61 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
             market_data = pd.concat(market_data_batches, axis=0).sort_index()
 
         if market_data is None:
-            raise ValueError("No market data available to construct training input")
+            # Try to load data using ares launcher integration
+            tprint("📥 [INTERACTIVE_GENERATOR] No market data available, attempting to load using ares launcher integration...")
+            tprint_debug("   → Will attempt to load data using ares launcher integration")
+            
+            try:
+                # Initialize ares integration if not already done
+                if not hasattr(self, 'ares_integration'):
+                    tprint("🔧 [INTERACTIVE_GENERATOR] Initializing ares launcher integration...")
+                    self.ares_integration = AresLauncherInteractiveFeatureGenerator()
+                    tprint_success("✅ [INTERACTIVE_GENERATOR] Ares launcher integration initialized")
+                else:
+                    tprint_debug("🔧 [INTERACTIVE_GENERATOR] Ares launcher integration already initialized")
+                
+                # Get symbol and timeframe from pipeline state
+                symbol = pipeline_state.get('symbol', 'ETHUSDT')
+                timeframe = pipeline_state.get('timeframe', '15m')
+                
+                tprint_info(f"📊 [INTERACTIVE_GENERATOR] Configuration for data loading:")
+                tprint_info(f"   → Symbol: {symbol}")
+                tprint_info(f"   → Timeframe: {timeframe}")
+                tprint_debug(f"   → Pipeline state keys: {list(pipeline_state.keys())}")
+                tprint_debug(f"   → Pipeline state: {pipeline_state}")
+                
+                # Load data using ares launcher integration
+                tprint("📥 [INTERACTIVE_GENERATOR] Loading data using ares launcher integration...")
+                market_data = self.ares_integration.load_data_for_generation(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    pipeline_state=pipeline_state
+                )
+                
+                if market_data is not None and not market_data.empty:
+                    tprint_success(f"✅ [INTERACTIVE_GENERATOR] Market data loaded via ares launcher: {market_data.shape[0]} rows, {market_data.shape[1]} columns")
+                    tprint_info(f"📊 [INTERACTIVE_GENERATOR] Loaded data summary:")
+                    tprint_info(f"   → Shape: {market_data.shape}")
+                    tprint_info(f"   → Date range: {market_data.index.min().date()} to {market_data.index.max().date()}")
+                    tprint_info(f"   → Data mode: {market_data.attrs.get('ares_mode', 'Unknown')}")
+                    tprint_info(f"   → Lookback days: {market_data.attrs.get('lookback_days', 'Unknown')}")
+                    tprint_debug(f"   → Data columns: {list(market_data.columns)}")
+                    tprint_debug(f"   → Memory usage: {market_data.memory_usage(deep=True).sum() / 1024 / 1024:.2f} MB")
+                    tprint_debug(f"   → Data attributes: {list(market_data.attrs.keys())}")
+                else:
+                    error_msg = "No data found using ares launcher integration"
+                    tprint_error(f"❌ [INTERACTIVE_GENERATOR] {error_msg}")
+                    tprint_debug(f"   → This could be due to:")
+                    tprint_debug(f"     - No data available for the specified parameters")
+                    tprint_debug(f"     - Data loading error in ares launcher integration")
+                    tprint_debug(f"     - Invalid symbol/timeframe combination")
+                    raise ValueError(error_msg)
+                    
+            except Exception as e:
+                tprint_error(f"❌ [INTERACTIVE_GENERATOR] Failed to load data using ares launcher integration: {e}")
+                tprint_debug(f"   → Exception type: {type(e).__name__}")
+                tprint_debug(f"   → Exception details: {str(e)}")
+                raise ValueError(f"No market data available to construct training input: {e}")
 
         labels_df = mh_result.get('labeled_data') or mh_result.get('labels')
         targets: Dict[str, pd.Series] = {}

@@ -189,7 +189,8 @@ class MonitoringOrchestrator:
                 # 2. Get the features used for the prediction
                 # 3. Generate SHAP/LIME explanations
                 # 4. Update the model_decision with explanations
-                pass
+                # TODO: Implement explainability integration
+                self.logger.debug("Explainability integration not yet implemented")
             
         except Exception as e:
             self.logger.error(f"Error generating decision explanations: {e}")

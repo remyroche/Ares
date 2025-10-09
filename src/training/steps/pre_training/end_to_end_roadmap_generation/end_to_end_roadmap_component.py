@@ -130,7 +130,7 @@ class RoadmapSystemInterface(ABC):
         Returns:
             RoadmapSystemResult with generated features and metadata
         """
-        pass
+        raise NotImplementedError("Subclasses must implement process_market_data method")
     
     @abstractmethod
     def get_system_status(self) -> Dict[str, Any]:
@@ -140,7 +140,7 @@ class RoadmapSystemInterface(ABC):
         Returns:
             Dictionary with system status information
         """
-        pass
+        raise NotImplementedError("Subclasses must implement get_system_status method")
 
 
 class RoadmapSystemAdapter(RoadmapSystemInterface):

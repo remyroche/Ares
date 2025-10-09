@@ -317,8 +317,9 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                     try:
                         resolved['preferred_min'] = float(preferred_window[0])
                         resolved['preferred_max'] = float(preferred_window[1])
-                    except (TypeError, ValueError):
-                        pass
+                    except (TypeError, ValueError) as e:
+                        # Keep original values if conversion fails
+                        self.logger.debug(f"Could not convert preferred window values: {e}")
 
                 for key in ('preferred_min', 'preferred_max', 'penalty_strength', 'penalty_exponent'):
                     if key in raw_settings and raw_settings[key] is not None:
@@ -337,8 +338,9 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                         width_val = float(width)
                         resolved['preferred_min'] = center_val - (width_val / 2.0)
                         resolved['preferred_max'] = center_val + (width_val / 2.0)
-                    except (TypeError, ValueError):
-                        pass
+                    except (TypeError, ValueError) as e:
+                        # Keep original values if conversion fails
+                        self.logger.debug(f"Could not convert center/width values: {e}")
 
         if resolved['preferred_min'] > resolved['preferred_max']:
             resolved['preferred_min'], resolved['preferred_max'] = resolved['preferred_max'], resolved['preferred_min']
@@ -1399,9 +1401,9 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             try:
                 merged_df['timestamp'] = pd.to_datetime(merged_df['timestamp'])
                 incoming['timestamp'] = pd.to_datetime(incoming['timestamp'])
-            except Exception:
+            except Exception as e:
                 # Keep original values if conversion fails
-                pass
+                self.logger.debug(f"Could not convert timestamp: {e}")
 
             incoming = incoming.drop_duplicates(subset=['timestamp'], keep='last')
             merged_df = merged_df.merge(

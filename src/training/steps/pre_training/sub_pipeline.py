@@ -1737,7 +1737,7 @@ class PreTrainingSubPipeline:
                 self.logger.info("📁 Using existing data mode - skipping download-dependent steps")
                 # Skip multi_horizon_profit_labeler since it may require downloads
                 # But keep other steps that can work with existing data
-                pass
+                # This is intentional - no action needed
 
         results = {
             'success': False,
@@ -2700,7 +2700,8 @@ class PreTrainingSubPipeline:
             'interactive_feature_generation',
             'final_feature_selection',
         ):
-            pass
+            # This is intentional - no action needed for these steps
+            continue
 
         self.logger.info("📈 Step duration summary:")
         self.event_logger.info(
@@ -4033,8 +4034,9 @@ class PreTrainingSubPipeline:
                     elif not isinstance(market_data.index, pd.DatetimeIndex):
                         try:
                             market_data.index = pd.to_datetime(market_data.index)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            # Keep original dtype if conversion fails
+                            self.logger.debug(f"Could not convert index to datetime: {e}")
                 else:
                     self.logger.warning("⚠️ No market data loaded, will pass None to component")
                     market_data = None

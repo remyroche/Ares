@@ -169,7 +169,8 @@ class SignedLog:
     """Signed log transform for heavy tails."""
 
     def __init__(self):
-        pass
+        """Initialize the signed log transform."""
+        self.fitted = False
     
     def fit_transform(self, data: pd.Series) -> pd.Series:
         """Apply signed log transform: sign(x) * log(1 + |x|)."""
@@ -185,7 +186,8 @@ class SignedLog:
     
     def set_state(self, state: Dict[str, Any]):
         """Set state (no state for signed log)."""
-        pass
+        # Signed log transform is stateless, so this is a no-op
+        self.fitted = state.get('fitted', False)
 
 
 class MADScaler:

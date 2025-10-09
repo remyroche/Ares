@@ -287,13 +287,18 @@ class DependencyManager:
             class ensemble:
                 class RandomForestRegressor:
                     def __init__(self, **kwargs):
-                        pass
+                        """Initialize fallback RandomForestRegressor."""
+                        self.kwargs = kwargs
+                        self.fitted = False
                     
                     def fit(self, X, y):
+                        """Fit the model."""
+                        self.fitted = True
                         return self
                     
                     def predict(self, X):
-                        return [0.5] * len(X)
+                        """Make predictions."""
+                        return np.zeros(len(X))
             
             class metrics:
                 @staticmethod

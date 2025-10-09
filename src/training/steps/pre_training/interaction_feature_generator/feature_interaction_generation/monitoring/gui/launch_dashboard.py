@@ -19,19 +19,19 @@ def check_dependencies() -> bool:
     """Check if required dependencies are available."""
     missing_deps = []
     try:
-        pass
+        import pandas
     except ImportError:
         missing_deps.append('pandas')
     try:
-        pass
+        import numpy
     except ImportError:
         missing_deps.append('numpy')
     try:
-        pass
+        import matplotlib
     except ImportError:
         missing_deps.append('matplotlib')
     try:
-        pass
+        import tkinter
     except ImportError:
         missing_deps.append('seaborn')
     if missing_deps:

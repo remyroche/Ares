@@ -38,6 +38,58 @@ class KlinesParquetManager:
         self.raw_data_dir.mkdir(parents=True, exist_ok=True)
         self.processed_data_dir.mkdir(parents=True, exist_ok=True)
 
+    def _get_last_x_days_fallback(self, df: pd.DataFrame, x_days: int = 20) -> Optional[pd.DataFrame]:
+        """Get the last x days of available data as a fallback.
+        
+        Args:
+            df: DataFrame to filter
+            x_days: Number of days to go back from the maximum available date
+            
+        Returns:
+            Filtered DataFrame with last x days of data or None if no data
+        """
+        if df is None or df.empty:
+            return None
+            
+        try:
+            # Find the maximum available date
+            timestamp_col = None
+            if 'timestamp' in df.columns:
+                timestamp_series = df['timestamp'].copy()
+                valid_mask = pd.notna(timestamp_series) & np.isfinite(timestamp_series)
+                if valid_mask.any():
+                    timestamp_series = timestamp_series[valid_mask]
+                    df = df[valid_mask]
+                    timestamp_col = pd.to_datetime(timestamp_series, unit='s')
+            elif 'open_time' in df.columns:
+                open_time_series = df['open_time'].copy()
+                valid_mask = pd.notna(open_time_series) & np.isfinite(open_time_series)
+                if valid_mask.any():
+                    open_time_series = open_time_series[valid_mask]
+                    df = df[valid_mask]
+                    timestamp_col = pd.to_datetime(open_time_series, unit='ms')
+            
+            if timestamp_col is not None and len(timestamp_col) > 0:
+                max_date = timestamp_col.max()
+                if not pd.isna(max_date):
+                    # Calculate start date for last x days
+                    start_date = max_date - timedelta(days=x_days)
+                    
+                    # Apply the filter
+                    mask = timestamp_col >= start_date
+                    filtered_df = df[mask]
+                    
+                    self.logger.info(f"📅 Fallback: Using last {x_days} days from {max_date.date()}")
+                    self.logger.info(f"📅 Fallback date range: {start_date.date()} to {max_date.date()}")
+                    self.logger.info(f"📅 Fallback result: {len(filtered_df)} records")
+                    
+                    return filtered_df
+                    
+        except Exception as e:
+            self.logger.warning(f"Could not apply last {x_days} days fallback: {e}")
+            
+        return None
+
     def _apply_date_filter_to_dataframe(self, df: pd.DataFrame, start_date: Optional[datetime], end_date: Optional[datetime]) -> Optional[pd.DataFrame]:
         """Apply date filtering to a dataframe.
 
@@ -721,11 +773,8 @@ class KlinesParquetManager:
                     
                     if len(combined_df) == 0:
                         self.logger.warning(f"⚠️ No data found in date range {start_date.date()} to {end_date.date()}")
-                        self.logger.info(f"📅 Fallback: Using last 20 days from {max_date.date()}")
-                        last_20_days = max_date - timedelta(days=20)
-                        mask = timestamp_col >= last_20_days
-                        combined_df = combined_df[mask]
-                        self.logger.info(f"📅 Fallback result: {len(combined_df)} records")
+                        # Use the new fallback method to get last x days of available data
+                        combined_df = self._get_last_x_days_fallback(combined_df, x_days=20)
                 else:
                     # Fallback to index-based filtering
                     try:
@@ -742,6 +791,13 @@ class KlinesParquetManager:
                             combined_df = combined_df[combined_df.index >= start_date]
                         if end_date is not None:
                             combined_df = combined_df[combined_df.index <= end_date]
+                            
+                        # Check if we have data after filtering, if not use fallback
+                        if len(combined_df) == 0:
+                            self.logger.warning(f"⚠️ No data found in date range after index-based filtering")
+                            # Use the new fallback method to get last x days of available data
+                            combined_df = self._get_last_x_days_fallback(combined_df, x_days=20)
+                            
                     except Exception as e:
                         self.logger.warning(f"Could not apply date filtering: {e}")
                         # Continue without filtering if conversion fails
@@ -1058,6 +1114,48 @@ class KlinesParquetManager:
             self.logger.exception(f"❌ Failed to list available data: {e}")
             return {}
     
+    def read_last_x_days_data(
+        self,
+        symbol: str,
+        interval: str,
+        x_days: int = 20,
+        data_type: str = "raw",
+        columns: Optional[List[str]] = None
+    ) -> Optional[pd.DataFrame]:
+        """Read the last x days of available data for a symbol and interval.
+        
+        Args:
+            symbol: Trading symbol
+            interval: Data interval
+            x_days: Number of days to go back from the maximum available date
+            data_type: 'raw' or 'processed'
+            columns: List of columns to read
+            
+        Returns:
+            DataFrame with the last x days of klines data or None if not found
+        """
+        try:
+            # First, get all available data without date filtering
+            all_data = self.read_data(symbol, interval, data_type=data_type, columns=columns)
+            
+            if all_data is None or all_data.empty:
+                self.logger.warning(f"No data available for {symbol} {interval}")
+                return None
+            
+            # Apply the last x days fallback
+            last_x_days_data = self._get_last_x_days_fallback(all_data, x_days)
+            
+            if last_x_days_data is not None and not last_x_days_data.empty:
+                self.logger.info(f"✅ Successfully loaded last {x_days} days of data for {symbol} {interval}")
+                return last_x_days_data
+            else:
+                self.logger.warning(f"Could not get last {x_days} days of data for {symbol} {interval}")
+                return None
+                
+        except Exception as e:
+            self.logger.exception(f"❌ Failed to read last {x_days} days data: {e}")
+            return None
+
     def get_data_statistics(self, symbol: str, interval: str, data_type: str = "raw") -> Dict[str, Any]:
         """Get detailed statistics for data.
         
@@ -1142,6 +1240,27 @@ def read_ethusdt_data(
     """
     manager = get_klines_manager(data_dir)
     return manager.read_data("ETHUSDT", interval, start_date, end_date, data_type)
+
+
+def read_ethusdt_last_x_days(
+    interval: str = "1m",
+    x_days: int = 20,
+    data_type: str = "raw",
+    data_dir: str = "historical_data"
+) -> Optional[pd.DataFrame]:
+    """Read the last x days of ETHUSDT data.
+    
+    Args:
+        interval: Data interval
+        x_days: Number of days to go back from the maximum available date
+        data_type: 'raw' or 'processed'
+        data_dir: Base directory for data storage
+        
+    Returns:
+        DataFrame with the last x days of ETHUSDT data or None if not found
+    """
+    manager = get_klines_manager(data_dir)
+    return manager.read_last_x_days_data("ETHUSDT", interval, x_days, data_type)
 
 
 # Backward compatibility functions
@@ -1281,15 +1400,26 @@ if __name__ == "__main__":
     info = manager.get_data_info("ETHUSDT", "1m", "raw")
     print(f"ETHUSDT 1m raw data info: {info}")
     
-    # Read data
+    # Read data with date range (will fallback to last 20 days if range not available)
     data = manager.read_data("ETHUSDT", "1m", data_type="raw")
     if data is not None:
         print(f"Loaded {len(data)} records")
         print(f"Columns: {list(data.columns)}")
         print(f"Date range: {data.index.min()} to {data.index.max()}")
+    
+    # Read last 30 days of data explicitly
+    last_30_days = manager.read_last_x_days_data("ETHUSDT", "1m", x_days=30, data_type="raw")
+    if last_30_days is not None:
+        print(f"Last 30 days: {len(last_30_days)} records")
+        print(f"Date range: {last_30_days.index.min()} to {last_30_days.index.max()}")
+    
+    # Test convenience function
+    ethusdt_last_7_days = read_ethusdt_last_x_days("1m", x_days=7)
+    if ethusdt_last_7_days is not None:
+        print(f"ETHUSDT last 7 days: {len(ethusdt_last_7_days)} records")
         
         # Test backward compatibility functions
-        validation_result = validate_klines_data(data)
+        validation_result = validate_klines_data(ethusdt_last_7_days)
         print(f"Validation result: {validation_result['valid']}")
         if validation_result['errors']:
             print(f"Errors: {validation_result['errors']}")

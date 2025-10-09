@@ -1,0 +1,110 @@
+{
+  "stage": "pre_training",
+  "sub_pipeline": "interactive_feature_generation",
+  "timestamp": "2025-10-09T22:07:40.256836",
+  "status": "failed",
+  "output_files": [],
+  "metadata": {
+    "run_metadata": {
+      "run_id": "c3752541c4704ab588e251f809ba5876",
+      "git_sha": "52a209bea380e8c9585bc4bfc983a2e171f1f423",
+      "config_hash": "ece775fc2af4b0ba455b70e9e5d5af7e34a00b6b262b8f953524553639fa9b77",
+      "data_snapshot_id": "unknown",
+      "rng_seed": null,
+      "symbol": "ETHUSDT",
+      "timeframe": "15m",
+      "mode": "light",
+      "host_name": "MacBook-Air-de-Remy.local",
+      "start_time_utc": "2025-10-09T20:07:39.704283Z",
+      "end_time_utc": null,
+      "duration_seconds": null
+    }
+  },
+  "artifacts": {
+    "interactive_feature_generation_result": {
+      "features": "Empty DataFrame\nColumns: []\nIndex: []",
+      "feature_names": [],
+      "selected_features": [],
+      "interaction_features": "Empty DataFrame\nColumns: []\nIndex: []",
+      "cross_timeframe_features": "Empty DataFrame\nColumns: []\nIndex: []",
+      "execution_time": 0.0018780231475830078,
+      "memory_usage_mb": 965.59375,
+      "success": true,
+      "error_message": null,
+      "validated_schemas": {
+        "inputs": {
+          "feature_matrix": {
+            "name": "Engineered Feature Frame",
+            "version": "1.0",
+            "description": "Feature matrix with datetime index and numeric feature columns."
+          }
+        },
+        "outputs": {},
+        "derived": {}
+      }
+    },
+    "stage_results": {},
+    "performance_metrics": {},
+    "artifacts": {},
+    "validated_schemas": {
+      "inputs": {
+        "feature_matrix": {
+          "name": "Engineered Feature Frame",
+          "version": "1.0",
+          "description": "Feature matrix with datetime index and numeric feature columns."
+        }
+      },
+      "outputs": {},
+      "derived": {}
+    }
+  },
+  "config": {
+    "symbol": "ETHUSDT",
+    "exchange": "binance",
+    "timeframe": "15m",
+    "mode": "light",
+    "intensity_percentage": 0.5,
+    "training_mode_config": {
+      "name": "light",
+      "description": "Development mode - Minimal data with all features/models",
+      "lookback_days": 20,
+      "lookback_years": 0,
+      "intensity_percentage": 0.025,
+      "computational_intensity": "minimal",
+      "estimated_duration_minutes": 10,
+      "max_trials": 10,
+      "n_trials": 5,
+      "monte_carlo_samples": 100,
+      "ab_test_rounds": 2,
+      "optuna_trials": 10,
+      "optuna_timeout": 300,
+      "batch_size": 512,
+      "epochs": 10,
+      "early_stopping_patience": 5,
+      "cross_validation_folds": 2,
+      "enable_parallelization": false,
+      "enable_caching": true,
+      "enable_advanced_features": true,
+      "enable_ensemble_training": true,
+      "enable_multi_timeframe_training": true,
+      "enable_adaptive_training": true
+    },
+    "direction_type": "long"
+  },
+  "next_stage_requirements": {
+    "required_files": [
+      "labels.parquet",
+      "features.parquet"
+    ],
+    "required_artifacts": [
+      "feature_metadata"
+    ],
+    "data_dependencies": [],
+    "next_stage": "model_training",
+    "sub_pipelines": [
+      "feature_lookback_optimization",
+      "interactive_feature_generation",
+      "final_feature_selection"
+    ]
+  }
+}

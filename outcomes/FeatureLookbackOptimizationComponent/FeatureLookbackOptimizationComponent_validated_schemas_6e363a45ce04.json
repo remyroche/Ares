@@ -1,0 +1,23 @@
+{
+  "inputs": {
+    "market_data": {
+      "name": "Raw OHLCV Frame",
+      "version": "1.0",
+      "description": "Normalized OHLCV input with datetime index and float OHLCV columns."
+    },
+    "labeled_targets": {
+      "rows": 19496,
+      "columns": 2,
+      "has_target_columns": true,
+      "has_confidence_columns": true
+    }
+  },
+  "outputs": {
+    "optimization_frame": {
+      "name": "Engineered Feature Frame",
+      "version": "1.0",
+      "description": "Feature matrix with datetime index and numeric feature columns."
+    }
+  },
+  "derived": {}
+}

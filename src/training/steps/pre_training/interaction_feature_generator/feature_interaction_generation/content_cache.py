@@ -25,7 +25,12 @@ from typing import Dict, List, Any, Optional, Set, Tuple, Union
 from dataclasses import dataclass, field
 from pathlib import Path
 import logging
-import zstd
+try:
+    import zstd
+    ZSTD_AVAILABLE = True
+except ImportError:
+    ZSTD_AVAILABLE = False
+    zstd = None
 import numpy as np
 import pandas as pd
 from collections import OrderedDict, defaultdict
@@ -166,7 +171,7 @@ class ContentAddressedCache:
         # Serialize to pickle
         serialized = pickle.dumps(data)
         
-        if self.config.enable_compression and len(serialized) > 1024:  # Only compress large data
+        if self.config.enable_compression and len(serialized) > 1024 and ZSTD_AVAILABLE:  # Only compress large data
             compressed = zstd.compress(serialized, self.config.compression_level)
             self.stats['compressions'] += 1
             return compressed
@@ -175,7 +180,7 @@ class ContentAddressedCache:
     
     def _deserialize_data(self, data: bytes, compressed: bool = False) -> Any:
         """Deserialize data with optional decompression."""
-        if compressed and self.config.enable_compression:
+        if compressed and self.config.enable_compression and ZSTD_AVAILABLE:
             decompressed = zstd.decompress(data)
             self.stats['decompressions'] += 1
             return pickle.loads(decompressed)

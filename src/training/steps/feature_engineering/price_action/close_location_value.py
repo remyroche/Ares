@@ -97,23 +97,19 @@ class CloseLocationValueFeature:
             
             # Calculate rolling mean CLV
             if self.config.include_rolling_clv:
-                rolling_clv = vectorized_rolling_features(
-                    raw_clv.values,
-                    windows=self.config.window,
-                    operation='mean'
-                )
-                rolling_clv = pd.Series(rolling_clv, index=data.index)
+                rolling_clv = raw_clv.rolling(
+                    window=self.config.window,
+                    min_periods=1
+                ).mean()
                 features['clv_rolling'] = rolling_clv
                 tprint_info(f"   → Rolling CLV: mean={rolling_clv.mean():.3f}, std={rolling_clv.std():.3f}")
             
             # Calculate CLV volatility
             if self.config.include_clv_volatility:
-                clv_volatility = vectorized_rolling_features(
-                    raw_clv.values,
-                    windows=self.config.window,
-                    operation='std'
-                )
-                clv_volatility = pd.Series(clv_volatility, index=data.index)
+                clv_volatility = raw_clv.rolling(
+                    window=self.config.window,
+                    min_periods=1
+                ).std()
                 features['clv_volatility'] = clv_volatility
                 tprint_info(f"   → CLV volatility: mean={clv_volatility.mean():.3f}, std={clv_volatility.std():.3f}")
             

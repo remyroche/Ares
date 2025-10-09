@@ -251,7 +251,8 @@ class BasePreTrainingComponent(ABC):
             metadata_keys=list(metadata.keys()),
         )
         component_name = self.__class__.__name__
-        base_artifact_dir = Path(self.artifact_manager.base_paths["artifacts"]) / component_name
+        # Save artifacts to outcomes/ directory instead of artifacts/
+        base_artifact_dir = Path('outcomes') / component_name
 
         report = persist_artifacts(
             component_name=component_name,

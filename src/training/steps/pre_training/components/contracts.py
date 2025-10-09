@@ -222,11 +222,29 @@ class _MappingBackedDataclass(MutableMapping[str, Any]):
                 if field_info and field_info.type != Any:
                     # Basic type validation - could be enhanced with more sophisticated validation
                     expected_type = field_info.type
-                    if not isinstance(value, expected_type) and value is not None:
-                        # Log warning but don't raise - allow flexibility for now
-                        import logging
-                        logger = logging.getLogger(__name__)
-                        logger.warning(f"Type mismatch for field '{key}': expected {expected_type}, got {type(value)}")
+                    # Check if expected_type is actually a valid type for isinstance()
+                    try:
+                        # Get origin type for complex annotations like Optional, Union, etc.
+                        import typing
+                        origin = typing.get_origin(expected_type)
+                        if origin is not None:
+                            # For Union types (including Optional), extract the actual types
+                            args = typing.get_args(expected_type)
+                            if args and value is not None:
+                                # Check against all types in the union (excluding None)
+                                valid_types = tuple(arg for arg in args if arg is not type(None))
+                                if valid_types and not isinstance(value, valid_types):
+                                    import logging
+                                    logger = logging.getLogger(__name__)
+                                    logger.warning(f"Type mismatch for field '{key}': expected {expected_type}, got {type(value)}")
+                        elif isinstance(expected_type, type) and not isinstance(value, expected_type) and value is not None:
+                            # Simple type check for non-generic types
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.warning(f"Type mismatch for field '{key}': expected {expected_type}, got {type(value)}")
+                    except (TypeError, AttributeError):
+                        # If type checking fails, just skip validation
+                        pass
 
             except (ImportError, AttributeError):
                 # If validation fails, just set the value
@@ -548,10 +566,18 @@ def _validate_final_selection(
     return bundle
 
 
+def _validate_feature_lookback(bundle: FeatureLookbackArtifacts) -> FeatureLookbackArtifacts:
+    """Validate FeatureLookbackArtifacts bundle."""
+    # Basic validation - ensure required fields exist
+    if not bundle.feature_lookback_optimization_result:
+        raise ValueError("feature_lookback_optimization_result is empty")
+    return bundle
+
 _ARTIFACT_VALIDATORS: Dict[Type[ArtifactBundle], Validator] = {
     MultiHorizonArtifacts: _validate_multi_horizon,
     InteractiveFeatureArtifacts: _validate_interactive_features,
     FinalFeatureSelectionArtifacts: _validate_final_selection,
+    FeatureLookbackArtifacts: _validate_feature_lookback,
 }
 
 

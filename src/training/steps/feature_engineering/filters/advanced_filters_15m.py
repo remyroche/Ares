@@ -66,9 +66,9 @@ from src.training.steps.feature_engineering.trend.trend_coherence import (
 # Import ML common utilities
 try:
     from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
-    from src.utils.ml_common.validation.cross_validation import CrossValidator
-    from src.utils.ml_common.validation.lookahead_bias_detector import LookaheadBiasDetector
-    from src.utils.ml_common.optimization.pareto_optimizer import ParetoOptimizer
+    from src.utils.ml_common.validation import CrossValidator
+    from src.utils.ml_common.utils.lookahead_protection import LookaheadBiasDetector
+    from src.utils.ml_common.optimization.pareto import ParetoOptimizer
     ML_COMMON_AVAILABLE = True
 except ImportError:
     ML_COMMON_AVAILABLE = False
@@ -102,7 +102,7 @@ class AdvancedFiltersConfig:
     
     # Grading system (primary filtering method)
     use_grading_system: bool = True  # Use average grade instead of cumulative filters
-    grade_threshold: float = 0.5  # Minimum average grade to pass (0.0-1.0)
+    grade_threshold: float = 0.2  # Minimum average grade to pass (0.0-1.0)
     grade_weights: Dict[str, float] = field(default_factory=lambda: {
         'efficiency': 0.25,
         'clv': 0.25,

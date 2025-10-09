@@ -34,16 +34,20 @@ class AresLauncherDataLoader:
         tprint("🚀 Initializing Ares Launcher Data Loader")
         tprint_info(f"📁 Data directory: {data_dir}")
     
-    def get_lookback_dates(self, mode: str = "light") -> tuple[datetime, datetime]:
+    def get_lookback_dates(self, mode: str = "light", symbol: Optional[str] = None, interval: Optional[str] = None) -> tuple[datetime, datetime]:
         """
-        Get start and end dates based on ares_launcher mode configuration.
+        Get start and end dates based on ares_launcher mode configuration, using last available data date.
         
         Args:
             mode: Pipeline mode ("light", "blank", "full")
+            symbol: Trading symbol (optional, for detecting last available date)
+            interval: Data interval (optional, for detecting last available date)
             
         Returns:
             Tuple of (start_date, end_date)
         """
+        import pandas as pd
+        
         tprint("🔍 [ARES_DATA_LOADER] Getting lookback dates for mode configuration")
         tprint_debug(f"   → Requested mode: {mode}")
         
@@ -61,9 +65,38 @@ class AresLauncherDataLoader:
             tprint_warning(f"⚠️ [ARES_DATA_LOADER] Unknown mode '{mode}', defaulting to light mode")
             config = get_light_mode_config()
         
-        # Calculate dates
+        # Calculate dates - use last available data date instead of current date
         end_date = datetime.now()
+        
+        # Try to detect last available data date if symbol and interval are provided
+        if symbol and interval:
+            try:
+                tprint_debug("🔍 [ARES_DATA_LOADER] Attempting to detect last available data date")
+                from src.utils.data.klines_parquet import KlinesParquetManager
+                manager = KlinesParquetManager(data_dir=self.data_dir)
+                
+                # Get data info to find the actual available date range
+                data_info = manager.get_data_info(symbol=symbol, interval=interval, data_type="processed")
+                
+                if data_info and data_info.get("available") and data_info.get("date_range"):
+                    # Use the last date from the available data
+                    _, max_date = data_info["date_range"]
+                    end_date = pd.to_datetime(max_date)
+                    # Remove timezone to match dataframe format (timezone-naive)
+                    if hasattr(end_date, 'tz') and end_date.tz is not None:
+                        end_date = end_date.tz_localize(None)
+                    # Normalize to end of day to include all data on that day
+                    end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+                    tprint_success(f"✅ [ARES_DATA_LOADER] Using last available data date: {end_date.strftime('%Y-%m-%d')}")
+                else:
+                    tprint_warning("⚠️ [ARES_DATA_LOADER] Could not get data info, using current date")
+            except Exception as e:
+                tprint_warning(f"⚠️ [ARES_DATA_LOADER] Error detecting last available date: {e}")
+                tprint_debug("   → Falling back to current date")
+        
         start_date = end_date - timedelta(days=config.lookback_days)
+        # Normalize to start of day to include all data from that day
+        start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
         
         tprint_success(f"✅ [ARES_DATA_LOADER] {mode.upper()} mode: {config.lookback_days} days lookback")
         tprint_info(f"📅 [ARES_DATA_LOADER] Date range: {start_date.date()} to {end_date.date()}")
@@ -115,7 +148,7 @@ class AresLauncherDataLoader:
             tprint_debug(f"   → Custom end: {end_date}")
         else:
             tprint_debug("🔍 [ARES_DATA_LOADER] Calculating dates based on mode configuration")
-            start_date, end_date = self.get_lookback_dates(mode)
+            start_date, end_date = self.get_lookback_dates(mode, symbol=symbol, interval=interval)
         
         try:
             tprint("📥 [ARES_DATA_LOADER] Loading data using KlinesParquetManager")
@@ -192,7 +225,7 @@ class AresLauncherDataLoader:
             end_date = custom_end_date
             tprint_info(f"📅 Using custom date range: {start_date.date()} to {end_date.date()}")
         else:
-            start_date, end_date = self.get_lookback_dates(mode)
+            start_date, end_date = self.get_lookback_dates(mode, symbol=symbol, interval=interval)
         
         try:
             # Use asyncio to run the synchronous load in a thread pool
@@ -244,7 +277,9 @@ class AresLauncherDataLoader:
         tprint(f"📊 Loading data for {len(symbols)} symbols in {mode.upper()} mode")
         
         results = {}
-        start_date, end_date = self.get_lookback_dates(mode)
+        # Get dates using first symbol to detect last available date
+        first_symbol = symbols[0] if symbols else None
+        start_date, end_date = self.get_lookback_dates(mode, symbol=first_symbol, interval=interval)
         
         for symbol in symbols:
             tprint_debug(f"📊 Loading {symbol}...")
@@ -297,7 +332,7 @@ class AresLauncherDataLoader:
         info = self.klines_manager.get_data_info(symbol, interval, "raw")
         
         # Add mode-specific information
-        start_date, end_date = self.get_lookback_dates(mode)
+        start_date, end_date = self.get_lookback_dates(mode, symbol=symbol, interval=interval)
         
         info.update({
             'mode': mode,

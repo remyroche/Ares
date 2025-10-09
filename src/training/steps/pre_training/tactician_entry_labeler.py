@@ -700,10 +700,28 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                 }
             }
             
+            # Save labeled data to parquet file for persistence
+            from pathlib import Path
+            symbol = pipeline_state.get('symbol', 'UNKNOWN')
+            exchange = pipeline_state.get('exchange', 'UNKNOWN')
+            timeframe = pipeline_state.get('timeframe', 'UNKNOWN')
+            timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            artifacts_dir = Path('artifacts')
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            
+            labeled_data_file = artifacts_dir / f'tactician_labeled_data_{symbol}_{exchange}_{timeframe}_{timestamp_str}.parquet'
+            
+            # Save labeled DataFrame to parquet
+            if isinstance(label_df, pd.DataFrame) and not label_df.empty:
+                label_df.to_parquet(labeled_data_file)
+                tprint_success(f"✅ Saved tactician labeled data to {labeled_data_file}")
+            
             # Create artifacts
             artifacts = {
                 'multi_horizon_labeling_result': {
                     'labeled_data': label_df,
+                    'labeled_data_file': str(labeled_data_file),  # Add file path for persistence
                     'labels': label_df,
                     'confidence_scores': confidence_df,
                     'eligibility_masks': eligibility_df,
@@ -752,8 +770,8 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
                     'n_entry_points': int((labels > 0).sum()),
                     'quality_metrics': quality_metrics,
                     'direction_settings': {
-                        'enable_long_positions': self.config.enable_long_positions if self.config else True,
-                        'enable_short_positions': self.config.enable_short_positions if self.config else False,
+                        'enable_long_positions': self.labeler.config.enable_long_positions,
+                        'enable_short_positions': self.labeler.config.enable_short_positions,
                     }
                 }
             )

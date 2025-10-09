@@ -182,6 +182,13 @@ class CrossValidationUtilities:
         return indices
 
 
+# Compatibility alias for CrossValidator
+try:
+    from src.utils.ml_common.validation.unified_cv import UnifiedCrossValidator as CrossValidator  # type: ignore
+except Exception:  # pragma: no cover - fallback if unavailable
+    CrossValidator = None  # type: ignore
+
+
 class OOFGenerator:
     """Out-of-fold prediction generator for ensemble methods.
 

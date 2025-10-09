@@ -1,0 +1,1843 @@
+{
+  "component": "FeatureLookbackOptimizationComponent",
+  "correlation_id": "862c5753-79c3-4c7a-91b9-dc4cab68005b",
+  "metadata": {
+    "optimization_status": "completed",
+    "total_features_optimized": 4,
+    "validation_summary": {
+      "total_rules": 6,
+      "passed": 6,
+      "failed": 0,
+      "warnings": 0,
+      "skipped": 0,
+      "critical_failures": 0,
+      "overall_status": "ValidationStatus.PASSED",
+      "quality_score": 1.0,
+      "recommendations": []
+    },
+    "performance_metrics": {
+      "monitoring_duration_seconds": 107.6772,
+      "total_operations": 1,
+      "error_count": 0,
+      "warning_count": 0,
+      "avg_memory_usage_mb": 934.765625,
+      "avg_cpu_usage_percent": 0.0,
+      "peak_memory_usage_mb": 967.296875,
+      "operation_statistics": {
+        "execute": {
+          "count": 1,
+          "total_time": 105.335778,
+          "avg_time": 105.335778,
+          "min_time": 105.335778,
+          "max_time": 105.335778
+        }
+      },
+      "quality_metrics": {
+        "data_quality_score": 1.0,
+        "validation_score": 1.0,
+        "optimization_score": 0.0
+      },
+      "resource_metrics": {
+        "peak_memory_mb": 967.296875,
+        "avg_cpu_percent": 0.0,
+        "disk_io_operations": 0,
+        "network_io_bytes": 0
+      },
+      "cache_metrics": {
+        "hits": 2,
+        "misses": 0,
+        "writes": 0,
+        "force_refreshes": 0
+      }
+    },
+    "optimization_results": {
+      "feature_results": {
+        "long_pipeline": {
+          "rsi_14_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "williams_r_14_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "stochastic_14_3_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "macd_12_26_9_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "momentum_endpoints_sma_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "momentum_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "roc_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "momentum_endpoints_ema_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "rsi_zscore_14_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "stochastic_kd_14_3": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "legacy_stochastic_14_3": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "donchian_channel_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "legacy_macd_12_26_9": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "legacy_rsi_14": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "macd_entropy_20_12_26": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "rsi_entropy_20_14": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "legacy_rsi_9": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "rsi_9_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "legacy_rsi_21": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "rsi_21_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "legacy_rsi_25": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "rsi_25_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "legacy_macd_8_21_5": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "macd_8_21_5_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "legacy_macd_5_35_5": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "macd_5_35_5_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "legacy_stochastic_9_3": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "stochastic_9_3_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "legacy_stochastic_21_3": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "stochastic_21_3_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "price_acceleration_10": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "price_acceleration_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "advanced_momentum_10_30": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "advanced_momentum_5_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "analyst_momentum_5m": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "analyst_momentum_15m": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "analyst_momentum_1h": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "analyst_momentum_alignment": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "bb_upper_20_2.0_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "atr_14_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volatility_bands_20_2.0_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volatility_10": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volatility_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "analyst_vol_ratio_5m_15m": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "sma_5_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "sma_10_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "sma_20_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "sma_50_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "ema_12_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "ema_26_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "wma_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "dema_21_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "tema_21_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "vwma_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "trima_21_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "keltner_channels_20_14_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "directional_signal": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "adx_14": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_sma_5": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "trend_score_14": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_ema_5": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_sma_10": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_ema_10": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_sma_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_ema_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_ema_50": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_sma_50": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_ratio_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_ratio_10": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_roc_1": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_ratio_50": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_roc_10": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_roc_5": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_roc_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_std_10": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_std_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_std_50": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_percentile_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_percentile_50": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_percentile_100": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_trend_strength_10_30": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_trend_strength_20_50": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_oscillator_5_15": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_oscillator_10_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_momentum_5": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_momentum_10": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_momentum_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_vwap_10": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_vwap_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_vwap_50": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_price_trend": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_accumulation_distribution": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_price_correlation_10": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_price_divergence_10": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_price_correlation_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_price_divergence_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "price_volume_oscillator_10_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "analyst_volume_pressure": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "price_volume_oscillator_5_15": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_zscore_60_252": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_ma_ratios_20_10": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "analyst_volume_trend": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "vwap_deviations_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "order_flow_imbalance_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "cmf_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "support_level_1_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "support_level_2_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "support_level_3_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "support_level_4_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "support_level_5_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "resistance_level_1_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "resistance_level_2_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "resistance_level_3_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "resistance_level_4_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "resistance_level_5_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "pivot_point_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "support_level_1_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "support_level_2_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "support_level_3_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "support_level_4_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "support_level_5_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "resistance_level_1_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "resistance_level_2_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "resistance_level_3_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "resistance_level_4_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "resistance_level_5_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "pivot_point_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "support_level_1_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "support_level_2_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "support_level_3_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_volatility_elasticity_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "support_level_4_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "support_level_5_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "resistance_level_1_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "resistance_level_2_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "resistance_level_3_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "resistance_level_4_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "pivot_point_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "resistance_level_5_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "fibonacci_0.236_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "fibonacci_0.236_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "fibonacci_0.382_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "fibonacci_0.236_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "fibonacci_0.382_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "fibonacci_0.382_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "fibonacci_0.5_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "fibonacci_0.5_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "fibonacci_0.5_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "fibonacci_0.618_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "fibonacci_0.618_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "fibonacci_0.618_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "fibonacci_0.786_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "fibonacci_0.786_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "fibonacci_0.786_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "adx_14_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "cci_20_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "ultimate_oscillator_7_14_28_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "kst_10_15_20_30_10_10_10_15_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "apo_12_26_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "cmo_14_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "natr_14_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "pfe_12_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "t3_14_0.7_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "kama_30_2_30_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "price_entropy_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_entropy_5_volume_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "aroon_25_returns_vwap": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "return_entropy_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "price_entropy_ma_5_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_entropy_ma_5_5_volume_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "return_entropy_ma_5_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "price_entropy_ma_5_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_entropy_ma_5_10_volume_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "return_entropy_ma_5_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "price_entropy_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_entropy_10_volume_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "return_entropy_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "price_entropy_ma_10_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_entropy_ma_10_5_volume_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "return_entropy_ma_10_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "price_entropy_ma_10_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_entropy_ma_10_10_volume_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "return_entropy_ma_10_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "price_entropy_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_entropy_20_volume_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "return_entropy_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "price_entropy_ma_20_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_entropy_ma_20_5_volume_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "price_entropy_ma_20_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "return_entropy_ma_20_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_entropy_ma_20_10_volume_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "return_entropy_ma_20_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "shannon_entropy_20_10": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "sample_entropy_20_2_0.2": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "lempel_ziv_complexity_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "entropy_rate_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "spectral_entropy_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "order_flow_imbalance_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "trade_size_imbalance_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "price_impact_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_weighted_price_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "trade_intensity_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "liquidity_proxy_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "market_depth_5_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "order_flow_imbalance_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "trade_size_imbalance_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "price_impact_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_weighted_price_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "trade_intensity_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "liquidity_proxy_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "market_depth_10_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "order_flow_imbalance_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "trade_size_imbalance_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "price_impact_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "volume_weighted_price_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "trade_intensity_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "liquidity_proxy_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "market_depth_20_price_returns": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "analyst_spread_normalized": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "analyst_tick_imbalance": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "cs_spread_momentum": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "amihud_illiquidity_vwap_distance": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "roll_lambda_rv_short": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "range_volume_shock_open30": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "hurst_exponent_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "hurst_exponent_50": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "jump_indicators_20_2.0": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "jump_indicators_20_3.0": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "permutation_entropy_20_3_1": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "cvar_20_0.05": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "max_drawdown_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "max_drawdown_50": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "rolling_skewness_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "rolling_kurtosis_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "trend_persistence_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "wavelet_energy_20_3": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "wavelet_energy_20_5": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "cvar_20_0.01": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "wavelet_energy_50_3": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "wavelet_energy_50_5": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "band_limited_volatility_20_0.1": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "band_limited_volatility_20_0.2": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "cycle_length_20_2_10": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "fractal_dimension_20": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "fractal_dimension_50": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "cycle_length_50_2_10": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "dfa_slopes_20_4_10": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "dfa_slopes_50_4_10": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "garch_1_1_h1": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          },
+          "garch_1_1_h5": {
+            "best_lookback_period": 39,
+            "best_score": -Infinity,
+            "optimization_method": "coarse_to_refine",
+            "target_column": "analyst_target",
+            "direction": "long"
+          }
+        },
+        "short_pipeline": {},
+        "long_target": "analyst_target",
+        "short_target": "close"
+      },
+      "total_features": 250,
+      "optimization_method": "coarse_to_refine_directional",
+      "feature_lag_metadata": {}
+    },
+    "validated_schemas": {
+      "inputs": {
+        "market_data": {
+          "name": "Raw OHLCV Frame",
+          "version": "1.0",
+          "description": "Normalized OHLCV input with datetime index and float OHLCV columns."
+        },
+        "labeled_targets": {
+          "rows": 19496,
+          "columns": 2,
+          "has_target_columns": true,
+          "has_confidence_columns": true
+        }
+      },
+      "outputs": {
+        "optimization_frame": {
+          "name": "Engineered Feature Frame",
+          "version": "1.0",
+          "description": "Feature matrix with datetime index and numeric feature columns."
+        }
+      },
+      "derived": {}
+    },
+    "run_metadata": {
+      "feature_cache_key": "ethusdt__15m__2024.09__76bd4647e36ff0ecfb433fccfba0f9e9a2e70859c25f63a82afdece55af35927",
+      "lookback_config_hash": "76bd4647e36ff0ecfb433fccfba0f9e9a2e70859c25f63a82afdece55af35927"
+    }
+  }
+}

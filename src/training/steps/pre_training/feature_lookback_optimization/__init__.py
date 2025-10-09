@@ -14,7 +14,6 @@ from src.utils.tprint import tprint
 tprint("🔧 Loading feature lookback optimization module...")
 
 from .feature_lookback_optimization import FeatureLookbackOptimizationComponent
-from .feature_lookback_optimization_modular import FeatureLookbackOptimizationComponent as ModularFeatureLookbackOptimizationComponent
 from .optimization_reporter import OptimizationReporter
 from src.utils.validation.unified_framework import FeatureLookbackValidationFramework, ValidationLevel, ValidationStatus
 from .dependency_manager import DependencyManager, get_dependency, is_dependency_available
@@ -34,7 +33,6 @@ tprint("📋 Setting up module exports...")
 __all__ = [
     # Main components
     'FeatureLookbackOptimizationComponent',
-    'ModularFeatureLookbackOptimizationComponent',
 
     # Modular components
     'CoreOptimizer',

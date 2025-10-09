@@ -202,6 +202,21 @@ class AresLauncher:
         filename = f"{stage}_{sub_pipeline}_outcome_{timestamp}.json"
         outcome_file = outcome_dir / filename
         
+        # Determine actual direction type from metadata if available
+        direction_type = 'both'
+        if hasattr(result, 'metadata') and result.metadata:
+            direction_settings = result.metadata.get('direction_settings', {})
+            enable_long = direction_settings.get('enable_long_positions', True)
+            enable_short = direction_settings.get('enable_short_positions', False)
+            if enable_long and enable_short:
+                direction_type = 'both'
+            elif enable_long:
+                direction_type = 'long'
+            elif enable_short:
+                direction_type = 'short'
+        elif hasattr(config, 'direction_type'):
+            direction_type = config.direction_type.value
+        
         outcome_data = {
             'stage': stage,
             'sub_pipeline': sub_pipeline,
@@ -217,7 +232,7 @@ class AresLauncher:
                 'mode': config.mode.value,
                 'intensity_percentage': config.intensity_percentage,
                 'training_mode_config': config.training_mode_config,
-                'direction_type': config.direction_type.value if hasattr(config, 'direction_type') else 'both'
+                'direction_type': direction_type
             },
             'next_stage_requirements': self._get_next_stage_requirements(stage, sub_pipeline)
         }
@@ -226,7 +241,196 @@ class AresLauncher:
             json.dump(outcome_data, f, indent=2, default=str)
         
         self.logger.info(f"💾 Outcome file created: {outcome_file}")
+        
+        # Create human-readable summary
+        summary_file = self._create_human_readable_summary(outcome_file, outcome_data, stage, sub_pipeline)
+        if summary_file:
+            self.logger.info(f"📄 Human-readable summary created: {summary_file}")
+        
         return str(outcome_file)
+    
+    def _create_human_readable_summary(self, outcome_file: Path, outcome_data: Dict, stage: str, sub_pipeline: str) -> Optional[str]:
+        """Create a human-readable summary file from the outcome data."""
+        try:
+            import pandas as pd
+            
+            # Create summary filename
+            summary_file = Path(str(outcome_file).replace('.json', '_SUMMARY.txt'))
+            
+            with open(summary_file, 'w') as f:
+                # Header
+                f.write("=" * 80 + "\n")
+                f.write(f"  {sub_pipeline.upper().replace('_', ' ')} - EXECUTION SUMMARY\n")
+                f.write("=" * 80 + "\n\n")
+                
+                # Configuration
+                config = outcome_data.get('config', {})
+                f.write("📋 CONFIGURATION\n")
+                f.write(f"   Symbol:          {config.get('symbol', 'N/A')}\n")
+                f.write(f"   Exchange:        {config.get('exchange', 'N/A')}\n")
+                f.write(f"   Timeframe:       {config.get('timeframe', 'N/A')}\n")
+                f.write(f"   Mode:            {config.get('mode', 'N/A')}\n")
+                f.write(f"   Direction:       {config.get('direction_type', 'N/A')}\n")
+                f.write(f"   Intensity:       {config.get('intensity_percentage', 'N/A')}\n")
+                f.write("\n")
+                
+                # Status and timing
+                f.write("📊 EXECUTION STATUS\n")
+                f.write(f"   Status:          {outcome_data.get('status', 'N/A')}\n")
+                f.write(f"   Timestamp:       {outcome_data.get('timestamp', 'N/A')}\n")
+                f.write("\n")
+                
+                # Metadata-specific summaries
+                metadata = outcome_data.get('metadata', {})
+                
+                # Feature Lookback Optimization specific
+                if sub_pipeline == 'feature_lookback_optimization':
+                    f.write("🎯 OPTIMIZATION RESULTS\n")
+                    f.write(f"   Status:                  {metadata.get('optimization_status', 'N/A')}\n")
+                    f.write(f"   Total Features Optimized: {metadata.get('total_features_optimized', 'N/A')}\n")
+                    f.write("\n")
+                    
+                    # Performance
+                    perf = metadata.get('performance_metrics', {})
+                    if perf:
+                        f.write("⏱️  PERFORMANCE\n")
+                        duration = perf.get('total_duration')
+                        if duration:
+                            f.write(f"   Duration:        {duration:.2f}s ({duration/60:.1f} minutes)\n")
+                        memory = perf.get('memory', {})
+                        if memory:
+                            peak_mb = memory.get('peak_mb')
+                            if peak_mb:
+                                f.write(f"   Peak Memory:     {peak_mb:.2f} MB\n")
+                        f.write("\n")
+                    
+                    # Feature file
+                    artifacts = outcome_data.get('artifacts', {})
+                    feature_file = artifacts.get('optimized_features_file')
+                    if feature_file:
+                        f.write("💾 SAVED FEATURES\n")
+                        f.write(f"   File: {Path(feature_file).name}\n")
+                        
+                        # Try to load feature details
+                        if Path(feature_file).exists():
+                            try:
+                                features_df = pd.read_parquet(feature_file)
+                                f.write(f"   Shape:           {features_df.shape[0]:,} rows × {features_df.shape[1]:,} columns\n")
+                                f.write(f"   Date Range:      {features_df.index.min().date()} to {features_df.index.max().date()}\n")
+                                f.write(f"   File Size:       {Path(feature_file).stat().st_size / 1024 / 1024:.2f} MB\n")
+                                f.write(f"\n   📝 Sample Features (first 15):\n")
+                                for i, col in enumerate(features_df.columns[:15], 1):
+                                    f.write(f"      {i:2d}. {col}\n")
+                                if len(features_df.columns) > 15:
+                                    f.write(f"      ... +{len(features_df.columns) - 15} more features\n")
+                            except Exception as e:
+                                f.write(f"   (Could not load feature details: {e})\n")
+                        f.write("\n")
+                    
+                    # Optimization details
+                    opt_results = metadata.get('optimization_results', {})
+                    if opt_results:
+                        feature_results = opt_results.get('feature_results', {})
+                        if feature_results:
+                            f.write("🔍 FEATURE OPTIMIZATION DETAILS\n")
+                            
+                            long_features = feature_results.get('long_pipeline', {})
+                            short_features = feature_results.get('short_pipeline', {})
+                            
+                            if long_features or short_features:
+                                f.write(f"   Long Direction:  {len(long_features):,} features\n")
+                                f.write(f"   Short Direction: {len(short_features):,} features\n")
+                                f.write("\n")
+                                
+                                # Show sample lookbacks
+                                if long_features:
+                                    f.write("   📊 Sample Optimal Lookbacks (Long Direction):\n")
+                                    for i, (fname, finfo) in enumerate(list(long_features.items())[:10], 1):
+                                        if isinstance(finfo, dict):
+                                            lookback = finfo.get('optimal_lookback', 'null')
+                                            score = finfo.get('optimal_score')
+                                            f.write(f"      {i:2d}. {fname}\n")
+                                            f.write(f"          Lookback: {lookback}")
+                                            if score is not None and score != 'null':
+                                                f.write(f" | Score: {score:.4f}")
+                                            f.write("\n")
+                                    if len(long_features) > 10:
+                                        f.write(f"          ... +{len(long_features) - 10} more features\n")
+                                f.write("\n")
+                    
+                    # Cache metrics
+                    cache_metrics = metadata.get('feature_cache_metrics', {})
+                    if cache_metrics:
+                        f.write("📦 FEATURE CACHE METRICS\n")
+                        f.write(f"   Hits:            {cache_metrics.get('hits', 0)}\n")
+                        f.write(f"   Misses:          {cache_metrics.get('misses', 0)}\n")
+                        hit_rate = cache_metrics.get('hit_rate')
+                        if hit_rate is not None:
+                            f.write(f"   Hit Rate:        {hit_rate*100:.1f}%\n")
+                        f.write("\n")
+                
+                # Analyst Profit Labeler specific
+                elif sub_pipeline == 'analyst_profit_labeler':
+                    f.write("🎯 LABELING RESULTS\n")
+                    f.write(f"   Timeframe:               {metadata.get('timeframe', 'N/A')}\n")
+                    f.write(f"   Samples:                 {metadata.get('n_samples', 'N/A'):,}\n")
+                    f.write(f"   Targets:                 {metadata.get('n_targets', 'N/A')}\n")
+                    f.write(f"   Horizons:                {metadata.get('n_horizons', 'N/A')}\n")
+                    
+                    opps_per_day = metadata.get('opportunities_per_day')
+                    if opps_per_day is not None:
+                        f.write(f"   Opportunities/Day:       {opps_per_day}\n")
+                    
+                    direction_settings = metadata.get('direction_settings', {})
+                    if direction_settings:
+                        f.write(f"   Long Positions:          {'✅ Enabled' if direction_settings.get('enable_long_positions') else '❌ Disabled'}\n")
+                        f.write(f"   Short Positions:         {'✅ Enabled' if direction_settings.get('enable_short_positions') else '❌ Disabled'}\n")
+                    f.write("\n")
+                
+                # Generic metadata summary
+                else:
+                    if metadata:
+                        f.write("📊 RESULTS\n")
+                        for key, value in list(metadata.items())[:10]:
+                            if not isinstance(value, (dict, list)):
+                                f.write(f"   {key}: {value}\n")
+                        f.write("\n")
+                
+                # Output files
+                output_files = outcome_data.get('output_files', [])
+                if output_files:
+                    f.write("📁 OUTPUT FILES\n")
+                    for output_file in output_files:
+                        f.write(f"   • {output_file}\n")
+                    f.write("\n")
+                
+                # Next stage requirements
+                next_reqs = outcome_data.get('next_stage_requirements', {})
+                if next_reqs:
+                    f.write("➡️  NEXT STAGE REQUIREMENTS\n")
+                    req_files = next_reqs.get('required_files', [])
+                    if req_files:
+                        f.write(f"   Required Files: {', '.join(req_files)}\n")
+                    req_artifacts = next_reqs.get('required_artifacts', [])
+                    if req_artifacts:
+                        f.write(f"   Required Artifacts: {', '.join(req_artifacts)}\n")
+                    sub_pipelines = next_reqs.get('sub_pipelines', [])
+                    if sub_pipelines:
+                        f.write(f"   Sub-pipelines: {', '.join(sub_pipelines)}\n")
+                    f.write("\n")
+                
+                # Footer
+                f.write("=" * 80 + "\n")
+                f.write(f"✅ {sub_pipeline.upper().replace('_', ' ')} COMPLETED SUCCESSFULLY\n")
+                f.write("=" * 80 + "\n")
+                f.write(f"\n📄 JSON Details: {outcome_file.name}\n")
+                f.write(f"📄 This Summary: {summary_file.name}\n")
+            
+            return str(summary_file)
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to create human-readable summary: {e}")
+            return None
     
     def _get_next_stage_requirements(self, current_stage: str, current_sub_pipeline: str) -> Dict[str, Any]:
         """Get requirements for the next stage/sub-pipeline."""
@@ -257,7 +461,7 @@ class AresLauncher:
                 'next_stage': 'model_training',
                 'required_files': ['labels.parquet', 'features.parquet'],
                 'required_artifacts': ['feature_metadata'],
-                'sub_pipelines': ['multi_horizon_profit_labeler', 'feature_lookback_optimization', 'interactive_feature_generation', 'final_feature_selection']
+                'sub_pipelines': ['feature_lookback_optimization', 'interactive_feature_generation', 'final_feature_selection']
             },
             'model_training': {
                 'next_stage': 'backtesting',
@@ -533,10 +737,38 @@ class AresLauncher:
             tprint("🔧 [SUB_PIPELINE_CONFIG] Applying light mode date filtering...")
             from datetime import datetime, timedelta
             from src.config.pipeline_modes import get_light_mode_config
+            import pandas as pd
 
             mode_config = get_light_mode_config()
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=mode_config.lookback_days)
+            
+            # Use last available data date instead of current date
+            try:
+                from src.utils.data.klines_parquet import KlinesParquetManager
+                manager = KlinesParquetManager(data_dir=base_config.get('data_dir', 'historical_data'))
+                
+                # Get data info to find the actual available date range
+                data_info = manager.get_data_info(
+                    symbol=base_config.get('symbol', 'ETHUSDT'),
+                    interval=base_config.get('timeframe', '15m'),
+                    data_type="processed"
+                )
+                
+                if data_info and data_info.get("available") and data_info.get("date_range"):
+                    # Use the last date from the available data
+                    _, max_date = data_info["date_range"]
+                    end_date = pd.to_datetime(max_date)
+                    start_date = end_date - timedelta(days=mode_config.lookback_days)
+                    tprint(f"✅ Using last available data date: {end_date.strftime('%Y-%m-%d')}")
+                else:
+                    # Fallback to current date if data info is not available
+                    tprint("⚠️ Could not get data info, using current date as fallback")
+                    end_date = datetime.now()
+                    start_date = end_date - timedelta(days=mode_config.lookback_days)
+            except Exception as e:
+                tprint(f"⚠️ Error detecting last available data date: {e}")
+                tprint("⚠️ Falling back to current date")
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=mode_config.lookback_days)
 
             filtered_config['start_date'] = start_date.strftime('%Y-%m-%d')
             filtered_config['end_date'] = end_date.strftime('%Y-%m-%d')
@@ -547,10 +779,38 @@ class AresLauncher:
             tprint("🔧 [SUB_PIPELINE_CONFIG] Applying blank mode date filtering...")
             from datetime import datetime, timedelta
             from src.config.pipeline_modes import get_blank_mode_config
+            import pandas as pd
 
             mode_config = get_blank_mode_config()
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=mode_config.lookback_days)
+            
+            # Use last available data date instead of current date
+            try:
+                from src.utils.data.klines_parquet import KlinesParquetManager
+                manager = KlinesParquetManager(data_dir=base_config.get('data_dir', 'historical_data'))
+                
+                # Get data info to find the actual available date range
+                data_info = manager.get_data_info(
+                    symbol=base_config.get('symbol', 'ETHUSDT'),
+                    interval=base_config.get('timeframe', '15m'),
+                    data_type="processed"
+                )
+                
+                if data_info and data_info.get("available") and data_info.get("date_range"):
+                    # Use the last date from the available data
+                    _, max_date = data_info["date_range"]
+                    end_date = pd.to_datetime(max_date)
+                    start_date = end_date - timedelta(days=mode_config.lookback_days)
+                    tprint(f"✅ Using last available data date: {end_date.strftime('%Y-%m-%d')}")
+                else:
+                    # Fallback to current date if data info is not available
+                    tprint("⚠️ Could not get data info, using current date as fallback")
+                    end_date = datetime.now()
+                    start_date = end_date - timedelta(days=mode_config.lookback_days)
+            except Exception as e:
+                tprint(f"⚠️ Error detecting last available data date: {e}")
+                tprint("⚠️ Falling back to current date")
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=mode_config.lookback_days)
 
             filtered_config['start_date'] = start_date.strftime('%Y-%m-%d')
             filtered_config['end_date'] = end_date.strftime('%Y-%m-%d')
@@ -1383,8 +1643,8 @@ Examples:
     parser.add_argument(
         '--direction',
         choices=['longs', 'shorts', 'both'],
-        default='both',
-        help='Direction type for training: longs (long positions only), shorts (short positions only), or both (default: both)'
+        default='longs',
+        help='Direction type for training: longs (long positions only), shorts (short positions only), or both (default: longs)'
     )
 
     parser.add_argument(
@@ -1593,7 +1853,7 @@ async def main():
             exchange=args.exchange,
             timeframe=args.timeframe,
             data_dir=args.data_dir,
-            direction=args.direction,
+            direction=args.direction if hasattr(args, 'direction') else 'longs',
             stage=stage,
             sub_pipeline=selected_sub_pipeline,
             execution_mode=execution_mode,

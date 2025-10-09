@@ -29,6 +29,9 @@ from .data_leakage_detector import DataLeakageDetector
 # Alias legacy TemporalCrossValidator to the unified implementation
 TemporalCrossValidator = UnifiedCrossValidator
 
+# Alias CrossValidator to the unified implementation for compatibility
+CrossValidator = UnifiedCrossValidator
+
 
 class CrossValidationUtilities:  # minimal shim
     """Backwards-compatible utilities wrapper.
@@ -175,7 +178,7 @@ __all__ = [
     'ConfigurationValidator',
 
     # Original Cross-validation
-    'TemporalCrossValidator', 'PurgedKFold', 'CrossValidationUtilities', 'PurgedSplitConfig',
+    'TemporalCrossValidator', 'CrossValidator', 'PurgedKFold', 'CrossValidationUtilities', 'PurgedSplitConfig',
     'purged_time_series_splits',
     # Unified CV API
     'UnifiedCrossValidator', 'UnifiedCVResult',

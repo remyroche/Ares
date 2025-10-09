@@ -59,13 +59,11 @@ np, _ = get_dependency('numpy')
 # Utility function to convert int64 to int for dictionary keys
 def convert_int64_to_int(value: Any) -> Any:
     """Convert int64 values to regular Python int for JSON serialization."""
-    tprint(f"🔄 Converting value of type {type(value).__name__} for JSON safety")
+    # Silently convert value (removed verbose logging)
     try:
         if hasattr(value, 'dtype') and value.dtype == 'int64':
-            tprint("📏 Detected numpy dtype int64, converting to int")
             return int(value)
         elif isinstance(value, np.int64):
-            tprint("📏 Detected numpy.int64 instance, converting to int")
             return int(value)
         elif isinstance(value, dict):
             # Convert both keys and values to handle int64 keys
@@ -74,10 +72,8 @@ def convert_int64_to_int(value: Any) -> Any:
                 # Convert key if it's int64
                 converted_key = k
                 if isinstance(k, np.int64):
-                    tprint("🔑 Converting dict key from numpy.int64 to int")
                     converted_key = int(k)
                 elif hasattr(k, 'dtype') and k.dtype == 'int64':
-                    tprint("🔑 Converting dict key from numpy dtype int64 to int")
                     converted_key = int(k)
 
                 # Convert value recursively
@@ -86,12 +82,10 @@ def convert_int64_to_int(value: Any) -> Any:
             return converted_dict
         elif isinstance(value, (list, tuple)):
             # Convert each item in the list/tuple recursively
-            tprint("📚 Converting sequence items for JSON safety")
             return [convert_int64_to_int(item) for item in value]
         elif hasattr(value, 'shape') and len(value.shape) > 0:
             # Handle numpy arrays that might be problematic
             if value.size > 100:  # Large arrays might cause issues
-                tprint("📦 Large numpy array detected, summarizing instead of full conversion")
                 return {
                     'type': 'numpy_array',
                     'shape': value.shape,
@@ -99,7 +93,6 @@ def convert_int64_to_int(value: Any) -> Any:
                     'size': value.size
                 }
             else:
-                tprint("📦 Small numpy array detected, converting to list")
                 return value.tolist()  # Convert small arrays to lists
         else:
             return value
@@ -300,10 +293,12 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
     def _resolve_regularization_settings(self) -> Dict[str, float]:
         """Resolve lookback regularization preferences from configuration."""
+        # DISABLED: Regularization penalty was too strong for small MI scores
+        # causing all features to select minimum lookback=5
         defaults: Dict[str, float] = {
             'preferred_min': 40.0,
             'preferred_max': 80.0,
-            'penalty_strength': 1e-5,
+            'penalty_strength': 0.0,  # DISABLED - was 1e-5, too strong for MI scores ~0.01
             'penalty_exponent': 2.0,
         }
 
@@ -557,8 +552,23 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             tprint("📐 Aligning market data with regime assignments")
             market_data = self._align_data_with_regime_assignments(market_data, pipeline_state)
 
-            # Prepare data for optimization
-            tprint("🧰 Preparing data for feature optimization")
+            # Generate features from OHLCV data BEFORE merging labels
+            tprint("🏦 Generating features from market data using feature bank")
+            feature_columns = await self._generate_features_for_optimization(
+                market_data,
+                pipeline_state,
+                force_refresh=pipeline_state.get('feature_cache_force_refresh', False)
+            )
+            
+            if not feature_columns:
+                log_error("Feature generation failed - no features generated")
+                tprint("❌ No features generated from feature bank")
+                return self._create_failed_result()
+            
+            tprint_success(f"✅ Generated {len(feature_columns)} features from feature bank")
+
+            # Now prepare data with labels for optimization
+            tprint("🧰 Preparing data for feature optimization (merging labels)")
             optimization_data = self._prepare_data_for_optimization(market_data, labeling_data)
 
             if optimization_data is None or optimization_data.empty:
@@ -573,14 +583,14 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             )
             
             # Skip temporal alignment check for feature lookback optimization
-            # This component generates its own lagged features and the raw data columns
-            # have been removed, so temporal alignment is not applicable at this stage
             tprint_debug("ℹ️ Skipping temporal alignment check for feature lookback optimization")
             
             validation_metadata['outputs']['optimization_frame'] = schema_metadata('engineered_features').get('engineered_features')
 
-            # Perform feature optimization
+            # Perform feature optimization with pre-generated features
             tprint("⚙️ Performing feature optimization workflow")
+            # Pass feature_columns to skip feature generation in _perform_feature_optimization
+            pipeline_state['pregenerated_features'] = feature_columns
             optimization_results = await self._perform_feature_optimization(optimization_data, pipeline_state)
 
             # Convert int64 values to regular int values for JSON serialization
@@ -602,6 +612,33 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             # Record final metrics
             tprint("🏁 Ending performance monitoring for execute operation")
             self.performance_monitor.end_operation("execute", start_time, success=True)
+            
+            # Save generated features to disk for standalone component execution
+            tprint("💾 Saving generated features to disk for standalone execution...")
+            try:
+                from pathlib import Path
+                from datetime import datetime
+                
+                artifacts_dir = Path('artifacts')
+                artifacts_dir.mkdir(exist_ok=True)
+                
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                feature_file = artifacts_dir / f"optimized_features_{self.config.symbol}_{self.config.timeframe}_{timestamp}.parquet"
+                
+                # Save optimization_data which contains all generated features
+                if optimization_data is not None and not optimization_data.empty:
+                    # Remove target/label columns before saving (keep only features)
+                    feature_cols = [col for col in optimization_data.columns 
+                                   if not any(pattern in col.lower() for pattern in ['target', 'label', 'confidence'])]
+                    features_to_save = optimization_data[feature_cols] if feature_cols else optimization_data
+                    
+                    features_to_save.to_parquet(feature_file)
+                    tprint_success(f"✅ Saved {len(feature_cols)} features to {feature_file.name}")
+                    artifacts['optimized_features_file'] = str(feature_file)
+                else:
+                    tprint_warning("⚠️ No features to save (optimization_data is empty)")
+            except Exception as e:
+                tprint_warning(f"⚠️ Failed to save features to disk: {e}")
 
             # Save artifacts persistently using the artifact manager
             try:
@@ -661,7 +698,6 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
             # Generate outcome file with datetime stamp
             try:
-                from datetime import datetime
                 outcome_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 outcomes_dir = Path('outcomes')
                 outcomes_dir.mkdir(parents=True, exist_ok=True)
@@ -676,40 +712,55 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 long_features_detail = {}
                 short_features_detail = {}
                 
+                # Check for feature_results in both possible locations
+                feature_results_dict = None
                 if 'feature_results' in optimization_results:
-                    long_pipeline = optimization_results['feature_results'].get('long_pipeline', {})
+                    feature_results_dict = optimization_results['feature_results']
+                elif 'full_optimization_results' in optimization_results:
+                    # Feature results may be nested inside full_optimization_results
+                    full_results = optimization_results['full_optimization_results']
+                    if isinstance(full_results, dict) and 'feature_results' in full_results:
+                        feature_results_dict = full_results['feature_results']
+                
+                if feature_results_dict:
+                    long_pipeline = feature_results_dict.get('long_pipeline', {})
                     for feature_name, feature_data in long_pipeline.items():
                         if isinstance(feature_data, dict):
                             long_features_detail[feature_name] = {
-                                'optimal_lookback': feature_data.get('optimal_lookback'),
-                                'score': feature_data.get('score'),
-                                'method': feature_data.get('method'),
+                                'optimal_lookback': feature_data.get('best_lookback_period'),
+                                'score': feature_data.get('best_score'),
+                                'method': feature_data.get('optimization_method', 'coarse_to_refine'),
                             }
                     
-                    short_pipeline = optimization_results['feature_results'].get('short_pipeline', {})
+                    short_pipeline = feature_results_dict.get('short_pipeline', {})
                     for feature_name, feature_data in short_pipeline.items():
                         if isinstance(feature_data, dict):
                             short_features_detail[feature_name] = {
-                                'optimal_lookback': feature_data.get('optimal_lookback'),
-                                'score': feature_data.get('score'),
-                                'method': feature_data.get('method'),
+                                'optimal_lookback': feature_data.get('best_lookback_period'),
+                                'score': feature_data.get('best_score'),
+                                'method': feature_data.get('optimization_method', 'coarse_to_refine'),
                             }
                 
-                # Calculate optimization statistics
+                # Calculate optimization statistics (handle None values properly)
+                long_lookbacks = [f.get('optimal_lookback') for f in long_features_detail.values() if f.get('optimal_lookback') is not None]
+                long_scores = [f.get('score') for f in long_features_detail.values() if f.get('score') is not None]
+                short_lookbacks = [f.get('optimal_lookback') for f in short_features_detail.values() if f.get('optimal_lookback') is not None]
+                short_scores = [f.get('score') for f in short_features_detail.values() if f.get('score') is not None]
+                
                 optimization_stats = {
                     'long_pipeline': {
-                        'total_features': long_count,
-                        'avg_lookback': float(sum(f.get('optimal_lookback', 0) for f in long_features_detail.values()) / long_count) if long_count > 0 else 0.0,
-                        'avg_score': float(sum(f.get('score', 0) for f in long_features_detail.values() if f.get('score') is not None) / max(1, sum(1 for f in long_features_detail.values() if f.get('score') is not None))),
-                        'min_lookback': min((f.get('optimal_lookback', 0) for f in long_features_detail.values()), default=0),
-                        'max_lookback': max((f.get('optimal_lookback', 0) for f in long_features_detail.values()), default=0),
+                        'total_features': long_count or 0,
+                        'avg_lookback': float(sum(long_lookbacks) / len(long_lookbacks)) if long_lookbacks else 0.0,
+                        'avg_score': float(sum(long_scores) / len(long_scores)) if long_scores else 0.0,
+                        'min_lookback': min(long_lookbacks) if long_lookbacks else 0,
+                        'max_lookback': max(long_lookbacks) if long_lookbacks else 0,
                     },
                     'short_pipeline': {
-                        'total_features': short_count,
-                        'avg_lookback': float(sum(f.get('optimal_lookback', 0) for f in short_features_detail.values()) / short_count) if short_count > 0 else 0.0,
-                        'avg_score': float(sum(f.get('score', 0) for f in short_features_detail.values() if f.get('score') is not None) / max(1, sum(1 for f in short_features_detail.values() if f.get('score') is not None))),
-                        'min_lookback': min((f.get('optimal_lookback', 0) for f in short_features_detail.values()), default=0),
-                        'max_lookback': max((f.get('optimal_lookback', 0) for f in short_features_detail.values()), default=0),
+                        'total_features': short_count or 0,
+                        'avg_lookback': float(sum(short_lookbacks) / len(short_lookbacks)) if short_lookbacks else 0.0,
+                        'avg_score': float(sum(short_scores) / len(short_scores)) if short_scores else 0.0,
+                        'min_lookback': min(short_lookbacks) if short_lookbacks else 0,
+                        'max_lookback': max(short_lookbacks) if short_lookbacks else 0,
                     }
                 }
                 
@@ -749,9 +800,9 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                     },
                     'results': {
                         'summary': {
-                            'total_features_optimized': long_count + short_count,
-                            'long_pipeline_features': long_count,
-                            'short_pipeline_features': short_count,
+                            'total_features_optimized': (long_count or 0) + (short_count or 0),
+                            'long_pipeline_features': long_count or 0,
+                            'short_pipeline_features': short_count or 0,
                             'feature_cache_hit': self.cache_metrics.get('cache_hit', False),
                             'feature_cache_key': self._current_cache_key,
                         },
@@ -777,13 +828,79 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 
                 tprint_success(f"📄 Outcome file saved: {outcome_filename}")
                 
+                # Generate comprehensive optimization report
+                try:
+                    report_filename = f"lookback_optimization_report_{self.config.symbol}_{self.config.timeframe}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                    report_path = Path("outcomes") / report_filename
+                    report_path.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # Create detailed report
+                    report_data = {
+                        'report_metadata': {
+                            'title': 'Feature Lookback Optimization Report',
+                            'generated_at': datetime.now().isoformat(),
+                            'symbol': self.config.symbol if hasattr(self.config, 'symbol') else 'UNKNOWN',
+                            'exchange': self.config.exchange if hasattr(self.config, 'exchange') else 'UNKNOWN',
+                            'timeframe': self.config.timeframe if hasattr(self.config, 'timeframe') else 'UNKNOWN',
+                            'execution_mode': data.attrs.get('ares_mode', 'unknown') if hasattr(data, 'attrs') else 'unknown',
+                        },
+                        'optimization_summary': {
+                            'total_features_optimized': (long_count or 0) + (short_count or 0),
+                            'long_features': long_count or 0,
+                            'short_features': short_count or 0,
+                            'execution_time_seconds': perf_summary.get('execution_time', 0.0),
+                            'optimization_method': 'Bayesian TPE' if data.attrs.get('ares_mode', '') in ['light', 'blank'] else 'Coarse-to-Refine',
+                        },
+                        'mode_optimizations': {
+                            'execution_mode': data.attrs.get('ares_mode', 'unknown') if hasattr(data, 'attrs') else 'unknown',
+                            'bootstrap_samples': 2 if data.attrs.get('ares_mode', '') in ['light', 'blank'] else 10,
+                            'cv_folds': 2 if data.attrs.get('ares_mode', '') in ['light', 'blank'] else 5,
+                            'bayesian_optimization': data.attrs.get('ares_mode', '') in ['light', 'blank'],
+                            'cache_size': 100000,
+                        },
+                        'feature_results': {
+                            'long_pipeline': long_features_detail,
+                            'short_pipeline': short_features_detail,
+                        },
+                        'performance_metrics': performance_breakdown,
+                        'cache_performance': {
+                            'cache_key': self._current_cache_key,
+                            'cache_hit': self.cache_metrics.get('cache_hit', False),
+                            'cache_metrics': convert_int64_to_int(self.cache_metrics),
+                        },
+                        'hardware_utilization': hardware_stats,
+                        'validation_summary': validation_summary.__dict__ if validation_summary else None,
+                    }
+                    
+                    # Save report
+                    with open(report_path, 'w') as f:
+                        json.dump(report_data, f, indent=2, default=str)
+                    
+                    tprint_success(f"📊 Optimization report saved: {report_filename}")
+                    
+                except Exception as report_error:
+                    import traceback
+                    tprint_warning(f"⚠️ Failed to save optimization report: {report_error}")
+                    tprint_debug(f"🔍 Report save error traceback: {traceback.format_exc()}")
+                
             except Exception as outcome_error:
+                import traceback
                 tprint_warning(f"⚠️ Failed to save outcome file: {outcome_error}")
+                tprint_debug(f"🔍 Outcome save error traceback: {traceback.format_exc()}")
                 # Don't fail the component if outcome file generation fails
 
             long_count = len(optimization_results.get('feature_results', {}).get('long_pipeline', {}))
             short_count = len(optimization_results.get('feature_results', {}).get('short_pipeline', {}))
-            log_success(f"🎯 Multi-horizon feature lookback optimization completed successfully - Long: {long_count} features, Short: {short_count} features")
+            
+            # Report based on direction
+            optimization_direction = pipeline_state.get('direction', 'longs')
+            if optimization_direction == 'longs' and long_count > 0 and short_count == 0:
+                log_success(f"🎯 Feature lookback optimization completed successfully - LONGS: {long_count} features")
+            elif optimization_direction == 'shorts' and short_count > 0 and long_count == 0:
+                log_success(f"🎯 Feature lookback optimization completed successfully - SHORTS: {short_count} features")
+            else:
+                log_success(f"🎯 Feature lookback optimization completed successfully - Long: {long_count} features, Short: {short_count} features")
+            
             tprint("✅ Feature lookback optimization execution completed successfully")
             return result
 
@@ -794,12 +911,13 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         except Exception as e:
             # Create detailed error information
             import traceback
+            from datetime import datetime as dt  # Local import to ensure availability
             error_details = {
                 'error_type': type(e).__name__,
                 'error_message': str(e),
                 'traceback': traceback.format_exc(),
                 'component': 'feature_lookback_optimization',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': dt.now().isoformat()
             }
             
             self.error_handler.handle_error(
@@ -1260,24 +1378,15 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             # Initialize feature bank
             feature_bank = FeatureBank()
 
+            # Standardize column names to lowercase for consistent feature generation
+            data_for_features = data.copy()
+            data_for_features.columns = data_for_features.columns.str.lower()
+            tprint_debug(f"📊 Standardized column names to lowercase: {list(data_for_features.columns)[:10]}...")
+
             # Generate features using the feature bank directly
-            from src.feature_generation.core.feature_generator import FeatureCategory
-            included_categories = [
-                FeatureCategory.RETURNS,
-                FeatureCategory.MOMENTUM,
-                FeatureCategory.VOLUME,
-                FeatureCategory.VOLATILITY,
-                FeatureCategory.TREND,
-                FeatureCategory.OSCILLATOR,
-                FeatureCategory.SUPPORT_RESISTANCE,
-                FeatureCategory.CANDLESTICK_PATTERN,
-                FeatureCategory.MICROSTRUCTURE,
-                FeatureCategory.ENTROPY,
-                FeatureCategory.ORDER_FLOW,
-                FeatureCategory.ACCELERATION,
-                FeatureCategory.TIME,
-            ]
-            generated_features = feature_bank.generate_features(data, categories=included_categories)
+            # Use ALL available categories from feature bank
+            tprint_info("🏦 Generating features from ALL available categories in feature bank")
+            generated_features = feature_bank.generate_features(data_for_features, categories=None)  # None = all categories
 
             if generated_features is not None and not generated_features.empty:
                 total_features = generated_features.shape[1]
@@ -1302,19 +1411,8 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                     'timestamp', 'symbol', 'open_time', 'close_time', 'interval', 'exchange', 'timeframe'
                 ]
 
+                # Include ALL features from feature bank (no filtering by type)
                 feature_columns = [col for col in generated_features.columns if col not in excluded_columns]
-                feature_columns = [
-                    col for col in feature_columns
-                    if not any(
-                        unwanted in col.lower()
-                        for unwanted in [
-                            'wavelet', 'autoencoder', 'regime_', 'nas_', 'tas_',
-                            'interaction_', 'cross_timeframe_', 'cross_timeframe',
-                            'bid_ask', 'bidask', 'market_depth', 'liquidity_proxy',
-                            'order_flow', 'trade_intensity', 'volume_weighted'
-                        ]
-                    )
-                ]
 
                 self.logger.info(
                     f"🎯 Found {len(feature_columns)} engineered features for optimization (excluding unwanted types)"
@@ -1439,7 +1537,33 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         labeled_data_candidate = result.get('labeled_data')
         if labeled_data_candidate is None:
             labeled_data_candidate = result.get('labels')
-        labeled_df = self._coerce_to_dataframe(labeled_data_candidate)
+        
+        # If labeled_data is a string (file path), try to load from disk
+        if isinstance(labeled_data_candidate, str) and labeled_data_candidate.endswith('.parquet'):
+            tprint(f"📂 Loading labels from file: {labeled_data_candidate}")
+            try:
+                labeled_df = pd.read_parquet(labeled_data_candidate)
+                tprint_success(f"✅ Loaded {labeled_df.shape[0]} rows × {labeled_df.shape[1]} columns from {Path(labeled_data_candidate).name}")
+            except Exception as e:
+                tprint_error(f"❌ Failed to load labels from {labeled_data_candidate}: {e}")
+                labeled_df = None
+        # Check for labeled_data_file if labels aren't embedded
+        elif labeled_data_candidate is None and 'labeled_data_file' in result:
+            labeled_data_file = result.get('labeled_data_file')
+            if labeled_data_file and Path(labeled_data_file).exists():
+                tprint(f"📂 Loading labels from labeled_data_file: {labeled_data_file}")
+                try:
+                    labeled_df = pd.read_parquet(labeled_data_file)
+                    tprint_success(f"✅ Loaded {labeled_df.shape[0]} rows × {labeled_df.shape[1]} columns")
+                except Exception as e:
+                    tprint_error(f"❌ Failed to load from labeled_data_file: {e}")
+                    labeled_df = None
+            else:
+                tprint_warning(f"⚠️ labeled_data_file not found: {labeled_data_file}")
+                labeled_df = None
+        else:
+            labeled_df = self._coerce_to_dataframe(labeled_data_candidate)
+        
         if labeled_df is None or labeled_df.empty:
             tprint("⚠️ Normalized labeling dataframe is empty")
             return None
@@ -1526,14 +1650,31 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
     ) -> Optional[Dict[str, Any]]:
         """Fallback loader that inspects saved outcomes for labeling results."""
         manifest = ArtifactManifest()
-        artifact_base_name = 'market_analysis_multi_horizon_profit_labeler_outcome'
-        logical_name = DataLocator.build_logical_name(
-            artifact_base_name,
-            symbol=symbol,
-            exchange=exchange,
-            timeframe=timeframe,
-        )
-        entry = manifest.get_latest(logical_name)
+        
+        # Try multiple possible labeler outcomes in priority order
+        possible_base_names = [
+            'pre_training_analyst_profit_labeler_outcome',           # Current analyst labeler
+            'pre_training_tactician_entry_labeler_outcome',          # Current tactician labeler
+            'market_analysis_analyst_profit_labeler_outcome',        # Legacy analyst format
+            'market_analysis_multi_horizon_profit_labeler_outcome',  # Original multi-horizon labeler
+        ]
+        
+        entry = None
+        artifact_base_name = None
+        
+        for base_name in possible_base_names:
+            logical_name = DataLocator.build_logical_name(
+                base_name,
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+            )
+            entry = manifest.get_latest(logical_name)
+            if entry:
+                artifact_base_name = base_name
+                tprint(f"📂 Found labeling outcome: {base_name}")
+                break
+        
         fallback_allowed = False
 
         if entry:
@@ -1797,8 +1938,12 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                 if pipeline_state is not None:
                     pipeline_state.setdefault('feature_lookback_flags', {})['nested_cv_applied'] = False
 
+            # Get direction preference from pipeline_state (default to 'longs')
+            optimization_direction = pipeline_state.get('direction', 'longs')
+            tprint_info(f"🎯 Optimization direction: {optimization_direction}")
+            
             # Optimize each feature
-            tprint(f"🔍 Optimizing {len(feature_columns)} features across long/short pipelines")
+            tprint(f"🔍 Optimizing {len(feature_columns)} features for {optimization_direction}")
             feature_results = {}
 
             # Reset lag metadata before running optimization
@@ -1816,7 +1961,27 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             # Separate optimization for long and short directions
             long_feature_results: Dict[Any, Dict[str, Any]] = {}
             short_feature_results: Dict[Any, Dict[str, Any]] = {}
+            
+            # Determine which directions to optimize based on user preference
+            optimize_longs = optimization_direction in ('longs', 'both')
+            optimize_shorts = optimization_direction in ('shorts', 'both')
 
+            # OPTIMIZATION: Detect execution mode and create mode-aware constraints
+            execution_mode = data.attrs.get('ares_mode', 'full')  # Default to full if not set
+            if execution_mode not in ['light', 'blank', 'full']:
+                execution_mode = pipeline_state.get('execution_mode', 'full')
+            
+            tprint_info(f"🎯 Detected execution mode: {execution_mode.upper()}")
+            
+            # Create mode-aware constraints for optimization
+            from .core.optimizer import LookbackConstraints
+            mode_constraints = CoreOptimizer.create_mode_aware_constraints(execution_mode)
+            
+            # Apply mode-specific optimization parameters
+            use_bayesian_opt = mode_constraints.use_bayesian_optimization
+            n_bootstrap = mode_constraints.n_bootstrap_samples
+            cv_folds = mode_constraints.cv_folds
+            
             total_features = len(feature_columns)
             for idx, feature in enumerate(feature_columns, 1):
                 try:
@@ -1824,22 +1989,43 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                         tprint_info(f"⏳ Optimization progress: {idx}/{total_features} features ({100*idx/total_features:.1f}%)")
                     
                     # Use consistent lookback range for all execution modes
-                    lookback_range = (5, 300)  # Keep same range for all modes
+                    lookback_range = (3, 100)  # Reduced from 300 to 100 for faster, more relevant periods
                     optimizer_kwargs: Dict[str, Any] = {}
                     if use_nested_cv:
                         optimizer_kwargs['outer_split_iterator'] = outer_splits
                     optimizer_kwargs['regularization_settings'] = self.lookback_regularization_settings
+                    
+                    # OPTIMIZATION: Add mode-aware parameters
+                    optimizer_kwargs['n_bootstrap_samples'] = n_bootstrap
+                    optimizer_kwargs['cv_folds'] = cv_folds
+                    optimizer_kwargs['use_bayesian_optimization'] = use_bayesian_opt
 
-                    # Optimize for LONG direction
-                    if long_target_column != 'close':  # Only if we have a proper long target
-                        long_result = self.core_optimizer.optimize_single_feature(
-                            data,
-                            feature,
-                            long_target_column,
-                            method=OptimizationMethod.COARSE_TO_REFINE,
-                            lookback_range=lookback_range,
-                            **optimizer_kwargs,
-                        )
+                    # Optimize for LONG direction (only if enabled)
+                    if optimize_longs and long_target_column != 'close':  # Only if we have a proper long target
+                        # OPTIMIZATION: Use Bayesian optimization for light/blank modes
+                        if use_bayesian_opt:
+                            tprint_info(f"🚀 Using Bayesian TPE optimization for {feature}")
+                            # Call the Bayesian optimizer directly
+                            # Remove regularization_settings from kwargs to avoid duplication
+                            bayesian_kwargs = {k: v for k, v in optimizer_kwargs.items() if k != 'regularization_settings'}
+                            long_result = self.core_optimizer._optimize_with_bayesian_tpe(
+                                data,
+                                feature,
+                                long_target_column,
+                                lookback_range=lookback_range,
+                                regularization_settings=self.lookback_regularization_settings,
+                                n_trials=30 if execution_mode == 'light' else 50,
+                                **bayesian_kwargs
+                            )
+                        else:
+                            long_result = self.core_optimizer._optimize_coarse_to_refine(
+                                data,
+                                feature,
+                                long_target_column,
+                                lookback_range=lookback_range,
+                                regularization_settings=self.lookback_regularization_settings,
+                                **optimizer_kwargs,
+                            )
 
                         feature_key = feature
                         if isinstance(feature, np.int64):
@@ -1850,6 +2036,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                         long_entry: Dict[str, Any] = {
                             'best_lookback_period': long_result.best_lookback_period,
                             'best_score': long_result.best_score,
+                            'optimization_method': 'coarse_to_refine',
                             'target_column': long_target_column,
                             'direction': 'long'
                         }
@@ -1866,16 +2053,30 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
                         long_feature_results[feature_key] = long_entry
 
-                    # Optimize for SHORT direction
-                    if short_target_column != 'close':  # Only if we have a proper short target
-                        short_result = self.core_optimizer.optimize_single_feature(
-                            data,
-                            feature,
-                            short_target_column,
-                            method=OptimizationMethod.COARSE_TO_REFINE,
-                            lookback_range=lookback_range,
-                            **optimizer_kwargs,
-                        )
+                    # Optimize for SHORT direction (only if enabled)
+                    if optimize_shorts and short_target_column != 'close':  # Only if we have a proper short target
+                        # OPTIMIZATION: Use Bayesian optimization for light/blank modes
+                        if use_bayesian_opt:
+                            # Remove regularization_settings from kwargs to avoid duplication
+                            bayesian_kwargs = {k: v for k, v in optimizer_kwargs.items() if k != 'regularization_settings'}
+                            short_result = self.core_optimizer._optimize_with_bayesian_tpe(
+                                data,
+                                feature,
+                                short_target_column,
+                                lookback_range=lookback_range,
+                                regularization_settings=self.lookback_regularization_settings,
+                                n_trials=30 if execution_mode == 'light' else 50,
+                                **bayesian_kwargs
+                            )
+                        else:
+                            short_result = self.core_optimizer._optimize_coarse_to_refine(
+                                data,
+                                feature,
+                                short_target_column,
+                                lookback_range=lookback_range,
+                                regularization_settings=self.lookback_regularization_settings,
+                                **optimizer_kwargs,
+                            )
 
                         feature_key = feature
                         if isinstance(feature, np.int64):
@@ -1886,6 +2087,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
                         short_entry: Dict[str, Any] = {
                             'best_lookback_period': short_result.best_lookback_period,
                             'best_score': short_result.best_score,
+                            'optimization_method': 'coarse_to_refine',
                             'target_column': short_target_column,
                             'direction': 'short'
                         }
@@ -1919,7 +2121,15 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             }
 
             total_features = len(long_feature_results) + len(short_feature_results)
-            log_info(f"🎯 Completed differentiated optimization - Long: {len(long_feature_results)} features, Short: {len(short_feature_results)} features")
+            
+            # Report based on what was actually optimized
+            if optimization_direction == 'longs':
+                log_info(f"🎯 Completed LONGS-only optimization - {len(long_feature_results)} features")
+            elif optimization_direction == 'shorts':
+                log_info(f"🎯 Completed SHORTS-only optimization - {len(short_feature_results)} features")
+            else:
+                log_info(f"🎯 Completed differentiated optimization - Long: {len(long_feature_results)} features, Short: {len(short_feature_results)} features")
+            
             tprint_success("✅ Feature optimization orchestration completed")
             tprint_info(f"📊 Results: {len(long_feature_results)} long features, {len(short_feature_results)} short features (total: {total_features})")
 
@@ -2117,21 +2327,44 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             # Remove raw market data columns to avoid temporal alignment issues (lag=0)
             # These are input features, not engineered features for optimization
             # Keep only label/target columns and any pre-computed lagged features
+            # BUT preserve columns that are required for feature generation
             raw_market_cols = [
                 'open', 'high', 'low', 'close', 'volume',
                 'quote_volume', 'trades', 'number_of_trades', 'taker_buy_volume',
                 'taker_buy_quote_volume', 'open_time', 'close_time',
                 'timestamp', 'datetime'
             ]
-            
-            # Identify columns to remove (raw market data that aren't targets/labels)
+
+            # Get required columns from all available feature generators
+            required_for_features = set()
+            try:
+                from src.feature_generation.core.feature_bank import get_feature_bank
+                feature_bank = get_feature_bank()
+
+                # Check a sample of generators to find required columns
+                sample_generators = list(feature_bank.get_all_generators().values())[:50]  # Sample first 50
+                for generator in sample_generators:
+                    if hasattr(generator, 'config') and hasattr(generator.config, 'required_columns'):
+                        required_for_features.update(generator.config.required_columns)
+
+                tprint_debug(f"📋 Found {len(required_for_features)} columns required for feature generation: {sorted(required_for_features)}")
+            except Exception as e:
+                tprint_warning(f"⚠️ Could not determine required columns for feature generation: {e}")
+                # Fallback to common required columns
+                required_for_features = {'close', 'high', 'low', 'volume', 'open'}
+
+            # Identify columns to remove (raw market data that aren't targets/labels or required for features)
             cols_to_remove = []
             for col in prepared_data.columns:
                 # Keep target, label, confidence, and regime columns
                 keep_patterns = ['target', 'label', 'confidence', 'regime', 'eligibility', 'quality']
                 if any(pattern in col.lower() for pattern in keep_patterns):
                     continue
-                # Remove raw market data columns
+                # Keep columns required for feature generation
+                if col in required_for_features:
+                    tprint_debug(f"🔒 Preserving column '{col}' required for feature generation")
+                    continue
+                # Remove raw market data columns that aren't needed
                 if col in raw_market_cols:
                     cols_to_remove.append(col)
             
@@ -2291,34 +2524,46 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         """
         try:
             tprint_debug(f"🎯 Selecting optimal target column for direction: {direction or 'general'}")
+            tprint_debug(f"   Available columns in data: {list(data.columns)[:20]}...")
             column_bases = {col: strip_namespace(col)[0] for col in data.columns}
+            tprint_debug(f"   Column bases (first 20): {dict(list(column_bases.items())[:20])}")
 
             def _resolve_candidate(name: str) -> Optional[str]:
                 namespaced = ensure_namespace(name, ColumnNamespace.TARGET)
+                tprint_debug(f"   Trying candidate '{name}' (namespaced: '{namespaced}')")
                 if namespaced in data.columns:
+                    tprint_debug(f"   ✅ Found namespaced version: {namespaced}")
                     return namespaced
                 for col, base in column_bases.items():
                     if base == name:
+                        tprint_debug(f"   ✅ Found base match: {col}")
                         return col
+                tprint_debug(f"   ❌ Not found: {name}")
                 return None
 
             # If direction is specified, prioritize directional targets
             if direction == 'long':
                 long_priority = [
+                    'analyst_target',                    # Analyst profit labeler output
                     'long_overall_opportunity',
                     'long_leverage_adjusted_score',
                     'long_immediate_opportunity',
                     'long_short_term_opportunity'
                 ]
+                
+                tprint_debug(f"   Searching long direction priorities: {long_priority}")
 
                 for target in long_priority:
                     resolved = _resolve_candidate(target)
                     if resolved:
                         log_success(f"🎯 Selected long-specific target: {resolved}")
                         return resolved
+                
+                tprint_warning(f"⚠️ No long-specific target found from priority list")
 
             elif direction == 'short':
                 short_priority = [
+                    'tactician_target',                  # Tactician entry labeler output
                     'short_overall_opportunity',
                     'short_leverage_adjusted_score',
                     'short_immediate_opportunity',

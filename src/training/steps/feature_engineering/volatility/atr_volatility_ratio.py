@@ -89,23 +89,21 @@ class ATRVolatilityRatioFeature:
             
             # Calculate short-term ATR
             if self.config.include_atr_short:
-                atr_short = vectorized_rolling_features(
-                    true_range.values,
-                    windows=self.config.short_window,
-                    operation='mean'
-                )
-                atr_short = pd.Series(atr_short, index=data.index)
+                true_range_series = pd.Series(true_range, index=data.index)
+                atr_short = true_range_series.rolling(
+                    window=self.config.short_window,
+                    min_periods=1
+                ).mean()
                 features['atr_short'] = atr_short
                 tprint_info(f"   → Short-term ATR: mean={atr_short.mean():.3f}, std={atr_short.std():.3f}")
             
             # Calculate long-term ATR
             if self.config.include_atr_long:
-                atr_long = vectorized_rolling_features(
-                    true_range.values,
-                    windows=self.config.long_window,
-                    operation='mean'
-                )
-                atr_long = pd.Series(atr_long, index=data.index)
+                true_range_series = pd.Series(true_range, index=data.index)
+                atr_long = true_range_series.rolling(
+                    window=self.config.long_window,
+                    min_periods=1
+                ).mean()
                 features['atr_long'] = atr_long
                 tprint_info(f"   → Long-term ATR: mean={atr_long.mean():.3f}, std={atr_long.std():.3f}")
             

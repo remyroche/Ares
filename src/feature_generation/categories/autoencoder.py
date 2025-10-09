@@ -97,7 +97,7 @@ class AutoencoderFeatureGenerator(VectorizedFeatureGenerator):
             )
         return data
 
-class AutoencoderEncodedGenerator(FeatureGenerator):
+class AutoencoderEncodedGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder encoded features."""
     
     def __init__(self,
@@ -176,7 +176,7 @@ class AutoencoderEncodedGenerator(FeatureGenerator):
             )
         return data
 
-class AutoencoderReconstructionErrorGenerator(FeatureGenerator):
+class AutoencoderReconstructionErrorGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error features."""
     
     def __init__(self,
@@ -250,7 +250,7 @@ class AutoencoderReconstructionErrorGenerator(FeatureGenerator):
             )
         return data
 
-class AutoencoderReconstructionErrorMAGenerator(FeatureGenerator):
+class AutoencoderReconstructionErrorMAGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error moving average features."""
     
     def __init__(self,
@@ -330,7 +330,7 @@ class AutoencoderReconstructionErrorMAGenerator(FeatureGenerator):
             )
         return data
 
-class AutoencoderReconstructionErrorStdGenerator(FeatureGenerator):
+class AutoencoderReconstructionErrorStdGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error standard deviation features."""
     
     def __init__(self,
@@ -410,7 +410,7 @@ class AutoencoderReconstructionErrorStdGenerator(FeatureGenerator):
             )
         return data
 
-class AutoencoderReconstructionErrorSkewGenerator(FeatureGenerator):
+class AutoencoderReconstructionErrorSkewGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error skewness features."""
     
     def __init__(self,
@@ -490,7 +490,7 @@ class AutoencoderReconstructionErrorSkewGenerator(FeatureGenerator):
             )
         return data
 
-class AutoencoderReconstructionErrorKurtosisGenerator(FeatureGenerator):
+class AutoencoderReconstructionErrorKurtosisGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error kurtosis features."""
     
     def __init__(self,
@@ -570,7 +570,7 @@ class AutoencoderReconstructionErrorKurtosisGenerator(FeatureGenerator):
             )
         return data
 
-class AutoencoderReconstructionErrorRatioGenerator(FeatureGenerator):
+class AutoencoderReconstructionErrorRatioGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error ratio features."""
     
     def __init__(self,
@@ -651,7 +651,7 @@ class AutoencoderReconstructionErrorRatioGenerator(FeatureGenerator):
             )
         return data
 
-class AutoencoderReconstructionErrorDiffGenerator(FeatureGenerator):
+class AutoencoderReconstructionErrorDiffGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error difference features."""
     
     def __init__(self,
@@ -731,7 +731,7 @@ class AutoencoderReconstructionErrorDiffGenerator(FeatureGenerator):
             )
         return data
 
-class AutoencoderReconstructionErrorProductGenerator(FeatureGenerator):
+class AutoencoderReconstructionErrorProductGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error product features."""
     
     def __init__(self,
@@ -812,7 +812,7 @@ class AutoencoderReconstructionErrorProductGenerator(FeatureGenerator):
             )
         return data
 
-class AutoencoderReconstructionErrorSquaredGenerator(FeatureGenerator):
+class AutoencoderReconstructionErrorSquaredGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error squared features."""
     
     def __init__(self,
@@ -888,7 +888,7 @@ class AutoencoderReconstructionErrorSquaredGenerator(FeatureGenerator):
             )
         return data
 
-class AutoencoderReconstructionErrorCubedGenerator(FeatureGenerator):
+class AutoencoderReconstructionErrorCubedGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error cubed features."""
     
     def __init__(self,
@@ -964,7 +964,7 @@ class AutoencoderReconstructionErrorCubedGenerator(FeatureGenerator):
             )
         return data
 
-class AutoencoderReconstructionErrorCrossTimeframeGenerator(FeatureGenerator):
+class AutoencoderReconstructionErrorCrossTimeframeGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error cross timeframe features."""
     
     def __init__(self,
@@ -1044,7 +1044,7 @@ class AutoencoderReconstructionErrorCrossTimeframeGenerator(FeatureGenerator):
             )
         return data
 
-class AutoencoderReconstructionErrorRegimeGenerator(FeatureGenerator):
+class AutoencoderReconstructionErrorRegimeGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error regime features."""
     
     def __init__(self,
@@ -1126,7 +1126,7 @@ class AutoencoderReconstructionErrorRegimeGenerator(FeatureGenerator):
             )
         return data
 
-class AutoencoderReconstructionErrorInteractionGenerator(FeatureGenerator):
+class AutoencoderReconstructionErrorInteractionGenerator(VectorizedFeatureGenerator):
     """Generator for autoencoder reconstruction error interaction features."""
     
     def __init__(self,

@@ -93,12 +93,10 @@ class BarEfficiencyRatioFeature:
             
             # Calculate rolling mean efficiency
             if self.config.include_rolling_efficiency:
-                rolling_efficiency = vectorized_rolling_features(
-                    raw_efficiency.values,
-                    windows=self.config.window,
-                    operation='mean'
-                )
-                rolling_efficiency = pd.Series(rolling_efficiency, index=data.index)
+                rolling_efficiency = raw_efficiency.rolling(
+                    window=self.config.window,
+                    min_periods=1
+                ).mean()
                 features['bar_efficiency_rolling'] = rolling_efficiency
                 tprint_info(f"   → Rolling efficiency: mean={rolling_efficiency.mean():.3f}, std={rolling_efficiency.std():.3f}")
             

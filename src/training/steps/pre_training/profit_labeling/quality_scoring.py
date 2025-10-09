@@ -62,7 +62,7 @@ except ImportError:
 
 # Import cross-validation utilities
 try:
-    from src.utils.ml_common.validation.cross_validation import CrossValidator
+    from src.utils.ml_common.validation.cv_utils import CrossValidator
     CV_UTILITIES_AVAILABLE = True
 except ImportError:
     CV_UTILITIES_AVAILABLE = False

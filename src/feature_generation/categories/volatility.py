@@ -788,32 +788,6 @@ def create_volatility_generators(periods: Dict[str, List[int]] = None) -> List[F
 
     generators.append(AnalystVolatilityRatio5m15mGenerator())
     generators.append(AnalystVolatilityRegimeDeviationGenerator())
-    
-    # NEW FEATURES - Advanced Volatility Analysis
-    # Realized volatility generators
-    for window in periods.get('realized_volatility', [20]):
-        generators.append(RealizedVolatilityGenerator(window))
-    
-    # Parkinson volatility generators
-    for window in periods.get('parkinson_volatility', [20]):
-        generators.append(ParkinsonVolatilityGenerator(window))
-    
-    # Garman-Klass volatility generators
-    for window in periods.get('garman_klass_volatility', [20]):
-        generators.append(GarmanKlassVolatilityGenerator(window))
-    
-    # Rogers-Satchell volatility generators
-    for window in periods.get('rogers_satchell_volatility', [20]):
-        generators.append(RogersSatchellVolatilityGenerator(window))
-    
-    # Vol of vol generators
-    for vol_window in periods.get('vol_of_vol_windows', [20]):
-        for vol_of_vol_window in periods.get('vol_of_vol_periods', [10]):
-            generators.append(VolOfVolGenerator(vol_window, vol_of_vol_window))
-    
-    # Downside semivolatility generators
-    for window in periods.get('downside_semivol', [20]):
-        generators.append(DownsideSemivolGenerator(window))
 
     return generators
 

@@ -73,13 +73,6 @@ from .volume import (
 )
 from .volatility import (
     VolatilityFeatureGenerator,
-    # NEW FEATURES - Advanced Volatility Analysis
-    RealizedVolatilityGenerator,
-    ParkinsonVolatilityGenerator,
-    GarmanKlassVolatilityGenerator,
-    RogersSatchellVolatilityGenerator,
-    VolOfVolGenerator,
-    DownsideSemivolGenerator,
     create_volatility_generators,
     create_default_volatility_generators
 )
@@ -258,13 +251,6 @@ __all__ = [
     "OrderFlowImbalanceGenerator",
     "VolumeVolatilityElasticityGenerator",
     "VolatilityFeatureGenerator",
-    # NEW FEATURES - Advanced Volatility Analysis
-    "RealizedVolatilityGenerator",
-    "ParkinsonVolatilityGenerator",
-    "GarmanKlassVolatilityGenerator",
-    "RogersSatchellVolatilityGenerator",
-    "VolOfVolGenerator",
-    "DownsideSemivolGenerator",
     "GARCHFeatureGenerator",
     "NormalizationFeatureGenerator",
     "RollingZScoreGenerator",

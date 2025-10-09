@@ -130,7 +130,10 @@ try:
     from src.feature_selection import select_features as FeatureSelector
     from src.utils.ml_common.validation.data_leakage_detector import DataLeakageDetector
     from src.utils.ml_common.utils.lookahead_protection import LookaheadBiasDetector
-    # Note: HPOptimizer, ModelValidator, and OutOfFoldPredictor may need to be implemented or imported from elsewhere
+    from src.utils.ml_common.post_training.model_validation import ModelValidator
+    from src.utils.ml_common.validation.cv_utils import OOFGenerator as OutOfFoldPredictor
+    # HPOptimizer is an alias for BayesianTPEOptimizer
+    HPOptimizer = BayesianTPEOptimizer
     ML_COMMON_AVAILABLE = True
     tprint_success("✅ ML common utilities loaded successfully")
 except ImportError as e:
@@ -144,7 +147,9 @@ try:
     from src.utils.data.klines_parquet import KlineParquetLoader
     from src.utils.serialization_utils import save_pickle, load_pickle
     from src.utils.data.feature_engineer import FeatureEngineer
-    # Note: DataPreprocessor and TimeSeriesProcessor may need to be implemented or imported from elsewhere
+    from src.training.steps.data_collection.data_quality_components.data_preprocessor import DataPreprocessor
+    # TimeSeriesProcessor not available - will be set to None if not found
+    TimeSeriesProcessor = None
     DATA_UTILS_AVAILABLE = True
     tprint_success("✅ Data utilities loaded successfully")
 except ImportError as e:

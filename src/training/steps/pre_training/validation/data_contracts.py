@@ -453,6 +453,10 @@ def validate_feature_artifact(
     """Validate the interactive feature generation artifact."""
 
     tprint_info(f"Validating feature artifact for {context}")
+    
+    # FIXED: Initialize matrix operations variables for feature correlation analysis
+    matrix_ops = get_unified_matrix_operations() if MATRIX_OPERATIONS_AVAILABLE else None
+    vectorized_core = get_vectorized_processing_core() if MATRIX_OPERATIONS_AVAILABLE else None
 
     target_shifts = _extract_target_shifts(payload)
     feature_metadata = payload.get("feature_metadata")

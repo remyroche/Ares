@@ -15,7 +15,7 @@ Key Features:
 
 import asyncio
 import multiprocessing as mp
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from typing import Dict, List, Any, Optional, Callable, Tuple, Set
 from dataclasses import dataclass, field
 from enum import Enum
@@ -234,31 +234,52 @@ class DAGExecutor:
         # Build execution order
         self.build_execution_order()
         
-        # Identify parallel groups
-        parallel_groups = self.identify_parallel_groups()
-        
         # Initialize process pool
         if self.use_processes:
             self.process_pool = ProcessPoolExecutor(max_workers=self.max_workers)
         
         try:
-            # Execute groups sequentially, but nodes within groups in parallel
-            for group_idx, group in enumerate(parallel_groups):
-                tprint_info(f"🔄 Executing group {group_idx + 1}/{len(parallel_groups)}: {group}")
+            # Execute nodes in waves - recalculate parallel groups after each wave
+            remaining_nodes = set(self.execution_order)
+            wave_number = 0
+            
+            while remaining_nodes:
+                wave_number += 1
                 
-                if len(group) == 1:
-                    # Single node - execute directly
-                    await self._execute_single_node(group[0], context)
-                else:
-                    # Multiple nodes - execute in parallel
-                    await self._execute_parallel_group(group, context)
+                # Identify nodes that can run now (all dependencies completed)
+                parallel_groups = self.identify_parallel_groups()
                 
-                # Update completed nodes
-                for node_id in group:
-                    if self.nodes[node_id].status == ExecutionStatus.COMPLETED:
-                        self.completed_nodes.add(node_id)
-                    elif self.nodes[node_id].status == ExecutionStatus.FAILED:
-                        self.failed_nodes.add(node_id)
+                # If no nodes are ready, we have a deadlock or all remaining nodes failed
+                if not parallel_groups or all(len(group) == 0 for group in parallel_groups):
+                    tprint_warning(f"⚠️ No more nodes can execute. Remaining: {len(remaining_nodes)}, Completed: {len(self.completed_nodes)}, Failed: {len(self.failed_nodes)}")
+                    break
+                
+                # Execute the current wave of parallel groups
+                for group_idx, group in enumerate(parallel_groups):
+                    # Skip empty groups
+                    if not group:
+                        continue
+                        
+                    tprint_info(f"🔄 Wave {wave_number}, Executing group {group_idx + 1}/{len(parallel_groups)}: {group}")
+                    
+                    if len(group) == 1:
+                        # Single node - execute directly
+                        await self._execute_single_node(group[0], context)
+                    else:
+                        # Multiple nodes - execute in parallel
+                        await self._execute_parallel_group(group, context)
+                    
+                    # Update completed/failed nodes and remove from remaining
+                    for node_id in group:
+                        if self.nodes[node_id].status == ExecutionStatus.COMPLETED:
+                            self.completed_nodes.add(node_id)
+                            remaining_nodes.discard(node_id)
+                        elif self.nodes[node_id].status == ExecutionStatus.FAILED:
+                            self.failed_nodes.add(node_id)
+                            remaining_nodes.discard(node_id)
+                
+                # After processing all groups in this wave, loop back to recalculate next wave
+                # The while loop will continue and identify the next set of nodes that can run
             
             # Calculate performance metrics
             self.total_execution_time = time.time() - start_time

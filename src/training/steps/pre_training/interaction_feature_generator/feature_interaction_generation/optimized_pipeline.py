@@ -49,7 +49,7 @@ class OptimizedPipelineConfig:
     """Configuration for the optimized pipeline."""
     # DAG executor settings
     max_workers: int = 8
-    use_processes: bool = True
+    use_processes: bool = False  # FIXED: Changed to threads to avoid pickling issues with thread locks
     
     # Memory model settings
     max_memory_gb: float = 8.0
@@ -462,6 +462,12 @@ class OptimizedInteractiveFeaturePipeline:
         # Combine features
         if all_features:
             final_features = pd.concat(all_features, axis=1)
+            # Remove duplicate columns if any were introduced during concatenation
+            if len(final_features.columns) != len(set(final_features.columns)):
+                from src.utils.tprint import tprint_warning, tprint_debug
+                tprint_warning(f"⚠️ Duplicate columns detected in final feature assembly")
+                final_features = final_features.loc[:, ~final_features.columns.duplicated(keep='first')]
+                tprint_debug(f"✅ Removed duplicate columns, now have {len(final_features.columns)} unique columns")
         else:
             final_features = pd.DataFrame()
         

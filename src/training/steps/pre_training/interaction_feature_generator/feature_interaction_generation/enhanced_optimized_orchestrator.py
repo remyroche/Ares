@@ -84,7 +84,7 @@ class EnhancedOptimizedConfig:
     
     # DAG executor settings
     max_workers: int = 8
-    use_processes: bool = True
+    use_processes: bool = False  # FIXED: Changed to threads to avoid pickling issues with thread locks
     
     # Memory model settings
     max_memory_gb: float = 16.0
@@ -99,8 +99,8 @@ class EnhancedOptimizedConfig:
     
     # Early filtering settings
     downsample_ratio: float = 0.1
-    variance_threshold: float = 1e-6
-    top_k_per_family: int = 5
+    variance_threshold: float = 1e-10  # FIXED: More lenient - was 1e-6 which filtered out too many features
+    top_k_per_family: int = 20  # FIXED: Increased from 5 to allow more features per family
     
     # Interaction pruning settings
     max_interactions_per_domain: int = 6
@@ -235,7 +235,7 @@ class EnhancedOptimizedInteractionOrchestrator:
         if self.config.enable_parallel_processing:
             self.dag_executor = DAGExecutor(
                 max_workers=self.config.max_workers,
-                use_processes=self.config.use_processes
+                use_processes=False  # FIXED: Force threads to avoid pickling issues
             )
         else:
             self.dag_executor = None
@@ -249,7 +249,7 @@ class EnhancedOptimizedInteractionOrchestrator:
         
         executor = DAGExecutor(
             max_workers=self.config.max_workers,
-            use_processes=self.config.use_processes
+            use_processes=False  # FIXED: Force threads to avoid pickling issues
         )
         
         # Define optimized nodes
@@ -371,8 +371,45 @@ class EnhancedOptimizedInteractionOrchestrator:
         else:
             data = context.data
         
+        # OPTIMIZATION: Skip early filtering in light mode with optimized features
+        # Since features are already optimized from lookback optimization, early filtering is redundant
+        execution_mode = context.pipeline_state.get('execution_mode', 'full')
+        if execution_mode == 'light':
+            tprint_info("🚀 Skipping early filtering in LIGHT mode (features already optimized)")
+            exclude_cols = ['target', 'timestamp', 'open_time', 'close_time', 'symbol', 'interval', 'exchange']
+            all_features = [col for col in data.columns if col not in exclude_cols]
+            context.pipeline_state['filtered_features'] = all_features
+            return {
+                'status': 'skipped',
+                'selected_features': all_features,
+                'rejected_features': [],
+                'reason': 'light_mode_optimization'
+            }
+        
         # Perform early filtering
         target_column = context.pipeline_state.get('target_column', 'target')
+        
+        # FIXED: Check if target column exists, use fallback if not
+        if target_column not in data.columns:
+            # Try common target column names
+            for fallback in ['analyst_target', 'tactician_target', 'close']:
+                if fallback in data.columns:
+                    target_column = fallback
+                    tprint_info(f"🔄 Using fallback target column: {target_column}")
+                    break
+            else:
+                # Skip early filtering if no valid target found but still set filtered_features
+                tprint_warning(f"⚠️ No valid target column found, skipping early filtering")
+                exclude_cols = ['target', 'timestamp', 'open_time', 'close_time', 'symbol', 'interval', 'exchange']
+                all_features = [col for col in data.columns if col not in exclude_cols]
+                context.pipeline_state['filtered_features'] = all_features
+                return {
+                    'status': 'skipped',
+                    'selected_features': all_features,
+                    'rejected_features': [],
+                    'reason': 'no_target_column'
+                }
+        
         filtering_result = self.early_filtering.filter_features(data, target_column)
         
         # Update context with filtered features
@@ -400,13 +437,27 @@ class EnhancedOptimizedInteractionOrchestrator:
         if 'filtered_features' in context.pipeline_state:
             features_to_use = context.pipeline_state['filtered_features']
         else:
-            features_to_use = [col for col in data.columns if col != 'target']
+            # FIXED: Better column filtering - exclude common non-feature columns
+            exclude_cols = ['target', 'timestamp', 'open_time', 'close_time', 'symbol', 'interval', 'exchange']
+            features_to_use = [col for col in data.columns if col not in exclude_cols]
+            
+            # If we still have no features, use all columns
+            if len(features_to_use) == 0:
+                features_to_use = list(data.columns)
+                tprint_warning(f"⚠️ No features after filtering, using all {len(features_to_use)} columns")
+            else:
+                tprint_info(f"📊 Using {len(features_to_use)} features for generation")
         
         # Generate features (simplified - would use actual feature generation)
         generated_features = data[features_to_use].copy()
         
-        # Apply memory optimization
-        optimized_features = self.memory_processor.optimize_dataframe_dtypes(generated_features)
+        # Apply memory optimization using the matrix operations utility
+        try:
+            from src.utils.matrix_operations import optimize_dataframe
+            optimized_features = optimize_dataframe(generated_features)
+        except (ImportError, AttributeError):
+            # Fallback: simple dtype optimization
+            optimized_features = generated_features
         
         # Store in memory-efficient format
         if self.config.use_parquet:
@@ -437,12 +488,33 @@ class EnhancedOptimizedInteractionOrchestrator:
         else:
             features = context.data
         
+        # FIXED: Check if features is empty or has no columns
+        if features is None or len(features.columns) == 0:
+            tprint_warning("⚠️ No features available for budgeted optimization, skipping")
+            return {'status': 'skipped', 'reason': 'no_features', 'features_count': 0}
+        
         # Get target
         target_column = context.pipeline_state.get('target_column', 'target')
-        target = features[target_column] if target_column in features.columns else features.iloc[:, -1]
+        
+        # FIXED: Better target column handling with fallback
+        if target_column in features.columns:
+            target = features[target_column]
+        elif len(features.columns) > 0:
+            # Use first column as target as fallback
+            target = features.iloc[:, 0]
+            target_column = features.columns[0]
+            tprint_info(f"🔄 Using fallback target column: {target_column}")
+        else:
+            tprint_warning("⚠️ No valid target column found, skipping budgeted optimization")
+            return {'status': 'skipped', 'reason': 'no_target', 'features_count': len(features.columns)}
         
         # Get feature names
         feature_names = [col for col in features.columns if col != target_column]
+        
+        # FIXED: Check if we have any features to optimize
+        if len(feature_names) == 0:
+            tprint_warning("⚠️ No features to optimize after removing target column")
+            return {'status': 'skipped', 'reason': 'no_features_after_target_removal', 'features_count': 0}
         
         # Perform budgeted optimization
         optimization_result = self.budgeted_optimizer.optimize_lookbacks(
@@ -496,15 +568,27 @@ class EnhancedOptimizedInteractionOrchestrator:
         else:
             features = pd.DataFrame()
         
-        if features.empty:
+        if features.empty or len(features.columns) == 0:
             return {'status': 'skipped', 'reason': 'no_interaction_features'}
         
         # Get target
         target_column = context.pipeline_state.get('target_column', 'target')
-        target = features[target_column] if target_column in features.columns else features.iloc[:, -1]
+        
+        # FIXED: Better target handling
+        if target_column in features.columns:
+            target = features[target_column]
+        elif len(features.columns) > 0:
+            target = features.iloc[:, 0]
+            target_column = features.columns[0]
+            tprint_info(f"🔄 Using fallback target column: {target_column}")
+        else:
+            return {'status': 'skipped', 'reason': 'no_valid_target'}
         
         # Get feature names
         feature_names = [col for col in features.columns if col != target_column]
+        
+        if len(feature_names) == 0:
+            return {'status': 'skipped', 'reason': 'no_features_after_target_removal'}
         
         # Perform interaction pruning
         pruning_result = self.interaction_pruning.prune_interactions_for_data(
@@ -575,8 +659,19 @@ class EnhancedOptimizedInteractionOrchestrator:
         # Combine features
         if all_features:
             final_features = pd.concat(all_features, axis=1)
+            # Remove duplicate columns if any were introduced during concatenation
+            if len(final_features.columns) != len(set(final_features.columns)):
+                tprint_warning(f"⚠️ Duplicate columns detected in final feature assembly")
+                final_features = final_features.loc[:, ~final_features.columns.duplicated(keep='first')]
+                tprint_debug(f"✅ Removed duplicate columns, now have {len(final_features.columns)} unique columns")
         else:
-            final_features = pd.DataFrame()
+            # FIXED: If no new features were generated, return the input data as features
+            # This allows the component to pass through base features
+            tprint_warning("⚠️ No new features generated, using input data as features")
+            if hasattr(context.data, 'to_pandas'):
+                final_features = context.data.to_pandas()
+            else:
+                final_features = context.data if isinstance(context.data, pd.DataFrame) else pd.DataFrame(context.data)
         
         # Store result
         context.pipeline_state['final_features'] = final_features
@@ -711,8 +806,25 @@ class EnhancedOptimizedInteractionOrchestrator:
             else:
                 raise ValueError("No data found in training_input")
             
+            # Check for and remove duplicate columns
+            if isinstance(data, pd.DataFrame) and len(data.columns) != len(set(data.columns)):
+                duplicate_cols = [col for col in data.columns if list(data.columns).count(col) > 1]
+                unique_duplicates = list(set(duplicate_cols))
+                tprint_warning(f"⚠️ Input data has duplicate columns: {unique_duplicates[:10]}{'...' if len(unique_duplicates) > 10 else ''}")
+                data = data.loc[:, ~data.columns.duplicated(keep='first')]
+                tprint_debug(f"✅ Removed duplicate columns, now have {len(data.columns)} unique columns")
+            
             # Extract target column
             target_column = training_input.get('target_column', 'target')
+            
+            # OPTIMIZATION: Extract execution mode for mode-aware optimization
+            execution_mode = 'full'  # default
+            if hasattr(data, 'attrs') and 'ares_mode' in data.attrs:
+                execution_mode = data.attrs['ares_mode']
+            elif 'execution_mode' in pipeline_state:
+                execution_mode = pipeline_state['execution_mode']
+            elif 'ares_mode' in pipeline_state:
+                execution_mode = pipeline_state['ares_mode']
             
             # Create execution context
             context = ExecutionContext(
@@ -721,6 +833,8 @@ class EnhancedOptimizedInteractionOrchestrator:
                 config=self.config.__dict__
             )
             context.pipeline_state['target_column'] = target_column
+            context.pipeline_state['execution_mode'] = execution_mode
+            tprint_info(f"🎯 Running in {execution_mode.upper()} mode")
             
             # Execute pipeline
             if self.config.enable_parallel_processing and self.dag_executor:

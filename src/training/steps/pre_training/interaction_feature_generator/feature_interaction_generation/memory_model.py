@@ -140,6 +140,16 @@ class MemoryEfficientProcessor:
         """Convert DataFrame to PyArrow Table for efficient storage."""
         tprint_debug(f"🔄 Converting {name} to columnar format")
         
+        # Check for duplicate columns and handle them
+        if len(data.columns) != len(set(data.columns)):
+            duplicate_cols = [col for col in data.columns if list(data.columns).count(col) > 1]
+            unique_duplicates = list(set(duplicate_cols))
+            tprint_warning(f"⚠️ Found duplicate columns: {unique_duplicates[:10]}{'...' if len(unique_duplicates) > 10 else ''}")
+            
+            # Remove duplicate columns (keep first occurrence)
+            data = data.loc[:, ~data.columns.duplicated(keep='first')]
+            tprint_debug(f"✅ Removed duplicate columns, now have {len(data.columns)} unique columns")
+        
         # Convert to PyArrow Table
         table = pa.Table.from_pandas(data, preserve_index=True)
         

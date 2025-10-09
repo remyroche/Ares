@@ -706,7 +706,7 @@ class FeatureBank:
                 generators.extend(enhanced_generators)
                 self.logger.info(f"✅ Added {len(enhanced_generators)} enhanced normalization generators")
             except ImportError:
-                self.logger.warning("⚠️ Enhanced normalization generators not available")
+                self.logger.debug("ℹ️ Enhanced normalization generators not available (optional)")
 
             # Fallback to standard normalization generators
             try:
@@ -732,7 +732,7 @@ class FeatureBank:
                 generators.extend(enhanced_generators)
                 self.logger.info(f"✅ Added {len(enhanced_generators)} enhanced representation learning generators")
             except ImportError:
-                self.logger.warning("⚠️ Enhanced representation learning generators not available")
+                self.logger.debug("ℹ️ Enhanced representation learning generators not available (optional)")
 
             # Fallback to standard representation learning generators
             try:

@@ -101,26 +101,26 @@ class FinalFeatureSelectionStep:
         if self.enable_bootstrap_validation:
             tprint(f"   🔄 Bootstrap validation: Enabled ({self.bootstrap_iterations} iterations)")
 
-        # Model-specific feature count profiles
+        # Model-specific feature count profiles - Updated for new pipeline
         self.model_profiles = {
             'AdvancedMambaHybrid': {
-                'min_features': 80, 'target_features': 100, 'max_features': 120,
-                'stage_targets': [110, 95, 85],  # Custom stage targets
+                'min_features': 50, 'target_features': 60, 'max_features': 80,
+                'stage_targets': [60],  # Updated for mRMR/Ensemble/RFE pipeline (variable start)
                 'priority_categories': ['momentum', 'interaction', 'microstructure']
             },
             'FinancialResNet': {
-                'min_features': 100, 'target_features': 120, 'max_features': 150,
-                'stage_targets': [140, 115, 105],
+                'min_features': 60, 'target_features': 80, 'max_features': 100,
+                'stage_targets': [80],  # Updated for mRMR/Ensemble/RFE pipeline
                 'priority_categories': ['regime', 'temporal', 'volatility']
             },
             'DeepScaler': {
-                'min_features': 60, 'target_features': 80, 'max_features': 100,
-                'stage_targets': [95, 75, 65],
+                'min_features': 40, 'target_features': 60, 'max_features': 80,
+                'stage_targets': [60],  # Updated for mRMR/Ensemble/RFE pipeline
                 'priority_categories': ['statistical', 'momentum', 'volatility']
             },
             'NBEATS': {
-                'min_features': 50, 'target_features': 70, 'max_features': 80,
-                'stage_targets': [75, 60, 55],
+                'min_features': 30, 'target_features': 50, 'max_features': 70,
+                'stage_targets': [50],  # Updated for mRMR/Ensemble/RFE pipeline
                 'priority_categories': ['temporal', 'trend', 'seasonality']
             }
         }
@@ -189,10 +189,10 @@ class FinalFeatureSelectionStep:
         FeatureSelectionConfig = _FeatureSelectionConfig
 
         self.feature_config = FeatureSelectionConfig(
-            initial_features=self.config.get('initial_features', 120),
+            initial_features=self.config.get('initial_features', None),  # Truly variable starting point
             stage_1_target=self.config.get('stage_1_target', profile['stage_targets'][0]),
-            stage_2_target=self.config.get('stage_2_target', profile['stage_targets'][1]),
-            stage_3_target=self.config.get('stage_3_target', profile['stage_targets'][2]),
+            stage_2_target=self.config.get('stage_2_target', profile.get('stage_targets', [60])[-1]),
+            stage_3_target=self.config.get('stage_3_target', profile.get('stage_targets', [60])[-1]),
             rf_n_estimators=self.config.get('rf_n_estimators', 100),
             cv_folds=self.config.get('cv_folds', 5),
             save_analysis=self.config.get('save_analysis', True),
@@ -253,7 +253,7 @@ class FinalFeatureSelectionStep:
         tprint(f"   🏢 Exchange: {exchange}")
         tprint(f"   ⏰ Timeframe: {timeframe}")
         tprint(f"   📁 Data directory: {data_dir}")
-        tprint(f"   🎯 Target: xx→120→100→80→60 features")
+        tprint(f"   🎯 Target: Variable→60 pipeline (mRMR/Ensemble/RFE)")
         
         try:
             # Load feature data
@@ -333,17 +333,34 @@ class FinalFeatureSelectionStep:
         tprint("🔍 Attempting to load standardized target data artifacts")
 
         manifest = ArtifactManifest()
-        artifact_base_name = 'market_analysis_multi_horizon_profit_labeler_outcome'
-        logical_name = ArtifactDataLocator.build_logical_name(
-            artifact_base_name,
-            symbol=symbol,
-            exchange=exchange,
-            timeframe=timeframe,
-        )
-        entry = manifest.get_latest(logical_name)
+        
+        # Try multiple artifact base names to support both analyst and tactician labels
+        possible_base_names = [
+            'pre_training_tactician_entry_labeler_outcome',      # Tactician labels (entry timing)
+            'pre_training_analyst_profit_labeler_outcome',       # Analyst labels (profit targets)
+            'market_analysis_multi_horizon_profit_labeler_outcome',  # Legacy format
+        ]
+        
+        entry = None
+        artifact_base_name = None
+        
+        for base_name in possible_base_names:
+            logical_name = ArtifactDataLocator.build_logical_name(
+                base_name,
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+            )
+            entry = manifest.get_latest(logical_name)
+            if entry and entry.resolved_path.exists():
+                artifact_base_name = base_name
+                self.logger.info(f"📂 Found labels from: {base_name}")
+                tprint(f"✅ Using labels from: {base_name}")
+                break
+        
         fallback_allowed = False
 
-        if entry:
+        if entry and artifact_base_name:
             outcome_file = entry.resolved_path
             if outcome_file.exists():
                 self.logger.info(f"📂 Loading target data from manifest entry: {outcome_file}")
@@ -737,7 +754,7 @@ class FinalFeatureSelectionStep:
 
         tprint("🔍 Running Multi-Stage Feature Selection")
         tprint(f"   📊 Input: {len(X)} samples, {len(X.columns)} features")
-        tprint(f"   🎯 Target: xx→120→100→80→60 features")
+        tprint(f"   🎯 Target: Variable→60 pipeline (mRMR/Ensemble/RFE)")
         
         if y is not None:
             tprint(f"   🎯 Target: {len(y)} samples (supervised learning)")
@@ -970,10 +987,10 @@ class FinalFeatureSelectionStep:
             
             tprint("📈 FEATURE REDUCTION PIPELINE:")
             tprint(f"   🔢 Initial Features: {selection_result.feature_counts.get('initial', 'N/A')}")
-            tprint(f"   📊 Stage 1 (xx→120): {selection_result.feature_counts.get('stage_1', 'N/A')} features")
-            tprint(f"   📊 Stage 2 (120→100): {selection_result.feature_counts.get('stage_2', 'N/A')} features")
-            tprint(f"   📊 Stage 3 (100→80): {selection_result.feature_counts.get('stage_3', 'N/A')} features")
-            tprint(f"   📊 Final (80→60): {selection_result.feature_counts.get('final', 'N/A')} features")
+            tprint(f"   📊 Stage 1 (mRMR): {selection_result.feature_counts.get('stage_1', 'N/A')} features")
+            tprint(f"   📊 Stage 2 (Ensemble): {selection_result.feature_counts.get('stage_2', 'N/A')} features")
+            tprint(f"   📊 Stage 3 (RFE): {selection_result.feature_counts.get('stage_3', 'N/A')} features")
+            tprint(f"   📊 Final: {selection_result.feature_counts.get('final', 'N/A')} features")
             tprint("")
             
             tprint("📊 STAGE SCORES:")
@@ -1079,7 +1096,7 @@ class FinalFeatureSelectionStep:
             tprint("   ✅ Vectorized operations: Enabled")
             tprint("   ✅ Caching: Enabled")
             tprint("   ✅ Comprehensive logging: Enabled")
-            tprint("   ✅ Multi-stage reduction: xx→120→100→80→60")
+            tprint("   ✅ Multi-stage reduction: Variable→60 (mRMR/Ensemble/RFE)")
             
             tprint("=" * 60)
             

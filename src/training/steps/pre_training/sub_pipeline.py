@@ -4236,7 +4236,7 @@ class PreTrainingSubPipeline:
             result.end_time = datetime.now()
             result.duration_seconds = (result.end_time - result.start_time).total_seconds()
             result.artifacts = component_result.artifacts
-            result.output_files = component_result.output_files
+            result.output_files = getattr(component_result, 'output_files', [])
             result.error_message = component_result.error_message
             result.error_code = self._extract_component_error_code(
                 component_result,

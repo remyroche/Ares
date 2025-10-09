@@ -87,14 +87,14 @@ class TrendCoherenceFeature:
             # Calculate direction consistency
             if self.config.include_direction_consistency:
                 close_direction = np.sign(data['close'].diff())
+                close_direction_series = pd.Series(close_direction, index=data.index)
                 
-                # Use vectorized rolling operations for direction consistency
-                direction_consistency = vectorized_rolling_features(
-                    close_direction.values,
-                    windows=self.config.direction_window,
-                    operation='consistency'
-                )
-                direction_consistency = pd.Series(direction_consistency, index=data.index)
+                # Calculate direction consistency as the absolute value of the mean direction
+                # (higher values = more consistent directional movement)
+                direction_consistency = close_direction_series.rolling(
+                    window=self.config.direction_window,
+                    min_periods=1
+                ).apply(lambda x: np.abs(x.mean()), raw=True)
                 features['trend_direction_consistency'] = direction_consistency
                 tprint_info(f"   → Direction consistency: mean={direction_consistency.mean():.3f}, std={direction_consistency.std():.3f}")
             

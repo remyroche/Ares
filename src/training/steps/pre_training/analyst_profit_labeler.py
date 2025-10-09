@@ -721,6 +721,19 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                 'target_profits': self.labeler.config.target_profits,
             }
             
+            # Calculate additional metrics
+            opportunities_per_day = None
+            
+            if labeling_result.labels is not None and isinstance(labeling_result.labels, pd.DataFrame):
+                # Calculate opportunities per day (post-filtering)
+                if hasattr(labeling_result.labels.index, 'to_pydatetime'):
+                    dates = pd.to_datetime(labeling_result.labels.index)
+                    date_range_days = (dates.max() - dates.min()).days
+                    if date_range_days > 0:
+                        # Count positive labels (actual opportunities)
+                        positive_labels = (labeling_result.labels.iloc[:, 0] == 1).sum() if len(labeling_result.labels.columns) > 0 else 0
+                        opportunities_per_day = round(float(positive_labels / date_range_days), 2)
+            
             # Create result
             result = ComponentResult(
                 success=True,
@@ -734,7 +747,8 @@ class AnalystProfitLabelerComponent(BasePreTrainingComponent):
                     'direction_settings': {
                         'enable_long_positions': self.labeler.config.enable_long_positions,
                         'enable_short_positions': self.labeler.config.enable_short_positions,
-                    }
+                    },
+                    'opportunities_per_day': opportunities_per_day
                 }
             )
             

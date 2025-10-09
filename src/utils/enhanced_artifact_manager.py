@@ -255,7 +255,7 @@ class EnhancedArtifactManager:
         """
         metadata = self.get_most_recent_artifact(base_name, directory, version, extension)
         if not metadata:
-            self.logger.warning(f"No artifacts found for base_name '{base_name}'")
+            self.logger.debug(f"No artifacts found for base_name '{base_name}'")
             return None, None
         
         try:

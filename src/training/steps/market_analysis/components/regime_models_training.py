@@ -1456,6 +1456,7 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
     ) -> Dict[str, Any]:
         """
         Predict regime labels and probabilities using trained ensemble models.
+        Enhanced to provide comprehensive probabilistic outputs for each detected regime.
         
         Args:
             models: Dictionary of trained models
@@ -1465,7 +1466,12 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             use_meta_learner: Whether to use the meta-learner (stacker_lgbm_calibrated)
             
         Returns:
-            Dictionary with comprehensive prediction information
+            Dictionary with comprehensive prediction information including:
+            - regime_labels: Predicted regime for each sample
+            - regime_probabilities: Probability matrix for each regime
+            - regime_confidence_scores: Confidence scores for each prediction
+            - regime_analysis: Detailed analysis of regime probabilities
+            - ensemble_probabilities: Probabilities from all models in ensemble
         """
         try:
             tprint("🔮 [REGIME_MODELS] Starting regime prediction with probabilities", color="cyan")
@@ -1542,6 +1548,20 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             else:
                 dominance = np.ones(len(regime_labels))
             
+            # Generate ensemble probabilities from all available models
+            ensemble_probabilities = self._generate_ensemble_probabilities(models, X_scaled, feature_names)
+            
+            # Calculate comprehensive regime analysis
+            regime_analysis = self._calculate_comprehensive_regime_analysis(
+                regime_probabilities, regime_labels, n_regimes
+            )
+            
+            # Calculate regime transition probabilities
+            regime_transitions = self._calculate_regime_transitions(regime_labels, n_regimes)
+            
+            # Calculate regime persistence analysis
+            regime_persistence = self._calculate_regime_persistence(regime_labels, n_regimes)
+            
             # Create comprehensive prediction result
             prediction_result = {
                 'regime_labels': regime_labels,
@@ -1555,12 +1575,17 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 'entropy': entropy,
                 'dominance': dominance,
                 'model_used': model_name,
+                'ensemble_probabilities': ensemble_probabilities,
+                'regime_analysis': regime_analysis,
+                'regime_transitions': regime_transitions,
+                'regime_persistence': regime_persistence,
                 'prediction_metadata': {
                     'model_type': type(primary_model).__name__,
                     'n_samples': len(regime_labels),
                     'feature_count': X.shape[1],
                     'prediction_timestamp': datetime.now().isoformat(),
-                    'scaled_features_used': True
+                    'scaled_features_used': True,
+                    'ensemble_models_used': len(ensemble_probabilities) if ensemble_probabilities else 0
                 }
             }
             
@@ -2440,3 +2465,277 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             self.logger.error(f"Failed to load artifacts from outcome files: {e}")
 
         return artifacts
+
+    def _generate_ensemble_probabilities(self, models: Dict[str, Any], X_scaled: np.ndarray, feature_names: List[str]) -> Dict[str, np.ndarray]:
+        """
+        Generate probability predictions from all available models in the ensemble.
+        
+        Args:
+            models: Dictionary of trained models
+            X_scaled: Scaled feature matrix
+            feature_names: List of feature names
+            
+        Returns:
+            Dictionary mapping model names to their probability predictions
+        """
+        try:
+            tprint("🔮 [REGIME_MODELS] Generating ensemble probabilities from all models", color="cyan")
+            
+            ensemble_probabilities = {}
+            
+            # Get all available models (excluding metadata)
+            available_models = {name: model for name, model in models.items() 
+                              if model is not None and hasattr(model, 'predict') 
+                              and name not in ['stacker_lgbm_calibrated_feature_indices']}
+            
+            for model_name, model in available_models.items():
+                try:
+                    if hasattr(model, 'predict_proba'):
+                        # Get probability predictions
+                        proba = model.predict_proba(X_scaled)
+                        ensemble_probabilities[model_name] = proba
+                        tprint(f"✅ [REGIME_MODELS] {model_name}: Generated {proba.shape[1]} regime probabilities", color="green")
+                    else:
+                        # Convert class predictions to one-hot probabilities
+                        predictions = model.predict(X_scaled)
+                        unique_classes = np.unique(predictions)
+                        n_classes = len(unique_classes)
+                        
+                        # Create one-hot encoded probabilities
+                        proba = np.zeros((len(predictions), n_classes))
+                        for i, class_val in enumerate(unique_classes):
+                            proba[predictions == class_val, i] = 1.0
+                        
+                        ensemble_probabilities[model_name] = proba
+                        tprint(f"✅ [REGIME_MODELS] {model_name}: Converted class predictions to {n_classes} regime probabilities", color="green")
+                        
+                except Exception as e:
+                    tprint(f"⚠️ [REGIME_MODELS] Failed to get probabilities from {model_name}: {e}", color="yellow")
+                    continue
+            
+            tprint(f"📊 [REGIME_MODELS] Generated ensemble probabilities from {len(ensemble_probabilities)} models", color="blue")
+            return ensemble_probabilities
+            
+        except Exception as e:
+            tprint(f"❌ [REGIME_MODELS] Failed to generate ensemble probabilities: {e}", color="red")
+            return {}
+
+    def _calculate_comprehensive_regime_analysis(self, regime_probabilities: np.ndarray, regime_labels: np.ndarray, n_regimes: int) -> Dict[str, Any]:
+        """
+        Calculate comprehensive analysis of regime probabilities and predictions.
+        
+        Args:
+            regime_probabilities: Probability matrix for each regime
+            regime_labels: Predicted regime labels
+            n_regimes: Number of regimes
+            
+        Returns:
+            Dictionary containing comprehensive regime analysis
+        """
+        try:
+            tprint("📊 [REGIME_MODELS] Calculating comprehensive regime analysis", color="cyan")
+            
+            # Calculate regime-specific statistics
+            regime_stats = {}
+            for regime in range(n_regimes):
+                regime_mask = (regime_labels == regime)
+                regime_probs = regime_probabilities[regime_mask, regime] if regime_mask.any() else np.array([])
+                
+                regime_stats[f'regime_{regime}'] = {
+                    'count': int(np.sum(regime_mask)),
+                    'percentage': float(np.sum(regime_mask) / len(regime_labels) * 100),
+                    'avg_probability': float(np.mean(regime_probs)) if len(regime_probs) > 0 else 0.0,
+                    'std_probability': float(np.std(regime_probs)) if len(regime_probs) > 0 else 0.0,
+                    'min_probability': float(np.min(regime_probs)) if len(regime_probs) > 0 else 0.0,
+                    'max_probability': float(np.max(regime_probs)) if len(regime_probs) > 0 else 0.0,
+                    'confidence_distribution': {
+                        'high_confidence': int(np.sum(regime_probs >= 0.8)) if len(regime_probs) > 0 else 0,
+                        'medium_confidence': int(np.sum((regime_probs >= 0.5) & (regime_probs < 0.8))) if len(regime_probs) > 0 else 0,
+                        'low_confidence': int(np.sum(regime_probs < 0.5)) if len(regime_probs) > 0 else 0
+                    }
+                }
+            
+            # Calculate cross-regime probability correlations
+            regime_correlations = {}
+            for i in range(n_regimes):
+                for j in range(i + 1, n_regimes):
+                    corr = np.corrcoef(regime_probabilities[:, i], regime_probabilities[:, j])[0, 1]
+                    regime_correlations[f'regime_{i}_vs_regime_{j}'] = float(corr) if not np.isnan(corr) else 0.0
+            
+            # Calculate regime uncertainty metrics
+            entropy = -np.sum(regime_probabilities * np.log(regime_probabilities + 1e-10), axis=1)
+            uncertainty_metrics = {
+                'mean_entropy': float(np.mean(entropy)),
+                'std_entropy': float(np.std(entropy)),
+                'high_uncertainty_samples': int(np.sum(entropy > 1.0)),
+                'low_uncertainty_samples': int(np.sum(entropy < 0.5)),
+                'uncertainty_distribution': {
+                    'very_low': int(np.sum(entropy < 0.2)),
+                    'low': int(np.sum((entropy >= 0.2) & (entropy < 0.5))),
+                    'medium': int(np.sum((entropy >= 0.5) & (entropy < 1.0))),
+                    'high': int(np.sum((entropy >= 1.0) & (entropy < 1.5))),
+                    'very_high': int(np.sum(entropy >= 1.5))
+                }
+            }
+            
+            # Calculate regime dominance analysis
+            sorted_probs = np.sort(regime_probabilities, axis=1)
+            dominance_analysis = {
+                'mean_dominance': float(np.mean(sorted_probs[:, -1] - sorted_probs[:, -2])) if n_regimes > 1 else 1.0,
+                'std_dominance': float(np.std(sorted_probs[:, -1] - sorted_probs[:, -2])) if n_regimes > 1 else 0.0,
+                'clear_dominance_samples': int(np.sum((sorted_probs[:, -1] - sorted_probs[:, -2]) > 0.5)) if n_regimes > 1 else len(regime_labels),
+                'ambiguous_samples': int(np.sum((sorted_probs[:, -1] - sorted_probs[:, -2]) <= 0.2)) if n_regimes > 1 else 0
+            }
+            
+            analysis = {
+                'regime_statistics': regime_stats,
+                'regime_correlations': regime_correlations,
+                'uncertainty_metrics': uncertainty_metrics,
+                'dominance_analysis': dominance_analysis,
+                'summary': {
+                    'total_samples': len(regime_labels),
+                    'n_regimes': n_regimes,
+                    'most_common_regime': int(np.argmax(np.bincount(regime_labels, minlength=n_regimes))),
+                    'least_common_regime': int(np.argmin(np.bincount(regime_labels, minlength=n_regimes))),
+                    'avg_confidence': float(np.mean(np.max(regime_probabilities, axis=1))),
+                    'regime_balance': float(np.std(np.bincount(regime_labels, minlength=n_regimes) / len(regime_labels)))
+                }
+            }
+            
+            tprint("✅ [REGIME_MODELS] Comprehensive regime analysis completed", color="green")
+            return analysis
+            
+        except Exception as e:
+            tprint(f"❌ [REGIME_MODELS] Failed to calculate regime analysis: {e}", color="red")
+            return {'error': str(e)}
+
+    def _calculate_regime_transitions(self, regime_labels: np.ndarray, n_regimes: int) -> Dict[str, Any]:
+        """
+        Calculate regime transition probabilities and patterns.
+        
+        Args:
+            regime_labels: Predicted regime labels
+            n_regimes: Number of regimes
+            
+        Returns:
+            Dictionary containing regime transition analysis
+        """
+        try:
+            tprint("🔄 [REGIME_MODELS] Calculating regime transition analysis", color="cyan")
+            
+            # Calculate transition matrix
+            transition_matrix = np.zeros((n_regimes, n_regimes))
+            
+            for i in range(len(regime_labels) - 1):
+                current_regime = int(regime_labels[i])
+                next_regime = int(regime_labels[i + 1])
+                transition_matrix[current_regime, next_regime] += 1
+            
+            # Normalize to get transition probabilities
+            row_sums = transition_matrix.sum(axis=1)
+            transition_probabilities = np.divide(transition_matrix, row_sums[:, np.newaxis], 
+                                               out=np.zeros_like(transition_matrix), 
+                                               where=row_sums[:, np.newaxis] != 0)
+            
+            # Calculate transition statistics
+            transitions = {
+                'transition_matrix': transition_matrix.tolist(),
+                'transition_probabilities': transition_probabilities.tolist(),
+                'transition_counts': {
+                    'total_transitions': int(np.sum(transition_matrix)),
+                    'self_transitions': int(np.sum(np.diag(transition_matrix))),
+                    'cross_transitions': int(np.sum(transition_matrix) - np.sum(np.diag(transition_matrix))),
+                    'transition_rate': float(np.sum(transition_matrix) / len(regime_labels)) if len(regime_labels) > 0 else 0.0
+                },
+                'regime_persistence': {
+                    f'regime_{i}': float(transition_probabilities[i, i]) for i in range(n_regimes)
+                },
+                'most_likely_transitions': {
+                    f'from_regime_{i}': int(np.argmax(transition_probabilities[i, :])) 
+                    for i in range(n_regimes) if np.sum(transition_matrix[i, :]) > 0
+                }
+            }
+            
+            tprint("✅ [REGIME_MODELS] Regime transition analysis completed", color="green")
+            return transitions
+            
+        except Exception as e:
+            tprint(f"❌ [REGIME_MODELS] Failed to calculate regime transitions: {e}", color="red")
+            return {'error': str(e)}
+
+    def _calculate_regime_persistence(self, regime_labels: np.ndarray, n_regimes: int) -> Dict[str, Any]:
+        """
+        Calculate regime persistence and stability metrics.
+        
+        Args:
+            regime_labels: Predicted regime labels
+            n_regimes: Number of regimes
+            
+        Returns:
+            Dictionary containing regime persistence analysis
+        """
+        try:
+            tprint("📈 [REGIME_MODELS] Calculating regime persistence analysis", color="cyan")
+            
+            # Calculate regime durations
+            regime_durations = {f'regime_{i}': [] for i in range(n_regimes)}
+            current_regime = regime_labels[0]
+            current_duration = 1
+            
+            for i in range(1, len(regime_labels)):
+                if regime_labels[i] == current_regime:
+                    current_duration += 1
+                else:
+                    regime_durations[f'regime_{int(current_regime)}'].append(current_duration)
+                    current_regime = regime_labels[i]
+                    current_duration = 1
+            
+            # Add the last regime duration
+            regime_durations[f'regime_{int(current_regime)}'].append(current_duration)
+            
+            # Calculate persistence statistics
+            persistence_stats = {}
+            for regime in range(n_regimes):
+                durations = regime_durations[f'regime_{regime}']
+                if durations:
+                    persistence_stats[f'regime_{regime}'] = {
+                        'avg_duration': float(np.mean(durations)),
+                        'std_duration': float(np.std(durations)),
+                        'min_duration': int(np.min(durations)),
+                        'max_duration': int(np.max(durations)),
+                        'total_episodes': len(durations),
+                        'total_duration': int(np.sum(durations))
+                    }
+                else:
+                    persistence_stats[f'regime_{regime}'] = {
+                        'avg_duration': 0.0,
+                        'std_duration': 0.0,
+                        'min_duration': 0,
+                        'max_duration': 0,
+                        'total_episodes': 0,
+                        'total_duration': 0
+                    }
+            
+            # Calculate overall persistence metrics
+            all_durations = [d for durations in regime_durations.values() for d in durations]
+            overall_persistence = {
+                'avg_episode_duration': float(np.mean(all_durations)) if all_durations else 0.0,
+                'std_episode_duration': float(np.std(all_durations)) if all_durations else 0.0,
+                'longest_episode': int(np.max(all_durations)) if all_durations else 0,
+                'shortest_episode': int(np.min(all_durations)) if all_durations else 0,
+                'total_episodes': len(all_durations),
+                'regime_stability': float(np.mean([stats['avg_duration'] for stats in persistence_stats.values()]))
+            }
+            
+            persistence = {
+                'regime_durations': regime_durations,
+                'persistence_statistics': persistence_stats,
+                'overall_persistence': overall_persistence
+            }
+            
+            tprint("✅ [REGIME_MODELS] Regime persistence analysis completed", color="green")
+            return persistence
+            
+        except Exception as e:
+            tprint(f"❌ [REGIME_MODELS] Failed to calculate regime persistence: {e}", color="red")
+            return {'error': str(e)}

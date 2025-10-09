@@ -328,7 +328,8 @@ class TradingSystemIntegrator:
     async def _capture_prediction_context(self, system_id: str, *args, **kwargs) -> None:
         """Capture prediction context for analysis."""
         try:
-            pass
+            # TODO: Implement prediction context capture
+            self.logger.debug(f"Prediction context capture not yet implemented for {system_id}")
         except Exception as e:
             self.logger.error(f'Error capturing prediction context: {e}')
 

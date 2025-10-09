@@ -58,7 +58,7 @@ class ParentFeature(ABC):
     @abstractmethod
     def compute(self, data: pd.DataFrame) -> pd.Series:
         """Compute the feature from market data."""
-        pass
+        raise NotImplementedError("Subclasses must implement compute method")
     
     def validate_input(self, data: pd.DataFrame) -> bool:
         """Validate input data has required fields."""

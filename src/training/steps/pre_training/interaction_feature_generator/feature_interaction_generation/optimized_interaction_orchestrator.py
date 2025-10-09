@@ -122,7 +122,17 @@ except ImportError as e:
         return df.describe(include="all")
 
     def safe_to_parquet(*args, **kwargs):
-        pass
+        """Safe parquet save with error handling."""
+        try:
+            import pandas as pd
+            df = args[0] if args else kwargs.get('df')
+            path = args[1] if len(args) > 1 else kwargs.get('path')
+            if df is not None and path is not None:
+                df.to_parquet(path, **{k: v for k, v in kwargs.items() if k not in ['df', 'path']})
+                return True
+        except Exception as e:
+            print(f"Warning: Failed to save parquet file: {e}")
+        return False
 
     def safe_read_parquet(*args, **kwargs):
         return None

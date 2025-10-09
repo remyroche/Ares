@@ -59,12 +59,12 @@ class BasePatchModel(ABC):
     @abstractmethod
     def fit(self, X: np.ndarray, y: np.ndarray) -> None:
         """Fit the model."""
-        pass
+        raise NotImplementedError("Subclasses must implement fit method")
     
     @abstractmethod
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Make predictions."""
-        pass
+        raise NotImplementedError("Subclasses must implement predict method")
     
     def get_confidence(self, predictions: np.ndarray) -> np.ndarray:
         """Calculate confidence scores."""

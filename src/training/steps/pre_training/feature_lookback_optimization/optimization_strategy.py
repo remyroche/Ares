@@ -142,7 +142,7 @@ class OptimizationStrategy(ABC):
     def optimize(self, 
                  data: pd.DataFrame, 
                  feature_name: str, 
-                 target_column: str,
+                 target_column: str, 
                  **kwargs) -> OptimizationResult:
         """
         Perform optimization.
@@ -156,7 +156,7 @@ class OptimizationStrategy(ABC):
         Returns:
             OptimizationResult with optimization results
         """
-        pass
+        raise NotImplementedError("Subclasses must implement optimize method")
     
     @abstractmethod
     def validate_inputs(self, 
@@ -174,7 +174,7 @@ class OptimizationStrategy(ABC):
         Returns:
             Tuple of (is_valid, error_message)
         """
-        pass
+        raise NotImplementedError("Subclasses must implement validate_inputs method")
     
     def get_default_config(self) -> Dict[str, Any]:
         """Get default configuration for this strategy."""

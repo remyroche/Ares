@@ -562,6 +562,17 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
             tprint("✅ [REGIME_MODELS] Regime detection models training completed successfully", color="green", bold=True)
             self.logger.info(f"Regime detection models training completed successfully in {execution_time:.2f} seconds")
             
+            # Generate regime probability report
+            try:
+                regime_report = await self._generate_regime_probability_report(
+                    training_results, X, feature_names, artifacts
+                )
+                if regime_report:
+                    artifacts['regime_probability_report'] = regime_report
+                    tprint("📊 [REGIME_MODELS] Regime probability report generated successfully", color="green")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_MODELS] Failed to generate regime probability report: {e}", color="yellow")
+            
             # Save artifacts persistently using the artifact manager
             try:
                 save_report = await self.save_artifacts(artifacts, {
@@ -627,6 +638,149 @@ class RegimeModelsTrainingComponent(BaseMarketAnalysisComponent):
                 error_message=f"{error_msg} (Type: {error_type})"
             )
     
+    async def _generate_regime_probability_report(
+        self, 
+        training_results: Dict[str, Any], 
+        X: np.ndarray, 
+        feature_names: List[str], 
+        artifacts: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Generate a comprehensive report with regime probabilities for all regimes."""
+        try:
+            tprint("📊 [REGIME_MODELS] Generating regime probability report", color="cyan")
+            
+            # Get the trained models
+            models = training_results.get('models', {})
+            if not models:
+                tprint("⚠️ [REGIME_MODELS] No trained models found for report generation", color="yellow")
+                return None
+            
+            # Use the first available model for probability generation
+            model_name = list(models.keys())[0]
+            model = models[model_name]
+            
+            if not hasattr(model, 'predict_proba'):
+                tprint(f"⚠️ [REGIME_MODELS] Model {model_name} does not support probability prediction", color="yellow")
+                return None
+            
+            # Generate regime probabilities for all samples
+            tprint(f"🔮 [REGIME_MODELS] Generating regime probabilities using {model_name}", color="cyan")
+            regime_probabilities = model.predict_proba(X)
+            regime_labels = model.predict(X)
+            
+            n_regimes = regime_probabilities.shape[1]
+            n_samples = len(regime_probabilities)
+            
+            # Calculate regime statistics
+            regime_stats = {}
+            for i in range(n_regimes):
+                regime_probs = regime_probabilities[:, i]
+                regime_count = np.sum(regime_labels == i)
+                
+                regime_stats[f'regime_{i}'] = {
+                    'sample_count': int(regime_count),
+                    'percentage': float(regime_count / n_samples * 100),
+                    'mean_probability': float(np.mean(regime_probs)),
+                    'std_probability': float(np.std(regime_probs)),
+                    'min_probability': float(np.min(regime_probs)),
+                    'max_probability': float(np.max(regime_probs)),
+                    'confidence_distribution': {
+                        'high_confidence': int(np.sum(regime_probs > 0.8)),
+                        'medium_confidence': int(np.sum((regime_probs > 0.5) & (regime_probs <= 0.8))),
+                        'low_confidence': int(np.sum(regime_probs <= 0.5))
+                    }
+                }
+            
+            # Calculate overall statistics
+            overall_stats = {
+                'total_samples': n_samples,
+                'n_regimes': n_regimes,
+                'mean_max_probability': float(np.mean(np.max(regime_probabilities, axis=1))),
+                'std_max_probability': float(np.std(np.max(regime_probabilities, axis=1))),
+                'regime_balance': float(np.std([regime_stats[f'regime_{i}']['percentage'] for i in range(n_regimes)])),
+                'prediction_confidence': float(np.mean(np.max(regime_probabilities, axis=1))),
+                'uncertainty_entropy': float(np.mean([-np.sum(p * np.log(p + 1e-10)) for p in regime_probabilities]))
+            }
+            
+            # Generate comprehensive report
+            report = {
+                'model_name': model_name,
+                'generation_timestamp': datetime.now().isoformat(),
+                'overall_statistics': overall_stats,
+                'regime_statistics': regime_stats,
+                'regime_probabilities': regime_probabilities.tolist(),
+                'regime_labels': regime_labels.tolist(),
+                'feature_names': feature_names,
+                'data_shape': X.shape,
+                'report_type': 'regime_probability_analysis'
+            }
+            
+            # Generate text report
+            text_report = self._generate_text_report(report)
+            report['text_report'] = text_report
+            
+            tprint(f"✅ [REGIME_MODELS] Regime probability report generated for {n_regimes} regimes", color="green")
+            return report
+            
+        except Exception as e:
+            tprint(f"❌ [REGIME_MODELS] Failed to generate regime probability report: {e}", color="red")
+            return None
+
+    def _generate_text_report(self, report: Dict[str, Any]) -> str:
+        """Generate a human-readable text report from regime probability data."""
+        try:
+            lines = []
+            lines.append("=" * 80)
+            lines.append("REGIME PROBABILITY ANALYSIS REPORT")
+            lines.append(f"Model: {report.get('model_name', 'Unknown')}")
+            lines.append(f"Generated: {report.get('generation_timestamp', 'Unknown')}")
+            lines.append("=" * 80)
+            lines.append("")
+            
+            # Overall Statistics
+            overall = report.get('overall_statistics', {})
+            lines.append("📊 OVERALL STATISTICS")
+            lines.append("-" * 40)
+            lines.append(f"Total Samples: {overall.get('total_samples', 'N/A')}")
+            lines.append(f"Number of Regimes: {overall.get('n_regimes', 'N/A')}")
+            lines.append(f"Mean Max Probability: {overall.get('mean_max_probability', 0):.3f}")
+            lines.append(f"Std Max Probability: {overall.get('std_max_probability', 0):.3f}")
+            lines.append(f"Regime Balance: {overall.get('regime_balance', 0):.3f}")
+            lines.append(f"Prediction Confidence: {overall.get('prediction_confidence', 0):.3f}")
+            lines.append(f"Uncertainty Entropy: {overall.get('uncertainty_entropy', 0):.3f}")
+            lines.append("")
+            
+            # Regime Statistics
+            regime_stats = report.get('regime_statistics', {})
+            lines.append("🎯 REGIME PROBABILITY STATISTICS")
+            lines.append("-" * 40)
+            
+            for regime_key, regime_data in regime_stats.items():
+                if isinstance(regime_data, dict):
+                    lines.append(f"{regime_key.upper()}:")
+                    lines.append(f"  Sample Count: {regime_data.get('sample_count', 0)}")
+                    lines.append(f"  Percentage: {regime_data.get('percentage', 0):.1f}%")
+                    lines.append(f"  Mean Probability: {regime_data.get('mean_probability', 0):.3f}")
+                    lines.append(f"  Std Probability: {regime_data.get('std_probability', 0):.3f}")
+                    lines.append(f"  Min Probability: {regime_data.get('min_probability', 0):.3f}")
+                    lines.append(f"  Max Probability: {regime_data.get('max_probability', 0):.3f}")
+                    
+                    conf_dist = regime_data.get('confidence_distribution', {})
+                    lines.append(f"  Confidence Distribution:")
+                    lines.append(f"    High (>0.8): {conf_dist.get('high_confidence', 0)}")
+                    lines.append(f"    Medium (0.5-0.8): {conf_dist.get('medium_confidence', 0)}")
+                    lines.append(f"    Low (≤0.5): {conf_dist.get('low_confidence', 0)}")
+                    lines.append("")
+            
+            lines.append("=" * 80)
+            lines.append("END OF REGIME PROBABILITY REPORT")
+            lines.append("=" * 80)
+            
+            return "\n".join(lines)
+            
+        except Exception as e:
+            return f"Error generating text report: {e}"
+
     def _get_system_performance(self) -> Dict[str, Any]:
         """Get current system performance metrics."""
         try:

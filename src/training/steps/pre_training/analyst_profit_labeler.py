@@ -117,8 +117,8 @@ class AnalystProfitLabelerConfig:
 
     # Horizon settings for Analyst (strategic decision-making)
     # Horizons are in MINUTES (must be >= timeframe period)
-    # Updated for 15m timeframe: 1h, 2h, 4h, 6h, 12h, 24h
-    horizons: List[int] = field(default_factory=lambda: [60, 120, 240, 360, 720, 1440])  # 1h, 2h, 4h, 6h, 12h, 24h in minutes
+    # Updated for 15m timeframe: 1h, 2h, 4h, 6h
+    horizons: List[int] = field(default_factory=lambda: [60, 120, 240, 360])  # 1h, 2h, 4h, 6h in minutes
 
     # Profit targets (percentage) - Realistic for hourly crypto movements after fees
     # ETH typically moves 0.4% per hour on average (0.26% median)

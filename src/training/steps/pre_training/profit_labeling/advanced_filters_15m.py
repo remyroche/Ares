@@ -27,12 +27,50 @@ import warnings
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
 from src.utils.common_operations import (
     safe_divide, safe_log, safe_sqrt, safe_mean, safe_std,
-    validate_finite, validate_positive, validate_range, safe_correlation
+    validate_finite, validate_positive, validate_range, safe_correlation,
+    safe_dataframe_operation, validate_dataframe_columns, get_dataframe_info,
+    create_data_quality_report, optimize_memory, memory_checkpoint,
+    integrate_with_m1_optimizers, get_m1_gpu_manager, get_m1_memory_optimizer
 )
-from src.utils.math_validation import MathValidation
+from src.utils.common_utilities import (
+    analyze_nan_values_detailed, format_nan_analysis_report,
+    create_data_quality_report as create_detailed_quality_report,
+    get_dataframe_info as get_detailed_dataframe_info
+)
+from src.utils.math_validation import MathValidation, safe_divide as math_safe_divide
+from src.utils.matrix_operations import (
+    get_unified_matrix_operations, get_vectorized_processing_core,
+    get_enhanced_matrix_operations, optimize_dataframe,
+    vectorized_rolling_features, matrix_correlation_analysis,
+    safe_correlation_matrix, compute_trading_indicators,
+    get_hardware_performance_report
+)
+from src.utils.hardware.m1_gpu_utils import get_m1_gpu_manager as get_gpu_manager
+from src.utils.hardware.m1_memory_optimizer import M1MemoryOptimizer
+from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
+from src.utils.serialization_utils import UniversalSerializer
 
-# Import matrix operations for optimized rolling calculations
-from src.utils.matrix_operations import vectorized_rolling_features
+# Import data utilities (optional)
+try:
+    from src.utils.data.klines_parquet import KlineParquetManager
+    DATA_UTILS_AVAILABLE = True
+except ImportError:
+    DATA_UTILS_AVAILABLE = False
+    KlineParquetManager = None
+
+# Import ML common utilities
+try:
+    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import BayesianTPEOptimizer
+    from src.utils.ml_common.validation.cross_validation import CrossValidator
+    from src.utils.ml_common.validation.lookahead_bias_detector import LookaheadBiasDetector
+    from src.utils.ml_common.optimization.pareto_optimizer import ParetoOptimizer
+    ML_COMMON_AVAILABLE = True
+except ImportError:
+    ML_COMMON_AVAILABLE = False
+    BayesianTPEOptimizer = None
+    CrossValidator = None
+    LookaheadBiasDetector = None
+    ParetoOptimizer = None
 
 
 class FilterType(Enum):
@@ -140,11 +178,36 @@ class AdvancedFilters15m:
         self.config = config or AdvancedFiltersConfig()
         self.logger = logging.getLogger('AdvancedFilters15m')
         
+        # Initialize matrix operations for enhanced data processing
+        self.matrix_ops = get_unified_matrix_operations()
+        self.vectorized_core = get_vectorized_processing_core()
+        self.enhanced_matrix_ops = get_enhanced_matrix_operations()
+        
+        # Initialize M1 optimizations if available
+        self.m1_integration = integrate_with_m1_optimizers()
+        self.gpu_manager = get_gpu_manager() if self.m1_integration.get('success', False) else None
+        self.memory_optimizer = get_m1_memory_optimizer() if self.m1_integration.get('success', False) else None
+        
+        # Initialize ML common utilities if available
+        self.bayesian_optimizer = BayesianTPEOptimizer() if ML_COMMON_AVAILABLE else None
+        self.cross_validator = CrossValidator() if ML_COMMON_AVAILABLE else None
+        self.lookahead_detector = LookaheadBiasDetector() if ML_COMMON_AVAILABLE else None
+        self.pareto_optimizer = ParetoOptimizer() if ML_COMMON_AVAILABLE else None
+        
+        # Initialize serialization utilities
+        self.serializer = UniversalSerializer()
+        
+        # Initialize data quality tools
+        self.math_validator = MathValidation()
+        
         tprint_info("🔍 Advanced Filters for 15m Timeframe initialized")
         tprint_info(f"   → Efficiency ratio: {self.config.enable_efficiency_ratio}")
         tprint_info(f"   → CLV filtering: {self.config.enable_clv}")
         tprint_info(f"   → ATR ratio: {self.config.enable_atr_ratio}")
         tprint_info(f"   → Trend coherence: {self.config.enable_trend_coherence}")
+        tprint_info(f"   → Matrix operations: {self.matrix_ops.__class__.__name__}")
+        tprint_info(f"   → M1 optimizations: GPU={'✅' if self.gpu_manager else '❌'}, Memory={'✅' if self.memory_optimizer else '❌'}")
+        tprint_info(f"   → ML Common: {'✅' if ML_COMMON_AVAILABLE else '❌'}")
     
     def apply_filters(self, data: pd.DataFrame) -> FilterResult:
         """
@@ -159,8 +222,16 @@ class AdvancedFilters15m:
         start_time = datetime.now()
         tprint_info("🔍 Applying advanced 15m filters")
         
-        # Validate input data
+        # Validate input data using common utilities
         self._validate_input_data(data)
+        
+        # Optimize data using matrix operations
+        tprint_info("🧮 Optimizing data with matrix operations")
+        original_shape = data.shape
+        optimized_data = optimize_dataframe(data)
+        if optimized_data is not data:
+            data = optimized_data
+            tprint_success(f"✅ Data optimized: {original_shape} → {data.shape}")
         
         # Initialize result container
         result = FilterResult(
@@ -171,94 +242,136 @@ class AdvancedFilters15m:
         )
         
         try:
-            # Apply individual filters
-            if self.config.enable_efficiency_ratio:
-                result.efficiency_mask = self._apply_efficiency_ratio_filter(data)
-                result.filter_statistics['efficiency'] = self._calculate_efficiency_stats(data, result.efficiency_mask)
-            
-            if self.config.enable_clv:
-                result.clv_mask = self._apply_clv_filter(data)
-                result.filter_statistics['clv'] = self._calculate_clv_stats(data, result.clv_mask)
-            
-            if self.config.enable_atr_ratio:
-                result.atr_ratio_mask = self._apply_atr_ratio_filter(data)
-                result.filter_statistics['atr_ratio'] = self._calculate_atr_ratio_stats(data, result.atr_ratio_mask)
-            
-            if self.config.enable_trend_coherence:
-                result.trend_coherence_mask = self._apply_trend_coherence_filter(data)
-                result.filter_statistics['trend_coherence'] = self._calculate_trend_coherence_stats(data, result.trend_coherence_mask)
-            
-            # Combine filters based on configuration
-            result.eligibility_mask = self._combine_filters(result)
-            result.eligibility_ratio = result.eligibility_mask.mean()
-            result.n_eligible_samples = result.eligibility_mask.sum()
-            result.n_filtered_samples = result.n_total_samples - result.n_eligible_samples
-            
-            # Calculate quality metrics
-            result.overall_quality_score = self._calculate_overall_quality_score(result)
-            result.noise_reduction_ratio = result.n_filtered_samples / result.n_total_samples
-            
-            # Calculate filter effectiveness
-            result.filter_effectiveness = self._calculate_filter_effectiveness(result)
-            
-            # Validate results
-            self._validate_filter_results(result)
-            
-            result.processing_time = (datetime.now() - start_time).total_seconds()
-            
-            tprint_success(f"✅ Advanced filters applied: {result.n_eligible_samples}/{result.n_total_samples} samples eligible ({result.eligibility_ratio:.1%})")
-            
-            return result
+            # Use memory optimization context
+            with memory_checkpoint("advanced_filters_15m"):
+                # Apply individual filters
+                if self.config.enable_efficiency_ratio:
+                    tprint_info("📊 Applying efficiency ratio filter")
+                    result.efficiency_mask = self._apply_efficiency_ratio_filter(data)
+                    result.filter_statistics['efficiency'] = self._calculate_efficiency_stats(data, result.efficiency_mask)
+                
+                if self.config.enable_clv:
+                    tprint_info("📊 Applying CLV filter")
+                    result.clv_mask = self._apply_clv_filter(data)
+                    result.filter_statistics['clv'] = self._calculate_clv_stats(data, result.clv_mask)
+                
+                if self.config.enable_atr_ratio:
+                    tprint_info("📊 Applying ATR ratio filter")
+                    result.atr_ratio_mask = self._apply_atr_ratio_filter(data)
+                    result.filter_statistics['atr_ratio'] = self._calculate_atr_ratio_stats(data, result.atr_ratio_mask)
+                
+                if self.config.enable_trend_coherence:
+                    tprint_info("📊 Applying trend coherence filter")
+                    result.trend_coherence_mask = self._apply_trend_coherence_filter(data)
+                    result.filter_statistics['trend_coherence'] = self._calculate_trend_coherence_stats(data, result.trend_coherence_mask)
+                
+                # Combine filters based on configuration
+                result.eligibility_mask = self._combine_filters(result)
+                result.eligibility_ratio = result.eligibility_mask.mean()
+                result.n_eligible_samples = result.eligibility_mask.sum()
+                result.n_filtered_samples = result.n_total_samples - result.n_eligible_samples
+                
+                # Calculate quality metrics
+                result.overall_quality_score = self._calculate_overall_quality_score(result)
+                result.noise_reduction_ratio = result.n_filtered_samples / result.n_total_samples
+                
+                # Calculate filter effectiveness
+                result.filter_effectiveness = self._calculate_filter_effectiveness(result)
+                
+                # Validate results
+                self._validate_filter_results(result)
+                
+                # Log memory usage and performance
+                memory_info = optimize_memory()
+                data_info = get_dataframe_info(data)
+                hardware_report = get_hardware_performance_report()
+                tprint_info(f"📊 Data info: {data_info['shape']} shape, {data_info.get('memory_usage', 'N/A')} memory")
+                tprint_info(f"🔧 Hardware performance: {hardware_report.get('cpu_cores', 'N/A')} cores, GPU: {hardware_report.get('gpu_available', 'N/A')}")
+                
+                result.processing_time = (datetime.now() - start_time).total_seconds()
+                
+                tprint_success(f"✅ Advanced filters applied: {result.n_eligible_samples}/{result.n_total_samples} samples eligible ({result.eligibility_ratio:.1%})")
+                
+                return result
             
         except Exception as e:
             tprint_error(f"❌ Error applying advanced filters: {e}")
             raise
     
     def _validate_input_data(self, data: pd.DataFrame) -> None:
-        """Validate input data format and requirements."""
+        """Validate input data format and requirements using common utilities."""
         required_columns = ['open', 'high', 'low', 'close', 'volume']
-        missing_columns = [col for col in required_columns if col not in data.columns]
         
-        if missing_columns:
+        # Use common utilities for validation
+        if not validate_dataframe_columns(data, required_columns):
+            missing_columns = set(required_columns) - set(data.columns)
             raise ValueError(f"Missing required columns: {missing_columns}")
         
-        if len(data) < max(self.config.efficiency_window, self.config.clv_window, 
-                          self.config.atr_long_window, self.config.direction_window):
-            raise ValueError(f"Insufficient data: need at least {max(self.config.efficiency_window, self.config.clv_window, self.config.atr_long_window, self.config.direction_window)} samples")
+        min_required = max(self.config.efficiency_window, self.config.clv_window, 
+                          self.config.atr_long_window, self.config.direction_window)
+        if len(data) < min_required:
+            raise ValueError(f"Insufficient data: need at least {min_required} samples")
         
-        # Check for valid OHLCV data
+        # Check for valid OHLCV data using safe operations
         for col in ['open', 'high', 'low', 'close']:
             if not pd.api.types.is_numeric_dtype(data[col]):
-                raise ValueError(f"Column {col} must be numeric")
+                tprint_warning(f"⚠️ Converting {col} to numeric")
+                data = safe_dataframe_operation(data, pd.to_numeric, col, errors='coerce')
         
-        # Validate OHLC relationships
-        invalid_ohlc = (data['high'] < data['low']) | (data['high'] < data['open']) | (data['high'] < data['close']) | (data['low'] > data['open']) | (data['low'] > data['close'])
-        if invalid_ohlc.any():
-            tprint_warning(f"⚠️ Found {invalid_ohlc.sum()} invalid OHLC relationships")
+        # Validate OHLC relationships using math validation
+        try:
+            high_low_valid = (data['high'] >= data['low']).all()
+            high_open_valid = (data['high'] >= data['open']).all()
+            high_close_valid = (data['high'] >= data['close']).all()
+            low_open_valid = (data['low'] <= data['open']).all()
+            low_close_valid = (data['low'] <= data['close']).all()
+            
+            if not all([high_low_valid, high_open_valid, high_close_valid, low_open_valid, low_close_valid]):
+                tprint_warning("⚠️ Found invalid OHLC relationships - data may need cleaning")
+        except Exception as e:
+            tprint_warning(f"⚠️ Error validating OHLC relationships: {e}")
+        
+        # Analyze data quality
+        data_quality = create_data_quality_report(data)
+        if data_quality.get('quality_metrics', {}).get('missing_percentage', 0) > 10:
+            tprint_warning(f"⚠️ High missing data percentage: {data_quality['quality_metrics']['missing_percentage']:.2f}%")
+        
+        # Detailed NaN analysis if issues found
+        nan_analysis = analyze_nan_values_detailed(data)
+        if nan_analysis.get('total_nans', 0) > 0:
+            nan_report = format_nan_analysis_report(nan_analysis, "  ")
+            tprint_info(f"📊 NaN Analysis:\n{nan_report}")
     
     def _apply_efficiency_ratio_filter(self, data: pd.DataFrame) -> pd.Series:
         """
-        Apply bar efficiency ratio filter.
+        Apply bar efficiency ratio filter using matrix operations.
         
         Efficiency_t = |close_t - open_t| / (high_t - low_t)
         High efficiency (>0.6) = directional, Low efficiency (<0.3) = choppy
         """
-        tprint_info("📊 Applying efficiency ratio filter")
-        
-        # Calculate efficiency ratio for each bar
+        # Calculate efficiency ratio for each bar using safe operations
         price_range = data['high'] - data['low']
         price_range = price_range.replace(0, np.nan)  # Avoid division by zero
         
-        efficiency = np.abs(data['close'] - data['open']) / price_range
+        # Use safe division for efficiency calculation
+        efficiency = np.abs(data['close'] - data['open'])
+        efficiency = efficiency / price_range
         efficiency = efficiency.fillna(0)  # Set to 0 for zero-range bars
+        efficiency = efficiency.replace([np.inf, -np.inf], 0)  # Replace infinite values with 0
         
-        # Calculate rolling mean efficiency
-        rolling_efficiency = efficiency.rolling(window=self.config.efficiency_window, min_periods=1).mean()
+        # Use vectorized rolling operations
+        rolling_efficiency = vectorized_rolling_features(
+            efficiency.values, 
+            windows=self.config.efficiency_window, 
+            operation='mean'
+        )
+        rolling_efficiency = pd.Series(rolling_efficiency, index=data.index)
         
-        # Create eligibility mask
-        # Keep bars with moderate to high efficiency (avoid both very low and very high)
-        efficiency_mask = (rolling_efficiency >= self.config.efficiency_threshold_low) & \
-                         (rolling_efficiency <= 1.0)  # Cap at 1.0 (perfect efficiency)
+        # Create eligibility mask using math validation
+        efficiency_mask = self.math_validator.validate_finite(
+            (rolling_efficiency >= self.config.efficiency_threshold_low) & 
+            (rolling_efficiency <= 1.0)  # Cap at 1.0 (perfect efficiency)
+        )
         
         tprint_info(f"   → Efficiency filter: {efficiency_mask.sum()}/{len(efficiency_mask)} samples passed")
         
@@ -266,31 +379,43 @@ class AdvancedFilters15m:
     
     def _apply_clv_filter(self, data: pd.DataFrame) -> pd.Series:
         """
-        Apply Close-Location Value (CLV) filter.
+        Apply Close-Location Value (CLV) filter using matrix operations.
         
         CLV_t = (2*close_t - high_t - low_t) / (high_t - low_t)
         Sustained positive CLV → bullish control, sustained negative → bearish
         """
-        tprint_info("📊 Applying CLV filter")
-        
-        # Calculate CLV for each bar
+        # Calculate CLV for each bar using safe operations
         price_range = data['high'] - data['low']
         price_range = price_range.replace(0, np.nan)  # Avoid division by zero
         
-        clv = (2 * data['close'] - data['high'] - data['low']) / price_range
+        clv_numerator = 2 * data['close'] - data['high'] - data['low']
+        clv = clv_numerator / price_range
         clv = clv.fillna(0)  # Set to 0 for zero-range bars
+        clv = clv.replace([np.inf, -np.inf], 0)  # Replace infinite values with 0
         
-        # Calculate rolling mean CLV
-        rolling_clv = clv.rolling(window=self.config.clv_window, min_periods=1).mean()
+        # Use vectorized rolling operations for mean and std
+        rolling_clv = vectorized_rolling_features(
+            clv.values, 
+            windows=self.config.clv_window, 
+            operation='mean'
+        )
+        rolling_clv = pd.Series(rolling_clv, index=data.index)
         
-        # Calculate CLV volatility (standard deviation of rolling CLV)
-        clv_volatility = rolling_clv.rolling(window=self.config.clv_window, min_periods=1).std()
+        clv_volatility = vectorized_rolling_features(
+            clv.values, 
+            windows=self.config.clv_window, 
+            operation='std'
+        )
+        clv_volatility = pd.Series(clv_volatility, index=data.index)
         
-        # Create eligibility mask
-        # Keep bars with sustained directional CLV and low volatility
-        clv_directional = (rolling_clv >= self.config.clv_threshold_positive) | \
-                         (rolling_clv <= self.config.clv_threshold_negative)
-        clv_stable = clv_volatility <= self.config.clv_volatility_threshold
+        # Create eligibility mask using math validation
+        clv_directional = self.math_validator.validate_finite(
+            (rolling_clv >= self.config.clv_threshold_positive) | 
+            (rolling_clv <= self.config.clv_threshold_negative)
+        )
+        clv_stable = self.math_validator.validate_finite(
+            clv_volatility <= self.config.clv_volatility_threshold
+        )
         
         clv_mask = clv_directional & clv_stable
         
@@ -300,33 +425,43 @@ class AdvancedFilters15m:
     
     def _apply_atr_ratio_filter(self, data: pd.DataFrame) -> pd.Series:
         """
-        Apply ATR volatility ratio filter.
+        Apply ATR volatility ratio filter using matrix operations.
         
         r_t = ATR_short / ATR_long
         Skip when r_t > 1.5-2.0 (too jumpy) or < 0.5 (too quiet)
         """
-        tprint_info("📊 Applying ATR ratio filter")
-        
-        # Calculate True Range
+        # Calculate True Range using vectorized operations
         tr1 = data['high'] - data['low']
         tr2 = np.abs(data['high'] - data['close'].shift(1))
         tr3 = np.abs(data['low'] - data['close'].shift(1))
         
         true_range = np.maximum(tr1, np.maximum(tr2, tr3))
         
-        # Calculate ATR for short and long windows
-        atr_short = true_range.rolling(window=self.config.atr_short_window, min_periods=1).mean()
-        atr_long = true_range.rolling(window=self.config.atr_long_window, min_periods=1).mean()
+        # Use vectorized rolling operations for ATR calculation
+        atr_short = vectorized_rolling_features(
+            true_range.values, 
+            windows=self.config.atr_short_window, 
+            operation='mean'
+        )
+        atr_short = pd.Series(atr_short, index=data.index)
         
-        # Calculate ATR ratio
+        atr_long = vectorized_rolling_features(
+            true_range.values, 
+            windows=self.config.atr_long_window, 
+            operation='mean'
+        )
+        atr_long = pd.Series(atr_long, index=data.index)
+        
+        # Calculate ATR ratio using safe division
         atr_ratio = atr_short / atr_long
         atr_ratio = atr_ratio.fillna(1.0)  # Fill NaN values with 1.0
         atr_ratio = atr_ratio.replace([np.inf, -np.inf], 1.0)  # Replace infinite values with 1.0
         
-        # Create eligibility mask
-        # Keep bars with moderate volatility (not too quiet, not too jumpy)
-        atr_ratio_mask = (atr_ratio >= self.config.atr_ratio_threshold_low) & \
-                        (atr_ratio <= self.config.atr_ratio_threshold_high)
+        # Create eligibility mask using math validation
+        atr_ratio_mask = self.math_validator.validate_finite(
+            (atr_ratio >= self.config.atr_ratio_threshold_low) & 
+            (atr_ratio <= self.config.atr_ratio_threshold_high)
+        )
         
         tprint_info(f"   → ATR ratio filter: {atr_ratio_mask.sum()}/{len(atr_ratio_mask)} samples passed")
         
@@ -334,33 +469,54 @@ class AdvancedFilters15m:
     
     def _apply_trend_coherence_filter(self, data: pd.DataFrame) -> pd.Series:
         """
-        Apply trend coherence filter.
+        Apply trend coherence filter using matrix operations.
         
         Combines direction consistency and EMA slope for trend continuity.
         """
-        tprint_info("📊 Applying trend coherence filter")
-        
-        # Calculate direction consistency
-        # Check if bars close in the same direction as previous bars
+        # Calculate direction consistency using vectorized operations
         close_direction = np.sign(data['close'].diff())
-        direction_consistency = close_direction.rolling(window=self.config.direction_window, min_periods=1).apply(
-            lambda x: (x == x.iloc[-1]).sum() / len(x) if len(x) > 0 else 0
-        )
         
-        # Calculate EMA slope
+        # Use vectorized rolling operations for direction consistency
+        direction_consistency = vectorized_rolling_features(
+            close_direction.values, 
+            windows=self.config.direction_window, 
+            operation='consistency'
+        )
+        direction_consistency = pd.Series(direction_consistency, index=data.index)
+        
+        # Calculate EMA slope using vectorized operations
         ema = data['close'].ewm(span=self.config.ema_period, min_periods=1).mean()
         ema_slope = ema.diff()
         
-        # Create eligibility mask
-        # Keep bars with consistent direction and positive slope trend
-        direction_consistent = direction_consistency >= self.config.min_direction_consistency
-        slope_positive = ema_slope >= self.config.min_slope_threshold
+        # Create eligibility mask using math validation
+        direction_consistent = self.math_validator.validate_finite(
+            direction_consistency >= self.config.min_direction_consistency
+        )
+        slope_positive = self.math_validator.validate_finite(
+            ema_slope >= self.config.min_slope_threshold
+        )
         
         trend_coherence_mask = direction_consistent & slope_positive
         
         tprint_info(f"   → Trend coherence filter: {trend_coherence_mask.sum()}/{len(trend_coherence_mask)} samples passed")
         
         return trend_coherence_mask
+    
+    def cleanup(self) -> None:
+        """Clean up resources and optimize memory."""
+        try:
+            # Optimize memory usage
+            memory_info = optimize_memory()
+            if memory_info.get('success', False):
+                tprint_info(f"🧠 Memory optimized: {memory_info.get('objects_collected', 0)} objects collected")
+            
+            # Clean up M1 optimizers if available
+            if self.memory_optimizer:
+                self.memory_optimizer.cleanup()
+            
+            tprint_success("✅ AdvancedFilters15m cleanup completed")
+        except Exception as e:
+            tprint_warning(f"⚠️ Error during cleanup: {e}")
     
     def _combine_filters(self, result: FilterResult) -> pd.Series:
         """Combine individual filter results into final eligibility mask."""
@@ -394,37 +550,41 @@ class AdvancedFilters15m:
         return combined_mask
     
     def _calculate_efficiency_stats(self, data: pd.DataFrame, mask: pd.Series) -> Dict[str, float]:
-        """Calculate efficiency ratio statistics."""
+        """Calculate efficiency ratio statistics using safe operations."""
         price_range = data['high'] - data['low']
         price_range = price_range.replace(0, np.nan)
-        efficiency = np.abs(data['close'] - data['open']) / price_range
+        efficiency = np.abs(data['close'] - data['open'])
+        efficiency = efficiency / price_range
         efficiency = efficiency.fillna(0)
+        efficiency = efficiency.replace([np.inf, -np.inf], 0)
         
         return {
-            'mean_efficiency': float(efficiency.mean()),
-            'std_efficiency': float(efficiency.std()),
+            'mean_efficiency': float(safe_mean(efficiency)),
+            'std_efficiency': float(safe_std(efficiency)),
             'min_efficiency': float(efficiency.min()),
             'max_efficiency': float(efficiency.max()),
             'eligible_ratio': float(mask.mean()) if mask is not None else 0.0
         }
     
     def _calculate_clv_stats(self, data: pd.DataFrame, mask: pd.Series) -> Dict[str, float]:
-        """Calculate CLV statistics."""
+        """Calculate CLV statistics using safe operations."""
         price_range = data['high'] - data['low']
         price_range = price_range.replace(0, np.nan)
-        clv = (2 * data['close'] - data['high'] - data['low']) / price_range
+        clv_numerator = 2 * data['close'] - data['high'] - data['low']
+        clv = clv_numerator / price_range
         clv = clv.fillna(0)
+        clv = clv.replace([np.inf, -np.inf], 0)
         
         return {
-            'mean_clv': float(clv.mean()),
-            'std_clv': float(clv.std()),
+            'mean_clv': float(safe_mean(clv)),
+            'std_clv': float(safe_std(clv)),
             'min_clv': float(clv.min()),
             'max_clv': float(clv.max()),
             'eligible_ratio': float(mask.mean()) if mask is not None else 0.0
         }
     
     def _calculate_atr_ratio_stats(self, data: pd.DataFrame, mask: pd.Series) -> Dict[str, float]:
-        """Calculate ATR ratio statistics."""
+        """Calculate ATR ratio statistics using safe operations."""
         tr1 = data['high'] - data['low']
         tr2 = np.abs(data['high'] - data['close'].shift(1))
         tr3 = np.abs(data['low'] - data['close'].shift(1))
@@ -437,15 +597,15 @@ class AdvancedFilters15m:
         atr_ratio = atr_ratio.replace([np.inf, -np.inf], 1.0)  # Replace infinite values with 1.0
         
         return {
-            'mean_atr_ratio': float(atr_ratio.mean()),
-            'std_atr_ratio': float(atr_ratio.std()),
+            'mean_atr_ratio': float(safe_mean(atr_ratio)),
+            'std_atr_ratio': float(safe_std(atr_ratio)),
             'min_atr_ratio': float(atr_ratio.min()),
             'max_atr_ratio': float(atr_ratio.max()),
             'eligible_ratio': float(mask.mean()) if mask is not None else 0.0
         }
     
     def _calculate_trend_coherence_stats(self, data: pd.DataFrame, mask: pd.Series) -> Dict[str, float]:
-        """Calculate trend coherence statistics."""
+        """Calculate trend coherence statistics using safe operations."""
         close_direction = np.sign(data['close'].diff())
         direction_consistency = close_direction.rolling(window=self.config.direction_window, min_periods=1).apply(
             lambda x: (x == x.iloc[-1]).sum() / len(x) if len(x) > 0 else 0
@@ -455,9 +615,9 @@ class AdvancedFilters15m:
         ema_slope = ema.diff()
         
         return {
-            'mean_direction_consistency': float(direction_consistency.mean()),
-            'mean_ema_slope': float(ema_slope.mean()),
-            'std_ema_slope': float(ema_slope.std()),
+            'mean_direction_consistency': float(safe_mean(direction_consistency)),
+            'mean_ema_slope': float(safe_mean(ema_slope)),
+            'std_ema_slope': float(safe_std(ema_slope)),
             'eligible_ratio': float(mask.mean()) if mask is not None else 0.0
         }
     
@@ -504,6 +664,12 @@ class AdvancedFilters15m:
             failure_rate = 1.0 - effectiveness
             if failure_rate > self.config.max_filter_failure_rate:
                 tprint_warning(f"⚠️ High failure rate for {filter_name}: {failure_rate:.1%} > {self.config.max_filter_failure_rate:.1%}")
+        
+        # Log data quality metrics
+        if hasattr(result, 'config_used') and result.config_used:
+            tprint_info(f"📊 Filter configuration: {result.config_used.filter_type.value} mode")
+            tprint_info(f"📊 Quality score: {result.overall_quality_score:.3f}")
+            tprint_info(f"📊 Noise reduction: {result.noise_reduction_ratio:.1%}")
 
 
 # Convenience function for external usage
@@ -523,5 +689,18 @@ def apply_advanced_filters_15m(
     Returns:
         FilterResult with eligibility mask and statistics
     """
-    filter_system = AdvancedFilters15m(config)
-    return filter_system.apply_filters(data, **kwargs)
+    tprint_info("🚀 Starting advanced filters 15m application")
+    
+    try:
+        filter_system = AdvancedFilters15m(config)
+        result = filter_system.apply_filters(data, **kwargs)
+        
+        # Cleanup resources
+        filter_system.cleanup()
+        
+        tprint_success("✅ Advanced filters 15m application completed")
+        return result
+        
+    except Exception as e:
+        tprint_error(f"❌ Error in advanced filters 15m application: {e}")
+        raise

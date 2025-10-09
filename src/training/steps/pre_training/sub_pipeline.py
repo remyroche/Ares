@@ -4010,8 +4010,8 @@ class PreTrainingSubPipeline:
             if hasattr(component, 'set_run_metadata'):
                 component.set_run_metadata(run_metadata)
 
-            # Load market data for feature lookback optimization
-            from src.utils.data.klines_parquet import KlinesParquetManager
+            # Load market data for feature lookback optimization using ares launcher integration
+            from src.training.steps.pre_training.feature_lookback_optimization.ares_launcher_integration import AresLauncherFeatureLookbackOptimizer
             import pandas as pd
             
             # Normalize timeframe for data loading (60m -> 1h)
@@ -4019,15 +4019,31 @@ class PreTrainingSubPipeline:
             normalized_timeframe = timeframe_map.get(config.timeframe, config.timeframe)
             
             try:
-                klines_manager = KlinesParquetManager()
-                market_data = klines_manager.read_data(
+                # Use ares launcher integration for data loading
+                ares_optimizer = AresLauncherFeatureLookbackOptimizer()
+                
+                # Create pipeline state for ares integration
+                ares_pipeline_state = {
+                    'symbol': config.symbol,
+                    'exchange': config.exchange,
+                    'timeframe': normalized_timeframe,
+                    'execution_mode': getattr(config, 'execution_mode', 'light'),  # Default to light mode
+                    'lookback_days': getattr(config, 'lookback_days', None),
+                    'intensity_percentage': getattr(config, 'intensity_percentage', None)
+                }
+                
+                # Load data using ares launcher integration
+                market_data = ares_optimizer.load_data_for_optimization(
                     symbol=config.symbol,
-                    interval=normalized_timeframe,
-                    start_date=None,
-                    end_date=None
+                    timeframe=normalized_timeframe,
+                    pipeline_state=ares_pipeline_state
                 )
+                
                 if market_data is not None and not market_data.empty:
-                    self.logger.info(f"✅ Loaded {len(market_data)} rows of market data for feature lookback optimization")
+                    self.logger.info(f"✅ Loaded {len(market_data)} rows of market data via ares launcher integration")
+                    self.logger.info(f"📅 Data mode: {market_data.attrs.get('ares_mode', 'Unknown')}")
+                    self.logger.info(f"📅 Lookback days: {market_data.attrs.get('lookback_days', 'Unknown')}")
+                    
                     # Basic data transformation
                     if 'open_time' in market_data.columns and not isinstance(market_data.index, pd.DatetimeIndex):
                         market_data = market_data.set_index('open_time')
@@ -4038,10 +4054,10 @@ class PreTrainingSubPipeline:
                             # Keep original dtype if conversion fails
                             self.logger.debug(f"Could not convert index to datetime: {e}")
                 else:
-                    self.logger.warning("⚠️ No market data loaded, will pass None to component")
+                    self.logger.warning("⚠️ No market data loaded via ares launcher integration, will pass None to component")
                     market_data = None
             except Exception as e:
-                self.logger.warning(f"⚠️ Could not load market data: {e}, will pass None to component")
+                self.logger.warning(f"⚠️ Could not load market data via ares launcher integration: {e}, will pass None to component")
                 market_data = None
 
             # Execute component

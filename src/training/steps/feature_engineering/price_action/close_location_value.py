@@ -192,6 +192,148 @@ class CloseLocationValueFeature:
         }
 
 
+class CloseLocationValueGenerator(FeatureGenerator):
+    """
+    Framework-compatible Close-Location Value feature generator.
+    
+    Implements the FeatureGenerator interface for integration with the feature bank
+    and period lookback optimization system.
+    """
+    
+    def __init__(self, lookback: int = 8, **kwargs):
+        """
+        Initialize the Close-Location Value feature generator.
+        
+        Args:
+            lookback: Number of periods for rolling calculation
+            **kwargs: Additional configuration parameters
+        """
+        config = FeatureConfig(
+            name="close_location_value",
+            category=FeatureCategory.PRICE_ACTION,
+            description="Close-Location Value measuring buying/selling pressure and control",
+            required_columns=['open', 'high', 'low', 'close'],
+            optional_columns=['volume'],
+            default_lookback=lookback,
+            min_lookback=1,
+            max_lookback=20,
+            parameters={
+                'window': lookback,
+                'positive_threshold': kwargs.get('positive_threshold', 0.2),
+                'negative_threshold': kwargs.get('negative_threshold', -0.2),
+                'volatility_threshold': kwargs.get('volatility_threshold', 0.5),
+                'include_raw_clv': kwargs.get('include_raw_clv', True),
+                'include_rolling_clv': kwargs.get('include_rolling_clv', True),
+                'include_clv_volatility': kwargs.get('include_clv_volatility', True),
+                'include_clv_grade': kwargs.get('include_clv_grade', True),
+                'include_clv_class': kwargs.get('include_clv_class', True)
+            },
+            matrix_optimized=True,
+            gpu_accelerated=False,
+            enable_feature_selection=True
+        )
+        
+        super().__init__(config)
+        
+        # Initialize the feature engine
+        feature_config = CLVConfig(
+            window=lookback,
+            positive_threshold=kwargs.get('positive_threshold', 0.2),
+            negative_threshold=kwargs.get('negative_threshold', -0.2),
+            volatility_threshold=kwargs.get('volatility_threshold', 0.5),
+            include_raw_clv=kwargs.get('include_raw_clv', True),
+            include_rolling_clv=kwargs.get('include_rolling_clv', True),
+            include_clv_volatility=kwargs.get('include_clv_volatility', True),
+            include_clv_grade=kwargs.get('include_clv_grade', True),
+            include_clv_class=kwargs.get('include_clv_class', True)
+        )
+        self.feature_engine = CloseLocationValueFeature(feature_config)
+    
+    def generate(self, data: pd.DataFrame, lookback: Optional[int] = None) -> FeatureResult:
+        """
+        Generate Close-Location Value features.
+        
+        Args:
+            data: OHLCV data with required columns
+            lookback: Override default lookback period
+            
+        Returns:
+            FeatureResult with generated features
+        """
+        start_time = time.time()
+        
+        try:
+            # Use provided lookback or default
+            effective_lookback = lookback or self.config.default_lookback
+            
+            # Update feature engine configuration if lookback changed
+            if effective_lookback != self.config.default_lookback:
+                self.feature_engine.config.window = effective_lookback
+            
+            # Generate features
+            features = self.feature_engine.calculate_features(data)
+            
+            # Select the primary feature (rolling CLV)
+            if 'clv_rolling' in features:
+                primary_feature = features['clv_rolling']
+            elif 'clv_raw' in features:
+                primary_feature = features['clv_raw']
+            else:
+                raise ValueError("No primary CLV feature generated")
+            
+            computation_time = time.time() - start_time
+            
+            return FeatureResult(
+                name=self.config.name,
+                data=primary_feature,
+                config=self.config,
+                computation_time=computation_time,
+                success=True,
+                metadata={
+                    'lookback_used': effective_lookback,
+                    'all_features': list(features.keys()),
+                    'feature_stats': {
+                        'mean': float(primary_feature.mean()),
+                        'std': float(primary_feature.std()),
+                        'min': float(primary_feature.min()),
+                        'max': float(primary_feature.max())
+                    }
+                }
+            )
+            
+        except Exception as e:
+            computation_time = time.time() - start_time
+            return FeatureResult(
+                name=self.config.name,
+                data=pd.Series(dtype=float),
+                config=self.config,
+                computation_time=computation_time,
+                success=False,
+                error_message=str(e)
+            )
+    
+    def get_all_features(self, data: pd.DataFrame, lookback: Optional[int] = None) -> Dict[str, pd.Series]:
+        """
+        Generate all Close-Location Value features.
+        
+        Args:
+            data: OHLCV data with required columns
+            lookback: Override default lookback period
+            
+        Returns:
+            Dictionary of all generated features
+        """
+        # Use provided lookback or default
+        effective_lookback = lookback or self.config.default_lookback
+        
+        # Update feature engine configuration if lookback changed
+        if effective_lookback != self.config.default_lookback:
+            self.feature_engine.config.window = effective_lookback
+        
+        # Generate all features
+        return self.feature_engine.calculate_features(data)
+
+
 # Convenience function for external usage
 def calculate_clv_features(
     data: pd.DataFrame,

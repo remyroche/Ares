@@ -11,13 +11,17 @@ High efficiency (>0.6) = directional, Low efficiency (<0.3) = choppy
 
 import numpy as np
 import pandas as pd
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List, Any
 from dataclasses import dataclass
+import time
 
 # Import existing utilities
 from src.utils.tprint import tprint_info, tprint_warning, tprint_error
 from src.utils.common_operations import safe_divide, safe_mean, safe_std
 from src.utils.matrix_operations import vectorized_rolling_features
+
+# Import framework components
+from src.feature_generation.core.feature_generator import FeatureGenerator, FeatureCategory, FeatureConfig, FeatureResult
 
 
 @dataclass
@@ -159,6 +163,142 @@ class BarEfficiencyRatioFeature:
                 'interpretation': 'Categorical classification based on thresholds'
             }
         }
+
+
+class BarEfficiencyRatioGenerator(FeatureGenerator):
+    """
+    Framework-compatible Bar Efficiency Ratio feature generator.
+    
+    Implements the FeatureGenerator interface for integration with the feature bank
+    and period lookback optimization system.
+    """
+    
+    def __init__(self, lookback: int = 3, **kwargs):
+        """
+        Initialize the Bar Efficiency Ratio feature generator.
+        
+        Args:
+            lookback: Number of periods for rolling calculation
+            **kwargs: Additional configuration parameters
+        """
+        config = FeatureConfig(
+            name="bar_efficiency_ratio",
+            category=FeatureCategory.PRICE_ACTION,
+            description="Bar efficiency ratio measuring directional price action vs choppy conditions",
+            required_columns=['open', 'high', 'low', 'close'],
+            optional_columns=['volume'],
+            default_lookback=lookback,
+            min_lookback=1,
+            max_lookback=20,
+            parameters={
+                'window': lookback,
+                'high_efficiency_threshold': kwargs.get('high_efficiency_threshold', 0.6),
+                'low_efficiency_threshold': kwargs.get('low_efficiency_threshold', 0.3),
+                'include_raw_efficiency': kwargs.get('include_raw_efficiency', True),
+                'include_rolling_efficiency': kwargs.get('include_rolling_efficiency', True),
+                'include_efficiency_grade': kwargs.get('include_efficiency_grade', True)
+            },
+            matrix_optimized=True,
+            gpu_accelerated=False,
+            enable_feature_selection=True
+        )
+        
+        super().__init__(config)
+        
+        # Initialize the feature engine
+        feature_config = BarEfficiencyConfig(
+            window=lookback,
+            high_efficiency_threshold=kwargs.get('high_efficiency_threshold', 0.6),
+            low_efficiency_threshold=kwargs.get('low_efficiency_threshold', 0.3),
+            include_raw_efficiency=kwargs.get('include_raw_efficiency', True),
+            include_rolling_efficiency=kwargs.get('include_rolling_efficiency', True),
+            include_efficiency_grade=kwargs.get('include_efficiency_grade', True)
+        )
+        self.feature_engine = BarEfficiencyRatioFeature(feature_config)
+    
+    def generate(self, data: pd.DataFrame, lookback: Optional[int] = None) -> FeatureResult:
+        """
+        Generate Bar Efficiency Ratio features.
+        
+        Args:
+            data: OHLCV data with required columns
+            lookback: Override default lookback period
+            
+        Returns:
+            FeatureResult with generated features
+        """
+        start_time = time.time()
+        
+        try:
+            # Use provided lookback or default
+            effective_lookback = lookback or self.config.default_lookback
+            
+            # Update feature engine configuration if lookback changed
+            if effective_lookback != self.config.default_lookback:
+                self.feature_engine.config.window = effective_lookback
+            
+            # Generate features
+            features = self.feature_engine.calculate_features(data)
+            
+            # Select the primary feature (rolling efficiency)
+            if 'bar_efficiency_rolling' in features:
+                primary_feature = features['bar_efficiency_rolling']
+            elif 'bar_efficiency_raw' in features:
+                primary_feature = features['bar_efficiency_raw']
+            else:
+                raise ValueError("No primary efficiency feature generated")
+            
+            computation_time = time.time() - start_time
+            
+            return FeatureResult(
+                name=self.config.name,
+                data=primary_feature,
+                config=self.config,
+                computation_time=computation_time,
+                success=True,
+                metadata={
+                    'lookback_used': effective_lookback,
+                    'all_features': list(features.keys()),
+                    'feature_stats': {
+                        'mean': float(primary_feature.mean()),
+                        'std': float(primary_feature.std()),
+                        'min': float(primary_feature.min()),
+                        'max': float(primary_feature.max())
+                    }
+                }
+            )
+            
+        except Exception as e:
+            computation_time = time.time() - start_time
+            return FeatureResult(
+                name=self.config.name,
+                data=pd.Series(dtype=float),
+                config=self.config,
+                computation_time=computation_time,
+                success=False,
+                error_message=str(e)
+            )
+    
+    def get_all_features(self, data: pd.DataFrame, lookback: Optional[int] = None) -> Dict[str, pd.Series]:
+        """
+        Generate all Bar Efficiency Ratio features.
+        
+        Args:
+            data: OHLCV data with required columns
+            lookback: Override default lookback period
+            
+        Returns:
+            Dictionary of all generated features
+        """
+        # Use provided lookback or default
+        effective_lookback = lookback or self.config.default_lookback
+        
+        # Update feature engine configuration if lookback changed
+        if effective_lookback != self.config.default_lookback:
+            self.feature_engine.config.window = effective_lookback
+        
+        # Generate all features
+        return self.feature_engine.calculate_features(data)
 
 
 # Convenience function for external usage

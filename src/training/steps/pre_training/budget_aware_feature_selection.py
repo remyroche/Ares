@@ -90,15 +90,15 @@ class FeatureTypeBudget:
 @dataclass
 class BudgetAwareSelectionConfig:
     """Configuration for budget-aware feature selection."""
-    # Feature type budgets - Updated with corrected allocation
+    # Feature type budgets - Focused on trading performance
     base_features: FeatureTypeBudget = field(default_factory=lambda: FeatureTypeBudget(
         feature_type='base',
         min_features=40,
         max_features=80,
         target_features=60,  # Main target for base features
-        budget_ms=68.0,  # 68% of total budget
+        budget_ms=100.0,  # No computational budget constraint
         priority_weight=1.0,
-        cost_per_feature_ms=0.5
+        cost_per_feature_ms=1.0  # Equal cost for trading performance focus
     ))
     
     interaction_features: FeatureTypeBudget = field(default_factory=lambda: FeatureTypeBudget(
@@ -106,9 +106,9 @@ class BudgetAwareSelectionConfig:
         min_features=5,
         max_features=15,
         target_features=10,  # Target 10 interaction features
-        budget_ms=15.0,  # 15% of total budget
+        budget_ms=100.0,  # No computational budget constraint
         priority_weight=0.8,
-        cost_per_feature_ms=1.0
+        cost_per_feature_ms=1.0  # Equal cost for trading performance focus
     ))
     
     cross_timeframe_features: FeatureTypeBudget = field(default_factory=lambda: FeatureTypeBudget(
@@ -116,20 +116,20 @@ class BudgetAwareSelectionConfig:
         min_features=3,
         max_features=10,
         target_features=6,  # Target 6 cross-timeframe features
-        budget_ms=10.0,  # 10% of total budget
+        budget_ms=100.0,  # No computational budget constraint
         priority_weight=0.7,
-        cost_per_feature_ms=1.2
+        cost_per_feature_ms=1.0  # Equal cost for trading performance focus
     ))
     
-    # Gate features budget (7% of total budget)
+    # Gate features budget - Focused on trading performance
     gate_features: FeatureTypeBudget = field(default_factory=lambda: FeatureTypeBudget(
         feature_type='gate',
         min_features=2,
         max_features=8,
         target_features=5,  # Target 5 gate features
-        budget_ms=7.0,  # 7% of total budget
+        budget_ms=100.0,  # No computational budget constraint
         priority_weight=0.9,
-        cost_per_feature_ms=1.5
+        cost_per_feature_ms=1.0  # Equal cost for trading performance focus
     ))
     
     # Global settings
@@ -584,27 +584,27 @@ class BudgetAwareFeatureSelector:
         feature_scores: Dict[str, float],
         budget_config: FeatureTypeBudget
     ) -> Tuple[List[str], List[str]]:
-        """Apply budget constraints using mRMR/Spearman → Ensemble → Ensemble+RFE pipeline."""
+        """Apply trading performance-focused selection using mRMR/Spearman → Ensemble → RFE pipeline."""
         
         if not feature_names:
             return [], []
         
-        tprint_debug(f"🔍 Applying budget constraints for {budget_config.feature_type} features")
+        tprint_debug(f"🔍 Applying trading performance-focused selection for {budget_config.feature_type} features")
         tprint_debug(f"   📊 Target: {budget_config.target_features}, Min: {budget_config.min_features}, Max: {budget_config.max_features}")
         
         try:
-            # Step 1: mRMR/Spearman pre-selection
+            # Step 1: mRMR/Spearman - remove top 50% (keep bottom 50% for diversity)
             preselected_features = self._mrmr_spearman_selection(
                 feature_names, feature_scores, budget_config
             )
             
-            # Step 2: Ensemble selection
-            ensemble_selected = self._ensemble_selection(
+            # Step 2: Multiple ensemble selection steps
+            ensemble_selected = self._multi_step_ensemble_selection(
                 preselected_features, feature_scores, budget_config
             )
             
-            # Step 3: Ensemble + RFE final selection
-            final_selected = self._ensemble_rfe_selection(
+            # Step 3: RFE final selection
+            final_selected = self._rfe_final_selection(
                 ensemble_selected, feature_scores, budget_config
             )
             
@@ -617,7 +617,7 @@ class BudgetAwareFeatureSelector:
             return selected, rejected
             
         except Exception as e:
-            tprint_warning(f"⚠️ Budget constraint application failed for {budget_config.feature_type}: {e}")
+            tprint_warning(f"⚠️ Trading performance selection failed for {budget_config.feature_type}: {e}")
             # Fallback to simple selection
             return self._simple_fallback_selection(feature_names, feature_scores, budget_config)
     
@@ -627,7 +627,7 @@ class BudgetAwareFeatureSelector:
         feature_scores: Dict[str, float],
         budget_config: FeatureTypeBudget
     ) -> List[str]:
-        """Step 1: mRMR/Spearman pre-selection."""
+        """Step 1: mRMR/Spearman - remove top 50% (keep bottom 50% for diversity)."""
         
         # Sort by Spearman correlation (feature scores)
         sorted_features = sorted(
@@ -636,74 +636,257 @@ class BudgetAwareFeatureSelector:
             reverse=True
         )
         
-        # Select top features for mRMR (2x target to allow for further filtering)
-        mrmr_candidates = sorted_features[:min(len(sorted_features), budget_config.target_features * 2)]
+        # Remove top 50% - keep bottom 50% for diversity
+        # This is counter-intuitive but helps avoid overfitting to obvious features
+        keep_count = max(1, len(sorted_features) // 2)
+        mrmr_candidates = sorted_features[-keep_count:]  # Keep bottom 50%
         
-        tprint_debug(f"   🎯 mRMR pre-selection: {len(mrmr_candidates)} candidates from {len(feature_names)}")
+        tprint_debug(f"   🎯 mRMR pre-selection: Removed top 50%, kept {len(mrmr_candidates)} candidates from {len(feature_names)}")
         return mrmr_candidates
     
-    def _ensemble_selection(
+    def _multi_step_ensemble_selection(
         self,
         candidate_features: List[str],
         feature_scores: Dict[str, float],
         budget_config: FeatureTypeBudget
     ) -> List[str]:
-        """Step 2: Ensemble selection using multiple criteria."""
+        """Step 2: Multiple ensemble selection steps for trading performance."""
         
         if not candidate_features:
             return []
         
-        # Calculate ensemble scores using multiple criteria
-        ensemble_scores = {}
+        tprint_debug(f"   🔄 Running multi-step ensemble selection for {budget_config.feature_type}")
+        
+        current_features = candidate_features.copy()
+        
+        # Step 2a: Diversity-based ensemble
+        current_features = self._diversity_ensemble_selection(
+            current_features, feature_scores, budget_config
+        )
+        
+        # Step 2b: Stability-based ensemble
+        current_features = self._stability_ensemble_selection(
+            current_features, feature_scores, budget_config
+        )
+        
+        # Step 2c: Trading performance ensemble
+        current_features = self._trading_performance_ensemble_selection(
+            current_features, feature_scores, budget_config
+        )
+        
+        tprint_debug(f"   🎯 Multi-step ensemble: {len(current_features)} from {len(candidate_features)}")
+        return current_features
+    
+    def _diversity_ensemble_selection(
+        self,
+        candidate_features: List[str],
+        feature_scores: Dict[str, float],
+        budget_config: FeatureTypeBudget
+    ) -> List[str]:
+        """Diversity-based ensemble selection."""
+        
+        if not candidate_features:
+            return []
+        
+        # Calculate diversity scores
+        diversity_scores = {}
         
         for feature in candidate_features:
             base_score = feature_scores.get(feature, 0.0)
             
-            # Apply feature type specific adjustments
-            if budget_config.feature_type == 'interaction':
-                # Interaction features get slight boost for diversity
-                ensemble_scores[feature] = base_score * 1.1
-            elif budget_config.feature_type == 'cross_timeframe':
-                # Cross-timeframe features get boost for temporal relevance
-                ensemble_scores[feature] = base_score * 1.05
-            else:
-                ensemble_scores[feature] = base_score
+            # Boost features that are different from common patterns
+            diversity_boost = 1.0
+            
+            # Interaction features get diversity boost
+            if 'interaction' in feature.lower() or '_x_' in feature or '*' in feature:
+                diversity_boost = 1.2
+            
+            # Cross-timeframe features get diversity boost
+            elif 'cross' in feature.lower() or 'timeframe' in feature.lower():
+                diversity_boost = 1.15
+            
+            # Gate features get diversity boost
+            elif 'gate' in feature.lower():
+                diversity_boost = 1.1
+            
+            diversity_scores[feature] = base_score * diversity_boost
         
-        # Sort by ensemble score
+        # Sort by diversity score
         sorted_features = sorted(
             candidate_features,
-            key=lambda f: ensemble_scores.get(f, 0.0),
+            key=lambda f: diversity_scores.get(f, 0.0),
             reverse=True
         )
         
-        # Select top features (1.5x target for RFE)
-        ensemble_selected = sorted_features[:min(len(sorted_features), int(budget_config.target_features * 1.5))]
-        
-        tprint_debug(f"   🎯 Ensemble selection: {len(ensemble_selected)} from {len(candidate_features)}")
-        return ensemble_selected
+        # Keep top 80% for next step
+        keep_count = max(1, int(len(sorted_features) * 0.8))
+        return sorted_features[:keep_count]
     
-    def _ensemble_rfe_selection(
+    def _stability_ensemble_selection(
         self,
         candidate_features: List[str],
         feature_scores: Dict[str, float],
         budget_config: FeatureTypeBudget
     ) -> List[str]:
-        """Step 3: Ensemble + RFE final selection with robust scoring and budget constraints."""
+        """Stability-based ensemble selection."""
         
         if not candidate_features:
             return []
         
-        tprint_debug(f"   🔬 Running Ensemble+RFE with robust scoring for {budget_config.feature_type}")
+        # Calculate stability scores
+        stability_scores = {}
         
-        # Calculate robust metrics for all features
-        all_metrics = self._calculate_robust_metrics(candidate_features, feature_scores, budget_config)
+        for feature in candidate_features:
+            base_score = feature_scores.get(feature, 0.0)
+            
+            # Calculate stability proxy
+            stability = self._calculate_feature_stability(feature, [], candidate_features)
+            
+            # Combine base score with stability
+            stability_scores[feature] = base_score * 0.7 + stability * 0.3
         
-        # Apply RFE with budget constraints
-        selected = self._rfe_with_budget_constraints(
-            candidate_features, all_metrics, budget_config
+        # Sort by stability score
+        sorted_features = sorted(
+            candidate_features,
+            key=lambda f: stability_scores.get(f, 0.0),
+            reverse=True
         )
         
-        tprint_debug(f"   🎯 Ensemble+RFE: {len(selected)} final features with robust scoring")
+        # Keep top 70% for next step
+        keep_count = max(1, int(len(sorted_features) * 0.7))
+        return sorted_features[:keep_count]
+    
+    def _trading_performance_ensemble_selection(
+        self,
+        candidate_features: List[str],
+        feature_scores: Dict[str, float],
+        budget_config: FeatureTypeBudget
+    ) -> List[str]:
+        """Trading performance-based ensemble selection."""
+        
+        if not candidate_features:
+            return []
+        
+        # Calculate trading performance scores
+        trading_scores = {}
+        
+        for feature in candidate_features:
+            base_score = feature_scores.get(feature, 0.0)
+            
+            # Calculate CV and sensitivity for trading performance
+            cv_score = self._calculate_cv_performance(feature, [], candidate_features)
+            sensitivity_score = self._calculate_sensitivity_score(feature, [], candidate_features)
+            
+            # Combine for trading performance
+            trading_scores[feature] = (
+                base_score * 0.4 +
+                cv_score * 0.4 +
+                sensitivity_score * 0.2
+            )
+        
+        # Sort by trading performance score
+        sorted_features = sorted(
+            candidate_features,
+            key=lambda f: trading_scores.get(f, 0.0),
+            reverse=True
+        )
+        
+        # Keep top 60% for RFE
+        keep_count = max(1, int(len(sorted_features) * 0.6))
+        return sorted_features[:keep_count]
+    
+    def _rfe_final_selection(
+        self,
+        candidate_features: List[str],
+        feature_scores: Dict[str, float],
+        budget_config: FeatureTypeBudget
+    ) -> List[str]:
+        """Step 3: RFE final selection focused on trading performance."""
+        
+        if not candidate_features:
+            return []
+        
+        tprint_debug(f"   🔬 Running RFE final selection for {budget_config.feature_type}")
+        
+        # Calculate trading performance metrics
+        trading_metrics = self._calculate_trading_performance_metrics(
+            candidate_features, feature_scores, budget_config
+        )
+        
+        # Apply RFE with trading performance focus
+        selected = self._rfe_trading_performance(
+            candidate_features, trading_metrics, budget_config
+        )
+        
+        tprint_debug(f"   🎯 RFE final: {len(selected)} features selected for trading performance")
+        return selected
+    
+    def _calculate_trading_performance_metrics(
+        self,
+        candidate_features: List[str],
+        feature_scores: Dict[str, float],
+        budget_config: FeatureTypeBudget
+    ) -> Dict[str, Dict[str, float]]:
+        """Calculate trading performance metrics for RFE."""
+        
+        metrics = {}
+        
+        for feature in candidate_features:
+            base_score = feature_scores.get(feature, 0.0)
+            
+            # Calculate trading-specific metrics
+            cv_score = self._calculate_cv_performance(feature, [], candidate_features)
+            stability_score = self._calculate_feature_stability(feature, [], candidate_features)
+            sensitivity_score = self._calculate_sensitivity_score(feature, [], candidate_features)
+            
+            # Calculate trading performance score
+            trading_score = (
+                base_score * 0.3 +           # Base importance
+                cv_score * 0.4 +             # CV performance (most important for trading)
+                stability_score * 0.2 +      # Stability
+                sensitivity_score * 0.1      # Sensitivity
+            )
+            
+            metrics[feature] = {
+                'trading_score': trading_score,
+                'base_score': base_score,
+                'cv_score': cv_score,
+                'stability_score': stability_score,
+                'sensitivity_score': sensitivity_score
+            }
+        
+        return metrics
+    
+    def _rfe_trading_performance(
+        self,
+        candidate_features: List[str],
+        trading_metrics: Dict[str, Dict[str, float]],
+        budget_config: FeatureTypeBudget
+    ) -> List[str]:
+        """RFE focused on trading performance - no computational budget constraints."""
+        
+        selected = []
+        remaining_features = candidate_features.copy()
+        
+        # Sort by trading performance score
+        remaining_features.sort(
+            key=lambda f: trading_metrics.get(f, {}).get('trading_score', 0.0),
+            reverse=True
+        )
+        
+        # Select features up to target (no budget constraints)
+        while remaining_features and len(selected) < budget_config.target_features:
+            best_feature = remaining_features[0]
+            selected.append(best_feature)
+            remaining_features.remove(best_feature)
+        
+        # Ensure minimum features
+        if len(selected) < budget_config.min_features and remaining_features:
+            needed = budget_config.min_features - len(selected)
+            for feature in remaining_features[:needed]:
+                if feature not in selected:
+                    selected.append(feature)
+        
         return selected
     
     def _calculate_robust_metrics(
@@ -806,10 +989,9 @@ class BudgetAwareFeatureSelector:
         all_metrics: Dict[str, Dict[str, float]],
         budget_config: FeatureTypeBudget
     ) -> List[str]:
-        """RFE with budget constraints and tie-breaking."""
+        """RFE focused on trading performance - no computational budget constraints."""
         
         selected = []
-        current_cost = 0.0
         remaining_features = candidate_features.copy()
         
         # Sort by combined score
@@ -818,53 +1000,17 @@ class BudgetAwareFeatureSelector:
             reverse=True
         )
         
-        # Track minimum features per type
-        min_features = budget_config.min_features
-        
+        # Select features up to target (no budget constraints)
         while remaining_features and len(selected) < budget_config.target_features:
-            # Find best feature that fits budget
-            best_feature = None
-            best_benefit_cost = -float('inf')
-            
-            for feature in remaining_features:
-                feature_cost = budget_config.cost_per_feature_ms
-                
-                # Check if adding this feature would exceed budget
-                if current_cost + feature_cost > budget_config.budget_ms:
-                    continue
-                
-                # Check if we can still meet minimum requirements
-                remaining_after_add = len(remaining_features) - 1
-                if len(selected) + 1 + remaining_after_add < min_features:
-                    continue
-                
-                # Calculate benefit per cost
-                feature_metrics = all_metrics.get(feature, {})
-                benefit = feature_metrics.get('combined_score', 0.0)
-                benefit_cost = benefit / feature_cost
-                
-                if benefit_cost > best_benefit_cost:
-                    best_benefit_cost = benefit_cost
-                    best_feature = feature
-            
-            if best_feature is None:
-                break
-            
-            # Add best feature
+            best_feature = remaining_features[0]
             selected.append(best_feature)
             remaining_features.remove(best_feature)
-            current_cost += budget_config.cost_per_feature_ms
             
-            tprint_debug(f"   ✅ Added {best_feature}: benefit/cost={best_benefit_cost:.4f}")
+            tprint_debug(f"   ✅ Added {best_feature}: score={all_metrics.get(best_feature, {}).get('combined_score', 0.0):.4f}")
         
         # Ensure minimum features if not met
-        if len(selected) < min_features and remaining_features:
-            needed = min_features - len(selected)
-            # Add remaining features by score
-            remaining_features.sort(
-                key=lambda f: all_metrics.get(f, {}).get('combined_score', 0.0),
-                reverse=True
-            )
+        if len(selected) < budget_config.min_features and remaining_features:
+            needed = budget_config.min_features - len(selected)
             for feature in remaining_features[:needed]:
                 if feature not in selected:
                     selected.append(feature)
@@ -1106,38 +1252,38 @@ def create_budget_aware_selector(
             min_features=40,
             max_features=80,
             target_features=60,  # Target 60 base features
-            budget_ms=total_budget_ms * 0.68,  # 68% of total budget
+            budget_ms=100.0,  # No computational budget constraint
             priority_weight=1.0,
-            cost_per_feature_ms=0.5
+            cost_per_feature_ms=1.0  # Equal cost for trading performance focus
         ),
         interaction_features=interaction_features_budget or FeatureTypeBudget(
             feature_type='interaction',
             min_features=5,
             max_features=15,
             target_features=10,  # Target 10 interaction features
-            budget_ms=total_budget_ms * 0.15,  # 15% of total budget
+            budget_ms=100.0,  # No computational budget constraint
             priority_weight=0.8,
-            cost_per_feature_ms=1.0
+            cost_per_feature_ms=1.0  # Equal cost for trading performance focus
         ),
         cross_timeframe_features=cross_timeframe_features_budget or FeatureTypeBudget(
             feature_type='cross_timeframe',
             min_features=3,
             max_features=10,
             target_features=6,  # Target 6 cross-timeframe features
-            budget_ms=total_budget_ms * 0.10,  # 10% of total budget
+            budget_ms=100.0,  # No computational budget constraint
             priority_weight=0.7,
-            cost_per_feature_ms=1.2
+            cost_per_feature_ms=1.0  # Equal cost for trading performance focus
         ),
         gate_features=FeatureTypeBudget(
             feature_type='gate',
             min_features=2,
             max_features=8,
             target_features=5,  # Target 5 gate features
-            budget_ms=total_budget_ms * 0.07,  # 7% of total budget
+            budget_ms=100.0,  # No computational budget constraint
             priority_weight=0.9,
-            cost_per_feature_ms=1.5
+            cost_per_feature_ms=1.0  # Equal cost for trading performance focus
         ),
-        total_budget_ms=total_budget_ms
+        total_budget_ms=100.0  # No computational budget constraint
     )
     
     return BudgetAwareFeatureSelector(config)

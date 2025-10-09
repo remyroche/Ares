@@ -5,8 +5,10 @@ This module provides a specialized profit labeling component for Analyst models,
 using the VolatilityAwareMultiHorizonLabeler with Analyst-specific configurations.
 
 Key Features:
-- 60m timeframe optimization for strategic decision-making
-- Multi-horizon profit labeling (1h, 4h, 12h, 24h horizons)
+- 15m timeframe optimization for strategic decision-making
+- Multi-horizon profit labeling (15m, 30m, 45m, 60m, 75m, 90m horizons)
+- Adversarial price movement analysis - checks ALL bars in opportunity window
+- Optimal entry timing - only flags opportunities after adversarial movements stop
 - Volatility-aware target bands
 - Enhanced label quality scoring
 - Per-regime/cluster optimization support
@@ -102,6 +104,7 @@ class AnalystProfitLabelerConfig:
     # Horizon settings for Analyst (strategic decision-making)
     # Horizons are in MINUTES (must be >= timeframe period)
     # Looking for opportunities on up to 6 15m bars (90 minutes total)
+    # Adversarial analysis checks ALL bars in opportunity window to ensure optimal entry timing
     horizons: List[int] = field(default_factory=lambda: [15, 30, 45, 60, 75, 90])  # 1, 2, 3, 4, 5, 6 bars in minutes
 
     # Profit targets (percentage) - Realistic for 15m crypto movements after fees
@@ -126,10 +129,15 @@ class AnalystProfitLabelerConfig:
     enable_short_positions: bool = False  # Include short opportunities (sell when expecting price decrease)
 
     # Adversarial price movement settings
+    # Strategy: Check ALL bars in opportunity window for adversarial movements
+    # Only flag opportunity AFTER adversarial movements have stopped
+    # This trains models to enter at optimal peak/bottom prices, not before small bumps
     enable_adversarial_analysis: bool = True  # Consider adversarial price movements
     adversarial_threshold: float = 0.1  # 0.1% threshold for adversarial movements
-    max_adversarial_bars: int = 2  # Maximum number of bars to check for adversarial movements
-    adversarial_weight: float = 0.3  # Weight given to adversarial movements in decision making
+    check_all_bars_for_adversarial: bool = True  # Check all bars in opportunity window for adversarial movements
+    wait_for_adversarial_clearance: bool = True  # Only flag opportunity after adversarial movements stop
+    adversarial_clearance_bars: int = 1  # Number of bars to wait after adversarial movement stops
+    adversarial_weight: float = 0.0  # No weight - binary decision: opportunity only if no adversarial movements
 
     # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
@@ -338,6 +346,15 @@ class AnalystProfitLabeler:
         
         # Configure regime adaptation
         labeler_config.regime_config.enabled = self.config.enable_regime_adaptation
+        
+        # Configure adversarial analysis
+        if hasattr(labeler_config, 'adversarial_analysis'):
+            labeler_config.adversarial_analysis.enabled = self.config.enable_adversarial_analysis
+            labeler_config.adversarial_analysis.threshold = self.config.adversarial_threshold
+            labeler_config.adversarial_analysis.check_all_bars = self.config.check_all_bars_for_adversarial
+            labeler_config.adversarial_analysis.wait_for_clearance = self.config.wait_for_adversarial_clearance
+            labeler_config.adversarial_analysis.clearance_bars = self.config.adversarial_clearance_bars
+            labeler_config.adversarial_analysis.weight = self.config.adversarial_weight
         
         # Apply custom parameters
         if self.config.custom_params:

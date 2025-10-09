@@ -50,6 +50,11 @@ class EnhancedMultiHorizonConfig(MultiHorizonConfig):
     enable_regime_conditioning: bool = True
     enable_risk_awareness: bool = True
     
+    # Adversarial analysis for optimal entry timing
+    enable_adversarial_analysis: bool = True
+    check_all_bars_for_adversarial: bool = True
+    wait_for_adversarial_clearance: bool = True
+    
     # Data quality thresholds
     min_data_quality_score: float = 0.7
     min_label_stability_score: float = 0.6
@@ -633,6 +638,9 @@ def create_trading_optimized_multi_horizon_config() -> EnhancedMultiHorizonConfi
         tactician_horizon_minutes=15,
         enable_regime_conditioning=True,
         enable_risk_awareness=True,
+        enable_adversarial_analysis=True,
+        check_all_bars_for_adversarial=True,
+        wait_for_adversarial_clearance=True,
         min_data_quality_score=0.8,
         min_label_stability_score=0.7,
         enhanced_config=create_trading_optimized_config()
@@ -649,6 +657,9 @@ def create_research_optimized_multi_horizon_config() -> EnhancedMultiHorizonConf
         tactician_horizon_minutes=15,
         enable_regime_conditioning=True,
         enable_risk_awareness=False,
+        enable_adversarial_analysis=True,
+        check_all_bars_for_adversarial=True,
+        wait_for_adversarial_clearance=True,
         min_data_quality_score=0.6,
         min_label_stability_score=0.5,
         enhanced_config=create_research_optimized_config()

@@ -56,6 +56,15 @@ class EnhancedMultiHorizonConfig(MultiHorizonConfig):
     find_highest_gap_entry: bool = True
     entry_point_strategy: str = "local_extrema"  # Find local minima/maxima before price action
     
+    # Multi-size opportunity detection (compatible with model_training/)
+    multi_size_thresholds: Dict[str, float] = field(default_factory=lambda: {
+        'micro': 0.5,    # 0.5% minimum for micro opportunities
+        'small': 0.7,    # 0.7% minimum for small opportunities  
+        'medium': 1.0,   # 1.0% minimum for medium opportunities
+        'good': 1.5      # 1.5% minimum for good opportunities
+    })
+    max_windows: int = 10  # Support up to 10 rolling windows
+    
     # Data quality thresholds
     min_data_quality_score: float = 0.7
     min_label_stability_score: float = 0.6
@@ -643,6 +652,8 @@ def create_trading_optimized_multi_horizon_config() -> EnhancedMultiHorizonConfi
         entry_threshold=0.5,
         find_highest_gap_entry=True,
         entry_point_strategy="local_extrema",
+        multi_size_thresholds={'micro': 0.5, 'small': 0.7, 'medium': 1.0, 'good': 1.5},
+        max_windows=10,
         min_data_quality_score=0.8,
         min_label_stability_score=0.7,
         enhanced_config=create_trading_optimized_config()
@@ -663,6 +674,8 @@ def create_research_optimized_multi_horizon_config() -> EnhancedMultiHorizonConf
         entry_threshold=0.5,
         find_highest_gap_entry=True,
         entry_point_strategy="local_extrema",
+        multi_size_thresholds={'micro': 0.5, 'small': 0.7, 'medium': 1.0, 'good': 1.5},
+        max_windows=10,
         min_data_quality_score=0.6,
         min_label_stability_score=0.5,
         enhanced_config=create_research_optimized_config()

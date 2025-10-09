@@ -6,10 +6,10 @@ using the VolatilityAwareMultiHorizonLabeler with Analyst-specific configuration
 
 Key Features:
 - 15m timeframe optimization for strategic decision-making
-- Multi-horizon profit labeling (15m, 30m, 45m, 60m, 75m, 90m horizons)
+- Multi-horizon profit labeling (15m to 150m, up to 10 rolling windows)
 - Optimal entry point detection - analyzes price variation over rolling windows
 - Local extrema entry - finds local minima/maxima BEFORE price action as optimal entry point
-- Multi-size opportunity logic (0.5%, 0.7%, 1.0% thresholds)
+- Multi-size opportunity logic (0.5%, 0.7%, 1.0%, 1.5% thresholds) - compatible with model_training/
 - Volatility-aware target bands
 - Enhanced label quality scoring
 - Per-regime/cluster optimization support
@@ -104,9 +104,9 @@ class AnalystProfitLabelerConfig:
 
     # Horizon settings for Analyst (strategic decision-making)
     # Horizons are in MINUTES (must be >= timeframe period)
-    # Rolling windows for price variation analysis: 15m, 30m, 45m, 60m, 75m, 90m
-    # System finds optimal entry point (highest price gap) within each window
-    horizons: List[int] = field(default_factory=lambda: [15, 30, 45, 60, 75, 90])  # Rolling window sizes in minutes
+    # Rolling windows for price variation analysis: 15m to 150m (up to 10 windows)
+    # System finds optimal entry point (local extrema) within each window
+    horizons: List[int] = field(default_factory=lambda: [15, 30, 45, 60, 75, 90, 105, 120, 135, 150])  # 10 rolling window sizes in minutes
 
     # Profit targets (percentage) - Multi-size opportunity logic
     # 0.5% minimum entry threshold, with 0.7% and 1.0% as higher confidence levels
@@ -131,13 +131,22 @@ class AnalystProfitLabelerConfig:
 
     # Optimal entry point detection
     # Strategy: Analyze price variation over rolling windows to find optimal entry points
-    # 1. Check price variation over rolling windows (15m, 30m, 45m, 60m, 75m, 90m)
+    # 1. Check price variation over rolling windows (15m to 150m, up to 10 windows)
     # 2. If price variation clears opportunity threshold (0.5%), find local minima/maxima
     # 3. Flag the bar with highest price gap BEFORE the price action as optimal entry point
     enable_optimal_entry_detection: bool = True  # Enable optimal entry point detection
     entry_threshold: float = 0.5  # Minimum price variation to consider an opportunity (0.5%)
     find_highest_gap_entry: bool = True  # Find bar with highest price gap as entry point
     entry_point_strategy: str = "local_extrema"  # Find local minima/maxima before price action
+    
+    # Multi-size opportunity detection (compatible with model_training/)
+    multi_size_thresholds: Dict[str, float] = field(default_factory=lambda: {
+        'micro': 0.5,    # 0.5% minimum for micro opportunities
+        'small': 0.7,    # 0.7% minimum for small opportunities  
+        'medium': 1.0,   # 1.0% minimum for medium opportunities
+        'good': 1.5      # 1.5% minimum for good opportunities
+    })
+    max_windows: int = 10  # Support up to 10 rolling windows
 
     # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
@@ -355,6 +364,8 @@ class AnalystProfitLabeler:
             labeler_config.optimal_entry_detection.entry_point_strategy = self.config.entry_point_strategy
             labeler_config.optimal_entry_detection.horizons = self.config.horizons
             labeler_config.optimal_entry_detection.target_profits = self.config.target_profits
+            labeler_config.optimal_entry_detection.multi_size_thresholds = self.config.multi_size_thresholds
+            labeler_config.optimal_entry_detection.max_windows = self.config.max_windows
         
         # Apply custom parameters
         if self.config.custom_params:

@@ -906,7 +906,7 @@ class AnalystModelsTrainingStep:
         sample_weight: np.ndarray,
         **kwargs,
     ) -> Dict[str, np.ndarray]:
-        """Construct regime/context features required by the gating head."""
+        """Construct regime/context features required by the gating head with regime probabilities."""
 
         n_samples = X.shape[0]
         feature_map: Dict[str, np.ndarray] = {}
@@ -919,6 +919,7 @@ class AnalystModelsTrainingStep:
             'regime_context',
             'additional_context',
             'regime_feature_map',
+            'regime_probabilities_info',  # Simplified: only regime probabilities
         ):
             value = kwargs.get(key)
             if isinstance(value, dict):
@@ -939,6 +940,22 @@ class AnalystModelsTrainingStep:
                         return frame[name].values
             return None
 
+        # Regime probabilities from probabilistic outputs
+        regime_probabilities_info = _lookup('regime_probabilities_info')
+        if regime_probabilities_info and regime_probabilities_info.get('has_probabilistic_outputs'):
+            tprint_info("📊 Using regime probabilities for Analyst models")
+            
+            # Add regime probability features
+            regime_probabilities = regime_probabilities_info.get('regime_probabilities')
+            if regime_probabilities is not None and len(regime_probabilities) == n_samples:
+                n_regimes = regime_probabilities.shape[1] if len(regime_probabilities.shape) > 1 else 1
+                for i in range(n_regimes):
+                    feature_map[f'regime_prob_{i}'] = self._ensure_feature_array(regime_probabilities[:, i], n_samples)
+                tprint_info(f"✅ Added {n_regimes} regime probability features")
+        else:
+            tprint_warning("⚠️ No regime probabilities available, using fallback features")
+
+        # Legacy regime features (fallback)
         volatility = _lookup('volatility_level', 'volatility', 'volatility_score')
         if volatility is None:
             if X.size:
@@ -961,6 +978,7 @@ class AnalystModelsTrainingStep:
             liquidity = np.zeros(n_samples)
         feature_map['liquidity_z'] = self._ensure_feature_array(liquidity, n_samples)
 
+        tprint_info(f"📊 Assembled {len(feature_map)} regime features for Analyst models")
         return feature_map
 
     def _ensure_feature_array(self, values: Any, n_samples: int) -> np.ndarray:

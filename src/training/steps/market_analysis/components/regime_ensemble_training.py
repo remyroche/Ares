@@ -291,6 +291,17 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             tprint("✅ [REGIME_ENSEMBLE] Regime ensemble training completed successfully", color="green", bold=True)
             tprint(f"⏱️ [REGIME_ENSEMBLE] Total execution time: {(datetime.now() - start_time).total_seconds():.2f}s", color="blue")
             
+            # Generate regime probability report
+            try:
+                regime_report = await self._generate_regime_probability_report(
+                    results, X_processed, feature_names
+                )
+                if regime_report:
+                    results['regime_probability_report'] = regime_report
+                    tprint("📊 [REGIME_ENSEMBLE] Regime probability report generated successfully", color="green")
+            except Exception as e:
+                tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to generate regime probability report: {e}", color="yellow")
+            
             # Save artifacts persistently using the artifact manager
             try:
                 save_report = await self.save_artifacts(results, {
@@ -1209,3 +1220,334 @@ class RegimeEnsembleTrainingComponent(BaseMarketAnalysisComponent):
             regime_labels = np.random.randint(0, 2, len(data))
             tprint("📊 [REGIME_ENSEMBLE] Using simple 2-regime fallback", color="blue")
             return regime_labels
+
+    def predict_regimes_with_probabilities(
+        self,
+        stacker_result: Dict[str, Any],
+        X: np.ndarray,
+        feature_names: List[str],
+        scaler: Optional[Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Predict regime labels and probabilities using trained ensemble meta-learner.
+        Enhanced to provide comprehensive probabilistic outputs for each detected regime.
+        
+        Args:
+            stacker_result: Dictionary containing trained meta-learner and base models
+            X: Feature matrix
+            feature_names: List of feature names
+            scaler: Optional scaler for feature normalization
+            
+        Returns:
+            Dictionary with comprehensive prediction information including:
+            - regime_labels: Predicted regime for each sample
+            - regime_probabilities: Probability matrix for each regime
+            - regime_confidence_scores: Confidence scores for each prediction
+            - regime_analysis: Detailed analysis of regime probabilities
+            - ensemble_probabilities: Probabilities from all models in ensemble
+        """
+        try:
+            tprint("🔮 [REGIME_ENSEMBLE] Starting ensemble regime prediction with probabilities", color="cyan")
+            
+            # Scale features if scaler is provided
+            if scaler is not None:
+                X_scaled = scaler.transform(X)
+                tprint("✅ [REGIME_ENSEMBLE] Features scaled using provided scaler", color="green")
+            else:
+                X_scaled = X
+                tprint("⚠️ [REGIME_ENSEMBLE] No scaler provided, using unscaled features", color="yellow")
+            
+            # Extract meta-learner and base models
+            meta_learner = stacker_result.get('meta_learner')
+            base_models = stacker_result.get('base_models', {})
+            base_model_names = stacker_result.get('base_model_names', [])
+            
+            if meta_learner is None:
+                raise ValueError("No meta-learner found in stacker_result")
+            
+            # Generate base model predictions for meta-learning
+            tprint("🔧 [REGIME_ENSEMBLE] Generating base model predictions", color="blue")
+            base_predictions = []
+            
+            for name, model in base_models.items():
+                try:
+                    if hasattr(model, 'predict_proba'):
+                        pred_proba = model.predict_proba(X_scaled)
+                        base_predictions.append(pred_proba)
+                        tprint(f"✅ [REGIME_ENSEMBLE] {name}: Generated {pred_proba.shape[1]} regime probabilities", color="green")
+                    else:
+                        pred = model.predict(X_scaled)
+                        unique_classes = np.unique(pred)
+                        pred_onehot = np.zeros((len(pred), len(unique_classes)))
+                        for i, class_val in enumerate(unique_classes):
+                            pred_onehot[pred == class_val, i] = 1
+                        base_predictions.append(pred_onehot)
+                        tprint(f"✅ [REGIME_ENSEMBLE] {name}: Converted class predictions to {len(unique_classes)} regime probabilities", color="green")
+                except Exception as e:
+                    tprint(f"⚠️ [REGIME_ENSEMBLE] Failed to get predictions from {name}: {e}", color="yellow")
+                    continue
+            
+            if not base_predictions:
+                raise ValueError("No valid base model predictions generated")
+            
+            # Combine base model predictions
+            meta_features = np.column_stack(base_predictions)
+            tprint(f"📊 [REGIME_ENSEMBLE] Meta-features shape: {meta_features.shape}", color="blue")
+            
+            # Make predictions using meta-learner
+            regime_labels = meta_learner.predict(meta_features)
+            regime_probabilities = meta_learner.predict_proba(meta_features)
+            
+            # Get number of regimes
+            n_regimes = regime_probabilities.shape[1] if len(regime_probabilities.shape) > 1 else 1
+            
+            # Calculate comprehensive probability information
+            max_probs = np.max(regime_probabilities, axis=1)
+            confidence_scores = max_probs
+            
+            # Calculate regime distribution statistics
+            regime_counts = np.bincount(regime_labels, minlength=n_regimes)
+            regime_percentages = regime_counts / len(regime_labels) * 100
+            
+            # Calculate average probabilities for each regime
+            avg_regime_probabilities = np.mean(regime_probabilities, axis=0)
+            
+            # Calculate regime stability (how consistent the predictions are)
+            regime_stability = 1.0 - np.std(regime_probabilities, axis=0)
+            
+            # Calculate entropy (uncertainty measure)
+            epsilon = 1e-10
+            entropy = -np.sum(regime_probabilities * np.log(regime_probabilities + epsilon), axis=1)
+            
+            # Calculate dominance (difference between top 2 probabilities)
+            sorted_probs = np.sort(regime_probabilities, axis=1)
+            if n_regimes > 1:
+                dominance = sorted_probs[:, -1] - sorted_probs[:, -2]
+            else:
+                dominance = np.ones(len(regime_labels))
+            
+            # Generate ensemble probabilities from all available models
+            from src.utils.regime_ensemble_utils import generate_ensemble_probabilities
+            ensemble_probabilities = generate_ensemble_probabilities(base_models, X_scaled, feature_names, "REGIME_ENSEMBLE")
+            
+            # Use RegimeProbabilityAnalyzer for comprehensive analysis
+            from src.utils.regime_probability_analyzer import RegimeProbabilityAnalyzer
+            analyzer = RegimeProbabilityAnalyzer()
+            
+            # Create prediction result for analysis
+            prediction_result = {
+                'regime_labels': regime_labels,
+                'regime_probabilities': regime_probabilities,
+                'n_regimes': n_regimes,
+                'ensemble_probabilities': ensemble_probabilities
+            }
+            
+            # Perform comprehensive analysis
+            analysis_results = analyzer.analyze_regime_predictions(prediction_result, 'stacker_lgbm_calibrated')
+            
+            # Extract analysis components
+            regime_analysis = analysis_results.get('regime_analysis', {})
+            regime_transitions = analysis_results.get('transition_analysis', {})
+            regime_persistence = analysis_results.get('persistence_analysis', {})
+            
+            # Create comprehensive prediction result
+            prediction_result = {
+                'regime_labels': regime_labels,
+                'regime_probabilities': regime_probabilities,
+                'confidence_scores': confidence_scores,
+                'n_regimes': n_regimes,
+                'regime_counts': regime_counts.tolist(),
+                'regime_percentages': regime_percentages.tolist(),
+                'avg_regime_probabilities': avg_regime_probabilities.tolist(),
+                'regime_stability': regime_stability.tolist(),
+                'entropy': entropy,
+                'dominance': dominance,
+                'model_used': 'stacker_lgbm_calibrated',
+                'ensemble_probabilities': ensemble_probabilities,
+                'regime_analysis': regime_analysis,
+                'regime_transitions': regime_transitions,
+                'regime_persistence': regime_persistence,
+                'prediction_metadata': {
+                    'model_type': type(meta_learner).__name__,
+                    'n_samples': len(regime_labels),
+                    'feature_count': X.shape[1],
+                    'prediction_timestamp': datetime.now().isoformat(),
+                    'scaled_features_used': scaler is not None,
+                    'ensemble_models_used': len(ensemble_probabilities) if ensemble_probabilities else 0,
+                    'base_models_used': len(base_models),
+                    'meta_features_shape': meta_features.shape
+                }
+            }
+            
+            tprint(f"✅ [REGIME_ENSEMBLE] Ensemble prediction completed: {len(regime_labels)} samples, {n_regimes} regimes", color="green")
+            tprint(f"📊 [REGIME_ENSEMBLE] Confidence range: [{confidence_scores.min():.3f}, {confidence_scores.max():.3f}]", color="cyan")
+            tprint(f"📈 [REGIME_ENSEMBLE] Regime distribution: {dict(zip(range(n_regimes), regime_counts))}", color="cyan")
+            
+            return prediction_result
+            
+        except Exception as e:
+            tprint(f"❌ [REGIME_ENSEMBLE] Ensemble prediction failed: {e}", color="red")
+            self.logger.error(f"Error in ensemble regime prediction: {e}", exc_info=True)
+            return {
+                'regime_labels': np.array([]),
+                'regime_probabilities': np.array([]),
+                'error': str(e)
+            }
+
+    async def _generate_regime_probability_report(
+        self, 
+        training_results: Dict[str, Any], 
+        X: np.ndarray, 
+        feature_names: List[str]
+    ) -> Optional[Dict[str, Any]]:
+        """Generate a comprehensive report with regime probabilities for all regimes."""
+        try:
+            tprint("📊 [REGIME_ENSEMBLE] Generating regime probability report", color="cyan")
+            
+            # Get the trained stacker model
+            stacker_model = training_results.get('stacker_lgbm_calibrated')
+            if not stacker_model:
+                tprint("⚠️ [REGIME_ENSEMBLE] No trained stacker model found for report generation", color="yellow")
+                return None
+            
+            if not hasattr(stacker_model, 'predict_proba'):
+                tprint("⚠️ [REGIME_ENSEMBLE] Stacker model does not support probability prediction", color="yellow")
+                return None
+            
+            # Generate regime probabilities for all samples
+            tprint("🔮 [REGIME_ENSEMBLE] Generating regime probabilities using stacker model", color="cyan")
+            regime_probabilities = stacker_model.predict_proba(X)
+            regime_labels = stacker_model.predict(X)
+            
+            n_regimes = regime_probabilities.shape[1]
+            n_samples = len(regime_probabilities)
+            
+            # Calculate regime statistics
+            regime_stats = {}
+            for i in range(n_regimes):
+                regime_probs = regime_probabilities[:, i]
+                regime_count = np.sum(regime_labels == i)
+                
+                regime_stats[f'regime_{i}'] = {
+                    'sample_count': int(regime_count),
+                    'percentage': float(regime_count / n_samples * 100),
+                    'mean_probability': float(np.mean(regime_probs)),
+                    'std_probability': float(np.std(regime_probs)),
+                    'min_probability': float(np.min(regime_probs)),
+                    'max_probability': float(np.max(regime_probs)),
+                    'confidence_distribution': {
+                        'high_confidence': int(np.sum(regime_probs > 0.8)),
+                        'medium_confidence': int(np.sum((regime_probs > 0.5) & (regime_probs <= 0.8))),
+                        'low_confidence': int(np.sum(regime_probs <= 0.5))
+                    }
+                }
+            
+            # Calculate overall statistics
+            overall_stats = {
+                'total_samples': n_samples,
+                'n_regimes': n_regimes,
+                'mean_max_probability': float(np.mean(np.max(regime_probabilities, axis=1))),
+                'std_max_probability': float(np.std(np.max(regime_probabilities, axis=1))),
+                'regime_balance': float(np.std([regime_stats[f'regime_{i}']['percentage'] for i in range(n_regimes)])),
+                'prediction_confidence': float(np.mean(np.max(regime_probabilities, axis=1))),
+                'uncertainty_entropy': float(np.mean([-np.sum(p * np.log(p + 1e-10)) for p in regime_probabilities]))
+            }
+            
+            # Get ensemble metrics
+            ensemble_metrics = training_results.get('ensemble_metrics', {})
+            stacker_metrics = ensemble_metrics.get('stacker_lgbm_calibrated', {})
+            
+            # Generate comprehensive report
+            report = {
+                'model_name': 'stacker_lgbm_calibrated',
+                'generation_timestamp': datetime.now().isoformat(),
+                'overall_statistics': overall_stats,
+                'regime_statistics': regime_stats,
+                'regime_probabilities': regime_probabilities.tolist(),
+                'regime_labels': regime_labels.tolist(),
+                'feature_names': feature_names,
+                'data_shape': X.shape,
+                'report_type': 'regime_ensemble_probability_analysis',
+                'ensemble_metrics': {
+                    'accuracy': stacker_metrics.get('accuracy', 0),
+                    'prediction_confidence': stacker_metrics.get('prediction_confidence', {}),
+                    'classification_report': stacker_metrics.get('classification_report', {})
+                }
+            }
+            
+            # Generate text report
+            text_report = self._generate_text_report(report)
+            report['text_report'] = text_report
+            
+            tprint(f"✅ [REGIME_ENSEMBLE] Regime probability report generated for {n_regimes} regimes", color="green")
+            return report
+            
+        except Exception as e:
+            tprint(f"❌ [REGIME_ENSEMBLE] Failed to generate regime probability report: {e}", color="red")
+            return None
+
+    def _generate_text_report(self, report: Dict[str, Any]) -> str:
+        """Generate a human-readable text report from regime probability data."""
+        try:
+            lines = []
+            lines.append("=" * 80)
+            lines.append("REGIME ENSEMBLE PROBABILITY ANALYSIS REPORT")
+            lines.append(f"Model: {report.get('model_name', 'Unknown')}")
+            lines.append(f"Generated: {report.get('generation_timestamp', 'Unknown')}")
+            lines.append("=" * 80)
+            lines.append("")
+            
+            # Overall Statistics
+            overall = report.get('overall_statistics', {})
+            lines.append("📊 OVERALL STATISTICS")
+            lines.append("-" * 40)
+            lines.append(f"Total Samples: {overall.get('total_samples', 'N/A')}")
+            lines.append(f"Number of Regimes: {overall.get('n_regimes', 'N/A')}")
+            lines.append(f"Mean Max Probability: {overall.get('mean_max_probability', 0):.3f}")
+            lines.append(f"Std Max Probability: {overall.get('std_max_probability', 0):.3f}")
+            lines.append(f"Regime Balance: {overall.get('regime_balance', 0):.3f}")
+            lines.append(f"Prediction Confidence: {overall.get('prediction_confidence', 0):.3f}")
+            lines.append(f"Uncertainty Entropy: {overall.get('uncertainty_entropy', 0):.3f}")
+            lines.append("")
+            
+            # Ensemble Metrics
+            ensemble_metrics = report.get('ensemble_metrics', {})
+            if ensemble_metrics:
+                lines.append("🤖 ENSEMBLE PERFORMANCE")
+                lines.append("-" * 40)
+                lines.append(f"Accuracy: {ensemble_metrics.get('accuracy', 0):.3f}")
+                pred_conf = ensemble_metrics.get('prediction_confidence', {})
+                lines.append(f"Mean Confidence: {pred_conf.get('mean', 0):.3f}")
+                lines.append(f"Std Confidence: {pred_conf.get('std', 0):.3f}")
+                lines.append("")
+            
+            # Regime Statistics
+            regime_stats = report.get('regime_statistics', {})
+            lines.append("🎯 REGIME PROBABILITY STATISTICS")
+            lines.append("-" * 40)
+            
+            for regime_key, regime_data in regime_stats.items():
+                if isinstance(regime_data, dict):
+                    lines.append(f"{regime_key.upper()}:")
+                    lines.append(f"  Sample Count: {regime_data.get('sample_count', 0)}")
+                    lines.append(f"  Percentage: {regime_data.get('percentage', 0):.1f}%")
+                    lines.append(f"  Mean Probability: {regime_data.get('mean_probability', 0):.3f}")
+                    lines.append(f"  Std Probability: {regime_data.get('std_probability', 0):.3f}")
+                    lines.append(f"  Min Probability: {regime_data.get('min_probability', 0):.3f}")
+                    lines.append(f"  Max Probability: {regime_data.get('max_probability', 0):.3f}")
+                    
+                    conf_dist = regime_data.get('confidence_distribution', {})
+                    lines.append(f"  Confidence Distribution:")
+                    lines.append(f"    High (>0.8): {conf_dist.get('high_confidence', 0)}")
+                    lines.append(f"    Medium (0.5-0.8): {conf_dist.get('medium_confidence', 0)}")
+                    lines.append(f"    Low (≤0.5): {conf_dist.get('low_confidence', 0)}")
+                    lines.append("")
+            
+            lines.append("=" * 80)
+            lines.append("END OF REGIME ENSEMBLE PROBABILITY REPORT")
+            lines.append("=" * 80)
+            
+            return "\n".join(lines)
+            
+        except Exception as e:
+            return f"Error generating text report: {e}"

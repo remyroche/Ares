@@ -1220,9 +1220,103 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
         return assignments
 
     def _predict_regime_states_with_ml_model(self, ensemble_result: Dict[str, Any], market_data: pd.DataFrame) -> Optional[np.ndarray]:
-        """Use the trained ML model from regime ensemble training to predict regime states."""
+        """Use the trained ML model from regime ensemble training to predict regime states with probabilistic outputs."""
         try:
-            self.logger.info("🤖 Using ML model to predict regime states")
+            self.logger.info("🤖 Using ML model to predict regime states with probabilistic outputs")
+            
+            # Check if we have the new probabilistic prediction method available
+            if 'stacker_lgbm_calibrated' in ensemble_result:
+                # Use the new probabilistic prediction method
+                from src.training.steps.market_analysis.components.regime_ensemble_training import RegimeEnsembleTrainingComponent
+                
+                # Create a temporary component instance to use the prediction method
+                ensemble_component = RegimeEnsembleTrainingComponent()
+                
+                # Extract feature names from metadata
+                metadata = ensemble_result.get('metadata', {})
+                feature_names = metadata.get('feature_names', [])
+                
+                if not feature_names:
+                    self.logger.error("❌ No feature names found in regime ensemble training metadata")
+                    return None
+                
+                self.logger.info(f"📊 Using {len(feature_names)} features for regime prediction")
+                
+                # Prepare features for prediction
+                available_features = []
+                missing_features = []
+                
+                for feature_name in feature_names:
+                    if feature_name in market_data.columns:
+                        available_features.append(feature_name)
+                    else:
+                        missing_features.append(feature_name)
+                
+                if missing_features:
+                    self.logger.warning(f"⚠️ Missing {len(missing_features)} features: {missing_features[:5]}...")
+                    self.logger.warning("⚠️ Will use available features only")
+                
+                if not available_features:
+                    self.logger.error("❌ No required features found in market data")
+                    return None
+                
+                # Prepare feature matrix
+                X = market_data[available_features].fillna(0).values
+                
+                self.logger.info(f"📊 Prepared feature matrix: {X.shape}")
+                
+                # Use the probabilistic prediction method
+                prediction_result = ensemble_component.predict_regimes_with_probabilities(
+                    stacker_result=ensemble_result,
+                    X=X,
+                    feature_names=available_features,
+                    scaler=None  # No scaler needed as we're using the raw features
+                )
+                
+                if 'error' in prediction_result:
+                    self.logger.error(f"❌ Error in probabilistic prediction: {prediction_result['error']}")
+                    return None
+                
+                # Extract regime labels
+                regime_predictions = prediction_result.get('regime_labels')
+                regime_probabilities = prediction_result.get('regime_probabilities')
+                
+                if regime_predictions is None:
+                    self.logger.error("❌ No regime predictions returned from probabilistic method")
+                    return None
+                
+                self.logger.info(f"✅ Generated {len(regime_predictions)} regime predictions with probabilities")
+                
+                # Store the probabilistic information for later use
+                self._cached_regime_probabilities = regime_probabilities
+                self._cached_regime_analysis = prediction_result.get('regime_analysis', {})
+                self._cached_ensemble_probabilities = prediction_result.get('ensemble_probabilities', {})
+                
+                # Validate regime count
+                unique_regimes = len(np.unique(regime_predictions))
+                if unique_regimes < 5:
+                    self.logger.error(f"❌ Insufficient regimes predicted: {unique_regimes} found, minimum 5 required")
+                    return None
+                elif unique_regimes > 20:
+                    self.logger.error(f"❌ Too many regimes predicted: {unique_regimes} found, maximum 20 allowed")
+                    return None
+                
+                self.logger.info(f"✅ ML model regime prediction successful: {len(regime_predictions)} assignments with {unique_regimes} regimes")
+                return regime_predictions.astype(np.int32)
+            
+            else:
+                # Fallback to old method if new structure not available
+                self.logger.warning("⚠️ Using fallback prediction method - consider updating to probabilistic outputs")
+                return self._predict_regime_states_with_ml_model_fallback(ensemble_result, market_data)
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error predicting regime states with ML model: {e}")
+            return None
+
+    def _predict_regime_states_with_ml_model_fallback(self, ensemble_result: Dict[str, Any], market_data: pd.DataFrame) -> Optional[np.ndarray]:
+        """Fallback method for predicting regime states with ML model (old implementation)."""
+        try:
+            self.logger.info("🤖 Using fallback ML model to predict regime states")
             
             # Extract the trained model
             if 'stacker_lgbm_calibrated' not in ensemble_result:
@@ -1243,7 +1337,6 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             self.logger.info(f"📊 Using {len(feature_names)} features for regime prediction")
             
             # Prepare features for prediction
-            # Extract the required features from market data
             available_features = []
             missing_features = []
             
@@ -1289,9 +1382,75 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             return None
 
     def _predict_regime_probabilities_with_ml_model(self, ensemble_result: Dict[str, Any], market_data: pd.DataFrame) -> Optional[np.ndarray]:
-        """Use the trained ML model to predict regime probabilities."""
+        """Use the trained ML model to predict regime probabilities with comprehensive probabilistic outputs."""
         try:
-            self.logger.info("🤖 Using ML model to predict regime probabilities")
+            self.logger.info("🤖 Using ML model to predict regime probabilities with comprehensive outputs")
+            
+            # Check if we have cached probabilities from the state prediction
+            if hasattr(self, '_cached_regime_probabilities') and self._cached_regime_probabilities is not None:
+                self.logger.info("✅ Using cached regime probabilities from state prediction")
+                return self._cached_regime_probabilities
+            
+            # If not cached, use the probabilistic prediction method
+            if 'stacker_lgbm_calibrated' in ensemble_result:
+                from src.training.steps.market_analysis.components.regime_ensemble_training import RegimeEnsembleTrainingComponent
+                
+                # Create a temporary component instance to use the prediction method
+                ensemble_component = RegimeEnsembleTrainingComponent()
+                
+                # Extract feature names from metadata
+                metadata = ensemble_result.get('metadata', {})
+                feature_names = metadata.get('feature_names', [])
+                
+                if not feature_names:
+                    self.logger.error("❌ No feature names found in regime ensemble training metadata")
+                    return None
+                
+                # Prepare features for prediction
+                available_features = [f for f in feature_names if f in market_data.columns]
+                
+                if not available_features:
+                    self.logger.error("❌ No required features found in market data")
+                    return None
+                
+                # Prepare feature matrix
+                X = market_data[available_features].fillna(0).values
+                
+                # Use the probabilistic prediction method
+                prediction_result = ensemble_component.predict_regimes_with_probabilities(
+                    stacker_result=ensemble_result,
+                    X=X,
+                    feature_names=available_features,
+                    scaler=None  # No scaler needed as we're using the raw features
+                )
+                
+                if 'error' in prediction_result:
+                    self.logger.error(f"❌ Error in probabilistic prediction: {prediction_result['error']}")
+                    return None
+                
+                # Extract regime probabilities
+                regime_probabilities = prediction_result.get('regime_probabilities')
+                
+                if regime_probabilities is None:
+                    self.logger.error("❌ No regime probabilities returned from probabilistic method")
+                    return None
+                
+                self.logger.info(f"✅ Generated regime probabilities: {regime_probabilities.shape}")
+                return regime_probabilities
+            
+            else:
+                # Fallback to old method if new structure not available
+                self.logger.warning("⚠️ Using fallback probability prediction method")
+                return self._predict_regime_probabilities_with_ml_model_fallback(ensemble_result, market_data)
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error predicting regime probabilities with ML model: {e}")
+            return None
+
+    def _predict_regime_probabilities_with_ml_model_fallback(self, ensemble_result: Dict[str, Any], market_data: pd.DataFrame) -> Optional[np.ndarray]:
+        """Fallback method for predicting regime probabilities with ML model (old implementation)."""
+        try:
+            self.logger.info("🤖 Using fallback ML model to predict regime probabilities")
             
             # Extract the trained model
             if 'stacker_lgbm_calibrated' not in ensemble_result:
@@ -1324,10 +1483,29 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
             
             self.logger.info(f"✅ Generated regime probabilities: {regime_probabilities.shape}")
             return regime_probabilities
+
+    def get_regime_probabilities(self) -> Dict[str, Any]:
+        """Get regime probabilities for downstream models (Analyst & Tactician)."""
+        try:
+            self.logger.info("📊 Providing regime probabilities for downstream models")
+            
+            regime_info = {
+                'regime_probabilities': getattr(self, '_cached_regime_probabilities', None),
+                'has_probabilistic_outputs': hasattr(self, '_cached_regime_probabilities') and self._cached_regime_probabilities is not None,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            self.logger.info("✅ Regime probabilities prepared for downstream models")
+            return regime_info
             
         except Exception as e:
-            self.logger.error(f"❌ Error predicting regime probabilities with ML model: {e}")
-            return None
+            self.logger.error(f"❌ Error providing regime probabilities: {e}")
+            return {
+                'regime_probabilities': None,
+                'has_probabilistic_outputs': False,
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            }
 
     
     async def _perform_regime_splitting(
@@ -1565,24 +1743,36 @@ class RegimeDataSplittingComponent(BaseMarketAnalysisComponent):
                 # Calculate regime statistics using memory-optimized utilities
                 regime_stats = self._calculate_regime_statistics_memory_optimized(market_data_aligned)
                 
+                # Get regime probabilities for downstream models
+                regime_probabilities_info = self.get_regime_probabilities()
+                
                 # Create regime data dictionary
                 regime_data = {
                     'market_data': market_data_aligned,
                     'regime_states': regime_states_aligned,
                     'regime_probabilities': regime_probabilities_aligned,
-                    'regime_statistics': regime_stats
+                    'regime_statistics': regime_stats,
+                    'regime_probabilities_info': regime_probabilities_info
                 }
+                
+                # Add regime probability features to market data for downstream models
+                if regime_probabilities_aligned is not None:
+                    n_regimes = regime_probabilities_aligned.shape[1] if len(regime_probabilities_aligned.shape) > 1 else 1
+                    for i in range(n_regimes):
+                        market_data_aligned[f'regime_prob_{i}'] = regime_probabilities_aligned[:, i]
                 
                 # Optimize final DataFrame for M1 if available
                 if is_m1_available():
                     regime_data['market_data'] = optimize_dataframe_for_m1(regime_data['market_data'])
                 
                 self.logger.info(f"✅ Regime splitting completed: {len(np.unique(regime_states_aligned))} regimes")
+                self.logger.info(f"📊 Added {n_regimes} regime probability features for downstream models")
                 
                 return {
                     'success': True,
                     'data': regime_data,
                     'regime_stats': regime_stats,
+                    'regime_probabilities_info': regime_probabilities_info,
                     'errors': []
                 }
 

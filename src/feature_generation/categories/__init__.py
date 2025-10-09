@@ -32,6 +32,11 @@ from .returns import (
     ReturnsKurtosisGenerator,
     ReturnGenerator,
     SharpeRatioGenerator,
+    # NEW FEATURES - Advanced Returns Analysis
+    AdvancedCumulativeReturnsGenerator,
+    RollingZScoreReturnsGenerator,
+    ARCoefficientsGenerator,
+    LjungBoxTestGenerator,
     create_returns_generators,
     create_default_returns_generators
 )
@@ -46,11 +51,28 @@ from .momentum import (
     AdvancedMomentumGenerator,
     PriceAccelerationGenerator,
     VolumeMomentumGenerator,
+    # NEW FEATURES - Advanced Momentum Analysis
+    MomentumEndpointsGenerator,
+    MACDDeltaGenerator,
+    RSIZScoreGenerator,
+    StochasticKDGenerator,
+    DonchianChannelGenerator,
     create_momentum_generators,
     create_default_momentum_generators
 )
 from .volume import VolumeFeatureGenerator, create_default_volume_generators
-from .volatility import VolatilityFeatureGenerator
+from .volatility import (
+    VolatilityFeatureGenerator,
+    # NEW FEATURES - Advanced Volatility Analysis
+    RealizedVolatilityGenerator,
+    ParkinsonVolatilityGenerator,
+    GarmanKlassVolatilityGenerator,
+    RogersSatchellVolatilityGenerator,
+    VolOfVolGenerator,
+    DownsideSemivolGenerator,
+    create_volatility_generators,
+    create_default_volatility_generators
+)
 from .normalization import (
     NormalizationFeatureGenerator,
     RollingZScoreGenerator,
@@ -172,6 +194,11 @@ __all__ = [
     "ReturnsKurtosisGenerator",
     "ReturnGenerator",
     "SharpeRatioGenerator",
+    # NEW FEATURES - Advanced Returns Analysis
+    "AdvancedCumulativeReturnsGenerator",
+    "RollingZScoreReturnsGenerator",
+    "ARCoefficientsGenerator",
+    "LjungBoxTestGenerator",
     "MomentumFeatureGenerator",
     "RSIGenerator",
     "MACDGenerator",
@@ -179,8 +206,21 @@ __all__ = [
     "WilliamsRGenerator",
     "MomentumOscillatorGenerator",
     "RateOfChangeGenerator",
+    # NEW FEATURES - Advanced Momentum Analysis
+    "MomentumEndpointsGenerator",
+    "MACDDeltaGenerator",
+    "RSIZScoreGenerator",
+    "StochasticKDGenerator",
+    "DonchianChannelGenerator",
     "VolumeFeatureGenerator",
     "VolatilityFeatureGenerator",
+    # NEW FEATURES - Advanced Volatility Analysis
+    "RealizedVolatilityGenerator",
+    "ParkinsonVolatilityGenerator",
+    "GarmanKlassVolatilityGenerator",
+    "RogersSatchellVolatilityGenerator",
+    "VolOfVolGenerator",
+    "DownsideSemivolGenerator",
     "GARCHFeatureGenerator",
     "NormalizationFeatureGenerator",
     "RollingZScoreGenerator",

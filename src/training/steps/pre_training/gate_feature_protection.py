@@ -48,10 +48,21 @@ class GateFeatureConfig:
     gate_importance_weight: float = 1.5  # Boost importance scores
     gate_regime_bonus: float = 0.1  # Bonus for regime separation
     
+    # Group awareness settings
+    enable_group_awareness: bool = True  # Enable group-wise constraints
+    min_gates_per_group: int = 1  # At least N gates per base feature group
+    group_lasso_penalty: float = 0.01  # Group lasso penalty for RFE
+    group_dropout_rate: float = 0.1  # Group dropout rate
+    
     # Validation settings
     validate_gate_contribution: bool = True
     min_gate_contribution: float = 0.01  # Minimum contribution to model
     enable_gate_interaction_validation: bool = True
+    
+    # Stability selection settings
+    stability_selection_folds: int = 5  # Number of CV folds for stability
+    stability_selection_threshold: float = 0.6  # Min selection frequency
+    report_gate_churn: bool = True  # Report gate churn between retrains
 
 
 class GateFeatureProtector:

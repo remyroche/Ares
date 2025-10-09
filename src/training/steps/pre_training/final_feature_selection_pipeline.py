@@ -98,6 +98,14 @@ from .backtesting.turnover import (
     reject_high_turnover_configs,
 )
 
+# Import gate feature protection
+try:
+    from .gate_feature_protection import GateFeatureProtector, GateFeatureConfig
+    GATE_PROTECTION_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: Gate feature protection not available: {e}")
+    GATE_PROTECTION_AVAILABLE = False
+
 try:
     from src.utils.ml_common.validation.cv import PurgedKFoldTime
     PURGED_KFOLD_AVAILABLE = PurgedKFoldTime is not None
@@ -345,6 +353,17 @@ class MultiStageFeatureSelector:
         self.config = config or FeatureSelectionConfig()
         self.logger = get_logger("MultiStageFeatureSelector")
         self.matrix_ops = get_unified_matrix_operations()
+
+        # Initialize gate feature protection if available
+        if GATE_PROTECTION_AVAILABLE:
+            gate_config = self.config.custom_params.get('gate_protection', {})
+            if gate_config and isinstance(gate_config, dict):
+                self.gate_protector = GateFeatureProtector(GateFeatureConfig(**gate_config))
+            else:
+                self.gate_protector = GateFeatureProtector()
+            tprint("🛡️ Gate feature protection enabled")
+        else:
+            self.gate_protector = None
 
         # Initialize hardware optimization tools if available
         if HARDWARE_OPTIMIZATION_AVAILABLE:
@@ -1369,6 +1388,14 @@ class MultiStageFeatureSelector:
         else:
             tprint("✅ No polarity adjustments required")
 
+        # Apply gate feature protection before correlation filtering
+        if self.gate_protector:
+            tprint("🛡️ Applying gate-aware correlation filtering...")
+            X, protection_info = self.gate_protector.protect_gate_features(X, y, "correlation_filtering")
+            if protection_info.get('valid_gate_count', 0) > 0:
+                tprint(f"✅ Protected {protection_info['valid_gate_count']} gate features")
+            tprint(f"📊 After gate protection: {X.shape[1]} features")
+
         # Remove highly correlated features using vectorized correlation computation
         tprint("🔄 Computing vectorized correlation analysis...")
         correlation_threshold = self.config.min_correlation_threshold
@@ -1745,6 +1772,14 @@ class MultiStageFeatureSelector:
         if not self.config.enable_rfe or not SKLEARN_FEATURE_SELECTION_AVAILABLE:
             tprint("⏭️ RFE disabled or unavailable, keeping all features")
             return X.columns.tolist()
+
+        # Apply gate feature protection before RFE
+        if self.gate_protector:
+            tprint("🛡️ Applying gate-aware RFE selection...")
+            X, protection_info = self.gate_protector.protect_gate_features(X, y, "rfe")
+            if protection_info.get('valid_gate_count', 0) > 0:
+                tprint(f"✅ Protected {protection_info['valid_gate_count']} gate features")
+            tprint(f"📊 After gate protection: {X.shape[1]} features")
 
         current_features = X.columns.tolist()
         best_score = float('-inf') if self._is_classification(y) else float('inf')

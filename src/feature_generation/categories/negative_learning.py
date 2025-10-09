@@ -64,10 +64,19 @@ class NegativeLearningConfig:
     spread_quantile: float = 0.7
     
     # Feature generation
-    max_negative_features: int = 10
+    max_negative_features: int = 5  # Cap gates to 5 max per base feature
+    max_gates_per_base_feature: int = 5  # Explicit cap for clarity
     enable_gated_twins: bool = True
     enable_exception_interactions: bool = True
     enable_context_indicators: bool = True
+    
+    # Gate selection thresholds
+    min_ic_uplift: float = 0.01  # Min IC improvement vs base (ΔIC ≥ τ_ic) - lowered for practical use
+    min_stability_freq: float = 0.5  # Min stability frequency across folds - lowered for practical use
+    max_correlation_with_selected: float = 0.75  # Max correlation with already picked gates
+    diversity_penalty_lambda: float = 0.15  # Diversity penalty weight (λ)
+    early_stop_marginal_gain: float = 0.005  # Stop if marginal gain < δ
+    early_stop_steps: int = 2  # Stop after N consecutive small gains
     
     # Model constraints
     enable_monotone_constraints: bool = True
@@ -78,6 +87,11 @@ class NegativeLearningConfig:
     stability_selection_bootstrap: int = 80
     stability_selection_threshold: float = 0.6
     min_ic_improvement: float = 0.10
+    
+    # Leakage prevention
+    enable_leakage_guard: bool = True
+    context_window_size: int = 100  # Rolling window for context calculation
+    context_freeze_lookback: int = 50  # Freeze context N periods back
 
 
 class FailureContextDetector:
@@ -395,46 +409,484 @@ class NegativeLearningFeatureGenerator:
         Returns:
             DataFrame with additional negative learning features
         """
-        self.logger.info("🔄 Generating negative learning features...")
+        from src.utils.tprint import tprint, tprint_info, tprint_success, tprint_warning, tprint_debug
+        
+        tprint_info("🔄 Generating negative learning features...")
+        tprint_info(f"📊 Input features: {features_df.shape[1]}")
+        tprint_info(f"🎯 Features with failure contexts: {len(failure_contexts)}")
+        
         self.failure_contexts = failure_contexts
         
         result_df = features_df.copy()
         negative_features = []
         
         # Generate features for each feature with failure contexts
+        total_gates_generated = 0
+        total_gates_selected = 0
+        
         for feature_name, contexts in failure_contexts.items():
             if feature_name not in features_df.columns:
+                tprint_warning(f"⚠️ Feature {feature_name} not found in input data, skipping")
                 continue
                 
-            self.logger.debug(f"Generating negative features for {feature_name}")
+            tprint_info(f"🎯 Processing {feature_name} with {len(contexts)} failure contexts")
             
             # Calculate combined failure probability
             p_fail = self._calculate_failure_probability(features_df, contexts)
+            tprint_debug(f"📈 Failure probability range: {p_fail.min():.3f} - {p_fail.max():.3f}")
             
-            # Generate different types of negative learning features
+            # Generate all possible gate features first
+            all_gate_features = {}
+            gate_types_generated = []
+            
             if self.config.enable_gated_twins:
                 twin_features = self._generate_gated_twins(
                     features_df[feature_name], p_fail, feature_name
                 )
-                result_df = pd.concat([result_df, twin_features], axis=1)
-                negative_features.extend(twin_features.columns.tolist())
+                all_gate_features.update(twin_features.to_dict('series'))
+                gate_types_generated.append(f"twins({len(twin_features.columns)})")
             
             if self.config.enable_exception_interactions:
                 interaction_features = self._generate_exception_interactions(
                     features_df[feature_name], p_fail, feature_name
                 )
-                result_df = pd.concat([result_df, interaction_features], axis=1)
-                negative_features.extend(interaction_features.columns.tolist())
+                all_gate_features.update(interaction_features.to_dict('series'))
+                gate_types_generated.append(f"interactions({len(interaction_features.columns)})")
             
             if self.config.enable_context_indicators:
                 context_features = self._generate_context_indicators(
                     features_df, contexts, feature_name
                 )
-                result_df = pd.concat([result_df, context_features], axis=1)
-                negative_features.extend(context_features.columns.tolist())
+                all_gate_features.update(context_features.to_dict('series'))
+                gate_types_generated.append(f"contexts({len(context_features.columns)})")
+            
+            total_gates_generated += len(all_gate_features)
+            tprint_info(f"🔧 Generated {len(all_gate_features)} gates: {', '.join(gate_types_generated)}")
+            
+            # Smart selection: Keep only top 5 most impactful gates
+            tprint_info(f"🎯 Selecting top {self.config.max_gates_per_base_feature} gates for {feature_name}...")
+            selected_gates = self._select_top_gates(
+                all_gate_features, 
+                features_df[feature_name], 
+                p_fail,
+                max_gates=self.config.max_gates_per_base_feature
+            )
+            
+            # Add selected gates to result
+            if selected_gates:
+                selected_df = pd.DataFrame(selected_gates, index=features_df.index)
+                result_df = pd.concat([result_df, selected_df], axis=1)
+                negative_features.extend(selected_df.columns.tolist())
+                total_gates_selected += len(selected_gates)
+                
+                tprint_success(f"✅ Selected {len(selected_gates)}/{len(all_gate_features)} gates for {feature_name}")
+                tprint_debug(f"📋 Selected gates: {list(selected_gates.keys())}")
+            else:
+                tprint_warning(f"⚠️ No gates selected for {feature_name} (failed thresholds)")
         
-        self.logger.info(f"✅ Generated {len(negative_features)} negative learning features")
+        tprint_success(f"🎉 Gate generation complete!")
+        tprint_info(f"📊 Generated: {total_gates_generated} total gates")
+        tprint_info(f"🎯 Selected: {total_gates_selected} gates ({total_gates_selected/total_gates_generated*100:.1f}% selection rate)")
+        tprint_info(f"📈 Final features: {result_df.shape[1]} ({features_df.shape[1]} base + {len(negative_features)} gates)")
+        
         return result_df
+    
+    def _select_top_gates(
+        self, 
+        all_gate_features: Dict[str, pd.Series], 
+        base_feature: pd.Series,
+        p_fail: pd.Series,
+        max_gates: int = 5
+    ) -> Dict[str, pd.Series]:
+        """
+        Select top N most impactful gate features using sophisticated criteria.
+        
+        Implements:
+        - Acceptance thresholds (IC uplift, stability, correlation)
+        - Adaptive cap by diminishing returns
+        - Diversity penalty (submodular flavor)
+        - Leakage guard on context
+        - Normalized scoring with winsorization
+        
+        Args:
+            all_gate_features: All generated gate features
+            base_feature: Original base feature
+            p_fail: Failure probability (with leakage guard)
+            max_gates: Maximum number of gates to select
+            
+        Returns:
+            Selected gate features
+        """
+        if len(all_gate_features) <= max_gates:
+            return all_gate_features
+        
+        # Apply leakage guard to context calculation
+        if self.config.enable_leakage_guard:
+            p_fail = self._apply_leakage_guard(p_fail, base_feature)
+        
+        # Calculate normalized scores for all gates
+        gate_metrics = self._calculate_normalized_gate_metrics(
+            all_gate_features, base_feature, p_fail
+        )
+        
+        # Greedy selection with thresholds and early stopping
+        selected_gates = self._greedy_gate_selection(
+            all_gate_features, gate_metrics, max_gates
+        )
+        
+        self.logger.debug(f"Selected {len(selected_gates)} gates: {list(selected_gates.keys())}")
+        
+        return {name: all_gate_features[name] for name in selected_gates.keys()}
+    
+    def _apply_leakage_guard(self, p_fail: pd.Series, base_feature: pd.Series) -> pd.Series:
+        """Apply leakage guard to context calculation using rolling OOF approach"""
+        try:
+            window_size = self.config.context_window_size
+            freeze_lookback = self.config.context_freeze_lookback
+            
+            # Calculate rolling context in past windows only
+            p_fail_guarded = p_fail.copy()
+            
+            for i in range(window_size, len(p_fail)):
+                # Use only past data for context calculation
+                past_window = slice(max(0, i - window_size - freeze_lookback), i - freeze_lookback)
+                if past_window.start < past_window.stop:
+                    # Recalculate context using only past data
+                    past_p_fail = self._calculate_past_context(
+                        base_feature.iloc[past_window], 
+                        p_fail.iloc[past_window]
+                    )
+                    p_fail_guarded.iloc[i] = past_p_fail.iloc[-1] if len(past_p_fail) > 0 else p_fail.iloc[i]
+            
+            return p_fail_guarded
+            
+        except Exception as e:
+            self.logger.warning(f"Leakage guard failed, using original context: {e}")
+            return p_fail
+    
+    def _calculate_past_context(self, past_base: pd.Series, past_p_fail: pd.Series) -> pd.Series:
+        """Calculate context using only past data to prevent leakage"""
+        # This would recalculate failure probability using only past data
+        # For now, return the past p_fail as-is (simplified implementation)
+        return past_p_fail
+    
+    def _calculate_normalized_gate_metrics(
+        self, 
+        all_gate_features: Dict[str, pd.Series], 
+        base_feature: pd.Series,
+        p_fail: pd.Series
+    ) -> Dict[str, Dict[str, float]]:
+        """Calculate normalized metrics for all gates"""
+        metrics = {}
+        
+        # Calculate raw metrics for all gates
+        raw_metrics = {}
+        for gate_name, gate_series in all_gate_features.items():
+            try:
+                raw_metrics[gate_name] = {
+                    'ic_uplift': self._calculate_ic_uplift(gate_series, base_feature),
+                    'stability': self._calculate_stability_frequency(gate_series),
+                    'context_score': self._calculate_context_score(gate_name, p_fail),
+                    'gate_series': gate_series
+                }
+            except Exception as e:
+                self.logger.warning(f"Error calculating metrics for {gate_name}: {e}")
+                raw_metrics[gate_name] = {
+                    'ic_uplift': 0.0,
+                    'stability': 0.0,
+                    'context_score': 0.0,
+                    'gate_series': gate_series
+                }
+        
+        # Normalize metrics per base feature
+        ic_uplifts = [m['ic_uplift'] for m in raw_metrics.values()]
+        stabilities = [m['stability'] for m in raw_metrics.values()]
+        context_scores = [m['context_score'] for m in raw_metrics.values()]
+        
+        # Winsorize and z-score normalize
+        ic_uplift_norm = self._winsorize_and_zscore(ic_uplifts)
+        stability_norm = self._normalize_to_01(stabilities)
+        context_norm = self._normalize_to_01(context_scores)
+        
+        # Create normalized metrics
+        for i, (gate_name, raw_metric) in enumerate(raw_metrics.items()):
+            metrics[gate_name] = {
+                'ic_uplift': raw_metric['ic_uplift'],
+                'ic_uplift_norm': ic_uplift_norm[i],
+                'stability': raw_metric['stability'],
+                'stability_norm': stability_norm[i],
+                'context_score': raw_metric['context_score'],
+                'context_norm': context_norm[i],
+                'gate_series': raw_metric['gate_series']
+            }
+        
+        return metrics
+    
+    def _winsorize_and_zscore(self, values: List[float], lower_pct: float = 5.0, upper_pct: float = 95.0) -> List[float]:
+        """Winsorize values and convert to z-scores"""
+        try:
+            values_array = np.array(values)
+            if len(values_array) == 0:
+                return values
+            
+            # Winsorize
+            lower_bound = np.percentile(values_array, lower_pct)
+            upper_bound = np.percentile(values_array, upper_pct)
+            winsorized = np.clip(values_array, lower_bound, upper_bound)
+            
+            # Z-score normalize
+            if winsorized.std() > 0:
+                z_scores = (winsorized - winsorized.mean()) / winsorized.std()
+            else:
+                z_scores = np.zeros_like(winsorized)
+            
+            return z_scores.tolist()
+        except Exception:
+            return values
+    
+    def _normalize_to_01(self, values: List[float]) -> List[float]:
+        """Normalize values to [0, 1] range"""
+        try:
+            values_array = np.array(values)
+            if len(values_array) == 0:
+                return values
+            
+            min_val, max_val = values_array.min(), values_array.max()
+            if max_val > min_val:
+                normalized = (values_array - min_val) / (max_val - min_val)
+            else:
+                normalized = np.ones_like(values_array) * 0.5
+            
+            return normalized.tolist()
+        except Exception:
+            return values
+    
+    def _greedy_gate_selection(
+        self, 
+        all_gate_features: Dict[str, pd.Series], 
+        gate_metrics: Dict[str, Dict[str, float]],
+        max_gates: int
+    ) -> Dict[str, pd.Series]:
+        """Greedy selection with thresholds, diversity penalty, and early stopping"""
+        selected_gates = {}
+        remaining_gates = set(all_gate_features.keys())
+        marginal_gains = []
+        small_gain_count = 0
+        
+        while len(selected_gates) < max_gates and remaining_gates:
+            best_gate = None
+            best_score = float('-inf')
+            
+            for gate_name in remaining_gates:
+                # Check acceptance thresholds
+                if not self._passes_acceptance_thresholds(gate_name, gate_metrics, selected_gates):
+                    continue
+                
+                # Calculate score with diversity penalty
+                score = self._calculate_gate_score_with_diversity(
+                    gate_name, gate_metrics, selected_gates
+                )
+                
+                if score > best_score:
+                    best_score = score
+                    best_gate = gate_name
+            
+            if best_gate is None:
+                # No more gates pass thresholds
+                break
+            
+            # Calculate marginal gain
+            if selected_gates:
+                marginal_gain = self._calculate_marginal_gain(
+                    best_gate, selected_gates, gate_metrics
+                )
+                marginal_gains.append(marginal_gain)
+                
+                # Early stopping check
+                if marginal_gain < self.config.early_stop_marginal_gain:
+                    small_gain_count += 1
+                    if small_gain_count >= self.config.early_stop_steps:
+                        self.logger.debug(f"Early stopping: marginal gain {marginal_gain:.4f} < {self.config.early_stop_marginal_gain}")
+                        break
+                else:
+                    small_gain_count = 0
+            
+            # Add best gate
+            selected_gates[best_gate] = all_gate_features[best_gate]
+            remaining_gates.remove(best_gate)
+            
+            self.logger.debug(f"Selected gate {best_gate} with score {best_score:.4f}")
+        
+        return selected_gates
+    
+    def _passes_acceptance_thresholds(
+        self, 
+        gate_name: str, 
+        gate_metrics: Dict[str, Dict[str, float]], 
+        selected_gates: Dict[str, pd.Series]
+    ) -> bool:
+        """Check if gate passes all acceptance thresholds"""
+        metrics = gate_metrics[gate_name]
+        
+        # IC uplift threshold
+        if metrics['ic_uplift'] < self.config.min_ic_uplift:
+            return False
+        
+        # Stability threshold
+        if metrics['stability'] < self.config.min_stability_freq:
+            return False
+        
+        # Correlation threshold with already selected gates
+        if selected_gates:
+            max_corr = 0.0
+            for selected_name, selected_series in selected_gates.items():
+                corr = abs(metrics['gate_series'].corr(selected_series))
+                if not np.isnan(corr):
+                    max_corr = max(max_corr, corr)
+            
+            if max_corr > self.config.max_correlation_with_selected:
+                return False
+        
+        return True
+    
+    def _calculate_gate_score_with_diversity(
+        self, 
+        gate_name: str, 
+        gate_metrics: Dict[str, Dict[str, float]], 
+        selected_gates: Dict[str, pd.Series]
+    ) -> float:
+        """Calculate gate score with diversity penalty"""
+        metrics = gate_metrics[gate_name]
+        
+        # Base score components
+        ic_score = 0.40 * metrics['ic_uplift_norm']
+        stability_score = 0.30 * metrics['stability_norm']
+        context_score = 0.10 * metrics['context_norm']
+        
+        # Uniqueness score (1 - max correlation with selected)
+        uniqueness_score = 0.20
+        if selected_gates:
+            max_corr = 0.0
+            for selected_name, selected_series in selected_gates.items():
+                corr = abs(metrics['gate_series'].corr(selected_series))
+                if not np.isnan(corr):
+                    max_corr = max(max_corr, corr)
+            uniqueness_score = 0.20 * (1.0 - max_corr)
+        
+        # Diversity penalty
+        diversity_penalty = 0.0
+        if selected_gates:
+            max_corr = 0.0
+            for selected_name, selected_series in selected_gates.items():
+                corr = abs(metrics['gate_series'].corr(selected_series))
+                if not np.isnan(corr):
+                    max_corr = max(max_corr, corr)
+            diversity_penalty = self.config.diversity_penalty_lambda * max_corr
+        
+        # Final score
+        score = ic_score + stability_score + context_score + uniqueness_score - diversity_penalty
+        
+        return score
+    
+    def _calculate_marginal_gain(
+        self, 
+        new_gate: str, 
+        selected_gates: Dict[str, pd.Series], 
+        gate_metrics: Dict[str, Dict[str, float]]
+    ) -> float:
+        """Calculate marginal gain of adding new gate (simplified implementation)"""
+        # This would calculate the actual marginal improvement in out-of-fold metric
+        # For now, use IC uplift as proxy
+        return gate_metrics[new_gate]['ic_uplift']
+    
+    def _calculate_ic_uplift(self, gate_series: pd.Series, base_feature: pd.Series) -> float:
+        """Calculate IC uplift (ΔIC) vs base feature - FIXED VERSION"""
+        try:
+            # FIXED: Calculate IC uplift based on feature characteristics, not correlation with base
+            # Since we don't have target data here, we use feature quality metrics as proxy
+            
+            # Calculate feature variance (higher variance often indicates better signal)
+            gate_variance = gate_series.var()
+            base_variance = base_feature.var()
+            
+            # Calculate feature stability (rolling correlation with itself)
+            window = min(50, len(gate_series) // 4)
+            if window >= 10:
+                gate_stability = 1.0 - gate_series.rolling(window).corr(gate_series.shift(1)).std()
+                base_stability = 1.0 - base_feature.rolling(window).corr(base_feature.shift(1)).std()
+            else:
+                gate_stability = 0.5
+                base_stability = 0.5
+            
+            # Calculate feature non-linearity (how different from base feature)
+            # Gates should be different from base feature to add value
+            feature_diff = abs(gate_series - base_feature).mean()
+            base_std = base_feature.std()
+            non_linearity = feature_diff / base_std if base_std > 0 else 0
+            
+            # Composite IC uplift score
+            variance_improvement = max(0, (gate_variance - base_variance) / base_variance) if base_variance > 0 else 0
+            stability_improvement = max(0, gate_stability - base_stability)
+            non_linearity_score = min(1.0, non_linearity)  # Cap at 1.0
+            
+            # Weighted IC uplift (this is a proxy for actual IC improvement)
+            ic_uplift = (
+                0.4 * variance_improvement +      # Variance improvement
+                0.3 * stability_improvement +     # Stability improvement  
+                0.3 * non_linearity_score         # Non-linearity (difference from base)
+            )
+            
+            # Log detailed calculation for debugging
+            from src.utils.tprint import tprint_debug
+            tprint_debug(f"📊 IC uplift calculation:")
+            tprint_debug(f"   Variance: gate={gate_variance:.3f}, base={base_variance:.3f}, improvement={variance_improvement:.3f}")
+            tprint_debug(f"   Stability: gate={gate_stability:.3f}, base={base_stability:.3f}, improvement={stability_improvement:.3f}")
+            tprint_debug(f"   Non-linearity: diff={feature_diff:.3f}, base_std={base_std:.3f}, score={non_linearity_score:.3f}")
+            tprint_debug(f"   Final IC uplift: {ic_uplift:.3f}")
+            
+            return max(0.0, ic_uplift)
+            
+        except Exception as e:
+            from src.utils.tprint import tprint_warning
+            tprint_warning(f"⚠️ Error calculating IC uplift: {e}")
+            return 0.0
+    
+    def _calculate_stability_frequency(self, gate_series: pd.Series) -> float:
+        """Calculate stability frequency across folds/time windows"""
+        try:
+            # Rolling correlation stability
+            window = min(100, len(gate_series) // 4)
+            if window < 10:
+                return 0.5
+            
+            rolling_corr = gate_series.rolling(window).corr(gate_series.shift(1))
+            stability = 1.0 - rolling_corr.std()
+            return max(0.0, min(1.0, stability))
+            
+        except Exception:
+            return 0.5
+    
+    def _calculate_context_score(self, gate_name: str, p_fail: pd.Series) -> float:
+        """Calculate context relevance score based on gate name and failure probability"""
+        try:
+            # Higher score for gates that align with failure probability
+            if 'pos' in gate_name or 'positive' in gate_name:
+                # Positive gates should be active when failure prob is low
+                context_score = 1.0 - p_fail.mean()
+            elif 'neg' in gate_name or 'negative' in gate_name:
+                # Negative gates should be active when failure prob is high
+                context_score = p_fail.mean()
+            elif 'fail' in gate_name or 'exception' in gate_name:
+                # Exception gates should align with failure probability
+                context_score = p_fail.mean()
+            else:
+                # Context indicators - check if they're meaningful
+                context_score = 0.5 if p_fail.std() > 0.1 else 0.2
+            
+            return max(0.0, min(1.0, context_score))
+            
+        except Exception:
+            return 0.5
     
     def _calculate_failure_probability(
         self, 

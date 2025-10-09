@@ -427,7 +427,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             self._current_execution_context = {
                 'symbol': pipeline_state.get('symbol', 'ETHUSDT'),
                 'exchange': pipeline_state.get('exchange', 'binance'),
-                'timeframe': pipeline_state.get('timeframe', '1h')
+                'timeframe': pipeline_state.get('timeframe', '15m')
             }
 
             numpy_rng = pipeline_state.get('numpy_rng') if isinstance(pipeline_state, dict) else None
@@ -943,7 +943,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             if not exchange:
                 exchange = getattr(self.config, 'exchange', 'binance') if hasattr(self, 'config') else 'binance'
             if not timeframe:
-                timeframe = getattr(self.config, 'timeframe', '1h') if hasattr(self, 'config') else '1h'
+                timeframe = getattr(self.config, 'timeframe', '15m') if hasattr(self, 'config') else '15m'
             
             tprint(f"📊 Loading data for {symbol} on {exchange} ({timeframe})...")
             

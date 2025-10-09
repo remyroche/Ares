@@ -45,8 +45,8 @@ class EnhancedMultiHorizonConfig(MultiHorizonConfig):
     enable_trading_aware_labels: bool = True
     
     # Enhanced label definitions
-    analyst_horizon_minutes: int = 60
-    tactician_horizon_minutes: int = 30
+    analyst_horizon_minutes: int = 15
+    tactician_horizon_minutes: int = 15
     enable_regime_conditioning: bool = True
     enable_risk_awareness: bool = True
     
@@ -629,8 +629,8 @@ def create_trading_optimized_multi_horizon_config() -> EnhancedMultiHorizonConfi
         enable_enhanced_data_cleaning=True,
         enable_enhanced_stability_monitoring=True,
         enable_trading_aware_labels=True,
-        analyst_horizon_minutes=60,
-        tactician_horizon_minutes=30,
+        analyst_horizon_minutes=15,
+        tactician_horizon_minutes=15,
         enable_regime_conditioning=True,
         enable_risk_awareness=True,
         min_data_quality_score=0.8,
@@ -645,8 +645,8 @@ def create_research_optimized_multi_horizon_config() -> EnhancedMultiHorizonConf
         enable_enhanced_data_cleaning=True,
         enable_enhanced_stability_monitoring=True,
         enable_trading_aware_labels=True,
-        analyst_horizon_minutes=60,
-        tactician_horizon_minutes=30,
+        analyst_horizon_minutes=15,
+        tactician_horizon_minutes=15,
         enable_regime_conditioning=True,
         enable_risk_awareness=False,
         min_data_quality_score=0.6,

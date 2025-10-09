@@ -95,18 +95,19 @@ except (ImportError, SyntaxError):
 class AnalystProfitLabelerConfig:
     """Configuration for Analyst profit labeling."""
 
-    # Timeframe settings (Analyst operates on 60m)
-    timeframe: str = "60m"
-    base_period_minutes: int = 60
+    # Timeframe settings (Analyst operates on 15m)
+    timeframe: str = "15m"
+    base_period_minutes: int = 15
 
     # Horizon settings for Analyst (strategic decision-making)
     # Horizons are in MINUTES (must be >= timeframe period)
-    horizons: List[int] = field(default_factory=lambda: [60, 120, 240, 360])  # 1h, 2h, 4h, 6h in minutes
+    # Looking for opportunities on up to 6 15m bars (90 minutes total)
+    horizons: List[int] = field(default_factory=lambda: [15, 30, 45, 60, 75, 90])  # 1, 2, 3, 4, 5, 6 bars in minutes
 
-    # Profit targets (percentage) - Realistic for hourly crypto movements after fees
-    # ETH typically moves 0.4% per hour on average (0.26% median)
-    # Starting at 0.5% provides buffer above typical trading costs (~0.1% roundtrip)
-    target_profits: List[float] = field(default_factory=lambda: [0.5, 1.0, 1.5, 2.0])
+    # Profit targets (percentage) - Realistic for 15m crypto movements after fees
+    # ETH typically moves 0.1% per 15m on average (0.07% median)
+    # Starting at 0.2% provides buffer above typical trading costs (~0.1% roundtrip)
+    target_profits: List[float] = field(default_factory=lambda: [0.2, 0.4, 0.6, 0.8, 1.0, 1.2])
 
     # Volatility-aware settings
     # Disable volatility normalization for simpler percentage-based targets
@@ -123,6 +124,12 @@ class AnalystProfitLabelerConfig:
     # Trading direction settings
     enable_long_positions: bool = True   # Include long opportunities (buy when expecting price increase)
     enable_short_positions: bool = False  # Include short opportunities (sell when expecting price decrease)
+
+    # Adversarial price movement settings
+    enable_adversarial_analysis: bool = True  # Consider adversarial price movements
+    adversarial_threshold: float = 0.1  # 0.1% threshold for adversarial movements
+    max_adversarial_bars: int = 2  # Maximum number of bars to check for adversarial movements
+    adversarial_weight: float = 0.3  # Weight given to adversarial movements in decision making
 
     # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
@@ -305,7 +312,7 @@ class AnalystProfitLabeler:
         # TIME bars with bar_size = timeframe period will pass through the data as-is
         from src.training.steps.pre_training.profit_labeling.bar_construction import BarType
         labeler_config.bar_construction.bar_type = BarType.TIME
-        labeler_config.bar_construction.bar_size = float(self.config.base_period_minutes)  # 60 minutes for 1h data
+        labeler_config.bar_construction.bar_size = float(self.config.base_period_minutes)  # 15 minutes for 15m data
         labeler_config.bar_construction.min_bars_required = 10  # Lower threshold for OHLCV data
         
         # Configure noise gating to be less aggressive for OHLCV data

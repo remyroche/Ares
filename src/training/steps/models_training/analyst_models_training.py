@@ -10,9 +10,9 @@ This module handles training of individual Analyst base models:
 - NAS (Neural Architecture Search) model
 - TAS (Tree-based Architecture Search) model
 
-The Analyst operates on the dedicated 1h timeframe and decides IF we trade by
+The Analyst operates on the dedicated 15m timeframe and decides IF we trade by
 screening market conditions and producing the green-signal gating that the
-Tactician consumes. Now includes NAS and TAS models for enhanced 1h timeframe
+Tactician consumes. Now includes NAS and TAS models for enhanced 15m timeframe
 strategic decision making with regime features.
 
 ENHANCED FEATURES:

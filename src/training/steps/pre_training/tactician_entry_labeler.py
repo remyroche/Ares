@@ -19,6 +19,7 @@ import warnings
 from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from scipy.signal import find_peaks
 
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
@@ -263,7 +264,7 @@ class TacticianDifferentiatedLabeler:
             
             tprint_success(f"✅ Enhanced quality scorer initialized: {method.value}")
             
-        except ImportError as e:
+        except (ImportError, AttributeError, Exception) as e:
             tprint_warning(f"⚠️ Enhanced quality scorer not available, using fallback: {e}")
             self.quality_scorer = None
 
@@ -899,10 +900,23 @@ class TacticianEntryLabelerComponent(BasePreTrainingComponent):
         except Exception as e:
             tprint_error(f"❌ Tactician Entry Labeling failed: {e}")
             
+            # Create detailed error information
+            import traceback
+            error_details = {
+                'error_type': type(e).__name__,
+                'error_message': str(e),
+                'traceback': traceback.format_exc(),
+                'component': 'tactician_entry_labeler',
+                'timestamp': datetime.now().isoformat()
+            }
+            
             result = ComponentResult(
                 success=False,
                 error_message=str(e),
-                metadata={'component': 'tactician_entry_labeler'}
+                metadata={
+                    'component': 'tactician_entry_labeler',
+                    'error_details': error_details
+                }
             )
             return result
 

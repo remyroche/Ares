@@ -8,7 +8,8 @@ Key Features:
 - 15m timeframe optimization for strategic decision-making
 - Multi-horizon profit labeling (15m, 30m, 45m, 60m, 75m, 90m horizons)
 - Adversarial price movement analysis - checks ALL bars in opportunity window
-- Optimal entry timing - only flags opportunities after adversarial movements stop
+- Optimal entry timing - flags opportunities when adversarial movements stop (no waiting)
+- Spanning opportunities - allows opportunities that span multiple bars with adversarial movements
 - Volatility-aware target bands
 - Enhanced label quality scoring
 - Per-regime/cluster optimization support
@@ -130,14 +131,16 @@ class AnalystProfitLabelerConfig:
 
     # Adversarial price movement settings
     # Strategy: Check ALL bars in opportunity window for adversarial movements
-    # Only flag opportunity AFTER adversarial movements have stopped
+    # Flag opportunity when adversarial movements stop (no waiting period)
+    # Don't discount opportunities that span multiple bars with adversarial movements
     # This trains models to enter at optimal peak/bottom prices, not before small bumps
     enable_adversarial_analysis: bool = True  # Consider adversarial price movements
     adversarial_threshold: float = 0.1  # 0.1% threshold for adversarial movements
     check_all_bars_for_adversarial: bool = True  # Check all bars in opportunity window for adversarial movements
     wait_for_adversarial_clearance: bool = True  # Only flag opportunity after adversarial movements stop
-    adversarial_clearance_bars: int = 1  # Number of bars to wait after adversarial movement stops
+    adversarial_clearance_bars: int = 0  # No waiting - start opportunity immediately when adversarial stops
     adversarial_weight: float = 0.0  # No weight - binary decision: opportunity only if no adversarial movements
+    allow_spanning_opportunities: bool = True  # Allow opportunities that span multiple bars with adversarial movements
 
     # Custom parameters
     custom_params: Dict[str, Any] = field(default_factory=dict)
@@ -355,6 +358,7 @@ class AnalystProfitLabeler:
             labeler_config.adversarial_analysis.wait_for_clearance = self.config.wait_for_adversarial_clearance
             labeler_config.adversarial_analysis.clearance_bars = self.config.adversarial_clearance_bars
             labeler_config.adversarial_analysis.weight = self.config.adversarial_weight
+            labeler_config.adversarial_analysis.allow_spanning_opportunities = self.config.allow_spanning_opportunities
         
         # Apply custom parameters
         if self.config.custom_params:

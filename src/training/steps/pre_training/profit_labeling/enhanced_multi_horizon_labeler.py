@@ -54,6 +54,7 @@ class EnhancedMultiHorizonConfig(MultiHorizonConfig):
     enable_adversarial_analysis: bool = True
     check_all_bars_for_adversarial: bool = True
     wait_for_adversarial_clearance: bool = True
+    allow_spanning_opportunities: bool = True
     
     # Data quality thresholds
     min_data_quality_score: float = 0.7
@@ -641,6 +642,7 @@ def create_trading_optimized_multi_horizon_config() -> EnhancedMultiHorizonConfi
         enable_adversarial_analysis=True,
         check_all_bars_for_adversarial=True,
         wait_for_adversarial_clearance=True,
+        allow_spanning_opportunities=True,
         min_data_quality_score=0.8,
         min_label_stability_score=0.7,
         enhanced_config=create_trading_optimized_config()
@@ -660,6 +662,7 @@ def create_research_optimized_multi_horizon_config() -> EnhancedMultiHorizonConf
         enable_adversarial_analysis=True,
         check_all_bars_for_adversarial=True,
         wait_for_adversarial_clearance=True,
+        allow_spanning_opportunities=True,
         min_data_quality_score=0.6,
         min_label_stability_score=0.5,
         enhanced_config=create_research_optimized_config()

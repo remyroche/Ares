@@ -45,15 +45,11 @@ from .interaction_pruning import InteractionPruningSystem, InteractionPruningCon
 from .budgeted_optimization import BudgetedLookbackOptimizer, BudgetedOptimizationConfig, OptimizationResult
 from .optimized_pipeline import OptimizedPipelineConfig, OptimizedInteractiveFeaturePipeline
 
-# Import existing utilities for backward compatibility
-try:
-    from src.feature_generation.core.feature_cache import FeatureCacheService
-    from src.feature_generation.core.feature_bank import FeatureBank
-    from ...settings import get_pre_training_settings
-    EXISTING_UTILS_AVAILABLE = True
-except ImportError:
-    EXISTING_UTILS_AVAILABLE = False
-    tprint_warning("⚠️ Some existing utilities not available - using optimized alternatives")
+# Import existing utilities for backward compatibility - fast-fail
+from src.feature_generation.core.feature_cache import FeatureCacheService
+from src.feature_generation.core.feature_bank import FeatureBank
+from ...settings import get_pre_training_settings
+EXISTING_UTILS_AVAILABLE = True
 
 logger = logging.getLogger(__name__)
 
@@ -433,55 +429,30 @@ class EnhancedOptimizedInteractionOrchestrator:
         else:
             data = context.data
         
-        # FIXED: Use actual feature generation instead of just copying
-        try:
-            from .feature_generators import FeatureGenerator, FeatureGenerationConfig
-            
-            # Create feature generation config
-            feature_config = FeatureGenerationConfig(
-                enable_technical_indicators=True,
-                enable_rolling_stats=True,
-                enable_interaction_features=False,  # Will be done in interaction stage
-                enable_cross_timeframe=False,  # Will be done in cross-timeframe stage
-                rolling_windows=[5, 10, 20, 50, 100],
-                max_interactions=50
-            )
-            
-            # Generate base features
-            feature_generator = FeatureGenerator(feature_config)
-            generated_features = feature_generator.generate_base_features(data)
-            
-            # If no features were generated, fall back to using input data
-            if generated_features.empty:
-                tprint_warning("⚠️ No features generated, using input data as base features")
-                exclude_cols = ['target', 'timestamp', 'open_time', 'close_time', 'symbol', 'interval', 'exchange']
-                features_to_use = [col for col in data.columns if col not in exclude_cols]
-                if features_to_use:
-                    generated_features = data[features_to_use].copy()
-                else:
-                    generated_features = data.copy()
-            
-            tprint_info(f"✅ Generated {len(generated_features.columns)} base features")
-            
-        except Exception as e:
-            tprint_error(f"❌ Feature generation failed: {e}")
-            tprint_info("🔄 Falling back to input data as features")
-            
-            # Fallback: use input data
-            exclude_cols = ['target', 'timestamp', 'open_time', 'close_time', 'symbol', 'interval', 'exchange']
-            features_to_use = [col for col in data.columns if col not in exclude_cols]
-            if features_to_use:
-                generated_features = data[features_to_use].copy()
-            else:
-                generated_features = data.copy()
+        # Use improved feature generation with fast-fail validation
+        from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
         
-        # Apply memory optimization using the matrix operations utility
-        try:
-            from src.utils.matrix_operations import optimize_dataframe
-            optimized_features = optimize_dataframe(generated_features)
-        except (ImportError, AttributeError):
-            # Fallback: simple dtype optimization
-            optimized_features = generated_features
+        # Create feature generation config
+        feature_config = FeatureGenerationConfig(
+            enable_technical_indicators=True,
+            enable_rolling_stats=True,
+            enable_interaction_features=False,  # Will be done in interaction stage
+            enable_cross_timeframe=False,  # Will be done in cross-timeframe stage
+            rolling_windows=[5, 10, 20, 50, 100],
+            max_interactions=50,
+            min_valid_ratio=0.8,  # Require 80% valid values
+            max_constant_ratio=0.1  # Allow max 10% constant features
+        )
+        
+        # Generate base features using improved generator - fast-fail on error
+        feature_generator = ImprovedFeatureGenerator(feature_config)
+        generated_features = feature_generator.generate_meaningful_features(data)
+        
+        tprint_info(f"✅ Generated {len(generated_features.columns)} validated base features")
+        
+        # Apply memory optimization using the matrix operations utility - fast-fail on error
+        from src.utils.matrix_operations import optimize_dataframe
+        optimized_features = optimize_dataframe(generated_features)
         
         # Store in memory-efficient format
         if self.config.use_parquet:
@@ -573,32 +544,26 @@ class EnhancedOptimizedInteractionOrchestrator:
         else:
             features = context.data
         
-        # FIXED: Use actual interaction feature generation
-        try:
-            from .feature_generators import FeatureGenerator, FeatureGenerationConfig
-            
-            # Create feature generation config for interactions
-            feature_config = FeatureGenerationConfig(
-                enable_technical_indicators=False,
-                enable_rolling_stats=False,
-                enable_interaction_features=True,
-                enable_cross_timeframe=False,
-                max_interactions=50,
-                interaction_types=['ratio', 'product', 'difference', 'sum']
-            )
-            
-            # Generate interaction features
-            feature_generator = FeatureGenerator(feature_config)
-            interaction_features = feature_generator.generate_interaction_features(features)
-            
-            tprint_info(f"✅ Generated {len(interaction_features.columns)} interaction features")
-            
-        except Exception as e:
-            tprint_error(f"❌ Interaction generation failed: {e}")
-            tprint_info("🔄 Falling back to simple interaction generation")
-            
-            # Fallback: use simple interaction generation
-            interaction_features = self._generate_interaction_features(features)
+        # Use improved interaction feature generation with fast-fail validation
+        from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
+        
+        # Create feature generation config for interactions
+        feature_config = FeatureGenerationConfig(
+            enable_technical_indicators=False,
+            enable_rolling_stats=False,
+            enable_interaction_features=True,
+            enable_cross_timeframe=False,
+            max_interactions=50,
+            interaction_types=['ratio', 'product', 'difference', 'sum'],
+            min_valid_ratio=0.8,  # Require 80% valid values
+            max_constant_ratio=0.1  # Allow max 10% constant features
+        )
+        
+        # Generate interaction features using improved generator - fast-fail on error
+        feature_generator = ImprovedFeatureGenerator(feature_config)
+        interaction_features = feature_generator.generate_interaction_features(features)
+        
+        tprint_info(f"✅ Generated {len(interaction_features.columns)} validated interaction features")
         
         # Store result
         context.pipeline_state['interaction_features'] = interaction_features
@@ -671,31 +636,25 @@ class EnhancedOptimizedInteractionOrchestrator:
         else:
             features = context.data
         
-        # FIXED: Use actual cross-timeframe feature generation
-        try:
-            from .feature_generators import FeatureGenerator, FeatureGenerationConfig
-            
-            # Create feature generation config for cross-timeframe
-            feature_config = FeatureGenerationConfig(
-                enable_technical_indicators=False,
-                enable_rolling_stats=False,
-                enable_interaction_features=False,
-                enable_cross_timeframe=True,
-                cross_timeframe_periods=[5, 15, 30, 60]
-            )
-            
-            # Generate cross-timeframe features
-            feature_generator = FeatureGenerator(feature_config)
-            cross_timeframe_features = feature_generator.generate_cross_timeframe_features(features)
-            
-            tprint_info(f"✅ Generated {len(cross_timeframe_features.columns)} cross-timeframe features")
-            
-        except Exception as e:
-            tprint_error(f"❌ Cross-timeframe generation failed: {e}")
-            tprint_info("🔄 Falling back to simple cross-timeframe generation")
-            
-            # Fallback: use simple cross-timeframe generation
-            cross_timeframe_features = self._generate_cross_timeframe_features(features)
+        # Use improved cross-timeframe feature generation with fast-fail validation
+        from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
+        
+        # Create feature generation config for cross-timeframe
+        feature_config = FeatureGenerationConfig(
+            enable_technical_indicators=False,
+            enable_rolling_stats=False,
+            enable_interaction_features=False,
+            enable_cross_timeframe=True,
+            cross_timeframe_periods=[5, 15, 30, 60],
+            min_valid_ratio=0.8,  # Require 80% valid values
+            max_constant_ratio=0.1  # Allow max 10% constant features
+        )
+        
+        # Generate cross-timeframe features using improved generator - fast-fail on error
+        feature_generator = ImprovedFeatureGenerator(feature_config)
+        cross_timeframe_features = feature_generator.generate_cross_timeframe_features(features)
+        
+        tprint_info(f"✅ Generated {len(cross_timeframe_features.columns)} validated cross-timeframe features")
         
         # Store result
         context.pipeline_state['cross_timeframe_features'] = cross_timeframe_features

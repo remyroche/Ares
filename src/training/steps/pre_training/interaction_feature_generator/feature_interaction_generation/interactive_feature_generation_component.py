@@ -41,64 +41,57 @@ from src.training.steps.pre_training.validation.data_contracts import (
     validate_feature_artifact,
 )
 
-# Import common operations and utilities - fail fast if not available
+# Import improved utilities
+from .import_manager import get_import_manager
+from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
+
+# Initialize import manager
+import_manager = get_import_manager()
+
+# Fast-fail imports - all required dependencies must be available
 try:
-    from src.utils.common_operations import (
-        safe_divide, safe_log, safe_sqrt, safe_power, validate_finite,
-        get_m1_gpu_manager, get_m1_memory_optimizer, get_m1_cpu_optimizer,
-        optimize_memory_usage, parallel_processing_optimizer
-    )
-    from .ares_launcher_integration import AresLauncherInteractiveFeatureGenerator
-    COMMON_OPS_AVAILABLE = True
+    # Import common operations and utilities using import manager
+    common_ops_result = import_manager.import_common_operations()
+    COMMON_OPS = common_ops_result.module
     tprint_success("✅ Common operations imported successfully")
-except ImportError as e:
-    tprint_error(f"❌ Critical error: Common operations not available: {e}")
-    raise ImportError(f"Required module src.utils.common_operations not available: {e}")
-
-# Import math validation
-from src.utils.math_validation import (
-    safe_divide as math_safe_divide, safe_log as math_safe_log,
-    safe_sqrt as math_safe_sqrt, validate_finite as math_validate_finite
-)
-
-# Import component registration
-from src.training.steps.pre_training.components.component_factory import register_component
-
-# Import matrix operations - fail fast if not available
-try:
-    from src.utils.matrix_operations import (
-        get_unified_matrix_operations, get_vectorized_processing_core,
-        get_batch_matrix_processor, safe_matrix_multiply,
-        vectorized_rolling_features, parallel_feature_engineering,
-        optimize_dataframe, get_hardware_performance_report
-    )
-    MATRIX_OPS_AVAILABLE = True
+    
+    # Import math validation
+    math_validation_result = import_manager.import_math_validation()
+    MATH_VALIDATION = math_validation_result.module
+    
+    # Import component registration
+    from src.training.steps.pre_training.components.component_factory import register_component
+    
+    # Import matrix operations using import manager
+    matrix_ops_result = import_manager.import_matrix_operations()
+    MATRIX_OPS = matrix_ops_result.module
     tprint_success("✅ Matrix operations imported successfully")
-except ImportError as e:
-    tprint_error(f"❌ Critical error: Matrix operations not available: {e}")
-    raise ImportError(f"Required module src.utils.matrix_operations not available: {e}")
-
-# Import ML common utilities - fail fast if not available
-try:
-    from src.utils.ml_common.optimization.bayesian_tpe_optimizer import (
-        BayesianTPEOptimizer, OptimizationConfig
-    )
-    from src.utils.purged_kfold import PurgedKFoldTime as PurgedKFold
-    from src.feature_selection import select_features as FeatureSelector
-    ML_COMMON_AVAILABLE = True
+    
+    # Import ML common utilities using import manager
+    ml_common_result = import_manager.import_ml_common()
+    purged_kfold_result = import_manager.import_purged_kfold()
+    feature_selection_result = import_manager.import_feature_selection()
+    
+    ML_COMMON = ml_common_result.module
+    PURGED_KFOLD = purged_kfold_result.module
+    FEATURE_SELECTION = feature_selection_result.module
     tprint_success("✅ ML common utilities imported successfully")
-except ImportError as e:
-    tprint_error(f"❌ Critical error: ML common utilities not available: {e}")
-    raise ImportError(f"Required module src.utils.ml_common not available: {e}")
-
-# Import data utilities - matching feature_lookback_optimization pattern
-try:
-    from src.utils.data.klines_parquet import KlinesParquetManager
-    DATA_UTILS_AVAILABLE = True
+    
+    # Import data utilities using import manager
+    data_utils_result = import_manager.import_data_utils()
+    DATA_UTILS = data_utils_result.module
     tprint_success("✅ Data utilities imported successfully")
+    
+    # Import ares launcher integration
+    from .ares_launcher_integration import AresLauncherInteractiveFeatureGenerator
+    ARES_LAUNCHER_AVAILABLE = True
+    
 except ImportError as e:
-    tprint_error(f"❌ Critical error: Data utilities not available: {e}")
-    raise ImportError(f"Required module src.utils.data not available: {e}")
+    tprint_error(f"❌ Critical dependency missing: {e}")
+    raise ImportError(f"Required dependency not available: {e}")
+except Exception as e:
+    tprint_error(f"❌ Unexpected error during initialization: {e}")
+    raise RuntimeError(f"Initialization failed: {e}")
 
 # Import column naming utilities
 from ...column_naming import (

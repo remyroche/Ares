@@ -25,6 +25,7 @@ from .analyst_labeler_integration import AnalystLabelerIntegration
 from .pre_screening_pipeline import PreScreeningPipeline
 from .feature_scorecard import FeatureScorecard
 from .compute_aware_optimizer import ComputeAwareOptimizer
+from .family_diverse_features import FamilyDiverseFeatureGenerator
 
 __all__ = [
     'FeatureComparisonUtils',
@@ -49,5 +50,6 @@ __all__ = [
     'AnalystLabelerIntegration',
     'PreScreeningPipeline',
     'FeatureScorecard',
-    'ComputeAwareOptimizer'
+    'ComputeAwareOptimizer',
+    'FamilyDiverseFeatureGenerator'
 ]

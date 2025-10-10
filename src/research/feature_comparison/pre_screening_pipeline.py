@@ -74,7 +74,8 @@ class PreScreeningPipeline:
         self.compute_profiles = {}
     
     def run_pre_screening(self, X: pd.DataFrame, y: pd.Series, 
-                         feature_families: Optional[Dict[str, List[str]]] = None) -> Dict[str, Any]:
+                         feature_families: Optional[Dict[str, List[str]]] = None,
+                         generate_family_features: bool = True) -> Dict[str, Any]:
         """
         Run complete pre-screening pipeline.
         
@@ -82,11 +83,39 @@ class PreScreeningPipeline:
             X: Feature matrix
             y: Target variable
             feature_families: Dictionary mapping family names to feature lists
+            generate_family_features: Whether to generate diverse family features
             
         Returns:
             Pre-screening results
         """
         logger.info("Starting pre-screening pipeline...")
+        
+        # Generate family-diverse features if requested
+        if generate_family_features:
+            logger.info("Generating family-diverse features...")
+            from .family_diverse_features import FamilyDiverseFeatureGenerator
+            
+            family_generator = FamilyDiverseFeatureGenerator(enable_matrix_ops=self.enable_matrix_ops)
+            family_features = family_generator.generate_family_diverse_features(X)
+            
+            # Combine all family features
+            all_family_features = {}
+            for family_name, family_df in family_features.items():
+                # Get feature columns (exclude original OHLCV)
+                original_cols = ['open', 'high', 'low', 'close', 'volume', 'timestamp']
+                feature_cols = [col for col in family_df.columns if col not in original_cols]
+                all_family_features[family_name] = feature_cols
+            
+            # Update feature_families
+            if feature_families is None:
+                feature_families = all_family_features
+            else:
+                # Merge with existing families
+                for family_name, features in all_family_features.items():
+                    if family_name in feature_families:
+                        feature_families[family_name].extend(features)
+                    else:
+                        feature_families[family_name] = features
         
         # Phase A: Fast univariate signal screen
         logger.info("Phase A: Fast univariate signal screen...")
@@ -107,7 +136,8 @@ class PreScreeningPipeline:
             'phase_c': phase_c_results,
             'final_features': phase_c_results['selected_features'],
             'feature_metadata': self.feature_metadata,
-            'compute_profiles': self.compute_profiles
+            'compute_profiles': self.compute_profiles,
+            'feature_families_used': feature_families
         }
         
         logger.info(f"Pre-screening completed. Selected {len(results['final_features'])} features")

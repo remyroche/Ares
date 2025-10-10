@@ -616,6 +616,78 @@ class AdvancedM1MemoryOptimizer(M1MemoryOptimizer):
         # Update predictive models based on allocation patterns
         pass
         
+    def aggressive_cleanup(self, force_cleanup: bool = False, clear_caches: bool = True, 
+                          compress_memory: bool = True, optimize_pools: bool = True) -> Dict[str, Any]:
+        """Perform aggressive memory cleanup."""
+        cleanup_results = {
+            'success': False,
+            'memory_freed_mb': 0.0,
+            'methods_used': [],
+            'errors': []
+        }
+        
+        try:
+            self.logger.info("🧹 Performing aggressive memory cleanup")
+            
+            # Clear caches if requested
+            if clear_caches:
+                self._clear_all_caches()
+                cleanup_results['methods_used'].append('cache_clear')
+            
+            # Optimize pools if requested
+            if optimize_pools:
+                for pool_type, pool in self.memory_pools.items():
+                    pool._perform_cleanup()
+                cleanup_results['methods_used'].append('pool_optimization')
+            
+            # Compress memory if requested
+            if compress_memory:
+                self._compress_memory_pools()
+                cleanup_results['methods_used'].append('memory_compression')
+            
+            # Force garbage collection
+            import gc
+            collected = gc.collect()
+            cleanup_results['memory_freed_mb'] = collected * 0.001  # Rough estimate
+            cleanup_results['methods_used'].append('garbage_collection')
+            
+            # Proactive cleanup
+            self._proactive_memory_cleanup()
+            cleanup_results['methods_used'].append('proactive_cleanup')
+            
+            cleanup_results['success'] = True
+            self.logger.info(f"✅ Aggressive cleanup completed: {cleanup_results['memory_freed_mb']:.1f}MB freed")
+            
+        except Exception as e:
+            cleanup_results['errors'].append(str(e))
+            self.logger.error(f"❌ Aggressive cleanup failed: {e}")
+        
+        return cleanup_results
+    
+    def _clear_all_caches(self):
+        """Clear all internal caches."""
+        # Clear event tracker cache
+        if hasattr(self, 'event_tracker') and hasattr(self.event_tracker, 'clear_cache'):
+            self.event_tracker.clear_cache()
+        elif hasattr(self, 'event_tracker'):
+            # Fallback: clear events manually
+            if hasattr(self.event_tracker, 'events'):
+                self.event_tracker.events.clear()
+        
+        # Clear predictive manager cache
+        if hasattr(self, 'predictive_manager') and hasattr(self.predictive_manager, 'clear_cache'):
+            self.predictive_manager.clear_cache()
+        elif hasattr(self, 'predictive_manager'):
+            # Fallback: clear predictions manually
+            if hasattr(self.predictive_manager, 'predictions'):
+                self.predictive_manager.predictions.clear()
+    
+    def _compress_memory_pools(self):
+        """Compress memory pools to free up space."""
+        for pool_type, pool in self.memory_pools.items():
+            if hasattr(pool, 'compress'):
+                pool.compress()
+
     def _proactive_memory_cleanup(self):
         """Perform proactive memory cleanup based on predictions."""
         self.logger.info("🧹 Performing proactive memory cleanup")

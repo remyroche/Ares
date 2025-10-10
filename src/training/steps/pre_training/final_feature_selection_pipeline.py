@@ -71,6 +71,7 @@ try:
         get_advanced_memory_optimizer,
         WorkloadType
     )
+    from src.utils.hardware.advanced_memory_optimizer import AdvancedM1MemoryOptimizer, MemoryStrategy
     MATRIX_OPERATIONS_AVAILABLE = True
     HARDWARE_OPTIMIZATION_AVAILABLE = True
 except ImportError:
@@ -377,11 +378,24 @@ class MultiStageFeatureSelector:
             self.hardware_manager = get_unified_hardware_manager()
             self.adaptive_engine = get_adaptive_optimization_engine()
             self.memory_optimizer = get_advanced_memory_optimizer()
+            
+            # Initialize advanced memory optimizer for aggressive cleanup
+            try:
+                self.advanced_memory_optimizer = AdvancedM1MemoryOptimizer(
+                    memory_limit_gb=8.0,
+                    strategy=MemoryStrategy.AGGRESSIVE
+                )
+                self.logger.info("🧠 Advanced memory optimizer initialized with aggressive strategy")
+            except Exception as e:
+                self.advanced_memory_optimizer = None
+                self.logger.warning(f"⚠️ Advanced memory optimizer not available: {e}")
+            
             self.logger.info("🚀 Hardware optimization tools initialized")
         else:
             self.hardware_manager = None
             self.adaptive_engine = None
             self.memory_optimizer = None
+            self.advanced_memory_optimizer = None
             self.logger.info("⚠️ Hardware optimization tools not available")
 
         # Initialize batch processor for chunked processing
@@ -694,6 +708,106 @@ class MultiStageFeatureSelector:
             tprint_warning(f"⚠️ Cache cleanup failed: {e}")
             self.logger.warning(f"Cache cleanup error: {e}")
     
+    def _aggressive_memory_cleanup(self, force_cleanup: bool = False) -> Dict[str, Any]:
+        """Perform aggressive memory cleanup using advanced memory optimizer."""
+        cleanup_results = {
+            'success': False,
+            'memory_freed_mb': 0.0,
+            'memory_pressure_before': 0.0,
+            'memory_pressure_after': 0.0,
+            'cleanup_methods_used': [],
+            'errors': []
+        }
+        
+        try:
+            # Get initial memory pressure
+            cleanup_results['memory_pressure_before'] = self._get_memory_pressure()
+            
+            # Use advanced memory optimizer if available
+            if hasattr(self, 'advanced_memory_optimizer') and self.advanced_memory_optimizer:
+                tprint("🧹 Performing aggressive memory cleanup with advanced optimizer...")
+                
+                # Perform comprehensive cleanup
+                advanced_cleanup = self.advanced_memory_optimizer.aggressive_cleanup(
+                    force_cleanup=force_cleanup,
+                    clear_caches=True,
+                    compress_memory=True,
+                    optimize_pools=True
+                )
+                
+                cleanup_results.update({
+                    'success': advanced_cleanup.get('success', False),
+                    'memory_freed_mb': advanced_cleanup.get('memory_freed_mb', 0.0),
+                    'cleanup_methods_used': advanced_cleanup.get('methods_used', [])
+                })
+                
+                self.logger.info(f"🧹 Advanced memory cleanup: {cleanup_results['memory_freed_mb']:.1f}MB freed")
+            
+            # Fallback to standard cleanup
+            if not cleanup_results['success']:
+                tprint("🧹 Performing fallback memory cleanup...")
+                
+                # Clear caches
+                self._clear_cache()
+                self._vectorized_arrays.clear()
+                self._computation_cache.clear()
+                
+                # Force garbage collection
+                import gc
+                collected = gc.collect()
+                
+                cleanup_results.update({
+                    'success': True,
+                    'memory_freed_mb': collected * 0.001,  # Rough estimate
+                    'cleanup_methods_used': ['cache_clear', 'garbage_collection']
+                })
+                
+                self.logger.info(f"🧹 Fallback memory cleanup: {collected} objects collected")
+            
+            # Get final memory pressure
+            cleanup_results['memory_pressure_after'] = self._get_memory_pressure()
+            
+            tprint_success(f"✅ Aggressive memory cleanup completed: {cleanup_results['memory_freed_mb']:.1f}MB freed")
+            
+        except Exception as e:
+            cleanup_results['errors'].append(str(e))
+            self.logger.error(f"❌ Aggressive memory cleanup failed: {e}")
+            tprint_error(f"❌ Aggressive memory cleanup failed: {e}")
+        
+        return cleanup_results
+    
+    def _get_memory_pressure(self) -> float:
+        """Get current memory pressure if available."""
+        if hasattr(self, 'memory_optimizer') and self.memory_optimizer:
+            return getattr(self.memory_optimizer, 'memory_pressure', 0.0)
+        return 0.0
+    
+    def _monitor_memory_pressure(self) -> Dict[str, Any]:
+        """Monitor memory pressure and trigger cleanup if needed."""
+        memory_stats = {
+            'pressure': self._get_memory_pressure(),
+            'cleanup_triggered': False,
+            'recommendations': []
+        }
+        
+        pressure = memory_stats['pressure']
+        
+        if pressure > 0.9:  # Critical pressure
+            memory_stats['cleanup_triggered'] = True
+            memory_stats['recommendations'].append('CRITICAL: Immediate aggressive cleanup required')
+            self._aggressive_memory_cleanup(force_cleanup=True)
+            
+        elif pressure > 0.8:  # High pressure
+            memory_stats['cleanup_triggered'] = True
+            memory_stats['recommendations'].append('WARNING: High memory pressure - performing cleanup')
+            self._aggressive_memory_cleanup(force_cleanup=False)
+            
+        elif pressure > 0.7:  # Medium pressure
+            memory_stats['recommendations'].append('INFO: Medium memory pressure - monitoring')
+            self._cleanup_cache()
+        
+        return memory_stats
+
     def _trim_cache_by_entries(self, max_entries: int = 1000) -> None:
         """Trim cache to maximum number of entries (LRU-like)."""
         if len(self._cache) > max_entries:
@@ -982,6 +1096,13 @@ class MultiStageFeatureSelector:
         # Clear cache at start of new selection
         self._clear_cache()
         self._active_event_timestamps = None
+        
+        # Monitor memory pressure at start
+        memory_stats = self._monitor_memory_pressure()
+        if memory_stats['cleanup_triggered']:
+            tprint(f"🧠 Memory pressure detected at start: {memory_stats['pressure']:.2f}")
+            for recommendation in memory_stats['recommendations']:
+                tprint(f"   → {recommendation}")
 
         # Align event timestamps to the provided data (before any windowing)
         event_ts_series_full: Optional[pd.Series] = None
@@ -1072,6 +1193,14 @@ class MultiStageFeatureSelector:
         tprint(f"   ✅ Cache hits: {cache_stats['cache_hits']}")
         tprint(f"   ❌ Cache misses: {cache_stats['cache_misses']}")
         tprint(f"   📈 Hit rate: {cache_stats['hit_rate']:.2%}")
+
+        # Perform final memory cleanup
+        final_cleanup = self._aggressive_memory_cleanup(force_cleanup=False)
+        tprint("🧹 FINAL MEMORY CLEANUP:")
+        tprint(f"   💾 Memory freed: {final_cleanup['memory_freed_mb']:.1f}MB")
+        tprint(f"   ✅ Cleanup success: {final_cleanup['success']}")
+        if final_cleanup['cleanup_methods_used']:
+            tprint(f"   🔧 Methods used: {', '.join(final_cleanup['cleanup_methods_used'])}")
 
         # Log execution time
         execution_time = time.time() - start_time

@@ -2,6 +2,7 @@
 OHLCV Data Management
 
 Handles OHLCV data fetching, caching, and processing for different timeframes.
+Now uses the enhanced OHLCV manager with comprehensive fixes for all identified issues.
 """
 
 import asyncio
@@ -11,6 +12,12 @@ from dataclasses import dataclass
 from enum import Enum
 
 from src.utils.logger import system_logger
+
+# Import the enhanced OHLCV manager
+from .enhanced_ohlcv_manager import (
+    EnhancedOHLCVManager, OHLCVData as EnhancedOHLCVData, Timeframe as EnhancedTimeframe,
+    get_enhanced_ohlcv_manager, cleanup_all_managers
+)
 
 
 class Timeframe(Enum):
@@ -56,37 +63,20 @@ class OHLCVData:
 class OHLCVManager:
     """
     Manages OHLCV data fetching, caching, and processing.
+    Now uses the enhanced OHLCV manager with comprehensive fixes.
     """
     
     def __init__(self, exchange_name: str):
         self.exchange_name = exchange_name
         self.logger = system_logger.getChild(f"OHLCVManager.{exchange_name}")
         
-        # Data cache: {symbol: {timeframe: [OHLCVData]}}
-        self.ohlcv_cache: Dict[str, Dict[Timeframe, List[OHLCVData]]] = {}
+        # Use the enhanced OHLCV manager
+        self.enhanced_manager = get_enhanced_ohlcv_manager(exchange_name)
         
-        # Cache settings
-        self.cache_ttl = {
-            Timeframe.MINUTE_1: timedelta(minutes=5),
-            Timeframe.MINUTE_3: timedelta(minutes=10),
-            Timeframe.MINUTE_5: timedelta(minutes=15),
-            Timeframe.MINUTE_15: timedelta(minutes=30),
-            Timeframe.MINUTE_30: timedelta(hours=1),
-            Timeframe.HOUR_1: timedelta(hours=2),
-            Timeframe.HOUR_2: timedelta(hours=4),
-            Timeframe.HOUR_4: timedelta(hours=8),
-            Timeframe.HOUR_6: timedelta(hours=12),
-            Timeframe.HOUR_12: timedelta(days=1),
-            Timeframe.DAY_1: timedelta(days=2),
-            Timeframe.DAY_3: timedelta(days=5),
-            Timeframe.WEEK_1: timedelta(weeks=2),
-            Timeframe.MONTH_1: timedelta(days=30)
-        }
-        
-        # Data fetching functions
-        self.fetch_functions: Dict[str, callable] = {}
-        
-        # Data limits
+        # Maintain backward compatibility
+        self.ohlcv_cache = {}  # Deprecated, use enhanced_manager.cache
+        self.cache_ttl = {}    # Deprecated, use enhanced_manager.config.ttl_seconds
+        self.fetch_functions = {}  # Deprecated, use enhanced_manager.fetch_functions
         self.max_candles_per_request = 1000
         self.max_cached_candles = 5000
         
@@ -102,6 +92,10 @@ class OHLCVManager:
             get_klines: Function to get recent klines
             get_historical_klines: Optional function to get historical klines
         """
+        # Delegate to enhanced manager
+        self.enhanced_manager.register_fetch_functions(get_klines, get_historical_klines)
+        
+        # Maintain backward compatibility
         self.fetch_functions = {
             "get_klines": get_klines,
             "get_historical_klines": get_historical_klines
@@ -128,35 +122,38 @@ class OHLCVManager:
         Returns:
             List of OHLCVData
         """
-        try:
-            # Check cache first
-            if use_cache and self._is_cache_valid(symbol, timeframe):
-                cached_data = self._get_cached_data(symbol, timeframe, limit)
-                if cached_data:
-                    return cached_data
-            
-            # Fetch fresh data
-            if "get_klines" not in self.fetch_functions:
-                self.logger.warning("No klines fetch function registered")
-                return []
-            
-            raw_data = await self.fetch_functions["get_klines"](symbol, timeframe.value, limit)
-            if not raw_data:
-                self.logger.warning(f"No OHLCV data received for {symbol}")
-                return []
-            
-            # Parse OHLCV data
-            ohlcv_data = self._parse_ohlcv_data(symbol, timeframe, raw_data)
-            
-            # Cache the data
-            self._cache_data(symbol, timeframe, ohlcv_data)
-            
-            # Return requested limit
-            return ohlcv_data[:limit]
-            
-        except Exception as e:
-            self.logger.error(f"Error fetching OHLCV data for {symbol}: {e}")
-            return []
+        # Convert to enhanced timeframe
+        enhanced_timeframe = self._convert_timeframe(timeframe)
+        
+        # Delegate to enhanced manager
+        enhanced_data = await self.enhanced_manager.get_ohlcv(
+            symbol, enhanced_timeframe, limit, use_cache
+        )
+        
+        # Convert back to legacy format for backward compatibility
+        return [self._convert_to_legacy_ohlcv(data) for data in enhanced_data]
+    
+    def _convert_timeframe(self, timeframe: Timeframe) -> EnhancedTimeframe:
+        """Convert legacy timeframe to enhanced timeframe."""
+        return EnhancedTimeframe(timeframe.value)
+    
+    def _convert_to_legacy_ohlcv(self, enhanced_data: EnhancedOHLCVData) -> OHLCVData:
+        """Convert enhanced OHLCV data to legacy format."""
+        return OHLCVData(
+            symbol=enhanced_data.symbol,
+            timeframe=Timeframe(enhanced_data.timeframe.value),
+            timestamp=enhanced_data.timestamp,
+            open=enhanced_data.open,
+            high=enhanced_data.high,
+            low=enhanced_data.low,
+            close=enhanced_data.close,
+            volume=enhanced_data.volume,
+            quote_volume=enhanced_data.quote_volume,
+            trades_count=enhanced_data.trades_count,
+            taker_buy_volume=enhanced_data.taker_buy_volume,
+            taker_buy_quote_volume=enhanced_data.taker_buy_quote_volume,
+            metadata=enhanced_data.metadata
+        )
     
     async def get_historical_ohlcv(
         self,
@@ -179,138 +176,38 @@ class OHLCVManager:
         Returns:
             List of OHLCVData
         """
-        try:
-            if "get_historical_klines" not in self.fetch_functions:
-                self.logger.warning("No historical klines fetch function registered")
-                return []
-            
-            raw_data = await self.fetch_functions["get_historical_klines"](
-                symbol, timeframe.value, start_time, end_time, limit
-            )
-            if not raw_data:
-                self.logger.warning(f"No historical OHLCV data received for {symbol}")
-                return []
-            
-            # Parse OHLCV data
-            ohlcv_data = self._parse_ohlcv_data(symbol, timeframe, raw_data)
-            
-            return ohlcv_data
-            
-        except Exception as e:
-            self.logger.error(f"Error fetching historical OHLCV data for {symbol}: {e}")
-            return []
+        # Convert to enhanced timeframe
+        enhanced_timeframe = self._convert_timeframe(timeframe)
+        
+        # Delegate to enhanced manager
+        enhanced_data = await self.enhanced_manager.get_historical_ohlcv(
+            symbol, enhanced_timeframe, start_time, end_time, limit
+        )
+        
+        # Convert back to legacy format for backward compatibility
+        return [self._convert_to_legacy_ohlcv(data) for data in enhanced_data]
     
-    def _parse_ohlcv_data(
-        self,
-        symbol: str,
-        timeframe: Timeframe,
-        raw_data: List[List[Any]]
-    ) -> List[OHLCVData]:
-        """Parse raw OHLCV data into OHLCVData structures."""
-        ohlcv_list = []
-        
-        for item in raw_data:
-            try:
-                # Parse timestamp
-                if isinstance(item[0], (int, float)):
-                    timestamp = datetime.fromtimestamp(item[0] / 1000)
-                else:
-                    timestamp = datetime.fromisoformat(str(item[0]))
-                
-                # Parse OHLCV values
-                open_price = float(item[1])
-                high_price = float(item[2])
-                low_price = float(item[3])
-                close_price = float(item[4])
-                volume = float(item[5])
-                
-                # Parse additional data if available
-                quote_volume = float(item[6]) if len(item) > 6 and item[6] else None
-                trades_count = int(item[7]) if len(item) > 7 and item[7] else None
-                taker_buy_volume = float(item[8]) if len(item) > 8 and item[8] else None
-                taker_buy_quote_volume = float(item[9]) if len(item) > 9 and item[9] else None
-                
-                ohlcv_data = OHLCVData(
-                    symbol=symbol,
-                    timeframe=timeframe,
-                    timestamp=timestamp,
-                    open=open_price,
-                    high=high_price,
-                    low=low_price,
-                    close=close_price,
-                    volume=volume,
-                    quote_volume=quote_volume,
-                    trades_count=trades_count,
-                    taker_buy_volume=taker_buy_volume,
-                    taker_buy_quote_volume=taker_buy_quote_volume,
-                    metadata={"raw_data": item}
-                )
-                
-                ohlcv_list.append(ohlcv_data)
-                
-            except (ValueError, TypeError, IndexError) as e:
-                self.logger.warning(f"Error parsing OHLCV item: {e}")
-                continue
-        
-        return ohlcv_list
+    def get_cache_statistics(self) -> Dict[str, Any]:
+        """Get OHLCV cache statistics."""
+        return self.enhanced_manager.get_cache_statistics()
     
-    def _is_cache_valid(self, symbol: str, timeframe: Timeframe) -> bool:
-        """Check if cache is valid for symbol and timeframe."""
-        if symbol not in self.ohlcv_cache:
-            return False
-        
-        if timeframe not in self.ohlcv_cache[symbol]:
-            return False
-        
-        data = self.ohlcv_cache[symbol][timeframe]
-        if not data:
-            return False
-        
-        # Check if most recent data is within TTL
-        latest_timestamp = data[-1].timestamp
-        ttl = self.cache_ttl.get(timeframe, timedelta(minutes=5))
-        
-        return datetime.now() - latest_timestamp < ttl
+    def cleanup_stale_cache(self) -> int:
+        """Clean up stale cache entries."""
+        return self.enhanced_manager.cache.cleanup_expired(3600)  # 1 hour TTL
     
-    def _get_cached_data(self, symbol: str, timeframe: Timeframe, limit: int) -> List[OHLCVData]:
-        """Get cached data for symbol and timeframe."""
-        if symbol not in self.ohlcv_cache:
-            return []
-        
-        if timeframe not in self.ohlcv_cache[symbol]:
-            return []
-        
-        data = self.ohlcv_cache[symbol][timeframe]
-        return data[-limit:] if len(data) >= limit else data
+    def invalidate_cache(self, symbol: Optional[str] = None, timeframe: Optional[Timeframe] = None) -> None:
+        """Invalidate OHLCV cache."""
+        if timeframe:
+            enhanced_timeframe = self._convert_timeframe(timeframe)
+            self.enhanced_manager.cache.invalidate(symbol, enhanced_timeframe)
+        else:
+            self.enhanced_manager.cache.invalidate(symbol)
     
-    def _cache_data(self, symbol: str, timeframe: Timeframe, data: List[OHLCVData]) -> None:
-        """Cache OHLCV data."""
-        if symbol not in self.ohlcv_cache:
-            self.ohlcv_cache[symbol] = {}
-        
-        if timeframe not in self.ohlcv_cache[symbol]:
-            self.ohlcv_cache[symbol][timeframe] = []
-        
-        # Add new data to cache
-        self.ohlcv_cache[symbol][timeframe].extend(data)
-        
-        # Sort by timestamp
-        self.ohlcv_cache[symbol][timeframe].sort(key=lambda x: x.timestamp)
-        
-        # Remove duplicates
-        seen_timestamps = set()
-        unique_data = []
-        for item in self.ohlcv_cache[symbol][timeframe]:
-            if item.timestamp not in seen_timestamps:
-                seen_timestamps.add(item.timestamp)
-                unique_data.append(item)
-        
-        self.ohlcv_cache[symbol][timeframe] = unique_data
-        
-        # Limit cache size
-        if len(self.ohlcv_cache[symbol][timeframe]) > self.max_cached_candles:
-            self.ohlcv_cache[symbol][timeframe] = self.ohlcv_cache[symbol][timeframe][-self.max_cached_candles:]
+    def cleanup(self) -> None:
+        """Clean up resources and connections."""
+        self.enhanced_manager.cleanup()
     
+    # Legacy methods for backward compatibility
     async def get_latest_candle(self, symbol: str, timeframe: Timeframe) -> Optional[OHLCVData]:
         """Get the latest candle for symbol and timeframe."""
         data = await self.get_ohlcv(symbol, timeframe, limit=1)
@@ -335,70 +232,6 @@ class OHLCVManager:
     
     def get_cached_candles(self, symbol: str, timeframe: Timeframe) -> List[OHLCVData]:
         """Get cached candles without fetching."""
-        if symbol not in self.ohlcv_cache:
-            return []
-        
-        if timeframe not in self.ohlcv_cache[symbol]:
-            return []
-        
-        return self.ohlcv_cache[symbol][timeframe].copy()
-    
-    
-    def get_cache_statistics(self) -> Dict[str, Any]:
-        """Get OHLCV cache statistics."""
-        total_symbols = len(self.ohlcv_cache)
-        total_candles = sum(
-            len(timeframe_data)
-            for symbol_data in self.ohlcv_cache.values()
-            for timeframe_data in symbol_data.values()
-        )
-        
-        timeframe_counts = {}
-        for symbol_data in self.ohlcv_cache.values():
-            for timeframe, data in symbol_data.items():
-                timeframe_counts[timeframe.value] = timeframe_counts.get(timeframe.value, 0) + len(data)
-        
-        return {
-            "total_symbols": total_symbols,
-            "total_candles": total_candles,
-            "timeframe_distribution": timeframe_counts,
-            "max_cached_candles": self.max_cached_candles
-        }
-    
-    def cleanup_stale_cache(self) -> int:
-        """Clean up stale cache entries."""
-        now = datetime.now()
-        cleaned_count = 0
-        
-        for symbol in list(self.ohlcv_cache.keys()):
-            for timeframe in list(self.ohlcv_cache[symbol].keys()):
-                data = self.ohlcv_cache[symbol][timeframe]
-                if not data:
-                    continue
-                
-                ttl = self.cache_ttl.get(timeframe, timedelta(minutes=5))
-                if now - data[-1].timestamp > ttl:
-                    del self.ohlcv_cache[symbol][timeframe]
-                    cleaned_count += 1
-            
-            # Remove empty symbol entries
-            if not self.ohlcv_cache[symbol]:
-                del self.ohlcv_cache[symbol]
-        
-        if cleaned_count > 0:
-            self.logger.info(f"Cleaned up {cleaned_count} stale cache entries")
-        
-        return cleaned_count
-    
-    def invalidate_cache(self, symbol: Optional[str] = None, timeframe: Optional[Timeframe] = None) -> None:
-        """Invalidate OHLCV cache."""
-        if symbol and timeframe:
-            if symbol in self.ohlcv_cache and timeframe in self.ohlcv_cache[symbol]:
-                del self.ohlcv_cache[symbol][timeframe]
-                self.logger.debug(f"Invalidated cache for {symbol} {timeframe.value}")
-        elif symbol:
-            self.ohlcv_cache.pop(symbol, None)
-            self.logger.debug(f"Invalidated cache for {symbol}")
-        else:
-            self.ohlcv_cache.clear()
-            self.logger.debug("Invalidated all OHLCV cache")
+        enhanced_timeframe = self._convert_timeframe(timeframe)
+        enhanced_data = self.enhanced_manager.cache.get(symbol, enhanced_timeframe)
+        return [self._convert_to_legacy_ohlcv(data) for data in enhanced_data]

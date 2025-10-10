@@ -131,7 +131,7 @@ class DomainWhitelist:
             ),
             InteractionRule(
                 FeatureDomain.VOLUME, FeatureDomain.PRICE_MOMENTUM, True,
-                "Volume confirms price momentum", priority=10
+                "Volume confirms price momentum - highly meaningful for trading", priority=10
             ),
             InteractionRule(
                 FeatureDomain.TREND, FeatureDomain.MEAN_REVERSION, True,
@@ -173,11 +173,19 @@ class DomainWhitelist:
             ),
             InteractionRule(
                 FeatureDomain.VOLUME, FeatureDomain.VOLATILITY, True,
-                "Volume-volatility relationship", priority=5
+                "Volume-volatility relationship - volume spikes indicate volatility", priority=8
             ),
             InteractionRule(
                 FeatureDomain.TREND, FeatureDomain.VOLUME, True,
-                "Trend confirmation with volume", priority=5
+                "Trend confirmation with volume - volume validates trend strength", priority=8
+            ),
+            InteractionRule(
+                FeatureDomain.VOLUME, FeatureDomain.MEAN_REVERSION, True,
+                "Volume at extremes signals mean reversion opportunities", priority=7
+            ),
+            InteractionRule(
+                FeatureDomain.VOLUME, FeatureDomain.CROSS_ASSET, True,
+                "Cross-asset volume patterns reveal market sentiment", priority=6
             ),
             
             # Low-priority rules

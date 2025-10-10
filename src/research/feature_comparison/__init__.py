@@ -21,6 +21,7 @@ from .stability_metrics import FeatureStabilityAnalyzer
 from .diagnostics import FeatureDiagnostics
 from .method_settings import MethodSettings
 from .enhanced_relevance_analyzer import EnhancedRelevanceAnalyzer
+from .analyst_labeler_integration import AnalystLabelerIntegration
 
 __all__ = [
     'FeatureComparisonUtils',
@@ -41,5 +42,6 @@ __all__ = [
     'FeatureStabilityAnalyzer',
     'FeatureDiagnostics',
     'MethodSettings',
-    'EnhancedRelevanceAnalyzer'
+    'EnhancedRelevanceAnalyzer',
+    'AnalystLabelerIntegration'
 ]

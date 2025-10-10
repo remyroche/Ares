@@ -1,0 +1,241 @@
+# Feature Comparison Framework
+
+This framework provides comprehensive tools to compare different feature engineering approaches, specifically focusing on VWAP-based features, volatility normalization, and their combinations.
+
+## Overview
+
+The framework compares 4 different feature versions:
+1. **Initial**: Basic OHLCV data + fundamental technical indicators
+2. **VWAP-based**: Features derived from Volume Weighted Average Price
+3. **Vol-normalized**: Features normalized by volatility
+4. **VWAP+Vol-normalized**: Combined VWAP and volatility normalization
+
+## Features
+
+- **Multiple Relevance Metrics**: LGBM with SHAP values, LASSO regression, Mutual Information, Correlation analysis
+- **Comprehensive Reporting**: JSON and Markdown reports with visualizations
+- **Modular Design**: Easy to extend with new feature engineering approaches
+- **Integration**: Works with existing feature modules in the codebase
+
+## Quick Start
+
+### Basic Usage
+
+```python
+from src.research.feature_comparison.run_comparison import FeatureComparisonRunner
+
+# Initialize with your data
+runner = FeatureComparisonRunner(data=your_data, task_type='regression')
+
+# Run complete analysis
+results = runner.run_complete_analysis()
+
+# Print summary
+runner.print_summary(results)
+```
+
+### Using Sample Data
+
+```python
+# Run with sample data
+runner = FeatureComparisonRunner()
+results = runner.run_complete_analysis()
+```
+
+## Module Structure
+
+### Core Modules
+
+- **`feature_comparison_utils.py`**: Utility functions to call scripts from different feature modules
+- **`feature_versions.py`**: Manages the 4 different feature versions
+- **`relevance_analyzer.py`**: Analyzes feature relevance using multiple methods
+- **`comparison_report.py`**: Generates comprehensive comparison reports
+- **`run_comparison.py`**: Main script to run the complete analysis
+
+### Key Classes
+
+#### FeatureComparisonUtils
+- `create_vwap_features()`: Generate VWAP-based features
+- `create_volatility_normalized_features()`: Generate volatility-normalized features
+- `create_combined_features()`: Generate combined VWAP + volatility features
+- `prepare_feature_versions()`: Prepare all 4 versions for comparison
+
+#### FeatureVersions
+- `generate_all_versions()`: Create all 4 feature versions
+- `get_feature_matrix()`: Get feature matrix for specific version
+- `get_version_info()`: Get information about each version
+- `compare_feature_counts()`: Compare feature counts across versions
+
+#### RelevanceAnalyzer
+- `lgbm_shap_analysis()`: LGBM analysis with SHAP values
+- `lasso_analysis()`: LASSO regression analysis
+- `mutual_information_analysis()`: Mutual information analysis
+- `comprehensive_analysis()`: Run all analysis methods
+
+#### ComparisonReport
+- `generate_comprehensive_report()`: Generate complete comparison report
+- `generate_markdown_report()`: Generate markdown report
+- `_generate_comparison_plots()`: Generate visualization plots
+
+## Feature Engineering Approaches
+
+### 1. Initial Features
+- Basic OHLCV data
+- Moving averages (SMA, EMA)
+- Price ratios
+- Volume features
+- Volatility indicators
+- Momentum indicators (RSI)
+
+### 2. VWAP-based Features
+- VWAP calculation
+- Price-VWAP ratios and differences
+- VWAP momentum indicators
+- VWAP volatility measures
+
+### 3. Volatility Normalized Features
+- Price features normalized by rolling volatility
+- Volume normalized by volatility
+- Volatility-adjusted moving averages
+
+### 4. Combined Features
+- VWAP features + volatility normalization
+- Advanced combined indicators
+- Cross-feature interactions
+
+## Analysis Methods
+
+### LGBM with SHAP
+- Gradient boosting model for feature importance
+- SHAP values for feature attribution
+- Performance metrics (R², MSE for regression)
+
+### LASSO Regression
+- Sparse linear model
+- Feature selection through regularization
+- Cross-validated alpha selection
+
+### Mutual Information
+- Non-parametric dependency measure
+- Captures non-linear relationships
+- Robust to outliers
+
+### Correlation Analysis
+- Linear correlation with target
+- Quick feature screening
+- Baseline comparison
+
+## Output Reports
+
+### JSON Report
+- Complete analysis results
+- Performance metrics
+- Feature rankings
+- Method-specific results
+
+### Markdown Report
+- Human-readable summary
+- Performance comparison tables
+- Top features by version
+- Analysis insights
+
+### Visualization Plots
+- Feature count comparison
+- Performance metrics comparison
+- Top features heatmap
+- Method agreement analysis
+
+## Example Output
+
+```
+FEATURE COMPARISON ANALYSIS SUMMARY
+================================================================================
+
+Feature Counts by Version:
+----------------------------------------
+initial                :   45 features
+vwap_based            :   58 features
+vol_normalized        :   52 features
+vwap_vol_normalized   :   65 features
+
+Performance Summary (LGBM R² Score):
+----------------------------------------
+initial                : 0.1234
+vwap_based            : 0.1456
+vol_normalized        : 0.1345
+vwap_vol_normalized   : 0.1567
+
+Top 5 Features by Version (Combined Ranking):
+------------------------------------------------------------
+
+vwap_based:
+  1. vwap_momentum_20 (rank: 2.25)
+  2. price_vwap_ratio (rank: 3.50)
+  3. vwap_volatility_10 (rank: 4.75)
+  4. vwap_momentum_10 (rank: 5.00)
+  5. price_vwap_pct (rank: 6.25)
+```
+
+## Integration with Existing Modules
+
+The framework integrates with existing feature engineering modules:
+
+- **feature_lookback_optimization**: For lookback period optimization
+- **feature_generation**: For advanced feature generation
+- **features_common**: For scalers and transforms
+- **feature_selection**: For feature selection methods
+
+## Requirements
+
+- pandas
+- numpy
+- scikit-learn
+- matplotlib
+- seaborn
+- lightgbm (optional, for LGBM analysis)
+- shap (optional, for SHAP analysis)
+
+## Usage Examples
+
+See `example_usage.py` for detailed usage examples including:
+- Basic comparison analysis
+- Custom parameter configuration
+- Specific version analysis
+- Sample data generation
+
+## File Structure
+
+```
+feature_comparison/
+├── __init__.py
+├── README.md
+├── feature_comparison_utils.py
+├── feature_versions.py
+├── relevance_analyzer.py
+├── comparison_report.py
+├── run_comparison.py
+├── example_usage.py
+└── reports/
+    ├── feature_comparison_report_YYYYMMDD_HHMMSS.json
+    ├── feature_comparison_report_YYYYMMDD_HHMMSS.md
+    ├── feature_count_comparison.png
+    ├── performance_comparison.png
+    └── top_features_comparison.png
+```
+
+## Contributing
+
+To add new feature engineering approaches:
+
+1. Extend `FeatureVersions` class with new version methods
+2. Update `FeatureComparisonUtils` with new feature creation functions
+3. Add new analysis methods to `RelevanceAnalyzer` if needed
+4. Update report generation in `ComparisonReport`
+
+## Notes
+
+- The framework is designed to be modular and extensible
+- All analysis methods include error handling and logging
+- Reports are automatically timestamped and saved
+- The framework works with both regression and classification tasks
+- Sample data generation is included for testing purposes

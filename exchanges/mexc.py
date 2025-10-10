@@ -492,10 +492,15 @@ class MexcExchange(BaseExchange, IExchangeClient):
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
+                    if not data:
+                        raise ValueError(f"No klines data received for {symbol}")
                     return data
+                else:
+                    error_text = await response.text()
+                    raise Exception(f"API request failed: {response.status} - {error_text}")
         except Exception as e:
             tprint(f"Error getting klines for {symbol}: {e}", "ERROR")
-        return []
+            raise  # Fast fail instead of returning empty list
     
     async def _get_historical_klines(
         self,
@@ -520,10 +525,15 @@ class MexcExchange(BaseExchange, IExchangeClient):
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
+                    if not data:
+                        raise ValueError(f"No historical klines data received for {symbol}")
                     return data
+                else:
+                    error_text = await response.text()
+                    raise Exception(f"API request failed: {response.status} - {error_text}")
         except Exception as e:
             tprint(f"Error getting historical klines for {symbol}: {e}", "ERROR")
-        return []
+            raise  # Fast fail instead of returning empty list
     
     async def _get_funding_rate(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Get funding rate for symbol."""
@@ -670,14 +680,18 @@ class MexcExchange(BaseExchange, IExchangeClient):
 
             async with self.session.request(method, url, params=params, headers=headers) as response:
                 if response.status == 200:
-                    return await response.json()
+                    data = await response.json()
+                    # Check for MEXC API error responses
+                    if isinstance(data, dict) and "code" in data and data["code"] != 200:
+                        error_msg = data.get("msg", "Unknown API error")
+                        raise Exception(f"MEXC API error {data['code']}: {error_msg}")
+                    return data
                 else:
                     error_text = await response.text()
-                    tprint(f"API request failed: {response.status} - {error_text}", "ERROR")
-                    return None
+                    raise Exception(f"API request failed: {response.status} - {error_text}")
         except Exception as e:
             tprint(f"Request failed: {e}", "ERROR")
-            return None
+            raise  # Fast fail instead of returning None
 
     async def _convert_to_market_data(
         self,
@@ -686,26 +700,48 @@ class MexcExchange(BaseExchange, IExchangeClient):
         interval: str,
     ) -> list[MarketData]:
         """Convert raw MEXC kline data to standardized MarketData format."""
+        if not raw_data:
+            raise ValueError("No raw data provided for conversion")
+            
         market_data_list = []
         
         for item in raw_data:
             try:
                 # MEXC klines format: [open_time, open, high, low, close, volume, close_time, ...]
-                if isinstance(item, list):
+                if isinstance(item, list) and len(item) >= 6:
+                    # Validate required fields
+                    if not all(item[i] for i in [0, 1, 2, 3, 4, 5]):
+                        raise ValueError(f"Invalid kline data: missing required fields in {item}")
+                        
                     timestamp = datetime.fromtimestamp(item[0] / 1000)
                     open_price = float(item[1])
                     high_price = float(item[2])
                     low_price = float(item[3])
                     close_price = float(item[4])
                     volume = float(item[5])
-                else:
-                    # Dict format
+                    
+                    # Validate price data
+                    if not all(price > 0 for price in [open_price, high_price, low_price, close_price]):
+                        raise ValueError(f"Invalid price data in kline: {item}")
+                        
+                elif isinstance(item, dict):
+                    # Dict format - validate required fields
+                    required_fields = ["open", "high", "low", "close", "volume"]
+                    if not all(field in item for field in required_fields):
+                        raise ValueError(f"Missing required fields in kline dict: {item}")
+                        
                     timestamp = self._convert_timestamp(item.get("timestamp", item.get("open_time", 0)))
-                    open_price = float(item.get("open", 0))
-                    high_price = float(item.get("high", 0))
-                    low_price = float(item.get("low", 0))
-                    close_price = float(item.get("close", 0))
-                    volume = float(item.get("volume", 0))
+                    open_price = float(item["open"])
+                    high_price = float(item["high"])
+                    low_price = float(item["low"])
+                    close_price = float(item["close"])
+                    volume = float(item["volume"])
+                    
+                    # Validate price data
+                    if not all(price > 0 for price in [open_price, high_price, low_price, close_price]):
+                        raise ValueError(f"Invalid price data in kline dict: {item}")
+                else:
+                    raise ValueError(f"Unsupported kline data format: {type(item)} - {item}")
 
                 market_data = MarketData(
                     symbol=symbol,
@@ -720,9 +756,12 @@ class MexcExchange(BaseExchange, IExchangeClient):
                 market_data_list.append(market_data)
                 
             except Exception as e:
-                self.logger.warning(f"Failed to convert kline data: {e}")
-                continue
+                self.logger.error(f"Failed to convert kline data: {e} - Data: {item}")
+                raise  # Fast fail instead of continuing with invalid data
 
+        if not market_data_list:
+            raise ValueError("No valid kline data could be converted")
+            
         return market_data_list
 
     async def _get_market_id(self, symbol: str) -> str:
@@ -743,26 +782,30 @@ class MexcExchange(BaseExchange, IExchangeClient):
         }
         
         data = await self._make_request("GET", "/api/v3/klines", params)
-        if data:
-            # Convert list format to dict format for consistency
-            klines = []
-            for item in data:
-                klines.append({
-                    "timestamp": item[0],
-                    "open_time": item[0],
-                    "open": item[1],
-                    "high": item[2],
-                    "low": item[3],
-                    "close": item[4],
-                    "volume": item[5],
-                    "close_time": item[6],
-                    "quote_volume": item[7],
-                    "trades": item[8],
-                    "taker_buy_base": item[9],
-                    "taker_buy_quote": item[10]
-                })
-            return klines
-        return []
+        if not data:
+            raise ValueError(f"No klines data received for {symbol}")
+            
+        # Convert list format to dict format for consistency
+        klines = []
+        for item in data:
+            if not isinstance(item, list) or len(item) < 6:
+                raise ValueError(f"Invalid kline format received: {item}")
+                
+            klines.append({
+                "timestamp": item[0],
+                "open_time": item[0],
+                "open": item[1],
+                "high": item[2],
+                "low": item[3],
+                "close": item[4],
+                "volume": item[5],
+                "close_time": item[6] if len(item) > 6 else item[0],
+                "quote_volume": item[7] if len(item) > 7 else 0,
+                "trades": item[8] if len(item) > 8 else 0,
+                "taker_buy_base": item[9] if len(item) > 9 else 0,
+                "taker_buy_quote": item[10] if len(item) > 10 else 0
+            })
+        return klines
 
     async def _get_historical_klines_raw(
         self,
@@ -782,26 +825,30 @@ class MexcExchange(BaseExchange, IExchangeClient):
         }
         
         data = await self._make_request("GET", "/api/v3/klines", params)
-        if data:
-            # Convert list format to dict format
-            klines = []
-            for item in data:
-                klines.append({
-                    "timestamp": item[0],
-                    "open_time": item[0],
-                    "open": item[1],
-                    "high": item[2],
-                    "low": item[3],
-                    "close": item[4],
-                    "volume": item[5],
-                    "close_time": item[6],
-                    "quote_volume": item[7],
-                    "trades": item[8],
-                    "taker_buy_base": item[9],
-                    "taker_buy_quote": item[10]
-                })
-            return klines
-        return []
+        if not data:
+            raise ValueError(f"No historical klines data received for {symbol}")
+            
+        # Convert list format to dict format
+        klines = []
+        for item in data:
+            if not isinstance(item, list) or len(item) < 6:
+                raise ValueError(f"Invalid historical kline format received: {item}")
+                
+            klines.append({
+                "timestamp": item[0],
+                "open_time": item[0],
+                "open": item[1],
+                "high": item[2],
+                "low": item[3],
+                "close": item[4],
+                "volume": item[5],
+                "close_time": item[6] if len(item) > 6 else item[0],
+                "quote_volume": item[7] if len(item) > 7 else 0,
+                "trades": item[8] if len(item) > 8 else 0,
+                "taker_buy_base": item[9] if len(item) > 9 else 0,
+                "taker_buy_quote": item[10] if len(item) > 10 else 0
+            })
+        return klines
 
     async def _get_historical_agg_trades_raw(
         self,
@@ -819,25 +866,32 @@ class MexcExchange(BaseExchange, IExchangeClient):
         }
         
         data = await self._make_request("GET", "/api/v3/aggTrades", params)
-        if data:
-            # Standardize field names
-            trades = []
-            for item in data:
-                trades.append({
-                    "timestamp": item.get("T", item.get("timestamp", 0)),
-                    "price": item.get("p", item.get("price", 0)),
-                    "quantity": item.get("q", item.get("quantity", 0)),
-                    "is_buyer_maker": item.get("m", item.get("is_buyer_maker", False)),
-                    "trade_id": item.get("a", item.get("trade_id", 0)),
-                    "first_trade_id": item.get("f", item.get("first_trade_id", 0)),
-                    "last_trade_id": item.get("l", item.get("last_trade_id", 0))
-                })
-            return trades
-        return []
+        if not data:
+            raise ValueError(f"No aggregated trades data received for {symbol}")
+            
+        # Standardize field names
+        trades = []
+        for item in data:
+            if not isinstance(item, dict):
+                raise ValueError(f"Invalid trade format received: {item}")
+                
+            trades.append({
+                "timestamp": item.get("T", item.get("timestamp", 0)),
+                "price": item.get("p", item.get("price", 0)),
+                "quantity": item.get("q", item.get("quantity", 0)),
+                "is_buyer_maker": item.get("m", item.get("is_buyer_maker", False)),
+                "trade_id": item.get("a", item.get("trade_id", 0)),
+                "first_trade_id": item.get("f", item.get("first_trade_id", 0)),
+                "last_trade_id": item.get("l", item.get("last_trade_id", 0))
+            })
+        return trades
 
     async def _get_account_info_raw(self) -> dict[str, Any]:
         """Get raw account information from MEXC."""
-        return await self._make_request("GET", "/api/v3/account", signed=True) or {}
+        data = await self._make_request("GET", "/api/v3/account", signed=True)
+        if not data:
+            raise ValueError("No account information received from MEXC")
+        return data
 
     async def _create_order_raw(
         self,
@@ -862,27 +916,39 @@ class MexcExchange(BaseExchange, IExchangeClient):
         if params:
             order_params.update(params)
             
-        return await self._make_request("POST", "/api/v3/order", order_params, signed=True) or {}
+        data = await self._make_request("POST", "/api/v3/order", order_params, signed=True)
+        if not data:
+            raise ValueError(f"Failed to create order for {symbol}")
+        return data
 
     async def _get_position_risk_raw(self, symbol: str) -> dict[str, Any]:
         """Get raw position risk information from MEXC futures."""
         params = {"symbol": symbol.upper()} if symbol else {}
         data = await self._make_request("GET", "/api/v3/positionRisk", params, signed=True)
         
-        if data and isinstance(data, list):
+        if not data:
+            raise ValueError(f"No position risk data received for {symbol}")
+            
+        if isinstance(data, list):
+            if not data:
+                raise ValueError(f"No position data available for {symbol}")
             # Return first matching position or first position if no symbol specified
             for position in data:
                 if not symbol or position.get("symbol", "").upper() == symbol.upper():
                     return position
-            return data[0] if data else {}
+            return data[0]
         
-        return data or {}
+        return data
 
     async def _get_open_orders_raw(self, symbol: str | None) -> list[dict[str, Any]]:
         """Get raw open orders from MEXC."""
         params = {"symbol": symbol.upper()} if symbol else {}
         data = await self._make_request("GET", "/api/v3/openOrders", params, signed=True)
-        return data if isinstance(data, list) else []
+        if not data:
+            raise ValueError(f"No open orders data received for {symbol or 'all symbols'}")
+        if not isinstance(data, list):
+            raise ValueError(f"Invalid open orders data format received: {type(data)}")
+        return data
 
     async def _cancel_order_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
         """Cancel raw order on MEXC."""
@@ -890,7 +956,10 @@ class MexcExchange(BaseExchange, IExchangeClient):
             "symbol": symbol.upper(),
             "orderId": str(order_id)
         }
-        return await self._make_request("DELETE", "/api/v3/order", params, signed=True) or {}
+        data = await self._make_request("DELETE", "/api/v3/order", params, signed=True)
+        if not data:
+            raise ValueError(f"Failed to cancel order {order_id} for {symbol}")
+        return data
 
     async def _get_order_status_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
         """Get raw order status from MEXC."""
@@ -898,7 +967,10 @@ class MexcExchange(BaseExchange, IExchangeClient):
             "symbol": symbol.upper(),
             "orderId": str(order_id)
         }
-        return await self._make_request("GET", "/api/v3/order", params, signed=True) or {}
+        data = await self._make_request("GET", "/api/v3/order", params, signed=True)
+        if not data:
+            raise ValueError(f"No order status data received for order {order_id} on {symbol}")
+        return data
 
     def _convert_interval(self, interval: str) -> str:
         """Convert standard interval to MEXC format."""

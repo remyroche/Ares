@@ -96,27 +96,31 @@ class FeatureComparisonUtils:
         # Calculate VWAP
         df['vwap'] = (df[price_col] * df[volume_col]).cumsum() / df[volume_col].cumsum()
         
-        # VWAP-based features
-        df['price_vwap_ratio'] = df[price_col] / df['vwap']
-        df['price_vwap_diff'] = df[price_col] - df['vwap']
-        df['price_vwap_pct'] = (df[price_col] - df['vwap']) / df['vwap'] * 100
+        # Calculate returns
+        df['returns'] = df[price_col].pct_change()
+        df['vwap_returns'] = df['vwap'].pct_change()
         
-        # VWAP momentum
-        df['vwap_momentum_5'] = df['vwap'].pct_change(5)
-        df['vwap_momentum_10'] = df['vwap'].pct_change(10)
-        df['vwap_momentum_20'] = df['vwap'].pct_change(20)
+        # VWAP-based features using returns
+        df['returns_vwap_ratio'] = df['returns'] / df['vwap_returns']
+        df['returns_vwap_diff'] = df['returns'] - df['vwap_returns']
+        df['returns_vwap_pct'] = (df['returns'] - df['vwap_returns']) / df['vwap_returns'] * 100
         
-        # VWAP volatility
-        df['vwap_volatility_5'] = df['vwap'].rolling(5).std()
-        df['vwap_volatility_10'] = df['vwap'].rolling(10).std()
-        df['vwap_volatility_20'] = df['vwap'].rolling(20).std()
+        # VWAP momentum using returns
+        df['vwap_momentum_5'] = df['vwap_returns'].rolling(5).mean()
+        df['vwap_momentum_10'] = df['vwap_returns'].rolling(10).mean()
+        df['vwap_momentum_20'] = df['vwap_returns'].rolling(20).mean()
+        
+        # VWAP volatility using returns
+        df['vwap_volatility_5'] = df['vwap_returns'].rolling(5).std()
+        df['vwap_volatility_10'] = df['vwap_returns'].rolling(10).std()
+        df['vwap_volatility_20'] = df['vwap_returns'].rolling(20).std()
         
         return df
     
     def create_volatility_normalized_features(self, data: pd.DataFrame, 
                                             lookback: int = 20) -> pd.DataFrame:
         """
-        Create volatility-normalized features.
+        Create volatility-normalized features using returns.
         
         Args:
             data: Input DataFrame
@@ -127,25 +131,33 @@ class FeatureComparisonUtils:
         """
         df = data.copy()
         
-        # Calculate rolling volatility
-        df['volatility'] = df['close'].rolling(lookback).std()
+        # Calculate returns
+        df['returns'] = df['close'].pct_change()
         
-        # Volatility-normalized features
-        price_cols = ['open', 'high', 'low', 'close']
-        for col in price_cols:
-            if col in df.columns:
-                df[f'{col}_vol_norm'] = df[col] / df['volatility']
-                df[f'{col}_vol_norm_ma'] = df[f'{col}_vol_norm'].rolling(5).mean()
+        # Calculate rolling volatility of returns
+        df['returns_volatility'] = df['returns'].rolling(lookback).std()
         
-        # Volume volatility normalization
+        # Volatility-normalized returns features
+        df['returns_vol_norm'] = df['returns'] / df['returns_volatility']
+        df['returns_abs_vol_norm'] = df['returns'].abs() / df['returns_volatility']
+        
+        # Volatility-normalized rolling features
+        for window in [5, 10, 20]:
+            if f'returns_ma_{window}' in df.columns:
+                df[f'returns_ma_{window}_vol_norm'] = df[f'returns_ma_{window}'] / df['returns_volatility']
+            if f'returns_std_{window}' in df.columns:
+                df[f'returns_std_{window}_vol_norm'] = df[f'returns_std_{window}'] / df['returns_volatility']
+        
+        # Volume volatility normalization (if volume available)
         if 'volume' in df.columns:
-            df['volume_vol_norm'] = df['volume'] / df['volatility']
+            df['volume_returns'] = df['volume'].pct_change()
+            df['volume_vol_norm'] = df['volume_returns'] / df['returns_volatility']
         
         return df
     
     def create_combined_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """
-        Create combined VWAP + volatility normalized features.
+        Create combined VWAP + volatility normalized features using returns.
         
         Args:
             data: Input DataFrame
@@ -161,9 +173,13 @@ class FeatureComparisonUtils:
         # Then create volatility normalized features
         df = self.create_volatility_normalized_features(df)
         
-        # Combined features
-        df['vwap_vol_norm'] = df['vwap'] / df['volatility']
-        df['price_vwap_vol_norm_ratio'] = df['price_vwap_ratio'] / df['volatility']
+        # Combined features using returns
+        df['vwap_returns_vol_norm'] = df['vwap_returns'] / df['returns_volatility']
+        df['returns_vwap_vol_norm_ratio'] = df['returns_vwap_ratio'] / df['returns_volatility']
+        
+        # Advanced combined features
+        df['combined_momentum'] = df['returns'] * df['vwap_returns'] * df['returns_volatility']
+        df['vol_regime_returns'] = (df['returns_volatility'] > df['returns_volatility'].rolling(50).mean()).astype(int)
         
         return df
     

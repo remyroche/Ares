@@ -14,7 +14,10 @@ The framework compares 4 different feature versions:
 
 - **Multiple Relevance Metrics**: LGBM with SHAP values, LASSO regression, Mutual Information, Correlation analysis
 - **Robust Scaling**: Multiple scaling methods (Standard, Robust, MinMax, Quantile, Power) with validation
-- **Robust Evaluation**: Spearman rank correlation, Bootstrap resampling, Temporal stability analysis
+- **Robust Evaluation**: Spearman rank correlation, Bootstrap resampling (10 samples), Temporal stability analysis
+- **Returns-Based Calculations**: All features use returns instead of raw prices for better statistical properties
+- **Advanced Features**: Rolling averages, EWMA, lagged/lead features for predictive vs reactive analysis
+- **Matrix Operations**: Hardware-optimized matrix operations for performance
 - **Comprehensive Reporting**: JSON and Markdown reports with visualizations
 - **Modular Design**: Easy to extend with new feature engineering approaches
 - **Integration**: Works with existing feature modules in the codebase
@@ -81,28 +84,32 @@ results = runner.run_complete_analysis()
 
 ## Feature Engineering Approaches
 
-### 1. Initial Features
-- Basic OHLCV data
-- Moving averages (SMA, EMA)
-- Price ratios
-- Volume features
-- Volatility indicators
-- Momentum indicators (RSI)
+### 1. Initial Features (Returns-Based)
+- Returns and log returns
+- Rolling averages (SMA, EWMA) of returns
+- Returns volatility and higher moments (skewness, kurtosis)
+- Lagged returns (reactive features)
+- Lead returns (predictive features)
+- Returns momentum and acceleration
+- Volume-returns relationships
 
-### 2. VWAP-based Features
-- VWAP calculation
-- Price-VWAP ratios and differences
-- VWAP momentum indicators
-- VWAP volatility measures
+### 2. VWAP-based Features (Returns-Based)
+- VWAP returns calculation
+- Returns-VWAP ratios and differences
+- VWAP returns momentum indicators
+- VWAP returns volatility measures
+- Volume-weighted returns
 
-### 3. Volatility Normalized Features
-- Price features normalized by rolling volatility
-- Volume normalized by volatility
-- Volatility-adjusted moving averages
+### 3. Volatility Normalized Features (Returns-Based)
+- Returns normalized by rolling volatility
+- Volatility-normalized rolling features
+- Volatility regime features
+- High/low volatility returns
 
-### 4. Combined Features
-- VWAP features + volatility normalization
-- Advanced combined indicators
+### 4. Combined Features (Returns-Based)
+- VWAP returns + volatility normalization
+- Advanced combined momentum indicators
+- Volatility regime-based features
 - Cross-feature interactions
 
 ## Analysis Methods
@@ -154,6 +161,38 @@ results = runner.run_complete_analysis()
 - Calculates stability scores for each feature
 - Identifies temporally stable features
 - Measures ranking consistency across periods
+
+## Advanced Features
+
+### Returns-Based Calculations
+- **No Raw Prices**: All calculations use returns for better statistical properties
+- **Stationarity**: Returns are more stationary than prices
+- **Risk-Adjusted**: Returns provide better risk-adjusted comparisons
+- **Volatility Scaling**: Returns naturally scale with volatility
+
+### Rolling and EWMA Features
+- **Rolling Averages**: SMA and EWMA of returns with multiple windows (5, 10, 20, 50)
+- **Rolling Statistics**: Standard deviation, skewness, kurtosis of returns
+- **Exponentially Weighted**: EWMA with different decay factors
+- **Matrix Optimized**: Uses vectorized operations for performance
+
+### Lagged and Lead Features
+- **Lagged Features**: Past returns (1, 2, 3, 5, 10 periods) for reactive analysis
+- **Lead Features**: Future returns (1, 2, 3, 5 periods) for predictive analysis
+- **Momentum Features**: Differences between current and lagged returns
+- **Acceleration**: Second differences for trend analysis
+
+### Matrix Operations Integration
+- **Hardware Acceleration**: M1/M2/M3 GPU acceleration when available
+- **Vectorized Operations**: Batch processing for multiple features
+- **Memory Optimization**: Efficient memory usage for large datasets
+- **Parallel Processing**: Multi-core CPU utilization
+
+### Bootstrap Optimization
+- **Reduced Samples**: 10 bootstrap samples instead of 50+ for faster analysis
+- **Efficient Resampling**: Optimized sampling algorithms
+- **Variance Assessment**: Coefficient of variation for feature stability
+- **Performance Tracking**: Bootstrap performance metrics
 
 ## Output Reports
 

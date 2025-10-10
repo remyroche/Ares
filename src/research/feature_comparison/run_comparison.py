@@ -23,6 +23,7 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from .feature_comparison_utils import FeatureComparisonUtils
 from .feature_versions import FeatureVersions
+from .optimized_feature_versions import OptimizedFeatureVersions
 from .relevance_analyzer import RelevanceAnalyzer
 from .comparison_report import ComparisonReport
 
@@ -44,7 +45,8 @@ class FeatureComparisonRunner:
     def __init__(self, data: Optional[pd.DataFrame] = None, 
                  target_col: str = 'returns',
                  task_type: str = 'regression',
-                 scaling_method: str = 'robust'):
+                 scaling_method: str = 'robust',
+                 use_optimized: bool = True):
         """
         Initialize the feature comparison runner.
         
@@ -53,11 +55,13 @@ class FeatureComparisonRunner:
             target_col: Name of target column
             task_type: 'regression' or 'classification'
             scaling_method: Scaling method for robust analysis
+            use_optimized: Whether to use optimized feature versions with matrix ops
         """
         self.data = data
         self.target_col = target_col
         self.task_type = task_type
         self.scaling_method = scaling_method
+        self.use_optimized = use_optimized
         self.utils = FeatureComparisonUtils()
         self.analyzer = RelevanceAnalyzer(scaling_method=scaling_method)
         self.report_generator = ComparisonReport()
@@ -121,7 +125,17 @@ class FeatureComparisonRunner:
         
         # Step 1: Create feature versions
         logger.info("Step 1: Creating feature versions...")
-        feature_versions = FeatureVersions(self.data, self.target_col)
+        
+        if self.use_optimized:
+            logger.info("Using optimized feature versions with matrix operations")
+            feature_versions = OptimizedFeatureVersions(
+                self.data, self.target_col, 
+                enable_matrix_ops=True, 
+                enable_hardware_opt=True
+            )
+        else:
+            logger.info("Using standard feature versions")
+            feature_versions = FeatureVersions(self.data, self.target_col)
         
         # Create target variable
         target = feature_versions.create_target(method='future_returns', periods=1)
@@ -158,7 +172,7 @@ class FeatureComparisonRunner:
                     X_clean, y_clean, self.task_type,
                     include_bootstrap=True,
                     include_temporal=True,
-                    n_bootstrap=50,
+                    n_bootstrap=10,
                     n_temporal_windows=5
                 )
                 analysis_results[version_name] = results

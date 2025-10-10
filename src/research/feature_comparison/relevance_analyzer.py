@@ -706,7 +706,7 @@ class RelevanceAnalyzer:
                                     task_type: str = 'regression',
                                     include_bootstrap: bool = True,
                                     include_temporal: bool = True,
-                                    n_bootstrap: int = 50,
+                                    n_bootstrap: int = 10,
                                     n_temporal_windows: int = 5) -> Dict[str, Any]:
         """
         Perform comprehensive analysis with robust evaluation methods.

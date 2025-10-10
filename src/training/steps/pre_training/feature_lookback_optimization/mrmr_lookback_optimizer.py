@@ -797,7 +797,15 @@ class MRMRLookbackOptimizer:
                     except Exception:
                         correlation = 0.0
                 
-                mi_score = abs(correlation)
+                # Convert correlation to MI approximation for consistency
+                if abs(correlation) < 0.999:  # Avoid log(0)
+                    try:
+                        mi_approx = 0.5 * np.log(1 - correlation**2) if correlation**2 < 1 else 0.0
+                        mi_score = max(0.0, -mi_approx)  # Ensure positive MI
+                    except (ValueError, OverflowError):
+                        mi_score = 0.0
+                else:
+                    mi_score = 0.0
 
             # Validate result
             if MATH_VALIDATION_AVAILABLE:
@@ -1598,11 +1606,21 @@ class MRMRLookbackOptimizer:
                     data, feature_name, first_lookback, second_lookback, "technical_indicator"
                 )
                 
-                # Calculate combined score
+                # Calculate combined score using MI-consistent metrics
+                # Convert correlation to MI approximation for consistent scaling
+                if abs(correlation) < 0.999:
+                    try:
+                        correlation_mi_approx = 0.5 * np.log(1 - correlation**2) if correlation**2 < 1 else 0.0
+                        correlation_mi_score = max(0.0, -correlation_mi_approx)
+                    except (ValueError, OverflowError):
+                        correlation_mi_score = 0.0
+                else:
+                    correlation_mi_score = 0.0
+                
                 combined_score = (
                     self.config.first_lookback_weight * first_mi_score +
                     self.config.second_lookback_weight * second_mi_score -
-                    self.config.correlation_weight * abs(correlation)
+                    self.config.correlation_weight * correlation_mi_score
                 )
                 
                 results.append({
@@ -1685,10 +1703,20 @@ class MRMRLookbackOptimizer:
                     data, feature_name, first_lookback, second_lookback, "technical_indicator"
                 )
                 
+                # Convert correlation to MI approximation for consistent scaling
+                if abs(correlation) < 0.999:
+                    try:
+                        correlation_mi_approx = 0.5 * np.log(1 - correlation**2) if correlation**2 < 1 else 0.0
+                        correlation_mi_score = max(0.0, -correlation_mi_approx)
+                    except (ValueError, OverflowError):
+                        correlation_mi_score = 0.0
+                else:
+                    correlation_mi_score = 0.0
+                
                 combined_score = (
                     self.config.first_lookback_weight * first_mi_score +
                     self.config.second_lookback_weight * second_mi_score -
-                    self.config.correlation_weight * abs(correlation)
+                    self.config.correlation_weight * correlation_mi_score
                 )
                 
                 results.append({
@@ -1792,10 +1820,20 @@ class MRMRLookbackOptimizer:
             )
 
             # Calculate combined score
+            # Convert correlation to MI approximation for consistent scaling
+            if abs(correlation) < 0.999:
+                try:
+                    correlation_mi_approx = 0.5 * np.log(1 - correlation**2) if correlation**2 < 1 else 0.0
+                    correlation_mi_score = max(0.0, -correlation_mi_approx)
+                except (ValueError, OverflowError):
+                    correlation_mi_score = 0.0
+            else:
+                correlation_mi_score = 0.0
+            
             combined_score = (
                 self.config.first_lookback_weight * first_mi_score +
                 self.config.second_lookback_weight * second_mi_score -
-                self.config.correlation_weight * abs(correlation)
+                self.config.correlation_weight * correlation_mi_score
             )
 
             tprint_debug(

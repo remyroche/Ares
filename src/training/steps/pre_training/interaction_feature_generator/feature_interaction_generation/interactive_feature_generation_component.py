@@ -189,8 +189,8 @@ class InteractiveFeatureGenerationConfig:
     
     # Early filtering settings
     downsample_ratio: float = 0.1
-    variance_threshold: float = 1e-10  # FIXED: More lenient - was 1e-6 which filtered out too many features
-    top_k_per_family: int = 20  # FIXED: Increased from 5 to allow more features per family
+    variance_threshold: float = 1e-8  # FIXED: More lenient threshold to prevent over-filtering
+    top_k_per_family: int = 50  # FIXED: Increased to allow more features per family
     
     # Interaction pruning settings
     max_interactions_per_domain: int = 6

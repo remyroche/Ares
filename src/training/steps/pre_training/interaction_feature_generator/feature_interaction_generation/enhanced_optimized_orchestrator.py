@@ -99,8 +99,8 @@ class EnhancedOptimizedConfig:
     
     # Early filtering settings
     downsample_ratio: float = 0.1
-    variance_threshold: float = 1e-10  # FIXED: More lenient - was 1e-6 which filtered out too many features
-    top_k_per_family: int = 20  # FIXED: Increased from 5 to allow more features per family
+    variance_threshold: float = 1e-8  # FIXED: More lenient threshold to prevent over-filtering
+    top_k_per_family: int = 50  # FIXED: Increased to allow more features per family
     
     # Interaction pruning settings
     max_interactions_per_domain: int = 6
@@ -392,7 +392,7 @@ class EnhancedOptimizedInteractionOrchestrator:
         # FIXED: Check if target column exists, use fallback if not
         if target_column not in data.columns:
             # Try common target column names
-            for fallback in ['analyst_target', 'tactician_target', 'close']:
+            for fallback in ['analyst_target', 'tactician_target', 'close', 'high', 'low', 'open']:
                 if fallback in data.columns:
                     target_column = fallback
                     tprint_info(f"🔄 Using fallback target column: {target_column}")
@@ -424,7 +424,7 @@ class EnhancedOptimizedInteractionOrchestrator:
         }
     
     async def _feature_engineering_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Feature engineering stage with memory optimization."""
+        """Feature engineering stage with actual feature generation."""
         tprint_debug("🏗️ Feature engineering stage...")
         
         # Convert data back to DataFrame if needed
@@ -433,23 +433,47 @@ class EnhancedOptimizedInteractionOrchestrator:
         else:
             data = context.data
         
-        # Use filtered features if available
-        if 'filtered_features' in context.pipeline_state:
-            features_to_use = context.pipeline_state['filtered_features']
-        else:
-            # FIXED: Better column filtering - exclude common non-feature columns
+        # FIXED: Use actual feature generation instead of just copying
+        try:
+            from .feature_generators import FeatureGenerator, FeatureGenerationConfig
+            
+            # Create feature generation config
+            feature_config = FeatureGenerationConfig(
+                enable_technical_indicators=True,
+                enable_rolling_stats=True,
+                enable_interaction_features=False,  # Will be done in interaction stage
+                enable_cross_timeframe=False,  # Will be done in cross-timeframe stage
+                rolling_windows=[5, 10, 20, 50, 100],
+                max_interactions=50
+            )
+            
+            # Generate base features
+            feature_generator = FeatureGenerator(feature_config)
+            generated_features = feature_generator.generate_base_features(data)
+            
+            # If no features were generated, fall back to using input data
+            if generated_features.empty:
+                tprint_warning("⚠️ No features generated, using input data as base features")
+                exclude_cols = ['target', 'timestamp', 'open_time', 'close_time', 'symbol', 'interval', 'exchange']
+                features_to_use = [col for col in data.columns if col not in exclude_cols]
+                if features_to_use:
+                    generated_features = data[features_to_use].copy()
+                else:
+                    generated_features = data.copy()
+            
+            tprint_info(f"✅ Generated {len(generated_features.columns)} base features")
+            
+        except Exception as e:
+            tprint_error(f"❌ Feature generation failed: {e}")
+            tprint_info("🔄 Falling back to input data as features")
+            
+            # Fallback: use input data
             exclude_cols = ['target', 'timestamp', 'open_time', 'close_time', 'symbol', 'interval', 'exchange']
             features_to_use = [col for col in data.columns if col not in exclude_cols]
-            
-            # If we still have no features, use all columns
-            if len(features_to_use) == 0:
-                features_to_use = list(data.columns)
-                tprint_warning(f"⚠️ No features after filtering, using all {len(features_to_use)} columns")
+            if features_to_use:
+                generated_features = data[features_to_use].copy()
             else:
-                tprint_info(f"📊 Using {len(features_to_use)} features for generation")
-        
-        # Generate features (simplified - would use actual feature generation)
-        generated_features = data[features_to_use].copy()
+                generated_features = data.copy()
         
         # Apply memory optimization using the matrix operations utility
         try:
@@ -493,6 +517,11 @@ class EnhancedOptimizedInteractionOrchestrator:
             tprint_warning("⚠️ No features available for budgeted optimization, skipping")
             return {'status': 'skipped', 'reason': 'no_features', 'features_count': 0}
         
+        # FIXED: Check if features have any non-NaN values
+        if features.isnull().all().all():
+            tprint_warning("⚠️ All features are NaN, skipping budgeted optimization")
+            return {'status': 'skipped', 'reason': 'all_nan_features', 'features_count': len(features.columns)}
+        
         # Get target
         target_column = context.pipeline_state.get('target_column', 'target')
         
@@ -532,7 +561,7 @@ class EnhancedOptimizedInteractionOrchestrator:
         }
     
     async def _interaction_generation_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Interaction generation stage."""
+        """Interaction generation stage with actual feature generation."""
         tprint_debug("🔗 Interaction generation stage...")
         
         # Get generated features
@@ -544,8 +573,32 @@ class EnhancedOptimizedInteractionOrchestrator:
         else:
             features = context.data
         
-        # Generate interactions (simplified)
-        interaction_features = self._generate_interaction_features(features)
+        # FIXED: Use actual interaction feature generation
+        try:
+            from .feature_generators import FeatureGenerator, FeatureGenerationConfig
+            
+            # Create feature generation config for interactions
+            feature_config = FeatureGenerationConfig(
+                enable_technical_indicators=False,
+                enable_rolling_stats=False,
+                enable_interaction_features=True,
+                enable_cross_timeframe=False,
+                max_interactions=50,
+                interaction_types=['ratio', 'product', 'difference', 'sum']
+            )
+            
+            # Generate interaction features
+            feature_generator = FeatureGenerator(feature_config)
+            interaction_features = feature_generator.generate_interaction_features(features)
+            
+            tprint_info(f"✅ Generated {len(interaction_features.columns)} interaction features")
+            
+        except Exception as e:
+            tprint_error(f"❌ Interaction generation failed: {e}")
+            tprint_info("🔄 Falling back to simple interaction generation")
+            
+            # Fallback: use simple interaction generation
+            interaction_features = self._generate_interaction_features(features)
         
         # Store result
         context.pipeline_state['interaction_features'] = interaction_features
@@ -606,7 +659,7 @@ class EnhancedOptimizedInteractionOrchestrator:
         }
     
     async def _cross_timeframe_stage(self, context: ExecutionContext) -> Dict[str, Any]:
-        """Cross-timeframe features stage."""
+        """Cross-timeframe features stage with actual feature generation."""
         tprint_debug("⏰ Cross-timeframe features stage...")
         
         # Get generated features
@@ -618,8 +671,31 @@ class EnhancedOptimizedInteractionOrchestrator:
         else:
             features = context.data
         
-        # Generate cross-timeframe features
-        cross_timeframe_features = self._generate_cross_timeframe_features(features)
+        # FIXED: Use actual cross-timeframe feature generation
+        try:
+            from .feature_generators import FeatureGenerator, FeatureGenerationConfig
+            
+            # Create feature generation config for cross-timeframe
+            feature_config = FeatureGenerationConfig(
+                enable_technical_indicators=False,
+                enable_rolling_stats=False,
+                enable_interaction_features=False,
+                enable_cross_timeframe=True,
+                cross_timeframe_periods=[5, 15, 30, 60]
+            )
+            
+            # Generate cross-timeframe features
+            feature_generator = FeatureGenerator(feature_config)
+            cross_timeframe_features = feature_generator.generate_cross_timeframe_features(features)
+            
+            tprint_info(f"✅ Generated {len(cross_timeframe_features.columns)} cross-timeframe features")
+            
+        except Exception as e:
+            tprint_error(f"❌ Cross-timeframe generation failed: {e}")
+            tprint_info("🔄 Falling back to simple cross-timeframe generation")
+            
+            # Fallback: use simple cross-timeframe generation
+            cross_timeframe_features = self._generate_cross_timeframe_features(features)
         
         # Store result
         context.pipeline_state['cross_timeframe_features'] = cross_timeframe_features

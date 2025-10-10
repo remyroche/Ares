@@ -14,15 +14,22 @@ from dataclasses import dataclass, field
 import logging
 import time
 import json
+import math
+import os
 from pathlib import Path
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.metrics import average_precision_score, balanced_accuracy_score, mean_squared_error, accuracy_score
 from sklearn.base import clone
 from sklearn.model_selection import cross_val_score, StratifiedKFold, KFold
+from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
+from sklearn.feature_selection import mutual_info_regression
+from scipy.stats import rankdata
 import joblib
 from functools import lru_cache
 import hashlib
 from collections import defaultdict
+from joblib import Parallel, delayed
 
 # Try to import SHAP, fallback if not available
 try:
@@ -440,6 +447,227 @@ class MultiStageFeatureSelector:
         # Memory management thresholds
         self.cache_size_limit_mb = 500  # 500MB cache limit
         self.max_cache_entries = 1000   # Maximum number of cache entries
+        
+        # Initialize caches and state for vectorized operations
+        self._variance_cache = {}
+        self._X_cached = None
+        self._last_X = None
+        
+        # Initialize random state for bootstrap variation
+        self._rng = np.random.default_rng(self.config.random_state)
+        
+        # Set thread limits to avoid oversubscription
+        self._set_thread_limits()
+
+    def _set_thread_limits(self):
+        """Set thread limits to avoid oversubscription."""
+        # Set MKL and OpenMP threads
+        os.environ['MKL_NUM_THREADS'] = str(min(4, os.cpu_count() // 2))
+        os.environ['OMP_NUM_THREADS'] = str(min(4, os.cpu_count() // 2))
+        
+        # LightGBM thread limit
+        self.lgb_threads = min(4, os.cpu_count() // 2)
+
+    def _y_numeric(self, y: pd.Series) -> np.ndarray:
+        """Convert y to numeric for Spearman/ranks."""
+        if pd.api.types.is_numeric_dtype(y):
+            return y.to_numpy()
+        return pd.Categorical(y).codes.astype(float)
+
+    def spearman_abs_vectorized(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        """Fully vectorized Spearman correlation calculation."""
+        Xr = X.rank(method="average").to_numpy(dtype=float)    # (n, p)
+        yr = rankdata(self._y_numeric(y))                      # (n,)
+        
+        # Center
+        Xc = Xr - Xr.mean(axis=0, keepdims=True)
+        yc = yr - yr.mean()
+        
+        # Pearson on ranked data == Spearman
+        num = Xc.T @ yc                                         # (p,)
+        denom = (np.sqrt((Xc**2).sum(axis=0)) * np.sqrt((yc**2).sum()))
+        rho = num / (denom + 1e-12)
+        
+        return pd.Series(np.abs(rho), index=X.columns)
+
+    def redundancy_mean_abs_spearman_blocked(self, X: pd.DataFrame, block=1024) -> pd.Series:
+        """Blocked redundancy calculation for large feature sets."""
+        R = X.rank(method="average")
+        p = R.shape[1]
+        sums = np.zeros(p, dtype=float)
+        counts = np.zeros(p, dtype=float)
+        
+        for i in range(0, p, block):
+            Ri = R.iloc[:, i:i+block]
+            Ci = Ri.corr(method="pearson").abs().to_numpy()
+            np.fill_diagonal(Ci, np.nan)
+            sums[i:i+block] += np.nansum(Ci, axis=1)
+            counts[i:i+block] += np.sum(~np.isnan(Ci), axis=1)
+        
+        red = sums / np.maximum(counts, 1)
+        return pd.Series(red, index=X.columns)
+
+    def zscore_matrix(self, M: np.ndarray, axis=0) -> np.ndarray:
+        """Vectorized z-score normalization."""
+        mu = M.mean(axis=axis, keepdims=True)
+        sd = M.std(axis=axis, ddof=0, keepdims=True)
+        return (M - mu) / (sd + 1e-12)
+
+    def top_k(self, names: List[str], scores: np.ndarray, k: int) -> List[str]:
+        """Top-k selection using argpartition for O(p) performance."""
+        k = min(k, len(scores))
+        idx = np.argpartition(-scores, k-1)[:k]   # top k unordered
+        
+        # Order those k deterministically
+        sub_scores = scores[idx]
+        sub_names = np.array(names)[idx]
+        order = np.lexsort((sub_names, -sub_scores))  # desc by score, then name asc
+        sub = idx[order]
+        
+        return [names[i] for i in sub]
+
+    def bottom_k(self, names: List[str], scores: np.ndarray, k: int) -> List[str]:
+        """Bottom-k selection using argpartition for O(p) performance."""
+        k = min(k, len(scores))
+        idx = np.argpartition(scores, k-1)[:k]
+        
+        # Order those k deterministically
+        sub_scores = scores[idx]
+        sub_names = np.array(names)[idx]
+        order = np.lexsort((sub_names, sub_scores))  # asc by score, then name asc
+        sub = idx[order]
+        
+        return [names[i] for i in sub]
+
+    def _lasso_scores_fast(self, X: pd.DataFrame, y: pd.Series, rs: int, n_splits: int = 3) -> pd.Series:
+        """Fast LASSO scoring with imputation."""
+        # Impute missing values
+        imp = SimpleImputer(strategy="median")
+        X_imp = imp.fit_transform(X)
+        
+        # Standardize
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X_imp)
+        
+        # LASSO with warm start
+        lasso = LassoCV(cv=n_splits, random_state=rs, n_jobs=1)
+        lasso.fit(X_scaled, y)
+        
+        return pd.Series(np.abs(lasso.coef_), index=X.columns)
+
+    def _lgbm_shap_fast(self, X: pd.DataFrame, y: pd.Series, rs: int, task: str = "reg") -> pd.Series:
+        """Fast LightGBM with built-in TreeSHAP."""
+        # Configure LightGBM
+        if task == "reg":
+            lgb_model = lgb.LGBMRegressor(
+                n_estimators=200,
+                importance_type="gain",
+                random_state=rs,
+                verbose=-1,
+                num_threads=self.lgb_threads
+            )
+        else:
+            lgb_model = lgb.LGBMClassifier(
+                n_estimators=200,
+                importance_type="gain",
+                random_state=rs,
+                verbose=-1,
+                num_threads=self.lgb_threads
+            )
+        
+        lgb_model.fit(X, y)
+        
+        # Use built-in TreeSHAP (C++ speed)
+        try:
+            shap_values = lgb_model.predict(X, pred_contrib=True)
+            # Sum absolute SHAP values across samples
+            shap_importance = np.abs(shap_values[:, :-1]).mean(axis=0)  # Exclude bias term
+        except Exception:
+            # Fallback to feature importance
+            shap_importance = lgb_model.feature_importances_
+        
+        return pd.Series(shap_importance, index=X.columns)
+
+    def ensemble_scores_cv_parallel(self, X: pd.DataFrame, y: pd.Series, rs: int, task: str = "reg", n_splits: int = 5) -> pd.Series:
+        """Parallel CV ensemble with optimized models."""
+        kf = KFold(n_splits=n_splits, shuffle=True, random_state=rs)
+        cols = X.columns.to_numpy()
+        p = len(cols)
+
+        def fold_scores(tr):
+            Xtr, ytr = X.iloc[tr], y.iloc[tr]
+            
+            # Fast LASSO
+            s_lasso = self._lasso_scores_fast(Xtr, ytr, rs, n_splits=3)
+            
+            # Fast LightGBM with TreeSHAP
+            s_lgb = self._lgbm_shap_fast(Xtr, ytr, rs, task)
+            
+            # Combine scores with z-score normalization
+            M = np.vstack([s_lasso.values, s_lgb.values]).T     # (p, 2)
+            Mz = self.zscore_matrix(M, axis=0)                  # z-score by column
+            return Mz.mean(axis=1)                              # (p,)
+
+        # Parallel fold processing
+        fold_vecs = Parallel(n_jobs=-1, prefer="threads")(
+            delayed(fold_scores)(tr) for tr, _ in kf.split(X)
+        )
+        
+        S = np.vstack(fold_vecs).mean(axis=0)                   # (p,)
+        return pd.Series(S, index=cols)
+
+    def stability_scores_vectorized(self, X: pd.DataFrame, y: pd.Series, scorer, rs: int, n_boot=50, row_frac=0.7) -> pd.Series:
+        """Vectorized stability selection with argpartition."""
+        n = len(X)
+        p = X.shape[1]
+        k = max(1, p // 2)
+        cols = X.columns.to_numpy()
+        freq = np.zeros(p, dtype=float)
+        
+        for b in range(n_boot):
+            idx = self._rng.choice(n, int(max(2, row_frac * n)), replace=False)
+            s = scorer(X.iloc[idx], y.iloc[idx]).to_numpy()    # (p,)
+            keep_idx = np.argpartition(-s, k-1)[:k]
+            freq[keep_idx] += 1
+        
+        return pd.Series(freq / n_boot, index=cols)
+
+    def _calculate_mrmr_mid_vectorized(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        """Fast MID approximation using vectorized operations."""
+        # Handle constants safely
+        const_mask = X.nunique(dropna=False) <= 1
+        if const_mask.any():
+            X_clean = X.loc[:, ~const_mask]
+        else:
+            X_clean = X
+        
+        # Relevance via MI (kNN)
+        mi = mutual_info_regression(
+            X_clean, y, 
+            discrete_features=False,
+            random_state=self.config.random_state,
+            n_neighbors=min(3, max(2, int(np.sqrt(len(X_clean)))))
+        )
+        mi_s = pd.Series(mi, index=X_clean.columns)
+        
+        # Redundancy: use blocked calculation for large feature sets
+        if len(X_clean.columns) > 2000:
+            red = self.redundancy_mean_abs_spearman_blocked(X_clean)
+        else:
+            # Fast correlation for smaller feature sets
+            R = X_clean.rank(method="average")
+            C = R.corr(method="pearson").abs().to_numpy()
+            np.fill_diagonal(C, np.nan)
+            red = pd.Series(np.nanmean(C, axis=1), index=X_clean.columns)
+        
+        # MID = MI - Redundancy
+        mid = mi_s - red.reindex(mi_s.index).fillna(0.0)
+        
+        # Reintroduce dropped constants with very low score
+        if const_mask.any():
+            mid = mid.reindex(X.columns).fillna(mid.min() - 1.0)
+        
+        return mid.reindex(X.columns).fillna(mid.min() - 1.0)
 
     def _cleanup_cache(self, threshold_mb: float = 500) -> None:
         """Clear cache if memory usage exceeds threshold."""
@@ -1934,266 +2162,144 @@ class MultiStageFeatureSelector:
             tprint(f"✅ Variance fallback selected {len(fallback_features)} features")
             return fallback_features
     
-    def _stage_1_selection(self, X: pd.DataFrame, y: pd.Series, target_count: Optional[int] = None) -> Tuple[List[str], Dict[str, float]]:
-        """Stage 1: Initial → target features using vectorized operations and optimized model selection."""
-
-        tprint("🚀 Starting Stage 1 Feature Selection (Vectorized)")
-        tprint(f"📊 Input: {len(X)} samples, {len(X.columns)} features")
-
-        if self._is_classification(y):
-            tprint(f"🎯 Classification task: {len(y.unique())} classes")
-        else:
-            tprint(f"🎯 Regression task: target range [{y.min():.3f}, {y.max():.3f}]")
-
-        # Use provided target count or fall back to config
-        actual_target = target_count or self.config.stage_1_target
-        tprint(f"🎯 Target features: {actual_target}")
-
-        # Apply chunked processing for large feature sets
-        if self.config.enable_chunked_processing and len(X.columns) > self.config.chunk_size:
-            tprint(f"📦 Applying chunked processing for {len(X.columns)} features")
-            X = self._process_features_in_chunks(X, y)
-
-        # Use vectorized feature importance computation
-        tprint("🔄 Computing vectorized feature importance...")
-        feature_importance_array = self._vectorized_feature_importance(X, y, 'rf')
-        feature_importance = dict(zip(X.columns, feature_importance_array))
+    def _stage_1_selection(self, X: pd.DataFrame, y: pd.Series, target_count: Optional[int] = None) -> Tuple[List[str], pd.Series]:
+        """Stage 1: Vectorized mRMR + Spearman with corrected math and argpartition selection."""
         
-        tprint(f"📈 Feature importance range: [{np.min(feature_importance_array):.6f}, {np.max(feature_importance_array):.6f}]")
-        tprint(f"📊 Feature importance mean: {np.mean(feature_importance_array):.6f}")
-        tprint(f"📊 Feature importance std: {np.std(feature_importance_array):.6f}")
-
-        # Apply early termination if enabled
-        if self.config.enable_early_termination:
-            tprint("🗑️ Applying early termination...")
-            X = self._apply_early_termination(X, feature_importance)
-
-        # Apply RFE if enabled
-        if self.config.enable_rfe and len(X.columns) > actual_target:
-            tprint(f"🔄 Applying RFE to reduce from {len(X.columns)} to ~{actual_target} features")
-            rfe_features = self._recursive_feature_elimination(X, y)
-            X = X[rfe_features]
-            tprint(f"✅ RFE completed: {len(X.columns)} features remaining")
-
-        # Select top features using vectorized operations
-        tprint("🏆 Selecting top features using vectorized operations...")
-        sorted_indices = np.argsort(feature_importance_array)[::-1]
-        selected_indices = sorted_indices[:actual_target]
-        selected_features = [X.columns[i] for i in selected_indices]
-
-        tprint(f"🏆 Final selection: {len(selected_features)} features")
-        tprint(f"📈 Top feature importance: {feature_importance_array[sorted_indices[0]]:.6f}" if len(sorted_indices) > 0 else "N/A")
-
-        # Calculate enhanced scores using vectorized operations
-        tprint("📊 Computing enhanced scores...")
-        selected_importance = feature_importance_array[selected_indices]
+        # Sanitize input and initialize caches
+        X = self._sanitize_X(X)
+        self._variance_cache = {}
+        self._X_cached = X
+        self._last_X = X
         
-        scores = {
-            'model_importance_score': np.mean(selected_importance),
-            'feature_variance': np.mean(X[selected_features].var().values),
-            'selection_quality': len(selected_features) / len(X.columns),
-            'model_type': 'vectorized_rf',
-            'importance_std': np.std(selected_importance),
-            'importance_range': np.max(selected_importance) - np.min(selected_importance)
-        }
+        p = X.shape[1]
+        t = target_count or 60
+        surplus = max(0, p - t)
+        n_keep = p - math.ceil(surplus / 2)
+        
+        tprint(f"🚀 Stage 1 (Vectorized): {p} → {n_keep} (remove {p - n_keep})")
+        
+        # Calculate scores vectorized
+        mrmr_scores = self._calculate_mrmr_mid_vectorized(X, y)
+        spearman_scores = self.spearman_abs_vectorized(X, y)
+        
+        # Vectorized z-score fusion
+        S = np.vstack([mrmr_scores.values, spearman_scores.values]).T  # (p, 2)
+        S_z = self.zscore_matrix(S, axis=0)
+        combined_scores = 0.7 * S_z[:, 0] + 0.3 * S_z[:, 1]  # (p,)
+        
+        # Top-k selection with argpartition
+        selected = self.top_k(X.columns.tolist(), combined_scores, n_keep)
+        
+        # Return scores as Series for consistency
+        scores = pd.Series(combined_scores, index=X.columns)
+        return selected, scores
 
-        # Add mutual information scores if enabled
-        if self.config.enable_mutual_information:
-            tprint("🔗 Calculating vectorized mutual information...")
-            mi_scores_array = self._vectorized_mutual_information(X[selected_features], y)
-            scores['mutual_information'] = np.mean(mi_scores_array)
-            scores['mutual_information_std'] = np.std(mi_scores_array)
-            tprint(f"📊 Mutual information average: {scores['mutual_information']:.4f}")
-
-        tprint(f"✅ Stage 1 completed: {len(selected_features)}/{len(X.columns)} features selected")
-        tprint(f"📊 Selection quality: {scores['selection_quality']:.2%}")
-        return selected_features, scores
+    def _sanitize_X(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Sanitize input data: numeric only, drop constants."""
+        Xn = X.select_dtypes(include=[np.number]).copy()
+        nonconst = Xn.nunique(dropna=False) > 1
+        return Xn.loc[:, nonconst]
     
-    def _stage_2_selection(self, X: pd.DataFrame, y: pd.Series, target_count: Optional[int] = None) -> Tuple[List[str], Dict[str, float]]:
-        """Stage 2: Previous → target features using vectorized enhanced selection methods."""
-
-        # Use provided target count or fall back to config
-        actual_target = target_count or self.config.stage_2_target
-
-        tprint("🚀 Starting Stage 2 Feature Selection (Vectorized Enhanced)")
-        tprint(f"📊 Input: {len(X)} samples, {len(X.columns)} features")
-        tprint(f"🎯 Target features: {actual_target}")
-
-        # Use vectorized feature importance computation with LightGBM if available
-        model_type = 'lightgbm' if LIGHTGBM_AVAILABLE else 'rf'
-        tprint(f"🔄 Computing vectorized feature importance using {model_type}...")
-        feature_importance_array = self._vectorized_feature_importance(X, y, model_type)
-        feature_importance = dict(zip(X.columns, feature_importance_array))
+    def _stage_2_selection(self, X: pd.DataFrame, y: pd.Series, target_count: Optional[int] = None) -> Tuple[List[str], pd.Series]:
+        """Stage 2: Vectorized iterative bottom removal with boolean masks."""
+        t = target_count or 60
+        target_plus_50 = t + 50
+        cols = X.columns.to_numpy()
+        mask = np.ones(len(cols), dtype=bool)  # True = keep
         
-        tprint(f"📈 Feature importance range: [{np.min(feature_importance_array):.6f}, {np.max(feature_importance_array):.6f}]")
-        tprint(f"📊 Feature importance mean: {np.mean(feature_importance_array):.6f}")
-
-        # Apply early termination if enabled
-        if self.config.enable_early_termination:
-            tprint("🗑️ Applying early termination...")
-            X = self._apply_early_termination(X, feature_importance)
-
-        # Apply RFE if enabled and we still have many features
-        if self.config.enable_rfe and len(X.columns) > actual_target * 1.5:
-            tprint(f"🔄 Applying RFE to reduce from {len(X.columns)} to ~{actual_target} features")
-            rfe_features = self._recursive_feature_elimination(X, y)
-            X = X[rfe_features]
-            tprint(f"✅ RFE completed: {len(X.columns)} features remaining")
-
-        # Select top features using vectorized operations
-        tprint("🏆 Selecting top features using vectorized operations...")
-        sorted_indices = np.argsort(feature_importance_array)[::-1]
-        selected_indices = sorted_indices[:actual_target]
-        selected_features = [X.columns[i] for i in selected_indices]
-
-        tprint(f"🏆 Stage 2 selection: {len(selected_features)} features")
-
-        # Calculate enhanced scores using vectorized operations
-        tprint("📊 Computing enhanced scores...")
-        selected_importance = feature_importance_array[selected_indices]
+        # Initialize default scores
+        ensemble_scores = pd.Series(0.0, index=cols)
         
-        scores = {
-            'model_importance_score': np.mean(selected_importance),
-            'feature_variance': np.mean(X[selected_features].var().values),
-            'selection_quality': len(selected_features) / len(X.columns),
-            'model_type': f'vectorized_{model_type}',
-            'importance_std': np.std(selected_importance),
-            'importance_range': np.max(selected_importance) - np.min(selected_importance)
-        }
-
-        # Add mutual information scores if enabled
-        if self.config.enable_mutual_information:
-            tprint("🔗 Calculating vectorized mutual information...")
-            mi_scores_array = self._vectorized_mutual_information(X[selected_features], y)
-            scores['mutual_information'] = np.mean(mi_scores_array)
-            scores['mutual_information_std'] = np.std(mi_scores_array)
-            tprint(f"📊 Mutual information average: {scores['mutual_information']:.4f}")
-
-        # Use SHAP for final refinement (required if configured)
-        if self.config.use_shap and len(selected_features) <= self.config.shap_max_features:
-            if not SHAP_AVAILABLE:
-                raise ImportError("SHAP is required for feature refinement but not available. Please install SHAP: pip install shap")
-            tprint("🔮 Applying SHAP refinement...")
-            try:
-                shap_features, shap_scores = self._shap_based_selection(X[selected_features], y, actual_target)
-                if not shap_features:
-                    raise ValueError("SHAP refinement returned no features - cannot proceed with empty feature set")
-                selected_features = shap_features
-                scores.update(shap_scores)
-                tprint("✅ SHAP refinement completed")
-            except Exception as e:
-                raise RuntimeError(f"SHAP refinement failed: {e}") from e
-
-        tprint(f"✅ Stage 2 completed: {len(selected_features)} features selected")
-        tprint(f"📊 Selection quality: {scores['selection_quality']:.2%}")
-        return selected_features, scores
-
-    def _stage_3_selection(self, X: pd.DataFrame, y: pd.Series, target_count: Optional[int] = None) -> Tuple[List[str], Dict[str, float]]:
-        """Stage 3: Previous → target features using vectorized combined importance and cross-validation."""
-
-        # Use provided target count or fall back to config
-        actual_target = target_count or self.config.stage_3_target
-
-        tprint("🚀 Starting Stage 3 Feature Selection (Vectorized Combined)")
-        tprint(f"📊 Input: {len(X)} samples, {len(X.columns)} features")
-        tprint(f"🎯 Target features: {actual_target}")
-
-        # Use vectorized feature importance computation
-        tprint("🔄 Computing vectorized model importance...")
-        model_importance_array = self._vectorized_feature_importance(X, y, 'rf')
-        model_importance = dict(zip(X.columns, model_importance_array))
-
-        # Cross-validation based selection using vectorized operations
-        tprint("🔄 Performing vectorized cross-validation feature importance...")
-        cv_event_timestamps = self._get_event_timestamps_for_index(X.index)
-        cv_scores = self._cross_validate_feature_importance_optimized(
-            X,
-            y,
-            event_timestamps=cv_event_timestamps,
-        )
-        cv_scores_array = np.array([cv_scores.get(f, 0) for f in X.columns])
-        tprint(f"✅ CV completed for {len(cv_scores)} features")
-
-        # Calculate non-linear quality metrics using vectorized operations
-        tprint("🔗 Calculating vectorized mutual information...")
-        mi_scores_array = self._vectorized_mutual_information(X, y)
-        tprint(f"✅ MI calculated for {len(mi_scores_array)} features")
-
-        # Calculate feature stability across time periods using vectorized operations
-        tprint("🛡️ Analyzing vectorized feature stability...")
-        stability_scores_array = self._vectorized_stability_analysis(X, y)
-        tprint(f"✅ Stability analyzed for {len(stability_scores_array)} features")
-
-        # Combine importance scores with non-linear awareness using vectorized operations
-        tprint("⚖️ Combining importance scores with vectorized non-linear awareness...")
+        tprint(f"🚀 Stage 2 (Vectorized): {len(cols)} → {target_plus_50} features")
         
-        # Vectorized combination: model + CV + MI + stability
-        base_scores = (model_importance_array * 0.3 + cv_scores_array * 0.3 + mi_scores_array * 0.2)
-        stability_multipliers = 0.5 + (stability_scores_array * 0.5)  # Range: 0.5-1.0
-        combined_scores_array = base_scores * stability_multipliers
+        iteration = 0
+        while np.sum(mask) > target_plus_50:
+            iteration += 1
+            n_current = np.sum(mask)
+            current_cols = cols[mask]
+            
+            # Calculate ensemble scores with parallel CV
+            ensemble_scores = self.ensemble_scores_cv_parallel(X[current_cols], y, self.config.random_state)
+            
+            # Convert to array for argpartition
+            scores_array = ensemble_scores.values
+            
+            # Remove bottom 20% (safely)
+            n_remove = max(1, min(n_current // 5, n_current - target_plus_50))
+            
+            # Get indices to remove using argpartition
+            bottom_indices = self.bottom_k(current_cols.tolist(), scores_array, n_remove)
+            drop_indices = np.where(np.isin(cols, bottom_indices))[0]
+            
+            # Update mask
+            mask[drop_indices] = False
+            
+            tprint(f"   Iteration {iteration}: {n_current} → {np.sum(mask)} (removed {n_remove})")
         
-        combined_scores = dict(zip(X.columns, combined_scores_array))
+        # Return final features and scores
+        final_features = cols[mask].tolist()
+        return final_features, ensemble_scores
 
-        tprint(f"📊 Non-linear combined scores range: [{np.min(combined_scores_array):.6f}, {np.max(combined_scores_array):.6f}]")
-        tprint(f"📊 Combined scores mean: {np.mean(combined_scores_array):.6f}")
-
-        # Analyze stability features
-        high_stability_mask = stability_scores_array > 0.8
-        low_stability_mask = stability_scores_array < 0.3
-        high_stability_features = X.columns[high_stability_mask].tolist()
-        low_stability_features = X.columns[low_stability_mask].tolist()
-
-        if len(high_stability_features) > 0:
-            tprint(f"🎯 High stability features: {len(high_stability_features)} (consistently valuable)")
-
-        if len(low_stability_features) > 0:
-            tprint(f"⚠️ Low stability features: {len(low_stability_features)} (context-dependent)")
-
-        # Apply early termination if enabled and we have many features
-        if self.config.enable_early_termination and len(X.columns) > actual_target * 2:
-            tprint("🗑️ Applying early termination...")
-            X = self._apply_early_termination(X, combined_scores)
-            # Update arrays to match remaining features
-            remaining_indices = [X.columns.get_loc(f) for f in X.columns if f in combined_scores]
-            combined_scores_array = combined_scores_array[remaining_indices]
-
-        # Apply final RFE if enabled
-        if self.config.enable_rfe and len(X.columns) > actual_target:
-            tprint(f"🔄 Applying final RFE to reduce from {len(X.columns)} to {actual_target} features")
-            rfe_features = self._recursive_feature_elimination(X, y)
-            X = X[rfe_features]
-            tprint(f"✅ Final RFE completed: {len(X.columns)} features remaining")
-
-        # Select top features using vectorized operations
-        tprint("🏆 Selecting final features using vectorized operations...")
-        sorted_indices = np.argsort(combined_scores_array)[::-1]
-        selected_indices = sorted_indices[:actual_target]
-        selected_features = [X.columns[i] for i in selected_indices]
-
-        tprint(f"🏆 Final Stage 3 selection: {len(selected_features)} features")
-        tprint(f"📈 Top combined score: {combined_scores_array[sorted_indices[0]]:.6f}" if len(sorted_indices) > 0 else "N/A")
-
-        # Calculate comprehensive scores with vectorized operations
-        selected_combined_scores = combined_scores_array[selected_indices]
-        selected_stability = stability_scores_array[selected_indices]
+    def _stage_3_selection(self, X: pd.DataFrame, y: pd.Series, target_count: Optional[int] = None) -> Tuple[List[str], pd.Series]:
+        """Stage 3: Vectorized chunked RFE with stability selection."""
+        t = target_count or 60
+        target_plus_20 = t + 20
+        cols = X.columns.to_numpy()
+        mask = np.ones(len(cols), dtype=bool)  # True = keep
         
-        scores = {
-            'combined_importance_score': np.mean(selected_combined_scores),
-            'model_cv_agreement': self._calculate_agreement(model_importance, cv_scores),
-            'final_stability': np.std(selected_combined_scores),
-            'model_type': 'vectorized_combined',
-            'mutual_information_avg': np.mean(mi_scores_array),
-            'stability_avg': np.mean(selected_stability),
-            'high_stability_features': len(high_stability_features),
-            'low_stability_features': len(low_stability_features),
-            'combined_std': np.std(selected_combined_scores),
-            'combined_range': np.max(selected_combined_scores) - np.min(selected_combined_scores)
-        }
-
-        tprint(f"📊 Final scores - Combined: {scores['combined_importance_score']:.4f}, Stability: {scores['final_stability']:.4f}")
-        tprint(f"📊 Selection quality: {len(selected_features)/len(X.columns):.2%}")
-        tprint(f"✅ Stage 3 completed: {len(selected_features)} features selected")
-        return selected_features, scores
+        # Initialize default scores
+        rfe_scores = pd.Series(0.0, index=cols)
+        
+        tprint(f"🚀 Stage 3 (Vectorized): {len(cols)} → {t} features")
+        
+        # Phase 1: Remove in chunks of 5 until target + 20
+        tprint("   Phase 1: Chunked removal (5 at a time)")
+        while np.sum(mask) > target_plus_20:
+            n_current = np.sum(mask)
+            current_cols = cols[mask]
+            
+            # Calculate ensemble + stability scores
+            ens = self.ensemble_scores_cv_parallel(X[current_cols], y, self.config.random_state)
+            stab = self.stability_scores_vectorized(
+                X[current_cols], y,
+                scorer=lambda X_, y_: self.ensemble_scores_cv_parallel(X_, y_, self.config.random_state),
+                rs=self.config.random_state
+            )
+            
+            # Vectorized z-score blending
+            S = np.vstack([ens.values, stab.values]).T  # (p, 2)
+            S_z = self.zscore_matrix(S, axis=0)
+            blended_scores = 0.6 * S_z[:, 0] + 0.4 * S_z[:, 1]  # (p,)
+            
+            # Remove based on blended scores
+            n_remove = min(5, n_current - target_plus_20)
+            bottom_indices = self.bottom_k(current_cols.tolist(), blended_scores, n_remove)
+            drop_indices = np.where(np.isin(cols, bottom_indices))[0]
+            
+            mask[drop_indices] = False
+            
+            tprint(f"     {n_current} → {np.sum(mask)} (removed {n_remove})")
+        
+        # Phase 2: Remove one by one until final target
+        tprint("   Phase 2: One-by-one removal")
+        while np.sum(mask) > t:
+            n_current = np.sum(mask)
+            current_cols = cols[mask]
+            
+            # Use RFE with ensemble scoring
+            rfe_scores = self.ensemble_scores_cv_parallel(X[current_cols], y, self.config.random_state)
+            scores_array = rfe_scores.values
+            
+            # Remove worst feature
+            worst_feature = self.bottom_k(current_cols.tolist(), scores_array, 1)[0]
+            drop_idx = np.where(cols == worst_feature)[0][0]
+            mask[drop_idx] = False
+            
+            tprint(f"     {n_current} → {np.sum(mask)} (removed {worst_feature})")
+        
+        # Return final features and scores
+        final_features = cols[mask].tolist()
+        return final_features, rfe_scores
 
     def _prepare_cv_splitter(
         self,

@@ -95,7 +95,7 @@ class DAGExecutor:
     time-series constraints and purged cross-validation folds.
     """
     
-    def __init__(self, max_workers: int = None, use_processes: bool = True):
+    def __init__(self, max_workers: int = None, use_processes: bool = False):
         """
         Initialize the DAG executor.
         
@@ -105,6 +105,7 @@ class DAGExecutor:
         """
         self.max_workers = max_workers or min(mp.cpu_count(), 8)
         self.use_processes = use_processes
+        # FIXED: Default to threads to avoid pickling issues with feature generation
         self.executor_class = ProcessPoolExecutor if use_processes else ThreadPoolExecutor
         
         # DAG state

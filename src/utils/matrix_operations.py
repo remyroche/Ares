@@ -241,6 +241,44 @@ class UnifiedMatrixOperations:
             
             return filtered_matrix
     
+    def optimize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Optimize DataFrame memory usage and performance.
+        
+        Args:
+            df: Input DataFrame
+            
+        Returns:
+            Optimized DataFrame
+        """
+        if self._ops and hasattr(self._ops, 'optimize_dataframe'):
+            return self._ops.optimize_dataframe(df)
+        else:
+            # FIXED: Enhanced DataFrame optimization
+            optimized_df = df.copy()
+            
+            # Optimize dtypes
+            for col in optimized_df.columns:
+                if optimized_df[col].dtype == 'object':
+                    try:
+                        optimized_df[col] = pd.to_numeric(optimized_df[col], errors='ignore')
+                    except:
+                        pass
+                elif optimized_df[col].dtype == 'float64':
+                    # Try to downcast to float32 if possible
+                    if optimized_df[col].min() >= np.finfo(np.float32).min and optimized_df[col].max() <= np.finfo(np.float32).max:
+                        optimized_df[col] = optimized_df[col].astype(np.float32)
+                elif optimized_df[col].dtype == 'int64':
+                    # Try to downcast to smaller int types
+                    if optimized_df[col].min() >= np.iinfo(np.int32).min and optimized_df[col].max() <= np.iinfo(np.int32).max:
+                        optimized_df[col] = optimized_df[col].astype(np.int32)
+                    elif optimized_df[col].min() >= np.iinfo(np.int16).min and optimized_df[col].max() <= np.iinfo(np.int16).max:
+                        optimized_df[col] = optimized_df[col].astype(np.int16)
+                    elif optimized_df[col].min() >= np.iinfo(np.int8).min and optimized_df[col].max() <= np.iinfo(np.int8).max:
+                        optimized_df[col] = optimized_df[col].astype(np.int8)
+            
+            return optimized_df
+    
     def is_available(self) -> bool:
         """Check if unified matrix operations are available."""
         return UNIFIED_MATRIX_OPS_AVAILABLE and self._ops is not None
@@ -261,3 +299,7 @@ def matrix_inverse(matrix: np.ndarray) -> np.ndarray:
 def optimize_array(array: np.ndarray, dtype: Optional[np.dtype] = None) -> np.ndarray:
     """Array optimization wrapper."""
     return default_matrix_ops.optimize_array(array, dtype)
+
+def optimize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """DataFrame optimization wrapper."""
+    return default_matrix_ops.optimize_dataframe(df)

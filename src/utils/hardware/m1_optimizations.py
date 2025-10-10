@@ -21,12 +21,6 @@ import torch
 from pathlib import Path
 import time
 
-# Import M1CPUOptimizer for compatibility
-try:
-    from .m1_cpu_optimizer import M1CPUOptimizer
-except ImportError:
-    M1CPUOptimizer = None
-
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')

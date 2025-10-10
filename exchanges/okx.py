@@ -329,6 +329,9 @@ class OkxExchange(BaseExchange):
     async def _get_server_time(self) -> Optional[int]:
         """Get server time in milliseconds."""
         try:
+            if not self._check_session():
+                return None
+                
             url = f"{self.base_url}/api/v5/public/time"
             async with self.session.get(url) as response:
                 if response.status == 200:
@@ -348,9 +351,31 @@ class OkxExchange(BaseExchange):
             self.logger.error(f"Connection test failed: {e}")
             return False
     
+    async def _get_account_info_raw(self) -> Dict[str, Any]:
+        """Get raw account information from exchange."""
+        try:
+            if not self._check_session():
+                return {}
+                
+            headers = self.auth_manager.get_auth_headers("GET", "/api/v5/account/balance")
+            if not headers:
+                return {}
+            
+            url = f"{self.base_url}/api/v5/account/balance"
+            async with self.session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data.get("data", [{}])[0] if data.get("data") else {}
+        except Exception as e:
+            self.logger.error(f"Error getting account info: {e}")
+        return {}
+    
     async def _get_account_info(self) -> Optional[Dict[str, Any]]:
         """Get account information."""
         try:
+            if not self._check_session():
+                return None
+                
             headers = self.auth_manager.get_auth_headers("GET", "/api/v5/account/balance")
             if not headers:
                 return None
@@ -367,6 +392,9 @@ class OkxExchange(BaseExchange):
     async def _get_instruments(self) -> List[Dict[str, Any]]:
         """Get instrument specifications."""
         try:
+            if not self._check_session():
+                return []
+                
             url = f"{self.base_url}/api/v5/public/instruments"
             params = {"instType": "SPOT"}
             async with self.session.get(url, params=params) as response:
@@ -380,6 +408,9 @@ class OkxExchange(BaseExchange):
     async def _get_ticker(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Get ticker data for symbol."""
         try:
+            if not self._check_session():
+                return None
+                
             url = f"{self.base_url}/api/v5/market/ticker"
             params = {"instId": symbol.upper()}
             async with self.session.get(url, params=params) as response:
@@ -393,6 +424,9 @@ class OkxExchange(BaseExchange):
     async def _get_order_book(self, symbol: str, limit: int = 20) -> Optional[Dict[str, Any]]:
         """Get order book for symbol."""
         try:
+            if not self._check_session():
+                return None
+                
             url = f"{self.base_url}/api/v5/market/books"
             params = {"instId": symbol.upper(), "sz": str(limit)}
             async with self.session.get(url, params=params) as response:
@@ -406,6 +440,9 @@ class OkxExchange(BaseExchange):
     async def _get_recent_trades(self, symbol: str, limit: int = 100) -> List[Dict[str, Any]]:
         """Get recent trades for symbol."""
         try:
+            if not self._check_session():
+                return []
+                
             url = f"{self.base_url}/api/v5/market/trades"
             params = {"instId": symbol.upper(), "limit": str(limit)}
             async with self.session.get(url, params=params) as response:
@@ -416,9 +453,12 @@ class OkxExchange(BaseExchange):
             self.logger.error(f"Error getting recent trades for {symbol}: {e}")
         return []
     
-    async def _get_klines(self, symbol: str, interval: str, limit: int = 100) -> List[List[Any]]:
-        """Get kline data for symbol."""
+    async def _get_klines_raw(self, symbol: str, interval: str, limit: int) -> List[Dict[str, Any]]:
+        """Get raw kline data from exchange."""
         try:
+            if not self._check_session():
+                return []
+                
             url = f"{self.base_url}/api/v5/market/candles"
             params = {
                 "instId": symbol.upper(),
@@ -428,9 +468,109 @@ class OkxExchange(BaseExchange):
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data.get("data", [])
+                    # Convert list format to dict format for consistency
+                    raw_klines = data.get("data", [])
+                    return [{"timestamp": int(k[0]), "open": float(k[1]), "high": float(k[2]), 
+                           "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])} 
+                           for k in raw_klines]
         except Exception as e:
             self.logger.error(f"Error getting klines for {symbol}: {e}")
+        return []
+    
+    async def _convert_to_market_data(
+        self,
+        raw_data: List[Dict[str, Any]],
+        symbol: str,
+        interval: str,
+    ) -> List[MarketData]:
+        """Convert raw exchange data to standardized MarketData format."""
+        market_data_list = []
+        for candle in raw_data:
+            try:
+                # Convert timestamp from milliseconds to datetime
+                timestamp = datetime.fromtimestamp(candle["timestamp"] / 1000)
+                
+                market_data = MarketData(
+                    symbol=symbol,
+                    timestamp=timestamp,
+                    open=candle["open"],
+                    high=candle["high"],
+                    low=candle["low"],
+                    close=candle["close"],
+                    volume=candle["volume"],
+                    interval=interval
+                )
+                market_data_list.append(market_data)
+            except Exception as e:
+                self.logger.error(f"Error converting kline data: {e}")
+                continue
+        
+        return market_data_list
+    
+    async def _get_market_id(self, symbol: str) -> str:
+        """Get the market ID for a given symbol."""
+        # For OKX, symbols are already in the correct format (e.g., BTCUSDT)
+        # Just ensure they're uppercase
+        return symbol.upper()
+    
+    async def _get_historical_klines_raw(
+        self,
+        symbol: str,
+        interval: str,
+        start_time_ms: int,
+        end_time_ms: int,
+        limit: int,
+    ) -> List[Dict[str, Any]]:
+        """Get raw historical kline data from exchange."""
+        try:
+            if not self._check_session():
+                return []
+                
+            url = f"{self.base_url}/api/v5/market/history-candles"
+            params = {
+                "instId": symbol.upper(),
+                "bar": self._convert_interval(interval),
+                "before": str(end_time_ms),
+                "after": str(start_time_ms),
+                "limit": str(min(limit, 300))
+            }
+            async with self.session.get(url, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    # Convert list format to dict format for consistency
+                    raw_klines = data.get("data", [])
+                    return [{"timestamp": int(k[0]), "open": float(k[1]), "high": float(k[2]), 
+                           "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])} 
+                           for k in raw_klines]
+        except Exception as e:
+            self.logger.error(f"Error getting historical klines for {symbol}: {e}")
+        return []
+    
+    async def _get_historical_agg_trades_raw(
+        self,
+        symbol: str,
+        start_time_ms: int,
+        end_time_ms: int,
+        limit: int,
+    ) -> List[Dict[str, Any]]:
+        """Get raw historical aggregated trades from exchange."""
+        try:
+            if not self._check_session():
+                return []
+                
+            url = f"{self.base_url}/api/v5/market/history-trades"
+            params = {
+                "instId": symbol.upper(),
+                "before": str(end_time_ms),
+                "after": str(start_time_ms),
+                "limit": str(min(limit, 100))
+            }
+            async with self.session.get(url, params=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data.get("data", [])
+        except Exception as e:
+            self.logger.error(f"Error getting historical trades for {symbol}: {e}")
         return []
     
     async def _get_historical_klines(
@@ -443,6 +583,9 @@ class OkxExchange(BaseExchange):
     ) -> List[List[Any]]:
         """Get historical kline data."""
         try:
+            if not self._check_session():
+                return []
+                
             url = f"{self.base_url}/api/v5/market/history-candles"
             params = {
                 "instId": symbol.upper(),
@@ -462,6 +605,9 @@ class OkxExchange(BaseExchange):
     async def _get_funding_rate(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Get funding rate for symbol."""
         try:
+            if not self._check_session():
+                return None
+                
             url = f"{self.base_url}/api/v5/public/funding-rate"
             params = {"instId": symbol.upper()}
             async with self.session.get(url, params=params) as response:
@@ -475,6 +621,9 @@ class OkxExchange(BaseExchange):
     async def _get_balances_exchange(self, account_type: str) -> List[Dict[str, Any]]:
         """Get balances for account type."""
         try:
+            if not self._check_session():
+                return []
+                
             headers = self.auth_manager.get_auth_headers("GET", "/api/v5/account/balance")
             if not headers:
                 return []
@@ -487,6 +636,66 @@ class OkxExchange(BaseExchange):
         except Exception as e:
             self.logger.error(f"Error getting balances: {e}")
         return []
+    
+    async def _create_order_raw(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: float,
+        price: Optional[float],
+        params: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Create raw order on exchange."""
+        try:
+            if not self._check_session():
+                return {}
+                
+            # Generate idempotency key
+            idempotency_key = self.idempotency_manager.create_order_key(
+                symbol, side, order_type, quantity, price, None
+            )
+            
+            # Prepare order parameters
+            order_params = {
+                "instId": symbol.upper(),
+                "tdMode": "cash",  # cash, cross, isolated
+                "side": "buy" if side.lower() == "buy" else "sell",
+                "ordType": "market" if order_type.upper() == "MARKET" else "limit",
+                "sz": str(quantity),
+                "clOrdId": idempotency_key
+            }
+            
+            if price is not None and order_type.upper() != "MARKET":
+                order_params["px"] = str(price)
+            
+            # Add additional params if provided
+            if params:
+                order_params.update(params)
+            
+            # Add subaccount if specified
+            if self.subaccount_id:
+                order_params["subAcct"] = self.subaccount_id
+            
+            # Execute with rate limiting
+            headers = self.auth_manager.get_auth_headers("POST", "/api/v5/trade/order", str(order_params))
+            if not headers:
+                return {}
+            
+            url = f"{self.base_url}/api/v5/trade/order"
+            
+            async with self.rate_limit_manager.execute_with_rate_limit("trading", self._make_request, "POST", url, order_params, headers):
+                async with self.session.post(url, json=order_params, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if data.get("code") == "0":
+                            return data.get("data", [{}])[0]
+            
+            return {}
+            
+        except Exception as e:
+            self.logger.error(f"Error creating order: {e}")
+            return {}
     
     async def _create_order_exchange(
         self,
@@ -545,6 +754,44 @@ class OkxExchange(BaseExchange):
             self.logger.error(f"Error creating order: {e}")
             return None
     
+    async def _cancel_order_raw(self, symbol: str, order_id: Any) -> Dict[str, Any]:
+        """Cancel raw order on exchange."""
+        try:
+            if not self._check_session():
+                return {"success": False, "error": "Session not initialized"}
+                
+            # Generate idempotency key
+            idempotency_key = self.idempotency_manager.create_cancel_key(str(order_id), symbol)
+            
+            # Prepare cancel parameters
+            cancel_params = {
+                "instId": symbol.upper(),
+                "ordId": str(order_id),
+                "clOrdId": idempotency_key
+            }
+            
+            # Add subaccount if specified
+            if self.subaccount_id:
+                cancel_params["subAcct"] = self.subaccount_id
+            
+            headers = self.auth_manager.get_auth_headers("POST", "/api/v5/trade/cancel-order", str(cancel_params))
+            if not headers:
+                return {}
+            
+            url = f"{self.base_url}/api/v5/trade/cancel-order"
+            
+            async with self.rate_limit_manager.execute_with_rate_limit("trading", self._make_request, "POST", url, cancel_params, headers):
+                async with self.session.post(url, json=cancel_params, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return {"success": data.get("code") == "0", "data": data}
+            
+            return {"success": False, "error": "Request failed"}
+            
+        except Exception as e:
+            self.logger.error(f"Error cancelling order {order_id}: {e}")
+            return {"success": False, "error": str(e)}
+    
     async def _cancel_order_exchange(self, order_id: str, symbol: str) -> bool:
         """Cancel order on exchange."""
         try:
@@ -580,9 +827,38 @@ class OkxExchange(BaseExchange):
             self.logger.error(f"Error cancelling order {order_id}: {e}")
             return False
     
+    async def _get_order_status_raw(self, symbol: str, order_id: Any) -> Dict[str, Any]:
+        """Get raw order status from exchange."""
+        try:
+            if not self._check_session():
+                return {}
+                
+            headers = self.auth_manager.get_auth_headers("GET", f"/api/v5/trade/order?instId={symbol}&ordId={order_id}")
+            if not headers:
+                return {}
+            
+            url = f"{self.base_url}/api/v5/trade/order"
+            params = {"instId": symbol.upper(), "ordId": str(order_id)}
+            
+            async with self.rate_limit_manager.execute_with_rate_limit("trading", self._make_request, "GET", url, params, headers):
+                async with self.session.get(url, params=params, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if data.get("code") == "0":
+                            return data.get("data", [{}])[0]
+            
+            return {}
+            
+        except Exception as e:
+            self.logger.error(f"Error getting order status for {order_id}: {e}")
+            return {}
+    
     async def _get_order_status_exchange(self, order_id: str, symbol: str) -> Optional[Dict[str, Any]]:
         """Get order status from exchange."""
         try:
+            if not self._check_session():
+                return None
+                
             headers = self.auth_manager.get_auth_headers("GET", f"/api/v5/trade/order?instId={symbol}&ordId={order_id}")
             if not headers:
                 return None
@@ -603,9 +879,40 @@ class OkxExchange(BaseExchange):
             self.logger.error(f"Error getting order status for {order_id}: {e}")
             return None
     
+    async def _get_open_orders_raw(self, symbol: Optional[str]) -> List[Dict[str, Any]]:
+        """Get raw open orders from exchange."""
+        try:
+            if not self._check_session():
+                return []
+                
+            headers = self.auth_manager.get_auth_headers("GET", "/api/v5/trade/orders-pending")
+            if not headers:
+                return []
+            
+            url = f"{self.base_url}/api/v5/trade/orders-pending"
+            params = {}
+            if symbol:
+                params["instId"] = symbol.upper()
+            
+            async with self.rate_limit_manager.execute_with_rate_limit("trading", self._make_request, "GET", url, params, headers):
+                async with self.session.get(url, params=params, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if data.get("code") == "0":
+                            return data.get("data", [])
+            
+            return []
+            
+        except Exception as e:
+            self.logger.error(f"Error getting open orders: {e}")
+            return []
+    
     async def _get_open_orders_exchange(self) -> List[Dict[str, Any]]:
         """Get open orders from exchange."""
         try:
+            if not self._check_session():
+                return []
+                
             headers = self.auth_manager.get_auth_headers("GET", "/api/v5/trade/orders-pending")
             if not headers:
                 return []
@@ -628,6 +935,9 @@ class OkxExchange(BaseExchange):
     async def _make_request(self, method: str, url: str, params: Dict[str, Any], headers: Dict[str, str]) -> Any:
         """Make HTTP request with proper error handling."""
         try:
+            if not self._check_session():
+                raise Exception("Session not initialized")
+                
             if method.upper() == "GET":
                 async with self.session.get(url, params=params, headers=headers) as response:
                     return await response.json()
@@ -637,6 +947,13 @@ class OkxExchange(BaseExchange):
         except Exception as e:
             self.logger.error(f"Request failed: {e}")
             raise
+    
+    def _check_session(self) -> bool:
+        """Check if session is initialized and available."""
+        if not self.session:
+            self.logger.error("HTTP session not initialized. Call _initialize_exchange() first.")
+            return False
+        return True
     
     def _convert_interval(self, interval: str) -> str:
         """Convert standard interval to OKX format."""
@@ -758,6 +1075,9 @@ class OkxExchange(BaseExchange):
     async def get_positions(self) -> List[Dict[str, Any]]:
         """Get current positions."""
         try:
+            if not self._check_session():
+                return []
+                
             headers = self.auth_manager.get_auth_headers("GET", "/api/v5/account/positions")
             if not headers:
                 return []
@@ -776,6 +1096,42 @@ class OkxExchange(BaseExchange):
         except Exception as e:
             self.logger.error(f"Error getting positions: {e}")
             return []
+    
+    async def _get_position_risk_raw(self, symbol: str) -> Dict[str, Any]:
+        """Get raw position risk information from exchange."""
+        try:
+            positions = await self.get_positions()
+            
+            for position in positions:
+                if position.get("instId") == symbol.upper():
+                    # Calculate liquidation risk using shared risk calculator
+                    from .shared.risk.risk_calculator import PositionRisk
+                    
+                    position_risk = self.risk_calculator.calculate_position_risk(
+                        symbol=symbol,
+                        position_size=float(position.get("pos", 0)),
+                        entry_price=float(position.get("avgPx", 0)),
+                        current_price=float(position.get("markPx", 0)),
+                        leverage=float(position.get("lever", 1))
+                    )
+                    
+                    return {
+                        "symbol": symbol,
+                        "margin_ratio": position_risk.margin_ratio,
+                        "liquidation_price": position_risk.liquidation_price,
+                        "risk_level": position_risk.risk_level.value,
+                        "unrealized_pnl": position_risk.unrealized_pnl,
+                        "position_size": position.get("pos", 0),
+                        "entry_price": position.get("avgPx", 0),
+                        "current_price": position.get("markPx", 0),
+                        "leverage": position.get("lever", 1)
+                    }
+            
+            return {}
+            
+        except Exception as e:
+            self.logger.error(f"Error getting position risk for {symbol}: {e}")
+            return {}
     
     async def get_liquidation_risk(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Get liquidation risk for symbol."""

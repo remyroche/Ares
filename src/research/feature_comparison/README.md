@@ -164,23 +164,49 @@ results = runner.run_complete_analysis()
 
 ## Advanced Features
 
+### Standardized Naming Conventions
+- **Explicit Definitions**: `ret_t(h) = log(P_t / P_{t-h})`, `vwap_t = volume-weighted average over window W`
+- **Window Specifications**: `_wW` for rolling window W, `_ewmA` for EWMA with span A
+- **Volatility Normalization**: `_normvolW` for features divided by vol_t(W)
+- **Lead/Lag Features**: `_leadH` / `_lagH` for H-step lead/lag
+- **Cross-sectional**: `_zcs` for cross-sectional z-score at time t
+
 ### Returns-Based Calculations
 - **No Raw Prices**: All calculations use returns for better statistical properties
 - **Stationarity**: Returns are more stationary than prices
 - **Risk-Adjusted**: Returns provide better risk-adjusted comparisons
 - **Volatility Scaling**: Returns naturally scale with volatility
 
+### Feature Consolidation and Validation
+- **Redundancy Removal**: Consolidates `returns_abs` vs `returns_squared` (keeps squared)
+- **Momentum Definition**: Explicit momentum as cumulative log-return over k periods
+- **Acceleration**: Δ momentum = momentum_k - momentum_{k-1}
+- **Multicollinearity Screening**: Removes features with |ρ|>0.95 or VIF>10
+- **Winsorization**: Handles outliers with 0.5-99.5% clipping
+
 ### Rolling and EWMA Features
-- **Rolling Averages**: SMA and EWMA of returns with multiple windows (5, 10, 20, 50)
-- **Rolling Statistics**: Standard deviation, skewness, kurtosis of returns
-- **Exponentially Weighted**: EWMA with different decay factors
+- **Rolling Averages**: `ret_ma_wW` with multiple windows (5, 10, 20, 50)
+- **Rolling Statistics**: `ret_std_wW`, `ret_skew_wW`, `ret_kurt_wW`
+- **Exponentially Weighted**: `ret_ewm_wW` with different spans
 - **Matrix Optimized**: Uses vectorized operations for performance
 
 ### Lagged and Lead Features
-- **Lagged Features**: Past returns (1, 2, 3, 5, 10 periods) for reactive analysis
-- **Lead Features**: Future returns (1, 2, 3, 5 periods) for predictive analysis
-- **Momentum Features**: Differences between current and lagged returns
-- **Acceleration**: Second differences for trend analysis
+- **Lagged Features**: `ret_lagH` for reactive analysis (H=1,2,3,5,10)
+- **Lead Features**: `ret_leadH` for predictive analysis (H=1,2,3,5)
+- **Momentum Features**: `ret_mom_kK` as cumulative return over K periods
+- **Acceleration**: `ret_acc_k1` as Δ momentum
+
+### VWAP and Volatility Features
+- **VWAP Features**: `vwap_wW`, `vwap_ret_wW`, `vwap_basis_wW`, `rel_vwap_dev_wW`
+- **Volatility Features**: `vol_wW` for realized volatility over window W
+- **Vol-of-Vol**: `vol_wW1_std_wW2` for volatility of volatility
+- **Regime Features**: `regime_highvol` for high volatility periods
+
+### Advanced Statistical Features
+- **Autocorrelation**: `ret_ac1_wW`, `ret_pac1_wW` for serial dependence
+- **Beta Normalization**: `beta_market_wW`, `ret_normbeta_wW`
+- **Drawdown Metrics**: `dd_current`, `dd_max_wW`
+- **Entropy Features**: `ret_perm_entropy_wW` for complexity measures
 
 ### Matrix Operations Integration
 - **Hardware Acceleration**: M1/M2/M3 GPU acceleration when available

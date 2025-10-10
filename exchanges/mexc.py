@@ -23,7 +23,7 @@ try:
 except ImportError:
     ccxt = None
 
-from src.interfaces.base_interfaces import MarketData
+from src.interfaces.base_interfaces import MarketData, IExchangeClient
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 
@@ -53,14 +53,19 @@ from .shared.interfaces_typed import (
 )
 
 
-class MexcExchange(BaseExchange):
+class MexcExchange(BaseExchange, IExchangeClient):
     """
-    MEXC exchange implementation following the BaseExchange interface.
+    MEXC exchange implementation following the BaseExchange and IExchangeClient interfaces.
     
     Provides comprehensive data download capabilities for:
     - Klines (OHLCV data)
     - Aggregated trades
     - Futures funding rates
+    - Account management
+    - Order execution
+    - Position risk management
+    
+    Implements IExchangeClient interface for standardized exchange operations.
     """
 
     def __init__(
@@ -213,9 +218,7 @@ class MexcExchange(BaseExchange):
         """Initialize the MEXC exchange client."""
         try:
             if aiohttp is None:
-                tprint("aiohttp not available, using mock session", "WARNING")
-                self.session = None
-                return
+                raise ImportError("aiohttp is required for MEXC exchange operations. Please install aiohttp: pip install aiohttp")
 
             # Initialize aiohttp session with SSL configuration
             timeout = aiohttp.ClientTimeout(total=self.timeout)
@@ -696,9 +699,11 @@ class MexcExchange(BaseExchange):
     ) -> dict[str, Any] | list[dict[str, Any]] | None:
         """Make HTTP request to MEXC API."""
         try:
-            if aiohttp is None or not self.session:
-                tprint("aiohttp not available, returning mock data", "WARNING")
-                return []
+            if aiohttp is None:
+                raise ImportError("aiohttp is required for MEXC exchange operations. Please install aiohttp: pip install aiohttp")
+            
+            if not self.session:
+                raise RuntimeError("MEXC exchange session not initialized. Call initialize() first.")
 
             url = f"{self.base_url}{endpoint}"
             
@@ -963,6 +968,59 @@ class MexcExchange(BaseExchange):
             "1M": "1M"
         }
         return interval_map.get(interval, "1m")
+
+    # IExchangeClient Interface Implementation
+    async def get_klines(self, symbol: str, interval: str, limit: int = 100) -> list[MarketData]:
+        """Get historical kline data - IExchangeClient interface method."""
+        try:
+            raw_data = await self._get_klines_raw(symbol, interval, limit)
+            return await self._convert_to_market_data(raw_data, symbol, interval)
+        except Exception as e:
+            tprint(f"Error getting klines for {symbol}: {e}", "ERROR")
+            return []
+
+    async def get_account_info(self) -> dict[str, Any]:
+        """Get account information - IExchangeClient interface method."""
+        try:
+            return await self._get_account_info_raw()
+        except Exception as e:
+            tprint(f"Error getting account info: {e}", "ERROR")
+            return {}
+
+    async def create_order(self, symbol: str, side: str, quantity: float, price: float | None = None, order_type: str = 'MARKET') -> dict[str, Any]:
+        """Create a trading order - IExchangeClient interface method."""
+        try:
+            return await self._create_order_raw(symbol, side, order_type, quantity, price, None)
+        except Exception as e:
+            tprint(f"Error creating order: {e}", "ERROR")
+            return {}
+
+    async def get_position_risk(self, symbol: str) -> dict[str, Any]:
+        """Get position risk information - IExchangeClient interface method."""
+        try:
+            return await self._get_position_risk_raw(symbol)
+        except Exception as e:
+            tprint(f"Error getting position risk for {symbol}: {e}", "ERROR")
+            return {}
+
+    # Additional public interface methods
+    async def initialize(self) -> None:
+        """Initialize the exchange connection - public interface method."""
+        try:
+            await self._initialize_exchange()
+            tprint("MEXC exchange initialized successfully", "INFO")
+        except Exception as e:
+            tprint(f"Failed to initialize MEXC exchange: {e}", "ERROR")
+            raise
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        await self.initialize()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.close()
 
     async def close(self) -> None:
         """Close the exchange connection."""

@@ -28,6 +28,7 @@ from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
 
 from .base_exchange import BaseExchange
+from .shared.interfaces_typed import tprint, handle_async_errors, handle_errors
 from .shared import (
     # Auth
     AuthenticationManager, APIKeyManager, TimeSyncManager, SubaccountManager,
@@ -212,11 +213,12 @@ class BinanceExchange(BaseExchange):
         except Exception as e:
             tprint(f"Failed to setup rate limiting: {e}", "ERROR")
 
+    @handle_async_errors(default_return=None)
     async def _initialize_exchange(self) -> None:
         """Initialize the Binance exchange client."""
         try:
             if aiohttp is None:
-                tprint("aiohttp not available, using mock session", "WARNING")
+                tprint("⚠️ aiohttp not available, using mock session", "WARNING")
                 self.session = None
                 return
 
@@ -236,6 +238,10 @@ class BinanceExchange(BaseExchange):
             # Start background tasks
             await self._start_background_tasks()
 
+            tprint("✅ Binance exchange initialized successfully", "INFO")
+
+        except Exception as e:
+            tprint(f"❌ Failed to initialize Binance exchange: {e}", "ERROR")
             tprint("Binance exchange initialized successfully", "INFO")
 
         except Exception as e:
@@ -380,6 +386,7 @@ class BinanceExchange(BaseExchange):
                 tprint(f"Error in background order sync: {e}", "ERROR")
                 await asyncio.sleep(30)
 
+    @handle_async_errors(default_return=None)
     async def _test_connection(self) -> bool:
         """Test connection to Binance API."""
         try:
@@ -395,7 +402,7 @@ class BinanceExchange(BaseExchange):
                     return False
         except Exception as e:
             tprint(f"Connection test failed: {e}", "ERROR")
-            return False
+            raise
     
     async def _get_server_time(self) -> Optional[int]:
         """Get server time in milliseconds."""
@@ -701,6 +708,7 @@ class BinanceExchange(BaseExchange):
             tprint(f"Error generating signature: {e}", "ERROR")
             raise
 
+    @handle_async_errors(default_return=None)
     async def _make_request(
         self,
         method: str,
@@ -710,32 +718,46 @@ class BinanceExchange(BaseExchange):
         futures: bool = False
     ) -> dict[str, Any] | list[dict[str, Any]] | None:
         """Make HTTP request to Binance API."""
-        if aiohttp is None or not self.session:
-            self.logger.warning("⚠️ aiohttp not available, returning mock data")
-            return []
-
-        base_url = self._get_futures_url() if futures else self._get_base_url()
-        url = f"{base_url}{endpoint}"
-        
-        if params is None:
-            params = {}
-
-        headers = {}
-        if signed and self.api_key:
-            params["timestamp"] = int(time.time() * 1000)
-            params["signature"] = self._generate_signature(params)
-            headers["X-MBX-APIKEY"] = self.api_key
-
         try:
+            if aiohttp is None or not self.session:
+                tprint("⚠️ aiohttp not available, returning mock data", "WARNING")
+                return []
+
+            base_url = self._get_futures_url() if futures else self._get_base_url()
+            url = f"{base_url}{endpoint}"
+            
+            if params is None:
+                params = {}
+
+            headers = {}
+            if signed and self.api_key:
+                params["timestamp"] = int(time.time() * 1000)
+                params["signature"] = self._generate_signature(params)
+                headers["X-MBX-APIKEY"] = self.api_key
+
             async with self.session.request(method, url, params=params, headers=headers) as response:
                 if response.status == 200:
                     return await response.json()
+                elif response.status == 429:
+                    # Rate limit exceeded
+                    tprint("Rate limit exceeded, waiting...", "WARNING")
+                    await asyncio.sleep(1)
+                    return await self._make_request(method, endpoint, params, signed, futures)  # Retry
+                elif response.status == 401:
+                    # Authentication error
+                    tprint("Authentication failed - check API credentials", "ERROR")
+                    return {"error": "authentication_failed"}
+                elif response.status == 400:
+                    # Bad request
+                    error_data = await response.json()
+                    tprint(f"Bad request: {error_data}", "ERROR")
+                    return {"error": "bad_request", "details": error_data}
                 else:
                     error_text = await response.text()
-                    self.logger.error(f"API request failed: {response.status} - {error_text}")
-                    return None
+                    tprint(f"API request failed: {response.status} - {error_text}", "ERROR")
+                    return {"error": f"http_{response.status}", "details": error_text}
         except Exception as e:
-            self.logger.error(f"Request failed: {e}")
+            tprint(f"Request failed: {e}", "ERROR")
             return None
 
     async def _convert_to_market_data(
@@ -803,25 +825,30 @@ class BinanceExchange(BaseExchange):
         }
         
         data = await self._make_request("GET", "/api/v3/klines", params)
-        if data:
+        if data and not isinstance(data, dict) and "error" not in str(data):
             # Convert list format to dict format for consistency
             klines = []
             for item in data:
-                klines.append({
-                    "timestamp": item[0],
-                    "open_time": item[0],
-                    "open": item[1],
-                    "high": item[2],
-                    "low": item[3],
-                    "close": item[4],
-                    "volume": item[5],
-                    "close_time": item[6],
-                    "quote_volume": item[7],
-                    "trades": item[8],
-                    "taker_buy_base": item[9],
-                    "taker_buy_quote": item[10]
-                })
+                if isinstance(item, list) and len(item) >= 11:
+                    klines.append({
+                        "timestamp": item[0],
+                        "open_time": item[0],
+                        "open": item[1],
+                        "high": item[2],
+                        "low": item[3],
+                        "close": item[4],
+                        "volume": item[5],
+                        "close_time": item[6],
+                        "quote_volume": item[7],
+                        "trades": item[8],
+                        "taker_buy_base": item[9],
+                        "taker_buy_quote": item[10]
+                    })
+                else:
+                    tprint(f"Invalid kline data format: {item}", "WARNING")
             return klines
+        elif isinstance(data, dict) and "error" in data:
+            tprint(f"API error in klines: {data['error']}", "ERROR")
         return []
 
     async def _get_historical_klines_raw(
@@ -1088,6 +1115,7 @@ class BinanceExchange(BaseExchange):
                 self.logger.error(f"Error in orderbook stream: {e}")
                 await asyncio.sleep(1)
 
+    @handle_async_errors(default_return=None)
     async def close(self) -> None:
         """Close the exchange connection."""
         try:
@@ -1108,5 +1136,22 @@ def create_binance_exchange(
     subaccount_id: str | None = None,
     use_testnet: bool = False
 ) -> BinanceExchange:
+    """
+    Create a new Binance exchange instance.
+    
+    Args:
+        api_key: Binance API key
+        api_secret: Binance API secret
+        trade_symbol: Trading symbol (default: BTCUSDT)
+        password: API password (optional)
+        
+    Returns:
+        BinanceExchange instance
+    """
+    try:
+        return BinanceExchange(api_key, api_secret, trade_symbol, password)
+    except Exception as e:
+        tprint(f"❌ Failed to create Binance exchange: {e}", "ERROR")
+        raise
     """Create a new Binance exchange instance."""
     return BinanceExchange(api_key, api_secret, trade_symbol, password, subaccount_id, use_testnet)

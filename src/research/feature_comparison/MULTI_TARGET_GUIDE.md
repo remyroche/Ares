@@ -136,6 +136,36 @@ multi_target = MultiTargetSystem(
 
 ## Usage Example
 
+### Basic Usage with Data Loading
+
+```python
+from feature_comparison.multi_target_system import MultiTargetSystem
+from datetime import datetime
+
+# Initialize multi-target system
+multi_target = MultiTargetSystem(
+    horizons=[1, 2, 3],
+    timeframe_minutes=15
+)
+
+# Run complete evaluation with automatic data loading
+results = multi_target.run_complete_evaluation_with_data_loading(
+    X=feature_matrix,
+    symbol="ETHUSDT",
+    interval="15m",
+    start_date=datetime(2024, 1, 1),
+    end_date=datetime(2024, 12, 31),
+    data_type="raw",
+    fallback_days=30
+)
+
+# Generate comprehensive report
+report = multi_target.generate_multi_target_report(results)
+print(report)
+```
+
+### Manual Data Loading
+
 ```python
 from feature_comparison.multi_target_system import MultiTargetSystem
 
@@ -143,6 +173,16 @@ from feature_comparison.multi_target_system import MultiTargetSystem
 multi_target = MultiTargetSystem(
     horizons=[1, 2, 3],
     timeframe_minutes=15
+)
+
+# Load market data using KlinesParquetManager
+data = multi_target.load_market_data(
+    symbol="ETHUSDT",
+    interval="15m",
+    start_date=datetime(2024, 1, 1),
+    end_date=datetime(2024, 12, 31),
+    data_type="raw",
+    fallback_days=30
 )
 
 # Create all targets
@@ -250,6 +290,13 @@ print(report)
 - **Robust error handling** for edge cases
 - **Comprehensive reporting** with detailed analysis
 - **Scalable evaluation** across large feature sets
+
+### 6. KlinesParquetManager Integration
+- **Real data loading** using KlinesParquetManager
+- **Automatic fallback** to synthetic data if real data unavailable
+- **Flexible data sources** (raw or processed data)
+- **Date range filtering** with intelligent fallback
+- **Data validation** and error handling
 
 ## Best Practices
 

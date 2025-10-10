@@ -17,6 +17,7 @@ from sklearn.metrics import precision_recall_curve, average_precision_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.model_selection import TimeSeriesSplit
+from datetime import datetime, timedelta
 import warnings
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,90 @@ class MultiTargetSystem:
         self.target_results = {}
         self.feature_performance = {}
         self.multi_target_metrics = {}
+        
+        # Initialize data manager
+        self.data_manager = None
+        self._initialize_data_manager()
+    
+    def _initialize_data_manager(self):
+        """Initialize the KlinesParquetManager."""
+        try:
+            from src.utils.data.klines_parquet import KlinesParquetManager
+            self.data_manager = KlinesParquetManager()
+            logger.info("KlinesParquetManager initialized successfully")
+        except ImportError as e:
+            logger.warning(f"Could not import KlinesParquetManager: {e}")
+            self.data_manager = None
+    
+    def load_market_data(self, 
+                        symbol: str = "ETHUSDT",
+                        interval: str = "15m",
+                        start_date: Optional[datetime] = None,
+                        end_date: Optional[datetime] = None,
+                        data_type: str = "raw",
+                        fallback_days: int = 30) -> Optional[pd.DataFrame]:
+        """
+        Load market data using KlinesParquetManager.
+        
+        Args:
+            symbol: Trading symbol (default: ETHUSDT)
+            interval: Data interval (default: 15m)
+            start_date: Start date for filtering
+            end_date: End date for filtering
+            data_type: 'raw' or 'processed'
+            fallback_days: Days to fallback to if no data in range
+            
+        Returns:
+            DataFrame with market data or None if not found
+        """
+        if self.data_manager is None:
+            logger.error("KlinesParquetManager not available")
+            return None
+        
+        try:
+            # Try to load data with specified date range
+            data = self.data_manager.read_data(
+                symbol=symbol,
+                interval=interval,
+                start_date=start_date,
+                end_date=end_date,
+                data_type=data_type
+            )
+            
+            # If no data found and we have a date range, try fallback
+            if (data is None or data.empty) and (start_date is not None or end_date is not None):
+                logger.info(f"No data found in specified range, trying last {fallback_days} days fallback")
+                data = self.data_manager.read_last_x_days_data(
+                    symbol=symbol,
+                    interval=interval,
+                    x_days=fallback_days,
+                    data_type=data_type
+                )
+            
+            if data is not None and not data.empty:
+                # Ensure we have the required columns
+                required_columns = ['open', 'high', 'low', 'close', 'volume']
+                missing_columns = [col for col in required_columns if col not in data.columns]
+                
+                if missing_columns:
+                    logger.error(f"Missing required columns: {missing_columns}")
+                    return None
+                
+                # Ensure data is sorted by timestamp
+                if not data.index.is_monotonic_increasing:
+                    data = data.sort_index()
+                
+                logger.info(f"Loaded {len(data)} records for {symbol} {interval}")
+                logger.info(f"Date range: {data.index.min()} to {data.index.max()}")
+                
+                return data
+            else:
+                logger.warning(f"No data available for {symbol} {interval}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Failed to load market data: {e}")
+            return None
     
     def create_all_targets(self, data: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         """
@@ -763,3 +848,71 @@ class MultiTargetSystem:
             report.append("")
         
         return "\n".join(report)
+    
+    def run_complete_evaluation_with_data_loading(self, 
+                                                X: pd.DataFrame,
+                                                symbol: str = "ETHUSDT",
+                                                interval: str = "15m",
+                                                start_date: Optional[datetime] = None,
+                                                end_date: Optional[datetime] = None,
+                                                data_type: str = "raw",
+                                                fallback_days: int = 30,
+                                                feature_names: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Run complete multi-target evaluation with automatic data loading.
+        
+        Args:
+            X: Feature matrix
+            symbol: Trading symbol for data loading
+            interval: Data interval for data loading
+            start_date: Start date for data loading
+            end_date: End date for data loading
+            data_type: 'raw' or 'processed' for data loading
+            fallback_days: Days to fallback to if no data in range
+            feature_names: List of feature names to evaluate
+            
+        Returns:
+            Complete evaluation results
+        """
+        logger.info("Running complete multi-target evaluation with data loading...")
+        
+        # Load market data
+        data = self.load_market_data(
+            symbol=symbol,
+            interval=interval,
+            start_date=start_date,
+            end_date=end_date,
+            data_type=data_type,
+            fallback_days=fallback_days
+        )
+        
+        if data is None:
+            logger.error("Failed to load market data")
+            return {
+                'error': 'Failed to load market data',
+                'target_families': {},
+                'feature_performance': {},
+                'multi_target_summary': {},
+                'best_features_by_target': {},
+                'correlation_analysis': {}
+            }
+        
+        # Create all targets
+        targets = self.create_all_targets(data)
+        
+        # Evaluate features against targets
+        results = self.evaluate_features_against_targets(X, targets, feature_names)
+        
+        # Add data information to results
+        results['data_info'] = {
+            'symbol': symbol,
+            'interval': interval,
+            'data_type': data_type,
+            'date_range': (data.index.min(), data.index.max()),
+            'n_records': len(data),
+            'n_targets': sum(len(target_df.columns) for target_df in targets.values())
+        }
+        
+        logger.info(f"Complete evaluation finished with {results['data_info']['n_targets']} targets")
+        
+        return results

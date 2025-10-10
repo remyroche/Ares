@@ -23,9 +23,84 @@ from feature_comparison.family_diverse_features import FamilyDiverseFeatureGener
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
-def create_market_data_15min(n_samples: int = 10000) -> pd.DataFrame:
+def load_market_data_with_klines_manager(symbol: str = "ETHUSDT",
+                                        interval: str = "15m",
+                                        start_date: Optional[datetime] = None,
+                                        end_date: Optional[datetime] = None,
+                                        data_type: str = "raw",
+                                        fallback_days: int = 30) -> Optional[pd.DataFrame]:
     """
-    Create market data with 15-minute timeframe for multi-target evaluation.
+    Load market data using KlinesParquetManager.
+    
+    Args:
+        symbol: Trading symbol (default: ETHUSDT)
+        interval: Data interval (default: 15m)
+        start_date: Start date for filtering
+        end_date: End date for filtering
+        data_type: 'raw' or 'processed'
+        fallback_days: Days to fallback to if no data in range
+        
+    Returns:
+        DataFrame with market data or None if not found
+    """
+    try:
+        from src.utils.data.klines_parquet import KlinesParquetManager
+        
+        # Initialize data manager
+        data_manager = KlinesParquetManager()
+        
+        # Try to load data with specified date range
+        data = data_manager.read_data(
+            symbol=symbol,
+            interval=interval,
+            start_date=start_date,
+            end_date=end_date,
+            data_type=data_type
+        )
+        
+        # If no data found and we have a date range, try fallback
+        if (data is None or data.empty) and (start_date is not None or end_date is not None):
+            print(f"No data found in specified range, trying last {fallback_days} days fallback")
+            data = data_manager.read_last_x_days_data(
+                symbol=symbol,
+                interval=interval,
+                x_days=fallback_days,
+                data_type=data_type
+            )
+        
+        if data is not None and not data.empty:
+            # Ensure we have the required columns
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            
+            if missing_columns:
+                print(f"Missing required columns: {missing_columns}")
+                return None
+            
+            # Ensure data is sorted by timestamp
+            if not data.index.is_monotonic_increasing:
+                data = data.sort_index()
+            
+            print(f"Loaded {len(data)} records for {symbol} {interval}")
+            print(f"Date range: {data.index.min()} to {data.index.max()}")
+            
+            return data
+        else:
+            print(f"No data available for {symbol} {interval}")
+            return None
+            
+    except ImportError as e:
+        print(f"Could not import KlinesParquetManager: {e}")
+        print("Falling back to synthetic data generation...")
+        return create_synthetic_market_data_15min()
+    except Exception as e:
+        print(f"Failed to load market data: {e}")
+        print("Falling back to synthetic data generation...")
+        return create_synthetic_market_data_15min()
+
+def create_synthetic_market_data_15min(n_samples: int = 10000) -> pd.DataFrame:
+    """
+    Create synthetic market data with 15-minute timeframe as fallback.
     
     Args:
         n_samples: Number of samples to generate
@@ -129,11 +204,23 @@ def test_multi_target_system():
     print("Testing Multi-Target System...")
     print("=" * 70)
     
-    # Create 15-minute market data
-    data = create_market_data_15min(8000)
-    print(f"Created market data with shape: {data.shape}")
+    # Load 15-minute market data using KlinesParquetManager
+    data = load_market_data_with_klines_manager(
+        symbol="ETHUSDT",
+        interval="15m",
+        start_date=datetime(2024, 1, 1),
+        end_date=datetime(2024, 12, 31),
+        data_type="raw",
+        fallback_days=30
+    )
+    
+    if data is None:
+        print("Failed to load market data, using synthetic data")
+        data = create_synthetic_market_data_15min(8000)
+    
+    print(f"Loaded market data with shape: {data.shape}")
     print(f"Timeframe: 15 minutes")
-    print(f"Date range: {data['timestamp'].min()} to {data['timestamp'].max()}")
+    print(f"Date range: {data.index.min()} to {data.index.max()}")
     
     # Generate base features
     family_generator = FamilyDiverseFeatureGenerator(enable_matrix_ops=True)
@@ -244,8 +331,16 @@ def test_specific_target_families():
     print("\nTesting Specific Target Families...")
     print("=" * 70)
     
-    # Create market data
-    data = create_market_data_15min(5000)
+    # Load market data using KlinesParquetManager
+    data = load_market_data_with_klines_manager(
+        symbol="ETHUSDT",
+        interval="15m",
+        fallback_days=20
+    )
+    
+    if data is None:
+        print("Failed to load market data, using synthetic data")
+        data = create_synthetic_market_data_15min(5000)
     
     # Generate features
     family_generator = FamilyDiverseFeatureGenerator(enable_matrix_ops=True)
@@ -330,8 +425,16 @@ def test_feature_performance_analysis():
     print("\nTesting Feature Performance Analysis...")
     print("=" * 70)
     
-    # Create market data
-    data = create_market_data_15min(6000)
+    # Load market data using KlinesParquetManager
+    data = load_market_data_with_klines_manager(
+        symbol="ETHUSDT",
+        interval="15m",
+        fallback_days=25
+    )
+    
+    if data is None:
+        print("Failed to load market data, using synthetic data")
+        data = create_synthetic_market_data_15min(6000)
     
     # Generate features
     family_generator = FamilyDiverseFeatureGenerator(enable_matrix_ops=True)
@@ -439,6 +542,92 @@ def test_feature_performance_analysis():
     
     return results
 
+def test_complete_evaluation_with_data_loading():
+    """Test complete evaluation with automatic data loading."""
+    print("\nTesting Complete Evaluation with Data Loading...")
+    print("=" * 80)
+    
+    # Generate features first (we'll use synthetic data for features)
+    print("Generating features...")
+    synthetic_data = create_synthetic_market_data_15min(5000)
+    family_generator = FamilyDiverseFeatureGenerator(enable_matrix_ops=True)
+    family_features = family_generator.generate_family_diverse_features(synthetic_data)
+    
+    # Combine features
+    X = pd.DataFrame(index=synthetic_data.index)
+    for family_df in family_features.values():
+        original_cols = ['open', 'high', 'low', 'close', 'volume', 'timestamp']
+        feature_cols = [col for col in family_df.columns if col not in original_cols]
+        for feature in feature_cols:
+            X[feature] = family_df[feature]
+    
+    print(f"Generated {X.shape[1]} features across {len(family_features)} families")
+    
+    # Initialize multi-target system
+    multi_target = MultiTargetSystem(
+        horizons=[1, 2, 3],
+        timeframe_minutes=15
+    )
+    
+    # Run complete evaluation with data loading
+    print("Running complete evaluation with data loading...")
+    results = multi_target.run_complete_evaluation_with_data_loading(
+        X=X,
+        symbol="ETHUSDT",
+        interval="15m",
+        start_date=datetime(2024, 1, 1),
+        end_date=datetime(2024, 12, 31),
+        data_type="raw",
+        fallback_days=30
+    )
+    
+    # Display results
+    if 'error' in results:
+        print(f"Error: {results['error']}")
+        return results
+    
+    print(f"\nComplete Evaluation Results:")
+    print("=" * 80)
+    
+    # Data info
+    if 'data_info' in results:
+        data_info = results['data_info']
+        print(f"Data Information:")
+        print(f"  Symbol: {data_info['symbol']}")
+        print(f"  Interval: {data_info['interval']}")
+        print(f"  Data Type: {data_info['data_type']}")
+        print(f"  Date Range: {data_info['date_range'][0]} to {data_info['date_range'][1]}")
+        print(f"  Records: {data_info['n_records']:,}")
+        print(f"  Targets: {data_info['n_targets']}")
+        print()
+    
+    # Summary
+    summary = results['multi_target_summary']
+    print(f"Evaluation Summary:")
+    print(f"  Total targets: {summary['total_targets']}")
+    print(f"  Total features evaluated: {summary['total_features_evaluated']}")
+    print()
+    
+    # Target family performance
+    print(f"Target Family Performance:")
+    for family_name, perf in summary['target_family_performance'].items():
+        print(f"  {family_name:20s} | Targets: {perf['targets']:2d} | Features: {perf['features_evaluated']:3d}")
+    print()
+    
+    # Best overall features
+    print(f"Best Overall Features (Top 10):")
+    for i, (feature, score) in enumerate(summary['best_overall_features'][:10], 1):
+        print(f"  {i:2d}. {feature:30s} | Score: {score:.4f}")
+    print()
+    
+    # Most consistent features
+    print(f"Most Consistent Features (Top 10):")
+    for i, (feature, consistency) in enumerate(summary['feature_consistency'][:10], 1):
+        print(f"  {i:2d}. {feature:30s} | Consistency: {consistency:.4f}")
+    print()
+    
+    return results
+
 def generate_comprehensive_report(results: Dict[str, Any]) -> str:
     """Generate comprehensive multi-target report."""
     multi_target = MultiTargetSystem()
@@ -470,8 +659,11 @@ def main():
     print("\n3. Testing Feature Performance Analysis...")
     performance_results = test_feature_performance_analysis()
     
+    print("\n4. Testing Complete Evaluation with Data Loading...")
+    complete_results = test_complete_evaluation_with_data_loading()
+    
     # Generate comprehensive report
-    print("\n4. Generating Comprehensive Report...")
+    print("\n5. Generating Comprehensive Report...")
     report = generate_comprehensive_report(multi_target_results)
     print(report)
     
@@ -487,6 +679,8 @@ def main():
     print("✅ Risk-adjusted returns with Sharpe-like metrics")
     print("✅ Meta-labeling with triple barrier method")
     print("✅ 15-minute timeframe with proper bar-based horizons")
+    print("✅ KlinesParquetManager integration for real data loading")
+    print("✅ Automatic fallback to synthetic data if real data unavailable")
     print("✅ Comprehensive evaluation across all targets")
     print("✅ Feature consistency and performance analysis")
     print("=" * 90)

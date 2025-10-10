@@ -1136,13 +1136,9 @@ class BinanceExchange(BaseExchange):
         return await self._make_request("GET", "/api/v3/depth", params)
 
     # Additional methods for live trading
-    async def get_ticker(self, symbol: str | None = None) -> dict[str, Any]:
-        """Get ticker information."""
-        if symbol:
-            return await self.get_24hr_ticker(symbol)
-        else:
-            # Get all tickers
-            return await self._make_request("GET", "/api/v3/ticker/24hr")
+    async def get_ticker(self, symbol: str) -> dict[str, Any]:
+        """Get ticker information - implements IExchange interface."""
+        return await self.get_24hr_ticker(symbol)
     
     async def get_recent_trades(self, symbol: str, limit: int = 100) -> list[dict[str, Any]]:
         """Get recent trades."""
@@ -1254,6 +1250,75 @@ class BinanceExchange(BaseExchange):
             except Exception as e:
                 self.logger.error(f"Error in orderbook stream: {e}")
                 await asyncio.sleep(1)
+
+    # Required IExchangeClient interface methods
+    async def get_klines(self, symbol: str, interval: str, limit: int = 100) -> list[MarketData]:
+        """Get historical kline data - implements IExchangeClient interface."""
+        raw_data = await self._get_klines_raw(symbol, interval, limit)
+        return await self._convert_to_market_data(raw_data, symbol, interval)
+
+    async def get_account_info(self) -> dict[str, Any]:
+        """Get account information - implements IExchangeClient interface."""
+        return await self._get_account_info_raw()
+
+    async def create_order(self, symbol: str, side: str, quantity: float, price: float | None = None, order_type: str = 'MARKET') -> dict[str, Any]:
+        """Create a trading order - implements IExchangeClient interface."""
+        return await self._create_order_raw(symbol, side, order_type, quantity, price, None)
+
+    async def get_position_risk(self, symbol: str) -> dict[str, Any]:
+        """Get position risk information - implements IExchangeClient interface."""
+        return await self._get_position_risk_raw(symbol)
+
+    # Required IExchange interface methods
+    async def initialize(self) -> None:
+        """Initialize the exchange connection - implements IExchange interface."""
+        await self._initialize_exchange()
+
+    async def get_status(self) -> str:
+        """Get current exchange status - implements IExchange interface."""
+        try:
+            if not self.session:
+                return "disconnected"
+            
+            # Test connection to determine status
+            await self._test_connection()
+            return "connected"
+        except Exception:
+            return "error"
+
+    async def get_balance(self, currency: str) -> dict[str, Any]:
+        """Get balance for a specific currency - implements IExchange interface."""
+        try:
+            balances = await self._get_balances_exchange("spot")
+            for balance in balances:
+                if balance.get("asset", "").upper() == currency.upper():
+                    return balance
+            return {"asset": currency, "free": "0.0", "locked": "0.0"}
+        except Exception as e:
+            raise NetworkError(f"Failed to get balance for {currency}: {e}")
+
+    async def cancel_order(self, order_id: str) -> dict[str, Any]:
+        """Cancel an existing order - implements IExchange interface."""
+        return await self._cancel_order_raw(self.trade_symbol, order_id)
+
+    async def get_order_status(self, order_id: str) -> dict[str, Any]:
+        """Get status of an order - implements IExchange interface."""
+        return await self._get_order_status_raw(self.trade_symbol, order_id)
+
+    async def get_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
+        """Get open orders - implements IExchange interface."""
+        return await self._get_open_orders_raw(symbol)
+
+
+    # Context manager support
+    async def __aenter__(self):
+        """Async context manager entry."""
+        await self.initialize()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.close()
 
     async def close(self) -> None:
         """Close the exchange connection."""

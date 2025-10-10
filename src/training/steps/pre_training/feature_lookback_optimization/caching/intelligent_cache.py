@@ -97,6 +97,7 @@ class IntelligentCache:
         self.memory_cache: Dict[str, CacheEntry] = {}
         self.disk_cache_dir = self.cache_dir / "disk"
         self.compressed_cache_dir = self.cache_dir / "compressed"
+        self.max_memory_entries = 1000  # Maximum entries in memory cache
         self.disk_cache_dir.mkdir(exist_ok=True)
         self.compressed_cache_dir.mkdir(exist_ok=True)
         
@@ -250,6 +251,10 @@ class IntelligentCache:
         
         # Check memory limits
         if self._get_memory_usage() + size_bytes > self.max_memory_mb * 1024 * 1024:
+            self._evict_memory_cache()
+        
+        # Check entry count limits
+        if len(self.memory_cache) >= self.max_memory_entries:
             self._evict_memory_cache()
         
         self.memory_cache[cache_key] = entry

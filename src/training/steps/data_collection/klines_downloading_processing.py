@@ -1168,7 +1168,59 @@ class KlinesDataQualityChecker:
         print("="*60)
 
 
-# Convenience functions
+# Enhanced convenience functions
+async def run_enhanced_klines_pipeline(
+    symbol: str = "ETHUSDT",
+    years: Optional[int] = None,
+    interval: str = "1m",
+    data_dir: str = "historical_data",
+    exchange: str = "binance",
+    api_key: str = "",
+    api_secret: str = "",
+    max_gap_minutes: int = 1,
+    create_consolidated: bool = True,
+    resampling_intervals: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """
+    Enhanced convenience function to run the complete klines processing pipeline.
+
+    This function provides a simple interface to the enhanced processing pipeline
+    with all the features: type hints, exchange-agnostic design, data standardization,
+    fast fail patterns, gap detection, resampling, and quality validation.
+
+    Args:
+        symbol: Trading symbol (e.g., "ETHUSDT")
+        years: Number of years of data to process (default: from centralized config)
+        interval: Data interval (e.g., "1m")
+        data_dir: Base directory for data storage
+        exchange: Exchange name (e.g., "binance", "okx", "gateio")
+        api_key: Exchange API key
+        api_secret: Exchange API secret
+        max_gap_minutes: Maximum allowed gap in minutes
+        create_consolidated: Whether to create consolidated output file
+        resampling_intervals: List of intervals for resampling (e.g., ['5m', '15m', '1h'])
+
+    Returns:
+        Dictionary with complete processing results
+
+    Raises:
+        ValueError: If required parameters are invalid
+        RuntimeError: If processing fails at any step
+    """
+    pipeline = KlinesDataProcessingPipeline(data_dir, exchange)
+    
+    return await pipeline.run_complete_pipeline(
+        symbol=symbol,
+        years=years,
+        interval=interval,
+        api_key=api_key,
+        api_secret=api_secret,
+        max_gap_minutes=max_gap_minutes,
+        create_consolidated=create_consolidated,
+        resampling_intervals=resampling_intervals
+    )
+
+
 def create_consolidated_features_file(
     symbol: str = "ETHUSDT",
     interval: str = "1m",
@@ -1189,7 +1241,7 @@ def create_consolidated_features_file(
     Returns:
         Dictionary with consolidation results
     """
-    pipeline = KlinesDataProcessingPipeline(data_dir)
+    pipeline = KlinesDataProcessingPipeline(data_dir, exchange)
     return pipeline.create_consolidated_features_file(symbol, interval, exchange)
 
 

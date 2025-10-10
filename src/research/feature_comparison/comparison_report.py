@@ -88,7 +88,8 @@ class ComparisonReport:
             'version_names': list(analysis_results.keys()),
             'feature_counts': {},
             'performance_metrics': {},
-            'top_features': {}
+            'top_features': {},
+            'robust_evaluation': {}
         }
         
         # Feature counts
@@ -106,6 +107,39 @@ class ComparisonReport:
             if 'combined_ranking' in results:
                 top_features = results['combined_ranking'].head(10)['feature'].tolist()
                 summary['top_features'][version_name] = top_features
+        
+        # Robust evaluation metrics
+        for version_name, results in analysis_results.items():
+            robust_metrics = {}
+            
+            # Rank correlations
+            if 'rank_correlations' in results:
+                rank_corr = results['rank_correlations']
+                robust_metrics['mean_rank_correlation'] = rank_corr.get('mean_correlation', 0)
+                robust_metrics['significant_correlations'] = sum(1 for v in rank_corr.values() 
+                                                               if isinstance(v, dict) and v.get('is_significant', False))
+            
+            # Bootstrap analysis
+            if 'bootstrap_analysis' in results:
+                bootstrap = results['bootstrap_analysis']
+                if 'method_results' in bootstrap:
+                    for method, method_results in bootstrap['method_results'].items():
+                        robust_metrics[f'{method}_mean_cv'] = method_results.get('cv_importance', pd.Series()).mean()
+                        robust_metrics[f'{method}_performance_std'] = method_results.get('std_performance', 0)
+            
+            # Temporal stability
+            if 'temporal_stability' in results:
+                temporal = results['temporal_stability']
+                if 'stability_metrics' in temporal:
+                    robust_metrics['mean_temporal_stability'] = temporal['stability_metrics'].get('mean_stability', 0)
+                    robust_metrics['stable_features_count'] = len(temporal['stability_metrics'].get('stable_features', []))
+            
+            # Scaling validation
+            if 'scaling_validation' in results:
+                scaling = results['scaling_validation']
+                robust_metrics['scaling_method'] = scaling.get('method', 'unknown')
+            
+            summary['robust_evaluation'][version_name] = robust_metrics
         
         return summary
     
@@ -179,6 +213,15 @@ class ComparisonReport:
             
             # Plot 4: Method agreement heatmap
             plots['method_agreement'] = self._plot_method_agreement(analysis_results)
+            
+            # Plot 5: Robust evaluation metrics
+            plots['robust_evaluation'] = self._plot_robust_evaluation(analysis_results)
+            
+            # Plot 6: Bootstrap stability
+            plots['bootstrap_stability'] = self._plot_bootstrap_stability(analysis_results)
+            
+            # Plot 7: Temporal stability
+            plots['temporal_stability'] = self._plot_temporal_stability(analysis_results)
             
         except Exception as e:
             logger.error(f"Error generating plots: {e}")
@@ -280,6 +323,182 @@ class ComparisonReport:
         # This would require more complex analysis of method agreement
         # For now, return a placeholder
         return "Method agreement plot not implemented yet"
+    
+    def _plot_robust_evaluation(self, analysis_results: Dict[str, Any]) -> str:
+        """Plot robust evaluation metrics comparison."""
+        try:
+            # Extract robust evaluation metrics
+            robust_data = []
+            for version_name, results in analysis_results.items():
+                if 'robust_evaluation' in results:
+                    robust_metrics = results['robust_evaluation']
+                    for metric, value in robust_metrics.items():
+                        if isinstance(value, (int, float)):
+                            robust_data.append({
+                                'version': version_name,
+                                'metric': metric,
+                                'value': value
+                            })
+            
+            if not robust_data:
+                return "No robust evaluation data available"
+            
+            robust_df = pd.DataFrame(robust_data)
+            
+            # Create subplots for different metric categories
+            fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+            fig.suptitle('Robust Evaluation Metrics Comparison', fontsize=16)
+            
+            # Rank correlation metrics
+            rank_corr_data = robust_df[robust_df['metric'].str.contains('rank_correlation', na=False)]
+            if not rank_corr_data.empty:
+                sns.barplot(data=rank_corr_data, x='version', y='value', hue='metric', ax=axes[0,0])
+                axes[0,0].set_title('Rank Correlation Metrics')
+                axes[0,0].tick_params(axis='x', rotation=45)
+            
+            # Bootstrap stability metrics
+            bootstrap_data = robust_df[robust_df['metric'].str.contains('cv|std', na=False)]
+            if not bootstrap_data.empty:
+                sns.barplot(data=bootstrap_data, x='version', y='value', hue='metric', ax=axes[0,1])
+                axes[0,1].set_title('Bootstrap Stability Metrics')
+                axes[0,1].tick_params(axis='x', rotation=45)
+            
+            # Temporal stability metrics
+            temporal_data = robust_df[robust_df['metric'].str.contains('temporal|stability', na=False)]
+            if not temporal_data.empty:
+                sns.barplot(data=temporal_data, x='version', y='value', hue='metric', ax=axes[1,0])
+                axes[1,0].set_title('Temporal Stability Metrics')
+                axes[1,0].tick_params(axis='x', rotation=45)
+            
+            # Scaling method info
+            scaling_data = robust_df[robust_df['metric'] == 'scaling_method']
+            if not scaling_data.empty:
+                axes[1,1].text(0.5, 0.5, f"Scaling Methods:\n{scaling_data.to_string()}", 
+                              ha='center', va='center', transform=axes[1,1].transAxes)
+                axes[1,1].set_title('Scaling Methods')
+                axes[1,1].axis('off')
+            
+            plt.tight_layout()
+            
+            plot_path = self.output_dir / 'robust_evaluation_metrics.png'
+            plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            return str(plot_path)
+            
+        except Exception as e:
+            logger.error(f"Error plotting robust evaluation: {e}")
+            return f"Error: {e}"
+    
+    def _plot_bootstrap_stability(self, analysis_results: Dict[str, Any]) -> str:
+        """Plot bootstrap stability analysis."""
+        try:
+            # Extract bootstrap results
+            bootstrap_data = []
+            for version_name, results in analysis_results.items():
+                if 'bootstrap_analysis' in results and 'method_results' in results['bootstrap_analysis']:
+                    for method, method_results in results['bootstrap_analysis']['method_results'].items():
+                        if 'cv_importance' in method_results:
+                            cv_series = method_results['cv_importance']
+                            for feature, cv_value in cv_series.items():
+                                bootstrap_data.append({
+                                    'version': version_name,
+                                    'method': method,
+                                    'feature': feature,
+                                    'cv_importance': cv_value
+                                })
+            
+            if not bootstrap_data:
+                return "No bootstrap data available"
+            
+            bootstrap_df = pd.DataFrame(bootstrap_data)
+            
+            # Plot coefficient of variation for feature importance
+            plt.figure(figsize=(15, 8))
+            
+            # Group by version and method
+            for i, (version, group) in enumerate(bootstrap_df.groupby('version')):
+                plt.subplot(2, 2, i+1)
+                
+                for method, method_group in group.groupby('method'):
+                    # Get top 10 features by mean CV
+                    top_features = method_group.nlargest(10, 'cv_importance')
+                    sns.barplot(data=top_features, x='cv_importance', y='feature', hue='method')
+                
+                plt.title(f'{version.replace("_", " ").title()} - Feature Importance Stability')
+                plt.xlabel('Coefficient of Variation')
+                plt.ylabel('Feature')
+            
+            plt.tight_layout()
+            
+            plot_path = self.output_dir / 'bootstrap_stability.png'
+            plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            return str(plot_path)
+            
+        except Exception as e:
+            logger.error(f"Error plotting bootstrap stability: {e}")
+            return f"Error: {e}"
+    
+    def _plot_temporal_stability(self, analysis_results: Dict[str, Any]) -> str:
+        """Plot temporal stability analysis."""
+        try:
+            # Extract temporal stability results
+            stability_data = []
+            for version_name, results in analysis_results.items():
+                if 'temporal_stability' in results and 'stability_metrics' in results['temporal_stability']:
+                    feature_stability = results['temporal_stability']['stability_metrics'].get('feature_stability', {})
+                    for feature, stability_info in feature_stability.items():
+                        stability_data.append({
+                            'version': version_name,
+                            'feature': feature,
+                            'stability_score': stability_info.get('stability_score', 0),
+                            'mean_rank': stability_info.get('mean_rank', 0),
+                            'std_rank': stability_info.get('std_rank', 0)
+                        })
+            
+            if not stability_data:
+                return "No temporal stability data available"
+            
+            stability_df = pd.DataFrame(stability_data)
+            
+            # Create temporal stability plots
+            fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+            fig.suptitle('Temporal Stability Analysis', fontsize=16)
+            
+            # Stability scores by version
+            sns.boxplot(data=stability_df, x='version', y='stability_score', ax=axes[0,0])
+            axes[0,0].set_title('Feature Stability Scores by Version')
+            axes[0,0].tick_params(axis='x', rotation=45)
+            
+            # Top stable features
+            top_stable = stability_df.nlargest(20, 'stability_score')
+            sns.barplot(data=top_stable, x='stability_score', y='feature', hue='version', ax=axes[0,1])
+            axes[0,1].set_title('Top 20 Most Stable Features')
+            
+            # Rank variance vs mean rank
+            sns.scatterplot(data=stability_df, x='mean_rank', y='std_rank', hue='version', ax=axes[1,0])
+            axes[1,0].set_title('Rank Variance vs Mean Rank')
+            axes[1,0].set_xlabel('Mean Rank')
+            axes[1,0].set_ylabel('Rank Standard Deviation')
+            
+            # Stability distribution
+            sns.histplot(data=stability_df, x='stability_score', hue='version', kde=True, ax=axes[1,1])
+            axes[1,1].set_title('Stability Score Distribution')
+            axes[1,1].set_xlabel('Stability Score')
+            
+            plt.tight_layout()
+            
+            plot_path = self.output_dir / 'temporal_stability.png'
+            plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            return str(plot_path)
+            
+        except Exception as e:
+            logger.error(f"Error plotting temporal stability: {e}")
+            return f"Error: {e}"
     
     def _save_report(self, report: Dict[str, Any]) -> None:
         """Save report to JSON file."""

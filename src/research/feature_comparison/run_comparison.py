@@ -43,7 +43,8 @@ class FeatureComparisonRunner:
     
     def __init__(self, data: Optional[pd.DataFrame] = None, 
                  target_col: str = 'returns',
-                 task_type: str = 'regression'):
+                 task_type: str = 'regression',
+                 scaling_method: str = 'robust'):
         """
         Initialize the feature comparison runner.
         
@@ -51,12 +52,14 @@ class FeatureComparisonRunner:
             data: Input DataFrame with OHLCV data
             target_col: Name of target column
             task_type: 'regression' or 'classification'
+            scaling_method: Scaling method for robust analysis
         """
         self.data = data
         self.target_col = target_col
         self.task_type = task_type
+        self.scaling_method = scaling_method
         self.utils = FeatureComparisonUtils()
-        self.analyzer = RelevanceAnalyzer()
+        self.analyzer = RelevanceAnalyzer(scaling_method=scaling_method)
         self.report_generator = ComparisonReport()
         
     def load_sample_data(self, n_samples: int = 1000) -> pd.DataFrame:
@@ -149,13 +152,17 @@ class FeatureComparisonRunner:
             
             logger.info(f"Analyzing {X_clean.shape[1]} features with {X_clean.shape[0]} samples")
             
-            # Run comprehensive analysis
+            # Run robust comprehensive analysis
             try:
-                results = self.analyzer.comprehensive_analysis(
-                    X_clean, y_clean, self.task_type
+                results = self.analyzer.robust_comprehensive_analysis(
+                    X_clean, y_clean, self.task_type,
+                    include_bootstrap=True,
+                    include_temporal=True,
+                    n_bootstrap=50,
+                    n_temporal_windows=5
                 )
                 analysis_results[version_name] = results
-                logger.info(f"Completed analysis for {version_name}")
+                logger.info(f"Completed robust analysis for {version_name}")
             except Exception as e:
                 logger.error(f"Error analyzing {version_name}: {e}")
                 analysis_results[version_name] = {}
@@ -232,6 +239,38 @@ class FeatureComparisonRunner:
                 print(f"\n{version_name}:")
                 for idx, row in top_5.iterrows():
                     print(f"  {idx+1}. {row['feature']} (rank: {row['avg_rank']:.2f})")
+        
+        # Robust evaluation metrics
+        print("\nRobust Evaluation Metrics:")
+        print("-" * 60)
+        for version_name, analysis in analysis_results.items():
+            print(f"\n{version_name}:")
+            
+            # Rank correlations
+            if 'rank_correlations' in analysis:
+                rank_corr = analysis['rank_correlations']
+                mean_corr = rank_corr.get('mean_correlation', 0)
+                print(f"  Mean Rank Correlation: {mean_corr:.3f}")
+            
+            # Bootstrap stability
+            if 'bootstrap_analysis' in analysis and 'method_results' in analysis['bootstrap_analysis']:
+                bootstrap = analysis['bootstrap_analysis']['method_results']
+                for method, method_results in bootstrap.items():
+                    mean_cv = method_results.get('cv_importance', pd.Series()).mean()
+                    print(f"  {method.upper()} Mean CV: {mean_cv:.3f}")
+            
+            # Temporal stability
+            if 'temporal_stability' in analysis and 'stability_metrics' in analysis['temporal_stability']:
+                temporal = analysis['temporal_stability']['stability_metrics']
+                mean_stability = temporal.get('mean_stability', 0)
+                stable_count = len(temporal.get('stable_features', []))
+                print(f"  Mean Temporal Stability: {mean_stability:.3f}")
+                print(f"  Stable Features Count: {stable_count}")
+            
+            # Scaling method
+            if 'scaling_validation' in analysis:
+                scaling_method = analysis['scaling_validation'].get('method', 'unknown')
+                print(f"  Scaling Method: {scaling_method}")
         
         print("\n" + "="*80)
         print(f"Detailed report saved to: {results['markdown_path']}")

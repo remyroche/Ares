@@ -13,6 +13,8 @@ The framework compares 4 different feature versions:
 ## Features
 
 - **Multiple Relevance Metrics**: LGBM with SHAP values, LASSO regression, Mutual Information, Correlation analysis
+- **Robust Scaling**: Multiple scaling methods (Standard, Robust, MinMax, Quantile, Power) with validation
+- **Robust Evaluation**: Spearman rank correlation, Bootstrap resampling, Temporal stability analysis
 - **Comprehensive Reporting**: JSON and Markdown reports with visualizations
 - **Modular Design**: Easy to extend with new feature engineering approaches
 - **Integration**: Works with existing feature modules in the codebase
@@ -125,6 +127,34 @@ results = runner.run_complete_analysis()
 - Quick feature screening
 - Baseline comparison
 
+## Robust Evaluation Methods
+
+### Robust Scaling
+- **Standard Scaling**: Z-score normalization
+- **Robust Scaling**: Uses median and IQR (outlier-resistant)
+- **MinMax Scaling**: Scales to [0,1] range
+- **Quantile Scaling**: Maps to uniform/normal distribution
+- **Power Scaling**: Yeo-Johnson transformation
+- **Validation**: Checks for NaN, infinite values, and scaling quality
+
+### Spearman Rank Correlation
+- Measures agreement between different feature importance methods
+- Robust to outliers and non-linear relationships
+- Provides significance testing (p-values)
+- Identifies method consensus and disagreements
+
+### Bootstrap Resampling
+- Assesses feature importance variance across bootstrap samples
+- Calculates coefficient of variation (CV) for stability
+- Provides confidence intervals for feature rankings
+- Identifies robust vs. unstable features
+
+### Temporal Stability Analysis
+- Analyzes feature importance consistency over time windows
+- Calculates stability scores for each feature
+- Identifies temporally stable features
+- Measures ranking consistency across periods
+
 ## Output Reports
 
 ### JSON Report
@@ -144,6 +174,9 @@ results = runner.run_complete_analysis()
 - Performance metrics comparison
 - Top features heatmap
 - Method agreement analysis
+- Robust evaluation metrics
+- Bootstrap stability analysis
+- Temporal stability plots
 
 ## Example Output
 
@@ -174,6 +207,16 @@ vwap_based:
   3. vwap_volatility_10 (rank: 4.75)
   4. vwap_momentum_10 (rank: 5.00)
   5. price_vwap_pct (rank: 6.25)
+
+Robust Evaluation Metrics:
+------------------------------------------------------------
+
+vwap_based:
+  Mean Rank Correlation: 0.742
+  LGBM Mean CV: 0.156
+  Mean Temporal Stability: 0.823
+  Stable Features Count: 12
+  Scaling Method: robust
 ```
 
 ## Integration with Existing Modules

@@ -71,6 +71,17 @@ class IExchange(ABC):
         """Close the exchange connection."""
 
     @abstractmethod
+    async def __aenter__(self):
+        """Async context manager entry."""
+        await self.initialize()
+        return self
+
+    @abstractmethod
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.close()
+
+    @abstractmethod
     async def get_status(self) -> ExchangeStatus:
         """Get current exchange status."""
 
@@ -203,6 +214,19 @@ class IExchangeAdapter(ABC):
     @abstractmethod
     async def disconnect(self) -> None:
         """Disconnect from the exchange."""
+
+    @abstractmethod
+    async def __aenter__(self):
+        """Async context manager entry."""
+        success = await self.connect()
+        if not success:
+            raise ConnectionError("Failed to connect to exchange")
+        return self
+
+    @abstractmethod
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.disconnect()
 
     @abstractmethod
     async def is_connected(self) -> bool:

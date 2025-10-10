@@ -4092,6 +4092,49 @@ class CoreOptimizer:
             self.logger.warning(f"⚠️ Error calculating robust mutual information: {e}")
             return 0.0
 
+    def _calculate_scale_normalized_score(self, mean_mi: float, std_mi: float, stability_penalty: float, lookback_penalty: float) -> Dict[str, float]:
+        """
+        Calculate scale-normalized scoring with adaptive penalties.
+        
+        Args:
+            mean_mi: Mean mutual information
+            std_mi: Standard deviation of MI
+            stability_penalty: Stability penalty (0 or 1)
+            lookback_penalty: Lookback regularization penalty
+            
+        Returns:
+            Dictionary with normalized score components
+        """
+        # Adaptive variance penalty: cap at 30% of mean_MI
+        max_variance_penalty = mean_mi * 0.3 if mean_mi > 0 else 0.0
+        variance_penalty = min(0.5 * std_mi, max_variance_penalty)
+        
+        # Scale-normalized stability penalty: 10% of mean_MI
+        normalized_stability_penalty = (mean_mi * 0.1) if stability_penalty > 0 else 0.0
+        
+        # Base objective (MI - variance penalty)
+        base_objective = mean_mi - variance_penalty
+        
+        # Total penalties with cap to preserve MI signal
+        total_penalties = normalized_stability_penalty + lookback_penalty
+        max_penalty = abs(base_objective) * 0.5 if base_objective != 0 else 0.0
+        capped_penalties = min(total_penalties, max_penalty)
+        
+        # Final normalized score
+        final_score = base_objective - capped_penalties
+        
+        return {
+            'mean_mi': mean_mi,
+            'std_mi': std_mi,
+            'variance_penalty': variance_penalty,
+            'normalized_stability_penalty': normalized_stability_penalty,
+            'lookback_penalty': lookback_penalty,
+            'base_objective': base_objective,
+            'total_penalties': total_penalties,
+            'capped_penalties': capped_penalties,
+            'final_score': final_score
+        }
+
     def _bootstrap_mi_validation(self, feature_values: np.ndarray, forward_returns: np.ndarray, n_resamples: int = 10) -> Dict[str, float]:
         """
         Perform VECTORIZED bootstrap sampling for variance estimation of mutual information.
@@ -4158,8 +4201,13 @@ class CoreOptimizer:
             mad_mi = float(np.median(np.abs(mi_samples - median_mi)))
             mad_over_median = float(safe_divide(mad_mi, np.abs(median_mi))) if median_mi != 0 else 0.0
 
-            # Objective function: mean_MI - 0.5 × std_MI (variance penalty)
-            objective = mean_mi - 0.5 * std_mi
+            # Use scale-normalized scoring (no penalties in bootstrap validation)
+            scoring_result = self._calculate_scale_normalized_score(
+                mean_mi=mean_mi,
+                std_mi=std_mi,
+                stability_penalty=0.0,  # No stability penalty in bootstrap validation
+                lookback_penalty=0.0   # No lookback penalty in bootstrap validation
+            )
 
             return {
                 'mean_mi': mean_mi,
@@ -4167,7 +4215,8 @@ class CoreOptimizer:
                 'median_mi': median_mi,
                 'mad_mi': mad_mi,
                 'mad_over_median': mad_over_median,
-                'objective': objective,
+                'objective': scoring_result['final_score'],
+                'variance_penalty': scoring_result['variance_penalty'],
                 'samples': mi_samples
             }
 
@@ -4992,10 +5041,20 @@ class CoreOptimizer:
                         if mad_ratio > stability_threshold:
                             unstable_horizons[horizon_key] = mad_ratio
 
-                        stability_penalty = 1.0 if horizon_key in unstable_horizons else 0.0
+                        # Use scale-normalized scoring with proper penalty handling
+                        stability_penalty_flag = 1.0 if horizon_key in unstable_horizons else 0.0
                         adjusted_mi = mi * (0.1 if horizon_key in unstable_horizons else 1.0)
-                        objective = stats['objective'] - stability_penalty
-                        penalized_objective = objective - lookback_penalty
+                        
+                        # Calculate normalized scores
+                        scoring_result = self._calculate_scale_normalized_score(
+                            mean_mi=stats['mean_mi'],
+                            std_mi=stats['std_mi'],
+                            stability_penalty=stability_penalty_flag,
+                            lookback_penalty=lookback_penalty
+                        )
+                        
+                        objective = scoring_result['base_objective']
+                        penalized_objective = scoring_result['final_score']
 
                         bootstrap_results.append({
                             'horizon': horizon_key,
@@ -5009,8 +5068,11 @@ class CoreOptimizer:
                             'original_mi': mi,
                             'adjusted_mi': adjusted_mi,
                             'is_unstable': horizon_key in unstable_horizons,
-                            'stability_guardrail_penalty': stability_penalty,
+                            'stability_guardrail_penalty': scoring_result['normalized_stability_penalty'],
                             'regularization_penalty': lookback_penalty,
+                            'variance_penalty': scoring_result['variance_penalty'],
+                            'total_penalties': scoring_result['total_penalties'],
+                            'capped_penalties': scoring_result['capped_penalties'],
                         })
 
                     except Exception as e:
@@ -5083,12 +5145,22 @@ class CoreOptimizer:
                         'penalized_objective',
                         candidate['objective'] - lookback_penalty,
                     )
-                    final_score = base_objective - stability_penalty
+                    # Use scale-normalized final scoring
+                    final_scoring_result = self._calculate_scale_normalized_score(
+                        mean_mi=candidate.get('mean_mi', 0.0),
+                        std_mi=candidate.get('std_mi', 0.0),
+                        stability_penalty=stability_penalty,
+                        lookback_penalty=lookback_penalty
+                    )
+                    final_score = final_scoring_result['final_score']
                     enriched_candidate = candidate.copy()
                     enriched_candidate['final_score'] = final_score
-                    enriched_candidate['validation_penalty'] = stability_penalty
+                    enriched_candidate['validation_penalty'] = final_scoring_result['normalized_stability_penalty']
                     enriched_candidate['regularization_penalty'] = lookback_penalty
                     enriched_candidate['penalized_objective'] = base_objective
+                    enriched_candidate['variance_penalty'] = final_scoring_result['variance_penalty']
+                    enriched_candidate['total_penalties'] = final_scoring_result['total_penalties']
+                    enriched_candidate['capped_penalties'] = final_scoring_result['capped_penalties']
                     final_results.append(enriched_candidate)
 
                 # Select best horizon

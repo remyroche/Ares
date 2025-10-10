@@ -1,26 +1,30 @@
 """
-Klines Data Downloading and Processing Pipeline
+Enhanced Klines Data Downloading and Processing Pipeline
 
-This module provides a complete pipeline for downloading, processing, and quality-checking
-historical klines data with gap detection, duplicate handling, and column management.
+This module provides a complete, production-ready pipeline for downloading, processing, and quality-checking
+historical klines data with comprehensive type hints, exchange-agnostic design, and fast-fail patterns.
 
 Features:
-- Download historical klines data using HistoricalDataPipeline
-- Detect and fill gaps > 1m
-- Identify and handle duplicate timestamps (warn on false duplicates, remove true duplicates)
-- Remove unwanted columns (taker_buy_base, taker_buy_quote, year)
-- Comprehensive data quality checks
-- Exchange-agnostic data standardization
-- Fast fail pattern with no fallbacks or mock data
+- Full type hints and tprint logging throughout
+- Exchange-agnostic design using ExchangeInterface
+- Data standardization using ExchangeDataStandardizer
+- Fast fail pattern with no fallbacks, mocks, or stubs
+- Comprehensive gap detection and filling
+- Data resampling capabilities
+- OHLCV data validation and formatting
+- Duplicate detection and handling
+- Quality assurance and validation
 """
 
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple, Union
+from typing import Dict, List, Any, Optional, Tuple, Union, Callable, Awaitable
 import sys
 import asyncio
 from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from enum import Enum
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -31,28 +35,41 @@ from src.utils.data.quality.comprehensive_duplicate_analyzer import (
     ComprehensiveDuplicateAnalyzer,
     analyze_duplicates_comprehensive
 )
-from src.utils.data.historical_data_pipeline import HistoricalDataPipeline
 from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
-from src.utils.data.gap_detector import GapDetector
 from exchanges.shared.exchange_data_standardizer import ExchangeDataStandardizer
+
+# Import the enhanced pipeline
+from .enhanced_klines_processing_pipeline import (
+    EnhancedKlinesProcessingPipeline,
+    ResamplingConfig,
+    process_klines_data_enhanced
+)
 
 
 class KlinesDataProcessingPipeline:
-    """Complete pipeline for downloading, processing, and quality-checking klines data."""
+    """
+    Enhanced pipeline for downloading, processing, and quality-checking klines data.
+    
+    This class provides a wrapper around the enhanced processing pipeline with
+    backward compatibility and additional convenience methods.
+    """
 
-    def __init__(self, data_dir: str = "historical_data") -> None:
+    def __init__(self, data_dir: str = "historical_data", exchange: str = "binance") -> None:
         """Initialize the processing pipeline.
 
         Args:
             data_dir: Base directory for historical data
+            exchange: Default exchange name
         """
         self.data_dir = data_dir
+        self.exchange = exchange.lower()
         self.logger = system_logger.getChild("KlinesDataProcessingPipeline")
 
-        # Initialize components
-        self.historical_pipeline = HistoricalDataPipeline(data_dir)
-        self.gap_detector = GapDetector(data_dir)
-        self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer(self.logger)
+        # Initialize enhanced pipeline
+        self.enhanced_pipeline = EnhancedKlinesProcessingPipeline(data_dir, exchange)
+        
+        # Initialize legacy components for backward compatibility
+        self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer()
         self.data_standardizer = ExchangeDataStandardizer(data_dir)
 
         # Quality checker will be initialized when first used
@@ -217,26 +234,33 @@ class KlinesDataProcessingPipeline:
     async def run_complete_pipeline(
         self,
         symbol: str = "ETHUSDT",
-        years: int = None,
+        years: Optional[int] = None,
         interval: str = "1m",
         api_key: str = "",
         api_secret: str = "",
         max_gap_minutes: int = 1,
-        create_consolidated: bool = True
+        create_consolidated: bool = True,
+        resampling_intervals: Optional[List[str]] = None
     ) -> Dict[str, Any]:
-        """Run the complete klines processing pipeline.
+        """
+        Run the complete klines processing pipeline using the enhanced processing system.
 
         Args:
             symbol: Trading symbol (e.g., "ETHUSDT", default: "ETHUSDT")
             years: Number of years of data to download (default: from centralized config)
             interval: Kline interval (e.g., "1m")
-            api_key: Binance API key
-            api_secret: Binance API secret
+            api_key: Exchange API key
+            api_secret: Exchange API secret
             max_gap_minutes: Maximum allowed gap in minutes
             create_consolidated: Whether to create consolidated features file
+            resampling_intervals: List of intervals for resampling (e.g., ['5m', '15m', '1h'])
 
         Returns:
             Dictionary with pipeline results
+
+        Raises:
+            ValueError: If required parameters are invalid
+            RuntimeError: If processing fails at any step
         """
         try:
             # Use centralized configuration if years not specified
@@ -245,125 +269,75 @@ class KlinesDataProcessingPipeline:
                 mode_config = get_full_mode_config()
                 years = mode_config.lookback_years
             
-            tprint_info(f"🚀 Starting complete klines processing pipeline for {symbol}")
+            tprint_info(f"🚀 Starting enhanced klines processing pipeline for {symbol}")
 
-            results = {
-                "symbol": symbol,
-                "years": years,
-                "interval": interval,
-                "steps_completed": [],
-                "errors": [],
-                "warnings": [],
-                "summary": {}
-            }
-
-            # Step 1: Download data using HistoricalDataPipeline
-            tprint_info(f"📥 Step 1: Downloading {years} years of {symbol} {interval} data")
+            # Validate parameters
+            if not symbol or not interval or years <= 0:
+                raise ValueError("Invalid parameters: symbol, interval, and years must be valid")
             
+            if not api_key or not api_secret:
+                raise ValueError("API credentials are required for data processing")
+
             # Create ExchangeInterface for exchange-agnostic data access
-            exchange_interface: Optional[ExchangeInterface] = None
-            if api_key and api_secret:
-                exchange_config = {
-                    'exchange_type': 'binance',
-                    'api_key': api_key,
-                    'api_secret': api_secret,
-                    'testnet': False
-                }
-                exchange_interface = create_exchange_interface(exchange_config)
-                await exchange_interface.connect()
-            
-            download_results = await self.historical_pipeline.run_complete_pipeline(
+            exchange_config = {
+                'exchange_type': self.exchange,
+                'api_key': api_key,
+                'api_secret': api_secret,
+                'testnet': False
+            }
+            exchange_interface = create_exchange_interface(exchange_config)
+            await exchange_interface.connect()
+
+            # Configure resampling if requested
+            resampling_config = None
+            if resampling_intervals:
+                resampling_config = ResamplingConfig(
+                    target_intervals=resampling_intervals,
+                    method='ohlc',
+                    preserve_volume=True,
+                    validate_continuity=True
+                )
+
+            # Use enhanced pipeline for processing
+            results = await self.enhanced_pipeline.process_klines_data(
                 symbol=symbol,
+                interval=interval,
                 years=years,
                 exchange_interface=exchange_interface,
-                api_key=api_key,
-                api_secret=api_secret,
-                target_intervals=[interval] if interval != "1m" else []
+                resampling_config=resampling_config,
+                max_gap_minutes=max_gap_minutes,
+                create_consolidated=create_consolidated
             )
-
-            if download_results.get("pipeline_success", False):
-                results["steps_completed"].append("download")
-                results["summary"]["download"] = download_results
-                tprint_success("✅ Data download completed")
-            else:
-                results["errors"].extend(download_results.get("errors", []))
-                tprint_error("❌ Data download failed")
-                return results
-
-            # Step 2: Remove unwanted columns
-            tprint_info("🧹 Step 2: Removing unwanted columns")
-            column_removal_results = self.remove_unwanted_columns(symbol, interval)
-            results["steps_completed"].append("column_removal")
-            results["summary"]["column_removal"] = column_removal_results
-
-            # Step 2.5: Add required columns to processed files
-            tprint_info("📦 Step 2.5: Adding required columns (exchange, timeframe) to processed files")
-            column_addition_results = self.add_required_columns_to_processed_files(symbol, interval, "binance")
-            results["steps_completed"].append("column_addition")
-            results["summary"]["column_addition"] = column_addition_results
-
-            # Step 3: Detect and fill gaps > 1m
-            tprint_info("🔍 Step 3: Detecting gaps > 1m and re-downloading if needed")
-            gap_results = await self.handle_gaps_with_column_removal(
-                symbol, interval, max_gap_minutes, exchange_interface, api_key, api_secret
-            )
-            results["steps_completed"].append("gap_handling")
-            results["summary"]["gap_handling"] = gap_results
-
-            # Step 4: Handle duplicates (warn on false, remove true)
-            tprint_info("🔍 Step 4: Analyzing and handling duplicate timestamps")
-            duplicate_results = self.handle_duplicates(symbol, interval)
-            results["steps_completed"].append("duplicate_handling")
-            results["summary"]["duplicate_handling"] = duplicate_results
-
-            # Add warnings from duplicate analysis
-            if duplicate_results.get("warnings"):
-                results["warnings"].extend(duplicate_results["warnings"])
-
-            # Step 5: Final quality check
-            tprint_info("✅ Step 5: Running final data quality check")
-            quality_results = self.quality_checker.check_processed_data_quality(
-                symbol, [interval]
-            )
-            results["steps_completed"].append("quality_check")
-            results["summary"]["quality_check"] = quality_results
-
-            # Step 6: Create consolidated features file (optional)
-            if create_consolidated:
-                tprint_info("📦 Step 6: Creating consolidated features file")
-                consolidated_results = self.create_consolidated_features_file(
-                    symbol=symbol,
-                    interval=interval,
-                    exchange="binance"
-                )
-                results["steps_completed"].append("consolidated_file_creation")
-                results["summary"]["consolidated_file_creation"] = consolidated_results
-
-                if not consolidated_results.get("success", False):
-                    results["warnings"].append(f"Consolidated file creation failed: {consolidated_results.get('error', 'Unknown error')}")
-                else:
-                    tprint_success("✅ Consolidated features file created successfully")
 
             # Cleanup exchange interface
-            if exchange_interface:
-                try:
-                    await exchange_interface.disconnect()
-                except Exception as e:
-                    tprint_warning(f"Error disconnecting exchange interface: {e}")
+            try:
+                await exchange_interface.disconnect()
+            except Exception as e:
+                tprint_warning(f"Error disconnecting exchange interface: {e}")
 
-            # Overall success
-            results["pipeline_success"] = len(results["errors"]) == 0
+            # Add legacy compatibility fields
+            results["steps_completed"] = results.get("steps_completed", [])
             results["completion_time"] = datetime.now().isoformat()
 
-            tprint_info(f"🎉 Pipeline completed: {len(results['steps_completed'])} steps, {len(results['errors'])} errors, {len(results['warnings'])} warnings")
+            tprint_info(f"🎉 Enhanced pipeline completed: {len(results['steps_completed'])} steps, {len(results['errors'])} errors, {len(results['warnings'])} warnings")
 
             return results
 
         except Exception as e:
-            tprint_error(f"❌ Pipeline failed: {e}")
-            results["errors"].append(str(e))
-            results["pipeline_success"] = False
-            return results
+            error_msg = f"Enhanced pipeline failed: {str(e)}"
+            tprint_error(f"❌ {error_msg}")
+            
+            # Return error result in legacy format
+            return {
+                "symbol": symbol,
+                "years": years,
+                "interval": interval,
+                "pipeline_success": False,
+                "steps_completed": [],
+                "errors": [error_msg],
+                "warnings": [],
+                "completion_time": datetime.now().isoformat()
+            }
 
     def remove_unwanted_columns(self, symbol: str, interval: str) -> Dict[str, Any]:
         """Remove unwanted columns from all data files.

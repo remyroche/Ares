@@ -324,32 +324,42 @@ class ImprovedFeatureGenerator:
         
         interaction_features = {}
         
-        # Generate interactions based on configuration
+        # OPTIMIZATION: Generate interactions more efficiently using vectorized operations
+        interaction_count = 0
+        max_interactions = min(self.config.max_interactions, len(numeric_cols) * (len(numeric_cols) - 1) // 2)
+        
         for i, col1 in enumerate(numeric_cols):
+            if interaction_count >= max_interactions:
+                break
+                
             for col2 in numeric_cols[i+1:]:
-                if len(interaction_features) >= self.config.max_interactions:
+                if interaction_count >= max_interactions:
                     break
                 
                 # Generate different types of interactions
                 for interaction_type in self.config.interaction_types:
-                    if len(interaction_features) >= self.config.max_interactions:
+                    if interaction_count >= max_interactions:
                         break
                     
                     feature_name = f"{col1}_{interaction_type}_{col2}"
                     
-                    if interaction_type == 'ratio':
-                        interaction_features[feature_name] = self._safe_divide(
-                            data[col1], data[col2]
-                        )
-                    elif interaction_type == 'product':
-                        interaction_features[feature_name] = data[col1] * data[col2]
-                    elif interaction_type == 'difference':
-                        interaction_features[feature_name] = data[col1] - data[col2]
-                    elif interaction_type == 'sum':
-                        interaction_features[feature_name] = data[col1] + data[col2]
-            
-            if len(interaction_features) >= self.config.max_interactions:
-                break
+                    try:
+                        if interaction_type == 'ratio':
+                            interaction_features[feature_name] = self._safe_divide(
+                                data[col1], data[col2]
+                            )
+                        elif interaction_type == 'product':
+                            interaction_features[feature_name] = data[col1] * data[col2]
+                        elif interaction_type == 'difference':
+                            interaction_features[feature_name] = data[col1] - data[col2]
+                        elif interaction_type == 'sum':
+                            interaction_features[feature_name] = data[col1] + data[col2]
+                        
+                        interaction_count += 1
+                        
+                    except Exception as e:
+                        tprint_debug(f"⚠️ Failed to generate {feature_name}: {e}")
+                        continue
         
         # Fast-fail: Must have generated interactions
         if not interaction_features:
@@ -553,30 +563,36 @@ class ImprovedFeatureGenerator:
         return features
     
     def _generate_rolling_statistics(self, data: pd.DataFrame) -> Dict[str, np.ndarray]:
-        """Generate rolling statistics for numeric columns."""
+        """Generate rolling statistics for numeric columns using vectorized operations."""
         features = {}
         
         try:
             numeric_cols = data.select_dtypes(include=[np.number]).columns
             
+            # OPTIMIZATION: Use vectorized operations for better performance
             for col in numeric_cols:
-                series = data[col].values
+                series = data[col]
                 
                 for window in self.config.rolling_windows:
                     if len(series) > window:
-                        # Basic statistics
-                        features[f'{col}_ma_{window}'] = self._rolling_mean(series, window)
-                        features[f'{col}_std_{window}'] = self._rolling_std(series, window)
-                        features[f'{col}_min_{window}'] = self._rolling_min(series, window)
-                        features[f'{col}_max_{window}'] = self._rolling_max(series, window)
+                        # Use pandas rolling operations for better performance
+                        rolling = series.rolling(window=window, min_periods=1)
                         
-                        # Advanced statistics
-                        features[f'{col}_skew_{window}'] = self._rolling_skew(series, window)
-                        features[f'{col}_kurt_{window}'] = self._rolling_kurtosis(series, window)
+                        # Basic statistics (vectorized)
+                        features[f'{col}_ma_{window}'] = rolling.mean().values
+                        features[f'{col}_std_{window}'] = rolling.std().values
+                        features[f'{col}_min_{window}'] = rolling.min().values
+                        features[f'{col}_max_{window}'] = rolling.max().values
                         
-                        # Percentiles
-                        features[f'{col}_p25_{window}'] = self._rolling_percentile(series, window, 25)
-                        features[f'{col}_p75_{window}'] = self._rolling_percentile(series, window, 75)
+                        # Advanced statistics (only if window is large enough)
+                        if window >= 10:
+                            features[f'{col}_skew_{window}'] = rolling.skew().values
+                            features[f'{col}_kurt_{window}'] = rolling.kurt().values
+                        
+                        # Percentiles (only if window is large enough)
+                        if window >= 20:
+                            features[f'{col}_p25_{window}'] = rolling.quantile(0.25).values
+                            features[f'{col}_p75_{window}'] = rolling.quantile(0.75).values
                         
         except Exception as e:
             tprint_debug(f"⚠️ Rolling statistics calculation failed: {e}")

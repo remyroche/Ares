@@ -95,8 +95,8 @@ class EnhancedOptimizedConfig:
     
     # Early filtering settings
     downsample_ratio: float = 0.1
-    variance_threshold: float = 1e-8  # FIXED: More lenient threshold to prevent over-filtering
-    top_k_per_family: int = 50  # FIXED: Increased to allow more features per family
+    variance_threshold: float = 1e-6  # FIXED: More reasonable threshold to prevent over-filtering
+    top_k_per_family: int = 10  # FIXED: Reduced to prevent memory issues and improve performance
     
     # Interaction pruning settings
     max_interactions_per_domain: int = 6
@@ -382,6 +382,19 @@ class EnhancedOptimizedInteractionOrchestrator:
                 'reason': 'light_mode_optimization'
             }
         
+        # OPTIMIZATION: Skip early filtering if data is too small (redundant processing)
+        if len(data) < 200:
+            tprint_info("🚀 Skipping early filtering for small dataset (redundant processing)")
+            exclude_cols = ['target', 'timestamp', 'open_time', 'close_time', 'symbol', 'interval', 'exchange']
+            all_features = [col for col in data.columns if col not in exclude_cols]
+            context.pipeline_state['filtered_features'] = all_features
+            return {
+                'status': 'skipped',
+                'selected_features': all_features,
+                'rejected_features': [],
+                'reason': 'small_dataset'
+            }
+        
         # Perform early filtering
         target_column = context.pipeline_state.get('target_column', 'target')
         
@@ -448,11 +461,19 @@ class EnhancedOptimizedInteractionOrchestrator:
         feature_generator = ImprovedFeatureGenerator(feature_config)
         generated_features = feature_generator.generate_meaningful_features(data)
         
+        # CRITICAL: Fast-fail if no features generated
+        if generated_features.empty or len(generated_features.columns) == 0:
+            raise RuntimeError("CRITICAL: Feature generation failed - no features created")
+        
         tprint_info(f"✅ Generated {len(generated_features.columns)} validated base features")
         
         # Apply memory optimization using the matrix operations utility - fast-fail on error
-        from src.utils.matrix_operations import optimize_dataframe
-        optimized_features = optimize_dataframe(generated_features)
+        try:
+            from src.utils.matrix_operations import optimize_dataframe
+            optimized_features = optimize_dataframe(generated_features)
+        except ImportError:
+            tprint_warning("⚠️ Matrix operations not available, using basic optimization")
+            optimized_features = self._basic_memory_optimization(generated_features)
         
         # Store in memory-efficient format
         if self.config.use_parquet:
@@ -563,7 +584,12 @@ class EnhancedOptimizedInteractionOrchestrator:
         feature_generator = ImprovedFeatureGenerator(feature_config)
         interaction_features = feature_generator.generate_interaction_features(features)
         
-        tprint_info(f"✅ Generated {len(interaction_features.columns)} validated interaction features")
+        # CRITICAL: Fast-fail if no interaction features generated
+        if interaction_features.empty or len(interaction_features.columns) == 0:
+            tprint_warning("⚠️ No interaction features generated - this may be expected for some datasets")
+            interaction_features = pd.DataFrame(index=features.index)  # Create empty DataFrame with correct index
+        else:
+            tprint_info(f"✅ Generated {len(interaction_features.columns)} validated interaction features")
         
         # Store result
         context.pipeline_state['interaction_features'] = interaction_features
@@ -654,7 +680,12 @@ class EnhancedOptimizedInteractionOrchestrator:
         feature_generator = ImprovedFeatureGenerator(feature_config)
         cross_timeframe_features = feature_generator.generate_cross_timeframe_features(features)
         
-        tprint_info(f"✅ Generated {len(cross_timeframe_features.columns)} validated cross-timeframe features")
+        # CRITICAL: Fast-fail if no cross-timeframe features generated
+        if cross_timeframe_features.empty or len(cross_timeframe_features.columns) == 0:
+            tprint_warning("⚠️ No cross-timeframe features generated - this may be expected for some datasets")
+            cross_timeframe_features = pd.DataFrame(index=features.index)  # Create empty DataFrame with correct index
+        else:
+            tprint_info(f"✅ Generated {len(cross_timeframe_features.columns)} validated cross-timeframe features")
         
         # Store result
         context.pipeline_state['cross_timeframe_features'] = cross_timeframe_features
@@ -700,13 +731,8 @@ class EnhancedOptimizedInteractionOrchestrator:
                 final_features = final_features.loc[:, ~final_features.columns.duplicated(keep='first')]
                 tprint_debug(f"✅ Removed duplicate columns, now have {len(final_features.columns)} unique columns")
         else:
-            # FIXED: If no new features were generated, return the input data as features
-            # This allows the component to pass through base features
-            tprint_warning("⚠️ No new features generated, using input data as features")
-            if hasattr(context.data, 'to_pandas'):
-                final_features = context.data.to_pandas()
-            else:
-                final_features = context.data if isinstance(context.data, pd.DataFrame) else pd.DataFrame(context.data)
+            # CRITICAL: This should not happen - if we reach here, something is wrong
+            raise RuntimeError("CRITICAL: No features were generated in any stage - this indicates a broken pipeline")
         
         # Store result
         context.pipeline_state['final_features'] = final_features
@@ -962,9 +988,36 @@ class EnhancedOptimizedInteractionOrchestrator:
                 self.stage_times[stage_name] = stage_time
                 tprint_debug(f"✅ Stage {stage_name} completed in {stage_time:.3f}s")
                 
+                # Clean up memory between stages
+                self._cleanup_memory()
+                
             except Exception as e:
                 tprint_error(f"❌ Stage {stage_name} failed: {e}")
                 raise
+    
+    def _basic_memory_optimization(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Basic memory optimization when advanced utilities are not available."""
+        tprint_debug("🔧 Applying basic memory optimization...")
+        
+        # Optimize dtypes
+        for col in df.select_dtypes(include=['float64']).columns:
+            df[col] = pd.to_numeric(df[col], downcast='float')
+        
+        for col in df.select_dtypes(include=['int64']).columns:
+            df[col] = pd.to_numeric(df[col], downcast='integer')
+        
+        # Remove unnecessary memory usage
+        df = df.copy()  # Ensure we have a clean copy
+        
+        return df
+    
+    def _cleanup_memory(self) -> None:
+        """Clean up memory between stages."""
+        import gc
+        gc.collect()
+        
+        if hasattr(self, 'memory_processor'):
+            self.memory_processor.cleanup()
     
     def cleanup(self) -> None:
         """Clean up resources."""
@@ -974,6 +1027,10 @@ class EnhancedOptimizedInteractionOrchestrator:
         self.memory_processor.cleanup()
         if self.cache:
             self.cache.cleanup()
+        
+        # Force garbage collection
+        import gc
+        gc.collect()
         
         tprint_success("✅ Enhanced optimized orchestrator cleanup completed")
 

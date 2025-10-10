@@ -329,6 +329,10 @@ class OkxExchange(BaseExchange):
     async def _get_server_time(self) -> Optional[int]:
         """Get server time in milliseconds."""
         try:
+            if not self.session:
+                self.logger.error("Session not initialized")
+                return None
+                
             url = f"{self.base_url}/api/v5/public/time"
             async with self.session.get(url) as response:
                 if response.status == 200:

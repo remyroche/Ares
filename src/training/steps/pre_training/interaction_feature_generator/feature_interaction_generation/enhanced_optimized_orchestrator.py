@@ -433,9 +433,9 @@ class EnhancedOptimizedInteractionOrchestrator:
         else:
             data = context.data
         
-        # FIXED: Use actual feature generation instead of just copying
+        # Use improved feature generation with better validation
         try:
-            from .feature_generators import FeatureGenerator, FeatureGenerationConfig
+            from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
             
             # Create feature generation config
             feature_config = FeatureGenerationConfig(
@@ -444,12 +444,14 @@ class EnhancedOptimizedInteractionOrchestrator:
                 enable_interaction_features=False,  # Will be done in interaction stage
                 enable_cross_timeframe=False,  # Will be done in cross-timeframe stage
                 rolling_windows=[5, 10, 20, 50, 100],
-                max_interactions=50
+                max_interactions=50,
+                min_valid_ratio=0.8,  # Require 80% valid values
+                max_constant_ratio=0.1  # Allow max 10% constant features
             )
             
-            # Generate base features
-            feature_generator = FeatureGenerator(feature_config)
-            generated_features = feature_generator.generate_base_features(data)
+            # Generate base features using improved generator
+            feature_generator = ImprovedFeatureGenerator(feature_config)
+            generated_features = feature_generator.generate_meaningful_features(data)
             
             # If no features were generated, fall back to using input data
             if generated_features.empty:
@@ -461,7 +463,7 @@ class EnhancedOptimizedInteractionOrchestrator:
                 else:
                     generated_features = data.copy()
             
-            tprint_info(f"✅ Generated {len(generated_features.columns)} base features")
+            tprint_info(f"✅ Generated {len(generated_features.columns)} validated base features")
             
         except Exception as e:
             tprint_error(f"❌ Feature generation failed: {e}")
@@ -573,9 +575,9 @@ class EnhancedOptimizedInteractionOrchestrator:
         else:
             features = context.data
         
-        # FIXED: Use actual interaction feature generation
+        # Use improved interaction feature generation with validation
         try:
-            from .feature_generators import FeatureGenerator, FeatureGenerationConfig
+            from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
             
             # Create feature generation config for interactions
             feature_config = FeatureGenerationConfig(
@@ -584,14 +586,16 @@ class EnhancedOptimizedInteractionOrchestrator:
                 enable_interaction_features=True,
                 enable_cross_timeframe=False,
                 max_interactions=50,
-                interaction_types=['ratio', 'product', 'difference', 'sum']
+                interaction_types=['ratio', 'product', 'difference', 'sum'],
+                min_valid_ratio=0.8,  # Require 80% valid values
+                max_constant_ratio=0.1  # Allow max 10% constant features
             )
             
-            # Generate interaction features
-            feature_generator = FeatureGenerator(feature_config)
+            # Generate interaction features using improved generator
+            feature_generator = ImprovedFeatureGenerator(feature_config)
             interaction_features = feature_generator.generate_interaction_features(features)
             
-            tprint_info(f"✅ Generated {len(interaction_features.columns)} interaction features")
+            tprint_info(f"✅ Generated {len(interaction_features.columns)} validated interaction features")
             
         except Exception as e:
             tprint_error(f"❌ Interaction generation failed: {e}")
@@ -671,9 +675,9 @@ class EnhancedOptimizedInteractionOrchestrator:
         else:
             features = context.data
         
-        # FIXED: Use actual cross-timeframe feature generation
+        # Use improved cross-timeframe feature generation with validation
         try:
-            from .feature_generators import FeatureGenerator, FeatureGenerationConfig
+            from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGenerationConfig
             
             # Create feature generation config for cross-timeframe
             feature_config = FeatureGenerationConfig(
@@ -681,14 +685,16 @@ class EnhancedOptimizedInteractionOrchestrator:
                 enable_rolling_stats=False,
                 enable_interaction_features=False,
                 enable_cross_timeframe=True,
-                cross_timeframe_periods=[5, 15, 30, 60]
+                cross_timeframe_periods=[5, 15, 30, 60],
+                min_valid_ratio=0.8,  # Require 80% valid values
+                max_constant_ratio=0.1  # Allow max 10% constant features
             )
             
-            # Generate cross-timeframe features
-            feature_generator = FeatureGenerator(feature_config)
+            # Generate cross-timeframe features using improved generator
+            feature_generator = ImprovedFeatureGenerator(feature_config)
             cross_timeframe_features = feature_generator.generate_cross_timeframe_features(features)
             
-            tprint_info(f"✅ Generated {len(cross_timeframe_features.columns)} cross-timeframe features")
+            tprint_info(f"✅ Generated {len(cross_timeframe_features.columns)} validated cross-timeframe features")
             
         except Exception as e:
             tprint_error(f"❌ Cross-timeframe generation failed: {e}")

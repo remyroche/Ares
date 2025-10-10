@@ -1,11 +1,12 @@
 """
-Balance Management Utilities
+Balance Management
 
-Handles balance tracking, equity calculations, and balance validation.
+Handles account balance tracking and management across exchanges.
 """
 
+import asyncio
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Callable, Awaitable
 from dataclasses import dataclass
 from enum import Enum
 
@@ -13,344 +14,359 @@ from src.utils.logger import system_logger
 
 
 class AccountType(Enum):
-    """Account type enumeration"""
+    """Account type enumeration."""
     SPOT = "spot"
-    FUTURES = "futures"
     MARGIN = "margin"
-    UNIFIED = "unified"
-    CLASSIC = "classic"
+    FUTURES = "futures"
+    OPTIONS = "options"
 
 
 @dataclass
 class Balance:
-    """Balance data structure"""
+    """Balance representation."""
     currency: str
     available: float
     frozen: float
     total: float
-    account_type: AccountType
-    timestamp: datetime = None
-    metadata: Dict[str, Any] = None
+    account_type: AccountType = AccountType.SPOT
+    updated_at: datetime = None
     
     def __post_init__(self):
-        if self.timestamp is None:
-            self.timestamp = datetime.now()
-        if self.metadata is None:
-            self.metadata = {}
-
-
-@dataclass
-class AccountEquity:
-    """Account equity data structure"""
-    account_type: AccountType
-    total_equity: float
-    available_equity: float
-    frozen_equity: float
-    unrealized_pnl: float
-    realized_pnl: float
-    balances: List[Balance]
-    timestamp: datetime = None
-    
-    def __post_init__(self):
-        if self.timestamp is None:
-            self.timestamp = datetime.now()
+        if self.updated_at is None:
+            self.updated_at = datetime.now()
+        if self.total == 0.0:
+            self.total = self.available + self.frozen
 
 
 class BalanceManager:
-    """
-    Manages balance tracking and equity calculations.
-    """
+    """Manages account balances across exchanges."""
     
     def __init__(self, exchange_name: str):
         self.exchange_name = exchange_name
         self.logger = system_logger.getChild(f"BalanceManager.{exchange_name}")
         
         # Balance storage
-        self.balances: Dict[str, Dict[AccountType, Balance]] = {}  # currency -> account_type -> balance
-        self.account_equities: Dict[AccountType, AccountEquity] = {}
+        self.balances: Dict[str, Dict[str, Balance]] = {}  # account_type -> currency -> Balance
+        self.balance_history: List[Dict[str, Any]] = []
         
-        # Balance fetching functions
-        self.fetch_functions: Dict[str, callable] = {}
+        # Exchange-specific functions
+        self.exchange_functions: Dict[str, Callable] = {}
         
         # Cache settings
-        self.cache_ttl = timedelta(seconds=30)
-        self.last_fetch: Optional[datetime] = None
+        self.cache_duration = timedelta(seconds=30)
+        self.last_update: Dict[str, datetime] = {}
         
+        # Statistics
+        self.total_balance_updates = 0
+        self.failed_balance_updates = 0
+    
     def register_fetch_functions(
         self,
-        get_balances: callable,
-        get_account_info: Optional[callable] = None
+        get_balances: Optional[Callable] = None,
+        get_account_info: Optional[Callable] = None
     ) -> None:
-        """
-        Register exchange-specific balance fetching functions.
-        
-        Args:
-            get_balances: Function to get balances
-            get_account_info: Optional function to get account information
-        """
-        self.fetch_functions = {
-            "get_balances": get_balances,
-            "get_account_info": get_account_info
-        }
-        
-        self.logger.info("Registered balance fetching functions")
+        """Register exchange-specific fetch functions."""
+        if get_balances:
+            self.exchange_functions["get_balances"] = get_balances
+        if get_account_info:
+            self.exchange_functions["get_account_info"] = get_account_info
     
-    async def fetch_balances(self, account_type: AccountType) -> List[Balance]:
-        """
-        Fetch balances for a specific account type.
-        
-        Args:
-            account_type: Account type to fetch balances for
-            
-        Returns:
-            List of Balance objects
-        """
+    async def get_balance(
+        self,
+        currency: str,
+        account_type: str = "spot"
+    ) -> Optional[float]:
+        """Get balance for a specific currency."""
         try:
-            if "get_balances" not in self.fetch_functions:
-                self.logger.warning("No get_balances function registered")
-                return []
+            # Check cache first
+            if self._is_cache_valid(account_type):
+                balance = self._get_cached_balance(currency, account_type)
+                if balance is not None:
+                    return balance
             
-            raw_data = await self.fetch_functions["get_balances"](account_type.value)
-            if not raw_data:
-                self.logger.warning(f"No balance data received for {account_type.value}")
-                return []
+            # Fetch from exchange
+            await self._refresh_balances(account_type)
             
-            # Parse balance data
-            balances = self._parse_balance_data(raw_data, account_type)
-            
-            # Update cache
-            self._update_balance_cache(balances, account_type)
-            
-            self.last_fetch = datetime.now()
-            return balances
+            # Return cached balance
+            return self._get_cached_balance(currency, account_type)
             
         except Exception as e:
-            self.logger.error(f"Error fetching balances for {account_type.value}: {e}")
-            return []
+            self.logger.error(f"Failed to get balance for {currency}: {e}")
+            return None
     
-    def _parse_balance_data(self, raw_data: List[Dict[str, Any]], account_type: AccountType) -> List[Balance]:
-        """Parse raw balance data into Balance objects."""
-        balances = []
-        
-        for item in raw_data:
-            try:
-                currency = item.get("currency") or item.get("ccy", "")
-                if not currency:
-                    continue
-                
-                available = float(item.get("available", 0) or item.get("avail", 0))
-                frozen = float(item.get("frozen", 0) or item.get("frozenBal", 0))
-                total = float(item.get("total", 0) or item.get("totalEq", 0))
-                
-                # If total is not provided, calculate it
-                if total == 0:
-                    total = available + frozen
-                
-                balance = Balance(
-                    currency=currency,
-                    available=available,
-                    frozen=frozen,
-                    total=total,
-                    account_type=account_type,
-                    metadata=item
-                )
-                
-                balances.append(balance)
-                
-            except (ValueError, TypeError) as e:
-                self.logger.warning(f"Error parsing balance data: {e}")
-                continue
-        
-        return balances
-    
-    def _update_balance_cache(self, balances: List[Balance], account_type: AccountType) -> None:
-        """Update balance cache with new data."""
-        for balance in balances:
-            if balance.currency not in self.balances:
-                self.balances[balance.currency] = {}
-            
-            self.balances[balance.currency][account_type] = balance
-    
-    def get_balance(self, currency: str, account_type: AccountType) -> Optional[Balance]:
-        """Get balance for a specific currency and account type."""
-        return self.balances.get(currency, {}).get(account_type)
-    
-    def get_all_balances(self, account_type: AccountType) -> List[Balance]:
+    async def get_all_balances(
+        self,
+        account_type: str = "spot"
+    ) -> Dict[str, float]:
         """Get all balances for an account type."""
-        return [
-            balance for currency_balances in self.balances.values()
-            for balance in [currency_balances.get(account_type)]
-            if balance is not None
-        ]
+        try:
+            # Check cache first
+            if self._is_cache_valid(account_type):
+                return self._get_all_cached_balances(account_type)
+            
+            # Fetch from exchange
+            await self._refresh_balances(account_type)
+            
+            # Return cached balances
+            return self._get_all_cached_balances(account_type)
+            
+        except Exception as e:
+            self.logger.error(f"Failed to get all balances for {account_type}: {e}")
+            return {}
     
-    def get_balance_summary(self, account_type: AccountType) -> Dict[str, Any]:
-        """Get balance summary for an account type."""
-        balances = self.get_all_balances(account_type)
-        
-        total_equity = sum(balance.total for balance in balances)
-        available_equity = sum(balance.available for balance in balances)
-        frozen_equity = sum(balance.frozen for balance in balances)
-        
-        return {
-            "account_type": account_type.value,
-            "total_equity": total_equity,
-            "available_equity": available_equity,
-            "frozen_equity": frozen_equity,
-            "currency_count": len(balances),
-            "non_zero_balances": len([b for b in balances if b.total > 0])
-        }
+    async def get_balance_details(
+        self,
+        currency: str,
+        account_type: str = "spot"
+    ) -> Optional[Balance]:
+        """Get detailed balance information."""
+        try:
+            # Check cache first
+            if self._is_cache_valid(account_type):
+                return self._get_cached_balance_details(currency, account_type)
+            
+            # Fetch from exchange
+            await self._refresh_balances(account_type)
+            
+            # Return cached balance details
+            return self._get_cached_balance_details(currency, account_type)
+            
+        except Exception as e:
+            self.logger.error(f"Failed to get balance details for {currency}: {e}")
+            return None
     
-    def calculate_total_equity(self, account_type: AccountType) -> float:
-        """Calculate total equity for an account type."""
-        balances = self.get_all_balances(account_type)
-        return sum(balance.total for balance in balances)
-    
-    def calculate_available_equity(self, account_type: AccountType) -> float:
-        """Calculate available equity for an account type."""
-        balances = self.get_all_balances(account_type)
-        return sum(balance.available for balance in balances)
-    
-    def get_usdt_balance(self, account_type: AccountType) -> float:
-        """Get USDT balance for an account type."""
-        usdt_balance = self.get_balance("USDT", account_type)
-        return usdt_balance.total if usdt_balance else 0.0
-    
-    def get_btc_balance(self, account_type: AccountType) -> float:
-        """Get BTC balance for an account type."""
-        btc_balance = self.get_balance("BTC", account_type)
-        return btc_balance.total if btc_balance else 0.0
+    async def get_all_balance_details(
+        self,
+        account_type: str = "spot"
+    ) -> List[Balance]:
+        """Get all detailed balance information."""
+        try:
+            # Check cache first
+            if self._is_cache_valid(account_type):
+                return self._get_all_cached_balance_details(account_type)
+            
+            # Fetch from exchange
+            await self._refresh_balances(account_type)
+            
+            # Return cached balance details
+            return self._get_all_cached_balance_details(account_type)
+            
+        except Exception as e:
+            self.logger.error(f"Failed to get all balance details for {account_type}: {e}")
+            return []
     
     def has_sufficient_balance(
         self,
         currency: str,
         amount: float,
-        account_type: AccountType
+        account_type: str = "spot"
     ) -> bool:
-        """Check if there's sufficient balance for a transaction."""
-        balance = self.get_balance(currency, account_type)
-        if not balance:
+        """Check if account has sufficient balance."""
+        try:
+            balance = self._get_cached_balance_details(currency, account_type)
+            if balance is None:
+                return False
+            
+            return balance.available >= amount
+            
+        except Exception as e:
+            self.logger.error(f"Failed to check sufficient balance for {currency}: {e}")
             return False
-        
-        return balance.available >= amount
-    
-    def get_balance_utilization(self, currency: str, account_type: AccountType) -> float:
-        """Get balance utilization ratio (frozen / total)."""
-        balance = self.get_balance(currency, account_type)
-        if not balance or balance.total == 0:
-            return 0.0
-        
-        return balance.frozen / balance.total
-    
-    def get_top_balances(self, account_type: AccountType, limit: int = 10) -> List[Balance]:
-        """Get top balances by total value."""
-        balances = self.get_all_balances(account_type)
-        return sorted(balances, key=lambda x: x.total, reverse=True)[:limit]
-    
-    def get_non_zero_balances(self, account_type: AccountType) -> List[Balance]:
-        """Get all non-zero balances."""
-        balances = self.get_all_balances(account_type)
-        return [balance for balance in balances if balance.total > 0]
     
     def calculate_portfolio_value(
         self,
-        account_type: AccountType,
         prices: Dict[str, float],
-        base_currency: str = "USDT"
+        base_currency: str = "USDT",
+        account_type: str = "spot"
     ) -> float:
-        """
-        Calculate portfolio value in base currency.
-        
-        Args:
-            account_type: Account type
-            prices: Price dictionary (currency -> price)
-            base_currency: Base currency for calculation
+        """Calculate total portfolio value."""
+        try:
+            total_value = 0.0
+            balances = self._get_all_cached_balance_details(account_type)
             
-        Returns:
-            Portfolio value in base currency
-        """
-        balances = self.get_all_balances(account_type)
-        total_value = 0.0
-        
-        for balance in balances:
-            if balance.currency == base_currency:
-                total_value += balance.total
-            elif balance.currency in prices:
-                total_value += balance.total * prices[balance.currency]
-        
-        return total_value
+            for balance in balances:
+                if balance.currency == base_currency:
+                    total_value += balance.total
+                elif balance.currency in prices:
+                    total_value += balance.total * prices[balance.currency]
+            
+            return total_value
+            
+        except Exception as e:
+            self.logger.error(f"Failed to calculate portfolio value: {e}")
+            return 0.0
     
-    def should_refresh_balances(self) -> bool:
-        """Check if balances should be refreshed."""
-        if not self.last_fetch:
-            return True
-        
-        return datetime.now() - self.last_fetch > self.cache_ttl
+    async def _refresh_balances(self, account_type: str) -> None:
+        """Refresh balances from exchange."""
+        try:
+            if "get_balances" not in self.exchange_functions:
+                self.logger.warning("No get_balances function registered")
+                return
+            
+            # Fetch balances from exchange
+            result = await self.exchange_functions["get_balances"](account_type)
+            
+            if result:
+                # Update local balances
+                self._update_balances_from_exchange(result, account_type)
+                self.last_update[account_type] = datetime.now()
+                self.total_balance_updates += 1
+                
+                self.logger.debug(f"Refreshed balances for {account_type}")
+            else:
+                self.failed_balance_updates += 1
+                self.logger.warning(f"Failed to refresh balances for {account_type}")
+                
+        except Exception as e:
+            self.failed_balance_updates += 1
+            self.logger.error(f"Failed to refresh balances for {account_type}: {e}")
     
-    async def ensure_fresh_balances(self, account_type: AccountType) -> List[Balance]:
-        """Ensure balances are fresh, refresh if needed."""
-        if self.should_refresh_balances():
-            return await self.fetch_balances(account_type)
-        
-        return self.get_all_balances(account_type)
+    def _update_balances_from_exchange(
+        self,
+        exchange_data: List[Dict[str, Any]],
+        account_type: str
+    ) -> None:
+        """Update balances from exchange data."""
+        try:
+            if account_type not in self.balances:
+                self.balances[account_type] = {}
+            
+            for balance_data in exchange_data:
+                currency = balance_data.get("asset", balance_data.get("currency", ""))
+                if not currency:
+                    continue
+                
+                # Extract balance values
+                available = float(balance_data.get("free", balance_data.get("available", 0)))
+                frozen = float(balance_data.get("locked", balance_data.get("frozen", 0)))
+                total = float(balance_data.get("total", available + frozen))
+                
+                # Create balance object
+                balance = Balance(
+                    currency=currency.upper(),
+                    available=available,
+                    frozen=frozen,
+                    total=total,
+                    account_type=AccountType(account_type.lower()),
+                    updated_at=datetime.now()
+                )
+                
+                # Store balance
+                self.balances[account_type][currency.upper()] = balance
+                
+                # Record in history
+                self._record_balance_history(balance)
+                
+        except Exception as e:
+            self.logger.error(f"Failed to update balances from exchange: {e}")
     
-    def get_balance_statistics(self) -> Dict[str, Any]:
-        """Get balance statistics."""
-        total_currencies = len(self.balances)
-        total_account_types = len(self.account_equities)
+    def _record_balance_history(self, balance: Balance) -> None:
+        """Record balance in history."""
+        try:
+            history_entry = {
+                "timestamp": balance.updated_at.isoformat(),
+                "currency": balance.currency,
+                "account_type": balance.account_type.value,
+                "available": balance.available,
+                "frozen": balance.frozen,
+                "total": balance.total
+            }
+            
+            self.balance_history.append(history_entry)
+            
+            # Keep only last 1000 entries
+            if len(self.balance_history) > 1000:
+                self.balance_history = self.balance_history[-1000:]
+                
+        except Exception as e:
+            self.logger.error(f"Failed to record balance history: {e}")
+    
+    def _is_cache_valid(self, account_type: str) -> bool:
+        """Check if cache is valid for account type."""
+        if account_type not in self.last_update:
+            return False
         
-        account_summaries = {}
-        for account_type in AccountType:
-            summary = self.get_balance_summary(account_type)
-            if summary["currency_count"] > 0:
-                account_summaries[account_type.value] = summary
+        return datetime.now() - self.last_update[account_type] < self.cache_duration
+    
+    def _get_cached_balance(self, currency: str, account_type: str) -> Optional[float]:
+        """Get cached balance for currency."""
+        if account_type not in self.balances:
+            return None
+        
+        balance = self.balances[account_type].get(currency.upper())
+        return balance.available if balance else None
+    
+    def _get_all_cached_balances(self, account_type: str) -> Dict[str, float]:
+        """Get all cached balances."""
+        if account_type not in self.balances:
+            return {}
         
         return {
-            "total_currencies": total_currencies,
-            "total_account_types": total_account_types,
-            "account_summaries": account_summaries,
-            "last_fetch": self.last_fetch.isoformat() if self.last_fetch else None,
-            "cache_ttl_seconds": self.cache_ttl.total_seconds()
+            currency: balance.available
+            for currency, balance in self.balances[account_type].items()
         }
     
-    def cleanup_old_balances(self, max_age_hours: int = 24) -> int:
-        """Clean up old balance data."""
-        cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
-        cleaned_count = 0
+    def _get_cached_balance_details(self, currency: str, account_type: str) -> Optional[Balance]:
+        """Get cached balance details for currency."""
+        if account_type not in self.balances:
+            return None
         
-        for currency in list(self.balances.keys()):
-            for account_type in list(self.balances[currency].keys()):
-                balance = self.balances[currency][account_type]
-                if balance.timestamp < cutoff_time:
-                    del self.balances[currency][account_type]
-                    cleaned_count += 1
+        return self.balances[account_type].get(currency.upper())
+    
+    def _get_all_cached_balance_details(self, account_type: str) -> List[Balance]:
+        """Get all cached balance details."""
+        if account_type not in self.balances:
+            return []
+        
+        return list(self.balances[account_type].values())
+    
+    def get_balance_history(
+        self,
+        currency: Optional[str] = None,
+        account_type: Optional[str] = None,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Get balance history."""
+        try:
+            history = self.balance_history.copy()
             
-            # Remove empty currency entries
-            if not self.balances[currency]:
-                del self.balances[currency]
-        
-        if cleaned_count > 0:
-            self.logger.info(f"Cleaned up {cleaned_count} old balance entries")
-        
-        return cleaned_count
+            # Filter by currency
+            if currency:
+                history = [h for h in history if h["currency"] == currency.upper()]
+            
+            # Filter by account type
+            if account_type:
+                history = [h for h in history if h["account_type"] == account_type.lower()]
+            
+            # Limit results
+            return history[-limit:] if limit > 0 else history
+            
+        except Exception as e:
+            self.logger.error(f"Failed to get balance history: {e}")
+            return []
     
-    def set_cache_ttl(self, ttl_seconds: int) -> None:
-        """Set cache TTL in seconds."""
-        self.cache_ttl = timedelta(seconds=ttl_seconds)
-        self.logger.info(f"Set balance cache TTL to {ttl_seconds} seconds")
+    def get_statistics(self) -> Dict[str, Any]:
+        """Get balance manager statistics."""
+        return {
+            "total_balance_updates": self.total_balance_updates,
+            "failed_balance_updates": self.failed_balance_updates,
+            "cached_account_types": list(self.balances.keys()),
+            "balance_history_entries": len(self.balance_history),
+            "cache_duration_seconds": self.cache_duration.total_seconds()
+        }
     
-    def invalidate_cache(self, currency: Optional[str] = None, account_type: Optional[AccountType] = None) -> None:
-        """Invalidate balance cache."""
-        if currency and account_type:
-            if currency in self.balances and account_type in self.balances[currency]:
-                del self.balances[currency][account_type]
-                self.logger.debug(f"Invalidated cache for {currency} {account_type.value}")
-        elif currency:
-            self.balances.pop(currency, None)
-            self.logger.debug(f"Invalidated cache for {currency}")
-        elif account_type:
-            for currency_balances in self.balances.values():
-                currency_balances.pop(account_type, None)
-            self.logger.debug(f"Invalidated cache for {account_type.value}")
+    def clear_cache(self, account_type: Optional[str] = None) -> None:
+        """Clear balance cache."""
+        if account_type:
+            self.balances.pop(account_type, None)
+            self.last_update.pop(account_type, None)
+            self.logger.info(f"Cleared cache for {account_type}")
         else:
             self.balances.clear()
-            self.logger.debug("Invalidated all balance cache")
+            self.last_update.clear()
+            self.logger.info("Cleared all balance cache")
+    
+    def set_cache_duration(self, duration_seconds: int) -> None:
+        """Set cache duration in seconds."""
+        self.cache_duration = timedelta(seconds=duration_seconds)
+        self.logger.info(f"Set cache duration to {duration_seconds} seconds")

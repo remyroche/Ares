@@ -178,6 +178,213 @@ class AuthenticationManager:
         if not self.is_authenticated or not self.current_key_id:
             self.logger.warning("Not authenticated, cannot generate headers")
             return None
+        
+        try:
+            # Get current API key info
+            key_info = self.api_key_manager.get_api_key(self.current_key_id)
+            if not key_info:
+                self.logger.error("API key not found")
+                return None
+            
+            # Generate exchange-specific headers
+            headers = self._generate_exchange_headers(
+                method, endpoint, body, key_info, additional_headers
+            )
+            
+            return headers
+            
+        except Exception as e:
+            self.logger.error(f"Failed to generate auth headers: {e}")
+            return None
+    
+    def _generate_exchange_headers(
+        self,
+        method: str,
+        endpoint: str,
+        body: str,
+        key_info: 'APIKeyInfo',
+        additional_headers: Optional[Dict[str, str]] = None
+    ) -> Dict[str, str]:
+        """Generate exchange-specific authentication headers."""
+        headers = additional_headers or {}
+        
+        if self.exchange_name.lower() == "binance":
+            return self._generate_binance_headers(method, endpoint, body, key_info, headers)
+        elif self.exchange_name.lower() == "okx":
+            return self._generate_okx_headers(method, endpoint, body, key_info, headers)
+        elif self.exchange_name.lower() == "mexc":
+            return self._generate_mexc_headers(method, endpoint, body, key_info, headers)
+        elif self.exchange_name.lower() == "bingx":
+            return self._generate_bingx_headers(method, endpoint, body, key_info, headers)
+        else:
+            # Default headers
+            headers["X-API-Key"] = key_info.api_key
+            return headers
+    
+    def _generate_binance_headers(
+        self,
+        method: str,
+        endpoint: str,
+        body: str,
+        key_info: 'APIKeyInfo',
+        headers: Dict[str, str]
+    ) -> Dict[str, str]:
+        """Generate Binance-specific authentication headers."""
+        import time
+        import hmac
+        import hashlib
+        from urllib.parse import urlencode
+        
+        # Add timestamp
+        timestamp = int(time.time() * 1000)
+        
+        # Create query string with timestamp
+        query_string = f"timestamp={timestamp}"
+        if body:
+            query_string += f"&{body}"
+        
+        # Generate signature
+        signature = hmac.new(
+            key_info.api_secret.encode('utf-8'),
+            query_string.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+        
+        headers.update({
+            "X-MBX-APIKEY": key_info.api_key,
+            "Content-Type": "application/x-www-form-urlencoded"
+        })
+        
+        # Add signature to query string
+        if "?" in endpoint:
+            endpoint += f"&{query_string}&signature={signature}"
+        else:
+            endpoint += f"?{query_string}&signature={signature}"
+        
+        return headers
+    
+    def _generate_okx_headers(
+        self,
+        method: str,
+        endpoint: str,
+        body: str,
+        key_info: 'APIKeyInfo',
+        headers: Dict[str, str]
+    ) -> Dict[str, str]:
+        """Generate OKX-specific authentication headers."""
+        import time
+        import hmac
+        import hashlib
+        import base64
+        
+        # OKX uses timestamp in ISO format
+        timestamp = time.strftime('%Y-%m-%dT%H:%M:%S.%fZ', time.gmtime())
+        
+        # Create prehash string
+        prehash_string = timestamp + method.upper() + endpoint + body
+        
+        # Generate signature
+        signature = base64.b64encode(
+            hmac.new(
+                key_info.api_secret.encode('utf-8'),
+                prehash_string.encode('utf-8'),
+                hashlib.sha256
+            ).digest()
+        ).decode('utf-8')
+        
+        headers.update({
+            "OK-ACCESS-KEY": key_info.api_key,
+            "OK-ACCESS-SIGN": signature,
+            "OK-ACCESS-TIMESTAMP": timestamp,
+            "OK-ACCESS-PASSPHRASE": key_info.passphrase or "",
+            "Content-Type": "application/json"
+        })
+        
+        return headers
+    
+    def _generate_mexc_headers(
+        self,
+        method: str,
+        endpoint: str,
+        body: str,
+        key_info: 'APIKeyInfo',
+        headers: Dict[str, str]
+    ) -> Dict[str, str]:
+        """Generate MEXC-specific authentication headers."""
+        import time
+        import hmac
+        import hashlib
+        from urllib.parse import urlencode
+        
+        # MEXC uses timestamp in milliseconds
+        timestamp = int(time.time() * 1000)
+        
+        # Create query string
+        query_string = f"timestamp={timestamp}"
+        if body:
+            query_string += f"&{body}"
+        
+        # Generate signature
+        signature = hmac.new(
+            key_info.api_secret.encode('utf-8'),
+            query_string.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+        
+        headers.update({
+            "X-MEXC-APIKEY": key_info.api_key,
+            "Content-Type": "application/x-www-form-urlencoded"
+        })
+        
+        # Add signature to query string
+        if "?" in endpoint:
+            endpoint += f"&{query_string}&signature={signature}"
+        else:
+            endpoint += f"?{query_string}&signature={signature}"
+        
+        return headers
+    
+    def _generate_bingx_headers(
+        self,
+        method: str,
+        endpoint: str,
+        body: str,
+        key_info: 'APIKeyInfo',
+        headers: Dict[str, str]
+    ) -> Dict[str, str]:
+        """Generate BingX-specific authentication headers."""
+        import time
+        import hmac
+        import hashlib
+        import base64
+        
+        # BingX uses timestamp in milliseconds
+        timestamp = int(time.time() * 1000)
+        
+        # Create query string
+        query_string = f"timestamp={timestamp}"
+        if body:
+            query_string += f"&{body}"
+        
+        # Generate signature
+        signature = hmac.new(
+            key_info.api_secret.encode('utf-8'),
+            query_string.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+        
+        headers.update({
+            "X-BX-APIKEY": key_info.api_key,
+            "Content-Type": "application/json"
+        })
+        
+        # Add signature to query string
+        if "?" in endpoint:
+            endpoint += f"&{query_string}&signature={signature}"
+        else:
+            endpoint += f"?{query_string}&signature={signature}"
+        
+        return headers
             
         # Get timestamp adjusted for clock skew
         timestamp = self.time_sync_manager.get_adjusted_timestamp()

@@ -693,76 +693,7 @@ class MexcExchange(BaseExchange, IExchangeClient):
             tprint(f"Request failed: {e}", "ERROR")
             raise  # Fast fail instead of returning None
 
-    async def _convert_to_market_data(
-        self,
-        raw_data: list[dict[str, Any]],
-        symbol: str,
-        interval: str,
-    ) -> list[MarketData]:
-        """Convert raw MEXC kline data to standardized MarketData format."""
-        if not raw_data:
-            raise ValueError("No raw data provided for conversion")
-            
-        market_data_list = []
-        
-        for item in raw_data:
-            try:
-                # MEXC klines format: [open_time, open, high, low, close, volume, close_time, ...]
-                if isinstance(item, list) and len(item) >= 6:
-                    # Validate required fields
-                    if not all(item[i] for i in [0, 1, 2, 3, 4, 5]):
-                        raise ValueError(f"Invalid kline data: missing required fields in {item}")
-                        
-                    timestamp = datetime.fromtimestamp(item[0] / 1000)
-                    open_price = float(item[1])
-                    high_price = float(item[2])
-                    low_price = float(item[3])
-                    close_price = float(item[4])
-                    volume = float(item[5])
-                    
-                    # Validate price data
-                    if not all(price > 0 for price in [open_price, high_price, low_price, close_price]):
-                        raise ValueError(f"Invalid price data in kline: {item}")
-                        
-                elif isinstance(item, dict):
-                    # Dict format - validate required fields
-                    required_fields = ["open", "high", "low", "close", "volume"]
-                    if not all(field in item for field in required_fields):
-                        raise ValueError(f"Missing required fields in kline dict: {item}")
-                        
-                    timestamp = self._convert_timestamp(item.get("timestamp", item.get("open_time", 0)))
-                    open_price = float(item["open"])
-                    high_price = float(item["high"])
-                    low_price = float(item["low"])
-                    close_price = float(item["close"])
-                    volume = float(item["volume"])
-                    
-                    # Validate price data
-                    if not all(price > 0 for price in [open_price, high_price, low_price, close_price]):
-                        raise ValueError(f"Invalid price data in kline dict: {item}")
-                else:
-                    raise ValueError(f"Unsupported kline data format: {type(item)} - {item}")
-
-                market_data = MarketData(
-                    symbol=symbol,
-                    timestamp=timestamp,
-                    open=open_price,
-                    high=high_price,
-                    low=low_price,
-                    close=close_price,
-                    volume=volume,
-                    interval=interval
-                )
-                market_data_list.append(market_data)
-                
-            except Exception as e:
-                self.logger.error(f"Failed to convert kline data: {e} - Data: {item}")
-                raise  # Fast fail instead of continuing with invalid data
-
-        if not market_data_list:
-            raise ValueError("No valid kline data could be converted")
-            
-        return market_data_list
+    # _convert_to_market_data is now handled by the base class with standardized conversion
 
     async def _get_market_id(self, symbol: str) -> str:
         """Get the market ID for a given symbol (MEXC uses symbol as-is)."""

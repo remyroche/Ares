@@ -833,52 +833,7 @@ class BinanceExchange(BaseExchange):
                 tprint(f"API request failed: {response.status} - {error_text}", "ERROR")
                 raise NetworkError(f"API request failed: {response.status} - {error_text}")
 
-    async def _convert_to_market_data(
-        self,
-        raw_data: list[dict[str, Any]],
-        symbol: str,
-        interval: str,
-    ) -> list[MarketData]:
-        """Convert raw Binance kline data to standardized MarketData format."""
-        market_data_list = []
-        
-        for item in raw_data:
-            try:
-                # Handle both list and dict formats from Binance
-                if isinstance(item, list):
-                    # Binance klines format: [open_time, open, high, low, close, volume, ...]
-                    timestamp = datetime.fromtimestamp(item[0] / 1000)
-                    open_price = float(item[1])
-                    high_price = float(item[2])
-                    low_price = float(item[3])
-                    close_price = float(item[4])
-                    volume = float(item[5])
-                else:
-                    # Dict format
-                    timestamp = self._convert_timestamp(item.get("timestamp", item.get("open_time", 0)))
-                    open_price = float(item.get("open", 0))
-                    high_price = float(item.get("high", 0))
-                    low_price = float(item.get("low", 0))
-                    close_price = float(item.get("close", 0))
-                    volume = float(item.get("volume", 0))
-
-                market_data = MarketData(
-                    symbol=symbol,
-                    timestamp=timestamp,
-                    open=open_price,
-                    high=high_price,
-                    low=low_price,
-                    close=close_price,
-                    volume=volume,
-                    interval=interval
-                )
-                market_data_list.append(market_data)
-                
-            except Exception as e:
-                self.logger.warning(f"Failed to convert kline data: {e}")
-                continue
-
-        return market_data_list
+    # _convert_to_market_data is now handled by the base class with standardized conversion
 
     async def _get_market_id(self, symbol: str) -> str:
         """Get the market ID for a given symbol (Binance uses symbol as-is)."""

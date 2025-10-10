@@ -245,46 +245,9 @@ def test_price_action_prediction():
             for feature, importance in top_features.items():
                 print(f"  {feature}: {importance:.4f}")
     
-    # Scenario 3: Regime prediction
-    print("\nScenario 3: Market Regime Prediction")
-    print("-" * 50)
-    
-    regime_labels = analyst_integration.create_price_action_labels(
-        data['close'], method='regime'
-    )
-    
-    # Align data
-    common_idx = X_features.index.intersection(regime_labels.index)
-    X_aligned = X_features.loc[common_idx]
-    y_aligned = regime_labels.loc[common_idx]
-    
-    # Remove NaN values
-    valid_mask = ~(X_aligned.isna().any(axis=1) | y_aligned.isna())
-    X_clean = X_aligned[valid_mask]
-    y_clean = y_aligned[valid_mask]
-    
-    print(f"Regime labels distribution: {y_clean.value_counts().to_dict()}")
-    
-    # Evaluate features for regime prediction
-    regime_results = analyst_integration.evaluate_feature_relevance_for_targets(
-        X_clean, {'regime': y_clean}, methods=['lgbm', 'lasso', 'mi']
-    )
-    
-    if 'regime' in regime_results and 'lgbm' in regime_results['regime']:
-        lgbm_results = regime_results['regime']['lgbm']
-        if 'performance' in lgbm_results:
-            print(f"LGBM Performance: {lgbm_results['performance']}")
-        
-        if 'feature_importance' in lgbm_results:
-            top_features = lgbm_results['feature_importance'].nlargest(5)
-            print("Top 5 features for regime prediction:")
-            for feature, importance in top_features.items():
-                print(f"  {feature}: {importance:.4f}")
-    
     return {
         'directional': directional_results,
-        'magnitude': magnitude_results,
-        'regime': regime_results
+        'magnitude': magnitude_results
     }
 
 def test_enhanced_analysis_with_analyst_targets():
@@ -355,7 +318,7 @@ def main():
     print("Analyst-Labeler Integration for Feature Relevance Analysis")
     print("=" * 80)
     print("Features:")
-    print("- Price action prediction (directional, magnitude, regime)")
+    print("- Price action prediction (directional, magnitude)")
     print("- Analyst-style target creation and labeling")
     print("- Feature relevance evaluation for different targets")
     print("- Integration with enhanced analysis framework")
@@ -376,7 +339,7 @@ def main():
     print("\n" + "=" * 80)
     print("Analyst-labeler integration testing completed successfully!")
     print("Key features demonstrated:")
-    print("✅ Price action prediction (directional, magnitude, regime)")
+    print("✅ Price action prediction (directional, magnitude)")
     print("✅ Analyst-style target creation and labeling")
     print("✅ Feature relevance evaluation for different targets")
     print("✅ Integration with enhanced analysis framework")

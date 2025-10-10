@@ -41,15 +41,6 @@ price_magnitude = {
 }
 ```
 
-#### **3. Regime Prediction**
-```python
-# Market regime classification
-volatility_regime = {
-    'high_vol': rolling_volatility > threshold,
-    'low_vol': rolling_volatility <= threshold
-}
-```
-
 ## 🔍 **Method-Specific Price Action Alignment**
 
 ### **1. Mutual Information (MI)**
@@ -170,10 +161,6 @@ report = analyst.create_analyst_style_report(results)
 **Features:** Technical indicators, regime features, momentum
 **Methods:** All methods evaluate how well features predict next-day price magnitude
 
-### **Scenario 3: Risk Management**
-**Target:** High volatility regime
-**Features:** Volatility features, drawdown metrics, regime indicators
-**Methods:** All methods evaluate how well features predict volatility regimes
 
 ## 📊 **Feature Categories for Price Prediction**
 
@@ -218,7 +205,6 @@ report = analyst.create_analyst_style_report(results)
 ### **2. Multiple Price Action Perspectives**
 - Directional prediction (up/down/sideways)
 - Magnitude prediction (small/large moves)
-- Regime prediction (high/low volatility)
 - Custom analyst-defined targets
 
 ### **3. Method Validation**
@@ -257,14 +243,13 @@ analyst.print_analyst_style_summary(report)
 
 # Shows which features best predict:
 # - Price direction (up/down/sideways)
-# - Price magnitude (small/large moves)  
-# - Market regimes (high/low volatility)
+# - Price magnitude (small/large moves)
 ```
 
 ## ✅ **Key Alignment Points**
 
 1. **All methods predict price action** - No abstract "relevance", only price prediction
-2. **Multiple price action targets** - Direction, magnitude, regime prediction
+2. **Multiple price action targets** - Direction and magnitude prediction
 3. **Analyst-friendly reporting** - Direct translation to trading decisions
 4. **Time-series safe** - Prevents lookahead bias in price prediction
 5. **Method validation** - Multiple methods validate price prediction features

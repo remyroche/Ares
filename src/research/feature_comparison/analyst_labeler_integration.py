@@ -22,18 +22,15 @@ class AnalystLabelerIntegration:
     """
     
     def __init__(self, price_threshold: float = 0.001, 
-                 volatility_threshold: float = 0.02,
                  lookforward_periods: int = 1):
         """
         Initialize analyst-labeler integration.
         
         Args:
             price_threshold: Minimum price movement to consider significant
-            volatility_threshold: Volatility threshold for regime classification
             lookforward_periods: Number of periods to look forward for labeling
         """
         self.price_threshold = price_threshold
-        self.volatility_threshold = volatility_threshold
         self.lookforward_periods = lookforward_periods
     
     def create_price_action_labels(self, prices: pd.Series, 
@@ -43,7 +40,7 @@ class AnalystLabelerIntegration:
         
         Args:
             prices: Price series
-            method: Labeling method ('directional', 'magnitude', 'regime')
+            method: Labeling method ('directional', 'magnitude')
             
         Returns:
             Price action labels
@@ -52,10 +49,8 @@ class AnalystLabelerIntegration:
             return self._create_directional_labels(prices)
         elif method == 'magnitude':
             return self._create_magnitude_labels(prices)
-        elif method == 'regime':
-            return self._create_regime_labels(prices)
         else:
-            raise ValueError(f"Unknown labeling method: {method}")
+            raise ValueError(f"Unknown labeling method: {method}. Use 'directional' or 'magnitude'")
     
     def _create_directional_labels(self, prices: pd.Series) -> pd.Series:
         """Create directional price movement labels."""
@@ -88,19 +83,6 @@ class AnalystLabelerIntegration:
         
         return labels
     
-    def _create_regime_labels(self, prices: pd.Series) -> pd.Series:
-        """Create market regime labels based on volatility."""
-        returns = prices.pct_change()
-        
-        # Calculate rolling volatility
-        rolling_vol = returns.rolling(20).std()
-        
-        # Create regime labels
-        labels = pd.Series(index=prices.index, dtype='category')
-        labels[rolling_vol > self.volatility_threshold] = 'high_vol'
-        labels[rolling_vol <= self.volatility_threshold] = 'low_vol'
-        
-        return labels
     
     def create_analyst_style_targets(self, data: pd.DataFrame) -> Dict[str, pd.Series]:
         """
@@ -122,9 +104,6 @@ class AnalystLabelerIntegration:
             targets['price_magnitude'] = self.create_price_action_labels(
                 data['close'], method='magnitude'
             )
-            targets['volatility_regime'] = self.create_price_action_labels(
-                data['close'], method='regime'
-            )
         
         # VWAP-based targets
         if 'vwap_w20' in data.columns:
@@ -134,7 +113,6 @@ class AnalystLabelerIntegration:
         
         # Volume-based targets
         if 'volume' in data.columns:
-            volume_returns = data['volume'].pct_change()
             targets['volume_direction'] = self.create_price_action_labels(
                 data['volume'], method='directional'
             )

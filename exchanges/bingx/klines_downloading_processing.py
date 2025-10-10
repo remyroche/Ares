@@ -29,6 +29,9 @@ from src.utils.data.quality.comprehensive_duplicate_analyzer import (
     analyze_duplicates_comprehensive
 )
 from src.utils.data.historical_data_pipeline import HistoricalDataPipeline
+from src.utils.data.klines_parquet import KlinesParquetManager
+from src.utils.data.processing.data_processing import DataProcessor
+from src.utils.data.quality.data_quality import DataQualityFramework
 from src.utils.data.gap_detector import GapDetector
 
 
@@ -42,6 +45,7 @@ class BingXKlinesDataProcessingPipeline:
             data_dir: Base directory for historical data
         """
         self.data_dir = data_dir
+        self.exchange = "bingx"
         self.logger = system_logger.getChild("BingXKlinesDataProcessingPipeline")
 
         # Initialize components
@@ -49,11 +53,147 @@ class BingXKlinesDataProcessingPipeline:
         self.gap_detector = GapDetector(data_dir)
         self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer(self.logger)
 
+        # Initialize standardized data managers
+        self.parquet_manager = KlinesParquetManager(data_dir, self.exchange)
+        self.data_processor = DataProcessor()
+        self.quality_framework = DataQualityFramework()
+
         # Quality checker will be initialized when first used
         self._quality_checker = None
 
         # Columns to remove
         self.columns_to_remove = ['taker_buy_base', 'taker_buy_quote', 'year']
+
+    def standardize_data_format(self, df: pd.DataFrame, symbol: str, interval: str) -> pd.DataFrame:
+        """Standardize data format to match KlinesParquetManager expectations.
+        
+        Args:
+            df: Raw DataFrame from exchange
+            symbol: Trading symbol
+            interval: Data interval
+            
+        Returns:
+            Standardized DataFrame
+        """
+        if df is None or df.empty:
+            return df
+            
+        try:
+            # Create a copy to avoid modifying original
+            standardized_df = df.copy()
+            
+            # Ensure required columns exist
+            required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            
+            # Handle timestamp column
+            if 'timestamp' not in standardized_df.columns:
+                if 'open_time' in standardized_df.columns:
+                    standardized_df['timestamp'] = standardized_df['open_time']
+                elif standardized_df.index.name == 'timestamp':
+                    standardized_df = standardized_df.reset_index()
+                else:
+                    self.logger.warning("No timestamp column found, using index")
+                    standardized_df['timestamp'] = standardized_df.index
+            
+            # Convert timestamp to datetime if needed
+            if not pd.api.types.is_datetime64_any_dtype(standardized_df['timestamp']):
+                try:
+                    # Try milliseconds first (common for crypto exchanges)
+                    standardized_df['timestamp'] = pd.to_datetime(standardized_df['timestamp'], unit='ms', utc=True)
+                except (ValueError, TypeError):
+                    try:
+                        # Try seconds
+                        standardized_df['timestamp'] = pd.to_datetime(standardized_df['timestamp'], unit='s', utc=True)
+                    except (ValueError, TypeError):
+                        # Try direct conversion
+                        standardized_df['timestamp'] = pd.to_datetime(standardized_df['timestamp'], utc=True)
+            
+            # Set timestamp as index
+            standardized_df = standardized_df.set_index('timestamp')
+            
+            # Ensure OHLCV columns are numeric
+            for col in ['open', 'high', 'low', 'close', 'volume']:
+                if col in standardized_df.columns:
+                    standardized_df[col] = pd.to_numeric(standardized_df[col], errors='coerce')
+            
+            # Add exchange metadata
+            standardized_df['exchange'] = self.exchange
+            standardized_df['symbol'] = symbol
+            standardized_df['interval'] = interval
+            
+            # Apply data quality fixes
+            standardized_df, _ = self.data_processor.fix_data_quality_issues(standardized_df)
+            
+            # Optimize data types
+            standardized_df = self.data_processor.optimize_dataframe_dtypes(standardized_df)
+            
+            self.logger.info(f"✅ Standardized data format: {len(standardized_df)} records for {symbol} {interval}")
+            return standardized_df
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to standardize data format: {e}")
+            return df
+
+    def save_standardized_data(self, df: pd.DataFrame, symbol: str, interval: str, data_type: str = "raw") -> bool:
+        """Save data using standardized KlinesParquetManager.
+        
+        Args:
+            df: DataFrame to save
+            symbol: Trading symbol
+            interval: Data interval
+            data_type: 'raw' or 'processed'
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            return self.parquet_manager.write_data(df, symbol, interval, data_type)
+        except Exception as e:
+            self.logger.error(f"❌ Failed to save standardized data: {e}")
+            return False
+
+    def load_standardized_data(self, symbol: str, interval: str, data_type: str = "raw", 
+                             start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> Optional[pd.DataFrame]:
+        """Load data using standardized KlinesParquetManager.
+        
+        Args:
+            symbol: Trading symbol
+            interval: Data interval
+            data_type: 'raw' or 'processed'
+            start_date: Start date for filtering
+            end_date: End date for filtering
+            
+        Returns:
+            DataFrame with data or None if not found
+        """
+        try:
+            return self.parquet_manager.read_data(symbol, interval, start_date, end_date, data_type)
+        except Exception as e:
+            self.logger.error(f"❌ Failed to load standardized data: {e}")
+            return None
+
+    def validate_data_quality(self, df: pd.DataFrame, context: str = "") -> Dict[str, Any]:
+        """Validate data quality using standardized framework.
+        
+        Args:
+            df: DataFrame to validate
+            context: Context for validation
+            
+        Returns:
+            Validation results
+        """
+        try:
+            result = self.quality_framework.validate_dataframe_quality(df, context)
+            return {
+                'passed': result.passed,
+                'quality_score': result.quality_score,
+                'issues': result.issues,
+                'warnings': result.warnings,
+                'metrics': result.metrics
+            }
+        except Exception as e:
+            self.logger.error(f"❌ Failed to validate data quality: {e}")
+            return {'passed': False, 'error': str(e)}
 
     @property
     def quality_checker(self):

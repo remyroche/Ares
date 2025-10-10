@@ -233,17 +233,6 @@ rounded_price = precision_helper.round_price(price, symbol)
 is_valid = precision_helper.validate_price(price, symbol)
 ```
 
-### 📈 Technical Analysis
-Built-in technical indicators:
-
-```python
-# Calculate technical indicators
-indicators = ohlcv_manager.calculate_technical_indicators(
-    "BTCUSDT",
-    Timeframe.HOUR_1,
-    ["sma_20", "ema_20", "rsi_14", "macd", "bollinger_bands"]
-)
-```
 
 ### 🔍 Audit Logging
 Comprehensive audit logging for all operations:

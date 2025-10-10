@@ -319,25 +319,17 @@ async def demonstrate_advanced_features():
         best_price = await exchange.price_manager.get_best_price("BTCUSDT")
         print(f"Best Price: ${best_price.price if best_price else 'N/A'}")
         
-        # 5. Technical Indicators
-        print("\n📈 Technical Indicators")
+        # 5. OHLCV Data Analysis
+        print("\n📈 OHLCV Data Analysis")
         print("-" * 30)
         
-        # Get OHLCV data for technical analysis
+        # Get OHLCV data
         ohlcv_data = await exchange.get_ohlcv("BTCUSDT", "1h", 100)
         if ohlcv_data:
-            # Calculate technical indicators
-            indicators = exchange.ohlcv_manager.calculate_technical_indicators(
-                "BTCUSDT", 
-                exchange.ohlcv_manager.Timeframe.HOUR_1,
-                ["sma_20", "ema_20", "rsi_14", "macd"]
-            )
-            
-            print(f"Technical Indicators (last 5 values):")
-            for indicator_name, values in indicators.items():
-                if values:
-                    last_values = values[-5:] if len(values) >= 5 else values
-                    print(f"  {indicator_name}: {last_values}")
+            print(f"Retrieved {len(ohlcv_data)} hourly candles for analysis")
+            if ohlcv_data:
+                latest = ohlcv_data[-1]
+                print(f"Latest candle: O={latest.open:.2f}, H={latest.high:.2f}, L={latest.low:.2f}, C={latest.close:.2f}")
         
         print("\n✅ Advanced features demonstration completed!")
         

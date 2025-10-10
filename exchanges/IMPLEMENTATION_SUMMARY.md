@@ -22,7 +22,7 @@ I have successfully created a comprehensive shared utility library for exchange 
 
 #### 💰 Pricing & Market Data (`pricing/`)
 - **PriceManager**: Price fetching, ticker data, and price validation with multiple sources
-- **OHLCVManager**: OHLCV data fetching, caching, and processing with technical indicators
+- **OHLCVManager**: OHLCV data fetching, caching, and processing
 - **MarketDataAggregator**: Market data aggregation from multiple sources
 
 #### 📋 Order Management (`orders/`)
@@ -110,8 +110,7 @@ The enhanced OKX implementation includes all required functionality:
 - Risk level assessment (LOW, MEDIUM, HIGH, CRITICAL)
 - Portfolio risk monitoring
 
-#### 📊 Technical Analysis
-- Built-in technical indicators (SMA, EMA, RSI, MACD, Bollinger Bands)
+#### 📊 Market Data Processing
 - OHLCV data processing and caching
 - Multiple timeframe support
 

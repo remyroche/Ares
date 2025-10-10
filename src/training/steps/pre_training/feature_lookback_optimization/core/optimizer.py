@@ -3084,13 +3084,33 @@ class CoreOptimizer:
             return 0.0
 
     def _calculate_composite_score(self, correlations: Dict[str, float]) -> float:
-        """Calculate composite score from multiple correlation metrics."""
+        """Calculate composite score using MI-consistent metrics."""
         try:
-            # Weighted combination of different correlation measures
+            # Convert all metrics to MI-consistent scale
+            mi_metrics = {}
+            
+            # Convert correlation metrics to MI approximations
+            for metric in ['pearson', 'spearman', 'r_squared']:
+                if metric in correlations:
+                    corr_value = correlations[metric]
+                    if abs(corr_value) < 0.999:  # Avoid log(0)
+                        try:
+                            mi_approx = 0.5 * np.log(1 - corr_value**2) if corr_value**2 < 1 else 0.0
+                            mi_metrics[metric] = max(0.0, -mi_approx)  # Ensure positive MI
+                        except (ValueError, OverflowError):
+                            mi_metrics[metric] = 0.0
+                    else:
+                        mi_metrics[metric] = 0.0
+            
+            # Use mutual_info directly if available
+            if 'mutual_info' in correlations:
+                mi_metrics['mutual_info'] = max(0.0, correlations['mutual_info'])
+            
+            # Weighted combination of MI-consistent metrics
             weights = {
-                'pearson': 0.4,
-                'spearman': 0.3,
-                'mutual_info': 0.2,
+                'pearson': 0.3,
+                'spearman': 0.2,
+                'mutual_info': 0.4,
                 'r_squared': 0.1
             }
             
@@ -3098,9 +3118,8 @@ class CoreOptimizer:
             total_weight = 0.0
             
             for metric, weight in weights.items():
-                if metric in correlations:
-                    value = abs(correlations[metric])  # Use absolute value
-                    composite_score += value * weight
+                if metric in mi_metrics:
+                    composite_score += mi_metrics[metric] * weight
                     total_weight += weight
             
             return composite_score / total_weight if total_weight > 0 else 0.0

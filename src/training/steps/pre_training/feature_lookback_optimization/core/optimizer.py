@@ -258,18 +258,51 @@ class CoreOptimizer:
         # Initialize matrix operations if available
         self.matrix_ops = None
         self.batch_processor = None
+        self.gpu_available = False
         if MATRIX_OPS_AVAILABLE:
             try:
                 self.matrix_ops = get_unified_matrix_operations()
                 self.batch_processor = BatchMatrixProcessor(chunk_size_mb=128, enable_gpu=True)
-                self.logger.info("✅ Matrix operations initialized for vectorized processing")
+                
+                # Check GPU availability
+                self.gpu_available = self._check_gpu_availability()
+                if self.gpu_available:
+                    self.logger.info("✅ Matrix operations initialized with GPU acceleration")
+                else:
+                    self.logger.info("✅ Matrix operations initialized (CPU only)")
+                    
             except Exception as e:
                 self.logger.warning(f"⚠️ Could not initialize matrix operations: {e}")
                 self.matrix_ops = None
                 self.batch_processor = None
+                self.gpu_available = False
 
         self._cached_multi_horizon_limits: Optional[Tuple[int, int]] = None
         self._data_locator: Optional[PipelineDataLocator] = None
+
+    def _check_gpu_availability(self) -> bool:
+        """Check if GPU acceleration is available."""
+        try:
+            if self.batch_processor and hasattr(self.batch_processor, 'gpu_available'):
+                return self.batch_processor.gpu_available
+            
+            # Try to detect GPU availability
+            try:
+                import torch
+                return torch.cuda.is_available()
+            except ImportError:
+                pass
+            
+            try:
+                import cupy
+                return True
+            except ImportError:
+                pass
+            
+            return False
+            
+        except Exception:
+            return False
 
     def set_rng(self, rng: Optional['np.random.Generator']) -> None:
         """Update the RNG used for stochastic routines."""
@@ -338,6 +371,8 @@ class CoreOptimizer:
         max_workers: Optional[int] = None,
         batch_size: int = 10,
         regularization_settings: Optional[Dict[str, float]] = None,
+        use_streaming: bool = False,
+        streaming_config: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> List[OptimizationResult]:
         """
@@ -366,6 +401,13 @@ class CoreOptimizer:
         from concurrent.futures import ThreadPoolExecutor, as_completed
         import multiprocessing as mp
         
+        # Check if streaming processing should be used
+        if use_streaming or len(data) > 100000:  # Auto-enable for large datasets
+            return self._optimize_with_streaming(
+                data, feature_names, target_column, lookback_range, method,
+                streaming_config, **kwargs
+            )
+        
         # Determine number of workers
         if max_workers is None:
             max_workers = min(mp.cpu_count(), 4)  # Cap at 4 to avoid overhead
@@ -374,6 +416,9 @@ class CoreOptimizer:
         tprint_info(f"   → Workers: {max_workers}")
         tprint_info(f"   → Batch size: {batch_size}")
         tprint_info(f"   → Method: {method}")
+        
+        # Optimize DataFrame memory usage
+        data = self._optimize_dataframe_memory(data)
         
         # Pre-compute shared forward returns matrix once for all features
         min_lookback, max_lookback = lookback_range
@@ -596,6 +641,68 @@ class CoreOptimizer:
         penalized_score = float(score) - penalty
         return penalized_score, penalty
 
+    def _optimize_with_streaming(
+        self,
+        data: pd.DataFrame,
+        feature_names: List[str],
+        target_column: str,
+        lookback_range: Tuple[int, int],
+        method: str,
+        streaming_config: Optional[Dict[str, Any]],
+        **kwargs
+    ) -> List[OptimizationResult]:
+        """Optimize features using streaming processing for large datasets."""
+        try:
+            from src.training.steps.pre_training.feature_lookback_optimization.streaming.streaming_processor import (
+                StreamingProcessor, StreamingConfig, create_streaming_processor
+            )
+            
+            # Create streaming processor
+            if streaming_config:
+                processor = create_streaming_processor(**streaming_config)
+            else:
+                # Default configuration for large datasets
+                processor = create_streaming_processor(
+                    chunk_size=5000,  # Smaller chunks for large datasets
+                    memory_limit_mb=2048,  # Higher memory limit
+                    overlap_size=200,  # Larger overlap for continuity
+                    enable_gc=True
+                )
+            
+            # Process using streaming
+            streaming_results = processor.process_large_dataset(
+                data, feature_names, target_column, lookback_range, method, **kwargs
+            )
+            
+            # Convert streaming results to OptimizationResult objects
+            results = []
+            for feature_name in feature_names:
+                if feature_name in streaming_results and streaming_results[feature_name]:
+                    result_data = streaming_results[feature_name]
+                    result = OptimizationResult(
+                        best_lookback_period=result_data['best_lookback_period'],
+                        best_score=result_data['best_score'],
+                        optimization_method=result_data['optimization_method'],
+                        total_trials=result_data['total_trials'],
+                        optimization_time=result_data['optimization_time'],
+                        convergence_achieved=result_data['convergence_achieved']
+                    )
+                    results.append(result)
+                else:
+                    # Create failed result
+                    results.append(self._create_failed_result(method, 0.0, feature_name=feature_name))
+            
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"❌ Streaming optimization failed: {e}")
+            # Fallback to regular processing
+            self.logger.info("🔄 Falling back to regular processing...")
+            return self.optimize_features_parallel_batch(
+                data, feature_names, target_column, lookback_range, method,
+                use_streaming=False, **kwargs
+            )
+
     def optimize_single_feature(
         self,
         data: pd.DataFrame,
@@ -754,8 +861,9 @@ class CoreOptimizer:
                 train_data = data
                 test_data = data
             else:
-                train_data = data.iloc[:split_point]
-                test_data = data.iloc[split_point:]
+                # Optimized DataFrame splitting using numpy slicing
+                train_data = data.iloc[:split_point].copy()
+                test_data = data.iloc[split_point:].copy()
                 tprint_debug(
                     f"   ↳ MRMR split at index {split_point}: train={len(train_data)}, test={len(test_data)}"
                 )
@@ -952,8 +1060,9 @@ class CoreOptimizer:
                 train_data = data
                 test_data = data
             else:
-                train_data = data.iloc[:split_point]
-                test_data = data.iloc[split_point:]
+                # Optimized DataFrame splitting using numpy slicing
+                train_data = data.iloc[:split_point].copy()
+                test_data = data.iloc[split_point:].copy()
                 tprint_debug(
                     f"   ↳ Grid search split at {split_point}: train={len(train_data)}, test={len(test_data)}"
                 )
@@ -2700,26 +2809,42 @@ class CoreOptimizer:
                     if len(close_prices) < window:
                         return pd.Series([0.5] * len(data), index=data.index, name=self.config.name)
 
-                    bounce_probs = []
-                    for i in range(window - 1, len(close_prices)):
-                        # Calculate bounce probability based on price action patterns
-                        window_close = close_prices[i-window+1:i+1]
-                        window_high = high_prices[i-window+1:i+1]
-                        window_low = low_prices[i-window+1:i+1]
-
-                        # Simple bounce detection: when price reverses after hitting high/low
-                        bounces = 0
-                        for j in range(1, len(window_close)):
-                            if (window_close[j] > window_high[j-1] and window_close[j] < window_close[j-1]) or \
-                               (window_close[j] < window_low[j-1] and window_close[j] > window_close[j-1]):
-                                bounces += 1
-
-                        bounce_prob = bounces / (len(window_close) - 1) if len(window_close) > 1 else 0.5
-                        bounce_probs.append(bounce_prob)
-
-                    # Pad with default probability for the beginning
-                    bounce_probs_padded = [0.5] * (window - 1) + bounce_probs
-                    return pd.Series(bounce_probs_padded, index=data.index, name=self.config.name)
+                    # Calculate bounce probabilities using vectorized operations
+                    if len(close_prices) >= window:
+                        # Create DataFrames for vectorized operations
+                        df = pd.DataFrame({
+                            'close': close_prices,
+                            'high': high_prices,
+                            'low': low_prices
+                        })
+                        
+                        def calculate_bounce_probability(window_data):
+                            if len(window_data) < 2:
+                                return 0.5
+                            
+                            close_vals = window_data['close'].values
+                            high_vals = window_data['high'].values
+                            low_vals = window_data['low'].values
+                            
+                            # Vectorized bounce detection
+                            close_diff = np.diff(close_vals)
+                            high_touches = close_vals[1:] > high_vals[:-1]
+                            low_touches = close_vals[1:] < low_vals[:-1]
+                            
+                            # Count bounces (reversals after touching levels)
+                            high_bounces = high_touches & (close_diff < 0)
+                            low_bounces = low_touches & (close_diff > 0)
+                            total_bounces = np.sum(high_bounces) + np.sum(low_bounces)
+                            
+                            total_changes = len(close_diff)
+                            return total_bounces / total_changes if total_changes > 0 else 0.5
+                        
+                        bounce_probs = df.rolling(window=window, min_periods=window).apply(
+                            calculate_bounce_probability, raw=False
+                        ).fillna(0.5).values
+                    else:
+                        bounce_probs = np.full(len(close_prices), 0.5)
+                    return pd.Series(bounce_probs, index=data.index, name=self.config.name)
 
             return MLBounceProbGenerator(window)
 
@@ -2795,30 +2920,37 @@ class CoreOptimizer:
                     if len(close_prices) < window:
                         return pd.Series([0.0] * len(data), index=data.index, name=self.config.name)
 
-                    hvn_levels = []
-                    for i in range(window - 1, len(close_prices)):
-                        # Calculate volume-weighted price levels for HVN detection
-                        window_close = close_prices[i-window+1:i+1]
-                        window_volume = volumes[i-window+1:i+1]
-
-                        # Find price levels with highest volume concentration
-                        price_volume = {}
-                        for j, (price, vol) in enumerate(zip(window_close, window_volume)):
-                            price_level = round(price, 2)  # Round to 2 decimal places
-                            if price_level not in price_volume:
-                                price_volume[price_level] = 0
-                            price_volume[price_level] += vol
-
-                        if price_volume:
-                            # HVN is the price level with highest volume
-                            hvn_price = max(price_volume, key=price_volume.get)
-                            hvn_levels.append(hvn_price)
-                        else:
-                            hvn_levels.append(close_prices[i])
-
-                    # Pad with current price for the beginning
-                    hvn_levels_padded = [close_prices[window-1]] * (window - 1) + hvn_levels
-                    return pd.Series(hvn_levels_padded, index=data.index, name=self.config.name)
+                    # Calculate HVN levels using vectorized operations
+                    if len(close_prices) >= window:
+                        # Create DataFrame for vectorized operations
+                        df = pd.DataFrame({
+                            'close': close_prices,
+                            'volume': volumes
+                        })
+                        
+                        def calculate_hvn_level(window_data):
+                            if len(window_data) < 2:
+                                return window_data['close'].iloc[-1] if len(window_data) > 0 else 0.0
+                            
+                            # Round prices to 2 decimal places and group by volume
+                            window_data_rounded = window_data.copy()
+                            window_data_rounded['price_level'] = window_data_rounded['close'].round(2)
+                            
+                            # Group by price level and sum volumes
+                            volume_by_price = window_data_rounded.groupby('price_level')['volume'].sum()
+                            
+                            if len(volume_by_price) > 0:
+                                # HVN is the price level with highest volume
+                                return volume_by_price.idxmax()
+                            else:
+                                return window_data['close'].iloc[-1]
+                        
+                        hvn_levels = df.rolling(window=window, min_periods=window).apply(
+                            calculate_hvn_level, raw=False
+                        ).fillna(method='ffill').values
+                    else:
+                        hvn_levels = close_prices
+                    return pd.Series(hvn_levels, index=data.index, name=self.config.name)
 
             return VolumeProfileHVNGenerator(window)
 
@@ -2877,39 +3009,48 @@ class CoreOptimizer:
                     if len(close_prices) < window:
                         return pd.Series([0.0] * len(data), index=data.index, name=self.config.name)
 
-                    vah_levels = []
-                    for i in range(window - 1, len(close_prices)):
-                        window_close = close_prices[i-window+1:i+1]
-                        window_volume = volumes[i-window+1:i+1]
-
-                        # Calculate volume-weighted price distribution
-                        price_volume = {}
-                        for price, vol in zip(window_close, window_volume):
-                            price_level = round(price, 2)
-                            if price_level not in price_volume:
-                                price_volume[price_level] = 0
-                            price_volume[price_level] += vol
-
-                        if price_volume:
-                            # Sort by volume and find the upper boundary of high volume area
-                            sorted_prices = sorted(price_volume.items(), key=lambda x: x[1], reverse=True)
-                            total_volume = sum(price_volume.values())
-                            cumulative_volume = 0
-                            vah_price = sorted_prices[0][0]  # Start with highest volume price
-
-                            for price_level, volume in sorted_prices:
-                                cumulative_volume += volume
-                                if cumulative_volume / total_volume >= 0.7:  # 70% of volume
-                                    vah_price = price_level
-                                    break
-
-                            vah_levels.append(vah_price)
-                        else:
-                            vah_levels.append(close_prices[i])
-
-                    # Pad with current price for the beginning
-                    vah_levels_padded = [close_prices[window-1]] * (window - 1) + vah_levels
-                    return pd.Series(vah_levels_padded, index=data.index, name=self.config.name)
+                    # Calculate VAH levels using vectorized operations
+                    if len(close_prices) >= window:
+                        # Create DataFrame for vectorized operations
+                        df = pd.DataFrame({
+                            'close': close_prices,
+                            'volume': volumes
+                        })
+                        
+                        def calculate_vah_level(window_data):
+                            if len(window_data) < 2:
+                                return window_data['close'].iloc[-1] if len(window_data) > 0 else 0.0
+                            
+                            # Round prices to 2 decimal places and group by volume
+                            window_data_rounded = window_data.copy()
+                            window_data_rounded['price_level'] = window_data_rounded['close'].round(2)
+                            
+                            # Group by price level and sum volumes
+                            volume_by_price = window_data_rounded.groupby('price_level')['volume'].sum()
+                            
+                            if len(volume_by_price) > 0:
+                                # Sort by volume and find the upper boundary of high volume area
+                                sorted_prices = volume_by_price.sort_values(ascending=False)
+                                total_volume = volume_by_price.sum()
+                                cumulative_volume = 0
+                                vah_price = sorted_prices.index[0]  # Start with highest volume price
+                                
+                                for price_level in sorted_prices.index:
+                                    cumulative_volume += sorted_prices[price_level]
+                                    if cumulative_volume / total_volume >= 0.7:  # 70% of volume
+                                        vah_price = price_level
+                                        break
+                                
+                                return vah_price
+                            else:
+                                return window_data['close'].iloc[-1]
+                        
+                        vah_levels = df.rolling(window=window, min_periods=window).apply(
+                            calculate_vah_level, raw=False
+                        ).fillna(method='ffill').values
+                    else:
+                        vah_levels = close_prices
+                    return pd.Series(vah_levels, index=data.index, name=self.config.name)
 
             return VolumeProfileVAHGenerator(window)
 
@@ -2941,39 +3082,48 @@ class CoreOptimizer:
                     if len(close_prices) < window:
                         return pd.Series([0.0] * len(data), index=data.index, name=self.config.name)
 
-                    val_levels = []
-                    for i in range(window - 1, len(close_prices)):
-                        window_close = close_prices[i-window+1:i+1]
-                        window_volume = volumes[i-window+1:i+1]
-
-                        # Calculate volume-weighted price distribution
-                        price_volume = {}
-                        for price, vol in zip(window_close, window_volume):
-                            price_level = round(price, 2)
-                            if price_level not in price_volume:
-                                price_volume[price_level] = 0
-                            price_volume[price_level] += vol
-
-                        if price_volume:
-                            # Sort by volume and find the lower boundary of high volume area
-                            sorted_prices = sorted(price_volume.items(), key=lambda x: x[1], reverse=True)
-                            total_volume = sum(price_volume.values())
-                            cumulative_volume = 0
-                            val_price = sorted_prices[-1][0]  # Start with lowest volume price
-
-                            for price_level, volume in sorted_prices:
-                                cumulative_volume += volume
-                                if cumulative_volume / total_volume >= 0.7:  # 70% of volume
-                                    val_price = price_level
-                                    break
-
-                            val_levels.append(val_price)
-                        else:
-                            val_levels.append(close_prices[i])
-
-                    # Pad with current price for the beginning
-                    val_levels_padded = [close_prices[window-1]] * (window - 1) + val_levels
-                    return pd.Series(val_levels_padded, index=data.index, name=self.config.name)
+                    # Calculate VAL levels using vectorized operations
+                    if len(close_prices) >= window:
+                        # Create DataFrame for vectorized operations
+                        df = pd.DataFrame({
+                            'close': close_prices,
+                            'volume': volumes
+                        })
+                        
+                        def calculate_val_level(window_data):
+                            if len(window_data) < 2:
+                                return window_data['close'].iloc[-1] if len(window_data) > 0 else 0.0
+                            
+                            # Round prices to 2 decimal places and group by volume
+                            window_data_rounded = window_data.copy()
+                            window_data_rounded['price_level'] = window_data_rounded['close'].round(2)
+                            
+                            # Group by price level and sum volumes
+                            volume_by_price = window_data_rounded.groupby('price_level')['volume'].sum()
+                            
+                            if len(volume_by_price) > 0:
+                                # Sort by volume and find the lower boundary of high volume area
+                                sorted_prices = volume_by_price.sort_values(ascending=False)
+                                total_volume = volume_by_price.sum()
+                                cumulative_volume = 0
+                                val_price = sorted_prices.index[-1]  # Start with lowest volume price
+                                
+                                for price_level in sorted_prices.index:
+                                    cumulative_volume += sorted_prices[price_level]
+                                    if cumulative_volume / total_volume >= 0.7:  # 70% of volume
+                                        val_price = price_level
+                                        break
+                                
+                                return val_price
+                            else:
+                                return window_data['close'].iloc[-1]
+                        
+                        val_levels = df.rolling(window=window, min_periods=window).apply(
+                            calculate_val_level, raw=False
+                        ).fillna(method='ffill').values
+                    else:
+                        val_levels = close_prices
+                    return pd.Series(val_levels, index=data.index, name=self.config.name)
 
             return VolumeProfileVALGenerator(window)
 
@@ -3455,40 +3605,118 @@ class CoreOptimizer:
         return feature_values
 
     def _vectorized_mi_calculation(self, features_list: List[np.ndarray], returns_list: List[np.ndarray]) -> List[float]:
-        """Calculate mutual information for multiple feature-return pairs using vectorized operations."""
+        """Calculate mutual information for multiple feature-return pairs using vectorized operations with GPU acceleration."""
         try:
-            # Use batch processing for multiple MI calculations with safe_correlation
-            mi_scores = []
-            for features, returns in zip(features_list, returns_list):
-                # Align arrays
-                min_length = min(len(features), len(returns))
-                if min_length < 10:
-                    mi_scores.append(0.0)
-                    continue
-                
-                # Use safe_correlation from math_validation for robust calculation
-                aligned_features = features[:min_length]
-                aligned_returns = returns[:min_length]
-                
-                # Calculate correlation using safe_correlation
-                correlation = safe_correlation(aligned_features, aligned_returns)
-                
-                # Convert correlation to MI approximation: MI ≈ 0.5 * log(1 - corr²)
-                if abs(correlation) < 0.999:  # Avoid log(0)
-                    try:
-                        mi_approx = 0.5 * np.log(1 - correlation**2) if correlation**2 < 1 else 0.0
-                        mi_scores.append(max(0.0, -mi_approx))  # Ensure positive
-                    except (ValueError, OverflowError):
-                        mi_scores.append(0.0)
-                else:
-                    mi_scores.append(0.0)
+            # Try GPU-accelerated batch processing first
+            if self.gpu_available and self.batch_processor and len(features_list) > 10:
+                return self._gpu_accelerated_mi_calculation(features_list, returns_list)
             
-            return mi_scores
+            # Fallback to CPU vectorized processing
+            return self._cpu_vectorized_mi_calculation(features_list, returns_list)
             
         except Exception as e:
             self.logger.warning(f"⚠️ Vectorized MI calculation failed, using fallback: {e}")
             # Fallback to individual calculations
             return [self._calculate_mutual_information_robust(f, r) for f, r in zip(features_list, returns_list)]
+
+    def _gpu_accelerated_mi_calculation(self, features_list: List[np.ndarray], returns_list: List[np.ndarray]) -> List[float]:
+        """GPU-accelerated MI calculation using batch processing."""
+        try:
+            # Prepare data for batch processing
+            aligned_pairs = []
+            for features, returns in zip(features_list, returns_list):
+                min_length = min(len(features), len(returns))
+                if min_length >= 10:
+                    aligned_pairs.append((features[:min_length], returns[:min_length]))
+            
+            if not aligned_pairs:
+                return [0.0] * len(features_list)
+            
+            # Use batch processor for GPU acceleration
+            if self.batch_processor:
+                # Convert to batch format
+                features_batch = np.array([pair[0] for pair in aligned_pairs])
+                returns_batch = np.array([pair[1] for pair in aligned_pairs])
+                
+                # Process in batches using GPU
+                mi_scores = self.batch_processor.process_correlations_batch(features_batch, returns_batch)
+                
+                # Convert correlations to MI approximations
+                mi_approximations = []
+                for corr in mi_scores:
+                    if abs(corr) < 0.999:
+                        try:
+                            mi_approx = 0.5 * np.log(1 - corr**2) if corr**2 < 1 else 0.0
+                            mi_approximations.append(max(0.0, -mi_approx))
+                        except (ValueError, OverflowError):
+                            mi_approximations.append(0.0)
+                    else:
+                        mi_approximations.append(0.0)
+                
+                return mi_approximations
+            else:
+                # Fallback to CPU processing
+                return self._cpu_vectorized_mi_calculation(features_list, returns_list)
+                
+        except Exception as e:
+            self.logger.warning(f"⚠️ GPU MI calculation failed, falling back to CPU: {e}")
+            return self._cpu_vectorized_mi_calculation(features_list, returns_list)
+
+    def _cpu_vectorized_mi_calculation(self, features_list: List[np.ndarray], returns_list: List[np.ndarray]) -> List[float]:
+        """CPU vectorized MI calculation."""
+        mi_scores = []
+        for features, returns in zip(features_list, returns_list):
+            # Align arrays
+            min_length = min(len(features), len(returns))
+            if min_length < 10:
+                mi_scores.append(0.0)
+                continue
+            
+            # Use safe_correlation from math_validation for robust calculation
+            aligned_features = features[:min_length]
+            aligned_returns = returns[:min_length]
+            
+            # Calculate correlation using safe_correlation
+            correlation = safe_correlation(aligned_features, aligned_returns)
+            
+            # Convert correlation to MI approximation: MI ≈ 0.5 * log(1 - corr²)
+            if abs(correlation) < 0.999:  # Avoid log(0)
+                try:
+                    mi_approx = 0.5 * np.log(1 - correlation**2) if correlation**2 < 1 else 0.0
+                    mi_scores.append(max(0.0, -mi_approx))  # Ensure positive
+                except (ValueError, OverflowError):
+                    mi_scores.append(0.0)
+            else:
+                mi_scores.append(0.0)
+        
+        return mi_scores
+
+    def _optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame memory usage by converting data types."""
+        try:
+            # Create a copy to avoid modifying original
+            optimized_df = df.copy()
+            
+            # Convert object columns to category if they have low cardinality
+            for col in optimized_df.select_dtypes(include=['object']).columns:
+                if optimized_df[col].nunique() / len(optimized_df) < 0.5:  # Less than 50% unique values
+                    optimized_df[col] = optimized_df[col].astype('category')
+            
+            # Convert float64 to float32 if precision allows
+            for col in optimized_df.select_dtypes(include=['float64']).columns:
+                if optimized_df[col].min() >= np.finfo(np.float32).min and optimized_df[col].max() <= np.finfo(np.float32).max:
+                    optimized_df[col] = optimized_df[col].astype('float32')
+            
+            # Convert int64 to int32 if range allows
+            for col in optimized_df.select_dtypes(include=['int64']).columns:
+                if optimized_df[col].min() >= np.iinfo(np.int32).min and optimized_df[col].max() <= np.iinfo(np.int32).max:
+                    optimized_df[col] = optimized_df[col].astype('int32')
+            
+            return optimized_df
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ DataFrame memory optimization failed: {e}")
+            return df
 
     def _extract_numeric_array(self, series: Union[pd.Series, np.ndarray, None]) -> Optional[np.ndarray]:
         """Convert a Series or array-like into a sanitized numpy array."""

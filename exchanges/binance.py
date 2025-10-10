@@ -571,7 +571,8 @@ class BinanceExchange(BaseExchange):
                 "symbol": symbol.upper(),
                 "side": side.upper(),
                 "type": order_type.upper(),
-                "quantity": str(quantity)
+                "quantity": str(quantity),
+                "timestamp": int(time.time() * 1000)
             }
             
             if price is not None:
@@ -581,13 +582,19 @@ class BinanceExchange(BaseExchange):
             if client_order_id:
                 order_params["newClientOrderId"] = client_order_id
             
-            # Get auth headers
-            headers = self.auth_manager.get_auth_headers("POST", "/api/v3/order")
-            if not headers:
-                return None
+            # Generate signature
+            query_string = urlencode(order_params)
+            signature = self._generate_signature(order_params)
+            order_params["signature"] = signature
+            
+            # Prepare headers
+            headers = {
+                "X-MBX-APIKEY": self.api_key,
+                "Content-Type": "application/x-www-form-urlencoded"
+            }
             
             url = f"{self._get_base_url()}/api/v3/order"
-            async with self.session.post(url, json=order_params, headers=headers) as response:
+            async with self.session.post(url, data=order_params, headers=headers) as response:
                 if response.status == 200:
                     data = await response.json()
                     return data
@@ -678,15 +685,21 @@ class BinanceExchange(BaseExchange):
 
     def _generate_signature(self, params: dict[str, Any]) -> str:
         """Generate HMAC signature for authenticated requests."""
-        if not self.api_secret:
-            raise ValueError("API secret not configured")
-        
-        query_string = urlencode(params)
-        return hmac.new(
-            self.api_secret.encode("utf-8"),
-            query_string.encode("utf-8"),
-            hashlib.sha256
-        ).hexdigest()
+        try:
+            if not self.api_secret:
+                raise ValueError("API secret not configured")
+            
+            query_string = urlencode(params)
+            signature = hmac.new(
+                self.api_secret.encode("utf-8"),
+                query_string.encode("utf-8"),
+                hashlib.sha256
+            ).hexdigest()
+            
+            return signature
+        except Exception as e:
+            tprint(f"Error generating signature: {e}", "ERROR")
+            raise
 
     async def _make_request(
         self,

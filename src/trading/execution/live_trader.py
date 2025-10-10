@@ -29,7 +29,7 @@ from ..utils.error_handling import (
 )
 from ..utils.validation import validate_trading_config
 from .order_manager import OrderManager, Order, OrderStatus, OrderSide, OrderType
-from .exchange_interface import ExchangeInterface, ExchangeType, create_exchange_interface
+from .exchange_interface import ExchangeInterface, create_exchange_interface
 
 # Import enhanced signal generators
 from ..signal_generation.analyst_signals import AnalystSignalGenerator, create_analyst_signal_generator

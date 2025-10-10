@@ -9,8 +9,8 @@ import asyncio
 import os
 from datetime import datetime, timedelta
 
-# Import the enhanced OKX exchange
-from ..okx_enhanced import create_enhanced_okx_exchange
+# Import the OKX exchange
+from ..okx import create_okx_exchange
 
 
 async def main():
@@ -18,8 +18,8 @@ async def main():
     print("🚀 Enhanced OKX Exchange Example")
     print("=" * 50)
     
-    # Initialize the enhanced exchange
-    exchange = create_enhanced_okx_exchange(
+    # Initialize the exchange
+    exchange = create_okx_exchange(
         api_key=os.getenv("OKX_API_KEY", ""),
         api_secret=os.getenv("OKX_API_SECRET", ""),
         password=os.getenv("OKX_PASSPHRASE", ""),
@@ -214,7 +214,7 @@ async def demonstrate_advanced_features():
     print("\n🚀 Advanced Features Demonstration")
     print("=" * 50)
     
-    exchange = create_enhanced_okx_exchange(
+    exchange = create_okx_exchange(
         api_key=os.getenv("OKX_API_KEY", ""),
         api_secret=os.getenv("OKX_API_SECRET", ""),
         password=os.getenv("OKX_PASSPHRASE", ""),

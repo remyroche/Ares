@@ -22,7 +22,7 @@ from src.utils.tprint import (
     tprint_info, tprint_warning, tprint_error, tprint_success,
     tprint_structured, LogLevel
 )
-from ..config.execution_config import ExecutionConfig
+from ...exchanges.exchange_dispatcher import ExchangeDispatcher, ExchangeConfig, ExchangeType
 from ..utils.error_handling import (
     ExecutionError, TradingErrorSeverity, trading_error_handler,
     critical_operation, require_no_fallback
@@ -98,9 +98,9 @@ class KlineData:
     taker_buy_base_asset_volume: float
     taker_buy_quote_asset_volume: float
 
-class ExchangeInterface(ABC):
+class ExchangeInterface:
     """
-    Abstract base class for exchange interfaces.
+    Exchange interface that uses the exchange dispatcher.
 
     Provides unified API for:
     - Market data access (ticker, order book, klines, trades)
@@ -117,12 +117,15 @@ class ExchangeInterface(ABC):
             config: Configuration dictionary
         """
         self.config = config
-        self.exchange_type = ExchangeType(config.get('exchange_type', 'simulated'))
+        self.exchange_type = config.get('exchange_type', 'simulated')
         self.api_key = config.get('api_key')
         self.api_secret = config.get('api_secret')
         self.testnet = config.get('testnet', True)
         self.rate_limits = config.get('rate_limits', {})
 
+        # Exchange dispatcher
+        self.dispatcher: Optional[ExchangeDispatcher] = None
+        
         # Connection state
         self.connection_status = ConnectionStatus.DISCONNECTED
         self.last_connection_attempt = None
@@ -142,34 +145,125 @@ class ExchangeInterface(ABC):
         self.failed_requests = 0
         self.avg_response_time = 0.0
 
-        self.logger = logger.getChild(f'{self.exchange_type.value}')
+        # Simulated exchange data
+        self.price_feeds: Dict[str, Dict[str, float]] = {}
+        self.simulated_orders: Dict[str, Dict[str, Any]] = {}
+        
+        # Initialize simulated data
+        self._initialize_simulated_data()
 
-    @abstractmethod
+        self.logger = logger.getChild(f'{self.exchange_type}')
+    
+    def _initialize_simulated_data(self) -> None:
+        """Initialize simulated exchange data."""
+        self.price_feeds['ETHUSDT'] = {
+            'price': 3000.0,
+            'bid_price': 2999.5,
+            'ask_price': 3000.5,
+            'volume_24h': 1000000.0,
+            'price_change_24h': 50.0,
+            'high_24h': 3100.0,
+            'low_24h': 2900.0
+        }
+
+        self.price_feeds['BTCUSDT'] = {
+            'price': 50000.0,
+            'bid_price': 49995.0,
+            'ask_price': 50005.0,
+            'volume_24h': 500000.0,
+            'price_change_24h': 1000.0,
+            'high_24h': 51000.0,
+            'low_24h': 48000.0
+        }
+
     async def connect(self) -> bool:
         """Connect to exchange."""
-        pass
+        try:
+            if self.exchange_type == 'simulated':
+                self.connection_status = ConnectionStatus.CONNECTED
+                tprint_success(f"✅ Connected to {self.exchange_type} (simulated)")
+                return True
+            
+            # Create exchange dispatcher
+            exchange_type = ExchangeType.OKX if self.exchange_type == 'okx' else ExchangeType.BINANCE
+            config = ExchangeConfig(
+                exchange_type=exchange_type,
+                api_key=self.api_key,
+                api_secret=self.api_secret,
+                use_testnet=self.testnet,
+                trade_symbol=self.config.get('trade_symbol', 'BTCUSDT')
+            )
+            
+            self.dispatcher = ExchangeDispatcher(config)
+            success = await self.dispatcher.initialize()
+            
+            if success:
+                self.connection_status = ConnectionStatus.CONNECTED
+                tprint_success(f"✅ Connected to {self.exchange_type}")
+                return True
+            else:
+                self.connection_status = ConnectionStatus.ERROR
+                return False
+                
+        except Exception as e:
+            self.connection_status = ConnectionStatus.ERROR
+            await self._handle_error(e, "connect")
+            return False
 
-    @abstractmethod
     async def disconnect(self) -> None:
         """Disconnect from exchange."""
-        pass
+        if self.dispatcher:
+            await self.dispatcher.close()
+            self.dispatcher = None
+        
+        self.connection_status = ConnectionStatus.DISCONNECTED
+        tprint_info(f"📴 Disconnected from {self.exchange_type}")
 
-    @abstractmethod
     async def is_connected(self) -> bool:
         """Check if connected to exchange."""
-        pass
+        if self.exchange_type == 'simulated':
+            return self.connection_status == ConnectionStatus.CONNECTED
+        
+        if self.dispatcher:
+            return await self.dispatcher.is_connected()
+        
+        return False
 
-    @abstractmethod
     async def get_ticker(self, symbol: str) -> Optional[TickerData]:
         """Get ticker data for symbol."""
-        pass
+        if self.exchange_type == 'simulated':
+            return await self._get_simulated_ticker(symbol)
+        
+        if self.dispatcher:
+            ticker_data = await self.dispatcher.get_ticker(symbol)
+            if ticker_data:
+                return TickerData(
+                    symbol=symbol,
+                    price=ticker_data.get('price', 0),
+                    bid_price=ticker_data.get('bid', 0),
+                    ask_price=ticker_data.get('ask', 0),
+                    bid_quantity=ticker_data.get('bidQty', 0),
+                    ask_quantity=ticker_data.get('askQty', 0),
+                    volume_24h=ticker_data.get('volume', 0),
+                    price_change_24h=ticker_data.get('change', 0),
+                    price_change_percent_24h=ticker_data.get('changePercent', 0),
+                    high_24h=ticker_data.get('high', 0),
+                    low_24h=ticker_data.get('low', 0),
+                    timestamp=datetime.now()
+                )
+        
+        return None
 
-    @abstractmethod
     async def get_order_book(self, symbol: str, limit: int = 100) -> Optional[Dict[str, Any]]:
         """Get order book for symbol."""
-        pass
+        if self.exchange_type == 'simulated':
+            return await self._get_simulated_order_book(symbol, limit)
+        
+        if self.dispatcher:
+            return await self.dispatcher.get_order_book(symbol, limit)
+        
+        return None
 
-    @abstractmethod
     async def get_klines(
         self,
         symbol: str,
@@ -179,19 +273,55 @@ class ExchangeInterface(ABC):
         limit: int = 500
     ) -> List[KlineData]:
         """Get kline data for symbol."""
-        pass
+        if self.exchange_type == 'simulated':
+            return await self._get_simulated_klines(symbol, interval, start_time, end_time, limit)
+        
+        if self.dispatcher:
+            ohlcv_data = await self.dispatcher.get_ohlcv(symbol, interval, limit)
+            klines = []
+            for candle in ohlcv_data:
+                klines.append(KlineData(
+                    symbol=candle.symbol,
+                    interval=interval,
+                    timestamp=candle.timestamp,
+                    open_price=candle.open,
+                    high_price=candle.high,
+                    low_price=candle.low,
+                    close_price=candle.close,
+                    volume=candle.volume,
+                    close_time=candle.timestamp,
+                    quote_asset_volume=candle.volume * candle.close,
+                    number_of_trades=0,
+                    taker_buy_base_asset_volume=candle.volume * 0.5,
+                    taker_buy_quote_asset_volume=candle.volume * candle.close * 0.5
+                ))
+            return klines
+        
+        return []
 
-    @abstractmethod
     async def get_recent_trades(self, symbol: str, limit: int = 500) -> List[Dict[str, Any]]:
         """Get recent trades for symbol."""
-        pass
+        if self.exchange_type == 'simulated':
+            return await self._get_simulated_recent_trades(symbol, limit)
+        
+        # For real exchanges, this would be implemented in the dispatcher
+        return []
 
-    @abstractmethod
     async def get_account_balance(self, asset: Optional[str] = None) -> Dict[str, float]:
         """Get account balance."""
-        pass
+        if self.exchange_type == 'simulated':
+            return self._get_simulated_balance(asset)
+        
+        if self.dispatcher:
+            if asset:
+                balance = await self.dispatcher.get_balance(asset)
+                return {asset: balance}
+            else:
+                # Get all balances - this would need to be implemented in dispatcher
+                return {}
+        
+        return {}
 
-    @abstractmethod
     async def create_order(
         self,
         symbol: str,
@@ -202,22 +332,231 @@ class ExchangeInterface(ABC):
         **kwargs
     ) -> Dict[str, Any]:
         """Create order."""
-        pass
+        if self.exchange_type == 'simulated':
+            return await self._create_simulated_order(symbol, side, order_type, quantity, price)
+        
+        if self.dispatcher:
+            result = await self.dispatcher.create_order(symbol, side, order_type, quantity, price)
+            return result or {}
+        
+        return {}
 
-    @abstractmethod
     async def cancel_order(self, symbol: str, order_id: str) -> bool:
         """Cancel order."""
-        pass
+        if self.exchange_type == 'simulated':
+            return await self._cancel_simulated_order(symbol, order_id)
+        
+        if self.dispatcher:
+            return await self.dispatcher.cancel_order(symbol, order_id)
+        
+        return False
 
-    @abstractmethod
     async def get_order_status(self, symbol: str, order_id: str) -> Dict[str, Any]:
         """Get order status."""
-        pass
+        if self.exchange_type == 'simulated':
+            return self._get_simulated_order_status(symbol, order_id)
+        
+        if self.dispatcher:
+            result = await self.dispatcher.get_order_status(symbol, order_id)
+            return result or {}
+        
+        return {}
 
-    @abstractmethod
     async def get_open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get open orders."""
-        pass
+        if self.exchange_type == 'simulated':
+            return self._get_simulated_open_orders(symbol)
+        
+        if self.dispatcher:
+            return await self.dispatcher.get_open_orders(symbol)
+        
+        return []
+
+    # Simulated exchange methods
+    async def _get_simulated_ticker(self, symbol: str) -> Optional[TickerData]:
+        """Get simulated ticker data."""
+        # Use the existing simulated exchange logic
+        if symbol not in self.price_feeds:
+            return None
+
+        data = self.price_feeds[symbol]
+        price_variation = np.random.normal(0, data['price'] * 0.001)
+        current_price = data['price'] + price_variation
+
+        return TickerData(
+            symbol=symbol,
+            price=current_price,
+            bid_price=current_price - 0.5,
+            ask_price=current_price + 0.5,
+            bid_quantity=np.random.uniform(1, 10),
+            ask_quantity=np.random.uniform(1, 10),
+            volume_24h=data['volume_24h'],
+            price_change_24h=data['price_change_24h'],
+            price_change_percent_24h=(data['price_change_24h'] / data['price']) * 100,
+            high_24h=data['high_24h'],
+            low_24h=data['low_24h'],
+            timestamp=datetime.now()
+        )
+
+    async def _get_simulated_order_book(self, symbol: str, limit: int) -> Optional[Dict[str, Any]]:
+        """Get simulated order book."""
+        if symbol not in self.price_feeds:
+            return None
+
+        data = self.price_feeds[symbol]
+        base_price = data['price']
+
+        bids = []
+        asks = []
+
+        for i in range(limit):
+            bid_price = base_price - 0.5 - (i * 0.1)
+            ask_price = base_price + 0.5 + (i * 0.1)
+
+            bid_quantity = np.random.uniform(0.1, 5.0)
+            ask_quantity = np.random.uniform(0.1, 5.0)
+
+            bids.append([bid_price, bid_quantity])
+            asks.append([ask_price, ask_quantity])
+
+        return {
+            'symbol': symbol,
+            'bids': bids,
+            'asks': asks,
+            'timestamp': datetime.now().isoformat()
+        }
+
+    async def _get_simulated_klines(
+        self,
+        symbol: str,
+        interval: str,
+        start_time: Optional[datetime],
+        end_time: Optional[datetime],
+        limit: int
+    ) -> List[KlineData]:
+        """Get simulated kline data."""
+        if symbol not in self.price_feeds:
+            return []
+
+        data = self.price_feeds[symbol]
+        base_price = data['price']
+        klines = []
+        current_time = datetime.now()
+
+        for i in range(min(limit, 500)):
+            timestamp = current_time - timedelta(minutes=i)
+            open_price = base_price + np.random.normal(0, base_price * 0.02)
+            high_price = open_price + abs(np.random.normal(0, base_price * 0.01))
+            low_price = open_price - abs(np.random.normal(0, base_price * 0.01))
+            close_price = low_price + np.random.uniform(0, high_price - low_price)
+            volume = np.random.uniform(100, 1000)
+
+            klines.append(KlineData(
+                symbol=symbol,
+                interval=interval,
+                timestamp=timestamp,
+                open_price=open_price,
+                high_price=high_price,
+                low_price=low_price,
+                close_price=close_price,
+                volume=volume,
+                close_time=timestamp + timedelta(minutes=1),
+                quote_asset_volume=close_price * volume,
+                number_of_trades=int(np.random.uniform(10, 100)),
+                taker_buy_base_asset_volume=volume * np.random.uniform(0.3, 0.7),
+                taker_buy_quote_asset_volume=close_price * volume * np.random.uniform(0.3, 0.7)
+            ))
+
+        return klines
+
+    async def _get_simulated_recent_trades(self, symbol: str, limit: int) -> List[Dict[str, Any]]:
+        """Get simulated recent trades."""
+        if symbol not in self.price_feeds:
+            return []
+
+        data = self.price_feeds[symbol]
+        base_price = data['price']
+        trades = []
+
+        for i in range(min(limit, 500)):
+            timestamp = datetime.now() - timedelta(seconds=i)
+            price = base_price + np.random.normal(0, base_price * 0.001)
+            quantity = np.random.uniform(0.01, 1.0)
+
+            trades.append({
+                'id': f'sim_trade_{i}',
+                'price': price,
+                'qty': quantity,
+                'quoteQty': price * quantity,
+                'time': timestamp.isoformat(),
+                'isBuyerMaker': np.random.choice([True, False]),
+                'isBestMatch': True
+            })
+
+        return trades
+
+    def _get_simulated_balance(self, asset: Optional[str]) -> Dict[str, float]:
+        """Get simulated account balance."""
+        if asset:
+            return {asset: 1000.0 if asset == 'USDT' else 10.0}
+
+        return {
+            'USDT': 10000.0,
+            'ETH': 10.0,
+            'BTC': 1.0
+        }
+
+    async def _create_simulated_order(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: float,
+        price: Optional[float]
+    ) -> Dict[str, Any]:
+        """Create simulated order."""
+        order_id = f'sim_order_{len(self.simulated_orders)}'
+
+        order_data = {
+            'symbol': symbol,
+            'orderId': order_id,
+            'orderListId': -1,
+            'clientOrderId': f'client_{order_id}',
+            'price': price,
+            'origQty': quantity,
+            'executedQty': quantity,
+            'cummulativeQuoteQty': price * quantity if price else 3000.0 * quantity,
+            'status': 'FILLED',
+            'timeInForce': 'GTC',
+            'type': order_type,
+            'side': side,
+            'workingTime': datetime.now().isoformat(),
+            'selfTradePreventionMode': 'NONE'
+        }
+
+        self.simulated_orders[order_id] = order_data
+        return order_data
+
+    async def _cancel_simulated_order(self, symbol: str, order_id: str) -> bool:
+        """Cancel simulated order."""
+        if order_id in self.simulated_orders:
+            self.simulated_orders[order_id]['status'] = 'CANCELLED'
+            return True
+        return False
+
+    def _get_simulated_order_status(self, symbol: str, order_id: str) -> Dict[str, Any]:
+        """Get simulated order status."""
+        return self.simulated_orders.get(order_id, {})
+
+    def _get_simulated_open_orders(self, symbol: Optional[str]) -> List[Dict[str, Any]]:
+        """Get simulated open orders."""
+        open_orders = []
+
+        for order_id, order_data in self.simulated_orders.items():
+            if order_data['status'] in ['NEW', 'PARTIALLY_FILLED']:
+                open_orders.append(order_data)
+
+        return open_orders
 
     def _check_rate_limit(self, endpoint: str) -> bool:
         """Check if request is within rate limits."""
@@ -256,283 +595,19 @@ class ExchangeInterface(ABC):
 
         tprint_error(f"❌ Exchange error in {operation}: {str(error)}")
 
-class SimulatedExchange(ExchangeInterface):
-    """
-    Simulated exchange for testing and paper trading.
-
-    Provides realistic market data simulation without real exchange connectivity.
-    """
-
-    def __init__(self, config: Dict[str, Any]):
-        super().__init__(config)
-
-        # Simulation parameters
-        self.price_feeds: Dict[str, Dict[str, float]] = {}
-        self.order_books: Dict[str, Dict[str, Any]] = {}
-        self.simulated_orders: Dict[str, Dict[str, Any]] = {}
-
-        # Initialize with some default prices
-        self.price_feeds['ETHUSDT'] = {
-            'price': 3000.0,
-            'bid_price': 2999.5,
-            'ask_price': 3000.5,
-            'volume_24h': 1000000.0,
-            'price_change_24h': 50.0,
-            'high_24h': 3100.0,
-            'low_24h': 2900.0
-        }
-
-        self.price_feeds['BTCUSDT'] = {
-            'price': 50000.0,
-            'bid_price': 49995.0,
-            'ask_price': 50005.0,
-            'volume_24h': 500000.0,
-            'price_change_24h': 1000.0,
-            'high_24h': 51000.0,
-            'low_24h': 48000.0
-        }
-
-    async def connect(self) -> bool:
-        """Connect to simulated exchange."""
-        try:
-            self.connection_status = ConnectionStatus.CONNECTED
-            tprint_success(f"✅ Connected to {self.exchange_type.value} (simulated)")
-            return True
-        except Exception as e:
-            self.connection_status = ConnectionStatus.ERROR
-            await self._handle_error(e, "connect")
-            return False
-
-    async def disconnect(self) -> None:
-        """Disconnect from simulated exchange."""
-        self.connection_status = ConnectionStatus.DISCONNECTED
-        tprint_info(f"📴 Disconnected from {self.exchange_type.value}")
-
-    async def is_connected(self) -> bool:
-        """Check if connected to simulated exchange."""
-        return self.connection_status == ConnectionStatus.CONNECTED
-
-    async def get_ticker(self, symbol: str) -> Optional[TickerData]:
-        """Get simulated ticker data."""
-        if symbol not in self.price_feeds:
-            return None
-
-        data = self.price_feeds[symbol]
-
-        # Add some random variation for realism
-        price_variation = np.random.normal(0, data['price'] * 0.001)
-        current_price = data['price'] + price_variation
-
-        return TickerData(
-            symbol=symbol,
-            price=current_price,
-            bid_price=current_price - 0.5,
-            ask_price=current_price + 0.5,
-            bid_quantity=np.random.uniform(1, 10),
-            ask_quantity=np.random.uniform(1, 10),
-            volume_24h=data['volume_24h'],
-            price_change_24h=data['price_change_24h'],
-            price_change_percent_24h=(data['price_change_24h'] / data['price']) * 100,
-            high_24h=data['high_24h'],
-            low_24h=data['low_24h'],
-            timestamp=datetime.now()
-        )
-
-    async def get_order_book(self, symbol: str, limit: int = 100) -> Optional[Dict[str, Any]]:
-        """Get simulated order book."""
-        if symbol not in self.price_feeds:
-            return None
-
-        data = self.price_feeds[symbol]
-        base_price = data['price']
-
-        # Generate simulated order book
-        bids = []
-        asks = []
-
-        for i in range(limit):
-            bid_price = base_price - 0.5 - (i * 0.1)
-            ask_price = base_price + 0.5 + (i * 0.1)
-
-            bid_quantity = np.random.uniform(0.1, 5.0)
-            ask_quantity = np.random.uniform(0.1, 5.0)
-
-            bids.append([bid_price, bid_quantity])
-            asks.append([ask_price, ask_quantity])
-
-        return {
-            'symbol': symbol,
-            'bids': bids,
-            'asks': asks,
-            'timestamp': datetime.now().isoformat()
-        }
-
-    async def get_klines(
-        self,
-        symbol: str,
-        interval: str,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-        limit: int = 500
-    ) -> List[KlineData]:
-        """Get simulated kline data."""
-        if symbol not in self.price_feeds:
-            return []
-
-        data = self.price_feeds[symbol]
-        base_price = data['price']
-
-        klines = []
-
-        # Generate simulated historical data
-        current_time = datetime.now()
-
-        for i in range(min(limit, 500)):
-            # Go backwards in time
-            timestamp = current_time - timedelta(minutes=i)
-
-            # Generate OHLC with some variation
-            open_price = base_price + np.random.normal(0, base_price * 0.02)
-            high_price = open_price + abs(np.random.normal(0, base_price * 0.01))
-            low_price = open_price - abs(np.random.normal(0, base_price * 0.01))
-            close_price = low_price + np.random.uniform(0, high_price - low_price)
-
-            volume = np.random.uniform(100, 1000)
-
-            klines.append(KlineData(
-                symbol=symbol,
-                interval=interval,
-                timestamp=timestamp,
-                open_price=open_price,
-                high_price=high_price,
-                low_price=low_price,
-                close_price=close_price,
-                volume=volume,
-                close_time=timestamp + timedelta(minutes=1),
-                quote_asset_volume=close_price * volume,
-                number_of_trades=int(np.random.uniform(10, 100)),
-                taker_buy_base_asset_volume=volume * np.random.uniform(0.3, 0.7),
-                taker_buy_quote_asset_volume=close_price * volume * np.random.uniform(0.3, 0.7)
-            ))
-
-        return klines
-
-    async def get_recent_trades(self, symbol: str, limit: int = 500) -> List[Dict[str, Any]]:
-        """Get simulated recent trades."""
-        if symbol not in self.price_feeds:
-            return []
-
-        data = self.price_feeds[symbol]
-        base_price = data['price']
-
-        trades = []
-
-        for i in range(min(limit, 500)):
-            timestamp = datetime.now() - timedelta(seconds=i)
-
-            # Randomize price and quantity
-            price = base_price + np.random.normal(0, base_price * 0.001)
-            quantity = np.random.uniform(0.01, 1.0)
-
-            trades.append({
-                'id': f'sim_trade_{i}',
-                'price': price,
-                'qty': quantity,
-                'quoteQty': price * quantity,
-                'time': timestamp.isoformat(),
-                'isBuyerMaker': np.random.choice([True, False]),
-                'isBestMatch': True
-            })
-
-        return trades
-
-    async def get_account_balance(self, asset: Optional[str] = None) -> Dict[str, float]:
-        """Get simulated account balance."""
-        if asset:
-            return {asset: 1000.0 if asset == 'USDT' else 10.0}
-
-        return {
-            'USDT': 10000.0,
-            'ETH': 10.0,
-            'BTC': 1.0
-        }
-
-    async def create_order(
-        self,
-        symbol: str,
-        side: str,
-        order_type: str,
-        quantity: float,
-        price: Optional[float] = None,
-        **kwargs
-    ) -> Dict[str, Any]:
-        """Create simulated order."""
-        order_id = f'sim_order_{len(self.simulated_orders)}'
-
-        order_data = {
-            'symbol': symbol,
-            'orderId': order_id,
-            'orderListId': -1,
-            'clientOrderId': f'client_{order_id}',
-            'price': price,
-            'origQty': quantity,
-            'executedQty': quantity,  # Assume immediate fill for simulation
-            'cummulativeQuoteQty': price * quantity if price else 3000.0 * quantity,
-            'status': 'FILLED',
-            'timeInForce': 'GTC',
-            'type': order_type,
-            'side': side,
-            'workingTime': datetime.now().isoformat(),
-            'selfTradePreventionMode': 'NONE'
-        }
-
-        self.simulated_orders[order_id] = order_data
-
-        return order_data
-
-    async def cancel_order(self, symbol: str, order_id: str) -> bool:
-        """Cancel simulated order."""
-        if order_id in self.simulated_orders:
-            self.simulated_orders[order_id]['status'] = 'CANCELLED'
-            return True
-        return False
-
-    async def get_order_status(self, symbol: str, order_id: str) -> Dict[str, Any]:
-        """Get simulated order status."""
-        return self.simulated_orders.get(order_id, {})
-
-    async def get_open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Get simulated open orders."""
-        open_orders = []
-
-        for order_id, order_data in self.simulated_orders.items():
-            if order_data['status'] in ['NEW', 'PARTIALLY_FILLED']:
-                open_orders.append(order_data)
-
-        return open_orders
 
 # Factory function for creating exchange interfaces
-async def create_exchange_interface(
-    exchange_type: ExchangeType,
-    config: Dict[str, Any]
-) -> ExchangeInterface:
+def create_exchange_interface(config: Dict[str, Any]) -> ExchangeInterface:
     """
     Create exchange interface.
 
     Args:
-        exchange_type: Type of exchange
         config: Configuration dictionary
 
     Returns:
         Exchange interface instance
     """
-    if exchange_type == ExchangeType.SIMULATED:
-        return SimulatedExchange(config)
-    else:
-        # For other exchanges, would return appropriate implementations
-        # For now, return simulated as placeholder
-        config['exchange_type'] = 'simulated'
-        return SimulatedExchange(config)
+    return ExchangeInterface(config)
 
 def get_exchange_interface(exchange_type: str) -> Optional[ExchangeInterface]:
     """Get exchange interface by type."""

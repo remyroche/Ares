@@ -27,8 +27,18 @@ from .factory import ExchangeFactory
 from .binance import BinanceExchange
 from .gateio import GateioExchange
 from .mexc import MexcExchange
-from .okx import OkxExchange
+from .okx import OkxExchange, create_okx_exchange
 from .phemex import PhemexExchange
+
+# Import exchange dispatcher
+from .exchange_dispatcher import (
+    ExchangeDispatcher, 
+    ExchangeConfig, 
+    ExchangeType,
+    create_exchange_dispatcher,
+    create_okx_dispatcher,
+    create_binance_dispatcher
+)
 
 __all__ = [
     "TradingReceiver",
@@ -46,5 +56,12 @@ __all__ = [
     "GateioExchange",
     "MexcExchange",
     "OkxExchange",
-    "PhemexExchange"
+    "create_okx_exchange",
+    "PhemexExchange",
+    "ExchangeDispatcher",
+    "ExchangeConfig",
+    "ExchangeType",
+    "create_exchange_dispatcher",
+    "create_okx_dispatcher",
+    "create_binance_dispatcher"
 ]

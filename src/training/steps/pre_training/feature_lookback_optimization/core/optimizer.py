@@ -2602,18 +2602,24 @@ class CoreOptimizer:
                     if len(close_prices) < window:
                         return pd.Series([0.0] * len(data), index=data.index, name=self.config.name)
 
-                    # Calculate rolling trend
-                    trends = []
-                    for i in range(window, len(close_prices)):
-                        window_prices = close_prices[i-window:i]
-                        # Simple linear trend slope
-                        x = np.arange(len(window_prices))
-                        slope = np.polyfit(x, window_prices, 1)[0]
-                        trends.append(slope / np.mean(window_prices))  # Normalized slope
-
-                    # Pad with zeros for the beginning
-                    trends_padded = [0.0] * (window - 1) + trends
-                    return pd.Series(trends_padded, index=data.index, name=self.config.name)
+                    # Calculate rolling trend using vectorized operations
+                    if len(close_prices) >= window:
+                        # Use pandas rolling for vectorized calculation
+                        price_series = pd.Series(close_prices)
+                        
+                        def calculate_trend_slope(window_prices):
+                            if len(window_prices) < 2:
+                                return 0.0
+                            x = np.arange(len(window_prices))
+                            slope = np.polyfit(x, window_prices, 1)[0]
+                            return slope / np.mean(window_prices) if np.mean(window_prices) != 0 else 0.0
+                        
+                        trends = price_series.rolling(window=window, min_periods=window).apply(
+                            calculate_trend_slope, raw=True
+                        ).fillna(0.0).values
+                    else:
+                        trends = np.zeros(len(close_prices))
+                    return pd.Series(trends, index=data.index, name=self.config.name)
 
             return SRStrengthTrendGenerator(window, sr_type)
 
@@ -2644,16 +2650,24 @@ class CoreOptimizer:
                     if len(close_prices) < window:
                         return pd.Series([0.5] * len(data), index=data.index, name=self.config.name)
 
-                    reliabilities = []
-                    for i in range(window - 1, len(close_prices)):
-                        window_prices = close_prices[i-window+1:i+1]
-                        volatility = np.std(window_prices) / np.mean(window_prices)
-                        reliability = 1.0 / (1.0 + volatility)
-                        reliabilities.append(reliability)
+                    # Calculate reliabilities using vectorized operations
+                    if len(close_prices) >= window:
+                        price_series = pd.Series(close_prices)
+                        
+                        # Calculate rolling volatility and reliability
+                        rolling_mean = price_series.rolling(window=window, min_periods=window).mean()
+                        rolling_std = price_series.rolling(window=window, min_periods=window).std()
+                        
+                        # Avoid division by zero
+                        volatility = rolling_std / rolling_mean.replace(0, np.nan)
+                        reliability = 1.0 / (1.0 + volatility.fillna(0))
+                        
+                        # Fill NaN values with 0.5 (default reliability)
+                        reliabilities = reliability.fillna(0.5).values
+                    else:
+                        reliabilities = np.full(len(close_prices), 0.5)
 
-                    # Pad with default reliability for the beginning
-                    reliabilities_padded = [0.5] * (window - 1) + reliabilities
-                    return pd.Series(reliabilities_padded, index=data.index, name=self.config.name)
+                    return pd.Series(reliabilities, index=data.index, name=self.config.name)
 
             return MLReliabilityGenerator(window)
 
@@ -4449,35 +4463,30 @@ class CoreOptimizer:
                     results[horizon] = lagged
 
                 elif 'sma' in feature_name.lower() or 'moving_average' in feature_name.lower():
-                    # Simple Moving Average
+                    # Simple Moving Average - Vectorized
                     if horizon <= len(close_prices):
-                        sma = np.full_like(close_prices, np.nan)
-                        for i in range(horizon, len(close_prices)):
-                            sma[i] = np.mean(close_prices[i-horizon:i])
+                        sma = pd.Series(close_prices).rolling(window=horizon, min_periods=horizon).mean().values
                         lagged = self._apply_minimum_lag(sma)
                         self._assert_lag_requirements(feature_name, horizon, lagged)
                         results[horizon] = lagged
 
                 elif 'ema' in feature_name.lower() or 'exponential' in feature_name.lower():
-                    # Exponential Moving Average
+                    # Exponential Moving Average - Vectorized
                     alpha = 2.0 / (horizon + 1)
-                    ema = np.full_like(close_prices, np.nan)
-                    if len(close_prices) > 0:
-                        ema[0] = close_prices[0]
-                        for i in range(1, len(close_prices)):
-                            ema[i] = alpha * close_prices[i] + (1 - alpha) * ema[i-1]
+                    ema = pd.Series(close_prices).ewm(alpha=alpha, adjust=False).mean().values
                     lagged = self._apply_minimum_lag(ema)
                     self._assert_lag_requirements(feature_name, horizon, lagged)
                     results[horizon] = lagged
 
                 elif 'volatility' in feature_name.lower():
-                    # Rolling volatility (standard deviation of returns)
+                    # Rolling volatility (standard deviation of returns) - Vectorized
                     if horizon < len(close_prices):
                         returns = np.diff(close_prices) / close_prices[:-1]
-                        volatility = np.full_like(close_prices, np.nan)
-                        for i in range(horizon, len(returns)):
-                            volatility[i] = np.std(returns[i-horizon:i])
-                        lagged = self._apply_minimum_lag(volatility)
+                        volatility = pd.Series(returns).rolling(window=horizon, min_periods=horizon).std().values
+                        # Pad with NaN to match original length
+                        volatility_padded = np.full(len(close_prices), np.nan)
+                        volatility_padded[1:len(volatility)+1] = volatility
+                        lagged = self._apply_minimum_lag(volatility_padded)
                         self._assert_lag_requirements(feature_name, horizon, lagged)
                         results[horizon] = lagged
 

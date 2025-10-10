@@ -30,8 +30,7 @@ from src.utils.data.quality.comprehensive_duplicate_analyzer import (
 )
 from src.utils.data.historical_data_pipeline import HistoricalDataPipeline
 from src.utils.data.klines_parquet import KlinesParquetManager
-from src.utils.data.processing.data_processing import DataProcessor
-from src.utils.data.quality.data_quality import DataQualityFramework
+from src.utils.data.exchange_data_standardizer import ExchangeDataStandardizer
 from src.utils.data.gap_detector import GapDetector
 
 
@@ -55,8 +54,7 @@ class MexcKlinesDataProcessingPipeline:
 
         # Initialize standardized data managers
         self.parquet_manager = KlinesParquetManager(data_dir, self.exchange)
-        self.data_processor = DataProcessor()
-        self.quality_framework = DataQualityFramework()
+        self.data_standardizer = ExchangeDataStandardizer(data_dir)
 
         # Quality checker will be initialized when first used
         self._quality_checker = None
@@ -65,7 +63,7 @@ class MexcKlinesDataProcessingPipeline:
         self.columns_to_remove = ['taker_buy_base', 'taker_buy_quote', 'year']
 
     def standardize_data_format(self, df: pd.DataFrame, symbol: str, interval: str) -> pd.DataFrame:
-        """Standardize data format to match KlinesParquetManager expectations.
+        """Standardize data format using centralized standardizer.
         
         Args:
             df: Raw DataFrame from exchange
@@ -75,59 +73,19 @@ class MexcKlinesDataProcessingPipeline:
         Returns:
             Standardized DataFrame
         """
-        if df is None or df.empty:
-            return df
-            
         try:
-            # Create a copy to avoid modifying original
-            standardized_df = df.copy()
+            standardized_df, report = self.data_standardizer.standardize_data(
+                df, self.exchange, symbol, interval, validate_quality=True
+            )
             
-            # Ensure required columns exist
-            required_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-            
-            # Handle timestamp column
-            if 'timestamp' not in standardized_df.columns:
-                if 'open_time' in standardized_df.columns:
-                    standardized_df['timestamp'] = standardized_df['open_time']
-                elif standardized_df.index.name == 'timestamp':
-                    standardized_df = standardized_df.reset_index()
-                else:
-                    self.logger.warning("No timestamp column found, using index")
-                    standardized_df['timestamp'] = standardized_df.index
-            
-            # Convert timestamp to datetime if needed
-            if not pd.api.types.is_datetime64_any_dtype(standardized_df['timestamp']):
-                try:
-                    # Try milliseconds first (common for crypto exchanges)
-                    standardized_df['timestamp'] = pd.to_datetime(standardized_df['timestamp'], unit='ms', utc=True)
-                except (ValueError, TypeError):
-                    try:
-                        # Try seconds
-                        standardized_df['timestamp'] = pd.to_datetime(standardized_df['timestamp'], unit='s', utc=True)
-                    except (ValueError, TypeError):
-                        # Try direct conversion
-                        standardized_df['timestamp'] = pd.to_datetime(standardized_df['timestamp'], utc=True)
-            
-            # Set timestamp as index
-            standardized_df = standardized_df.set_index('timestamp')
-            
-            # Ensure OHLCV columns are numeric
-            for col in ['open', 'high', 'low', 'close', 'volume']:
-                if col in standardized_df.columns:
-                    standardized_df[col] = pd.to_numeric(standardized_df[col], errors='coerce')
-            
-            # Add exchange metadata
-            standardized_df['exchange'] = self.exchange
-            standardized_df['symbol'] = symbol
-            standardized_df['interval'] = interval
-            
-            # Apply data quality fixes
-            standardized_df, _ = self.data_processor.fix_data_quality_issues(standardized_df)
-            
-            # Optimize data types
-            standardized_df = self.data_processor.optimize_dataframe_dtypes(standardized_df)
-            
-            self.logger.info(f"✅ Standardized data format: {len(standardized_df)} records for {symbol} {interval}")
+            if report['success']:
+                self.logger.info(f"✅ Data standardized: {len(standardized_df)} records for {symbol} {interval}")
+                if report.get('warnings'):
+                    for warning in report['warnings']:
+                        self.logger.warning(f"⚠️ {warning}")
+            else:
+                self.logger.error(f"❌ Data standardization failed: {report.get('errors', [])}")
+                
             return standardized_df
             
         except Exception as e:
@@ -173,7 +131,7 @@ class MexcKlinesDataProcessingPipeline:
             return None
 
     def validate_data_quality(self, df: pd.DataFrame, context: str = "") -> Dict[str, Any]:
-        """Validate data quality using standardized framework.
+        """Validate data quality using centralized standardizer.
         
         Args:
             df: DataFrame to validate
@@ -183,13 +141,19 @@ class MexcKlinesDataProcessingPipeline:
             Validation results
         """
         try:
-            result = self.quality_framework.validate_dataframe_quality(df, context)
+            # Use the standardizer's quality validation
+            _, report = self.data_standardizer.standardize_data(
+                df, self.exchange, "VALIDATION", "1m", validate_quality=True
+            )
+            
+            quality_info = report.get('quality_validation', {})
             return {
-                'passed': result.passed,
-                'quality_score': result.quality_score,
-                'issues': result.issues,
-                'warnings': result.warnings,
-                'metrics': result.metrics
+                'passed': quality_info.get('passed', False),
+                'quality_score': quality_info.get('quality_score', 0.0),
+                'issues': quality_info.get('issues', []),
+                'warnings': quality_info.get('warnings', []),
+                'metrics': quality_info.get('metrics', {}),
+                'standardization_report': report
             }
         except Exception as e:
             self.logger.error(f"❌ Failed to validate data quality: {e}")

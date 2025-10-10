@@ -175,17 +175,21 @@ class OrderResponse:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass
-class MarketDataPoint:
-    """Single market data point"""
-    symbol: str
-    timestamp: datetime
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: float
-    interval: str = "1m"
+# Import standardized market data from shared module
+try:
+    from exchanges.shared import StandardizedMarketData as MarketDataPoint
+except ImportError:
+    @dataclass
+    class MarketDataPoint:
+        """Single market data point - fallback definition"""
+        symbol: str
+        timestamp: datetime
+        open: float
+        high: float
+        low: float
+        close: float
+        volume: float
+        interval: str = "1m"
 
 
 @dataclass

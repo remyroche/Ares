@@ -34,14 +34,101 @@ class BaseExchange(IExchangeClient, ABC):
     async def _initialize_exchange(self) -> None:
         """Initialize the exchange client. Must be implemented by subclasses."""
 
-    @abstractmethod
     async def _convert_to_market_data(
         self,
         raw_data: list[dict[str, Any]],
         symbol: str,
         interval: str,
     ) -> list[MarketData]:
-        """Convert raw exchange data to standardized MarketData format."""
+        """Convert raw exchange data to standardized MarketData format using shared standardizer."""
+        try:
+            from exchanges.shared import OHLCVDataStandardizer, DataSource
+            
+            # Determine exchange source
+            exchange_name = self.__class__.__name__.lower()
+            if 'binance' in exchange_name:
+                source = DataSource.BINANCE
+            elif 'bingx' in exchange_name:
+                source = DataSource.BINGX
+            elif 'okx' in exchange_name:
+                source = DataSource.OKX
+            elif 'mexc' in exchange_name:
+                source = DataSource.MEXC
+            elif 'gateio' in exchange_name:
+                source = DataSource.GATEIO
+            elif 'phemex' in exchange_name:
+                source = DataSource.PHEMEX
+            else:
+                # Fallback to generic conversion
+                return await self._convert_to_market_data_fallback(raw_data, symbol, interval)
+            
+            # Use standardized converter
+            standardizer = OHLCVDataStandardizer()
+            standardized_data = standardizer.standardize_data(raw_data, source, symbol, interval)
+            
+            # Convert to MarketData format for backward compatibility
+            market_data = []
+            for item in standardized_data:
+                market_data.append(MarketData(
+                    symbol=item.symbol,
+                    timestamp=item.timestamp,
+                    open=item.open,
+                    high=item.high,
+                    low=item.low,
+                    close=item.close,
+                    volume=item.volume,
+                    interval=item.interval
+                ))
+            
+            return market_data
+            
+        except ImportError:
+            # Fallback to generic conversion if shared module not available
+            return await self._convert_to_market_data_fallback(raw_data, symbol, interval)
+        except Exception as e:
+            self.logger.error(f"Failed to standardize data: {e}")
+            return await self._convert_to_market_data_fallback(raw_data, symbol, interval)
+
+    async def _convert_to_market_data_fallback(
+        self,
+        raw_data: list[dict[str, Any]],
+        symbol: str,
+        interval: str,
+    ) -> list[MarketData]:
+        """Fallback conversion method for backward compatibility."""
+        market_data = []
+        for item in raw_data:
+            try:
+                # Handle different timestamp field names
+                timestamp = None
+                for ts_field in ['timestamp', 'open_time', 'ts']:
+                    if ts_field in item:
+                        ts_value = item[ts_field]
+                        if isinstance(ts_value, (int, float)):
+                            # Convert milliseconds to datetime
+                            timestamp = datetime.fromtimestamp(ts_value / 1000)
+                        elif isinstance(ts_value, str):
+                            timestamp = datetime.fromisoformat(ts_value.replace('Z', '+00:00'))
+                        break
+                
+                if timestamp is None:
+                    timestamp = datetime.utcnow()
+                
+                market_data.append(MarketData(
+                    symbol=symbol,
+                    timestamp=timestamp,
+                    open=float(item.get('open', 0.0)),
+                    high=float(item.get('high', 0.0)),
+                    low=float(item.get('low', 0.0)),
+                    close=float(item.get('close', 0.0)),
+                    volume=float(item.get('volume', 0.0)),
+                    interval=interval
+                ))
+            except Exception as e:
+                self.logger.warning(f"Failed to convert data point: {e}")
+                continue
+        
+        return market_data
 
     @abstractmethod
     async def _get_market_id(self, symbol: str) -> str:

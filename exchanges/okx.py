@@ -493,35 +493,7 @@ class OkxExchange(BaseExchange):
             self.logger.error(f"Error getting klines for {symbol}: {e}")
             raise
     
-    async def _convert_to_market_data(
-        self,
-        raw_data: List[Dict[str, Any]],
-        symbol: str,
-        interval: str,
-    ) -> List[MarketData]:
-        """Convert raw exchange data to standardized MarketData format."""
-        market_data_list = []
-        for candle in raw_data:
-            try:
-                # Convert timestamp from milliseconds to datetime
-                timestamp = datetime.fromtimestamp(candle["timestamp"] / 1000)
-                
-                market_data = MarketData(
-                    symbol=symbol,
-                    timestamp=timestamp,
-                    open=candle["open"],
-                    high=candle["high"],
-                    low=candle["low"],
-                    close=candle["close"],
-                    volume=candle["volume"],
-                    interval=interval
-                )
-                market_data_list.append(market_data)
-            except Exception as e:
-                self.logger.error(f"Error converting kline data: {e}")
-                continue
-        
-        return market_data_list
+    # _convert_to_market_data is now handled by the base class with standardized conversion
     
     async def _get_market_id(self, symbol: str) -> str:
         """Get the market ID for a given symbol."""

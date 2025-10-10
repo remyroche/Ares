@@ -16,6 +16,16 @@ from .klines_downloading_processing import (
     run_exchange_klines_pipeline,
     run_bingx_klines_pipeline
 )
+from .standardized_ohlcv_interface import (
+    StandardizedMarketData,
+    DataSource,
+    Interval,
+    OHLCVDataStandardizer,
+    ExchangeOHLCVInterface,
+    create_standardized_market_data,
+    standardize_exchange_data as standardize_ohlcv_data,
+    ohlcv_interface
+)
 
 __all__ = [
     'ExchangeDataStandardizer',
@@ -24,5 +34,13 @@ __all__ = [
     'validate_exchange_data',
     'KlinesDataProcessingPipeline',
     'run_exchange_klines_pipeline',
-    'run_bingx_klines_pipeline'
+    'run_bingx_klines_pipeline',
+    'StandardizedMarketData',
+    'DataSource',
+    'Interval',
+    'OHLCVDataStandardizer',
+    'ExchangeOHLCVInterface',
+    'create_standardized_market_data',
+    'standardize_ohlcv_data',
+    'ohlcv_interface'
 ]

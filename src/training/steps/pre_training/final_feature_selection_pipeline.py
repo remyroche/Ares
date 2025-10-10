@@ -1314,19 +1314,19 @@ class MultiStageFeatureSelector:
         tprint("📊 Stage 0 — preparing initial features")
         prepared_features = self._prepare_initial_features(X, y, feature_names)
 
-        # Stage 1: Initial → Stage 1 target features
+        # Stage 1: Initial → Stage 1 target features (Vectorized mRMR + Spearman)
         stage_1_target = stage_targets[1] if len(stage_targets) > 1 else 100
         self.logger.info(f"📊 Stage 1: Reducing to {stage_1_target} features")
         tprint(f"🚀 Stage 1 target: {stage_1_target} features")
         stage_1_features, stage_1_scores = self._stage_1_selection(prepared_features, y, target_count=stage_1_target)
 
-        # Stage 2: Stage 1 → Stage 2 target features
+        # Stage 2: Stage 1 → Stage 2 target features (Vectorized iterative bottom removal)
         stage_2_target = stage_targets[2] if len(stage_targets) > 2 else 80
         self.logger.info(f"📊 Stage 2: Reducing to {stage_2_target} features")
         tprint(f"🚀 Stage 2 target: {stage_2_target} features")
         stage_2_features, stage_2_scores = self._stage_2_selection(prepared_features[stage_1_features], y, target_count=stage_2_target)
 
-        # Stage 3: Stage 2 → Stage 3 target features
+        # Stage 3: Stage 2 → Stage 3 target features (Vectorized chunked RFE + Stability)
         stage_3_target = stage_targets[3] if len(stage_targets) > 3 else 60
         self.logger.info(f"📊 Stage 3: Reducing to {stage_3_target} features")
         tprint(f"🚀 Stage 3 target: {stage_3_target} features")
@@ -2919,10 +2919,10 @@ class MultiStageFeatureSelector:
                         stage_1_features: List[str],
                         stage_2_features: List[str],
                         stage_3_features: List[str],
-                        stage_1_scores: Dict[str, Any],
-                        stage_2_scores: Dict[str, Any],
-                        stage_3_scores: Dict[str, Any]):
-        """Compile final results."""
+                        stage_1_scores: Union[Dict[str, Any], pd.Series],
+                        stage_2_scores: Union[Dict[str, Any], pd.Series],
+                        stage_3_scores: Union[Dict[str, Any], pd.Series]):
+        """Compile final results with support for Series scores."""
         
         is_classification = self._is_classification(y)
 
@@ -2932,10 +2932,16 @@ class MultiStageFeatureSelector:
         self.results.stage_3_features = stage_3_features
         self.results.final_features = stage_3_features
 
+        # Convert Series scores to dict if needed
+        def _ensure_dict_scores(scores):
+            if isinstance(scores, pd.Series):
+                return scores.to_dict()
+            return scores
+
         # Store scores
-        self.results.stage_1_scores = stage_1_scores
-        self.results.stage_2_scores = stage_2_scores
-        self.results.stage_3_scores = stage_3_scores
+        self.results.stage_1_scores = _ensure_dict_scores(stage_1_scores)
+        self.results.stage_2_scores = _ensure_dict_scores(stage_2_scores)
+        self.results.stage_3_scores = _ensure_dict_scores(stage_3_scores)
 
         # Calculate final model performance
         final_model = self._train_random_forest(X[stage_3_features], y)

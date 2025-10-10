@@ -18,6 +18,14 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
 from pathlib import Path
 
+import sys
+import os
+from pathlib import Path
+
+# Add the project root to the path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 from src.utils.logger import system_logger
 from src.utils.data.processing.data_processing import DataProcessor
 from src.utils.data.quality.data_quality import DataQualityFramework

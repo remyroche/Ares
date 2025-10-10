@@ -30,7 +30,7 @@ from src.utils.data.quality.comprehensive_duplicate_analyzer import (
 )
 from src.utils.data.historical_data_pipeline import HistoricalDataPipeline
 from src.utils.data.klines_parquet import KlinesParquetManager
-from src.utils.data.exchange_data_standardizer import ExchangeDataStandardizer
+from exchanges.shared import ExchangeDataStandardizer
 from src.utils.data.gap_detector import GapDetector
 
 

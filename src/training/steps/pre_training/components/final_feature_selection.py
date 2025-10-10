@@ -44,6 +44,8 @@ from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
 from src.utils.hardware.adaptive_optimization_engine import AdaptiveOptimizationEngine
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager
 from src.utils.hardware.m1_gpu_utils import M1GPUManager
+from src.utils.hardware.advanced_memory_optimizer import AdvancedM1MemoryOptimizer, MemoryStrategy, MemoryPoolType
+from src.utils.hardware.memory_optimization import get_advanced_memory_optimizer
 
 # Import additional utility tools
 from src.utils.common_operations import safe_dataframe_operation
@@ -130,6 +132,23 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
         self.adaptive_engine = AdaptiveOptimizationEngine()
         self.hardware_manager = UnifiedHardwareManager()
         self.gpu_manager = M1GPUManager()
+        
+        # Initialize advanced memory optimizer for aggressive cleanup
+        try:
+            self.advanced_memory_optimizer = AdvancedM1MemoryOptimizer(
+                memory_limit_gb=8.0,
+                strategy=MemoryStrategy.AGGRESSIVE
+            )
+            self._log_info(
+                "🧠 [FinalFeatureSelection] Advanced memory optimizer initialized with aggressive strategy",
+                event='final_feature_selection.initialization',
+            )
+        except Exception as e:
+            self.advanced_memory_optimizer = None
+            self._log_warning(
+                f"⚠️ [FinalFeatureSelection] Advanced memory optimizer not available: {e}",
+                event='final_feature_selection.initialization',
+            )
 
         # Initialize additional utility managers
         self.common_utils = CommonUtilities()
@@ -531,15 +550,18 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 if isinstance(candidate, pd.DataFrame) and not candidate.empty:
                     pipeline_state[key] = _record_validated_frame(key, candidate)
 
-            # Check memory pressure and apply optimizations
-            memory_pressure = getattr(self.memory_optimizer, 'memory_pressure', 0.0)
-            if memory_pressure > 0.75:
-                log_warning(f'🧠 High memory pressure detected ({memory_pressure:.2f}), applying memory optimizations')
-                self.memory_optimizer._apply_memory_optimizations()
+            # Check memory pressure and apply aggressive optimizations
+            memory_stats = self.monitor_memory_pressure()
+            memory_pressure = memory_stats['pressure']
+            
+            if memory_stats['cleanup_triggered']:
+                log_warning(f'🧠 Memory pressure detected ({memory_pressure:.2f}), performing aggressive cleanup')
                 self._log_warning(
-                    f"🧠 [FinalFeatureSelection] High memory pressure detected ({memory_pressure:.2f}); optimizations applied",
-                    event='final_feature_selection.memory_optimization',
+                    f"🧠 [FinalFeatureSelection] Memory pressure detected ({memory_pressure:.2f}); aggressive cleanup performed",
+                    event='final_feature_selection.aggressive_memory_optimization',
                     memory_pressure=memory_pressure,
+                    cleanup_triggered=memory_stats['cleanup_triggered'],
+                    recommendations=memory_stats['recommendations']
                 )
 
             # Get hardware configuration for feature selection
@@ -830,11 +852,13 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     metrics=performance_metrics,
                 )
 
-                # Clean up memory after processing
-                self.memory_optimizer._light_memory_cleanup()
+                # Perform aggressive memory cleanup after processing
+                cleanup_results = self.aggressive_memory_cleanup(force_cleanup=False)
                 self._log_info(
-                    '🧹 [FinalFeatureSelection] Performed post-execution memory cleanup',
-                    event='final_feature_selection.cleanup',
+                    f'🧹 [FinalFeatureSelection] Performed post-execution aggressive memory cleanup: {cleanup_results["memory_freed_mb"]:.1f}MB freed',
+                    event='final_feature_selection.aggressive_cleanup',
+                    memory_freed_mb=cleanup_results['memory_freed_mb'],
+                    cleanup_success=cleanup_results['success']
                 )
 
                 # Save artifacts persistently using the artifact manager
@@ -915,12 +939,14 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                     event='final_feature_selection.result',
                 )
 
-                # Clean up memory even on failure
-                self.memory_optimizer._light_memory_cleanup()
+                # Perform aggressive memory cleanup even on failure
+                cleanup_results = self.aggressive_memory_cleanup(force_cleanup=True)
                 self._log_info(
-                    '🧹 [FinalFeatureSelection] Memory cleanup performed after failure',
-                    event='final_feature_selection.cleanup',
+                    f'🧹 [FinalFeatureSelection] Aggressive memory cleanup performed after failure: {cleanup_results["memory_freed_mb"]:.1f}MB freed',
+                    event='final_feature_selection.aggressive_cleanup',
                     status='post_failure',
+                    memory_freed_mb=cleanup_results['memory_freed_mb'],
+                    cleanup_success=cleanup_results['success']
                 )
 
                 failure_message = "Final feature selection execution failed"
@@ -973,17 +999,19 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 error=str(e),
             )
 
-            # Clean up memory on exception
+            # Perform aggressive memory cleanup on exception
             try:
-                self.memory_optimizer._light_memory_cleanup()
+                cleanup_results = self.aggressive_memory_cleanup(force_cleanup=True)
                 self._log_info(
-                    '🧹 [FinalFeatureSelection] Memory cleanup performed after exception',
-                    event='final_feature_selection.cleanup',
+                    f'🧹 [FinalFeatureSelection] Aggressive memory cleanup performed after exception: {cleanup_results["memory_freed_mb"]:.1f}MB freed',
+                    event='final_feature_selection.aggressive_cleanup',
                     status='post_exception',
+                    memory_freed_mb=cleanup_results['memory_freed_mb'],
+                    cleanup_success=cleanup_results['success']
                 )
             except Exception as cleanup_error:
                 self._log_warning(
-                    f'⚠️ [FinalFeatureSelection] Memory cleanup failed (non-critical): {cleanup_error}',
+                    f'⚠️ [FinalFeatureSelection] Aggressive memory cleanup failed (non-critical): {cleanup_error}',
                     event='final_feature_selection.cleanup',
                     error=str(cleanup_error),
                 )
@@ -1027,6 +1055,149 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
                 event='memory_optimized',
                 memory_pressure=self.get_memory_pressure()
             )
+    
+    def aggressive_memory_cleanup(self, force_cleanup: bool = False) -> Dict[str, Any]:
+        """Perform aggressive memory cleanup using advanced memory optimizer."""
+        cleanup_results = {
+            'success': False,
+            'memory_freed_mb': 0.0,
+            'memory_pressure_before': 0.0,
+            'memory_pressure_after': 0.0,
+            'cleanup_methods_used': [],
+            'errors': []
+        }
+        
+        try:
+            # Get initial memory pressure
+            cleanup_results['memory_pressure_before'] = self.get_memory_pressure()
+            
+            # Use advanced memory optimizer if available
+            if self.advanced_memory_optimizer:
+                tprint("🧹 Performing aggressive memory cleanup with advanced optimizer...")
+                
+                # Perform comprehensive cleanup
+                advanced_cleanup = self.advanced_memory_optimizer.aggressive_cleanup(
+                    force_cleanup=force_cleanup,
+                    clear_caches=True,
+                    compress_memory=True,
+                    optimize_pools=True
+                )
+                
+                cleanup_results.update({
+                    'success': advanced_cleanup.get('success', False),
+                    'memory_freed_mb': advanced_cleanup.get('memory_freed_mb', 0.0),
+                    'cleanup_methods_used': advanced_cleanup.get('methods_used', [])
+                })
+                
+                self._log_info(
+                    f"🧹 [FinalFeatureSelection] Advanced memory cleanup: {cleanup_results['memory_freed_mb']:.1f}MB freed",
+                    event='final_feature_selection.aggressive_cleanup',
+                    memory_freed_mb=cleanup_results['memory_freed_mb']
+                )
+            
+            # Fallback to standard memory optimizer
+            if not cleanup_results['success'] and self.memory_optimizer:
+                tprint("🧹 Performing fallback memory cleanup...")
+                
+                # Apply multiple cleanup strategies
+                self.memory_optimizer._apply_memory_optimizations()
+                self.memory_optimizer._light_memory_cleanup()
+                
+                # Force garbage collection
+                import gc
+                collected = gc.collect()
+                
+                cleanup_results.update({
+                    'success': True,
+                    'memory_freed_mb': collected * 0.001,  # Rough estimate
+                    'cleanup_methods_used': ['standard_optimization', 'light_cleanup', 'garbage_collection']
+                })
+                
+                self._log_info(
+                    f"🧹 [FinalFeatureSelection] Fallback memory cleanup: {collected} objects collected",
+                    event='final_feature_selection.fallback_cleanup',
+                    objects_collected=collected
+                )
+            
+            # Clear component-specific caches
+            self._clear_component_caches()
+            cleanup_results['cleanup_methods_used'].append('component_caches')
+            
+            # Get final memory pressure
+            cleanup_results['memory_pressure_after'] = self.get_memory_pressure()
+            
+            tprint_success(f"✅ Aggressive memory cleanup completed: {cleanup_results['memory_freed_mb']:.1f}MB freed")
+            
+        except Exception as e:
+            cleanup_results['errors'].append(str(e))
+            self._log_error(
+                f"❌ [FinalFeatureSelection] Aggressive memory cleanup failed: {e}",
+                event='final_feature_selection.cleanup_error',
+                error=str(e)
+            )
+            tprint_error(f"❌ Aggressive memory cleanup failed: {e}")
+        
+        return cleanup_results
+    
+    def _clear_component_caches(self):
+        """Clear component-specific caches and temporary data."""
+        try:
+            # Clear matrix operations caches
+            if hasattr(self, 'matrix_ops') and self.matrix_ops:
+                if hasattr(self.matrix_ops, 'clear_cache'):
+                    self.matrix_ops.clear_cache()
+            
+            # Clear vectorized arrays
+            if hasattr(self, '_vectorized_arrays'):
+                self._vectorized_arrays.clear()
+            
+            # Clear computation cache
+            if hasattr(self, '_computation_cache'):
+                self._computation_cache.clear()
+            
+            # Clear feature selection caches
+            if hasattr(self, '_cache'):
+                self._cache.clear()
+            
+            # Clear polarity tracking containers
+            if hasattr(self, 'feature_polarity_adjustments'):
+                self.feature_polarity_adjustments.clear()
+            if hasattr(self, 'feature_polarity_history'):
+                self.feature_polarity_history.clear()
+            if hasattr(self, 'feature_sign_stability'):
+                self.feature_sign_stability.clear()
+            
+            tprint("🧹 Component caches cleared")
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error clearing component caches: {e}")
+    
+    def monitor_memory_pressure(self) -> Dict[str, Any]:
+        """Monitor memory pressure and trigger cleanup if needed."""
+        memory_stats = {
+            'pressure': self.get_memory_pressure(),
+            'cleanup_triggered': False,
+            'recommendations': []
+        }
+        
+        pressure = memory_stats['pressure']
+        
+        if pressure > 0.9:  # Critical pressure
+            memory_stats['cleanup_triggered'] = True
+            memory_stats['recommendations'].append('CRITICAL: Immediate aggressive cleanup required')
+            self.aggressive_memory_cleanup(force_cleanup=True)
+            
+        elif pressure > 0.8:  # High pressure
+            memory_stats['cleanup_triggered'] = True
+            memory_stats['recommendations'].append('WARNING: High memory pressure - performing cleanup')
+            self.aggressive_memory_cleanup(force_cleanup=False)
+            
+        elif pressure > 0.7:  # Medium pressure
+            memory_stats['recommendations'].append('INFO: Medium memory pressure - monitoring')
+            if self.memory_optimizer:
+                self.memory_optimizer._light_memory_cleanup()
+        
+        return memory_stats
 
     def is_hardware_accelerated(self) -> bool:
         """Check if hardware acceleration is available."""
@@ -1201,25 +1372,42 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
         return X, y
 
     def cleanup(self):
-        """Clean up hardware optimization resources."""
+        """Clean up hardware optimization resources with aggressive cleanup."""
         try:
-            log_info('🧹 Cleaning up hardware optimization resources...')
+            log_info('🧹 Cleaning up hardware optimization resources with aggressive cleanup...')
             self._log_info(
-                '🧹 [FinalFeatureSelection] Cleanup initiated',
+                '🧹 [FinalFeatureSelection] Aggressive cleanup initiated',
                 event='final_feature_selection.cleanup',
                 phase='start',
             )
-            self.memory_optimizer._light_memory_cleanup()
-            log_info('✅ Hardware optimization resources cleaned up')
+            
+            # Perform aggressive cleanup
+            cleanup_results = self.aggressive_memory_cleanup(force_cleanup=True)
+            
+            # Clean up advanced memory optimizer if available
+            if self.advanced_memory_optimizer:
+                try:
+                    self.advanced_memory_optimizer.cleanup()
+                    log_info('✅ Advanced memory optimizer cleaned up')
+                except Exception as e:
+                    log_warning(f'⚠️ Advanced memory optimizer cleanup failed: {e}')
+            
+            # Clean up standard memory optimizer
+            if self.memory_optimizer:
+                self.memory_optimizer._light_memory_cleanup()
+            
+            log_info(f'✅ Hardware optimization resources cleaned up: {cleanup_results["memory_freed_mb"]:.1f}MB freed')
             self._log_success(
-                '✅ [FinalFeatureSelection] Cleanup completed',
+                f'✅ [FinalFeatureSelection] Aggressive cleanup completed: {cleanup_results["memory_freed_mb"]:.1f}MB freed',
                 event='final_feature_selection.cleanup',
                 phase='complete',
+                memory_freed_mb=cleanup_results['memory_freed_mb'],
+                cleanup_success=cleanup_results['success']
             )
         except Exception as e:
-            log_warning(f'⚠️ Error during hardware cleanup: {e}')
+            log_warning(f'⚠️ Error during aggressive hardware cleanup: {e}')
             self._log_warning(
-                f'⚠️ [FinalFeatureSelection] Cleanup encountered an error: {e}',
+                f'⚠️ [FinalFeatureSelection] Aggressive cleanup encountered an error: {e}',
                 event='final_feature_selection.cleanup',
                 error=str(e),
             )

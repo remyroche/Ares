@@ -29,6 +29,7 @@ from src.utils.data.quality.comprehensive_duplicate_analyzer import (
     analyze_duplicates_comprehensive
 )
 from src.utils.data.historical_data_pipeline import HistoricalDataPipeline
+from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
 from src.utils.data.gap_detector import GapDetector
 
 
@@ -253,9 +254,23 @@ class KlinesDataProcessingPipeline:
 
             # Step 1: Download data using HistoricalDataPipeline
             self.logger.info(f"📥 Step 1: Downloading {years} years of {symbol} {interval} data")
+            
+            # Create ExchangeInterface for exchange-agnostic data access
+            exchange_interface = None
+            if api_key and api_secret:
+                exchange_config = {
+                    'exchange_type': 'binance',
+                    'api_key': api_key,
+                    'api_secret': api_secret,
+                    'testnet': False
+                }
+                exchange_interface = create_exchange_interface(exchange_config)
+                await exchange_interface.connect()
+            
             download_results = await self.historical_pipeline.run_complete_pipeline(
                 symbol=symbol,
                 years=years,
+                exchange_interface=exchange_interface,
                 api_key=api_key,
                 api_secret=api_secret,
                 target_intervals=[interval] if interval != "1m" else []
@@ -285,7 +300,7 @@ class KlinesDataProcessingPipeline:
             # Step 3: Detect and fill gaps > 1m
             self.logger.info("🔍 Step 3: Detecting gaps > 1m and re-downloading if needed")
             gap_results = await self.handle_gaps_with_column_removal(
-                symbol, interval, max_gap_minutes, api_key, api_secret
+                symbol, interval, max_gap_minutes, exchange_interface, api_key, api_secret
             )
             results["steps_completed"].append("gap_handling")
             results["summary"]["gap_handling"] = gap_results
@@ -323,6 +338,13 @@ class KlinesDataProcessingPipeline:
                     results["warnings"].append(f"Consolidated file creation failed: {consolidated_results.get('error', 'Unknown error')}")
                 else:
                     self.logger.info("✅ Consolidated features file created successfully")
+
+            # Cleanup exchange interface
+            if exchange_interface:
+                try:
+                    await exchange_interface.disconnect()
+                except Exception as e:
+                    self.logger.warning(f"Error disconnecting exchange interface: {e}")
 
             # Overall success
             results["pipeline_success"] = len(results["errors"]) == 0
@@ -511,8 +533,9 @@ class KlinesDataProcessingPipeline:
         symbol: str,
         interval: str,
         max_gap_minutes: int,
-        api_key: str,
-        api_secret: str
+        exchange_interface: Optional[ExchangeInterface] = None,
+        api_key: str = "",
+        api_secret: str = ""
     ) -> Dict[str, Any]:
         """Detect gaps and fill them, removing unwanted columns from new data.
 
@@ -520,8 +543,9 @@ class KlinesDataProcessingPipeline:
             symbol: Trading symbol
             interval: Data interval
             max_gap_minutes: Maximum allowed gap in minutes
-            api_key: Binance API key
-            api_secret: Binance API secret
+            exchange_interface: ExchangeInterface instance (preferred over api_key/api_secret)
+            api_key: Exchange API key (fallback if exchange_interface not provided)
+            api_secret: Exchange API secret (fallback if exchange_interface not provided)
 
         Returns:
             Dictionary with gap handling results
@@ -539,7 +563,7 @@ class KlinesDataProcessingPipeline:
             self.logger.info(f"⚠️ Found {len(gaps)} gaps > {max_gap_minutes} minutes")
 
             # Fill gaps
-            gap_fill_results = await self.gap_detector.fill_gaps(gaps, api_key, api_secret)
+            gap_fill_results = await self.gap_detector.fill_gaps(gaps, exchange_interface, api_key, api_secret)
 
             # Remove unwanted columns and add required columns from newly downloaded data
             if gap_fill_results.get("filled_gaps", 0) > 0:

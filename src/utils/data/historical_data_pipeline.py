@@ -20,6 +20,7 @@ from src.utils.data.basic_returns_engineer import BasicReturnsEngineer
 from src.utils.data.optimized_parquet_storage import OptimizedParquetStorage
 from src.utils.data.klines_parquet import KlinesParquetManager
 from src.utils.data.quality.comprehensive_duplicate_analyzer import ComprehensiveDuplicateAnalyzer
+from src.trading.execution.exchange_interface import ExchangeInterface
 
 
 class HistoricalDataPipeline:
@@ -49,6 +50,7 @@ class HistoricalDataPipeline:
         self,
         symbol: str = "ETHUSDT",
         years: int = 3,
+        exchange_interface: Optional[ExchangeInterface] = None,
         api_key: str = "",
         api_secret: str = "",
         target_intervals: List[str] = None,
@@ -59,8 +61,9 @@ class HistoricalDataPipeline:
         Args:
             symbol: Trading symbol
             years: Number of years to download
-            api_key: Binance API key
-            api_secret: Binance API secret
+            exchange_interface: ExchangeInterface instance (preferred over api_key/api_secret)
+            api_key: Exchange API key (fallback if exchange_interface not provided)
+            api_secret: Exchange API secret (fallback if exchange_interface not provided)
             target_intervals: List of target intervals for resampling
             max_gap_minutes: Maximum allowed gap in minutes
             
@@ -89,6 +92,7 @@ class HistoricalDataPipeline:
                 symbol=symbol,
                 interval="1m",
                 years=years,
+                exchange_interface=exchange_interface,
                 api_key=api_key,
                 api_secret=api_secret
             )
@@ -121,7 +125,7 @@ class HistoricalDataPipeline:
             self.gap_detector.log_gaps(gaps)
             
             if gaps:
-                gap_results = await self.gap_detector.fill_gaps(gaps, api_key, api_secret)
+                gap_results = await self.gap_detector.fill_gaps(gaps, exchange_interface, api_key, api_secret)
                 results["steps_completed"].append("gap_filling")
                 results["summary"]["gap_filling"] = gap_results
                 self.logger.info(f"✅ Gap filling completed: {gap_results}")

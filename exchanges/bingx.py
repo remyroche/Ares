@@ -1,27 +1,23 @@
 """
-MEXC Exchange Implementation
+BingX Exchange Implementation
 
-This module provides a complete MEXC exchange implementation that follows
-the BaseExchange interface and integrates with the data collection system.
+This module provides a comprehensive BingX exchange implementation that uses
+the shared utilities for common functionality and adds all required features.
 """
 
 import asyncio
 import hashlib
 import hmac
 import time
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+import base64
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlencode
 
 try:
     import aiohttp
 except ImportError:
     aiohttp = None
-
-try:
-    import ccxt.async_support as ccxt
-except ImportError:
-    ccxt = None
 
 from src.interfaces.base_interfaces import MarketData
 from src.utils.logger import system_logger
@@ -53,16 +49,11 @@ from .shared.interfaces_typed import (
 )
 
 
-class MexcExchange(BaseExchange):
+class BingXExchange(BaseExchange):
     """
-    MEXC exchange implementation following the BaseExchange interface.
+    Enhanced BingX exchange implementation with comprehensive functionality.
+    """
     
-    Provides comprehensive data download capabilities for:
-    - Klines (OHLCV data)
-    - Aggregated trades
-    - Futures funding rates
-    """
-
     def __init__(
         self,
         api_key: str,
@@ -73,9 +64,9 @@ class MexcExchange(BaseExchange):
         use_testnet: bool = False
     ) -> None:
         super().__init__(api_key, api_secret, trade_symbol, password)
-        self.logger = system_logger.getChild("MexcExchange")
+        self.logger = system_logger.getChild("BingXExchange")
         self.session: aiohttp.ClientSession | None = None
-        self.base_url = "https://api.mexc.com"
+        self.base_url = "https://open-api.bingx.com" if not use_testnet else "https://open-api.bingx.com"
         self.use_testnet = use_testnet
         self.subaccount_id = subaccount_id
         
@@ -91,34 +82,34 @@ class MexcExchange(BaseExchange):
         """Initialize all shared utilities."""
         try:
             # Authentication
-            self.auth_manager = AuthenticationManager("mexc")
-            self.api_key_manager = APIKeyManager("mexc")
-            self.time_sync_manager = TimeSyncManager("mexc")
-            self.subaccount_manager = SubaccountManager("mexc")
+            self.auth_manager = AuthenticationManager("bingx")
+            self.api_key_manager = APIKeyManager("bingx")
+            self.time_sync_manager = TimeSyncManager("bingx")
+            self.subaccount_manager = SubaccountManager("bingx")
             
             # Market metadata
-            self.market_metadata = MarketMetadataManager("mexc")
-            self.instrument_manager = InstrumentManager("mexc")
+            self.market_metadata = MarketMetadataManager("bingx")
+            self.instrument_manager = InstrumentManager("bingx")
             self.precision_helper = PrecisionHelper()
-            self.risk_tier_manager = RiskTierManager("mexc")
+            self.risk_tier_manager = RiskTierManager("bingx")
             
             # Pricing
-            self.price_manager = PriceManager("mexc")
-            self.ohlcv_manager = OHLCVManager("mexc")
+            self.price_manager = PriceManager("bingx")
+            self.ohlcv_manager = OHLCVManager("bingx")
             
             # Orders
-            self.order_manager = OrderManager("mexc")
-            self.idempotency_manager = IdempotencyManager("mexc")
+            self.order_manager = OrderManager("bingx")
+            self.idempotency_manager = IdempotencyManager("bingx")
             
             # Risk
-            self.risk_calculator = RiskCalculator("mexc")
+            self.risk_calculator = RiskCalculator("bingx")
             
             # Wallet
-            self.balance_manager = BalanceManager("mexc")
+            self.balance_manager = BalanceManager("bingx")
             
             # Reliability
-            self.rate_limit_manager = RateLimitManager("mexc")
-            self.audit_logger = AuditLogger("mexc")
+            self.rate_limit_manager = RateLimitManager("bingx")
+            self.audit_logger = AuditLogger("bingx")
             
             # Register exchange-specific functions
             self._register_exchange_functions()
@@ -208,16 +199,16 @@ class MexcExchange(BaseExchange):
             
         except Exception as e:
             tprint(f"Failed to setup rate limiting: {e}", "ERROR")
-
+    
     async def _initialize_exchange(self) -> None:
-        """Initialize the MEXC exchange client."""
+        """Initialize the enhanced BingX exchange client."""
         try:
             if aiohttp is None:
                 tprint("aiohttp not available, using mock session", "WARNING")
                 self.session = None
                 return
 
-            # Initialize aiohttp session with SSL configuration
+            # Initialize aiohttp session
             timeout = aiohttp.ClientTimeout(total=self.timeout)
             connector = aiohttp.TCPConnector(verify_ssl=False)
             self.session = aiohttp.ClientSession(timeout=timeout, connector=connector)
@@ -231,20 +222,20 @@ class MexcExchange(BaseExchange):
             # Start background tasks
             await self._start_background_tasks()
 
-            tprint("MEXC exchange initialized successfully", "INFO")
+            tprint("BingX exchange initialized successfully", "INFO")
 
         except Exception as e:
-            tprint(f"Failed to initialize MEXC exchange: {e}", "ERROR")
+            tprint(f"Failed to initialize BingX exchange: {e}", "ERROR")
             raise
     
     async def _authenticate(self) -> None:
-        """Authenticate with MEXC using shared auth manager."""
+        """Authenticate with BingX using shared auth manager."""
         try:
             from .shared.auth.auth_manager import AuthConfig, APIKeyPermission
             
             # Create auth config
             auth_config = AuthConfig(
-                exchange_name="mexc",
+                exchange_name="bingx",
                 api_key=self.api_key,
                 api_secret=self.api_secret,
                 passphrase=self.password,
@@ -256,7 +247,7 @@ class MexcExchange(BaseExchange):
             # Authenticate
             success = await self.auth_manager.authenticate(auth_config)
             if not success:
-                raise Exception("Failed to authenticate with MEXC")
+                raise Exception("Failed to authenticate with BingX")
                 
         except Exception as e:
             tprint(f"Authentication failed: {e}", "ERROR")
@@ -374,49 +365,42 @@ class MexcExchange(BaseExchange):
             except Exception as e:
                 tprint(f"Error in background order sync: {e}", "ERROR")
                 await asyncio.sleep(30)
-
-    async def _test_connection(self) -> bool:
-        """Test connection to MEXC API."""
-        try:
-            url = f"{self.base_url}/api/v3/time"
-            async with self.session.get(url) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    server_time = data.get("serverTime")
-                    tprint(f"Connected to MEXC API (Server time: {server_time})", "INFO")
-                    return True
-                else:
-                    tprint(f"Connection test failed with status: {response.status}", "ERROR")
-                    return False
-        except Exception as e:
-            tprint(f"Connection test failed: {e}", "ERROR")
-            return False
     
+    # Exchange-specific API methods
     async def _get_server_time(self) -> Optional[int]:
         """Get server time in milliseconds."""
         try:
-            url = f"{self.base_url}/api/v3/time"
+            url = f"{self.base_url}/openApi/swap/v2/server/time"
             async with self.session.get(url) as response:
                 if response.status == 200:
                     data = await response.json()
-                    server_time = data.get("serverTime")
+                    server_time = data.get("data", {}).get("serverTime")
                     return int(server_time) if server_time else None
         except Exception as e:
             tprint(f"Error getting server time: {e}", "ERROR")
         return None
     
+    async def _test_connection(self) -> bool:
+        """Test connection to BingX API."""
+        try:
+            server_time = await self._get_server_time()
+            return server_time is not None
+        except Exception as e:
+            tprint(f"Connection test failed: {e}", "ERROR")
+            return False
+    
     async def _get_account_info(self) -> Optional[Dict[str, Any]]:
         """Get account information."""
         try:
-            headers = self.auth_manager.get_auth_headers("GET", "/api/v3/account")
+            headers = self.auth_manager.get_auth_headers("GET", "/openApi/swap/v2/user/balance")
             if not headers:
                 return None
             
-            url = f"{self.base_url}/api/v3/account"
+            url = f"{self.base_url}/openApi/swap/v2/user/balance"
             async with self.session.get(url, headers=headers) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data
+                    return data.get("data", {})
         except Exception as e:
             tprint(f"Error getting account info: {e}", "ERROR")
         return None
@@ -424,11 +408,11 @@ class MexcExchange(BaseExchange):
     async def _get_instruments(self) -> List[Dict[str, Any]]:
         """Get instrument specifications."""
         try:
-            url = f"{self.base_url}/api/v3/exchangeInfo"
+            url = f"{self.base_url}/openApi/swap/v2/quote/contracts"
             async with self.session.get(url) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data.get("symbols", [])
+                    return data.get("data", [])
         except Exception as e:
             tprint(f"Error getting instruments: {e}", "ERROR")
         return []
@@ -436,12 +420,12 @@ class MexcExchange(BaseExchange):
     async def _get_ticker(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Get ticker data for symbol."""
         try:
-            url = f"{self.base_url}/api/v3/ticker/24hr"
+            url = f"{self.base_url}/openApi/swap/v2/quote/ticker"
             params = {"symbol": symbol.upper()}
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data
+                    return data.get("data", [{}])[0] if data.get("data") else None
         except Exception as e:
             tprint(f"Error getting ticker for {symbol}: {e}", "ERROR")
         return None
@@ -449,12 +433,12 @@ class MexcExchange(BaseExchange):
     async def _get_order_book(self, symbol: str, limit: int = 20) -> Optional[Dict[str, Any]]:
         """Get order book for symbol."""
         try:
-            url = f"{self.base_url}/api/v3/depth"
+            url = f"{self.base_url}/openApi/swap/v2/quote/depth"
             params = {"symbol": symbol.upper(), "limit": str(limit)}
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data
+                    return data.get("data", [{}])[0] if data.get("data") else None
         except Exception as e:
             tprint(f"Error getting order book for {symbol}: {e}", "ERROR")
         return None
@@ -462,12 +446,12 @@ class MexcExchange(BaseExchange):
     async def _get_recent_trades(self, symbol: str, limit: int = 100) -> List[Dict[str, Any]]:
         """Get recent trades for symbol."""
         try:
-            url = f"{self.base_url}/api/v3/trades"
+            url = f"{self.base_url}/openApi/swap/v2/quote/trades"
             params = {"symbol": symbol.upper(), "limit": str(limit)}
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data
+                    return data.get("data", [])
         except Exception as e:
             tprint(f"Error getting recent trades for {symbol}: {e}", "ERROR")
         return []
@@ -475,7 +459,7 @@ class MexcExchange(BaseExchange):
     async def _get_klines(self, symbol: str, interval: str, limit: int = 100) -> List[List[Any]]:
         """Get kline data for symbol."""
         try:
-            url = f"{self.base_url}/api/v3/klines"
+            url = f"{self.base_url}/openApi/swap/v2/quote/klines"
             params = {
                 "symbol": symbol.upper(),
                 "interval": self._convert_interval(interval),
@@ -484,7 +468,7 @@ class MexcExchange(BaseExchange):
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data
+                    return data.get("data", [])
         except Exception as e:
             tprint(f"Error getting klines for {symbol}: {e}", "ERROR")
         return []
@@ -499,7 +483,7 @@ class MexcExchange(BaseExchange):
     ) -> List[List[Any]]:
         """Get historical kline data."""
         try:
-            url = f"{self.base_url}/api/v3/klines"
+            url = f"{self.base_url}/openApi/swap/v2/quote/klines"
             params = {
                 "symbol": symbol.upper(),
                 "interval": self._convert_interval(interval),
@@ -510,7 +494,7 @@ class MexcExchange(BaseExchange):
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data
+                    return data.get("data", [])
         except Exception as e:
             tprint(f"Error getting historical klines for {symbol}: {e}", "ERROR")
         return []
@@ -518,12 +502,12 @@ class MexcExchange(BaseExchange):
     async def _get_funding_rate(self, symbol: str) -> Optional[Dict[str, Any]]:
         """Get funding rate for symbol."""
         try:
-            url = f"{self.base_url}/api/v3/premiumIndex"
+            url = f"{self.base_url}/openApi/swap/v2/quote/fundingRate"
             params = {"symbol": symbol.upper()}
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data
+                    return data.get("data", [{}])[0] if data.get("data") else None
         except Exception as e:
             tprint(f"Error getting funding rate for {symbol}: {e}", "ERROR")
         return None
@@ -531,15 +515,15 @@ class MexcExchange(BaseExchange):
     async def _get_balances_exchange(self, account_type: str) -> List[Dict[str, Any]]:
         """Get balances for account type."""
         try:
-            headers = self.auth_manager.get_auth_headers("GET", "/api/v3/account")
+            headers = self.auth_manager.get_auth_headers("GET", "/openApi/swap/v2/user/balance")
             if not headers:
                 return []
             
-            url = f"{self.base_url}/api/v3/account"
+            url = f"{self.base_url}/openApi/swap/v2/user/balance"
             async with self.session.get(url, headers=headers) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data.get("balances", [])
+                    return data.get("data", [])
         except Exception as e:
             tprint(f"Error getting balances: {e}", "ERROR")
         return []
@@ -566,8 +550,7 @@ class MexcExchange(BaseExchange):
                 "symbol": symbol.upper(),
                 "side": side.upper(),
                 "type": order_type.upper(),
-                "quantity": str(quantity),
-                "timestamp": int(time.time() * 1000)
+                "quantity": str(quantity)
             }
             
             if price is not None:
@@ -575,23 +558,18 @@ class MexcExchange(BaseExchange):
             if stop_price is not None:
                 order_params["stopPrice"] = str(stop_price)
             if client_order_id:
-                order_params["newClientOrderId"] = client_order_id
+                order_params["clientOrderId"] = client_order_id
             
-            # Generate signature
-            signature = self._generate_signature(order_params)
-            order_params["signature"] = signature
+            # Get auth headers
+            headers = self.auth_manager.get_auth_headers("POST", "/openApi/swap/v2/trade/order")
+            if not headers:
+                return None
             
-            # Prepare headers
-            headers = {
-                "X-MEXC-APIKEY": self.api_key,
-                "Content-Type": "application/x-www-form-urlencoded"
-            }
-            
-            url = f"{self.base_url}/api/v3/order"
-            async with self.session.post(url, data=order_params, headers=headers) as response:
+            url = f"{self.base_url}/openApi/swap/v2/trade/order"
+            async with self.session.post(url, json=order_params, headers=headers) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data
+                    return data.get("data", {})
                 else:
                     error_text = await response.text()
                     tprint(f"Order creation failed: {response.status} - {error_text}", "ERROR")
@@ -604,11 +582,11 @@ class MexcExchange(BaseExchange):
     async def _cancel_order_exchange(self, order_id: str) -> bool:
         """Cancel order on exchange."""
         try:
-            headers = self.auth_manager.get_auth_headers("DELETE", "/api/v3/order")
+            headers = self.auth_manager.get_auth_headers("DELETE", "/openApi/swap/v2/trade/order")
             if not headers:
                 return False
             
-            url = f"{self.base_url}/api/v3/order"
+            url = f"{self.base_url}/openApi/swap/v2/trade/order"
             params = {"orderId": order_id}
             async with self.session.delete(url, params=params, headers=headers) as response:
                 if response.status == 200:
@@ -625,16 +603,16 @@ class MexcExchange(BaseExchange):
     async def _get_order_status_exchange(self, order_id: str) -> Optional[Dict[str, Any]]:
         """Get order status from exchange."""
         try:
-            headers = self.auth_manager.get_auth_headers("GET", "/api/v3/order")
+            headers = self.auth_manager.get_auth_headers("GET", "/openApi/swap/v2/trade/order")
             if not headers:
                 return None
             
-            url = f"{self.base_url}/api/v3/order"
+            url = f"{self.base_url}/openApi/swap/v2/trade/order"
             params = {"orderId": order_id}
             async with self.session.get(url, params=params, headers=headers) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data
+                    return data.get("data", {})
                 else:
                     error_text = await response.text()
                     tprint(f"Order status check failed: {response.status} - {error_text}", "ERROR")
@@ -647,11 +625,11 @@ class MexcExchange(BaseExchange):
     async def _get_open_orders_exchange(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get open orders from exchange."""
         try:
-            headers = self.auth_manager.get_auth_headers("GET", "/api/v3/openOrders")
+            headers = self.auth_manager.get_auth_headers("GET", "/openApi/swap/v2/trade/openOrders")
             if not headers:
                 return []
             
-            url = f"{self.base_url}/api/v3/openOrders"
+            url = f"{self.base_url}/openApi/swap/v2/trade/openOrders"
             params = {}
             if symbol:
                 params["symbol"] = symbol.upper()
@@ -659,7 +637,7 @@ class MexcExchange(BaseExchange):
             async with self.session.get(url, params=params, headers=headers) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data
+                    return data.get("data", [])
                 else:
                     error_text = await response.text()
                     tprint(f"Open orders fetch failed: {response.status} - {error_text}", "ERROR")
@@ -668,283 +646,9 @@ class MexcExchange(BaseExchange):
         except Exception as e:
             tprint(f"Error getting open orders: {e}", "ERROR")
         return []
-
-    def _generate_signature(self, params: dict[str, Any]) -> str:
-        """Generate HMAC signature for authenticated requests."""
-        try:
-            if not self.api_secret:
-                raise ValueError("API secret not configured")
-            
-            query_string = urlencode(params)
-            signature = hmac.new(
-                self.api_secret.encode("utf-8"),
-                query_string.encode("utf-8"),
-                hashlib.sha256
-            ).hexdigest()
-            
-            return signature
-        except Exception as e:
-            tprint(f"Error generating signature: {e}", "ERROR")
-            raise
-
-    async def _make_request(
-        self,
-        method: str,
-        endpoint: str,
-        params: dict[str, Any] | None = None,
-        signed: bool = False
-    ) -> dict[str, Any] | list[dict[str, Any]] | None:
-        """Make HTTP request to MEXC API."""
-        try:
-            if aiohttp is None or not self.session:
-                tprint("aiohttp not available, returning mock data", "WARNING")
-                return []
-
-            url = f"{self.base_url}{endpoint}"
-            
-            if params is None:
-                params = {}
-
-            headers = {}
-            if signed and self.api_key:
-                params["timestamp"] = int(time.time() * 1000)
-                params["signature"] = self._generate_signature(params)
-                headers["X-MEXC-APIKEY"] = self.api_key
-
-            async with self.session.request(method, url, params=params, headers=headers) as response:
-                if response.status == 200:
-                    return await response.json()
-                else:
-                    error_text = await response.text()
-                    tprint(f"API request failed: {response.status} - {error_text}", "ERROR")
-                    return None
-        except Exception as e:
-            tprint(f"Request failed: {e}", "ERROR")
-            return None
-
-    async def _convert_to_market_data(
-        self,
-        raw_data: list[dict[str, Any]],
-        symbol: str,
-        interval: str,
-    ) -> list[MarketData]:
-        """Convert raw MEXC kline data to standardized MarketData format."""
-        market_data_list = []
-        
-        for item in raw_data:
-            try:
-                # MEXC klines format: [open_time, open, high, low, close, volume, close_time, ...]
-                if isinstance(item, list):
-                    timestamp = datetime.fromtimestamp(item[0] / 1000)
-                    open_price = float(item[1])
-                    high_price = float(item[2])
-                    low_price = float(item[3])
-                    close_price = float(item[4])
-                    volume = float(item[5])
-                else:
-                    # Dict format
-                    timestamp = self._convert_timestamp(item.get("timestamp", item.get("open_time", 0)))
-                    open_price = float(item.get("open", 0))
-                    high_price = float(item.get("high", 0))
-                    low_price = float(item.get("low", 0))
-                    close_price = float(item.get("close", 0))
-                    volume = float(item.get("volume", 0))
-
-                market_data = MarketData(
-                    symbol=symbol,
-                    timestamp=timestamp,
-                    open=open_price,
-                    high=high_price,
-                    low=low_price,
-                    close=close_price,
-                    volume=volume,
-                    interval=interval
-                )
-                market_data_list.append(market_data)
-                
-            except Exception as e:
-                self.logger.warning(f"Failed to convert kline data: {e}")
-                continue
-
-        return market_data_list
-
-    async def _get_market_id(self, symbol: str) -> str:
-        """Get the market ID for a given symbol (MEXC uses symbol as-is)."""
-        return symbol.upper()
-
-    async def _get_klines_raw(
-        self,
-        symbol: str,
-        interval: str,
-        limit: int,
-    ) -> list[dict[str, Any]]:
-        """Get raw kline data from MEXC."""
-        params = {
-            "symbol": symbol.upper(),
-            "interval": self._convert_interval(interval),
-            "limit": min(limit, 1000)  # MEXC max limit is 1000
-        }
-        
-        data = await self._make_request("GET", "/api/v3/klines", params)
-        if data:
-            # Convert list format to dict format for consistency
-            klines = []
-            for item in data:
-                klines.append({
-                    "timestamp": item[0],
-                    "open_time": item[0],
-                    "open": item[1],
-                    "high": item[2],
-                    "low": item[3],
-                    "close": item[4],
-                    "volume": item[5],
-                    "close_time": item[6],
-                    "quote_volume": item[7],
-                    "trades": item[8],
-                    "taker_buy_base": item[9],
-                    "taker_buy_quote": item[10]
-                })
-            return klines
-        return []
-
-    async def _get_historical_klines_raw(
-        self,
-        symbol: str,
-        interval: str,
-        start_time_ms: int,
-        end_time_ms: int,
-        limit: int,
-    ) -> list[dict[str, Any]]:
-        """Get raw historical kline data from MEXC."""
-        params = {
-            "symbol": symbol.upper(),
-            "interval": self._convert_interval(interval),
-            "startTime": start_time_ms,
-            "endTime": end_time_ms,
-            "limit": min(limit, 1000)
-        }
-        
-        data = await self._make_request("GET", "/api/v3/klines", params)
-        if data:
-            # Convert list format to dict format
-            klines = []
-            for item in data:
-                klines.append({
-                    "timestamp": item[0],
-                    "open_time": item[0],
-                    "open": item[1],
-                    "high": item[2],
-                    "low": item[3],
-                    "close": item[4],
-                    "volume": item[5],
-                    "close_time": item[6],
-                    "quote_volume": item[7],
-                    "trades": item[8],
-                    "taker_buy_base": item[9],
-                    "taker_buy_quote": item[10]
-                })
-            return klines
-        return []
-
-    async def _get_historical_agg_trades_raw(
-        self,
-        symbol: str,
-        start_time_ms: int,
-        end_time_ms: int,
-        limit: int,
-    ) -> list[dict[str, Any]]:
-        """Get raw historical aggregated trades from MEXC."""
-        params = {
-            "symbol": symbol.upper(),
-            "startTime": start_time_ms,
-            "endTime": end_time_ms,
-            "limit": min(limit, 1000)
-        }
-        
-        data = await self._make_request("GET", "/api/v3/aggTrades", params)
-        if data:
-            # Standardize field names
-            trades = []
-            for item in data:
-                trades.append({
-                    "timestamp": item.get("T", item.get("timestamp", 0)),
-                    "price": item.get("p", item.get("price", 0)),
-                    "quantity": item.get("q", item.get("quantity", 0)),
-                    "is_buyer_maker": item.get("m", item.get("is_buyer_maker", False)),
-                    "trade_id": item.get("a", item.get("trade_id", 0)),
-                    "first_trade_id": item.get("f", item.get("first_trade_id", 0)),
-                    "last_trade_id": item.get("l", item.get("last_trade_id", 0))
-                })
-            return trades
-        return []
-
-    async def _get_account_info_raw(self) -> dict[str, Any]:
-        """Get raw account information from MEXC."""
-        return await self._make_request("GET", "/api/v3/account", signed=True) or {}
-
-    async def _create_order_raw(
-        self,
-        symbol: str,
-        side: str,
-        order_type: str,
-        quantity: float,
-        price: float | None,
-        params: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        """Create raw order on MEXC."""
-        order_params = {
-            "symbol": symbol.upper(),
-            "side": side.upper(),
-            "type": order_type.upper(),
-            "quantity": quantity
-        }
-        
-        if price is not None:
-            order_params["price"] = price
-            
-        if params:
-            order_params.update(params)
-            
-        return await self._make_request("POST", "/api/v3/order", order_params, signed=True) or {}
-
-    async def _get_position_risk_raw(self, symbol: str) -> dict[str, Any]:
-        """Get raw position risk information from MEXC futures."""
-        params = {"symbol": symbol.upper()} if symbol else {}
-        data = await self._make_request("GET", "/api/v3/positionRisk", params, signed=True)
-        
-        if data and isinstance(data, list):
-            # Return first matching position or first position if no symbol specified
-            for position in data:
-                if not symbol or position.get("symbol", "").upper() == symbol.upper():
-                    return position
-            return data[0] if data else {}
-        
-        return data or {}
-
-    async def _get_open_orders_raw(self, symbol: str | None) -> list[dict[str, Any]]:
-        """Get raw open orders from MEXC."""
-        params = {"symbol": symbol.upper()} if symbol else {}
-        data = await self._make_request("GET", "/api/v3/openOrders", params, signed=True)
-        return data if isinstance(data, list) else []
-
-    async def _cancel_order_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
-        """Cancel raw order on MEXC."""
-        params = {
-            "symbol": symbol.upper(),
-            "orderId": str(order_id)
-        }
-        return await self._make_request("DELETE", "/api/v3/order", params, signed=True) or {}
-
-    async def _get_order_status_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
-        """Get raw order status from MEXC."""
-        params = {
-            "symbol": symbol.upper(),
-            "orderId": str(order_id)
-        }
-        return await self._make_request("GET", "/api/v3/order", params, signed=True) or {}
-
+    
     def _convert_interval(self, interval: str) -> str:
-        """Convert standard interval to MEXC format."""
+        """Convert standard interval to BingX format."""
         interval_map = {
             "1m": "1m",
             "3m": "3m",
@@ -963,26 +667,26 @@ class MexcExchange(BaseExchange):
             "1M": "1M"
         }
         return interval_map.get(interval, "1m")
-
+    
     async def close(self) -> None:
         """Close the exchange connection."""
         try:
             if self.session:
                 await self.session.close()
                 self.session = None
-            tprint("MEXC exchange connection closed", "INFO")
+            tprint("BingX exchange connection closed", "INFO")
         except Exception as e:
-            tprint(f"Error closing MEXC exchange: {e}", "ERROR")
+            tprint(f"Error closing BingX exchange: {e}", "ERROR")
 
 
-# Factory function for creating MEXC exchange instances
-def create_mexc_exchange(
+# Factory function for creating BingX exchange instances
+def create_bingx_exchange(
     api_key: str = "",
     api_secret: str = "",
     trade_symbol: str = "BTCUSDT",
     password: str | None = None,
     subaccount_id: str | None = None,
     use_testnet: bool = False
-) -> MexcExchange:
-    """Create a new MEXC exchange instance."""
-    return MexcExchange(api_key, api_secret, trade_symbol, password, subaccount_id, use_testnet)
+) -> BingXExchange:
+    """Create a new BingX exchange instance."""
+    return BingXExchange(api_key, api_secret, trade_symbol, password, subaccount_id, use_testnet)

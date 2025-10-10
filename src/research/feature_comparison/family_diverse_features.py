@@ -84,8 +84,7 @@ class FamilyDiverseFeatureGenerator:
         # 9. Statistical Family
         families['statistical'] = self._generate_statistical_family(data)
         
-        # 10. Cross-Asset Family (if multiple assets)
-        families['cross_asset'] = self._generate_cross_asset_family(data)
+        # Note: Cross-asset family removed as requested
         
         logger.info(f"Generated features for {len(families)} families")
         return families
@@ -381,22 +380,6 @@ class FamilyDiverseFeatureGenerator:
         
         return df
     
-    def _generate_cross_asset_family(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Generate cross-asset features (if multiple assets available)."""
-        df = data.copy()
-        
-        # For now, generate relative features
-        # In practice, this would use multiple asset data
-        
-        # Relative strength
-        for period in [5, 10, 20]:
-            df[f'relative_strength_{period}'] = data['close'] / data['close'].rolling(period).mean()
-        
-        # Relative momentum
-        for period in [5, 10, 20]:
-            df[f'relative_momentum_{period}'] = data['close'].pct_change(period) - data['close'].pct_change(period).rolling(period).mean()
-        
-        return df
     
     # Helper methods for technical indicators
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:

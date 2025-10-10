@@ -151,7 +151,7 @@ class KlinesParquetManager:
                         open_time_series = open_time_series[valid_mask]
                         df = df[valid_mask]
 
-                    # open_time is typically in milliseconds for Binance data
+                    # open_time is typically in milliseconds for exchange data
                     timestamp_col = pd.to_datetime(open_time_series, unit='ms')
                 except (OverflowError, FloatingPointError):
                     # If overflow occurs, try with seconds
@@ -720,7 +720,7 @@ class KlinesParquetManager:
                             combined_df = combined_df[valid_mask]
                             self.logger.info(f"🔧 After cleaning invalid open_time values: {len(combined_df):,} records (removed {invalid_count:,})")
                         
-                        # open_time is typically in milliseconds for Binance data
+                        # open_time is typically in milliseconds for exchange data
                         timestamp_col = pd.to_datetime(open_time_series, unit='ms')
                         self.logger.info(f"🔧 Using 'open_time' column for timestamp filtering")
                     except (OverflowError, FloatingPointError):

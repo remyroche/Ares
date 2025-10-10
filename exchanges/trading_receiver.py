@@ -108,7 +108,7 @@ class TradingReceiver:
         self._cleanup_task: Optional[asyncio.Task] = None
 
         # Multi-exchange configuration
-        self.primary_exchange = self.config.get("primary_exchange", "binance")
+        self.primary_exchange = self.config.get("primary_exchange", "binance")  # Default to binance for backward compatibility
         self.failover_exchanges = self.config.get("failover_exchanges", ["okx", "gateio"])
         self.broadcast_enabled = self.config.get("broadcast_enabled", False)  # Changed to False
         self.load_balancing_enabled = self.config.get("load_balancing_enabled", False)
@@ -117,7 +117,7 @@ class TradingReceiver:
         self.ml_model_exchanges = self.config.get("ml_model_exchanges", {})
         self.ml_model_assets = self.config.get("ml_model_assets", {})
         self.ml_model_exchange_assets = self.config.get("ml_model_exchange_assets", {})
-        self.default_ml_exchange = self.config.get("default_ml_exchange", "binance")
+        self.default_ml_exchange = self.config.get("default_ml_exchange", "binance")  # Default to binance for backward compatibility
         self.default_asset = self.config.get("default_asset", "BTCUSDT")
         
     async def start(self) -> None:

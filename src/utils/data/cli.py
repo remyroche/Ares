@@ -1118,7 +1118,7 @@ async def enhanced_pipeline_command(args):
 def main():
     """Main CLI function."""
     parser = argparse.ArgumentParser(
-        description="Historical Binance Data Pipeline CLI",
+        description="Historical Exchange Data Pipeline CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -1174,12 +1174,12 @@ Examples:
     parser.add_argument(
         "--api-key",
         default="",
-        help="Binance API key (optional, for downloading)"
+        help="Exchange API key (optional, for downloading)"
     )
     parser.add_argument(
         "--api-secret",
         default="",
-        help="Binance API secret (optional, for downloading)"
+        help="Exchange API secret (optional, for downloading)"
     )
     parser.add_argument(
         "--verbose", "-v",

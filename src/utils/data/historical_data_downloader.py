@@ -1,7 +1,7 @@
 """
-Historical Data Downloader for Binance Klines
+Historical Data Downloader for Exchange Klines
 
-This module provides tools to download historical klines data from Binance
+This module provides tools to download historical klines data from any supported exchange
 and save it as optimized monthly parquet files with intelligent batching
 and duplicate handling.
 """
@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 import numpy as np
-from exchanges.binance import BinanceExchange
+# Removed direct Binance import - using ExchangeInterface instead
 from src.utils.logger import system_logger
 from src.utils.parquet_utils import ParquetUtils
 from src.utils.data.processing.data_processing import DataProcessor
@@ -23,16 +23,18 @@ from src.trading.execution.exchange_interface import ExchangeInterface, create_e
 
 
 class HistoricalDataDownloader:
-    """Download and manage historical Binance klines data."""
+    """Download and manage historical klines data from any supported exchange."""
 
-    def __init__(self, data_dir: str = "historical_data"):
+    def __init__(self, data_dir: str = "historical_data", exchange: str = "binance"):
         """Initialize the historical data downloader.
         
         Args:
             data_dir: Base directory for storing historical data
+            exchange: Exchange name for data organization
         """
         self.data_dir = Path(data_dir)
-        self.raw_data_dir = self.data_dir / "binance"
+        self.exchange = exchange.lower()
+        self.raw_data_dir = self.data_dir / self.exchange
         self.logger = system_logger.getChild("HistoricalDataDownloader")
         self.parquet_utils = ParquetUtils()
         self.data_processor = DataProcessor()
@@ -141,9 +143,15 @@ class HistoricalDataDownloader:
                 exchange = exchange_interface
                 await exchange.connect()
             else:
-                # Fallback to direct Binance exchange
-                exchange = BinanceExchange(api_key, api_secret, symbol)
-                await exchange._initialize_exchange()
+                # Create ExchangeInterface for the specified exchange
+                config = {
+                    'exchange_type': self.exchange,
+                    'api_key': api_key,
+                    'api_secret': api_secret,
+                    'trade_symbol': symbol
+                }
+                exchange = create_exchange_interface(config)
+                await exchange.connect()
             
             # Calculate date range
             end_date = datetime.now().replace(tzinfo=timezone.utc)

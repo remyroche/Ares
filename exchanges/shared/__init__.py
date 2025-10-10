@@ -6,10 +6,12 @@ separating common functionality from exchange-specific implementations.
 """
 
 # High-level interfaces (recommended for most use cases)
-from .high_level_wrappers import (
+from .high_level_wrappers_typed import (
     HighLevelAuthManager,
     HighLevelMarketManager,
     HighLevelOrderManager,
+)
+from .high_level_wrappers_typed_part2 import (
     HighLevelRiskManager,
     HighLevelBalanceManager,
     HighLevelRateLimitManager
@@ -59,7 +61,7 @@ from .reliability import (
 )
 
 # Interfaces and enums
-from .interfaces import (
+from .interfaces_typed import (
     DataSource,
     ValidationResult,
     IDataManager,
@@ -73,7 +75,10 @@ from .interfaces import (
     IHighLevelOrderManager,
     IHighLevelRiskManager,
     IHighLevelBalanceManager,
-    IHighLevelRateLimitManager
+    IHighLevelRateLimitManager,
+    tprint,
+    handle_errors,
+    handle_async_errors
 )
 
 __all__ = [
@@ -100,6 +105,9 @@ __all__ = [
     "IHighLevelRiskManager",
     "IHighLevelBalanceManager",
     "IHighLevelRateLimitManager",
+    "tprint",
+    "handle_errors",
+    "handle_async_errors",
     
     # Low-level utilities (advanced use cases)
     # Auth

@@ -5,14 +5,21 @@ These classes provide consistent, high-level interfaces that abstract away
 implementation details and provide uniform abstraction levels.
 """
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Callable, Awaitable, TypeVar
 from datetime import datetime
+import logging
 
-from .interfaces import (
+from .interfaces_typed import (
     IHighLevelAuthManager, IHighLevelMarketManager, IHighLevelOrderManager,
     IHighLevelRiskManager, IHighLevelBalanceManager, IHighLevelRateLimitManager,
-    DataSource, ValidationResult
+    DataSource, ValidationResult, tprint, handle_errors, handle_async_errors
 )
+
+# Type variables
+T = TypeVar('T')
+
+# Logger for error handling
+logger = logging.getLogger(__name__)
 from .auth.auth_manager import AuthenticationManager, AuthConfig, APIKeyPermission
 from .market.market_metadata import MarketMetadataManager, InstrumentType
 from .orders.order_manager import OrderManager, OrderSide, OrderType
@@ -24,82 +31,150 @@ from .reliability.rate_limit_manager import RateLimitManager, RateLimit
 class HighLevelAuthManager(IHighLevelAuthManager):
     """High-level wrapper for authentication management."""
     
-    def __init__(self, exchange_name: str):
-        self.exchange_name = exchange_name
-        self.auth_manager = AuthenticationManager(exchange_name)
-        self._initialized = False
+    def __init__(self, exchange_name: str) -> None:
+        """Initialize the high-level auth manager."""
+        try:
+            self.exchange_name: str = exchange_name
+            self.auth_manager: AuthenticationManager = AuthenticationManager(exchange_name)
+            self._initialized: bool = False
+            tprint(f"Initialized HighLevelAuthManager for {exchange_name}", "DEBUG")
+        except Exception as e:
+            tprint(f"Failed to initialize HighLevelAuthManager: {e}", "ERROR")
+            raise
     
+    @handle_errors(default_return=None)
     def initialize(self) -> None:
         """Initialize the authentication manager."""
-        self._initialized = True
+        try:
+            self._initialized = True
+            tprint(f"Auth manager initialized for {self.exchange_name}", "DEBUG")
+        except Exception as e:
+            tprint(f"Failed to initialize auth manager: {e}", "ERROR")
+            raise
     
+    @handle_errors(default_return=None)
     def close(self) -> None:
         """Close the authentication manager."""
-        self.auth_manager.logout()
-        self._initialized = False
+        try:
+            self.auth_manager.logout()
+            self._initialized = False
+            tprint(f"Auth manager closed for {self.exchange_name}", "DEBUG")
+        except Exception as e:
+            tprint(f"Failed to close auth manager: {e}", "ERROR")
+            raise
     
+    @handle_errors(default_return={"initialized": False, "authenticated": False, "permissions": [], "time_synced": False})
     def get_status(self) -> Dict[str, Any]:
         """Get authentication status."""
-        return {
-            "initialized": self._initialized,
-            "authenticated": self.auth_manager.is_authenticated,
-            "permissions": list(self.auth_manager.get_current_permissions()),
-            "time_synced": self.auth_manager.is_time_synced()
-        }
+        try:
+            return {
+                "initialized": self._initialized,
+                "authenticated": self.auth_manager.is_authenticated,
+                "permissions": list(self.auth_manager.get_current_permissions()),
+                "time_synced": self.auth_manager.is_time_synced()
+            }
+        except Exception as e:
+            tprint(f"Failed to get auth status: {e}", "ERROR")
+            return {"initialized": False, "authenticated": False, "permissions": [], "time_synced": False}
     
+    @handle_errors(default_return=None)
     def reset(self) -> None:
         """Reset to initial state."""
-        self.auth_manager.logout()
-        self._initialized = False
+        try:
+            self.auth_manager.logout()
+            self._initialized = False
+            tprint(f"Auth manager reset for {self.exchange_name}", "DEBUG")
+        except Exception as e:
+            tprint(f"Failed to reset auth manager: {e}", "ERROR")
+            raise
     
+    @handle_async_errors(default_return=False)
     async def authenticate(self, credentials: Dict[str, Any]) -> bool:
         """Authenticate with exchange using credentials."""
-        if not self._initialized:
-            self.initialize()
-        
-        # Convert credentials to AuthConfig
-        permissions = set()
-        if credentials.get("permissions"):
-            for perm in credentials["permissions"]:
-                try:
-                    permissions.add(APIKeyPermission(perm))
-                except ValueError:
-                    continue
-        
-        auth_config = AuthConfig(
-            exchange_name=self.exchange_name,
-            api_key=credentials["api_key"],
-            api_secret=credentials["api_secret"],
-            passphrase=credentials.get("passphrase"),
-            permissions=permissions or {APIKeyPermission.READ},
-            auto_sync_time=credentials.get("auto_sync_time", True)
-        )
-        
-        return await self.auth_manager.authenticate(auth_config)
+        try:
+            if not self._initialized:
+                self.initialize()
+            
+            # Convert credentials to AuthConfig
+            permissions: set = set()
+            if credentials.get("permissions"):
+                for perm in credentials["permissions"]:
+                    try:
+                        permissions.add(APIKeyPermission(perm))
+                    except ValueError as e:
+                        tprint(f"Invalid permission '{perm}': {e}", "WARNING")
+                        continue
+            
+            auth_config = AuthConfig(
+                exchange_name=self.exchange_name,
+                api_key=credentials["api_key"],
+                api_secret=credentials["api_secret"],
+                passphrase=credentials.get("passphrase"),
+                permissions=permissions or {APIKeyPermission.READ},
+                auto_sync_time=credentials.get("auto_sync_time", True)
+            )
+            
+            result = await self.auth_manager.authenticate(auth_config)
+            if result:
+                tprint(f"Successfully authenticated with {self.exchange_name}", "INFO")
+            else:
+                tprint(f"Failed to authenticate with {self.exchange_name}", "WARNING")
+            return result
+        except KeyError as e:
+            tprint(f"Missing required credential: {e}", "ERROR")
+            return False
+        except Exception as e:
+            tprint(f"Authentication error: {e}", "ERROR")
+            return False
     
+    @handle_async_errors(default_return=False)
     async def reauthenticate(self) -> bool:
         """Re-authenticate if needed."""
-        return await self.auth_manager.reauthenticate()
+        try:
+            result = await self.auth_manager.reauthenticate()
+            if result:
+                tprint(f"Successfully re-authenticated with {self.exchange_name}", "INFO")
+            else:
+                tprint(f"Failed to re-authenticate with {self.exchange_name}", "WARNING")
+            return result
+        except Exception as e:
+            tprint(f"Re-authentication error: {e}", "ERROR")
+            return False
     
+    @handle_errors(default_return=False)
     def is_authenticated(self) -> bool:
         """Check if currently authenticated."""
-        return self.auth_manager.is_authenticated_and_valid()
+        try:
+            return self.auth_manager.is_authenticated_and_valid()
+        except Exception as e:
+            tprint(f"Failed to check authentication status: {e}", "ERROR")
+            return False
     
+    @handle_errors(default_return=None)
     def get_auth_headers(self, request_data: Dict[str, Any]) -> Optional[Dict[str, str]]:
         """Get authentication headers for request."""
-        return self.auth_manager.get_auth_headers(
-            method=request_data.get("method", "GET"),
-            endpoint=request_data.get("endpoint", ""),
-            body=request_data.get("body", ""),
-            additional_headers=request_data.get("additional_headers")
-        )
+        try:
+            return self.auth_manager.get_auth_headers(
+                method=request_data.get("method", "GET"),
+                endpoint=request_data.get("endpoint", ""),
+                body=request_data.get("body", ""),
+                additional_headers=request_data.get("additional_headers")
+            )
+        except Exception as e:
+            tprint(f"Failed to get auth headers: {e}", "ERROR")
+            return None
     
+    @handle_errors(default_return=False)
     def has_permission(self, permission: str) -> bool:
         """Check if has specific permission."""
         try:
             perm = APIKeyPermission(permission)
             return self.auth_manager.has_permission(perm)
-        except ValueError:
+        except ValueError as e:
+            tprint(f"Invalid permission '{permission}': {e}", "WARNING")
+            return False
+        except Exception as e:
+            tprint(f"Failed to check permission: {e}", "ERROR")
             return False
 
 

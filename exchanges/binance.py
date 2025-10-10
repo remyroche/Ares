@@ -148,10 +148,24 @@ class BinanceExchange(BaseExchange):
             async with self.session.request(method, url, params=params, headers=headers) as response:
                 if response.status == 200:
                     return await response.json()
+                elif response.status == 429:
+                    # Rate limit exceeded
+                    tprint("Rate limit exceeded, waiting...", "WARNING")
+                    await asyncio.sleep(1)
+                    return await self._make_request(method, endpoint, params, signed, futures)  # Retry
+                elif response.status == 401:
+                    # Authentication error
+                    tprint("Authentication failed - check API credentials", "ERROR")
+                    return {"error": "authentication_failed"}
+                elif response.status == 400:
+                    # Bad request
+                    error_data = await response.json()
+                    tprint(f"Bad request: {error_data}", "ERROR")
+                    return {"error": "bad_request", "details": error_data}
                 else:
                     error_text = await response.text()
                     tprint(f"API request failed: {response.status} - {error_text}", "ERROR")
-                    return None
+                    return {"error": f"http_{response.status}", "details": error_text}
         except Exception as e:
             tprint(f"Request failed: {e}", "ERROR")
             return None
@@ -221,25 +235,30 @@ class BinanceExchange(BaseExchange):
         }
         
         data = await self._make_request("GET", "/api/v3/klines", params)
-        if data:
+        if data and not isinstance(data, dict) and "error" not in str(data):
             # Convert list format to dict format for consistency
             klines = []
             for item in data:
-                klines.append({
-                    "timestamp": item[0],
-                    "open_time": item[0],
-                    "open": item[1],
-                    "high": item[2],
-                    "low": item[3],
-                    "close": item[4],
-                    "volume": item[5],
-                    "close_time": item[6],
-                    "quote_volume": item[7],
-                    "trades": item[8],
-                    "taker_buy_base": item[9],
-                    "taker_buy_quote": item[10]
-                })
+                if isinstance(item, list) and len(item) >= 11:
+                    klines.append({
+                        "timestamp": item[0],
+                        "open_time": item[0],
+                        "open": item[1],
+                        "high": item[2],
+                        "low": item[3],
+                        "close": item[4],
+                        "volume": item[5],
+                        "close_time": item[6],
+                        "quote_volume": item[7],
+                        "trades": item[8],
+                        "taker_buy_base": item[9],
+                        "taker_buy_quote": item[10]
+                    })
+                else:
+                    tprint(f"Invalid kline data format: {item}", "WARNING")
             return klines
+        elif isinstance(data, dict) and "error" in data:
+            tprint(f"API error in klines: {data['error']}", "ERROR")
         return []
 
     async def _get_historical_klines_raw(

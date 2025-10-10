@@ -138,18 +138,18 @@ class ExchangeIntegrationManager:
                 'rate_limits': self.config.rate_limits
             }
             
-            # Initialize each utility
-            self.auth_manager = HighLevelAuthManager(exchange_config)
-            self.market_manager = HighLevelMarketManager(exchange_config)
-            self.order_manager = HighLevelOrderManager(exchange_config)
+            # Initialize each utility with correct parameters
+            self.auth_manager = HighLevelAuthManager(self.config.exchange_type)
+            self.market_manager = HighLevelMarketManager(self.config.exchange_type)
+            self.order_manager = HighLevelOrderManager(self.config.exchange_type)
             
             if self.config.enable_risk_management:
-                self.risk_manager = HighLevelRiskManager(exchange_config)
+                self.risk_manager = HighLevelRiskManager(self.config.exchange_type)
             
-            self.balance_manager = HighLevelBalanceManager(exchange_config)
+            self.balance_manager = HighLevelBalanceManager(self.config.exchange_type)
             
             if self.config.enable_rate_limiting:
-                self.rate_limit_manager = HighLevelRateLimitManager(exchange_config)
+                self.rate_limit_manager = HighLevelRateLimitManager(self.config.exchange_type)
             
             # Initialize all utilities
             for manager in [self.auth_manager, self.market_manager, self.order_manager, 

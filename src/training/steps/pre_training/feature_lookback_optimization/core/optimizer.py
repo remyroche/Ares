@@ -794,9 +794,11 @@ class CoreOptimizer:
                         stationarity_audit[lookback]['skipped'] = 'no_variance'
                         continue
 
-                    # Calculate correlation on test data to avoid overfitting
-                    correlation = safe_correlation(test_features[:min_length], test_data[target_column].values[:min_length], default=0.0)
-                    score = abs(correlation)  # Use absolute correlation as score
+                    # Calculate mutual information on test data to avoid overfitting
+                    score = self._calculate_mutual_information_robust(
+                        test_features[:min_length], 
+                        test_data[target_column].values[:min_length]
+                    )
 
                     trials += 1
 

@@ -22,6 +22,9 @@ from .diagnostics import FeatureDiagnostics
 from .method_settings import MethodSettings
 from .enhanced_relevance_analyzer import EnhancedRelevanceAnalyzer
 from .analyst_labeler_integration import AnalystLabelerIntegration
+from .pre_screening_pipeline import PreScreeningPipeline
+from .feature_scorecard import FeatureScorecard
+from .compute_aware_optimizer import ComputeAwareOptimizer
 
 __all__ = [
     'FeatureComparisonUtils',
@@ -43,5 +46,8 @@ __all__ = [
     'FeatureDiagnostics',
     'MethodSettings',
     'EnhancedRelevanceAnalyzer',
-    'AnalystLabelerIntegration'
+    'AnalystLabelerIntegration',
+    'PreScreeningPipeline',
+    'FeatureScorecard',
+    'ComputeAwareOptimizer'
 ]

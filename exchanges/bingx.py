@@ -1,7 +1,7 @@
 """
-Binance Exchange Implementation
+BingX Exchange Implementation
 
-This module provides a complete Binance exchange implementation that follows
+This module provides a complete BingX exchange implementation that follows
 the BaseExchange interface and integrates with the data collection system.
 """
 
@@ -10,7 +10,7 @@ import hashlib
 import hmac
 import time
 from datetime import datetime
-from typing import Any
+from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlencode
 
 try:
@@ -31,9 +31,9 @@ from .base_exchange import BaseExchange
 from .shared.interfaces_typed import tprint, handle_async_errors, handle_errors
 
 
-class BinanceExchange(BaseExchange):
+class BingXExchange(BaseExchange):
     """
-    Binance exchange implementation following the BaseExchange interface.
+    BingX exchange implementation following the BaseExchange interface.
     
     Provides comprehensive data download capabilities for:
     - Klines (OHLCV data)
@@ -49,17 +49,17 @@ class BinanceExchange(BaseExchange):
         password: str | None = None,
     ) -> None:
         super().__init__(api_key, api_secret, trade_symbol, password)
-        self.logger = system_logger.getChild("BinanceExchange")
+        self.logger = system_logger.getChild("BingXExchange")
         self.session: aiohttp.ClientSession | None = None
-        self.base_url = "https://api.binance.com"
-        self.futures_url = "https://fapi.binance.com"
-        self.testnet_url = "https://testnet.binance.vision"
-        self.testnet_futures_url = "https://testnet.binancefuture.com"
+        self.base_url = "https://open-api.bingx.com"
+        self.futures_url = "https://open-api.bingx.com"
+        self.testnet_url = "https://open-api-testnet.bingx.com"
+        self.testnet_futures_url = "https://open-api-testnet.bingx.com"
         self.use_testnet = False  # Set to True for testing
 
     @handle_async_errors(default_return=None)
     async def _initialize_exchange(self) -> None:
-        """Initialize the Binance exchange client."""
+        """Initialize the BingX exchange client."""
         try:
             if aiohttp is None:
                 tprint("⚠️ aiohttp not available, using mock session", "WARNING")
@@ -76,22 +76,22 @@ class BinanceExchange(BaseExchange):
             # Test connection
             await self._test_connection()
 
-            tprint("✅ Binance exchange initialized successfully", "INFO")
+            tprint("✅ BingX exchange initialized successfully", "INFO")
 
         except Exception as e:
-            tprint(f"❌ Failed to initialize Binance exchange: {e}", "ERROR")
+            tprint(f"❌ Failed to initialize BingX exchange: {e}", "ERROR")
             raise
 
     @handle_async_errors(default_return=None)
     async def _test_connection(self) -> None:
-        """Test connection to Binance API."""
+        """Test connection to BingX API."""
         try:
-            url = f"{self._get_base_url()}/api/v3/time"
+            url = f"{self._get_base_url()}/openApi/spot/v1/common/server-time"
             async with self.session.get(url) as response:
                 if response.status == 200:
                     data = await response.json()
-                    server_time = data.get("serverTime")
-                    tprint(f"Connected to Binance API (Server time: {server_time})", "INFO")
+                    server_time = data.get("data", {}).get("serverTime")
+                    tprint(f"Connected to BingX API (Server time: {server_time})", "INFO")
                 else:
                     raise Exception(f"Connection test failed with status: {response.status}")
         except Exception as e:
@@ -127,24 +127,27 @@ class BinanceExchange(BaseExchange):
         signed: bool = False,
         futures: bool = False
     ) -> dict[str, Any] | list[dict[str, Any]] | None:
-        """Make HTTP request to Binance API."""
+        """Make HTTP request to BingX API."""
+        if aiohttp is None or not self.session:
+            tprint("⚠️ aiohttp not available, returning mock data", "WARNING")
+            return []
+
+        base_url = self._get_futures_url() if futures else self._get_base_url()
+        url = f"{base_url}{endpoint}"
+        
+        if params is None:
+            params = {}
+
+        headers = {
+            "X-BX-APIKEY": self.api_key if self.api_key else "",
+            "Content-Type": "application/json"
+        }
+        
+        if signed and self.api_key:
+            params["timestamp"] = int(time.time() * 1000)
+            params["signature"] = self._generate_signature(params)
+
         try:
-            if aiohttp is None or not self.session:
-                tprint("⚠️ aiohttp not available, returning mock data", "WARNING")
-                return []
-
-            base_url = self._get_futures_url() if futures else self._get_base_url()
-            url = f"{base_url}{endpoint}"
-            
-            if params is None:
-                params = {}
-
-            headers = {}
-            if signed and self.api_key:
-                params["timestamp"] = int(time.time() * 1000)
-                params["signature"] = self._generate_signature(params)
-                headers["X-MBX-APIKEY"] = self.api_key
-
             async with self.session.request(method, url, params=params, headers=headers) as response:
                 if response.status == 200:
                     return await response.json()
@@ -156,20 +159,21 @@ class BinanceExchange(BaseExchange):
             tprint(f"Request failed: {e}", "ERROR")
             return None
 
+    @handle_async_errors(default_return=[])
     async def _convert_to_market_data(
         self,
         raw_data: list[dict[str, Any]],
         symbol: str,
         interval: str,
     ) -> list[MarketData]:
-        """Convert raw Binance kline data to standardized MarketData format."""
+        """Convert raw BingX kline data to standardized MarketData format."""
         market_data_list = []
         
         for item in raw_data:
             try:
-                # Handle both list and dict formats from Binance
+                # Handle both list and dict formats from BingX
                 if isinstance(item, list):
-                    # Binance klines format: [open_time, open, high, low, close, volume, ...]
+                    # BingX klines format: [open_time, open, high, low, close, volume, ...]
                     timestamp = datetime.fromtimestamp(item[0] / 1000)
                     open_price = float(item[1])
                     high_price = float(item[2])
@@ -198,33 +202,35 @@ class BinanceExchange(BaseExchange):
                 market_data_list.append(market_data)
                 
             except Exception as e:
-                self.logger.warning(f"Failed to convert kline data: {e}")
+                tprint(f"Failed to convert kline data: {e}", "WARNING")
                 continue
 
         return market_data_list
 
+    @handle_async_errors(default_return="")
     async def _get_market_id(self, symbol: str) -> str:
-        """Get the market ID for a given symbol (Binance uses symbol as-is)."""
+        """Get the market ID for a given symbol (BingX uses symbol as-is)."""
         return symbol.upper()
 
+    @handle_async_errors(default_return=[])
     async def _get_klines_raw(
         self,
         symbol: str,
         interval: str,
         limit: int,
     ) -> list[dict[str, Any]]:
-        """Get raw kline data from Binance."""
+        """Get raw kline data from BingX."""
         params = {
             "symbol": symbol.upper(),
             "interval": interval,
-            "limit": min(limit, 1000)  # Binance max limit is 1000
+            "limit": min(limit, 1000)  # BingX max limit is 1000
         }
         
-        data = await self._make_request("GET", "/api/v3/klines", params)
-        if data:
+        data = await self._make_request("GET", "/openApi/spot/v1/market/klines", params)
+        if data and "data" in data:
             # Convert list format to dict format for consistency
             klines = []
-            for item in data:
+            for item in data["data"]:
                 klines.append({
                     "timestamp": item[0],
                     "open_time": item[0],
@@ -242,6 +248,7 @@ class BinanceExchange(BaseExchange):
             return klines
         return []
 
+    @handle_async_errors(default_return=[])
     async def _get_historical_klines_raw(
         self,
         symbol: str,
@@ -250,7 +257,7 @@ class BinanceExchange(BaseExchange):
         end_time_ms: int,
         limit: int,
     ) -> list[dict[str, Any]]:
-        """Get raw historical kline data from Binance."""
+        """Get raw historical kline data from BingX."""
         params = {
             "symbol": symbol.upper(),
             "interval": interval,
@@ -259,11 +266,11 @@ class BinanceExchange(BaseExchange):
             "limit": min(limit, 1000)
         }
         
-        data = await self._make_request("GET", "/api/v3/klines", params)
-        if data:
+        data = await self._make_request("GET", "/openApi/spot/v1/market/klines", params)
+        if data and "data" in data:
             # Convert list format to dict format
             klines = []
-            for item in data:
+            for item in data["data"]:
                 klines.append({
                     "timestamp": item[0],
                     "open_time": item[0],
@@ -281,6 +288,7 @@ class BinanceExchange(BaseExchange):
             return klines
         return []
 
+    @handle_async_errors(default_return=[])
     async def _get_historical_agg_trades_raw(
         self,
         symbol: str,
@@ -288,7 +296,7 @@ class BinanceExchange(BaseExchange):
         end_time_ms: int,
         limit: int,
     ) -> list[dict[str, Any]]:
-        """Get raw historical aggregated trades from Binance."""
+        """Get raw historical aggregated trades from BingX."""
         params = {
             "symbol": symbol.upper(),
             "startTime": start_time_ms,
@@ -296,11 +304,11 @@ class BinanceExchange(BaseExchange):
             "limit": min(limit, 1000)
         }
         
-        data = await self._make_request("GET", "/api/v3/aggTrades", params)
-        if data:
+        data = await self._make_request("GET", "/openApi/spot/v1/market/aggTrades", params)
+        if data and "data" in data:
             # Standardize field names
             trades = []
-            for item in data:
+            for item in data["data"]:
                 trades.append({
                     "timestamp": item.get("T", item.get("timestamp", 0)),
                     "price": item.get("p", item.get("price", 0)),
@@ -313,10 +321,12 @@ class BinanceExchange(BaseExchange):
             return trades
         return []
 
+    @handle_async_errors(default_return={})
     async def _get_account_info_raw(self) -> dict[str, Any]:
-        """Get raw account information from Binance."""
-        return await self._make_request("GET", "/api/v3/account", signed=True) or {}
+        """Get raw account information from BingX."""
+        return await self._make_request("GET", "/openApi/spot/v1/account", signed=True) or {}
 
+    @handle_async_errors(default_return={})
     async def _create_order_raw(
         self,
         symbol: str,
@@ -326,7 +336,7 @@ class BinanceExchange(BaseExchange):
         price: float | None,
         params: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        """Create raw order on Binance."""
+        """Create raw order on BingX."""
         order_params = {
             "symbol": symbol.upper(),
             "side": side.upper(),
@@ -340,79 +350,90 @@ class BinanceExchange(BaseExchange):
         if params:
             order_params.update(params)
             
-        return await self._make_request("POST", "/api/v3/order", order_params, signed=True) or {}
+        return await self._make_request("POST", "/openApi/spot/v1/trade/order", order_params, signed=True) or {}
 
+    @handle_async_errors(default_return={})
     async def _get_position_risk_raw(self, symbol: str) -> dict[str, Any]:
-        """Get raw position risk information from Binance futures."""
+        """Get raw position risk information from BingX futures."""
         params = {"symbol": symbol.upper()} if symbol else {}
-        data = await self._make_request("GET", "/fapi/v2/positionRisk", params, signed=True, futures=True)
+        data = await self._make_request("GET", "/openApi/futures/v1/positionRisk", params, signed=True, futures=True)
         
-        if data and isinstance(data, list):
+        if data and "data" in data and isinstance(data["data"], list):
             # Return first matching position or first position if no symbol specified
-            for position in data:
+            for position in data["data"]:
                 if not symbol or position.get("symbol", "").upper() == symbol.upper():
                     return position
-            return data[0] if data else {}
+            return data["data"][0] if data["data"] else {}
         
         return data or {}
 
+    @handle_async_errors(default_return=[])
     async def _get_open_orders_raw(self, symbol: str | None) -> list[dict[str, Any]]:
-        """Get raw open orders from Binance."""
+        """Get raw open orders from BingX."""
         params = {"symbol": symbol.upper()} if symbol else {}
-        data = await self._make_request("GET", "/api/v3/openOrders", params, signed=True)
-        return data if isinstance(data, list) else []
+        data = await self._make_request("GET", "/openApi/spot/v1/trade/openOrders", params, signed=True)
+        return data.get("data", []) if isinstance(data, dict) else []
 
+    @handle_async_errors(default_return={})
     async def _cancel_order_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
-        """Cancel raw order on Binance."""
+        """Cancel raw order on BingX."""
         params = {
             "symbol": symbol.upper(),
             "orderId": str(order_id)
         }
-        return await self._make_request("DELETE", "/api/v3/order", params, signed=True) or {}
+        return await self._make_request("DELETE", "/openApi/spot/v1/trade/order", params, signed=True) or {}
 
+    @handle_async_errors(default_return={})
     async def _get_order_status_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
-        """Get raw order status from Binance."""
+        """Get raw order status from BingX."""
         params = {
             "symbol": symbol.upper(),
             "orderId": str(order_id)
         }
-        return await self._make_request("GET", "/api/v3/order", params, signed=True) or {}
+        return await self._make_request("GET", "/openApi/spot/v1/trade/query", params, signed=True) or {}
 
-    # Additional Binance-specific methods for data collection
+    # Additional BingX-specific methods for data collection
 
+    @handle_async_errors(default_return={})
     async def get_24hr_ticker(self, symbol: str | None = None) -> dict[str, Any]:
         """Get 24hr ticker statistics."""
-        endpoint = "/api/v3/ticker/24hr"
+        endpoint = "/openApi/spot/v1/market/ticker/24hr"
         params = {"symbol": symbol.upper()} if symbol else {}
-        return await self._make_request("GET", endpoint, params) or {}
+        data = await self._make_request("GET", endpoint, params)
+        return data.get("data", {}) if isinstance(data, dict) else {}
 
+    @handle_async_errors(default_return={})
     async def get_order_book(self, symbol: str, limit: int = 100) -> dict[str, Any]:
         """Get order book data."""
         params = {
             "symbol": symbol.upper(),
-            "limit": min(limit, 5000)  # Binance max limit is 5000
+            "limit": min(limit, 5000)  # BingX max limit is 5000
         }
-        return await self._make_request("GET", "/api/v3/depth", params) or {}
+        data = await self._make_request("GET", "/openApi/spot/v1/market/depth", params)
+        return data.get("data", {}) if isinstance(data, dict) else {}
 
     # Additional methods for live trading
+    @handle_async_errors(default_return={})
     async def get_ticker(self, symbol: str | None = None) -> dict[str, Any]:
         """Get ticker information."""
         if symbol:
             return await self.get_24hr_ticker(symbol)
         else:
             # Get all tickers
-            return await self._make_request("GET", "/api/v3/ticker/24hr") or {}
+            data = await self._make_request("GET", "/openApi/spot/v1/market/ticker/24hr")
+            return data.get("data", {}) if isinstance(data, dict) else {}
     
+    @handle_async_errors(default_return=[])
     async def get_recent_trades(self, symbol: str, limit: int = 100) -> list[dict[str, Any]]:
         """Get recent trades."""
         params = {
             "symbol": symbol.upper(),
             "limit": min(limit, 1000)
         }
-        data = await self._make_request("GET", "/api/v3/trades", params)
-        if data:
+        data = await self._make_request("GET", "/openApi/spot/v1/market/trades", params)
+        if data and "data" in data:
             trades = []
-            for item in data:
+            for item in data["data"]:
                 trades.append({
                     "timestamp": item["time"],
                     "price": item["price"],
@@ -423,24 +444,33 @@ class BinanceExchange(BaseExchange):
             return trades
         return []
     
+    @handle_async_errors(default_return={})
     async def get_funding_rate(self, symbol: str | None = None) -> dict[str, Any]:
         """Get funding rate information."""
         params = {"symbol": symbol.upper()} if symbol else {}
-        return await self._make_request("GET", "/fapi/v1/premiumIndex", params, futures=True) or {}
+        data = await self._make_request("GET", "/openApi/futures/v1/market/premiumIndex", params, futures=True)
+        return data.get("data", {}) if isinstance(data, dict) else {}
     
+    @handle_async_errors(default_return={})
     async def get_open_interest(self, symbol: str | None = None) -> dict[str, Any]:
         """Get open interest information."""
         params = {"symbol": symbol.upper()} if symbol else {}
-        return await self._make_request("GET", "/fapi/v1/openInterest", params, futures=True) or {}
+        data = await self._make_request("GET", "/openApi/futures/v1/market/openInterest", params, futures=True)
+        return data.get("data", {}) if isinstance(data, dict) else {}
     
+    @handle_async_errors(default_return={})
     async def get_server_time(self) -> dict[str, Any]:
         """Get server time."""
-        return await self._make_request("GET", "/api/v3/time") or {}
+        data = await self._make_request("GET", "/openApi/spot/v1/common/server-time")
+        return data.get("data", {}) if isinstance(data, dict) else {}
     
+    @handle_async_errors(default_return={})
     async def get_exchange_info(self) -> dict[str, Any]:
         """Get exchange information."""
-        return await self._make_request("GET", "/api/v3/exchangeInfo") or {}
+        data = await self._make_request("GET", "/openApi/spot/v1/common/symbols")
+        return data.get("data", {}) if isinstance(data, dict) else {}
     
+    @handle_async_errors(default_return={})
     async def get_symbol_info(self, symbol: str) -> dict[str, Any]:
         """Get symbol information."""
         exchange_info = await self.get_exchange_info()
@@ -450,6 +480,7 @@ class BinanceExchange(BaseExchange):
                     return symbol_info
         return {}
     
+    @handle_async_errors(default_return=None)
     async def get_klines_stream(self, symbol: str, interval: str, callback) -> None:
         """Stream klines data (WebSocket implementation would go here)."""
         # This would implement WebSocket streaming
@@ -461,9 +492,10 @@ class BinanceExchange(BaseExchange):
                     await callback(klines[0])
                 await asyncio.sleep(60)  # Poll every minute
             except Exception as e:
-                self.logger.error(f"Error in klines stream: {e}")
+                tprint(f"Error in klines stream: {e}", "ERROR")
                 await asyncio.sleep(60)
     
+    @handle_async_errors(default_return=None)
     async def get_ticker_stream(self, symbol: str, callback) -> None:
         """Stream ticker data (WebSocket implementation would go here)."""
         # This would implement WebSocket streaming
@@ -475,9 +507,10 @@ class BinanceExchange(BaseExchange):
                     await callback(ticker)
                 await asyncio.sleep(1)  # Poll every second
             except Exception as e:
-                self.logger.error(f"Error in ticker stream: {e}")
+                tprint(f"Error in ticker stream: {e}", "ERROR")
                 await asyncio.sleep(1)
     
+    @handle_async_errors(default_return=None)
     async def get_trade_stream(self, symbol: str, callback) -> None:
         """Stream trade data (WebSocket implementation would go here)."""
         # This would implement WebSocket streaming
@@ -489,9 +522,10 @@ class BinanceExchange(BaseExchange):
                     await callback(trade)
                 await asyncio.sleep(1)  # Poll every second
             except Exception as e:
-                self.logger.error(f"Error in trade stream: {e}")
+                tprint(f"Error in trade stream: {e}", "ERROR")
                 await asyncio.sleep(1)
     
+    @handle_async_errors(default_return=None)
     async def get_orderbook_stream(self, symbol: str, callback) -> None:
         """Stream orderbook data (WebSocket implementation would go here)."""
         # This would implement WebSocket streaming
@@ -503,42 +537,39 @@ class BinanceExchange(BaseExchange):
                     await callback(orderbook)
                 await asyncio.sleep(1)  # Poll every second
             except Exception as e:
-                self.logger.error(f"Error in orderbook stream: {e}")
+                tprint(f"Error in orderbook stream: {e}", "ERROR")
                 await asyncio.sleep(1)
 
     @handle_async_errors(default_return=None)
     async def close(self) -> None:
         """Close the exchange connection."""
-        try:
-            if self.session:
-                await self.session.close()
-                self.session = None
-            tprint("Binance exchange connection closed", "INFO")
-        except Exception as e:
-            tprint(f"Error closing Binance exchange: {e}", "ERROR")
+        if self.session:
+            await self.session.close()
+            self.session = None
+        tprint("BingX exchange connection closed", "INFO")
 
 
-# Factory function for creating Binance exchange instances
-def create_binance_exchange(
+# Factory function for creating BingX exchange instances
+def create_bingx_exchange(
     api_key: str = "",
     api_secret: str = "",
     trade_symbol: str = "BTCUSDT",
     password: str | None = None,
-) -> BinanceExchange:
+) -> BingXExchange:
     """
-    Create a new Binance exchange instance.
+    Create a new BingX exchange instance.
     
     Args:
-        api_key: Binance API key
-        api_secret: Binance API secret
+        api_key: BingX API key
+        api_secret: BingX API secret
         trade_symbol: Trading symbol (default: BTCUSDT)
         password: API password (optional)
         
     Returns:
-        BinanceExchange instance
+        BingXExchange instance
     """
     try:
-        return BinanceExchange(api_key, api_secret, trade_symbol, password)
+        return BingXExchange(api_key, api_secret, trade_symbol, password)
     except Exception as e:
-        tprint(f"❌ Failed to create Binance exchange: {e}", "ERROR")
+        tprint(f"❌ Failed to create BingX exchange: {e}", "ERROR")
         raise

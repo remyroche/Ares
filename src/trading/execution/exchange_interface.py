@@ -3,6 +3,7 @@ Exchange Interface
 
 Abstract interface for different cryptocurrency exchanges.
 Provides unified API for market data access and order execution.
+Integrates with exchanges/shared/ modules for comprehensive functionality.
 """
 
 import asyncio
@@ -22,6 +23,18 @@ from src.utils.tprint import (
     tprint_info, tprint_warning, tprint_error, tprint_success,
     tprint_structured, LogLevel
 )
+
+# Import shared exchange utilities
+from exchanges.shared.interfaces_typed import (
+    tprint, handle_errors, handle_async_errors, DataSource, ValidationResult,
+    IHighLevelAuthManager, IHighLevelMarketManager, IHighLevelOrderManager,
+    IHighLevelRiskManager, IHighLevelBalanceManager, IHighLevelRateLimitManager
+)
+from exchanges.shared import (
+    HighLevelAuthManager, HighLevelMarketManager, HighLevelOrderManager,
+    HighLevelRiskManager, HighLevelBalanceManager, HighLevelRateLimitManager
+)
+
 from ...exchanges.exchange_dispatcher import ExchangeDispatcher, ExchangeConfig, ExchangeType
 from ..utils.error_handling import (
     ExecutionError, TradingErrorSeverity, trading_error_handler,
@@ -100,13 +113,14 @@ class KlineData:
 
 class ExchangeInterface:
     """
-    Exchange interface that uses the exchange dispatcher.
+    Exchange interface that uses the exchange dispatcher and shared utilities.
 
     Provides unified API for:
     - Market data access (ticker, order book, klines, trades)
     - Order execution and management
     - Account information and balances
     - Rate limiting and error handling
+    - Authentication and risk management
     """
 
     def __init__(self, config: Dict[str, Any]):
@@ -125,6 +139,14 @@ class ExchangeInterface:
 
         # Exchange dispatcher
         self.dispatcher: Optional[ExchangeDispatcher] = None
+        
+        # Shared utilities
+        self.auth_manager: Optional[IHighLevelAuthManager] = None
+        self.market_manager: Optional[IHighLevelMarketManager] = None
+        self.order_manager: Optional[IHighLevelOrderManager] = None
+        self.risk_manager: Optional[IHighLevelRiskManager] = None
+        self.balance_manager: Optional[IHighLevelBalanceManager] = None
+        self.rate_limit_manager: Optional[IHighLevelRateLimitManager] = None
         
         # Connection state
         self.connection_status = ConnectionStatus.DISCONNECTED
@@ -151,6 +173,9 @@ class ExchangeInterface:
         
         # Initialize simulated data
         self._initialize_simulated_data()
+        
+        # Initialize shared utilities
+        self._initialize_shared_utilities()
 
         self.logger = logger.getChild(f'{self.exchange_type}')
     
@@ -176,13 +201,62 @@ class ExchangeInterface:
             'low_24h': 48000.0
         }
 
+    @handle_errors(default_return=None)
+    def _initialize_shared_utilities(self) -> None:
+        """Initialize shared exchange utilities."""
+        try:
+            # Initialize shared utilities with proper configuration
+            exchange_config = {
+                'exchange_type': self.exchange_type,
+                'api_key': self.api_key,
+                'api_secret': self.api_secret,
+                'testnet': self.testnet,
+                'rate_limits': self.rate_limits
+            }
+            
+            # Initialize each utility
+            self.auth_manager = HighLevelAuthManager(exchange_config)
+            self.market_manager = HighLevelMarketManager(exchange_config)
+            self.order_manager = HighLevelOrderManager(exchange_config)
+            self.risk_manager = HighLevelRiskManager(exchange_config)
+            self.balance_manager = HighLevelBalanceManager(exchange_config)
+            self.rate_limit_manager = HighLevelRateLimitManager(exchange_config)
+            
+            # Initialize all utilities
+            for manager in [self.auth_manager, self.market_manager, self.order_manager, 
+                          self.risk_manager, self.balance_manager, self.rate_limit_manager]:
+                if manager:
+                    manager.initialize()
+            
+            tprint("✅ Shared exchange utilities initialized successfully", "INFO")
+            
+        except Exception as e:
+            tprint(f"❌ Failed to initialize shared utilities: {e}", "ERROR")
+            # Continue without shared utilities for simulated mode
+            if self.exchange_type != 'simulated':
+                raise
+
+    @handle_async_errors(default_return=False)
     async def connect(self) -> bool:
         """Connect to exchange."""
         try:
             if self.exchange_type == 'simulated':
                 self.connection_status = ConnectionStatus.CONNECTED
-                tprint_success(f"✅ Connected to {self.exchange_type} (simulated)")
+                tprint("✅ Connected to simulated exchange", "INFO")
                 return True
+            
+            # Authenticate using shared auth manager
+            if self.auth_manager:
+                credentials = {
+                    'api_key': self.api_key,
+                    'api_secret': self.api_secret,
+                    'testnet': self.testnet
+                }
+                auth_success = await self.auth_manager.authenticate(credentials)
+                if not auth_success:
+                    tprint("❌ Authentication failed", "ERROR")
+                    self.connection_status = ConnectionStatus.ERROR
+                    return False
             
             # Create exchange dispatcher
             exchange_type = ExchangeType.OKX if self.exchange_type == 'okx' else ExchangeType.BINANCE
@@ -199,10 +273,11 @@ class ExchangeInterface:
             
             if success:
                 self.connection_status = ConnectionStatus.CONNECTED
-                tprint_success(f"✅ Connected to {self.exchange_type}")
+                tprint(f"✅ Connected to {self.exchange_type}", "INFO")
                 return True
             else:
                 self.connection_status = ConnectionStatus.ERROR
+                tprint(f"❌ Failed to connect to {self.exchange_type}", "ERROR")
                 return False
                 
         except Exception as e:
@@ -210,14 +285,25 @@ class ExchangeInterface:
             await self._handle_error(e, "connect")
             return False
 
+    @handle_async_errors(default_return=None)
     async def disconnect(self) -> None:
         """Disconnect from exchange."""
-        if self.dispatcher:
-            await self.dispatcher.close()
-            self.dispatcher = None
-        
-        self.connection_status = ConnectionStatus.DISCONNECTED
-        tprint_info(f"📴 Disconnected from {self.exchange_type}")
+        try:
+            if self.dispatcher:
+                await self.dispatcher.close()
+                self.dispatcher = None
+            
+            # Close shared utilities
+            for manager in [self.auth_manager, self.market_manager, self.order_manager, 
+                          self.risk_manager, self.balance_manager, self.rate_limit_manager]:
+                if manager:
+                    manager.close()
+            
+            self.connection_status = ConnectionStatus.DISCONNECTED
+            tprint(f"📴 Disconnected from {self.exchange_type}", "INFO")
+            
+        except Exception as e:
+            tprint(f"❌ Error during disconnect: {e}", "ERROR")
 
     async def is_connected(self) -> bool:
         """Check if connected to exchange."""
@@ -229,30 +315,56 @@ class ExchangeInterface:
         
         return False
 
+    @handle_async_errors(default_return=None)
     async def get_ticker(self, symbol: str) -> Optional[TickerData]:
         """Get ticker data for symbol."""
-        if self.exchange_type == 'simulated':
-            return await self._get_simulated_ticker(symbol)
-        
-        if self.dispatcher:
-            ticker_data = await self.dispatcher.get_ticker(symbol)
-            if ticker_data:
-                return TickerData(
-                    symbol=symbol,
-                    price=ticker_data.get('price', 0),
-                    bid_price=ticker_data.get('bid', 0),
-                    ask_price=ticker_data.get('ask', 0),
-                    bid_quantity=ticker_data.get('bidQty', 0),
-                    ask_quantity=ticker_data.get('askQty', 0),
-                    volume_24h=ticker_data.get('volume', 0),
-                    price_change_24h=ticker_data.get('change', 0),
-                    price_change_percent_24h=ticker_data.get('changePercent', 0),
-                    high_24h=ticker_data.get('high', 0),
-                    low_24h=ticker_data.get('low', 0),
-                    timestamp=datetime.now()
-                )
-        
-        return None
+        try:
+            if self.exchange_type == 'simulated':
+                return await self._get_simulated_ticker(symbol)
+            
+            # Use shared market manager if available
+            if self.market_manager:
+                market_data = await self.market_manager.get_market_data(symbol)
+                if market_data:
+                    return TickerData(
+                        symbol=symbol,
+                        price=market_data.get('price', 0),
+                        bid_price=market_data.get('bid', 0),
+                        ask_price=market_data.get('ask', 0),
+                        bid_quantity=market_data.get('bidQty', 0),
+                        ask_quantity=market_data.get('askQty', 0),
+                        volume_24h=market_data.get('volume', 0),
+                        price_change_24h=market_data.get('change', 0),
+                        price_change_percent_24h=market_data.get('changePercent', 0),
+                        high_24h=market_data.get('high', 0),
+                        low_24h=market_data.get('low', 0),
+                        timestamp=datetime.now()
+                    )
+            
+            # Fallback to dispatcher
+            if self.dispatcher:
+                ticker_data = await self.dispatcher.get_ticker(symbol)
+                if ticker_data:
+                    return TickerData(
+                        symbol=symbol,
+                        price=ticker_data.get('price', 0),
+                        bid_price=ticker_data.get('bid', 0),
+                        ask_price=ticker_data.get('ask', 0),
+                        bid_quantity=ticker_data.get('bidQty', 0),
+                        ask_quantity=ticker_data.get('askQty', 0),
+                        volume_24h=ticker_data.get('volume', 0),
+                        price_change_24h=ticker_data.get('change', 0),
+                        price_change_percent_24h=ticker_data.get('changePercent', 0),
+                        high_24h=ticker_data.get('high', 0),
+                        low_24h=ticker_data.get('low', 0),
+                        timestamp=datetime.now()
+                    )
+            
+            return None
+            
+        except Exception as e:
+            tprint(f"❌ Error getting ticker for {symbol}: {e}", "ERROR")
+            return None
 
     async def get_order_book(self, symbol: str, limit: int = 100) -> Optional[Dict[str, Any]]:
         """Get order book for symbol."""
@@ -307,21 +419,37 @@ class ExchangeInterface:
         # For real exchanges, this would be implemented in the dispatcher
         return []
 
+    @handle_async_errors(default_return={})
     async def get_account_balance(self, asset: Optional[str] = None) -> Dict[str, float]:
         """Get account balance."""
-        if self.exchange_type == 'simulated':
-            return self._get_simulated_balance(asset)
-        
-        if self.dispatcher:
-            if asset:
-                balance = await self.dispatcher.get_balance(asset)
-                return {asset: balance}
-            else:
-                # Get all balances - this would need to be implemented in dispatcher
-                return {}
-        
-        return {}
+        try:
+            if self.exchange_type == 'simulated':
+                return self._get_simulated_balance(asset)
+            
+            # Use shared balance manager if available
+            if self.balance_manager:
+                if asset:
+                    balance = await self.balance_manager.get_balance(asset)
+                    return {asset: balance} if balance is not None else {}
+                else:
+                    return await self.balance_manager.get_all_balances()
+            
+            # Fallback to dispatcher
+            if self.dispatcher:
+                if asset:
+                    balance = await self.dispatcher.get_balance(asset)
+                    return {asset: balance}
+                else:
+                    # Get all balances - this would need to be implemented in dispatcher
+                    return {}
+            
+            return {}
+            
+        except Exception as e:
+            tprint(f"❌ Error getting account balance: {e}", "ERROR")
+            return {}
 
+    @handle_async_errors(default_return={})
     async def create_order(
         self,
         symbol: str,
@@ -332,14 +460,56 @@ class ExchangeInterface:
         **kwargs
     ) -> Dict[str, Any]:
         """Create order."""
-        if self.exchange_type == 'simulated':
-            return await self._create_simulated_order(symbol, side, order_type, quantity, price)
-        
-        if self.dispatcher:
-            result = await self.dispatcher.create_order(symbol, side, order_type, quantity, price)
-            return result or {}
-        
-        return {}
+        try:
+            if self.exchange_type == 'simulated':
+                return await self._create_simulated_order(symbol, side, order_type, quantity, price)
+            
+            # Use shared order manager if available
+            if self.order_manager:
+                # Validate order parameters first
+                order_params = {
+                    'symbol': symbol,
+                    'side': side,
+                    'order_type': order_type,
+                    'quantity': quantity,
+                    'price': price,
+                    **kwargs
+                }
+                
+                validation_result = self.order_manager.validate_order_params(order_params)
+                if not validation_result.is_valid:
+                    tprint(f"❌ Order validation failed: {validation_result.errors}", "ERROR")
+                    return {'error': 'validation_failed', 'errors': validation_result.errors}
+                
+                # Create order using shared manager
+                order_id = await self.order_manager.create_order(
+                    symbol, side, order_type, quantity, **kwargs
+                )
+                
+                if order_id:
+                    return {
+                        'orderId': order_id,
+                        'symbol': symbol,
+                        'side': side,
+                        'type': order_type,
+                        'quantity': quantity,
+                        'price': price,
+                        'status': 'NEW'
+                    }
+                else:
+                    tprint(f"❌ Failed to create order for {symbol}", "ERROR")
+                    return {'error': 'order_creation_failed'}
+            
+            # Fallback to dispatcher
+            if self.dispatcher:
+                result = await self.dispatcher.create_order(symbol, side, order_type, quantity, price)
+                return result or {}
+            
+            return {'error': 'no_order_manager_available'}
+            
+        except Exception as e:
+            tprint(f"❌ Error creating order for {symbol}: {e}", "ERROR")
+            return {'error': str(e)}
 
     async def cancel_order(self, symbol: str, order_id: str) -> bool:
         """Cancel order."""
@@ -558,16 +728,50 @@ class ExchangeInterface:
 
         return open_orders
 
+    @handle_errors(default_return=False)
     def _check_rate_limit(self, endpoint: str) -> bool:
         """Check if request is within rate limits."""
-        now = datetime.now()
+        try:
+            # Use shared rate limit manager if available
+            if self.rate_limit_manager:
+                return not self.rate_limit_manager.is_limited(endpoint)
+            
+            # Fallback to simple rate limiting implementation
+            now = datetime.now()
+            if endpoint in self.request_counts:
+                if self.request_counts[endpoint] >= self.rate_limits.get(endpoint, 100):
+                    return False
+            return True
+            
+        except Exception as e:
+            tprint(f"❌ Error checking rate limit: {e}", "ERROR")
+            return False
 
-        # Simple rate limiting implementation
-        if endpoint in self.request_counts:
-            if self.request_counts[endpoint] >= self.rate_limits.get(endpoint, 100):
-                return False
+    @handle_async_errors(default_return={})
+    async def get_risk_info(self, symbol: str, position_size: float, current_price: float, leverage: float = 1.0) -> Dict[str, Any]:
+        """Get risk information for a position."""
+        try:
+            if self.risk_manager:
+                return self.risk_manager.calculate_position_risk(
+                    symbol, position_size, current_price, leverage
+                )
+            return {}
+            
+        except Exception as e:
+            tprint(f"❌ Error getting risk info for {symbol}: {e}", "ERROR")
+            return {}
 
-        return True
+    @handle_async_errors(default_return=[])
+    async def get_portfolio_risk(self, positions: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Get portfolio risk information."""
+        try:
+            if self.risk_manager:
+                return self.risk_manager.calculate_portfolio_risk(positions)
+            return {}
+            
+        except Exception as e:
+            tprint(f"❌ Error getting portfolio risk: {e}", "ERROR")
+            return {}
 
     def _update_rate_limit(self, endpoint: str) -> None:
         """Update rate limit counters."""
@@ -580,20 +784,25 @@ class ExchangeInterface:
         self.request_counts[endpoint] += 1
         self.total_requests += 1
 
+    @handle_async_errors(default_return=None)
     async def _handle_error(self, error: Exception, operation: str) -> None:
         """Handle exchange errors."""
-        self.connection_errors.append({
-            'timestamp': datetime.now(),
-            'operation': operation,
-            'error': str(error)
-        })
+        try:
+            self.connection_errors.append({
+                'timestamp': datetime.now(),
+                'operation': operation,
+                'error': str(error)
+            })
 
-        self.failed_requests += 1
+            self.failed_requests += 1
 
-        if len(self.connection_errors) > 10:
-            self.connection_status = ConnectionStatus.ERROR
+            if len(self.connection_errors) > 10:
+                self.connection_status = ConnectionStatus.ERROR
 
-        tprint_error(f"❌ Exchange error in {operation}: {str(error)}")
+            tprint(f"❌ Exchange error in {operation}: {str(error)}", "ERROR")
+            
+        except Exception as e:
+            tprint(f"❌ Error in error handler: {e}", "ERROR")
 
 
 # Factory function for creating exchange interfaces

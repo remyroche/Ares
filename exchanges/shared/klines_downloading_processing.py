@@ -42,7 +42,7 @@ class KlinesDataProcessingPipeline:
         """Initialize the processing pipeline.
 
         Args:
-            exchange: Exchange name (binance, bingx, mexc, etc.)
+            exchange: Exchange name (binance, bingx, mexc, okx, gateio, phemex, etc.)
             data_dir: Base directory for historical data
         """
         self.exchange = exchange.lower()
@@ -61,7 +61,7 @@ class KlinesDataProcessingPipeline:
         # Quality checker will be initialized when first used
         self._quality_checker = None
 
-        # Columns to remove
+        # Columns to remove (exchange-agnostic)
         self.columns_to_remove = ['taker_buy_base', 'taker_buy_quote', 'year']
 
     def standardize_data_format(self, df: pd.DataFrame, symbol: str, interval: str) -> pd.DataFrame:
@@ -161,40 +161,95 @@ class KlinesDataProcessingPipeline:
             self.logger.error(f"❌ Failed to validate data quality: {e}")
             return {'passed': False, 'error': str(e)}
 
+    def process_klines_data(
+        self, 
+        df: pd.DataFrame, 
+        symbol: str, 
+        interval: str, 
+        save_data: bool = True
+    ) -> pd.DataFrame:
+        """Process klines data using the shared pipeline.
+        
+        Args:
+            df: Raw DataFrame from exchange
+            symbol: Trading symbol
+            interval: Data interval
+            save_data: Whether to save processed data
+            
+        Returns:
+            Processed DataFrame
+        """
+        try:
+            # Standardize data format
+            standardized_df = self.standardize_data_format(df, symbol, interval)
+            
+            if save_data:
+                # Save standardized data
+                self.save_standardized_data(standardized_df, symbol, interval, "raw")
+            
+            return standardized_df
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to process klines data: {e}")
+            return df
+
+    def get_processed_data(
+        self,
+        symbol: str,
+        interval: str,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> Optional[pd.DataFrame]:
+        """Get previously processed data.
+        
+        Args:
+            symbol: Trading symbol
+            interval: Data interval
+            start_date: Start date filter
+            end_date: End date filter
+            
+        Returns:
+            Processed DataFrame or None
+        """
+        return self.load_standardized_data(symbol, interval, "raw", start_date, end_date)
+
     @property
     def quality_checker(self):
         """Lazy initialization of quality checker."""
         if self._quality_checker is None:
-            self._quality_checker = BingXKlinesDataQualityChecker(self.data_dir)
+            self._quality_checker = ExchangeKlinesDataQualityChecker(self.exchange, self.data_dir)
         return self._quality_checker
 
     def create_consolidated_features_file(
         self,
         symbol: str = "ETHUSDT",
         interval: str = "1m",
-        exchange: str = "bingx"
+        exchange: str = None
     ) -> Dict[str, Any]:
         """Create a consolidated features parquet file with required columns.
 
-        This creates a file with the format: historical_data/features_bingx_{SYMBOL}_consolidated.parquet
+        This creates a file with the format: historical_data/features_{EXCHANGE}_{SYMBOL}_consolidated.parquet
         containing the required columns: ['timestamp', 'exchange', 'timeframe']
 
         Args:
             symbol: Trading symbol (e.g., "ETHUSDT")
             interval: Time interval (e.g., "1m")
-            exchange: Exchange name (default: "bingx")
+            exchange: Exchange name (default: uses self.exchange)
 
         Returns:
             Dictionary with consolidation results
         """
         try:
+            if exchange is None:
+                exchange = self.exchange
+                
             self.logger.info(f"📦 Creating consolidated features file for {symbol} {interval}")
 
             # Define output file path
             output_file = Path(self.data_dir) / f"features_{exchange.lower()}_{symbol.upper()}_consolidated.parquet"
 
             # Find processed data files
-            data_path = Path(self.data_dir) / "bingx" / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
+            data_path = Path(self.data_dir) / exchange.lower() / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
 
             if not data_path.exists():
                 return {
@@ -384,7 +439,7 @@ class KlinesDataProcessingPipeline:
 
             # Step 2.5: Add required columns to processed files
             self.logger.info("📦 Step 2.5: Adding required columns (exchange, timeframe) to processed files")
-            column_addition_results = self.add_required_columns_to_processed_files(symbol, interval, "bingx")
+            column_addition_results = self.add_required_columns_to_processed_files(symbol, interval, self.exchange)
             results["steps_completed"].append("column_addition")
             results["summary"]["column_addition"] = column_addition_results
 
@@ -420,7 +475,7 @@ class KlinesDataProcessingPipeline:
                 consolidated_results = self.create_consolidated_features_file(
                     symbol=symbol,
                     interval=interval,
-                    exchange="bingx"
+                    exchange=self.exchange
                 )
                 results["steps_completed"].append("consolidated_file_creation")
                 results["summary"]["consolidated_file_creation"] = consolidated_results
@@ -458,7 +513,7 @@ class KlinesDataProcessingPipeline:
             self.logger.info(f"🧹 Removing columns {self.columns_to_remove} from {symbol} {interval} data")
 
             # Get data directory
-            data_path = Path(self.data_dir) / "bingx" / symbol.lower() / "raw" / f"{symbol.lower()}_{interval}"
+            data_path = Path(self.data_dir) / self.exchange / symbol.lower() / "raw" / f"{symbol.lower()}_{interval}"
 
             if not data_path.exists():
                 return {"files_processed": 0, "columns_removed": 0, "message": "No data directory found"}
@@ -534,7 +589,7 @@ class KlinesDataProcessingPipeline:
             self.logger.info(f"📦 Adding required columns to processed {symbol} {interval} data")
 
             # Get processed data directory
-            data_path = Path(self.data_dir) / "bingx" / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
+            data_path = Path(self.data_dir) / self.exchange / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
 
             if not data_path.exists():
                 return {"files_processed": 0, "columns_added": 0, "message": "No processed data directory found"}
@@ -677,7 +732,7 @@ class KlinesDataProcessingPipeline:
             self.logger.info(f"🔍 Analyzing duplicates in {symbol} {interval} data")
 
             # Get data directory
-            data_path = Path(self.data_dir) / "bingx" / symbol.lower() / "raw" / f"{symbol.lower()}_{interval}"
+            data_path = Path(self.data_dir) / self.exchange / symbol.lower() / "raw" / f"{symbol.lower()}_{interval}"
 
             if not data_path.exists():
                 return {"files_analyzed": 0, "duplicates_found": 0, "warnings": [], "message": "No data directory found"}
@@ -758,17 +813,19 @@ class KlinesDataProcessingPipeline:
             }
 
 
-class BingXKlinesDataQualityChecker:
-    """Comprehensive data quality checker for BingX klines data processing pipeline."""
+class ExchangeKlinesDataQualityChecker:
+    """Comprehensive data quality checker for exchange klines data processing pipeline."""
 
-    def __init__(self, data_dir: str = "historical_data"):
+    def __init__(self, exchange: str, data_dir: str = "historical_data"):
         """Initialize the data quality checker.
 
         Args:
+            exchange: Exchange name
             data_dir: Base directory for historical data
         """
+        self.exchange = exchange.lower()
         self.data_dir = Path(data_dir)
-        self.logger = system_logger.getChild("BingXKlinesDataQualityChecker")
+        self.logger = system_logger.getChild(f"ExchangeKlinesDataQualityChecker-{self.exchange.upper()}")
         self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer(self.logger)
 
     def check_processed_data_quality(self, symbol: str = "ETHUSDT",
@@ -847,7 +904,7 @@ class BingXKlinesDataQualityChecker:
 
         try:
             # Find data files for this interval
-            interval_path = self.data_dir / "bingx" / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
+            interval_path = self.data_dir / self.exchange / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
 
             if not interval_path.exists():
                 result["issues"].append(f"Processed data directory not found: {interval_path}")
@@ -1194,7 +1251,8 @@ class BingXKlinesDataQualityChecker:
 
 
 # Convenience functions
-async def run_bingx_klines_pipeline(
+async def run_exchange_klines_pipeline(
+    exchange: str,
     symbol: str = "ETHUSDT",
     years: int = None,
     interval: str = "1m",
@@ -1204,7 +1262,7 @@ async def run_bingx_klines_pipeline(
     max_gap_minutes: int = 1,
     create_consolidated: bool = True
 ) -> Dict[str, Any]:
-    """Run the complete pipeline for downloading klines data for any symbol from BingX.
+    """Run the complete pipeline for downloading klines data for any symbol from any exchange.
 
     This function:
     - Downloads data for the specified symbol using HistoricalDataPipeline
@@ -1215,11 +1273,12 @@ async def run_bingx_klines_pipeline(
     - Creates consolidated features file with required columns: ['timestamp', 'exchange', 'timeframe']
 
     Args:
+        exchange: Exchange name (binance, bingx, mexc, okx, gateio, phemex, etc.)
         symbol: Trading symbol (default: "ETHUSDT")
         years: Number of years of data to download (default: from centralized config)
         data_dir: Base directory for data storage
-        api_key: BingX API key
-        api_secret: BingX API secret
+        api_key: Exchange API key
+        api_secret: Exchange API secret
         interval: Kline interval (default: "1m")
         max_gap_minutes: Maximum allowed gap in minutes (default: 1)
         create_consolidated: Whether to create consolidated features file (default: True)
@@ -1233,9 +1292,9 @@ async def run_bingx_klines_pipeline(
         mode_config = get_full_mode_config()
         years = mode_config.lookback_years
     
-    pipeline = BingXKlinesDataProcessingPipeline(data_dir)
+    pipeline = KlinesDataProcessingPipeline(exchange, data_dir)
 
-    print(f"🚀 Starting {symbol} {interval} data pipeline ({years} years) - BingX")
+    print(f"🚀 Starting {symbol} {interval} data pipeline ({years} years) - {exchange.upper()}")
     print(f"📁 Data directory: {data_dir}")
     print(f"⏱️  Interval: {interval}")
     print(f"🎯 Max gap threshold: {max_gap_minutes} minutes")
@@ -1253,7 +1312,7 @@ async def run_bingx_klines_pipeline(
 
     # Print summary
     print("\n" + "="*80)
-    print("📊 BINGX PIPELINE EXECUTION SUMMARY")
+    print(f"📊 {exchange.upper()} PIPELINE EXECUTION SUMMARY")
     print("="*80)
     print(f"Symbol: {results['symbol']}")
     print(f"Years: {results['years']}")
@@ -1288,6 +1347,34 @@ async def run_bingx_klines_pipeline(
     return results
 
 
+# Backward compatibility function
+async def run_bingx_klines_pipeline(
+    symbol: str = "ETHUSDT",
+    years: int = None,
+    interval: str = "1m",
+    data_dir: str = "historical_data",
+    api_key: str = "",
+    api_secret: str = "",
+    max_gap_minutes: int = 1,
+    create_consolidated: bool = True
+) -> Dict[str, Any]:
+    """Run the complete pipeline for downloading klines data for any symbol from BingX.
+    
+    This is a backward compatibility function that calls the new exchange-agnostic function.
+    """
+    return await run_exchange_klines_pipeline(
+        exchange="bingx",
+        symbol=symbol,
+        years=years,
+        interval=interval,
+        data_dir=data_dir,
+        api_key=api_key,
+        api_secret=api_secret,
+        max_gap_minutes=max_gap_minutes,
+        create_consolidated=create_consolidated
+    )
+
+
 if __name__ == "__main__":
     # Example usage - download klines data with configurable symbol and years
     async def main():
@@ -1312,7 +1399,7 @@ if __name__ == "__main__":
         print(f"Starting {symbol} {years}-year 1m klines data download pipeline... (BingX)")
 
         # Run the complete pipeline
-        results = await run_bingx_klines_pipeline(symbol=symbol, years=years)
+        results = await run_exchange_klines_pipeline(exchange="bingx", symbol=symbol, years=years)
 
         print(f"\nPipeline completed with success: {results.get('pipeline_success', False)}")
 

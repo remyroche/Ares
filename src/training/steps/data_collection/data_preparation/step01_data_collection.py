@@ -28,7 +28,7 @@ class DataCollectionStep(BaseStep):
         """
         super().__init__(config, '01', 'data_collection')
         self.lookback_years = config.get('lookback_years', 2)
-        self.data_sources = config.get('data_sources', ['binance'])
+        self.data_sources = config.get('data_sources', ['binance'])  # Default to binance for backward compatibility
         self.intervals = config.get('intervals', ['1m'])
         self.data_downloader = None
     @log_step_functions

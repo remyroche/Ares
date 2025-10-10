@@ -36,6 +36,29 @@ from exchanges.shared import (
 )
 
 from ...exchanges.exchange_dispatcher import ExchangeDispatcher, ExchangeConfig, ExchangeType
+from ...exchanges.shared import (
+    # Auth
+    AuthenticationManager, APIKeyManager, TimeSyncManager, SubaccountManager,
+    # Market
+    MarketMetadataManager, InstrumentManager, PrecisionHelper, RiskTierManager,
+    # Pricing
+    PriceManager, OHLCVManager, MarketDataAggregator,
+    # Orders
+    OrderManager, IdempotencyManager, PositionManager,
+    # Risk
+    RiskCalculator, LiquidationRiskManager, MarginManager,
+    # History
+    TradeHistoryManager, PaginationManager,
+    # Wallet
+    BalanceManager, WalletManager,
+    # Reliability
+    RateLimitManager, RetryManager, AuditLogger, SystemStatusManager
+)
+from ...exchanges.shared.interfaces_typed import (
+    IHighLevelAuthManager, IHighLevelMarketManager, IHighLevelOrderManager,
+    IHighLevelRiskManager, IHighLevelBalanceManager, IHighLevelRateLimitManager,
+    tprint, DataSource, ValidationResult
+)
 from ..utils.error_handling import (
     ExecutionError, TradingErrorSeverity, trading_error_handler,
     critical_operation, require_no_fallback
@@ -147,6 +170,7 @@ class ExchangeInterface:
         self.risk_manager: Optional[IHighLevelRiskManager] = None
         self.balance_manager: Optional[IHighLevelBalanceManager] = None
         self.rate_limit_manager: Optional[IHighLevelRateLimitManager] = None
+        self._initialize_shared_utilities()
         
         # Connection state
         self.connection_status = ConnectionStatus.DISCONNECTED
@@ -178,6 +202,43 @@ class ExchangeInterface:
         self._initialize_shared_utilities()
 
         self.logger = logger.getChild(f'{self.exchange_type}')
+    
+    def _initialize_shared_utilities(self) -> None:
+        """Initialize shared utilities for exchange operations."""
+        try:
+            # Authentication
+            self.auth_manager = AuthenticationManager(self.exchange_type)
+            self.api_key_manager = APIKeyManager(self.exchange_type)
+            self.time_sync_manager = TimeSyncManager(self.exchange_type)
+            self.subaccount_manager = SubaccountManager(self.exchange_type)
+            
+            # Market metadata
+            self.market_metadata = MarketMetadataManager(self.exchange_type)
+            self.instrument_manager = InstrumentManager(self.exchange_type)
+            self.precision_helper = PrecisionHelper()
+            self.risk_tier_manager = RiskTierManager(self.exchange_type)
+            
+            # Pricing
+            self.price_manager = PriceManager(self.exchange_type)
+            self.ohlcv_manager = OHLCVManager(self.exchange_type)
+            
+            # Orders
+            self.order_manager = OrderManager(self.exchange_type)
+            self.idempotency_manager = IdempotencyManager(self.exchange_type)
+            
+            # Risk
+            self.risk_calculator = RiskCalculator(self.exchange_type)
+            
+            # Wallet
+            self.balance_manager = BalanceManager(self.exchange_type)
+            
+            # Reliability
+            self.rate_limit_manager = RateLimitManager(self.exchange_type)
+            self.audit_logger = AuditLogger(self.exchange_type)
+            
+        except Exception as e:
+            tprint(f"Failed to initialize shared utilities: {e}", "ERROR")
+            raise
     
     def _initialize_simulated_data(self) -> None:
         """Initialize simulated exchange data."""
@@ -257,6 +318,11 @@ class ExchangeInterface:
                     tprint("❌ Authentication failed", "ERROR")
                     self.connection_status = ConnectionStatus.ERROR
                     return False
+                tprint(f"Connected to {self.exchange_type} (simulated)", "INFO")
+                return True
+            
+            # Initialize shared utilities for real exchanges
+            await self._initialize_exchange_utilities()
             
             # Create exchange dispatcher
             exchange_type = ExchangeType.OKX if self.exchange_type == 'okx' else ExchangeType.BINANCE
@@ -274,6 +340,7 @@ class ExchangeInterface:
             if success:
                 self.connection_status = ConnectionStatus.CONNECTED
                 tprint(f"✅ Connected to {self.exchange_type}", "INFO")
+                tprint(f"Connected to {self.exchange_type}", "INFO")
                 return True
             else:
                 self.connection_status = ConnectionStatus.ERROR
@@ -284,6 +351,172 @@ class ExchangeInterface:
             self.connection_status = ConnectionStatus.ERROR
             await self._handle_error(e, "connect")
             return False
+    
+    async def _initialize_exchange_utilities(self) -> None:
+        """Initialize exchange-specific utilities."""
+        try:
+            # Register exchange functions with shared utilities
+            self._register_exchange_functions()
+            
+            # Set up rate limiting
+            self._setup_rate_limiting()
+            
+            # Initialize market data
+            await self._initialize_market_data()
+            
+        except Exception as e:
+            tprint(f"Failed to initialize exchange utilities: {e}", "ERROR")
+            raise
+    
+    def _register_exchange_functions(self) -> None:
+        """Register exchange-specific functions with shared utilities."""
+        try:
+            # Auth functions
+            self.auth_manager.register_auth_functions(
+                get_server_time=self._get_server_time,
+                test_connection=self._test_connection,
+                get_account_info=self._get_account_info
+            )
+            
+            # Market metadata functions
+            self.market_metadata.register_refresh_functions(
+                get_instruments=self._get_instruments,
+                get_ticker=self._get_ticker,
+                get_orderbook=self._get_order_book,
+                get_funding_rate=self._get_funding_rate
+            )
+            
+            # Price functions
+            self.price_manager.register_price_functions(
+                get_ticker=self._get_ticker,
+                get_orderbook=self._get_order_book,
+                get_recent_trades=self._get_recent_trades,
+                get_klines=self._get_klines
+            )
+            
+            # OHLCV functions
+            self.ohlcv_manager.register_fetch_functions(
+                get_klines=self._get_klines,
+                get_historical_klines=self._get_historical_klines
+            )
+            
+            # Order functions
+            self.order_manager.register_execution_functions(
+                create_order=self._create_order_exchange,
+                cancel_order=self._cancel_order_exchange,
+                get_order_status=self._get_order_status_exchange,
+                get_open_orders=self._get_open_orders_exchange
+            )
+            
+            # Balance functions
+            self.balance_manager.register_fetch_functions(
+                get_balances=self._get_balances_exchange,
+                get_account_info=self._get_account_info
+            )
+            
+        except Exception as e:
+            tprint(f"Failed to register exchange functions: {e}", "ERROR")
+            raise
+    
+    def _setup_rate_limiting(self) -> None:
+        """Set up rate limiting for different endpoints."""
+        try:
+            from ...exchanges.shared.reliability.rate_limit_manager import RateLimit
+            
+            # General API rate limits
+            general_limit = RateLimit(
+                requests_per_second=20,
+                requests_per_minute=1200,
+                requests_per_hour=72000,
+                burst_limit=50
+            )
+            
+            # Trading rate limits (more restrictive)
+            trading_limit = RateLimit(
+                requests_per_second=10,
+                requests_per_minute=600,
+                requests_per_hour=36000,
+                burst_limit=20
+            )
+            
+            # Set rate limits for different endpoint categories
+            self.rate_limit_manager.set_rate_limit("public", general_limit)
+            self.rate_limit_manager.set_rate_limit("trading", trading_limit)
+            self.rate_limit_manager.set_rate_limit("account", trading_limit)
+            
+        except Exception as e:
+            tprint(f"Failed to setup rate limiting: {e}", "ERROR")
+    
+    async def _initialize_market_data(self) -> None:
+        """Initialize market metadata and instruments."""
+        try:
+            # Refresh instruments
+            await self.market_metadata.refresh_instruments()
+            
+            # Set up precision configurations
+            await self._setup_precision_configs()
+            
+            # Set up risk tiers
+            await self._setup_risk_tiers()
+            
+        except Exception as e:
+            tprint(f"Failed to initialize market data: {e}", "ERROR")
+            raise
+    
+    async def _setup_precision_configs(self) -> None:
+        """Set up precision configurations for symbols."""
+        try:
+            from ...exchanges.shared.market.precision_helper import PrecisionConfig
+            
+            instruments = self.market_metadata.get_active_instruments()
+            for instrument in instruments:
+                config = PrecisionConfig(
+                    symbol=instrument.symbol,
+                    price_precision=instrument.price_precision,
+                    quantity_precision=instrument.quantity_precision,
+                    tick_size=instrument.tick_size,
+                    lot_size=instrument.lot_size,
+                    min_notional=instrument.min_notional,
+                    max_notional=instrument.max_notional
+                )
+                self.precision_helper.set_precision_config(config)
+                
+        except Exception as e:
+            tprint(f"Failed to setup precision configs: {e}", "ERROR")
+    
+    async def _setup_risk_tiers(self) -> None:
+        """Set up risk tiers for symbols."""
+        try:
+            from ...exchanges.shared.market.risk_tier_manager import SymbolRiskProfile, RiskTier
+            
+            instruments = self.market_metadata.get_active_instruments()
+            for instrument in instruments:
+                # Determine risk tier based on leverage
+                if instrument.max_leverage and instrument.max_leverage >= 20:
+                    risk_tier = RiskTier.EXTREME
+                elif instrument.max_leverage and instrument.max_leverage >= 10:
+                    risk_tier = RiskTier.HIGH
+                elif instrument.max_leverage and instrument.max_leverage >= 5:
+                    risk_tier = RiskTier.MEDIUM
+                else:
+                    risk_tier = RiskTier.LOW
+                
+                profile = SymbolRiskProfile(
+                    symbol=instrument.symbol,
+                    risk_tier=risk_tier,
+                    max_leverage=instrument.max_leverage or 1.0,
+                    max_position_size=1000000.0,  # Default
+                    max_notional=2000000.0,  # Default
+                    margin_ratio=instrument.margin_ratio or 0.1,
+                    liquidation_ratio=instrument.liquidation_ratio or 0.8,
+                    maintenance_margin=0.05,  # Default
+                    initial_margin=0.1  # Default
+                )
+                
+                self.risk_tier_manager.set_symbol_risk_profile(profile)
+                
+        except Exception as e:
+            tprint(f"Failed to setup risk tiers: {e}", "ERROR")
 
     @handle_async_errors(default_return=None)
     async def disconnect(self) -> None:
@@ -304,6 +537,170 @@ class ExchangeInterface:
             
         except Exception as e:
             tprint(f"❌ Error during disconnect: {e}", "ERROR")
+            self.connection_status = ConnectionStatus.DISCONNECTED
+            tprint(f"Disconnected from {self.exchange_type}", "INFO")
+        except Exception as e:
+            tprint(f"Error disconnecting from exchange: {e}", "ERROR")
+    
+    # Exchange-specific methods for shared utilities
+    async def _get_server_time(self) -> Optional[int]:
+        """Get server time in milliseconds."""
+        try:
+            if self.dispatcher:
+                return await self.dispatcher.get_server_time()
+        except Exception as e:
+            tprint(f"Error getting server time: {e}", "ERROR")
+        return None
+    
+    async def _test_connection(self) -> bool:
+        """Test connection to exchange."""
+        try:
+            if self.dispatcher:
+                return await self.dispatcher.test_connection()
+        except Exception as e:
+            tprint(f"Connection test failed: {e}", "ERROR")
+        return False
+    
+    async def _get_account_info(self) -> Optional[Dict[str, Any]]:
+        """Get account information."""
+        try:
+            if self.dispatcher:
+                return await self.dispatcher.get_account_info()
+        except Exception as e:
+            tprint(f"Error getting account info: {e}", "ERROR")
+        return None
+    
+    async def _get_instruments(self) -> List[Dict[str, Any]]:
+        """Get instrument specifications."""
+        try:
+            if self.dispatcher:
+                return await self.dispatcher.get_instruments()
+        except Exception as e:
+            tprint(f"Error getting instruments: {e}", "ERROR")
+        return []
+    
+    async def _get_ticker(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Get ticker data for symbol."""
+        try:
+            if self.dispatcher:
+                return await self.dispatcher.get_ticker(symbol)
+        except Exception as e:
+            tprint(f"Error getting ticker for {symbol}: {e}", "ERROR")
+        return None
+    
+    async def _get_order_book(self, symbol: str, limit: int = 20) -> Optional[Dict[str, Any]]:
+        """Get order book for symbol."""
+        try:
+            if self.dispatcher:
+                return await self.dispatcher.get_order_book(symbol, limit)
+        except Exception as e:
+            tprint(f"Error getting order book for {symbol}: {e}", "ERROR")
+        return None
+    
+    async def _get_recent_trades(self, symbol: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get recent trades for symbol."""
+        try:
+            if self.dispatcher:
+                return await self.dispatcher.get_recent_trades(symbol, limit)
+        except Exception as e:
+            tprint(f"Error getting recent trades for {symbol}: {e}", "ERROR")
+        return []
+    
+    async def _get_klines(self, symbol: str, interval: str, limit: int = 100) -> List[List[Any]]:
+        """Get kline data for symbol."""
+        try:
+            if self.dispatcher:
+                ohlcv_data = await self.dispatcher.get_ohlcv(symbol, interval, limit)
+                return [[candle.timestamp.timestamp() * 1000, candle.open, candle.high, 
+                        candle.low, candle.close, candle.volume] for candle in ohlcv_data]
+        except Exception as e:
+            tprint(f"Error getting klines for {symbol}: {e}", "ERROR")
+        return []
+    
+    async def _get_historical_klines(
+        self,
+        symbol: str,
+        interval: str,
+        start_time: datetime,
+        end_time: datetime,
+        limit: int = 1000
+    ) -> List[List[Any]]:
+        """Get historical kline data."""
+        try:
+            if self.dispatcher:
+                ohlcv_data = await self.dispatcher.get_historical_ohlcv(
+                    symbol, interval, start_time, end_time, limit
+                )
+                return [[candle.timestamp.timestamp() * 1000, candle.open, candle.high, 
+                        candle.low, candle.close, candle.volume] for candle in ohlcv_data]
+        except Exception as e:
+            tprint(f"Error getting historical klines for {symbol}: {e}", "ERROR")
+        return []
+    
+    async def _get_funding_rate(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Get funding rate for symbol."""
+        try:
+            if self.dispatcher:
+                return await self.dispatcher.get_funding_rate(symbol)
+        except Exception as e:
+            tprint(f"Error getting funding rate for {symbol}: {e}", "ERROR")
+        return None
+    
+    async def _get_balances_exchange(self, account_type: str) -> List[Dict[str, Any]]:
+        """Get balances for account type."""
+        try:
+            if self.dispatcher:
+                return await self.dispatcher.get_balances(account_type)
+        except Exception as e:
+            tprint(f"Error getting balances: {e}", "ERROR")
+        return []
+    
+    async def _create_order_exchange(
+        self,
+        symbol: str,
+        side: str,
+        order_type: str,
+        quantity: float,
+        price: Optional[float] = None,
+        stop_price: Optional[float] = None,
+        client_order_id: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Create order on exchange."""
+        try:
+            if self.dispatcher:
+                return await self.dispatcher.create_order(
+                    symbol, side, order_type, quantity, price, stop_price, client_order_id
+                )
+        except Exception as e:
+            tprint(f"Error creating order: {e}", "ERROR")
+        return None
+    
+    async def _cancel_order_exchange(self, order_id: str) -> bool:
+        """Cancel order on exchange."""
+        try:
+            if self.dispatcher:
+                return await self.dispatcher.cancel_order(order_id)
+        except Exception as e:
+            tprint(f"Error canceling order: {e}", "ERROR")
+        return False
+    
+    async def _get_order_status_exchange(self, order_id: str) -> Optional[Dict[str, Any]]:
+        """Get order status from exchange."""
+        try:
+            if self.dispatcher:
+                return await self.dispatcher.get_order_status(order_id)
+        except Exception as e:
+            tprint(f"Error getting order status: {e}", "ERROR")
+        return None
+    
+    async def _get_open_orders_exchange(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get open orders from exchange."""
+        try:
+            if self.dispatcher:
+                return await self.dispatcher.get_open_orders(symbol)
+        except Exception as e:
+            tprint(f"Error getting open orders: {e}", "ERROR")
+        return []
 
     async def is_connected(self) -> bool:
         """Check if connected to exchange."""

@@ -2,7 +2,7 @@
 Gap Detection and Filling Tools for Historical Data
 
 This module provides tools to detect gaps in historical klines data
-and fill them by downloading missing data from Binance.
+and fill them by downloading missing data from any supported exchange.
 """
 
 import asyncio
@@ -11,22 +11,25 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
-from exchanges.binance import BinanceExchange
+# Removed direct Binance import - using ExchangeInterface instead
 from src.utils.logger import system_logger
 from src.utils.parquet_utils import ParquetUtils
+from src.trading.execution.exchange_interface import ExchangeInterface
 
 
 class GapDetector:
     """Detect and fill gaps in historical klines data."""
 
-    def __init__(self, data_dir: str = "historical_data"):
+    def __init__(self, data_dir: str = "historical_data", exchange: str = "binance"):
         """Initialize the gap detector.
         
         Args:
             data_dir: Base directory for historical data
+            exchange: Exchange name for data organization
         """
         self.data_dir = Path(data_dir)
-        self.raw_data_dir = self.data_dir / "binance"
+        self.exchange = exchange.lower()
+        self.raw_data_dir = self.data_dir / self.exchange
         self.logger = system_logger.getChild("GapDetector")
         self.parquet_utils = ParquetUtils()
         
@@ -208,9 +211,75 @@ class GapDetector:
         
         return interval_map.get(interval, timedelta(minutes=1))
     
+    async def _get_historical_klines_unified(
+        self,
+        exchange,
+        symbol: str,
+        interval: str,
+        start_time_ms: int,
+        end_time_ms: int,
+        limit: int
+    ) -> List[Dict[str, Any]]:
+        """Get historical klines data using unified interface for both exchange types.
+        
+        Args:
+            exchange: Exchange instance (ExchangeInterface)
+            symbol: Trading symbol
+            interval: Kline interval
+            start_time_ms: Start time in milliseconds
+            end_time_ms: End time in milliseconds
+            limit: Maximum number of records
+            
+        Returns:
+            List of kline data dictionaries
+        """
+        try:
+            # Check if it's ExchangeInterface
+            if hasattr(exchange, 'get_klines') and hasattr(exchange, 'exchange_type'):
+                # Use ExchangeInterface
+                from datetime import datetime
+                start_time = datetime.fromtimestamp(start_time_ms / 1000)
+                end_time = datetime.fromtimestamp(end_time_ms / 1000)
+                
+                klines_data = await exchange.get_klines(
+                    symbol=symbol,
+                    interval=interval,
+                    start_time=start_time,
+                    end_time=end_time,
+                    limit=limit
+                )
+                
+                # Convert KlineData objects to dict format
+                result = []
+                for kline in klines_data:
+                    result.append({
+                        "timestamp": int(kline.timestamp.timestamp() * 1000),
+                        "open_time": int(kline.timestamp.timestamp() * 1000),
+                        "open": kline.open_price,
+                        "high": kline.high_price,
+                        "low": kline.low_price,
+                        "close": kline.close_price,
+                        "volume": kline.volume,
+                        "close_time": int(kline.close_time.timestamp() * 1000),
+                        "quote_volume": kline.quote_asset_volume,
+                        "trades": kline.number_of_trades,
+                        "taker_buy_base": kline.taker_buy_base_asset_volume,
+                        "taker_buy_quote": kline.taker_buy_quote_asset_volume
+                    })
+                return result
+            else:
+                # Use ExchangeInterface method
+                return await exchange.get_klines(
+                    symbol, interval, start_time, end_time, limit
+                )
+        except Exception as e:
+            self.logger.error(f"Error getting historical klines: {e}")
+            return []
+    
     async def fill_gaps(
         self,
         gaps: List[Dict[str, Any]],
+        exchange_interface: Optional[ExchangeInterface] = None,
         api_key: str = "",
         api_secret: str = ""
     ) -> Dict[str, Any]:
@@ -218,8 +287,9 @@ class GapDetector:
         
         Args:
             gaps: List of gap information from detect_gaps
-            api_key: Binance API key
-            api_secret: Binance API secret
+            exchange_interface: ExchangeInterface instance (preferred over api_key/api_secret)
+            api_key: Exchange API key (fallback if exchange_interface not provided)
+            api_secret: Exchange API secret (fallback if exchange_interface not provided)
             
         Returns:
             Dictionary with filling results
@@ -230,9 +300,21 @@ class GapDetector:
         try:
             self.logger.info(f"🔧 Filling {len(gaps)} gaps")
             
-            # Initialize Binance exchange
-            exchange = BinanceExchange(api_key, api_secret, gaps[0]["symbol"])
-            await exchange._initialize_exchange()
+            # Initialize exchange (prefer ExchangeInterface if provided)
+            if exchange_interface is not None:
+                exchange = exchange_interface
+                await exchange.connect()
+            else:
+                # Create ExchangeInterface for the specified exchange
+                from src.trading.execution.exchange_interface import create_exchange_interface
+                config = {
+                    'exchange_type': 'binance',  # Default to binance for backward compatibility
+                    'api_key': api_key,
+                    'api_secret': api_secret,
+                    'trade_symbol': gaps[0]["symbol"]
+                }
+                exchange = create_exchange_interface(config)
+                await exchange.connect()
             
             filled_gaps = 0
             total_records_added = 0
@@ -257,7 +339,11 @@ class GapDetector:
                     errors.append(error_msg)
                     self.logger.error(error_msg)
             
-            await exchange.close()
+            # Close exchange connection
+            if hasattr(exchange, 'close'):
+                await exchange.close()
+            elif hasattr(exchange, 'disconnect'):
+                await exchange.disconnect()
             
             result = {
                 "filled_gaps": filled_gaps,
@@ -274,13 +360,13 @@ class GapDetector:
     
     async def _fill_single_gap(
         self,
-        exchange: BinanceExchange,
+        exchange,
         gap: Dict[str, Any]
     ) -> Tuple[bool, int]:
         """Fill a single gap by downloading missing data.
         
         Args:
-            exchange: Binance exchange instance
+            exchange: Exchange instance
             gap: Gap information dictionary
             
         Returns:
@@ -297,8 +383,8 @@ class GapDetector:
             end_time_ms = int(gap_end.timestamp() * 1000)
             
             # Download data for the gap period
-            raw_data = await exchange._get_historical_klines_raw(
-                symbol, interval, start_time_ms, end_time_ms, 1000
+            raw_data = await self._get_historical_klines_unified(
+                exchange, symbol, interval, start_time_ms, end_time_ms, 1000
             )
             
             if not raw_data:
@@ -428,8 +514,8 @@ async def detect_and_fill_gaps(
         interval: Kline interval
         max_gap_minutes: Maximum allowed gap in minutes
         data_dir: Base directory for data storage
-        api_key: Binance API key
-        api_secret: Binance API secret
+        api_key: Exchange API key
+        api_secret: Exchange API secret
         
     Returns:
         Dictionary with gap detection and filling results

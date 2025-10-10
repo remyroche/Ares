@@ -2,7 +2,7 @@
 Klines Data Downloading and Processing Pipeline
 
 This module provides a complete pipeline for downloading, processing, and quality-checking
-historical klines data with gap detection, duplicate handling, and column management.
+historical klines data from any exchange with gap detection, duplicate handling, and column management.
 
 Features:
 - Download historical klines data using HistoricalDataPipeline
@@ -10,6 +10,7 @@ Features:
 - Identify and handle duplicate timestamps (warn on false duplicates, remove true duplicates)
 - Remove unwanted columns (taker_buy_base, taker_buy_quote, year)
 - Comprehensive data quality checks
+- Exchange-agnostic data standardization
 """
 
 import pandas as pd
@@ -29,67 +30,226 @@ from src.utils.data.quality.comprehensive_duplicate_analyzer import (
     analyze_duplicates_comprehensive
 )
 from src.utils.data.historical_data_pipeline import HistoricalDataPipeline
-from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
+from src.utils.data.klines_parquet import KlinesParquetManager
+from exchanges.shared import ExchangeDataStandardizer
 from src.utils.data.gap_detector import GapDetector
 
 
 class KlinesDataProcessingPipeline:
-    """Complete pipeline for downloading, processing, and quality-checking klines data."""
+    """Complete pipeline for downloading, processing, and quality-checking klines data from any exchange."""
 
-    def __init__(self, data_dir: str = "historical_data"):
+    def __init__(self, exchange: str, data_dir: str = "historical_data"):
         """Initialize the processing pipeline.
 
         Args:
+            exchange: Exchange name (binance, bingx, mexc, okx, gateio, phemex, etc.)
             data_dir: Base directory for historical data
         """
+        self.exchange = exchange.lower()
         self.data_dir = data_dir
-        self.logger = system_logger.getChild("KlinesDataProcessingPipeline")
+        self.logger = system_logger.getChild(f"KlinesDataProcessingPipeline-{self.exchange.upper()}")
 
         # Initialize components
         self.historical_pipeline = HistoricalDataPipeline(data_dir)
         self.gap_detector = GapDetector(data_dir)
         self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer(self.logger)
 
+        # Initialize standardized data managers
+        self.parquet_manager = KlinesParquetManager(data_dir, self.exchange)
+        self.data_standardizer = ExchangeDataStandardizer(data_dir)
+
         # Quality checker will be initialized when first used
         self._quality_checker = None
 
-        # Columns to remove
+        # Columns to remove (exchange-agnostic)
         self.columns_to_remove = ['taker_buy_base', 'taker_buy_quote', 'year']
+
+    def standardize_data_format(self, df: pd.DataFrame, symbol: str, interval: str) -> pd.DataFrame:
+        """Standardize data format using centralized standardizer.
+        
+        Args:
+            df: Raw DataFrame from exchange
+            symbol: Trading symbol
+            interval: Data interval
+            
+        Returns:
+            Standardized DataFrame
+        """
+        try:
+            standardized_df, report = self.data_standardizer.standardize_data(
+                df, self.exchange, symbol, interval, validate_quality=True
+            )
+            
+            if report['success']:
+                self.logger.info(f"✅ Data standardized: {len(standardized_df)} records for {symbol} {interval}")
+                if report.get('warnings'):
+                    for warning in report['warnings']:
+                        self.logger.warning(f"⚠️ {warning}")
+            else:
+                self.logger.error(f"❌ Data standardization failed: {report.get('errors', [])}")
+                
+            return standardized_df
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to standardize data format: {e}")
+            return df
+
+    def save_standardized_data(self, df: pd.DataFrame, symbol: str, interval: str, data_type: str = "raw") -> bool:
+        """Save data using standardized KlinesParquetManager.
+        
+        Args:
+            df: DataFrame to save
+            symbol: Trading symbol
+            interval: Data interval
+            data_type: 'raw' or 'processed'
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            return self.parquet_manager.write_data(df, symbol, interval, data_type)
+        except Exception as e:
+            self.logger.error(f"❌ Failed to save standardized data: {e}")
+            return False
+
+    def load_standardized_data(self, symbol: str, interval: str, data_type: str = "raw", 
+                             start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> Optional[pd.DataFrame]:
+        """Load data using standardized KlinesParquetManager.
+        
+        Args:
+            symbol: Trading symbol
+            interval: Data interval
+            data_type: 'raw' or 'processed'
+            start_date: Start date for filtering
+            end_date: End date for filtering
+            
+        Returns:
+            DataFrame with data or None if not found
+        """
+        try:
+            return self.parquet_manager.read_data(symbol, interval, start_date, end_date, data_type)
+        except Exception as e:
+            self.logger.error(f"❌ Failed to load standardized data: {e}")
+            return None
+
+    def validate_data_quality(self, df: pd.DataFrame, context: str = "") -> Dict[str, Any]:
+        """Validate data quality using centralized standardizer.
+        
+        Args:
+            df: DataFrame to validate
+            context: Context for validation
+            
+        Returns:
+            Validation results
+        """
+        try:
+            # Use the standardizer's quality validation
+            _, report = self.data_standardizer.standardize_data(
+                df, self.exchange, "VALIDATION", "1m", validate_quality=True
+            )
+            
+            quality_info = report.get('quality_validation', {})
+            return {
+                'passed': quality_info.get('passed', False),
+                'quality_score': quality_info.get('quality_score', 0.0),
+                'issues': quality_info.get('issues', []),
+                'warnings': quality_info.get('warnings', []),
+                'metrics': quality_info.get('metrics', {}),
+                'standardization_report': report
+            }
+        except Exception as e:
+            self.logger.error(f"❌ Failed to validate data quality: {e}")
+            return {'passed': False, 'error': str(e)}
+
+    def process_klines_data(
+        self, 
+        df: pd.DataFrame, 
+        symbol: str, 
+        interval: str, 
+        save_data: bool = True
+    ) -> pd.DataFrame:
+        """Process klines data using the shared pipeline.
+        
+        Args:
+            df: Raw DataFrame from exchange
+            symbol: Trading symbol
+            interval: Data interval
+            save_data: Whether to save processed data
+            
+        Returns:
+            Processed DataFrame
+        """
+        try:
+            # Standardize data format
+            standardized_df = self.standardize_data_format(df, symbol, interval)
+            
+            if save_data:
+                # Save standardized data
+                self.save_standardized_data(standardized_df, symbol, interval, "raw")
+            
+            return standardized_df
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to process klines data: {e}")
+            return df
+
+    def get_processed_data(
+        self,
+        symbol: str,
+        interval: str,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> Optional[pd.DataFrame]:
+        """Get previously processed data.
+        
+        Args:
+            symbol: Trading symbol
+            interval: Data interval
+            start_date: Start date filter
+            end_date: End date filter
+            
+        Returns:
+            Processed DataFrame or None
+        """
+        return self.load_standardized_data(symbol, interval, "raw", start_date, end_date)
 
     @property
     def quality_checker(self):
         """Lazy initialization of quality checker."""
         if self._quality_checker is None:
-            self._quality_checker = KlinesDataQualityChecker(self.data_dir)
+            self._quality_checker = ExchangeKlinesDataQualityChecker(self.exchange, self.data_dir)
         return self._quality_checker
 
     def create_consolidated_features_file(
         self,
         symbol: str = "ETHUSDT",
         interval: str = "1m",
-        exchange: str = "binance"
+        exchange: str = None
     ) -> Dict[str, Any]:
         """Create a consolidated features parquet file with required columns.
 
-        This creates a file with the format: historical_data/features_binance_{SYMBOL}_consolidated.parquet
+        This creates a file with the format: historical_data/features_{EXCHANGE}_{SYMBOL}_consolidated.parquet
         containing the required columns: ['timestamp', 'exchange', 'timeframe']
 
         Args:
             symbol: Trading symbol (e.g., "ETHUSDT")
             interval: Time interval (e.g., "1m")
-            exchange: Exchange name (default: "binance")
+            exchange: Exchange name (default: uses self.exchange)
 
         Returns:
             Dictionary with consolidation results
         """
         try:
+            if exchange is None:
+                exchange = self.exchange
+                
             self.logger.info(f"📦 Creating consolidated features file for {symbol} {interval}")
 
             # Define output file path
             output_file = Path(self.data_dir) / f"features_{exchange.lower()}_{symbol.upper()}_consolidated.parquet"
 
             # Find processed data files
-            data_path = Path(self.data_dir) / "binance" / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
+            data_path = Path(self.data_dir) / exchange.lower() / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
 
             if not data_path.exists():
                 return {
@@ -225,8 +385,8 @@ class KlinesDataProcessingPipeline:
             symbol: Trading symbol (e.g., "ETHUSDT", default: "ETHUSDT")
             years: Number of years of data to download (default: from centralized config)
             interval: Kline interval (e.g., "1m")
-            api_key: Binance API key
-            api_secret: Binance API secret
+            api_key: BingX API key
+            api_secret: BingX API secret
             max_gap_minutes: Maximum allowed gap in minutes
             create_consolidated: Whether to create consolidated features file
 
@@ -254,23 +414,9 @@ class KlinesDataProcessingPipeline:
 
             # Step 1: Download data using HistoricalDataPipeline
             self.logger.info(f"📥 Step 1: Downloading {years} years of {symbol} {interval} data")
-            
-            # Create ExchangeInterface for exchange-agnostic data access
-            exchange_interface = None
-            if api_key and api_secret:
-                exchange_config = {
-                    'exchange_type': 'binance',
-                    'api_key': api_key,
-                    'api_secret': api_secret,
-                    'testnet': False
-                }
-                exchange_interface = create_exchange_interface(exchange_config)
-                await exchange_interface.connect()
-            
             download_results = await self.historical_pipeline.run_complete_pipeline(
                 symbol=symbol,
                 years=years,
-                exchange_interface=exchange_interface,
                 api_key=api_key,
                 api_secret=api_secret,
                 target_intervals=[interval] if interval != "1m" else []
@@ -293,14 +439,14 @@ class KlinesDataProcessingPipeline:
 
             # Step 2.5: Add required columns to processed files
             self.logger.info("📦 Step 2.5: Adding required columns (exchange, timeframe) to processed files")
-            column_addition_results = self.add_required_columns_to_processed_files(symbol, interval, "binance")
+            column_addition_results = self.add_required_columns_to_processed_files(symbol, interval, self.exchange)
             results["steps_completed"].append("column_addition")
             results["summary"]["column_addition"] = column_addition_results
 
             # Step 3: Detect and fill gaps > 1m
             self.logger.info("🔍 Step 3: Detecting gaps > 1m and re-downloading if needed")
             gap_results = await self.handle_gaps_with_column_removal(
-                symbol, interval, max_gap_minutes, exchange_interface, api_key, api_secret
+                symbol, interval, max_gap_minutes, api_key, api_secret
             )
             results["steps_completed"].append("gap_handling")
             results["summary"]["gap_handling"] = gap_results
@@ -329,7 +475,7 @@ class KlinesDataProcessingPipeline:
                 consolidated_results = self.create_consolidated_features_file(
                     symbol=symbol,
                     interval=interval,
-                    exchange="binance"
+                    exchange=self.exchange
                 )
                 results["steps_completed"].append("consolidated_file_creation")
                 results["summary"]["consolidated_file_creation"] = consolidated_results
@@ -338,13 +484,6 @@ class KlinesDataProcessingPipeline:
                     results["warnings"].append(f"Consolidated file creation failed: {consolidated_results.get('error', 'Unknown error')}")
                 else:
                     self.logger.info("✅ Consolidated features file created successfully")
-
-            # Cleanup exchange interface
-            if exchange_interface:
-                try:
-                    await exchange_interface.disconnect()
-                except Exception as e:
-                    self.logger.warning(f"Error disconnecting exchange interface: {e}")
 
             # Overall success
             results["pipeline_success"] = len(results["errors"]) == 0
@@ -374,7 +513,7 @@ class KlinesDataProcessingPipeline:
             self.logger.info(f"🧹 Removing columns {self.columns_to_remove} from {symbol} {interval} data")
 
             # Get data directory
-            data_path = Path(self.data_dir) / "binance" / symbol.lower() / "raw" / f"{symbol.lower()}_{interval}"
+            data_path = Path(self.data_dir) / self.exchange / symbol.lower() / "raw" / f"{symbol.lower()}_{interval}"
 
             if not data_path.exists():
                 return {"files_processed": 0, "columns_removed": 0, "message": "No data directory found"}
@@ -435,7 +574,7 @@ class KlinesDataProcessingPipeline:
                 "error": str(e)
             }
 
-    def add_required_columns_to_processed_files(self, symbol: str, interval: str, exchange: str = "binance") -> Dict[str, Any]:
+    def add_required_columns_to_processed_files(self, symbol: str, interval: str, exchange: str = "bingx") -> Dict[str, Any]:
         """Add required columns (exchange, timeframe) to processed data files.
 
         Args:
@@ -450,7 +589,7 @@ class KlinesDataProcessingPipeline:
             self.logger.info(f"📦 Adding required columns to processed {symbol} {interval} data")
 
             # Get processed data directory
-            data_path = Path(self.data_dir) / "binance" / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
+            data_path = Path(self.data_dir) / self.exchange / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
 
             if not data_path.exists():
                 return {"files_processed": 0, "columns_added": 0, "message": "No processed data directory found"}
@@ -533,9 +672,8 @@ class KlinesDataProcessingPipeline:
         symbol: str,
         interval: str,
         max_gap_minutes: int,
-        exchange_interface: Optional[ExchangeInterface] = None,
-        api_key: str = "",
-        api_secret: str = ""
+        api_key: str,
+        api_secret: str
     ) -> Dict[str, Any]:
         """Detect gaps and fill them, removing unwanted columns from new data.
 
@@ -543,9 +681,8 @@ class KlinesDataProcessingPipeline:
             symbol: Trading symbol
             interval: Data interval
             max_gap_minutes: Maximum allowed gap in minutes
-            exchange_interface: ExchangeInterface instance (preferred over api_key/api_secret)
-            api_key: Exchange API key (fallback if exchange_interface not provided)
-            api_secret: Exchange API secret (fallback if exchange_interface not provided)
+            api_key: BingX API key
+            api_secret: BingX API secret
 
         Returns:
             Dictionary with gap handling results
@@ -563,7 +700,7 @@ class KlinesDataProcessingPipeline:
             self.logger.info(f"⚠️ Found {len(gaps)} gaps > {max_gap_minutes} minutes")
 
             # Fill gaps
-            gap_fill_results = await self.gap_detector.fill_gaps(gaps, exchange_interface, api_key, api_secret)
+            gap_fill_results = await self.gap_detector.fill_gaps(gaps, api_key, api_secret)
 
             # Remove unwanted columns and add required columns from newly downloaded data
             if gap_fill_results.get("filled_gaps", 0) > 0:
@@ -572,7 +709,7 @@ class KlinesDataProcessingPipeline:
                 gap_fill_results["column_removal"] = column_removal_results
 
                 self.logger.info("📦 Adding required columns to gap-filled data")
-                column_addition_results = self.add_required_columns_to_processed_files(symbol, interval, "binance")
+                column_addition_results = self.add_required_columns_to_processed_files(symbol, interval, "bingx")
                 gap_fill_results["column_addition"] = column_addition_results
 
             return gap_fill_results
@@ -595,7 +732,7 @@ class KlinesDataProcessingPipeline:
             self.logger.info(f"🔍 Analyzing duplicates in {symbol} {interval} data")
 
             # Get data directory
-            data_path = Path(self.data_dir) / "binance" / symbol.lower() / "raw" / f"{symbol.lower()}_{interval}"
+            data_path = Path(self.data_dir) / self.exchange / symbol.lower() / "raw" / f"{symbol.lower()}_{interval}"
 
             if not data_path.exists():
                 return {"files_analyzed": 0, "duplicates_found": 0, "warnings": [], "message": "No data directory found"}
@@ -676,17 +813,19 @@ class KlinesDataProcessingPipeline:
             }
 
 
-class KlinesDataQualityChecker:
-    """Comprehensive data quality checker for klines data processing pipeline."""
+class ExchangeKlinesDataQualityChecker:
+    """Comprehensive data quality checker for exchange klines data processing pipeline."""
 
-    def __init__(self, data_dir: str = "historical_data"):
+    def __init__(self, exchange: str, data_dir: str = "historical_data"):
         """Initialize the data quality checker.
 
         Args:
+            exchange: Exchange name
             data_dir: Base directory for historical data
         """
+        self.exchange = exchange.lower()
         self.data_dir = Path(data_dir)
-        self.logger = system_logger.getChild("KlinesDataQualityChecker")
+        self.logger = system_logger.getChild(f"ExchangeKlinesDataQualityChecker-{self.exchange.upper()}")
         self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer(self.logger)
 
     def check_processed_data_quality(self, symbol: str = "ETHUSDT",
@@ -765,7 +904,7 @@ class KlinesDataQualityChecker:
 
         try:
             # Find data files for this interval
-            interval_path = self.data_dir / "binance" / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
+            interval_path = self.data_dir / self.exchange / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
 
             if not interval_path.exists():
                 result["issues"].append(f"Processed data directory not found: {interval_path}")
@@ -1006,7 +1145,7 @@ class KlinesDataQualityChecker:
             if null_count > 0:
                 null_pct = null_count / total_records
                 if null_pct > max_null_pct:
-                    issues.append(".1f")
+                    issues.append(f"Column {col} has {null_pct:.1%} null values")
                 elif null_count > 0:
                     issues.append(f"Column {col} has {null_count} null values")
 
@@ -1110,313 +1249,20 @@ class KlinesDataQualityChecker:
 
         return summary
 
-    def print_quality_report(self, results: Dict[str, Any]) -> None:
-        """Print a formatted quality report.
 
-        Args:
-            results: Quality check results
-        """
-        print("\n" + "="*60)
-        print("📊 KLINES DATA QUALITY REPORT")
-        print("="*60)
-        print(f"Symbol: {results['symbol']}")
-        print(f"Intervals Checked: {', '.join(results['intervals_checked'])}")
-        print(f"Overall Quality: {'✅ PASSED' if results['overall_quality'] else '❌ FAILED'}")
-        print()
-
-        # Summary
-        summary = results['summary']
-        print("📈 SUMMARY:")
-        print(f"  Total Intervals: {summary['total_intervals']}")
-        print(f"  Passed: {summary['passed_intervals']}")
-        print(f"  Failed: {summary['failed_intervals']}")
-        print(f"  Total Issues: {summary['total_issues']}")
-        print(",.0f")
-        print(".2f")
-        print()
-
-        # Interval details
-        print("📋 INTERVAL DETAILS:")
-        for interval, interval_result in results['interval_results'].items():
-            status = "✅" if interval_result.get('quality_passed', False) else "❌"
-            record_count = interval_result.get('record_count', 0)
-            issue_count = len(interval_result.get('issues', []))
-            duplicate_analysis = interval_result.get('duplicate_analysis', {})
-
-            print(f"  {interval.upper()}: {status} {record_count:,} records, {issue_count} issues")
-
-            # Show duplicate analysis summary
-            if duplicate_analysis.get('total_duplicate_records', 0) > 0:
-                dup_count = duplicate_analysis['total_duplicate_records']
-                dup_groups = duplicate_analysis['duplicate_groups']
-                false_dup = duplicate_analysis.get('false_duplicates', 0)
-                true_dup = duplicate_analysis.get('true_duplicates', 0)
-
-                print(f"    📊 Duplicates: {dup_count} records in {dup_groups} groups")
-                print(f"       True duplicates: {true_dup}, False duplicates: {false_dup}")
-
-                if duplicate_analysis.get('duplicate_issues'):
-                    for issue in duplicate_analysis['duplicate_issues'][:2]:
-                        print(f"       ⚠️  {issue}")
-
-            if interval_result.get('issues'):
-                for issue in interval_result['issues'][:3]:  # Show first 3 issues
-                    print(f"    • {issue}")
-                if len(interval_result['issues']) > 3:
-                    print(f"    • ... and {len(interval_result['issues']) - 3} more issues")
-        print()
-
-        # Recommendations
-        all_recommendations = []
-
-        # Collect recommendations from issues
-        if results['issues']:
-            all_recommendations.extend(results['issues'])
-
-        # Collect duplicate-specific recommendations
-        for interval_result in results['interval_results'].values():
-            duplicate_analysis = interval_result.get('duplicate_analysis', {})
-            if duplicate_analysis.get('recommendations'):
-                all_recommendations.extend(duplicate_analysis['recommendations'])
-
-        if all_recommendations:
-            print("💡 RECOMMENDATIONS:")
-            for rec in all_recommendations[:5]:
-                print(f"  • {rec}")
-            if len(all_recommendations) > 5:
-                print(f"  • ... and {len(all_recommendations) - 5} more recommendations")
-
-        print("="*60)
-
-
-def create_consolidated_features_file(
-    symbol: str = "ETHUSDT",
-    interval: str = "1m",
-    exchange: str = "binance",
-    data_dir: str = "historical_data"
-) -> Dict[str, Any]:
-    """Convenience function to create consolidated features file.
-
-    Creates a file with the format: historical_data/features_binance_{SYMBOL}_consolidated.parquet
-    containing the required columns: ['timestamp', 'exchange', 'timeframe']
-
-    Args:
-        symbol: Trading symbol (e.g., "ETHUSDT")
-        interval: Time interval (e.g., "1m")
-        exchange: Exchange name (default: "binance")
-        data_dir: Base directory for data storage
-
-    Returns:
-        Dictionary with consolidation results
-    """
-    pipeline = KlinesDataProcessingPipeline(data_dir)
-    return pipeline.create_consolidated_features_file(symbol, interval, exchange)
-
-
-def add_required_columns_to_files(
-    symbol: str = "ETHUSDT",
-    interval: str = "1m",
-    exchange: str = "binance",
-    data_dir: str = "historical_data"
-) -> Dict[str, Any]:
-    """Convenience function to add required columns to processed data files.
-
-    Adds the required columns: ['exchange', 'timeframe'] to all processed data files.
-
-    Args:
-        symbol: Trading symbol (e.g., "ETHUSDT")
-        interval: Time interval (e.g., "1m")
-        exchange: Exchange name (default: "binance")
-        data_dir: Base directory for data storage
-
-    Returns:
-        Dictionary with column addition results
-    """
-    pipeline = KlinesDataProcessingPipeline(data_dir)
-    return pipeline.add_required_columns_to_processed_files(symbol, interval, exchange)
-
-
-def run_data_quality_check(symbol: str = "ETHUSDT",
-                          intervals: List[str] = None,
-                          data_dir: str = "historical_data") -> Dict[str, Any]:
-    """Convenience function to run data quality check.
-
-    Args:
-        symbol: Trading symbol
-        intervals: List of intervals to check
-        data_dir: Data directory
-
-    Returns:
-        Quality check results
-    """
-    checker = KlinesDataQualityChecker(data_dir)
-    results = checker.check_processed_data_quality(symbol, intervals)
-    checker.print_quality_report(results)
-    return results
-
-
-def run_duplicate_analysis(symbol: str = "ETHUSDT",
-                          interval: str = "1m",
-                          data_dir: str = "historical_data") -> Dict[str, Any]:
-    """Convenience function to run comprehensive duplicate analysis on specific interval.
-
-    Args:
-        symbol: Trading symbol
-        interval: Time interval to analyze
-        data_dir: Data directory
-
-    Returns:
-        Duplicate analysis results
-    """
-    checker = KlinesDataQualityChecker(data_dir)
-
-    # Find data files
-    interval_path = Path(data_dir) / "binance" / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
-
-    if not interval_path.exists():
-        return {"error": f"Data directory not found: {interval_path}"}
-
-    sample_files = checker._get_sample_files(interval_path, max_files=5)
-    if not sample_files:
-        return {"error": "No parquet files found"}
-
-    # Run duplicate analysis
-    duplicate_results = checker._check_duplicate_timestamps(sample_files)
-
-    # Print comprehensive report
-    print("\n" + "="*80)
-    print("🔍 COMPREHENSIVE DUPLICATE TIMESTAMP ANALYSIS")
-    print("="*80)
-    print(f"Symbol: {symbol.upper()}")
-    print(f"Interval: {interval}")
-    print(f"Files Analyzed: {duplicate_results['total_files_analyzed']}")
-    print()
-
-    if duplicate_results['total_duplicate_records'] > 0:
-        print("📊 DUPLICATE SUMMARY:")
-        print(f"  Total Duplicate Records: {duplicate_results['total_duplicate_records']:,}")
-        print(f"  Duplicate Groups: {duplicate_results['duplicate_groups']:,}")
-        print(f"  True Duplicates: {duplicate_results['true_duplicates']:,}")
-        print(f"  False Duplicates: {duplicate_results['false_duplicates']:,}")
-        print(f"  Mixed Duplicates: {duplicate_results['mixed_duplicates']:,}")
-        print()
-
-        if duplicate_results['duplicate_issues']:
-            print("⚠️  ISSUES FOUND:")
-            for issue in duplicate_results['duplicate_issues']:
-                print(f"  • {issue}")
-            print()
-
-        if duplicate_results['recommendations']:
-            print("💡 RECOMMENDATIONS:")
-            for rec in duplicate_results['recommendations']:
-                print(f"  • {rec}")
-            print()
-    else:
-        print("✅ NO DUPLICATES FOUND")
-        print("  All timestamps are unique in the analyzed files.")
-        print()
-
-    print("="*80)
-    return duplicate_results
-
-
-def resolve_duplicates_in_files(input_files: List[str],
-                               output_files: List[str],
-                               strategy: str = 'manual_review') -> Dict[str, Any]:
-    """Convenience function to analyze duplicates in specific files (MANUAL REVIEW ONLY).
-
-    Args:
-        input_files: List of input parquet files
-        output_files: List of output files (must match input_files length)
-        strategy: Resolution strategy (only 'manual_review' supported)
-
-    Returns:
-        Analysis summary with manual review recommendations
-    """
-    if len(input_files) != len(output_files):
-        raise ValueError("Input and output file lists must have the same length")
-
-    if strategy != 'manual_review':
-        raise ValueError("Only 'manual_review' strategy is supported. Automatic resolution is disabled.")
-
-    analyzer = ComprehensiveDuplicateAnalyzer()
-
-    results = {
-        'files_processed': len(input_files),
-        'successful_analysis': 0,
-        'failed_analysis': 0,
-        'total_records_flagged': 0,
-        'manual_review_required': [],
-        'analysis_summaries': []
-    }
-
-    for input_file, output_file in zip(input_files, output_files):
-        try:
-            print(f"🔍 Analyzing {input_file}")
-
-            # Read data
-            df = pd.read_parquet(input_file)
-
-            # Analyze duplicates (NO automatic resolution)
-            original_df, analysis_summary = analyzer.resolve_duplicates(df, strategy)
-
-            # Save original data (unchanged)
-            original_df.to_parquet(output_file, index=False)
-
-            flagged_count = analysis_summary['records_flagged']
-            manual_review_items = analysis_summary['manual_review_needed']
-
-            results['analysis_summaries'].append({
-                'input_file': input_file,
-                'output_file': output_file,
-                'original_records': len(df),
-                'records_flagged': flagged_count,
-                'duplicate_groups': len(manual_review_items),
-                'manual_review_items': manual_review_items,
-                'strategy': strategy,
-                'success': True
-            })
-
-            results['successful_analysis'] += 1
-            results['total_records_flagged'] += flagged_count
-            results['manual_review_required'].extend(manual_review_items)
-
-            print(f"  📋 Flagged {flagged_count} records for manual review")
-
-        except Exception as e:
-            print(f"  ❌ Failed to analyze {input_file}: {e}")
-            results['failed_analysis'] += 1
-            results['analysis_summaries'].append({
-                'input_file': input_file,
-                'output_file': output_file,
-                'error': str(e),
-                'success': False
-            })
-
-    print(f"\n📊 ANALYSIS SUMMARY:")
-    print(f"  Files Analyzed: {results['files_processed']}")
-    print(f"  Successful: {results['successful_analysis']}")
-    print(f"  Failed: {results['failed_analysis']}")
-    print(f"  Total Records Flagged: {results['total_records_flagged']:,}")
-    print(f"  Duplicate Groups Requiring Review: {len(results['manual_review_required'])}")
-    print("⚠️ MANUAL REVIEW REQUIRED: Check analysis_summaries for detailed duplicate information")
-
-    return results
-
-
-# Convenience functions for the complete pipeline
-async def run_ethusdt_3year_pipeline(
+# Convenience functions
+async def run_exchange_klines_pipeline(
+    exchange: str,
     symbol: str = "ETHUSDT",
     years: int = None,
+    interval: str = "1m",
     data_dir: str = "historical_data",
     api_key: str = "",
     api_secret: str = "",
-    interval: str = "1m",
     max_gap_minutes: int = 1,
     create_consolidated: bool = True
 ) -> Dict[str, Any]:
-    """Run the complete pipeline for downloading klines data for any symbol.
+    """Run the complete pipeline for downloading klines data for any symbol from any exchange.
 
     This function:
     - Downloads data for the specified symbol using HistoricalDataPipeline
@@ -1427,11 +1273,12 @@ async def run_ethusdt_3year_pipeline(
     - Creates consolidated features file with required columns: ['timestamp', 'exchange', 'timeframe']
 
     Args:
+        exchange: Exchange name (binance, bingx, mexc, okx, gateio, phemex, etc.)
         symbol: Trading symbol (default: "ETHUSDT")
         years: Number of years of data to download (default: from centralized config)
         data_dir: Base directory for data storage
-        api_key: Binance API key
-        api_secret: Binance API secret
+        api_key: Exchange API key
+        api_secret: Exchange API secret
         interval: Kline interval (default: "1m")
         max_gap_minutes: Maximum allowed gap in minutes (default: 1)
         create_consolidated: Whether to create consolidated features file (default: True)
@@ -1441,12 +1288,13 @@ async def run_ethusdt_3year_pipeline(
     """
     # Use centralized configuration if years not specified
     if years is None:
+        from src.config.pipeline_modes import get_full_mode_config
         mode_config = get_full_mode_config()
         years = mode_config.lookback_years
     
-    pipeline = KlinesDataProcessingPipeline(data_dir)
+    pipeline = KlinesDataProcessingPipeline(exchange, data_dir)
 
-    print(f"🚀 Starting {symbol} {interval} data pipeline ({years} years)")
+    print(f"🚀 Starting {symbol} {interval} data pipeline ({years} years) - {exchange.upper()}")
     print(f"📁 Data directory: {data_dir}")
     print(f"⏱️  Interval: {interval}")
     print(f"🎯 Max gap threshold: {max_gap_minutes} minutes")
@@ -1464,7 +1312,7 @@ async def run_ethusdt_3year_pipeline(
 
     # Print summary
     print("\n" + "="*80)
-    print("📊 PIPELINE EXECUTION SUMMARY")
+    print(f"📊 {exchange.upper()} PIPELINE EXECUTION SUMMARY")
     print("="*80)
     print(f"Symbol: {results['symbol']}")
     print(f"Years: {results['years']}")
@@ -1499,8 +1347,9 @@ async def run_ethusdt_3year_pipeline(
     return results
 
 
-async def run_custom_symbol_pipeline(
-    symbol: str,
+# Backward compatibility function
+async def run_bingx_klines_pipeline(
+    symbol: str = "ETHUSDT",
     years: int = None,
     interval: str = "1m",
     data_dir: str = "historical_data",
@@ -1509,153 +1358,61 @@ async def run_custom_symbol_pipeline(
     max_gap_minutes: int = 1,
     create_consolidated: bool = True
 ) -> Dict[str, Any]:
-    """Run the complete pipeline for any symbol.
-
-    Args:
-        symbol: Trading symbol (e.g., "BTCUSDT")
-        years: Number of years of data to download (default: from centralized config)
-        interval: Kline interval (e.g., "1m")
-        data_dir: Base directory for data storage
-        api_key: Binance API key
-        api_secret: Binance API secret
-        max_gap_minutes: Maximum allowed gap in minutes
-        create_consolidated: Whether to create consolidated features file (default: True)
-
-    Returns:
-        Dictionary with complete pipeline results
-    """
-    # Use centralized configuration if years not specified
-    if years is None:
-        mode_config = get_full_mode_config()
-        years = mode_config.lookback_years
+    """Run the complete pipeline for downloading klines data for any symbol from BingX.
     
-    pipeline = KlinesDataProcessingPipeline(data_dir)
-
-    print(f"🚀 Starting {symbol} {interval} data pipeline ({years} years)")
-
-    results = await pipeline.run_complete_pipeline(
+    This is a backward compatibility function that calls the new exchange-agnostic function.
+    """
+    return await run_exchange_klines_pipeline(
+        exchange="bingx",
         symbol=symbol,
         years=years,
         interval=interval,
+        data_dir=data_dir,
         api_key=api_key,
         api_secret=api_secret,
         max_gap_minutes=max_gap_minutes,
         create_consolidated=create_consolidated
     )
 
-    return results
-
-
-def test_consolidated_features_file():
-    """Test function to create consolidated features file."""
-    print("Testing consolidated features file creation...")
-
-    # Test the consolidated file creation
-    result = create_consolidated_features_file(
-        symbol="ETHUSDT",
-        interval="1m",
-        exchange="binance",
-        data_dir="historical_data"
-    )
-
-    print(f"Consolidated file creation result: {result['success']}")
-    if result['success']:
-        print(f"  📁 Output file: {result['output_file']}")
-        print(f"  📊 Records: {result['total_records']:,}")
-        print(f"  🗂️  Columns: {result['columns']}")
-        print(f"  📏 Size: {result['file_size_mb']} MB")
-        print(f"  📅 Date range: {result['date_range']}")
-
-        # Check required columns
-        required_cols = ['timestamp', 'exchange', 'timeframe']
-        print(f"  ✅ Required columns present: {all(col in result['columns'] for col in required_cols)}")
-    else:
-        print(f"  ❌ Error: {result.get('error', 'Unknown error')}")
-
-    return result
-
-
-def test_add_required_columns():
-    """Test function to add required columns to processed files."""
-    print("Testing addition of required columns to processed files...")
-
-    # Test adding required columns
-    result = add_required_columns_to_files(
-        symbol="ETHUSDT",
-        interval="1m",
-        exchange="binance",
-        data_dir="historical_data"
-    )
-
-    print(f"Column addition result: {result['success']}")
-    if result['success']:
-        print(f"  📁 Files processed: {result['files_processed']}")
-        print(f"  📊 Columns added: {result['columns_added']}")
-        print(f"  🗂️  Targeted columns: {result['columns_targeted']}")
-    else:
-        print(f"  ❌ Error: {result.get('error', 'Unknown error')}")
-
-    return result
-
 
 if __name__ == "__main__":
+    # Example usage - download klines data with configurable symbol and years
+    async def main():
+        # Parse command line arguments for symbol and years
+        symbol = "ETHUSDT"  # default
+        years = None  # Will use centralized config
+        
+        # Check for additional command line arguments
+        if len(sys.argv) > 1:
+            # Try to parse symbol from command line
+            potential_symbol = sys.argv[1].upper()
+            if potential_symbol not in ["TEST_CONSOLIDATED", "TEST_COLUMNS"]:
+                symbol = potential_symbol
+                
+            # Try to parse years from command line
+            if len(sys.argv) > 2:
+                try:
+                    years = int(sys.argv[2])
+                except ValueError:
+                    print(f"⚠️ Invalid years argument '{sys.argv[2]}', using default: {years}")
+        
+        print(f"Starting {symbol} {years}-year 1m klines data download pipeline... (BingX)")
 
-    if len(sys.argv) > 1:
-        if sys.argv[1] == "test_consolidated":
-            # Test the consolidated features file creation
-            test_consolidated_features_file()
-        elif sys.argv[1] == "test_columns":
-            # Test adding required columns
-            test_add_required_columns()
-        else:
-            print("Usage:")
-            print("  python klines_downloading_processing.py [SYMBOL] [YEARS]")
-            print("  python klines_downloading_processing.py test_consolidated")
-            print("  python klines_downloading_processing.py test_columns")
-            print("")
-            print("Examples:")
-            print("  python klines_downloading_processing.py                    # ETHUSDT, 4 years (default)")
-            print("  python klines_downloading_processing.py BTCUSDT           # BTCUSDT, 4 years")
-            print("  python klines_downloading_processing.py ETHUSDT 3         # ETHUSDT, 3 years")
-            print("  python klines_downloading_processing.py BTCUSDT 1         # BTCUSDT, 1 year")
-    else:
-        # Example usage - download klines data with configurable symbol and years
-        async def main():
-            # Parse command line arguments for symbol and years
-            symbol = "ETHUSDT"  # default
-            years = None  # Will use centralized config
-            
-            # Check for additional command line arguments
-            if len(sys.argv) > 1:
-                # Try to parse symbol from command line
-                potential_symbol = sys.argv[1].upper()
-                if potential_symbol not in ["TEST_CONSOLIDATED", "TEST_COLUMNS"]:
-                    symbol = potential_symbol
-                    
-                # Try to parse years from command line
-                if len(sys.argv) > 2:
-                    try:
-                        years = int(sys.argv[2])
-                    except ValueError:
-                        print(f"⚠️ Invalid years argument '{sys.argv[2]}', using default: {years}")
-            
-            print(f"Starting {symbol} {years}-year 1m klines data download pipeline...")
+        # Run the complete pipeline
+        results = await run_exchange_klines_pipeline(exchange="bingx", symbol=symbol, years=years)
 
-            # Run the complete pipeline
-            results = await run_ethusdt_3year_pipeline(symbol=symbol, years=years)
+        print(f"\nPipeline completed with success: {results.get('pipeline_success', False)}")
 
-            print(f"\nPipeline completed with success: {results.get('pipeline_success', False)}")
+        # Print any warnings or errors
+        if results.get('warnings'):
+            print("\n⚠️ WARNINGS:")
+            for warning in results['warnings']:
+                print(f"  • {warning}")
 
-            # Print any warnings or errors
-            if results.get('warnings'):
-                print("\n⚠️ WARNINGS:")
-                for warning in results['warnings']:
-                    print(f"  • {warning}")
+        if results.get('errors'):
+            print("\n❌ ERRORS:")
+            for error in results['errors']:
+                print(f"  • {error}")
 
-            if results.get('errors'):
-                print("\n❌ ERRORS:")
-                for error in results['errors']:
-                    print(f"  • {error}")
-
-        # Run the main function
-        asyncio.run(main())
+    # Run the main function
+    asyncio.run(main())

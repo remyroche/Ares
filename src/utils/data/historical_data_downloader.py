@@ -1,7 +1,7 @@
 """
-Historical Data Downloader for Binance Klines
+Historical Data Downloader for Exchange Klines
 
-This module provides tools to download historical klines data from Binance
+This module provides tools to download historical klines data from any supported exchange
 and save it as optimized monthly parquet files with intelligent batching
 and duplicate handling.
 """
@@ -14,24 +14,27 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 import numpy as np
-from exchanges.binance import BinanceExchange
+# Removed direct Binance import - using ExchangeInterface instead
 from src.utils.logger import system_logger
 from src.utils.parquet_utils import ParquetUtils
 from src.utils.data.processing.data_processing import DataProcessor
 from src.utils.hardware.memory_optimization import MemoryMonitor, optimize_dataframe_dtypes
+from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
 
 
 class HistoricalDataDownloader:
-    """Download and manage historical Binance klines data."""
+    """Download and manage historical klines data from any supported exchange."""
 
-    def __init__(self, data_dir: str = "historical_data"):
+    def __init__(self, data_dir: str = "historical_data", exchange: str = "binance"):
         """Initialize the historical data downloader.
         
         Args:
             data_dir: Base directory for storing historical data
+            exchange: Exchange name for data organization
         """
         self.data_dir = Path(data_dir)
-        self.raw_data_dir = self.data_dir / "binance"
+        self.exchange = exchange.lower()
+        self.raw_data_dir = self.data_dir / self.exchange
         self.logger = system_logger.getChild("HistoricalDataDownloader")
         self.parquet_utils = ParquetUtils()
         self.data_processor = DataProcessor()
@@ -43,12 +46,78 @@ class HistoricalDataDownloader:
         # Batch tracking
         self.batch_count = 0
         self.total_downloaded = 0
+    
+    async def _get_historical_klines_unified(
+        self,
+        exchange,
+        symbol: str,
+        interval: str,
+        start_time_ms: int,
+        end_time_ms: int,
+        limit: int
+    ) -> List[Dict[str, Any]]:
+        """Get historical klines data using unified interface for both exchange types.
+        
+        Args:
+            exchange: Exchange instance (ExchangeInterface or BinanceExchange)
+            symbol: Trading symbol
+            interval: Kline interval
+            start_time_ms: Start time in milliseconds
+            end_time_ms: End time in milliseconds
+            limit: Maximum number of records
+            
+        Returns:
+            List of kline data dictionaries
+        """
+        try:
+            # Check if it's ExchangeInterface
+            if hasattr(exchange, 'get_klines') and hasattr(exchange, 'exchange_type'):
+                # Use ExchangeInterface
+                from datetime import datetime
+                start_time = datetime.fromtimestamp(start_time_ms / 1000)
+                end_time = datetime.fromtimestamp(end_time_ms / 1000)
+                
+                klines_data = await exchange.get_klines(
+                    symbol=symbol,
+                    interval=interval,
+                    start_time=start_time,
+                    end_time=end_time,
+                    limit=limit
+                )
+                
+                # Convert KlineData objects to dict format
+                result = []
+                for kline in klines_data:
+                    result.append({
+                        "timestamp": int(kline.timestamp.timestamp() * 1000),
+                        "open_time": int(kline.timestamp.timestamp() * 1000),
+                        "open": kline.open_price,
+                        "high": kline.high_price,
+                        "low": kline.low_price,
+                        "close": kline.close_price,
+                        "volume": kline.volume,
+                        "close_time": int(kline.close_time.timestamp() * 1000),
+                        "quote_volume": kline.quote_asset_volume,
+                        "trades": kline.number_of_trades,
+                        "taker_buy_base": kline.taker_buy_base_asset_volume,
+                        "taker_buy_quote": kline.taker_buy_quote_asset_volume
+                    })
+                return result
+            else:
+                # Use direct BinanceExchange method
+                return await exchange._get_historical_klines_raw(
+                    symbol, interval, start_time_ms, end_time_ms, limit
+                )
+        except Exception as e:
+            self.logger.error(f"Error getting historical klines: {e}")
+            return []
         
     async def download_historical_klines(
         self,
         symbol: str = "ETHUSDT",
         interval: str = "1m",
         years: int = 3,
+        exchange_interface: Optional[ExchangeInterface] = None,
         api_key: str = "",
         api_secret: str = ""
     ) -> bool:
@@ -58,8 +127,9 @@ class HistoricalDataDownloader:
             symbol: Trading symbol (e.g., 'ETHUSDT')
             interval: Kline interval (e.g., '1m', '5m', '1h')
             years: Number of years of historical data to download
-            api_key: Binance API key
-            api_secret: Binance API secret
+            exchange_interface: ExchangeInterface instance (preferred over api_key/api_secret)
+            api_key: Exchange API key (fallback if exchange_interface not provided)
+            api_secret: Exchange API secret (fallback if exchange_interface not provided)
             
         Returns:
             True if successful, False otherwise
@@ -68,9 +138,20 @@ class HistoricalDataDownloader:
             self.logger.info(f"🚀 Starting historical data download for {symbol}")
             self.logger.info(f"📅 Downloading {years} years of {interval} data")
             
-            # Initialize Binance exchange
-            exchange = BinanceExchange(api_key, api_secret, symbol)
-            await exchange._initialize_exchange()
+            # Initialize exchange (prefer ExchangeInterface if provided)
+            if exchange_interface is not None:
+                exchange = exchange_interface
+                await exchange.connect()
+            else:
+                # Create ExchangeInterface for the specified exchange
+                config = {
+                    'exchange_type': self.exchange,
+                    'api_key': api_key,
+                    'api_secret': api_secret,
+                    'trade_symbol': symbol
+                }
+                exchange = create_exchange_interface(config)
+                await exchange.connect()
             
             # Calculate date range
             end_date = datetime.now().replace(tzinfo=timezone.utc)
@@ -89,7 +170,11 @@ class HistoricalDataDownloader:
                 exchange, symbol, interval, start_date, end_date, symbol_dir
             )
             
-            await exchange.close()
+            # Close exchange connection
+            if hasattr(exchange, 'close'):
+                await exchange.close()
+            elif hasattr(exchange, 'disconnect'):
+                await exchange.disconnect()
             
             self.logger.info(f"🎉 Historical data download completed: {self.total_downloaded} total records")
             return success
@@ -100,7 +185,7 @@ class HistoricalDataDownloader:
     
     async def _download_with_intelligent_batching(
         self,
-        exchange: BinanceExchange,
+        exchange,
         symbol: str,
         interval: str,
         start_date: datetime,
@@ -289,8 +374,8 @@ class HistoricalDataDownloader:
             end_time_ms = int(end_date.timestamp() * 1000)
             
             # Download raw klines data
-            raw_data = await exchange._get_historical_klines_raw(
-                symbol, interval, start_time_ms, end_time_ms, 1000
+            raw_data = await self._get_historical_klines_unified(
+                exchange, symbol, interval, start_time_ms, end_time_ms, 1000
             )
             
             if not raw_data:
@@ -444,8 +529,8 @@ class HistoricalDataDownloader:
             end_time_ms = int(end_date.timestamp() * 1000)
             
             # Download raw klines data
-            raw_data = await exchange._get_historical_klines_raw(
-                symbol, interval, start_time_ms, end_time_ms, 1000
+            raw_data = await self._get_historical_klines_unified(
+                exchange, symbol, interval, start_time_ms, end_time_ms, 1000
             )
             
             if not raw_data:

@@ -22,15 +22,17 @@ from src.utils.tprint import tprint
 class KlinesParquetManager:
     """Unified manager for klines parquet data operations."""
 
-    def __init__(self, data_dir: str = "historical_data"):
+    def __init__(self, data_dir: str = "historical_data", exchange: str = "binance"):
         """Initialize the klines parquet manager.
 
         Args:
             data_dir: Base directory for data storage
+            exchange: Exchange name (binance, bingx, mexc, etc.)
         """
         self.data_dir = Path(data_dir)
-        self.raw_data_dir = self.data_dir / "binance"
-        self.processed_data_dir = self.data_dir / "binance"
+        self.exchange = exchange.lower()
+        self.raw_data_dir = self.data_dir / self.exchange
+        self.processed_data_dir = self.data_dir / self.exchange
         self.logger = system_logger.getChild("KlinesParquetManager")
         self.parquet_utils = ParquetUtils()
         self.data_processor = DataProcessor()
@@ -149,7 +151,7 @@ class KlinesParquetManager:
                         open_time_series = open_time_series[valid_mask]
                         df = df[valid_mask]
 
-                    # open_time is typically in milliseconds for Binance data
+                    # open_time is typically in milliseconds for exchange data
                     timestamp_col = pd.to_datetime(open_time_series, unit='ms')
                 except (OverflowError, FloatingPointError):
                     # If overflow occurs, try with seconds
@@ -718,7 +720,7 @@ class KlinesParquetManager:
                             combined_df = combined_df[valid_mask]
                             self.logger.info(f"🔧 After cleaning invalid open_time values: {len(combined_df):,} records (removed {invalid_count:,})")
                         
-                        # open_time is typically in milliseconds for Binance data
+                        # open_time is typically in milliseconds for exchange data
                         timestamp_col = pd.to_datetime(open_time_series, unit='ms')
                         self.logger.info(f"🔧 Using 'open_time' column for timestamp filtering")
                     except (OverflowError, FloatingPointError):
@@ -1213,16 +1215,17 @@ class KlinesParquetManager:
 
 
 # Convenience functions
-def get_klines_manager(data_dir: str = "historical_data") -> KlinesParquetManager:
+def get_klines_manager(data_dir: str = "historical_data", exchange: str = "binance") -> KlinesParquetManager:
     """Get a klines parquet manager instance.
 
     Args:
         data_dir: Base directory for data storage
+        exchange: Exchange name (binance, bingx, mexc, etc.)
 
     Returns:
         KlinesParquetManager instance
     """
-    return KlinesParquetManager(data_dir)
+    return KlinesParquetManager(data_dir, exchange)
 
 
 def read_ethusdt_data(
@@ -1276,7 +1279,8 @@ def save_klines_to_parquet(
     interval: str,
     data_type: str = "raw",
     overwrite: bool = False,
-    data_dir: str = "historical_data"
+    data_dir: str = "historical_data",
+    exchange: str = "binance"
 ) -> bool:
     """Save klines data to parquet files (backward compatibility function).
     
@@ -1287,11 +1291,12 @@ def save_klines_to_parquet(
         data_type: 'raw' or 'processed'
         overwrite: Whether to overwrite existing files
         data_dir: Base directory for data storage
+        exchange: Exchange name (binance, bingx, mexc, etc.)
         
     Returns:
         True if successful, False otherwise
     """
-    manager = get_klines_manager(data_dir)
+    manager = get_klines_manager(data_dir, exchange)
     return manager.write_data(df, symbol, interval, data_type, overwrite)
 
 
@@ -1302,7 +1307,8 @@ def load_klines_from_parquet(
     end_date: Optional[datetime] = None,
     data_type: str = "raw",
     columns: Optional[List[str]] = None,
-    data_dir: str = "historical_data"
+    data_dir: str = "historical_data",
+    exchange: str = "binance"
 ) -> Optional[pd.DataFrame]:
     """Load klines data from parquet files (backward compatibility function).
     
@@ -1314,11 +1320,12 @@ def load_klines_from_parquet(
         data_type: 'raw' or 'processed'
         columns: List of columns to read
         data_dir: Base directory for data storage
+        exchange: Exchange name (binance, bingx, mexc, etc.)
         
     Returns:
         DataFrame with klines data or None if not found
     """
-    manager = get_klines_manager(data_dir)
+    manager = get_klines_manager(data_dir, exchange)
     return manager.read_data(symbol, interval, start_date, end_date, data_type, columns)
 
 

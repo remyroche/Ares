@@ -11,6 +11,7 @@ import sys
 import numpy as np
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional, List, Dict, Any
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -24,6 +25,7 @@ from src.utils.data.quality.data_quality import DataQualityFramework, check_data
 from src.utils.data.validation.validators import CrossStepValidator
 from src.utils.logger import system_logger
 from src.utils.data.gap_detector import GapDetector
+from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
 
 
 def setup_logging(verbose: bool = False):
@@ -35,17 +37,99 @@ def setup_logging(verbose: bool = False):
         logging.basicConfig(level=logging.INFO)
 
 
+async def _get_historical_klines_unified(
+    exchange_interface: Optional[ExchangeInterface],
+    symbol: str,
+    interval: str,
+    start_time_ms: int,
+    end_time_ms: int,
+    limit: int
+) -> List[Dict[str, Any]]:
+    """Get historical klines data using unified interface for both exchange types.
+    
+    Args:
+        exchange_interface: ExchangeInterface instance
+        symbol: Trading symbol
+        interval: Kline interval
+        start_time_ms: Start time in milliseconds
+        end_time_ms: End time in milliseconds
+        limit: Maximum number of records
+        
+    Returns:
+        List of kline data dictionaries
+    """
+    try:
+        if exchange_interface is not None:
+            # Use ExchangeInterface
+            from datetime import datetime
+            start_time = datetime.fromtimestamp(start_time_ms / 1000)
+            end_time = datetime.fromtimestamp(end_time_ms / 1000)
+            
+            klines_data = await exchange_interface.get_klines(
+                symbol=symbol,
+                interval=interval,
+                start_time=start_time,
+                end_time=end_time,
+                limit=limit
+            )
+            
+            # Convert KlineData objects to dict format
+            result = []
+            for kline in klines_data:
+                result.append({
+                    "timestamp": int(kline.timestamp.timestamp() * 1000),
+                    "open_time": int(kline.timestamp.timestamp() * 1000),
+                    "open": kline.open_price,
+                    "high": kline.high_price,
+                    "low": kline.low_price,
+                    "close": kline.close_price,
+                    "volume": kline.volume,
+                    "close_time": int(kline.close_time.timestamp() * 1000),
+                    "quote_volume": kline.quote_asset_volume,
+                    "trades": kline.number_of_trades,
+                    "taker_buy_base": kline.taker_buy_base_asset_volume,
+                    "taker_buy_quote": kline.taker_buy_quote_asset_volume
+                })
+            return result
+        else:
+            # Fallback to direct Binance exchange
+            from exchanges.binance import BinanceExchange
+            exchange = BinanceExchange("", "", symbol)
+            await exchange._initialize_exchange()
+            result = await exchange._get_historical_klines_raw(
+                symbol, interval, start_time_ms, end_time_ms, limit
+            )
+            await exchange.close()
+            return result
+    except Exception as e:
+        print(f"Error getting historical klines: {e}")
+        return []
+
+
 async def download_command(args):
     """Handle download command."""
     print(f"📥 Downloading {args.years} years of {args.symbol} data...")
 
     pipeline = HistoricalDataPipeline(args.data_dir)
 
+    # Create ExchangeInterface for exchange-agnostic data access
+    exchange_interface = None
+    if args.api_key and args.api_secret:
+        exchange_config = {
+            'exchange_type': 'binance',
+            'api_key': args.api_key,
+            'api_secret': args.api_secret,
+            'testnet': False
+        }
+        exchange_interface = create_exchange_interface(exchange_config)
+        await exchange_interface.connect()
+
     # Download raw data
     success = await pipeline.downloader.download_historical_klines(
         symbol=args.symbol,
         interval="1m",
         years=args.years,
+        exchange_interface=exchange_interface,
         api_key=args.api_key,
         api_secret=args.api_secret
     )
@@ -67,12 +151,19 @@ async def download_standardized_command(args):
 
     # Import required modules
     import pandas as pd
-    from exchanges.binance import BinanceExchange
 
     try:
-        # Initialize exchange
-        exchange = BinanceExchange(args.api_key, args.api_secret, args.symbol)
-        await exchange._initialize_exchange()
+        # Create ExchangeInterface for exchange-agnostic data access
+        exchange_interface = None
+        if args.api_key and args.api_secret:
+            exchange_config = {
+                'exchange_type': 'binance',
+                'api_key': args.api_key,
+                'api_secret': args.api_secret,
+                'testnet': False
+            }
+            exchange_interface = create_exchange_interface(exchange_config)
+            await exchange_interface.connect()
 
         # Calculate date range
         end_date = datetime.now()
@@ -105,8 +196,8 @@ async def download_standardized_command(args):
             start_time_ms = int(month_start.timestamp() * 1000)
             end_time_ms = int(month_end.timestamp() * 1000)
 
-            raw_data = await exchange._get_historical_klines_raw(
-                args.symbol, "1m", start_time_ms, end_time_ms, 1000
+            raw_data = await _get_historical_klines_unified(
+                exchange_interface, args.symbol, "1m", start_time_ms, end_time_ms, 1000
             )
 
             if raw_data:
@@ -153,7 +244,12 @@ async def download_standardized_command(args):
 
             current_date = month_end
 
-        await exchange.close()
+        # Cleanup exchange interface
+        if exchange_interface:
+            try:
+                await exchange_interface.disconnect()
+            except Exception as e:
+                print(f"Warning: Error disconnecting exchange interface: {e}")
 
         print(f"✅ Standardized download completed!")
         print(f"📊 Total records: {total_downloaded}")
@@ -1022,7 +1118,7 @@ async def enhanced_pipeline_command(args):
 def main():
     """Main CLI function."""
     parser = argparse.ArgumentParser(
-        description="Historical Binance Data Pipeline CLI",
+        description="Historical Exchange Data Pipeline CLI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -1078,12 +1174,12 @@ Examples:
     parser.add_argument(
         "--api-key",
         default="",
-        help="Binance API key (optional, for downloading)"
+        help="Exchange API key (optional, for downloading)"
     )
     parser.add_argument(
         "--api-secret",
         default="",
-        help="Binance API secret (optional, for downloading)"
+        help="Exchange API secret (optional, for downloading)"
     )
     parser.add_argument(
         "--verbose", "-v",

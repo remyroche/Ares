@@ -2,7 +2,7 @@
 Complete Historical Data Pipeline
 
 This module provides a complete pipeline for downloading, processing, and managing
-historical Binance klines data with gap detection, feature engineering, and resampling.
+historical klines data from any supported exchange with gap detection, feature engineering, and resampling.
 """
 
 import asyncio
@@ -20,26 +20,29 @@ from src.utils.data.basic_returns_engineer import BasicReturnsEngineer
 from src.utils.data.optimized_parquet_storage import OptimizedParquetStorage
 from src.utils.data.klines_parquet import KlinesParquetManager
 from src.utils.data.quality.comprehensive_duplicate_analyzer import ComprehensiveDuplicateAnalyzer
+from src.trading.execution.exchange_interface import ExchangeInterface
 
 
 class HistoricalDataPipeline:
     """Complete pipeline for historical data management."""
 
-    def __init__(self, data_dir: str = "historical_data"):
+    def __init__(self, data_dir: str = "historical_data", exchange: str = "binance"):
         """Initialize the historical data pipeline.
 
         Args:
             data_dir: Base directory for data storage
+            exchange: Exchange name for data organization
         """
         self.data_dir = Path(data_dir)
+        self.exchange = exchange.lower()
         self.logger = system_logger.getChild("HistoricalDataPipeline")
 
         # Initialize components
-        self.downloader = HistoricalDataDownloader(data_dir)
-        self.gap_detector = GapDetector(data_dir)
+        self.downloader = HistoricalDataDownloader(data_dir, exchange)
+        self.gap_detector = GapDetector(data_dir, exchange)
         self.basic_returns_engineer = BasicReturnsEngineer(data_dir)
         self.optimized_storage = OptimizedParquetStorage(data_dir)
-        self.klines_manager = KlinesParquetManager(data_dir)
+        self.klines_manager = KlinesParquetManager(data_dir, exchange)
         self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer(self.logger)
 
         # Columns to remove - keeping taker columns as requested
@@ -49,6 +52,7 @@ class HistoricalDataPipeline:
         self,
         symbol: str = "ETHUSDT",
         years: int = 3,
+        exchange_interface: Optional[ExchangeInterface] = None,
         api_key: str = "",
         api_secret: str = "",
         target_intervals: List[str] = None,
@@ -59,8 +63,9 @@ class HistoricalDataPipeline:
         Args:
             symbol: Trading symbol
             years: Number of years to download
-            api_key: Binance API key
-            api_secret: Binance API secret
+            exchange_interface: ExchangeInterface instance (preferred over api_key/api_secret)
+            api_key: Exchange API key (fallback if exchange_interface not provided)
+            api_secret: Exchange API secret (fallback if exchange_interface not provided)
             target_intervals: List of target intervals for resampling
             max_gap_minutes: Maximum allowed gap in minutes
             
@@ -89,6 +94,7 @@ class HistoricalDataPipeline:
                 symbol=symbol,
                 interval="1m",
                 years=years,
+                exchange_interface=exchange_interface,
                 api_key=api_key,
                 api_secret=api_secret
             )
@@ -121,7 +127,7 @@ class HistoricalDataPipeline:
             self.gap_detector.log_gaps(gaps)
             
             if gaps:
-                gap_results = await self.gap_detector.fill_gaps(gaps, api_key, api_secret)
+                gap_results = await self.gap_detector.fill_gaps(gaps, exchange_interface, api_key, api_secret)
                 results["steps_completed"].append("gap_filling")
                 results["summary"]["gap_filling"] = gap_results
                 self.logger.info(f"✅ Gap filling completed: {gap_results}")
@@ -377,7 +383,7 @@ class HistoricalDataPipeline:
             self.logger.info(f"🔍 Analyzing duplicates in {symbol} {interval} data")
 
             # Get data directory
-            data_path = Path(self.data_dir) / "binance" / symbol.lower() / "raw" / f"{symbol.lower()}_{interval}"
+            data_path = Path(self.data_dir) / self.exchange / symbol.lower() / "raw" / f"{symbol.lower()}_{interval}"
 
             if not data_path.exists():
                 return {"files_analyzed": 0, "duplicates_found": 0, "warnings": [], "message": "No data directory found"}
@@ -480,9 +486,9 @@ class HistoricalDataPipeline:
 
             # Get list of files for this symbol/interval
             if data_type == "raw":
-                symbol_dir = self.data_dir / "binance" / symbol.lower() / "raw"
+                symbol_dir = self.data_dir / self.exchange / symbol.lower() / "raw"
             else:
-                symbol_dir = self.data_dir / "binance" / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
+                symbol_dir = self.data_dir / self.exchange / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
 
             if not symbol_dir.exists():
                 return {"checked_files": 0, "issues_found": 0, "issues_fixed": 0, "message": "No data directory found"}
@@ -654,8 +660,8 @@ async def run_ethusdt_pipeline(
     Args:
         years: Number of years to download
         data_dir: Base directory for data storage
-        api_key: Binance API key
-        api_secret: Binance API secret
+        api_key: Exchange API key
+        api_secret: Exchange API secret
         target_intervals: List of target intervals for resampling
         
     Returns:
@@ -693,8 +699,8 @@ async def run_ethusdt_3year_pipeline(
 
     Args:
         data_dir: Base directory for data storage
-        api_key: Binance API key
-        api_secret: Binance API secret
+        api_key: Exchange API key
+        api_secret: Exchange API secret
         target_intervals: List of target intervals for resampling
         max_gap_minutes: Maximum allowed gap in minutes
 

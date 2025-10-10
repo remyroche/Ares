@@ -407,7 +407,45 @@ class InteractionFeaturesGenerator:
         return pd.DataFrame(features, index=data.index)
     
     def _select_top_pairs(self, data: pd.DataFrame, max_pairs: int) -> List[Tuple[str, str]]:
-        """Select top pairs based on correlation for interaction generation."""
+        """Select top pairs using domain whitelist and correlation analysis."""
+        if len(data.columns) < 2:
+            return []
+        
+        try:
+            from .domain_whitelist import get_domain_whitelist
+            
+            # Get domain whitelist
+            whitelist = get_domain_whitelist()
+            
+            # Get allowed interactions
+            numeric_cols = data.select_dtypes(include=[np.number]).columns
+            numeric_cols = [col for col in numeric_cols if col not in ['target', 'timestamp']]
+            
+            allowed_interactions = whitelist.get_allowed_interactions(numeric_cols, max_pairs * 2)
+            
+            tprint_info(f"📊 Domain whitelist found {len(allowed_interactions)} allowed interactions")
+            
+            # If we have enough allowed interactions, use them directly
+            if len(allowed_interactions) >= max_pairs:
+                return [(pair[0], pair[1]) for pair in allowed_interactions[:max_pairs]]
+            
+            # Otherwise, supplement with correlation-based selection
+            corr_pairs = self._get_correlation_pairs(data, max_pairs - len(allowed_interactions))
+            
+            # Combine and deduplicate
+            all_pairs = [(pair[0], pair[1]) for pair in allowed_interactions]
+            for pair in corr_pairs:
+                if pair not in all_pairs:
+                    all_pairs.append(pair)
+            
+            return all_pairs[:max_pairs]
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Domain whitelist failed: {e}, using correlation-based selection")
+            return self._get_correlation_pairs(data, max_pairs)
+    
+    def _get_correlation_pairs(self, data: pd.DataFrame, max_pairs: int) -> List[Tuple[str, str]]:
+        """Get top pairs based on correlation (fallback method)."""
         if len(data.columns) < 2:
             return []
         
@@ -430,22 +468,28 @@ class InteractionFeaturesGenerator:
 
 
 class CrossTimeframeGenerator:
-    """Generate cross-timeframe features."""
+    """Generate cross-timeframe features with data-driven periods."""
     
     def __init__(self, config: FeatureGenerationConfig):
         self.config = config
+        self.period_selector = None  # Will be initialized when needed
     
     def generate_cross_timeframe_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Generate cross-timeframe features."""
+        """Generate cross-timeframe features using data-driven periods."""
         features = {}
+        
+        # Get data-driven periods
+        periods = self._get_optimal_periods(data)
         
         numeric_cols = data.select_dtypes(include=[np.number]).columns
         numeric_cols = [col for col in numeric_cols if col not in ['target', 'timestamp']]
         
+        tprint_info(f"📊 Using data-driven periods for cross-timeframe features: {periods}")
+        
         for col in numeric_cols:
             col_data = data[col].values
             
-            for period in self.config.cross_timeframe_periods:
+            for period in periods:
                 if len(col_data) > period:
                     # Cross-timeframe aggregations
                     features[f'ctf_{period}_{col}_mean'] = self._rolling_mean(col_data, period)
@@ -459,6 +503,29 @@ class CrossTimeframeGenerator:
                     features[f'ctf_{period}_{col}_current_vs_min'] = col_data / (features[f'ctf_{period}_{col}_min'] + 1e-8)
         
         return pd.DataFrame(features, index=data.index)
+    
+    def _get_optimal_periods(self, data: pd.DataFrame) -> List[int]:
+        """Get optimal periods using data-driven analysis."""
+        try:
+            from .data_driven_periods import get_data_driven_periods
+            
+            # Use data-driven period selection
+            periods = get_data_driven_periods(
+                data, 
+                target_timeframe=None,  # Will be detected from data
+                max_periods=len(self.config.cross_timeframe_periods)
+            )
+            
+            # Fallback to config periods if data-driven selection fails
+            if not periods:
+                tprint_warning("⚠️ Data-driven period selection failed, using config periods")
+                return self.config.cross_timeframe_periods
+            
+            return periods
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Data-driven period selection failed: {e}, using config periods")
+            return self.config.cross_timeframe_periods
     
     def _rolling_mean(self, data: np.ndarray, window: int) -> np.ndarray:
         """Vectorized rolling mean calculation."""

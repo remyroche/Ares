@@ -25,6 +25,7 @@ from .factory import ExchangeFactory
 
 # Import exchange implementations
 from .binance import BinanceExchange
+from .bingx import BingXExchange, create_bingx_exchange
 from .gateio import GateioExchange
 from .mexc import MexcExchange
 from .okx import OkxExchange, create_okx_exchange
@@ -53,6 +54,8 @@ __all__ = [
     "ResponseHandler",
     "ExchangeFactory",
     "BinanceExchange",
+    "BingXExchange",
+    "create_bingx_exchange",
     "GateioExchange",
     "MexcExchange",
     "OkxExchange",

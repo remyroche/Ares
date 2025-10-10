@@ -27,6 +27,7 @@ from .feature_scorecard import FeatureScorecard
 from .compute_aware_optimizer import ComputeAwareOptimizer
 from .family_diverse_features import FamilyDiverseFeatureGenerator
 from .feature_acceleration_dilation import FeatureAccelerationDilation
+from .feature_acceleration_dilation_enhanced import EnhancedFeatureAccelerationDilation
 
 __all__ = [
     'FeatureComparisonUtils',
@@ -53,5 +54,6 @@ __all__ = [
     'FeatureScorecard',
     'ComputeAwareOptimizer',
     'FamilyDiverseFeatureGenerator',
-    'FeatureAccelerationDilation'
+    'FeatureAccelerationDilation',
+    'EnhancedFeatureAccelerationDilation'
 ]

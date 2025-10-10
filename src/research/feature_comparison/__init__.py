@@ -16,6 +16,11 @@ from .standardized_features import StandardizedFeatureGenerator
 from .feature_consolidation import FeatureConsolidator, FeatureValidator
 from .enhanced_comparison_runner import EnhancedFeatureComparisonRunner
 from .robust_scaling import RobustFeatureScaler, MultiMethodScaler
+from .time_series_validation import TimeSeriesValidator, PurgedGroupKFold, WalkForwardValidator, OutOfSampleValidator
+from .stability_metrics import FeatureStabilityAnalyzer
+from .diagnostics import FeatureDiagnostics
+from .method_settings import MethodSettings
+from .enhanced_relevance_analyzer import EnhancedRelevanceAnalyzer
 
 __all__ = [
     'FeatureComparisonUtils',
@@ -28,5 +33,13 @@ __all__ = [
     'FeatureValidator',
     'EnhancedFeatureComparisonRunner',
     'RobustFeatureScaler',
-    'MultiMethodScaler'
+    'MultiMethodScaler',
+    'TimeSeriesValidator',
+    'PurgedGroupKFold',
+    'WalkForwardValidator',
+    'OutOfSampleValidator',
+    'FeatureStabilityAnalyzer',
+    'FeatureDiagnostics',
+    'MethodSettings',
+    'EnhancedRelevanceAnalyzer'
 ]

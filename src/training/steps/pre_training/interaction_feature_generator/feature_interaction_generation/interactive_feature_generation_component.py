@@ -48,76 +48,50 @@ from .feature_generation_utils import ImprovedFeatureGenerator, FeatureGeneratio
 # Initialize import manager
 import_manager = get_import_manager()
 
-# Import common operations and utilities using import manager
-common_ops_result = import_manager.import_common_operations()
-COMMON_OPS_AVAILABLE = common_ops_result.status.value == "success"
-if COMMON_OPS_AVAILABLE:
+# Fast-fail imports - all required dependencies must be available
+try:
+    # Import common operations and utilities using import manager
+    common_ops_result = import_manager.import_common_operations()
     COMMON_OPS = common_ops_result.module
     tprint_success("✅ Common operations imported successfully")
-else:
-    COMMON_OPS = None
-    tprint_error("❌ Common operations not available")
-
-# Import math validation
-math_validation_result = import_manager.import_math_validation()
-MATH_VALIDATION_AVAILABLE = math_validation_result.status.value == "success"
-if MATH_VALIDATION_AVAILABLE:
+    
+    # Import math validation
+    math_validation_result = import_manager.import_math_validation()
     MATH_VALIDATION = math_validation_result.module
-else:
-    MATH_VALIDATION = None
-
-# Import component registration
-from src.training.steps.pre_training.components.component_factory import register_component
-
-# Import matrix operations using import manager
-matrix_ops_result = import_manager.import_matrix_operations()
-MATRIX_OPS_AVAILABLE = matrix_ops_result.status.value == "success"
-if MATRIX_OPS_AVAILABLE:
+    
+    # Import component registration
+    from src.training.steps.pre_training.components.component_factory import register_component
+    
+    # Import matrix operations using import manager
+    matrix_ops_result = import_manager.import_matrix_operations()
     MATRIX_OPS = matrix_ops_result.module
     tprint_success("✅ Matrix operations imported successfully")
-else:
-    MATRIX_OPS = None
-    tprint_error("❌ Matrix operations not available")
-
-# Import ML common utilities using import manager
-ml_common_result = import_manager.import_ml_common()
-purged_kfold_result = import_manager.import_purged_kfold()
-feature_selection_result = import_manager.import_feature_selection()
-
-ML_COMMON_AVAILABLE = (
-    ml_common_result.status.value == "success" and
-    purged_kfold_result.status.value == "success" and
-    feature_selection_result.status.value == "success"
-)
-
-if ML_COMMON_AVAILABLE:
+    
+    # Import ML common utilities using import manager
+    ml_common_result = import_manager.import_ml_common()
+    purged_kfold_result = import_manager.import_purged_kfold()
+    feature_selection_result = import_manager.import_feature_selection()
+    
     ML_COMMON = ml_common_result.module
     PURGED_KFOLD = purged_kfold_result.module
     FEATURE_SELECTION = feature_selection_result.module
     tprint_success("✅ ML common utilities imported successfully")
-else:
-    ML_COMMON = None
-    PURGED_KFOLD = None
-    FEATURE_SELECTION = None
-    tprint_error("❌ ML common utilities not available")
-
-# Import data utilities using import manager
-data_utils_result = import_manager.import_data_utils()
-DATA_UTILS_AVAILABLE = data_utils_result.status.value == "success"
-if DATA_UTILS_AVAILABLE:
+    
+    # Import data utilities using import manager
+    data_utils_result = import_manager.import_data_utils()
     DATA_UTILS = data_utils_result.module
     tprint_success("✅ Data utilities imported successfully")
-else:
-    DATA_UTILS = None
-    tprint_error("❌ Data utilities not available")
-
-# Import ares launcher integration
-try:
+    
+    # Import ares launcher integration
     from .ares_launcher_integration import AresLauncherInteractiveFeatureGenerator
     ARES_LAUNCHER_AVAILABLE = True
+    
 except ImportError as e:
-    ARES_LAUNCHER_AVAILABLE = False
-    tprint_warning(f"⚠️ Ares launcher integration not available: {e}")
+    tprint_error(f"❌ Critical dependency missing: {e}")
+    raise ImportError(f"Required dependency not available: {e}")
+except Exception as e:
+    tprint_error(f"❌ Unexpected error during initialization: {e}")
+    raise RuntimeError(f"Initialization failed: {e}")
 
 # Import column naming utilities
 from ...column_naming import (

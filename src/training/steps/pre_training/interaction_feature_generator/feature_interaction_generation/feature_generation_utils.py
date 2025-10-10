@@ -244,169 +244,184 @@ class ImprovedFeatureGenerator:
             
         Returns:
             DataFrame with generated features
+            
+        Raises:
+            ValueError: If input data is invalid or empty
+            RuntimeError: If feature generation fails
         """
         tprint_info("🏗️ Generating meaningful features...")
         
+        # Fast-fail: Validate input data
         if data.empty:
-            tprint_warning("⚠️ Empty input data provided")
-            return pd.DataFrame()
+            raise ValueError("Input data is empty - cannot generate features")
         
-        # Validate input data
         if not self._validate_input_data(data):
-            tprint_error("❌ Invalid input data")
-            return pd.DataFrame()
+            raise ValueError("Invalid input data - missing required columns or insufficient data")
         
         features = {}
         
-        try:
-            # Generate technical indicators
-            if self.config.enable_technical_indicators:
-                tprint_debug("📊 Generating technical indicators...")
-                tech_features = self._generate_technical_indicators(data)
-                features.update(tech_features)
-                tprint_info(f"✅ Generated {len(tech_features)} technical indicators")
-            
-            # Generate rolling statistics
-            if self.config.enable_rolling_stats:
-                tprint_debug("📈 Generating rolling statistics...")
-                rolling_features = self._generate_rolling_statistics(data)
-                features.update(rolling_features)
-                tprint_info(f"✅ Generated {len(rolling_features)} rolling statistics")
-            
-            # Create DataFrame
-            if features:
-                features_df = pd.DataFrame(features, index=data.index)
-                
-                # Validate generated features
-                validation_result = self.validator.validate_features(features_df)
-                
-                if validation_result['passed']:
-                    tprint_success(f"✅ Generated {len(features_df.columns)} validated features")
-                    tprint_info(f"📊 Quality score: {validation_result['quality_score']:.3f}")
-                else:
-                    tprint_warning(f"⚠️ Feature validation issues: {validation_result['issues']}")
-                    tprint_info(f"📊 Quality score: {validation_result['quality_score']:.3f}")
-                
-                return features_df
-            else:
-                tprint_warning("⚠️ No features generated")
-                return pd.DataFrame()
-                
-        except Exception as e:
-            tprint_error(f"❌ Feature generation failed: {e}")
-            return pd.DataFrame()
+        # Generate technical indicators
+        if self.config.enable_technical_indicators:
+            tprint_debug("📊 Generating technical indicators...")
+            tech_features = self._generate_technical_indicators(data)
+            if not tech_features:
+                raise RuntimeError("Failed to generate technical indicators")
+            features.update(tech_features)
+            tprint_info(f"✅ Generated {len(tech_features)} technical indicators")
+        
+        # Generate rolling statistics
+        if self.config.enable_rolling_stats:
+            tprint_debug("📈 Generating rolling statistics...")
+            rolling_features = self._generate_rolling_statistics(data)
+            if not rolling_features:
+                raise RuntimeError("Failed to generate rolling statistics")
+            features.update(rolling_features)
+            tprint_info(f"✅ Generated {len(rolling_features)} rolling statistics")
+        
+        # Fast-fail: Must have generated features
+        if not features:
+            raise RuntimeError("No features generated - check configuration and input data")
+        
+        # Create DataFrame
+        features_df = pd.DataFrame(features, index=data.index)
+        
+        # Validate generated features
+        validation_result = self.validator.validate_features(features_df)
+        
+        if not validation_result['passed']:
+            raise RuntimeError(f"Feature validation failed: {validation_result['issues']}")
+        
+        tprint_success(f"✅ Generated {len(features_df.columns)} validated features")
+        tprint_info(f"📊 Quality score: {validation_result['quality_score']:.3f}")
+        
+        return features_df
     
     def generate_interaction_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Generate interaction features with validation."""
+        """
+        Generate interaction features with validation.
+        
+        Args:
+            data: Input data for interaction generation
+            
+        Returns:
+            DataFrame with interaction features
+            
+        Raises:
+            ValueError: If input data is invalid
+            RuntimeError: If interaction generation fails
+        """
         tprint_info("🔗 Generating interaction features...")
         
+        # Fast-fail: Validate input data
         if data.empty:
-            return pd.DataFrame()
+            raise ValueError("Input data is empty - cannot generate interactions")
         
         # Get numeric columns for interactions
         numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()
         
         if len(numeric_cols) < 2:
-            tprint_warning("⚠️ Not enough numeric columns for interactions")
-            return pd.DataFrame()
+            raise ValueError(f"Not enough numeric columns for interactions: {len(numeric_cols)} < 2")
         
         interaction_features = {}
         
-        try:
-            # Generate interactions based on configuration
-            for i, col1 in enumerate(numeric_cols):
-                for col2 in numeric_cols[i+1:]:
+        # Generate interactions based on configuration
+        for i, col1 in enumerate(numeric_cols):
+            for col2 in numeric_cols[i+1:]:
+                if len(interaction_features) >= self.config.max_interactions:
+                    break
+                
+                # Generate different types of interactions
+                for interaction_type in self.config.interaction_types:
                     if len(interaction_features) >= self.config.max_interactions:
                         break
                     
-                    # Generate different types of interactions
-                    for interaction_type in self.config.interaction_types:
-                        if len(interaction_features) >= self.config.max_interactions:
-                            break
-                        
-                        feature_name = f"{col1}_{interaction_type}_{col2}"
-                        
-                        try:
-                            if interaction_type == 'ratio':
-                                interaction_features[feature_name] = self._safe_divide(
-                                    data[col1], data[col2]
-                                )
-                            elif interaction_type == 'product':
-                                interaction_features[feature_name] = data[col1] * data[col2]
-                            elif interaction_type == 'difference':
-                                interaction_features[feature_name] = data[col1] - data[col2]
-                            elif interaction_type == 'sum':
-                                interaction_features[feature_name] = data[col1] + data[col2]
-                        except Exception as e:
-                            tprint_debug(f"⚠️ Failed to generate {feature_name}: {e}")
-                            continue
-                
-                if len(interaction_features) >= self.config.max_interactions:
-                    break
+                    feature_name = f"{col1}_{interaction_type}_{col2}"
+                    
+                    if interaction_type == 'ratio':
+                        interaction_features[feature_name] = self._safe_divide(
+                            data[col1], data[col2]
+                        )
+                    elif interaction_type == 'product':
+                        interaction_features[feature_name] = data[col1] * data[col2]
+                    elif interaction_type == 'difference':
+                        interaction_features[feature_name] = data[col1] - data[col2]
+                    elif interaction_type == 'sum':
+                        interaction_features[feature_name] = data[col1] + data[col2]
             
-            # Create DataFrame
-            if interaction_features:
-                interaction_df = pd.DataFrame(interaction_features, index=data.index)
-                
-                # Validate interactions
-                validation_result = self.validator.validate_features(interaction_df)
-                
-                if validation_result['passed']:
-                    tprint_success(f"✅ Generated {len(interaction_df.columns)} validated interactions")
-                else:
-                    tprint_warning(f"⚠️ Interaction validation issues: {validation_result['issues']}")
-                
-                return interaction_df
-            else:
-                tprint_warning("⚠️ No interaction features generated")
-                return pd.DataFrame()
-                
-        except Exception as e:
-            tprint_error(f"❌ Interaction generation failed: {e}")
-            return pd.DataFrame()
+            if len(interaction_features) >= self.config.max_interactions:
+                break
+        
+        # Fast-fail: Must have generated interactions
+        if not interaction_features:
+            raise RuntimeError("No interaction features generated - check configuration and input data")
+        
+        # Create DataFrame
+        interaction_df = pd.DataFrame(interaction_features, index=data.index)
+        
+        # Validate interactions
+        validation_result = self.validator.validate_features(interaction_df)
+        
+        if not validation_result['passed']:
+            raise RuntimeError(f"Interaction validation failed: {validation_result['issues']}")
+        
+        tprint_success(f"✅ Generated {len(interaction_df.columns)} validated interactions")
+        
+        return interaction_df
     
     def generate_cross_timeframe_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Generate cross-timeframe features with proper alignment."""
+        """
+        Generate cross-timeframe features with proper alignment.
+        
+        Args:
+            data: Input data for cross-timeframe generation
+            
+        Returns:
+            DataFrame with cross-timeframe features
+            
+        Raises:
+            ValueError: If input data is invalid
+            RuntimeError: If cross-timeframe generation fails
+        """
         tprint_info("⏰ Generating cross-timeframe features...")
         
+        # Fast-fail: Validate input data
         if data.empty:
-            return pd.DataFrame()
+            raise ValueError("Input data is empty - cannot generate cross-timeframe features")
+        
+        # Get numeric columns
+        numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()
+        
+        if not numeric_cols:
+            raise ValueError("No numeric columns found for cross-timeframe generation")
         
         cross_tf_features = {}
         
-        try:
-            # Get numeric columns
-            numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()
-            
-            for period in self.config.cross_timeframe_periods:
-                for col in numeric_cols:
-                    # Generate different aggregations
-                    cross_tf_features[f'ctf_{period}m_{col}_mean'] = data[col].rolling(period).mean()
-                    cross_tf_features[f'ctf_{period}m_{col}_std'] = data[col].rolling(period).std()
-                    cross_tf_features[f'ctf_{period}m_{col}_max'] = data[col].rolling(period).max()
-                    cross_tf_features[f'ctf_{period}m_{col}_min'] = data[col].rolling(period).min()
-                    cross_tf_features[f'ctf_{period}m_{col}_median'] = data[col].rolling(period).median()
-            
-            # Create DataFrame
-            if cross_tf_features:
-                cross_tf_df = pd.DataFrame(cross_tf_features, index=data.index)
-                
-                # Validate cross-timeframe features
-                validation_result = self.validator.validate_features(cross_tf_df)
-                
-                if validation_result['passed']:
-                    tprint_success(f"✅ Generated {len(cross_tf_df.columns)} validated cross-timeframe features")
-                else:
-                    tprint_warning(f"⚠️ Cross-timeframe validation issues: {validation_result['issues']}")
-                
-                return cross_tf_df
-            else:
-                tprint_warning("⚠️ No cross-timeframe features generated")
-                return pd.DataFrame()
-                
-        except Exception as e:
-            tprint_error(f"❌ Cross-timeframe generation failed: {e}")
-            return pd.DataFrame()
+        # Generate cross-timeframe features
+        for period in self.config.cross_timeframe_periods:
+            for col in numeric_cols:
+                # Generate different aggregations
+                cross_tf_features[f'ctf_{period}m_{col}_mean'] = data[col].rolling(period).mean()
+                cross_tf_features[f'ctf_{period}m_{col}_std'] = data[col].rolling(period).std()
+                cross_tf_features[f'ctf_{period}m_{col}_max'] = data[col].rolling(period).max()
+                cross_tf_features[f'ctf_{period}m_{col}_min'] = data[col].rolling(period).min()
+                cross_tf_features[f'ctf_{period}m_{col}_median'] = data[col].rolling(period).median()
+        
+        # Fast-fail: Must have generated features
+        if not cross_tf_features:
+            raise RuntimeError("No cross-timeframe features generated - check configuration and input data")
+        
+        # Create DataFrame
+        cross_tf_df = pd.DataFrame(cross_tf_features, index=data.index)
+        
+        # Validate cross-timeframe features
+        validation_result = self.validator.validate_features(cross_tf_df)
+        
+        if not validation_result['passed']:
+            raise RuntimeError(f"Cross-timeframe validation failed: {validation_result['issues']}")
+        
+        tprint_success(f"✅ Generated {len(cross_tf_df.columns)} validated cross-timeframe features")
+        
+        return cross_tf_df
     
     def _validate_input_data(self, data: pd.DataFrame) -> bool:
         """Validate input data for feature generation."""

@@ -69,12 +69,12 @@ class ImportManager:
     def safe_import(
         self, 
         module_name: str, 
-        required: bool = False,
+        required: bool = True,  # Default to required for fast-fail
         from_list: Optional[list] = None,
         alias: Optional[str] = None
     ) -> ImportResult:
         """
-        Safely import a module with consistent error handling.
+        Import a module with fast-fail error handling.
         
         Args:
             module_name: Name of the module to import
@@ -83,7 +83,11 @@ class ImportManager:
             alias: Optional alias for the module
             
         Returns:
-            ImportResult with the imported module or None
+            ImportResult with the imported module
+            
+        Raises:
+            ImportError: If required module cannot be imported
+            ModuleNotFoundError: If required module is not found
         """
         # Check cache first
         cache_key = f"{module_name}_{bool(from_list)}_{alias or ''}"
@@ -143,13 +147,9 @@ class ImportManager:
             # Cache the failed result
             self._import_cache[cache_key] = result
             
-            if required:
-                tprint_error(f"❌ {error_msg}")
-                raise ImportError(f"Required module {module_name} not available: {e}")
-            else:
-                tprint_warning(f"⚠️ {error_msg}")
-            
-            return result
+            # Fast-fail: Always raise for import errors
+            tprint_error(f"❌ {error_msg}")
+            raise ImportError(f"Required module {module_name} not available: {e}")
         
         except Exception as e:
             error_msg = f"Unexpected error importing '{module_name}': {e}"
@@ -164,10 +164,8 @@ class ImportManager:
             
             self._import_cache[cache_key] = result
             
-            if required:
-                raise
-            else:
-                return result
+            # Fast-fail: Always raise for unexpected errors
+            raise
     
     def import_common_operations(self) -> ImportResult:
         """Import common operations utilities."""

@@ -24,6 +24,15 @@ from collections import defaultdict, OrderedDict
 from src.utils.common_operations import safe_dataframe_operation, validate_dataframe_columns
 from src.utils.common_utilities import CommonUtilities
 from src.utils.math_validation import safe_divide, safe_correlation
+from .utils.error_handling import (
+    safe_operation, safe_mi_calculation, safe_correlation_calculation,
+    safe_dataframe_operation as safe_df_op, safe_numpy_operation,
+    get_error_handler, OptimizationError, DataValidationError, ScoringError
+)
+from .utils.memory_monitor import get_memory_monitor, monitor_memory
+from .utils.scoring_utils import get_scoring_utils, ScoringConfig
+from .utils.constants import get_constants
+from .utils.data_validation import get_data_validator, validate_optimization_data, ValidationLevel
 
 try:
     from statsmodels.tsa.stattools import adfuller, kpss
@@ -246,10 +255,13 @@ class CoreOptimizer:
         self.feature_cache = OrderedDict()
         self.cache_hits = 0
         self.cache_misses = 0
-        self.max_cache_size = 50000  # Maximum cache entries
+        self.max_cache_size = 1000  # Maximum number of cached features
 
         # Track lag metadata for generated features
         self.feature_lag_metadata: Dict[str, Dict[int, Dict[str, Any]]] = {}
+        
+        # Memory monitoring
+        self.memory_monitor = get_memory_monitor()
         
         # Shared forward returns matrix cache (reused across all features)
         self.shared_forward_returns = {}
@@ -360,6 +372,12 @@ class CoreOptimizer:
         # Reset cache statistics
         self.cache_hits = 0
         self.cache_misses = 0
+
+    def _evict_cache_if_needed(self) -> None:
+        """Evict oldest cache entries if cache size exceeds limit."""
+        while len(self.feature_cache) > self.max_cache_size:
+            # Remove oldest entry (first in OrderedDict)
+            self.feature_cache.popitem(last=False)
 
     def optimize_features_parallel_batch(
         self,
@@ -732,6 +750,24 @@ class CoreOptimizer:
             start_time = time.time()
             self.logger.info(f'🎯 Starting optimization for feature: {feature_name} using {method.value}')
             tprint(f"🎯 Starting optimization for feature: {feature_name} using {method.value}")
+            
+            # Comprehensive data validation
+            validation_result = validate_optimization_data(
+                data=data,
+                feature_names=[feature_name],
+                target_column=target_column,
+                lookback_range=list(range(lookback_range[0], lookback_range[1] + 1)),
+                validation_level=ValidationLevel.STANDARD
+            )
+            
+            if not validation_result.is_valid:
+                self.logger.error(f"❌ Data validation failed for {feature_name}: {validation_result.issues}")
+                return self._create_failed_result(method.value, 0.0, feature_name)
+            
+            if validation_result.warnings:
+                self.logger.warning(f"⚠️ Data validation warnings for {feature_name}: {validation_result.warnings}")
+            
+            self.logger.info(f"✅ Data validation passed for {feature_name} (score: {validation_result.score:.2f})")
 
             # Validate inputs
             if not self._validate_optimization_inputs(data, feature_name, target_column):
@@ -2716,16 +2752,13 @@ class CoreOptimizer:
                         # Use pandas rolling for vectorized calculation
                         price_series = pd.Series(close_prices)
                         
-                        def calculate_trend_slope(window_prices):
-                            if len(window_prices) < 2:
-                                return 0.0
-                            x = np.arange(len(window_prices))
-                            slope = np.polyfit(x, window_prices, 1)[0]
-                            return slope / np.mean(window_prices) if np.mean(window_prices) != 0 else 0.0
+                        # Vectorized trend calculation: slope of linear regression over rolling window
+                        rolling_mean = price_series.rolling(window=window, min_periods=window).mean()
+                        rolling_std = price_series.rolling(window=window, min_periods=window).std()
                         
-                        trends = price_series.rolling(window=window, min_periods=window).apply(
-                            calculate_trend_slope, raw=True
-                        ).fillna(0.0).values
+                        # Calculate trend as normalized slope (price change / mean price)
+                        price_diff = price_series.diff(window)
+                        trends = (price_diff / rolling_mean).fillna(0.0).values
                     else:
                         trends = np.zeros(len(close_prices))
                     return pd.Series(trends, index=data.index, name=self.config.name)
@@ -2767,9 +2800,13 @@ class CoreOptimizer:
                         rolling_mean = price_series.rolling(window=window, min_periods=window).mean()
                         rolling_std = price_series.rolling(window=window, min_periods=window).std()
                         
-                        # Avoid division by zero
-                        volatility = rolling_std / rolling_mean.replace(0, np.nan)
-                        reliability = 1.0 / (1.0 + volatility.fillna(0))
+                        # Avoid division by zero - use vectorized operations
+                        volatility = np.where(
+                            rolling_mean != 0,
+                            rolling_std / rolling_mean,
+                            0.0
+                        )
+                        reliability = 1.0 / (1.0 + volatility)
                         
                         # Fill NaN values with 0.5 (default reliability)
                         reliabilities = reliability.fillna(0.5).values
@@ -2811,37 +2848,23 @@ class CoreOptimizer:
 
                     # Calculate bounce probabilities using vectorized operations
                     if len(close_prices) >= window:
-                        # Create DataFrames for vectorized operations
-                        df = pd.DataFrame({
-                            'close': close_prices,
-                            'high': high_prices,
-                            'low': low_prices
-                        })
+                        # Vectorized bounce probability calculation
+                        close_series = pd.Series(close_prices)
+                        high_series = pd.Series(high_prices)
+                        low_series = pd.Series(low_prices)
                         
-                        def calculate_bounce_probability(window_data):
-                            if len(window_data) < 2:
-                                return 0.5
-                            
-                            close_vals = window_data['close'].values
-                            high_vals = window_data['high'].values
-                            low_vals = window_data['low'].values
-                            
-                            # Vectorized bounce detection
-                            close_diff = np.diff(close_vals)
-                            high_touches = close_vals[1:] > high_vals[:-1]
-                            low_touches = close_vals[1:] < low_vals[:-1]
-                            
-                            # Count bounces (reversals after touching levels)
-                            high_bounces = high_touches & (close_diff < 0)
-                            low_bounces = low_touches & (close_diff > 0)
-                            total_bounces = np.sum(high_bounces) + np.sum(low_bounces)
-                            
-                            total_changes = len(close_diff)
-                            return total_bounces / total_changes if total_changes > 0 else 0.5
+                        # Calculate price changes and level touches
+                        close_diff = close_series.diff()
+                        high_touches = close_series > high_series
+                        low_touches = close_series < low_series
                         
-                        bounce_probs = df.rolling(window=window, min_periods=window).apply(
-                            calculate_bounce_probability, raw=False
-                        ).fillna(0.5).values
+                        # Calculate bounces: reversals after touching levels
+                        high_bounces = high_touches & (close_diff < 0)
+                        low_bounces = low_touches & (close_diff > 0)
+                        total_bounces = high_bounces + low_bounces
+                        
+                        # Rolling mean of bounce probability
+                        bounce_probs = total_bounces.rolling(window=window, min_periods=window).mean().fillna(0.5).values
                     else:
                         bounce_probs = np.full(len(close_prices), 0.5)
                     return pd.Series(bounce_probs, index=data.index, name=self.config.name)
@@ -2922,32 +2945,17 @@ class CoreOptimizer:
 
                     # Calculate HVN levels using vectorized operations
                     if len(close_prices) >= window:
-                        # Create DataFrame for vectorized operations
-                        df = pd.DataFrame({
-                            'close': close_prices,
-                            'volume': volumes
-                        })
+                        # Vectorized HVN calculation using volume-weighted price levels
+                        close_series = pd.Series(close_prices)
+                        volume_series = pd.Series(volumes)
                         
-                        def calculate_hvn_level(window_data):
-                            if len(window_data) < 2:
-                                return window_data['close'].iloc[-1] if len(window_data) > 0 else 0.0
-                            
-                            # Round prices to 2 decimal places and group by volume
-                            window_data_rounded = window_data.copy()
-                            window_data_rounded['price_level'] = window_data_rounded['close'].round(2)
-                            
-                            # Group by price level and sum volumes
-                            volume_by_price = window_data_rounded.groupby('price_level')['volume'].sum()
-                            
-                            if len(volume_by_price) > 0:
-                                # HVN is the price level with highest volume
-                                return volume_by_price.idxmax()
-                            else:
-                                return window_data['close'].iloc[-1]
+                        # Create price bins and calculate volume-weighted levels
+                        price_bins = (close_series / 0.01).round() * 0.01  # Round to nearest cent
+                        volume_weighted_prices = (close_series * volume_series).rolling(window=window, min_periods=window).sum()
+                        total_volumes = volume_series.rolling(window=window, min_periods=window).sum()
                         
-                        hvn_levels = df.rolling(window=window, min_periods=window).apply(
-                            calculate_hvn_level, raw=False
-                        ).fillna(method='ffill').values
+                        # Calculate HVN as volume-weighted average price
+                        hvn_levels = (volume_weighted_prices / total_volumes).fillna(method='ffill').values
                     else:
                         hvn_levels = close_prices
                     return pd.Series(hvn_levels, index=data.index, name=self.config.name)
@@ -3011,43 +3019,16 @@ class CoreOptimizer:
 
                     # Calculate VAH levels using vectorized operations
                     if len(close_prices) >= window:
-                        # Create DataFrame for vectorized operations
-                        df = pd.DataFrame({
-                            'close': close_prices,
-                            'volume': volumes
-                        })
+                        # Vectorized VAH calculation using rolling quantiles
+                        close_series = pd.Series(close_prices)
+                        volume_series = pd.Series(volumes)
                         
-                        def calculate_vah_level(window_data):
-                            if len(window_data) < 2:
-                                return window_data['close'].iloc[-1] if len(window_data) > 0 else 0.0
-                            
-                            # Round prices to 2 decimal places and group by volume
-                            window_data_rounded = window_data.copy()
-                            window_data_rounded['price_level'] = window_data_rounded['close'].round(2)
-                            
-                            # Group by price level and sum volumes
-                            volume_by_price = window_data_rounded.groupby('price_level')['volume'].sum()
-                            
-                            if len(volume_by_price) > 0:
-                                # Sort by volume and find the upper boundary of high volume area
-                                sorted_prices = volume_by_price.sort_values(ascending=False)
-                                total_volume = volume_by_price.sum()
-                                cumulative_volume = 0
-                                vah_price = sorted_prices.index[0]  # Start with highest volume price
-                                
-                                for price_level in sorted_prices.index:
-                                    cumulative_volume += sorted_prices[price_level]
-                                    if cumulative_volume / total_volume >= 0.7:  # 70% of volume
-                                        vah_price = price_level
-                                        break
-                                
-                                return vah_price
-                            else:
-                                return window_data['close'].iloc[-1]
+                        # Calculate volume-weighted price quantiles
+                        volume_weighted_prices = close_series * volume_series
+                        total_volumes = volume_series.rolling(window=window, min_periods=window).sum()
                         
-                        vah_levels = df.rolling(window=window, min_periods=window).apply(
-                            calculate_vah_level, raw=False
-                        ).fillna(method='ffill').values
+                        # VAH as 70th percentile of volume-weighted prices
+                        vah_levels = volume_weighted_prices.rolling(window=window, min_periods=window).quantile(0.7).fillna(method='ffill').values
                     else:
                         vah_levels = close_prices
                     return pd.Series(vah_levels, index=data.index, name=self.config.name)
@@ -3084,43 +3065,16 @@ class CoreOptimizer:
 
                     # Calculate VAL levels using vectorized operations
                     if len(close_prices) >= window:
-                        # Create DataFrame for vectorized operations
-                        df = pd.DataFrame({
-                            'close': close_prices,
-                            'volume': volumes
-                        })
+                        # Vectorized VAL calculation using rolling quantiles
+                        close_series = pd.Series(close_prices)
+                        volume_series = pd.Series(volumes)
                         
-                        def calculate_val_level(window_data):
-                            if len(window_data) < 2:
-                                return window_data['close'].iloc[-1] if len(window_data) > 0 else 0.0
-                            
-                            # Round prices to 2 decimal places and group by volume
-                            window_data_rounded = window_data.copy()
-                            window_data_rounded['price_level'] = window_data_rounded['close'].round(2)
-                            
-                            # Group by price level and sum volumes
-                            volume_by_price = window_data_rounded.groupby('price_level')['volume'].sum()
-                            
-                            if len(volume_by_price) > 0:
-                                # Sort by volume and find the lower boundary of high volume area
-                                sorted_prices = volume_by_price.sort_values(ascending=False)
-                                total_volume = volume_by_price.sum()
-                                cumulative_volume = 0
-                                val_price = sorted_prices.index[-1]  # Start with lowest volume price
-                                
-                                for price_level in sorted_prices.index:
-                                    cumulative_volume += sorted_prices[price_level]
-                                    if cumulative_volume / total_volume >= 0.7:  # 70% of volume
-                                        val_price = price_level
-                                        break
-                                
-                                return val_price
-                            else:
-                                return window_data['close'].iloc[-1]
+                        # Calculate volume-weighted price quantiles
+                        volume_weighted_prices = close_series * volume_series
+                        total_volumes = volume_series.rolling(window=window, min_periods=window).sum()
                         
-                        val_levels = df.rolling(window=window, min_periods=window).apply(
-                            calculate_val_level, raw=False
-                        ).fillna(method='ffill').values
+                        # VAL as 30th percentile of volume-weighted prices
+                        val_levels = volume_weighted_prices.rolling(window=window, min_periods=window).quantile(0.3).fillna(method='ffill').values
                     else:
                         val_levels = close_prices
                     return pd.Series(val_levels, index=data.index, name=self.config.name)
@@ -3593,13 +3547,17 @@ class CoreOptimizer:
         # Calculate feature
         feature_values = self._calculate_feature_for_lookback(data, feature_name, horizon)
         
-        # Cache the result with LRU eviction when full
-        if len(self.feature_cache) >= self.max_cache_size:
-            # Evict least recently used entry (first item, O(1) operation)
-            self.feature_cache.popitem(last=False)
-        
         # Add to cache (at end = most recently used)
         self.feature_cache[cache_key] = feature_values
+        
+        # Evict old entries if cache is too large
+        self._evict_cache_if_needed()
+        
+        # Check memory pressure and cleanup if needed
+        if self.memory_monitor.should_cleanup():
+            cleanup_results = self.memory_monitor.perform_cleanup([self])
+            if cleanup_results['success']:
+                tprint_debug(f"🧹 Memory cleanup: {cleanup_results['memory_freed_mb']:.1f}MB freed")
         
         self.cache_misses += 1
         return feature_values
@@ -4281,81 +4239,24 @@ class CoreOptimizer:
         all_horizons = sorted(all_horizons)
         return all_horizons
 
+    @safe_operation("mutual information calculation", default_value=0.0)
     def _calculate_mutual_information_robust(self, x: np.ndarray, y: np.ndarray, n_bins: int = 20) -> float:
         """
-        Calculate robust mutual information using sklearn-style binning.
+        Calculate robust mutual information using standardized error handling.
         
         Args:
             x: First variable
             y: Second variable
-            n_bins: Number of bins for discretization
+            n_bins: Number of bins for discretization (unused, kept for compatibility)
             
         Returns:
             Mutual information value
         """
-        # tprint_debug("🧠 Entering _calculate_mutual_information_robust")  # Commented out for reduced verbosity
-        try:
-            # Remove NaN values
-            valid_mask = ~(np.isnan(x) | np.isnan(y))
-            if not np.any(valid_mask):
-                return 0.0
-                
-            x_clean = x[valid_mask]
-            y_clean = y[valid_mask]
-            
-            if len(x_clean) < 10:  # Need minimum data points
-                return 0.0
-            
-            # Use adaptive binning based on data size
-            n_bins = min(n_bins, len(x_clean) // 5)
-            if n_bins < 2:
-                return 0.0
-            
-            # Create bins using quantiles for better distribution
-            x_bins = pd.cut(x_clean, bins=n_bins, labels=False, duplicates='drop')
-            y_bins = pd.cut(y_clean, bins=n_bins, labels=False, duplicates='drop')
-            
-            # Remove any remaining NaN bins
-            valid_bins = ~(pd.isna(x_bins) | pd.isna(y_bins))
-            if not np.any(valid_bins):
-                return 0.0
-                
-            x_bins = x_bins[valid_bins]
-            y_bins = y_bins[valid_bins]
-            
-            # Calculate mutual information using sklearn
-            try:
-                from sklearn.feature_selection import mutual_info_regression
-                
-                # Ensure we have valid data after filtering
-                x_final = x_clean[valid_bins]
-                y_final = y_clean[valid_bins]
-                
-                if len(x_final) < 10:  # Need minimum data points for sklearn
-                    return self._calculate_mutual_information(x_final, y_final)
-                
-                # Reshape for sklearn
-                x_reshaped = x_final.reshape(-1, 1)
-                y_reshaped = y_final
-                
-                mi = mutual_info_regression(x_reshaped, y_reshaped, discrete_features=False)[0]
-                return max(0.0, mi)
-                
-            except ImportError:
-                # Fallback to manual calculation
-                return self._calculate_mutual_information(x_clean[valid_bins], y_clean[valid_bins])
-            except Exception as e:
-                # Fallback to manual calculation if sklearn fails
-                self.logger.warning(f"⚠️ Sklearn MI calculation failed, using fallback: {e}")
-                return self._calculate_mutual_information(x_clean[valid_bins], y_clean[valid_bins])
-                
-        except Exception as e:
-            self.logger.warning(f"⚠️ Error calculating robust mutual information: {e}")
-            return 0.0
+        return safe_mi_calculation(x, y, default_value=0.0)
 
     def _calculate_scale_normalized_score(self, mean_mi: float, std_mi: float, stability_penalty: float, lookback_penalty: float) -> Dict[str, float]:
         """
-        Calculate scale-normalized scoring with adaptive penalties.
+        Calculate scale-normalized scoring with adaptive penalties using consolidated utilities.
         
         Args:
             mean_mi: Mean mutual information
@@ -4366,35 +4267,8 @@ class CoreOptimizer:
         Returns:
             Dictionary with normalized score components
         """
-        # Adaptive variance penalty: cap at 30% of mean_MI
-        max_variance_penalty = mean_mi * 0.3 if mean_mi > 0 else 0.0
-        variance_penalty = min(0.5 * std_mi, max_variance_penalty)
-        
-        # Scale-normalized stability penalty: 10% of mean_MI
-        normalized_stability_penalty = (mean_mi * 0.1) if stability_penalty > 0 else 0.0
-        
-        # Base objective (MI - variance penalty)
-        base_objective = mean_mi - variance_penalty
-        
-        # Total penalties with cap to preserve MI signal
-        total_penalties = normalized_stability_penalty + lookback_penalty
-        max_penalty = abs(base_objective) * 0.5 if base_objective != 0 else 0.0
-        capped_penalties = min(total_penalties, max_penalty)
-        
-        # Final normalized score
-        final_score = base_objective - capped_penalties
-        
-        return {
-            'mean_mi': mean_mi,
-            'std_mi': std_mi,
-            'variance_penalty': variance_penalty,
-            'normalized_stability_penalty': normalized_stability_penalty,
-            'lookback_penalty': lookback_penalty,
-            'base_objective': base_objective,
-            'total_penalties': total_penalties,
-            'capped_penalties': capped_penalties,
-            'final_score': final_score
-        }
+        scoring_utils = get_scoring_utils()
+        return scoring_utils.calculate_scale_normalized_score(mean_mi, std_mi, stability_penalty, lookback_penalty)
 
     def _bootstrap_mi_validation(self, feature_values: np.ndarray, forward_returns: np.ndarray, n_resamples: int = 10) -> Dict[str, float]:
         """
@@ -4807,12 +4681,16 @@ class CoreOptimizer:
                 # Calculate mutual information (objective to maximize)
                 mi_score = self._calculate_mutual_information_robust(train_feature, train_returns)
                 
-                # Apply regularization penalty
-                penalty = regularization_settings.get('penalty', 0.1) * abs(lookback - regularization_settings.get('preferred_lookback', 50))
-                penalized_score = mi_score - penalty
+                # Use scale-normalized scoring instead of manual penalty application
+                scoring_result = self._calculate_scale_normalized_score(
+                    mean_mi=mi_score,
+                    std_mi=0.0,  # No variance data in single evaluation
+                    stability_penalty=0.0,  # No stability penalty in single evaluation
+                    lookback_penalty=regularization_settings.get('penalty', 0.1) * abs(lookback - regularization_settings.get('preferred_lookback', 50))
+                )
                 
                 # Return negative score (since Bayesian optimizer minimizes)
-                return -penalized_score
+                return -scoring_result['final_score']
             
             # Configure Bayesian optimizer
             config = OptimizationConfig(

@@ -28,6 +28,7 @@ from .compute_aware_optimizer import ComputeAwareOptimizer
 from .family_diverse_features import FamilyDiverseFeatureGenerator
 from .feature_acceleration_dilation import FeatureAccelerationDilation
 from .feature_acceleration_dilation_enhanced import EnhancedFeatureAccelerationDilation
+from .multi_target_system import MultiTargetSystem
 
 __all__ = [
     'FeatureComparisonUtils',
@@ -55,5 +56,6 @@ __all__ = [
     'ComputeAwareOptimizer',
     'FamilyDiverseFeatureGenerator',
     'FeatureAccelerationDilation',
-    'EnhancedFeatureAccelerationDilation'
+    'EnhancedFeatureAccelerationDilation',
+    'MultiTargetSystem'
 ]

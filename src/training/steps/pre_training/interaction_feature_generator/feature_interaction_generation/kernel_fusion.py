@@ -38,6 +38,10 @@ class KernelFusionConfig:
     use_multiprocessing: bool = False  # Use multiprocessing vs threading
     memory_limit_mb: int = 1000  # Memory limit per batch
     interaction_types: List[str] = None  # Types of interactions to compute
+    row_block_size: int = 10000  # Row block size for contiguous writes
+    preallocate_output: bool = True  # Preallocate output matrices
+    domain_pair_quotas: bool = True  # Use domain-based pair quotas
+    max_pairs_per_domain: int = 100  # Maximum pairs per domain
     
     def __post_init__(self):
         if self.interaction_types is None:
@@ -146,20 +150,85 @@ class KernelFusion:
                       data: pd.DataFrame,
                       feature_pairs: List[Tuple[str, str]],
                       interaction_types: List[str]) -> pd.DataFrame:
-        """Process a single batch of feature pairs."""
+        """Process a single batch of feature pairs with optimizations."""
         if not feature_pairs:
             return pd.DataFrame(index=data.index)
         
-        # Extract feature data
+        # Preallocate output if configured
+        if self.config.preallocate_output:
+            total_interactions = len(feature_pairs) * len(interaction_types)
+            if total_interactions > 0:
+                # Preallocate with optimal dtype
+                interactions = {}
+                for pair in feature_pairs:
+                    feature1, feature2 = pair
+                    if feature1 in data.columns and feature2 in data.columns:
+                        for interaction_type in interaction_types:
+                            key = f'{feature1}_{interaction_type}_{feature2}'
+                            interactions[key] = np.empty(len(data), dtype=np.float32)
+            else:
+                interactions = {}
+        else:
+            interactions = {}
+        
+        # Extract feature data efficiently
         feature_data = {}
         for pair in feature_pairs:
             for feature in pair:
                 if feature not in feature_data and feature in data.columns:
                     feature_data[feature] = data[feature].values
         
-        # Compute interactions
-        interactions = {}
+        # Process in row blocks for contiguous writes
+        if self.config.row_block_size > 0 and len(data) > self.config.row_block_size:
+            interactions = self._process_row_blocks(
+                data, feature_pairs, interaction_types, feature_data, interactions
+            )
+        else:
+            # Process all at once
+            interactions = self._process_all_rows(
+                feature_pairs, interaction_types, feature_data, interactions
+            )
         
+        # Update statistics
+        self.fusion_stats['batches_processed'] += 1
+        
+        return pd.DataFrame(interactions, index=data.index)
+    
+    def _process_row_blocks(self, 
+                           data: pd.DataFrame,
+                           feature_pairs: List[Tuple[str, str]],
+                           interaction_types: List[str],
+                           feature_data: Dict[str, np.ndarray],
+                           interactions: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+        """Process interactions in row blocks for contiguous writes."""
+        row_block_size = self.config.row_block_size
+        
+        for start_idx in range(0, len(data), row_block_size):
+            end_idx = min(start_idx + row_block_size, len(data))
+            
+            # Extract row block data
+            block_data = {}
+            for feature, values in feature_data.items():
+                block_data[feature] = values[start_idx:end_idx]
+            
+            # Compute interactions for this block
+            block_interactions = self._compute_block_interactions(
+                block_data, feature_pairs, interaction_types
+            )
+            
+            # Store results in preallocated arrays
+            for key, block_result in block_interactions.items():
+                if key in interactions:
+                    interactions[key][start_idx:end_idx] = block_result
+        
+        return interactions
+    
+    def _process_all_rows(self, 
+                         feature_pairs: List[Tuple[str, str]],
+                         interaction_types: List[str],
+                         feature_data: Dict[str, np.ndarray],
+                         interactions: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+        """Process all interactions at once."""
         for pair in feature_pairs:
             feature1, feature2 = pair
             
@@ -176,10 +245,32 @@ class KernelFusion:
             
             interactions.update(pair_interactions)
         
-        # Update statistics
-        self.fusion_stats['batches_processed'] += 1
+        return interactions
+    
+    def _compute_block_interactions(self, 
+                                   block_data: Dict[str, np.ndarray],
+                                   feature_pairs: List[Tuple[str, str]],
+                                   interaction_types: List[str]) -> Dict[str, np.ndarray]:
+        """Compute interactions for a block of data."""
+        interactions = {}
         
-        return pd.DataFrame(interactions, index=data.index)
+        for pair in feature_pairs:
+            feature1, feature2 = pair
+            
+            if feature1 not in block_data or feature2 not in block_data:
+                continue
+            
+            data1 = block_data[feature1]
+            data2 = block_data[feature2]
+            
+            # Compute all interaction types in one pass
+            pair_interactions = self._compute_pair_interactions(
+                data1, data2, feature1, feature2, interaction_types
+            )
+            
+            interactions.update(pair_interactions)
+        
+        return interactions
     
     def _compute_pair_interactions(self, 
                                   data1: np.ndarray,
@@ -187,52 +278,55 @@ class KernelFusion:
                                   name1: str,
                                   name2: str,
                                   interaction_types: List[str]) -> Dict[str, np.ndarray]:
-        """Compute all interaction types for a pair in one pass."""
+        """Compute all interaction types for a pair in one pass with optimizations."""
         interactions = {}
         
-        # Handle NaN values
+        # Handle NaN values efficiently
         valid_mask = ~(np.isnan(data1) | np.isnan(data2))
         
         if not np.any(valid_mask):
-            # All NaN values
+            # All NaN values - return NaN arrays
             for interaction_type in interaction_types:
                 interactions[f'{name1}_{interaction_type}_{name2}'] = np.full_like(data1, np.nan)
             return interactions
         
-        # Extract valid data
-        valid_data1 = data1[valid_mask]
-        valid_data2 = data2[valid_mask]
+        # Precompute common values for efficiency
+        epsilon = 1e-8
+        data2_safe = data2 + epsilon
         
-        # Compute interactions
-        for interaction_type in interaction_types:
-            if interaction_type == 'sum':
-                result = data1 + data2
-            elif interaction_type == 'diff':
-                result = data1 - data2
-            elif interaction_type == 'prod':
-                result = data1 * data2
-            elif interaction_type == 'ratio':
-                # Safe division with epsilon
-                epsilon = 1e-8
-                result = data1 / (data2 + epsilon)
-            elif interaction_type == 'max':
-                result = np.maximum(data1, data2)
-            elif interaction_type == 'min':
-                result = np.minimum(data1, data2)
-            elif interaction_type == 'abs_diff':
-                result = np.abs(data1 - data2)
-            elif interaction_type == 'squared_diff':
-                result = (data1 - data2) ** 2
-            elif interaction_type == 'log_ratio':
-                # Safe log ratio
-                epsilon = 1e-8
-                ratio = data1 / (data2 + epsilon)
-                result = np.log(np.abs(ratio) + epsilon)
-            else:
-                # Unknown interaction type
-                result = np.full_like(data1, np.nan)
-            
-            interactions[f'{name1}_{interaction_type}_{name2}'] = result
+        # Compute all interactions in vectorized operations
+        if 'sum' in interaction_types:
+            interactions[f'{name1}_sum_{name2}'] = data1 + data2
+        
+        if 'diff' in interaction_types:
+            interactions[f'{name1}_diff_{name2}'] = data1 - data2
+        
+        if 'prod' in interaction_types:
+            interactions[f'{name1}_prod_{name2}'] = data1 * data2
+        
+        if 'ratio' in interaction_types:
+            interactions[f'{name1}_ratio_{name2}'] = data1 / data2_safe
+        
+        if 'max' in interaction_types:
+            interactions[f'{name1}_max_{name2}'] = np.maximum(data1, data2)
+        
+        if 'min' in interaction_types:
+            interactions[f'{name1}_min_{name2}'] = np.minimum(data1, data2)
+        
+        if 'abs_diff' in interaction_types:
+            interactions[f'{name1}_abs_diff_{name2}'] = np.abs(data1 - data2)
+        
+        if 'squared_diff' in interaction_types:
+            diff = data1 - data2
+            interactions[f'{name1}_squared_diff_{name2}'] = diff * diff
+        
+        if 'log_ratio' in interaction_types:
+            ratio = data1 / data2_safe
+            interactions[f'{name1}_log_ratio_{name2}'] = np.log(np.abs(ratio) + epsilon)
+        
+        # Apply NaN mask to all results
+        for key, result in interactions.items():
+            interactions[key] = np.where(valid_mask, result, np.nan)
         
         return interactions
     

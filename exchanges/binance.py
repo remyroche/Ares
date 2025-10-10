@@ -23,6 +23,32 @@ try:
 except ImportError:
     ccxt = None
 
+
+# Custom exception classes for better error handling
+class BinanceError(Exception):
+    """Base exception for Binance exchange errors."""
+    pass
+
+
+class AuthenticationError(BinanceError):
+    """Authentication related errors."""
+    pass
+
+
+class NetworkError(BinanceError):
+    """Network related errors."""
+    pass
+
+
+class ValidationError(BinanceError):
+    """Validation related errors."""
+    pass
+
+
+class RateLimitError(BinanceError):
+    """Rate limit related errors."""
+    pass
+
 from src.interfaces.base_interfaces import MarketData
 from src.utils.logger import system_logger
 from src.core.decorators import handles_errors
@@ -213,15 +239,12 @@ class BinanceExchange(BaseExchange):
         except Exception as e:
             tprint(f"Failed to setup rate limiting: {e}", "ERROR")
 
-    @handle_async_errors(default_return=None)
     async def _initialize_exchange(self) -> None:
         """Initialize the Binance exchange client."""
+        if aiohttp is None:
+            raise ImportError("aiohttp is required for Binance exchange but not available")
+        
         try:
-            if aiohttp is None:
-                tprint("⚠️ aiohttp not available, using mock session", "WARNING")
-                self.session = None
-                return
-
             # Initialize aiohttp session with SSL configuration
             timeout = aiohttp.ClientTimeout(total=self.timeout)
             # Create SSL connector with certificate verification disabled for compatibility
@@ -242,10 +265,6 @@ class BinanceExchange(BaseExchange):
 
         except Exception as e:
             tprint(f"❌ Failed to initialize Binance exchange: {e}", "ERROR")
-            tprint("Binance exchange initialized successfully", "INFO")
-
-        except Exception as e:
-            tprint(f"Failed to initialize Binance exchange: {e}", "ERROR")
             raise
     
     async def _authenticate(self) -> None:
@@ -386,120 +405,152 @@ class BinanceExchange(BaseExchange):
                 tprint(f"Error in background order sync: {e}", "ERROR")
                 await asyncio.sleep(30)
 
-    @handle_async_errors(default_return=None)
     async def _test_connection(self) -> bool:
         """Test connection to Binance API."""
-        try:
-            url = f"{self._get_base_url()}/api/v3/time"
-            async with self.session.get(url) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    server_time = data.get("serverTime")
-                    tprint(f"Connected to Binance API (Server time: {server_time})", "INFO")
-                    return True
-                else:
-                    tprint(f"Connection test failed with status: {response.status}", "ERROR")
-                    return False
-        except Exception as e:
-            tprint(f"Connection test failed: {e}", "ERROR")
-            raise
-    
-    async def _get_server_time(self) -> Optional[int]:
-        """Get server time in milliseconds."""
-        try:
-            url = f"{self._get_base_url()}/api/v3/time"
-            async with self.session.get(url) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    server_time = data.get("serverTime")
-                    return int(server_time) if server_time else None
-        except Exception as e:
-            tprint(f"Error getting server time: {e}", "ERROR")
-        return None
-    
-    async def _get_account_info(self) -> Optional[Dict[str, Any]]:
-        """Get account information."""
-        try:
-            headers = self.auth_manager.get_auth_headers("GET", "/api/v3/account")
-            if not headers:
-                return None
+        if not self.session:
+            raise RuntimeError("Exchange session not initialized")
             
-            url = f"{self._get_base_url()}/api/v3/account"
-            async with self.session.get(url, headers=headers) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data
-        except Exception as e:
-            tprint(f"Error getting account info: {e}", "ERROR")
-        return None
+        url = f"{self._get_base_url()}/api/v3/time"
+        async with self.session.get(url) as response:
+            if response.status == 200:
+                data = await response.json()
+                server_time = data.get("serverTime")
+                tprint(f"Connected to Binance API (Server time: {server_time})", "INFO")
+                return True
+            else:
+                error_text = await response.text()
+                tprint(f"Connection test failed with status: {response.status} - {error_text}", "ERROR")
+                raise NetworkError(f"Connection test failed: {response.status} - {error_text}")
+    
+    async def _get_server_time(self) -> int:
+        """Get server time in milliseconds."""
+        if not self.session:
+            raise RuntimeError("Exchange session not initialized")
+            
+        url = f"{self._get_base_url()}/api/v3/time"
+        async with self.session.get(url) as response:
+            if response.status == 200:
+                data = await response.json()
+                server_time = data.get("serverTime")
+                if server_time:
+                    return int(server_time)
+                else:
+                    raise ValueError("Invalid server time response")
+            else:
+                error_text = await response.text()
+                raise NetworkError(f"Failed to get server time: {response.status} - {error_text}")
+    
+    async def _get_account_info(self) -> Dict[str, Any]:
+        """Get account information."""
+        if not self.session:
+            raise RuntimeError("Exchange session not initialized")
+            
+        headers = self.auth_manager.get_auth_headers("GET", "/api/v3/account")
+        if not headers:
+            raise AuthenticationError("Failed to get authentication headers")
+        
+        url = f"{self._get_base_url()}/api/v3/account"
+        async with self.session.get(url, headers=headers) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data
+            else:
+                error_text = await response.text()
+                raise NetworkError(f"Failed to get account info: {response.status} - {error_text}")
     
     async def _get_instruments(self) -> List[Dict[str, Any]]:
         """Get instrument specifications."""
-        try:
-            url = f"{self._get_base_url()}/api/v3/exchangeInfo"
-            async with self.session.get(url) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data.get("symbols", [])
-        except Exception as e:
-            tprint(f"Error getting instruments: {e}", "ERROR")
-        return []
+        if not self.session:
+            raise RuntimeError("Exchange session not initialized")
+            
+        url = f"{self._get_base_url()}/api/v3/exchangeInfo"
+        async with self.session.get(url) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data.get("symbols", [])
+            else:
+                error_text = await response.text()
+                raise NetworkError(f"Failed to get instruments: {response.status} - {error_text}")
     
-    async def _get_ticker(self, symbol: str) -> Optional[Dict[str, Any]]:
+    async def _get_ticker(self, symbol: str) -> Dict[str, Any]:
         """Get ticker data for symbol."""
-        try:
-            url = f"{self._get_base_url()}/api/v3/ticker/24hr"
-            params = {"symbol": symbol.upper()}
-            async with self.session.get(url, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data
-        except Exception as e:
-            tprint(f"Error getting ticker for {symbol}: {e}", "ERROR")
-        return None
+        if not self.session:
+            raise RuntimeError("Exchange session not initialized")
+        if not symbol:
+            raise ValueError("Symbol is required")
+            
+        url = f"{self._get_base_url()}/api/v3/ticker/24hr"
+        params = {"symbol": symbol.upper()}
+        async with self.session.get(url, params=params) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data
+            else:
+                error_text = await response.text()
+                raise NetworkError(f"Failed to get ticker for {symbol}: {response.status} - {error_text}")
     
-    async def _get_order_book(self, symbol: str, limit: int = 20) -> Optional[Dict[str, Any]]:
+    async def _get_order_book(self, symbol: str, limit: int = 20) -> Dict[str, Any]:
         """Get order book for symbol."""
-        try:
-            url = f"{self._get_base_url()}/api/v3/depth"
-            params = {"symbol": symbol.upper(), "limit": str(limit)}
-            async with self.session.get(url, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data
-        except Exception as e:
-            tprint(f"Error getting order book for {symbol}: {e}", "ERROR")
-        return None
+        if not self.session:
+            raise RuntimeError("Exchange session not initialized")
+        if not symbol:
+            raise ValueError("Symbol is required")
+        if limit <= 0 or limit > 5000:
+            raise ValueError("Limit must be between 1 and 5000")
+            
+        url = f"{self._get_base_url()}/api/v3/depth"
+        params = {"symbol": symbol.upper(), "limit": str(limit)}
+        async with self.session.get(url, params=params) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data
+            else:
+                error_text = await response.text()
+                raise NetworkError(f"Failed to get order book for {symbol}: {response.status} - {error_text}")
     
     async def _get_recent_trades(self, symbol: str, limit: int = 100) -> List[Dict[str, Any]]:
         """Get recent trades for symbol."""
-        try:
-            url = f"{self._get_base_url()}/api/v3/trades"
-            params = {"symbol": symbol.upper(), "limit": str(limit)}
-            async with self.session.get(url, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data
-        except Exception as e:
-            tprint(f"Error getting recent trades for {symbol}: {e}", "ERROR")
-        return []
+        if not self.session:
+            raise RuntimeError("Exchange session not initialized")
+        if not symbol:
+            raise ValueError("Symbol is required")
+        if limit <= 0 or limit > 1000:
+            raise ValueError("Limit must be between 1 and 1000")
+            
+        url = f"{self._get_base_url()}/api/v3/trades"
+        params = {"symbol": symbol.upper(), "limit": str(limit)}
+        async with self.session.get(url, params=params) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data
+            else:
+                error_text = await response.text()
+                raise NetworkError(f"Failed to get recent trades for {symbol}: {response.status} - {error_text}")
     
     async def _get_klines(self, symbol: str, interval: str, limit: int = 100) -> List[List[Any]]:
         """Get kline data for symbol."""
-        try:
-            url = f"{self._get_base_url()}/api/v3/klines"
-            params = {
-                "symbol": symbol.upper(),
-                "interval": interval,
-                "limit": str(min(limit, 1000))
-            }
-            async with self.session.get(url, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data
-        except Exception as e:
-            tprint(f"Error getting klines for {symbol}: {e}", "ERROR")
-        return []
+        if not self.session:
+            raise RuntimeError("Exchange session not initialized")
+        if not symbol:
+            raise ValueError("Symbol is required")
+        if not interval:
+            raise ValueError("Interval is required")
+        if limit <= 0 or limit > 1000:
+            raise ValueError("Limit must be between 1 and 1000")
+            
+        url = f"{self._get_base_url()}/api/v3/klines"
+        params = {
+            "symbol": symbol.upper(),
+            "interval": interval,
+            "limit": str(min(limit, 1000))
+        }
+        async with self.session.get(url, params=params) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data
+            else:
+                error_text = await response.text()
+                raise NetworkError(f"Failed to get klines for {symbol}: {response.status} - {error_text}")
     
     async def _get_historical_klines(
         self,
@@ -510,51 +561,67 @@ class BinanceExchange(BaseExchange):
         limit: int = 1000
     ) -> List[List[Any]]:
         """Get historical kline data."""
-        try:
-            url = f"{self._get_base_url()}/api/v3/klines"
-            params = {
-                "symbol": symbol.upper(),
-                "interval": interval,
-                "startTime": str(int(start_time.timestamp() * 1000)),
-                "endTime": str(int(end_time.timestamp() * 1000)),
-                "limit": str(min(limit, 1000))
-            }
-            async with self.session.get(url, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data
-        except Exception as e:
-            tprint(f"Error getting historical klines for {symbol}: {e}", "ERROR")
-        return []
+        if not self.session:
+            raise RuntimeError("Exchange session not initialized")
+        if not symbol:
+            raise ValueError("Symbol is required")
+        if not interval:
+            raise ValueError("Interval is required")
+        if limit <= 0 or limit > 1000:
+            raise ValueError("Limit must be between 1 and 1000")
+        if start_time >= end_time:
+            raise ValueError("Start time must be before end time")
+            
+        url = f"{self._get_base_url()}/api/v3/klines"
+        params = {
+            "symbol": symbol.upper(),
+            "interval": interval,
+            "startTime": str(int(start_time.timestamp() * 1000)),
+            "endTime": str(int(end_time.timestamp() * 1000)),
+            "limit": str(min(limit, 1000))
+        }
+        async with self.session.get(url, params=params) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data
+            else:
+                error_text = await response.text()
+                raise NetworkError(f"Failed to get historical klines for {symbol}: {response.status} - {error_text}")
     
-    async def _get_funding_rate(self, symbol: str) -> Optional[Dict[str, Any]]:
+    async def _get_funding_rate(self, symbol: str) -> Dict[str, Any]:
         """Get funding rate for symbol."""
-        try:
-            url = f"{self._get_futures_url()}/fapi/v1/premiumIndex"
-            params = {"symbol": symbol.upper()}
-            async with self.session.get(url, params=params) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data
-        except Exception as e:
-            tprint(f"Error getting funding rate for {symbol}: {e}", "ERROR")
-        return None
+        if not self.session:
+            raise RuntimeError("Exchange session not initialized")
+        if not symbol:
+            raise ValueError("Symbol is required")
+            
+        url = f"{self._get_futures_url()}/fapi/v1/premiumIndex"
+        params = {"symbol": symbol.upper()}
+        async with self.session.get(url, params=params) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data
+            else:
+                error_text = await response.text()
+                raise NetworkError(f"Failed to get funding rate for {symbol}: {response.status} - {error_text}")
     
     async def _get_balances_exchange(self, account_type: str) -> List[Dict[str, Any]]:
         """Get balances for account type."""
-        try:
-            headers = self.auth_manager.get_auth_headers("GET", "/api/v3/account")
-            if not headers:
-                return []
+        if not self.session:
+            raise RuntimeError("Exchange session not initialized")
             
-            url = f"{self._get_base_url()}/api/v3/account"
-            async with self.session.get(url, headers=headers) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data.get("balances", [])
-        except Exception as e:
-            tprint(f"Error getting balances: {e}", "ERROR")
-        return []
+        headers = self.auth_manager.get_auth_headers("GET", "/api/v3/account")
+        if not headers:
+            raise AuthenticationError("Failed to get authentication headers")
+        
+        url = f"{self._get_base_url()}/api/v3/account"
+        async with self.session.get(url, headers=headers) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data.get("balances", [])
+            else:
+                error_text = await response.text()
+                raise NetworkError(f"Failed to get balances: {response.status} - {error_text}")
     
     async def _create_order_exchange(
         self,
@@ -565,122 +632,130 @@ class BinanceExchange(BaseExchange):
         price: Optional[float] = None,
         stop_price: Optional[float] = None,
         client_order_id: Optional[str] = None
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """Create order on exchange."""
-        try:
-            # Generate idempotency key
-            idempotency_key = self.idempotency_manager.create_order_key(
-                symbol, side, order_type, quantity, price, client_order_id
-            )
+        if not self.session:
+            raise RuntimeError("Exchange session not initialized")
+        if not symbol:
+            raise ValueError("Symbol is required")
+        if not side or side.upper() not in ["BUY", "SELL"]:
+            raise ValueError("Side must be BUY or SELL")
+        if not order_type:
+            raise ValueError("Order type is required")
+        if quantity <= 0:
+            raise ValueError("Quantity must be positive")
+        if price is not None and price <= 0:
+            raise ValueError("Price must be positive")
+        if stop_price is not None and stop_price <= 0:
+            raise ValueError("Stop price must be positive")
             
-            # Prepare order parameters
-            order_params = {
-                "symbol": symbol.upper(),
-                "side": side.upper(),
-                "type": order_type.upper(),
-                "quantity": str(quantity),
-                "timestamp": int(time.time() * 1000)
-            }
-            
-            if price is not None:
-                order_params["price"] = str(price)
-            if stop_price is not None:
-                order_params["stopPrice"] = str(stop_price)
-            if client_order_id:
-                order_params["newClientOrderId"] = client_order_id
-            
-            # Generate signature
-            query_string = urlencode(order_params)
-            signature = self._generate_signature(order_params)
-            order_params["signature"] = signature
-            
-            # Prepare headers
-            headers = {
-                "X-MBX-APIKEY": self.api_key,
-                "Content-Type": "application/x-www-form-urlencoded"
-            }
-            
-            url = f"{self._get_base_url()}/api/v3/order"
-            async with self.session.post(url, data=order_params, headers=headers) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data
-                else:
-                    error_text = await response.text()
-                    tprint(f"Order creation failed: {response.status} - {error_text}", "ERROR")
-                    return None
-                    
-        except Exception as e:
-            tprint(f"Error creating order: {e}", "ERROR")
-        return None
+        # Generate idempotency key
+        idempotency_key = self.idempotency_manager.create_order_key(
+            symbol, side, order_type, quantity, price, client_order_id
+        )
+        
+        # Prepare order parameters
+        order_params = {
+            "symbol": symbol.upper(),
+            "side": side.upper(),
+            "type": order_type.upper(),
+            "quantity": str(quantity),
+            "timestamp": int(time.time() * 1000)
+        }
+        
+        if price is not None:
+            order_params["price"] = str(price)
+        if stop_price is not None:
+            order_params["stopPrice"] = str(stop_price)
+        if client_order_id:
+            order_params["newClientOrderId"] = client_order_id
+        
+        # Generate signature
+        query_string = urlencode(order_params)
+        signature = self._generate_signature(order_params)
+        order_params["signature"] = signature
+        
+        # Prepare headers
+        headers = {
+            "X-MBX-APIKEY": self.api_key,
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        
+        url = f"{self._get_base_url()}/api/v3/order"
+        async with self.session.post(url, data=order_params, headers=headers) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data
+            else:
+                error_text = await response.text()
+                tprint(f"Order creation failed: {response.status} - {error_text}", "ERROR")
+                raise NetworkError(f"Order creation failed: {response.status} - {error_text}")
     
     async def _cancel_order_exchange(self, order_id: str) -> bool:
         """Cancel order on exchange."""
-        try:
-            headers = self.auth_manager.get_auth_headers("DELETE", "/api/v3/order")
-            if not headers:
-                return False
+        if not self.session:
+            raise RuntimeError("Exchange session not initialized")
+        if not order_id:
+            raise ValueError("Order ID is required")
             
-            url = f"{self._get_base_url()}/api/v3/order"
-            params = {"orderId": order_id}
-            async with self.session.delete(url, params=params, headers=headers) as response:
-                if response.status == 200:
-                    return True
-                else:
-                    error_text = await response.text()
-                    tprint(f"Order cancellation failed: {response.status} - {error_text}", "ERROR")
-                    return False
-                    
-        except Exception as e:
-            tprint(f"Error canceling order: {e}", "ERROR")
-        return False
+        headers = self.auth_manager.get_auth_headers("DELETE", "/api/v3/order")
+        if not headers:
+            raise AuthenticationError("Failed to get authentication headers")
+        
+        url = f"{self._get_base_url()}/api/v3/order"
+        params = {"orderId": order_id}
+        async with self.session.delete(url, params=params, headers=headers) as response:
+            if response.status == 200:
+                return True
+            else:
+                error_text = await response.text()
+                tprint(f"Order cancellation failed: {response.status} - {error_text}", "ERROR")
+                raise NetworkError(f"Order cancellation failed: {response.status} - {error_text}")
     
-    async def _get_order_status_exchange(self, order_id: str) -> Optional[Dict[str, Any]]:
+    async def _get_order_status_exchange(self, order_id: str) -> Dict[str, Any]:
         """Get order status from exchange."""
-        try:
-            headers = self.auth_manager.get_auth_headers("GET", "/api/v3/order")
-            if not headers:
-                return None
+        if not self.session:
+            raise RuntimeError("Exchange session not initialized")
+        if not order_id:
+            raise ValueError("Order ID is required")
             
-            url = f"{self._get_base_url()}/api/v3/order"
-            params = {"orderId": order_id}
-            async with self.session.get(url, params=params, headers=headers) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data
-                else:
-                    error_text = await response.text()
-                    tprint(f"Order status check failed: {response.status} - {error_text}", "ERROR")
-                    return None
-                    
-        except Exception as e:
-            tprint(f"Error getting order status: {e}", "ERROR")
-        return None
+        headers = self.auth_manager.get_auth_headers("GET", "/api/v3/order")
+        if not headers:
+            raise AuthenticationError("Failed to get authentication headers")
+        
+        url = f"{self._get_base_url()}/api/v3/order"
+        params = {"orderId": order_id}
+        async with self.session.get(url, params=params, headers=headers) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data
+            else:
+                error_text = await response.text()
+                tprint(f"Order status check failed: {response.status} - {error_text}", "ERROR")
+                raise NetworkError(f"Order status check failed: {response.status} - {error_text}")
     
     async def _get_open_orders_exchange(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get open orders from exchange."""
-        try:
-            headers = self.auth_manager.get_auth_headers("GET", "/api/v3/openOrders")
-            if not headers:
-                return []
+        if not self.session:
+            raise RuntimeError("Exchange session not initialized")
             
-            url = f"{self._get_base_url()}/api/v3/openOrders"
-            params = {}
-            if symbol:
-                params["symbol"] = symbol.upper()
-            
-            async with self.session.get(url, params=params, headers=headers) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data
-                else:
-                    error_text = await response.text()
-                    tprint(f"Open orders fetch failed: {response.status} - {error_text}", "ERROR")
-                    return []
-                    
-        except Exception as e:
-            tprint(f"Error getting open orders: {e}", "ERROR")
-        return []
+        headers = self.auth_manager.get_auth_headers("GET", "/api/v3/openOrders")
+        if not headers:
+            raise AuthenticationError("Failed to get authentication headers")
+        
+        url = f"{self._get_base_url()}/api/v3/openOrders"
+        params = {}
+        if symbol:
+            params["symbol"] = symbol.upper()
+        
+        async with self.session.get(url, params=params, headers=headers) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data
+            else:
+                error_text = await response.text()
+                tprint(f"Open orders fetch failed: {response.status} - {error_text}", "ERROR")
+                raise NetworkError(f"Open orders fetch failed: {response.status} - {error_text}")
 
     def _get_base_url(self) -> str:
         """Get the base URL for API calls."""
@@ -708,7 +783,6 @@ class BinanceExchange(BaseExchange):
             tprint(f"Error generating signature: {e}", "ERROR")
             raise
 
-    @handle_async_errors(default_return=None)
     async def _make_request(
         self,
         method: str,
@@ -716,49 +790,48 @@ class BinanceExchange(BaseExchange):
         params: dict[str, Any] | None = None,
         signed: bool = False,
         futures: bool = False
-    ) -> dict[str, Any] | list[dict[str, Any]] | None:
+    ) -> dict[str, Any] | list[dict[str, Any]]:
         """Make HTTP request to Binance API."""
-        try:
-            if aiohttp is None or not self.session:
-                tprint("⚠️ aiohttp not available, returning mock data", "WARNING")
-                return []
+        if aiohttp is None:
+            raise ImportError("aiohttp is required for Binance exchange but not available")
+        
+        if not self.session:
+            raise RuntimeError("Exchange session not initialized")
 
-            base_url = self._get_futures_url() if futures else self._get_base_url()
-            url = f"{base_url}{endpoint}"
-            
-            if params is None:
-                params = {}
+        base_url = self._get_futures_url() if futures else self._get_base_url()
+        url = f"{base_url}{endpoint}"
+        
+        if params is None:
+            params = {}
 
-            headers = {}
-            if signed and self.api_key:
-                params["timestamp"] = int(time.time() * 1000)
-                params["signature"] = self._generate_signature(params)
-                headers["X-MBX-APIKEY"] = self.api_key
+        headers = {}
+        if signed and self.api_key:
+            params["timestamp"] = int(time.time() * 1000)
+            params["signature"] = self._generate_signature(params)
+            headers["X-MBX-APIKEY"] = self.api_key
 
-            async with self.session.request(method, url, params=params, headers=headers) as response:
-                if response.status == 200:
-                    return await response.json()
-                elif response.status == 429:
-                    # Rate limit exceeded
-                    tprint("Rate limit exceeded, waiting...", "WARNING")
-                    await asyncio.sleep(1)
-                    return await self._make_request(method, endpoint, params, signed, futures)  # Retry
-                elif response.status == 401:
-                    # Authentication error
-                    tprint("Authentication failed - check API credentials", "ERROR")
-                    return {"error": "authentication_failed"}
-                elif response.status == 400:
-                    # Bad request
-                    error_data = await response.json()
-                    tprint(f"Bad request: {error_data}", "ERROR")
-                    return {"error": "bad_request", "details": error_data}
-                else:
-                    error_text = await response.text()
-                    tprint(f"API request failed: {response.status} - {error_text}", "ERROR")
-                    return {"error": f"http_{response.status}", "details": error_text}
-        except Exception as e:
-            tprint(f"Request failed: {e}", "ERROR")
-            return None
+        async with self.session.request(method, url, params=params, headers=headers) as response:
+            if response.status == 200:
+                return await response.json()
+            elif response.status == 429:
+                # Rate limit exceeded
+                tprint("Rate limit exceeded, waiting...", "WARNING")
+                await asyncio.sleep(1)
+                return await self._make_request(method, endpoint, params, signed, futures)  # Retry
+            elif response.status == 401:
+                # Authentication error
+                error_text = await response.text()
+                tprint(f"Authentication failed - check API credentials: {error_text}", "ERROR")
+                raise AuthenticationError("Authentication failed - check API credentials")
+            elif response.status == 400:
+                # Bad request
+                error_data = await response.json()
+                tprint(f"Bad request: {error_data}", "ERROR")
+                raise ValidationError(f"Bad request: {error_data}")
+            else:
+                error_text = await response.text()
+                tprint(f"API request failed: {response.status} - {error_text}", "ERROR")
+                raise NetworkError(f"API request failed: {response.status} - {error_text}")
 
     async def _convert_to_market_data(
         self,
@@ -818,6 +891,13 @@ class BinanceExchange(BaseExchange):
         limit: int,
     ) -> list[dict[str, Any]]:
         """Get raw kline data from Binance."""
+        if not symbol:
+            raise ValueError("Symbol is required")
+        if not interval:
+            raise ValueError("Interval is required")
+        if limit <= 0 or limit > 1000:
+            raise ValueError("Limit must be between 1 and 1000")
+            
         params = {
             "symbol": symbol.upper(),
             "interval": interval,
@@ -849,6 +929,7 @@ class BinanceExchange(BaseExchange):
             return klines
         elif isinstance(data, dict) and "error" in data:
             tprint(f"API error in klines: {data['error']}", "ERROR")
+            raise NetworkError(f"API error in klines: {data['error']}")
         return []
 
     async def _get_historical_klines_raw(
@@ -860,6 +941,15 @@ class BinanceExchange(BaseExchange):
         limit: int,
     ) -> list[dict[str, Any]]:
         """Get raw historical kline data from Binance."""
+        if not symbol:
+            raise ValueError("Symbol is required")
+        if not interval:
+            raise ValueError("Interval is required")
+        if limit <= 0 or limit > 1000:
+            raise ValueError("Limit must be between 1 and 1000")
+        if start_time_ms >= end_time_ms:
+            raise ValueError("Start time must be before end time")
+            
         params = {
             "symbol": symbol.upper(),
             "interval": interval,
@@ -898,6 +988,13 @@ class BinanceExchange(BaseExchange):
         limit: int,
     ) -> list[dict[str, Any]]:
         """Get raw historical aggregated trades from Binance."""
+        if not symbol:
+            raise ValueError("Symbol is required")
+        if limit <= 0 or limit > 1000:
+            raise ValueError("Limit must be between 1 and 1000")
+        if start_time_ms >= end_time_ms:
+            raise ValueError("Start time must be before end time")
+            
         params = {
             "symbol": symbol.upper(),
             "startTime": start_time_ms,
@@ -924,7 +1021,7 @@ class BinanceExchange(BaseExchange):
 
     async def _get_account_info_raw(self) -> dict[str, Any]:
         """Get raw account information from Binance."""
-        return await self._make_request("GET", "/api/v3/account", signed=True) or {}
+        return await self._make_request("GET", "/api/v3/account", signed=True)
 
     async def _create_order_raw(
         self,
@@ -936,6 +1033,17 @@ class BinanceExchange(BaseExchange):
         params: dict[str, Any] | None,
     ) -> dict[str, Any]:
         """Create raw order on Binance."""
+        if not symbol:
+            raise ValueError("Symbol is required")
+        if not side or side.upper() not in ["BUY", "SELL"]:
+            raise ValueError("Side must be BUY or SELL")
+        if not order_type:
+            raise ValueError("Order type is required")
+        if quantity <= 0:
+            raise ValueError("Quantity must be positive")
+        if price is not None and price <= 0:
+            raise ValueError("Price must be positive")
+            
         order_params = {
             "symbol": symbol.upper(),
             "side": side.upper(),
@@ -949,43 +1057,62 @@ class BinanceExchange(BaseExchange):
         if params:
             order_params.update(params)
             
-        return await self._make_request("POST", "/api/v3/order", order_params, signed=True) or {}
+        return await self._make_request("POST", "/api/v3/order", order_params, signed=True)
 
     async def _get_position_risk_raw(self, symbol: str) -> dict[str, Any]:
         """Get raw position risk information from Binance futures."""
-        params = {"symbol": symbol.upper()} if symbol else {}
+        if not symbol:
+            raise ValueError("Symbol is required")
+            
+        params = {"symbol": symbol.upper()}
         data = await self._make_request("GET", "/fapi/v2/positionRisk", params, signed=True, futures=True)
         
         if data and isinstance(data, list):
             # Return first matching position or first position if no symbol specified
             for position in data:
-                if not symbol or position.get("symbol", "").upper() == symbol.upper():
+                if position.get("symbol", "").upper() == symbol.upper():
                     return position
-            return data[0] if data else {}
+            if data:
+                return data[0]
+            else:
+                raise ValueError(f"No position found for symbol {symbol}")
         
-        return data or {}
+        return data
 
     async def _get_open_orders_raw(self, symbol: str | None) -> list[dict[str, Any]]:
         """Get raw open orders from Binance."""
         params = {"symbol": symbol.upper()} if symbol else {}
         data = await self._make_request("GET", "/api/v3/openOrders", params, signed=True)
-        return data if isinstance(data, list) else []
+        if isinstance(data, list):
+            return data
+        else:
+            raise ValueError("Invalid response format for open orders")
 
     async def _cancel_order_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
         """Cancel raw order on Binance."""
+        if not symbol:
+            raise ValueError("Symbol is required")
+        if not order_id:
+            raise ValueError("Order ID is required")
+            
         params = {
             "symbol": symbol.upper(),
             "orderId": str(order_id)
         }
-        return await self._make_request("DELETE", "/api/v3/order", params, signed=True) or {}
+        return await self._make_request("DELETE", "/api/v3/order", params, signed=True)
 
     async def _get_order_status_raw(self, symbol: str, order_id: Any) -> dict[str, Any]:
         """Get raw order status from Binance."""
+        if not symbol:
+            raise ValueError("Symbol is required")
+        if not order_id:
+            raise ValueError("Order ID is required")
+            
         params = {
             "symbol": symbol.upper(),
             "orderId": str(order_id)
         }
-        return await self._make_request("GET", "/api/v3/order", params, signed=True) or {}
+        return await self._make_request("GET", "/api/v3/order", params, signed=True)
 
     # Additional Binance-specific methods for data collection
 
@@ -993,15 +1120,20 @@ class BinanceExchange(BaseExchange):
         """Get 24hr ticker statistics."""
         endpoint = "/api/v3/ticker/24hr"
         params = {"symbol": symbol.upper()} if symbol else {}
-        return await self._make_request("GET", endpoint, params) or {}
+        return await self._make_request("GET", endpoint, params)
 
     async def get_order_book(self, symbol: str, limit: int = 100) -> dict[str, Any]:
         """Get order book data."""
+        if not symbol:
+            raise ValueError("Symbol is required")
+        if limit <= 0 or limit > 5000:
+            raise ValueError("Limit must be between 1 and 5000")
+            
         params = {
             "symbol": symbol.upper(),
             "limit": min(limit, 5000)  # Binance max limit is 5000
         }
-        return await self._make_request("GET", "/api/v3/depth", params) or {}
+        return await self._make_request("GET", "/api/v3/depth", params)
 
     # Additional methods for live trading
     async def get_ticker(self, symbol: str | None = None) -> dict[str, Any]:
@@ -1010,10 +1142,15 @@ class BinanceExchange(BaseExchange):
             return await self.get_24hr_ticker(symbol)
         else:
             # Get all tickers
-            return await self._make_request("GET", "/api/v3/ticker/24hr") or {}
+            return await self._make_request("GET", "/api/v3/ticker/24hr")
     
     async def get_recent_trades(self, symbol: str, limit: int = 100) -> list[dict[str, Any]]:
         """Get recent trades."""
+        if not symbol:
+            raise ValueError("Symbol is required")
+        if limit <= 0 or limit > 1000:
+            raise ValueError("Limit must be between 1 and 1000")
+            
         params = {
             "symbol": symbol.upper(),
             "limit": min(limit, 1000)
@@ -1035,29 +1172,32 @@ class BinanceExchange(BaseExchange):
     async def get_funding_rate(self, symbol: str | None = None) -> dict[str, Any]:
         """Get funding rate information."""
         params = {"symbol": symbol.upper()} if symbol else {}
-        return await self._make_request("GET", "/fapi/v1/premiumIndex", params, futures=True) or {}
+        return await self._make_request("GET", "/fapi/v1/premiumIndex", params, futures=True)
     
     async def get_open_interest(self, symbol: str | None = None) -> dict[str, Any]:
         """Get open interest information."""
         params = {"symbol": symbol.upper()} if symbol else {}
-        return await self._make_request("GET", "/fapi/v1/openInterest", params, futures=True) or {}
+        return await self._make_request("GET", "/fapi/v1/openInterest", params, futures=True)
     
     async def get_server_time(self) -> dict[str, Any]:
         """Get server time."""
-        return await self._make_request("GET", "/api/v3/time") or {}
+        return await self._make_request("GET", "/api/v3/time")
     
     async def get_exchange_info(self) -> dict[str, Any]:
         """Get exchange information."""
-        return await self._make_request("GET", "/api/v3/exchangeInfo") or {}
+        return await self._make_request("GET", "/api/v3/exchangeInfo")
     
     async def get_symbol_info(self, symbol: str) -> dict[str, Any]:
         """Get symbol information."""
+        if not symbol:
+            raise ValueError("Symbol is required")
+            
         exchange_info = await self.get_exchange_info()
         if exchange_info and "symbols" in exchange_info:
             for symbol_info in exchange_info["symbols"]:
                 if symbol_info.get("symbol") == symbol.upper():
                     return symbol_info
-        return {}
+        raise ValueError(f"Symbol {symbol} not found")
     
     async def get_klines_stream(self, symbol: str, interval: str, callback) -> None:
         """Stream klines data (WebSocket implementation would go here)."""
@@ -1115,16 +1255,12 @@ class BinanceExchange(BaseExchange):
                 self.logger.error(f"Error in orderbook stream: {e}")
                 await asyncio.sleep(1)
 
-    @handle_async_errors(default_return=None)
     async def close(self) -> None:
         """Close the exchange connection."""
-        try:
-            if self.session:
-                await self.session.close()
-                self.session = None
-            tprint("Binance exchange connection closed", "INFO")
-        except Exception as e:
-            tprint(f"Error closing Binance exchange: {e}", "ERROR")
+        if self.session:
+            await self.session.close()
+            self.session = None
+        tprint("Binance exchange connection closed", "INFO")
 
 
 # Factory function for creating Binance exchange instances
@@ -1144,14 +1280,10 @@ def create_binance_exchange(
         api_secret: Binance API secret
         trade_symbol: Trading symbol (default: BTCUSDT)
         password: API password (optional)
+        subaccount_id: Subaccount ID (optional)
+        use_testnet: Use testnet (default: False)
         
     Returns:
         BinanceExchange instance
     """
-    try:
-        return BinanceExchange(api_key, api_secret, trade_symbol, password)
-    except Exception as e:
-        tprint(f"❌ Failed to create Binance exchange: {e}", "ERROR")
-        raise
-    """Create a new Binance exchange instance."""
     return BinanceExchange(api_key, api_secret, trade_symbol, password, subaccount_id, use_testnet)

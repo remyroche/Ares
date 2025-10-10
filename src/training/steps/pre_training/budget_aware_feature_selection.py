@@ -810,10 +810,10 @@ class BudgetAwareSelectionResult:
     
     # Success indicators
     success: bool
+    config_used: BudgetAwareSelectionConfig
     error_message: Optional[str] = None
     
     # Additional metadata
-    config_used: BudgetAwareSelectionConfig
     performance_breakdown: Dict[str, Any] = field(default_factory=dict)
     
     # Explainability

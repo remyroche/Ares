@@ -2,7 +2,7 @@
 Gap Detection and Filling Tools for Historical Data
 
 This module provides tools to detect gaps in historical klines data
-and fill them by downloading missing data from Binance.
+and fill them by downloading missing data from any supported exchange.
 """
 
 import asyncio
@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
-from exchanges.binance import BinanceExchange
+# Removed direct Binance import - using ExchangeInterface instead
 from src.utils.logger import system_logger
 from src.utils.parquet_utils import ParquetUtils
 from src.trading.execution.exchange_interface import ExchangeInterface
@@ -20,14 +20,16 @@ from src.trading.execution.exchange_interface import ExchangeInterface
 class GapDetector:
     """Detect and fill gaps in historical klines data."""
 
-    def __init__(self, data_dir: str = "historical_data"):
+    def __init__(self, data_dir: str = "historical_data", exchange: str = "binance"):
         """Initialize the gap detector.
         
         Args:
             data_dir: Base directory for historical data
+            exchange: Exchange name for data organization
         """
         self.data_dir = Path(data_dir)
-        self.raw_data_dir = self.data_dir / "binance"
+        self.exchange = exchange.lower()
+        self.raw_data_dir = self.data_dir / self.exchange
         self.logger = system_logger.getChild("GapDetector")
         self.parquet_utils = ParquetUtils()
         
@@ -221,7 +223,7 @@ class GapDetector:
         """Get historical klines data using unified interface for both exchange types.
         
         Args:
-            exchange: Exchange instance (ExchangeInterface or BinanceExchange)
+            exchange: Exchange instance (ExchangeInterface)
             symbol: Trading symbol
             interval: Kline interval
             start_time_ms: Start time in milliseconds
@@ -266,9 +268,9 @@ class GapDetector:
                     })
                 return result
             else:
-                # Use direct BinanceExchange method
-                return await exchange._get_historical_klines_raw(
-                    symbol, interval, start_time_ms, end_time_ms, limit
+                # Use ExchangeInterface method
+                return await exchange.get_klines(
+                    symbol, interval, start_time, end_time, limit
                 )
         except Exception as e:
             self.logger.error(f"Error getting historical klines: {e}")
@@ -303,9 +305,16 @@ class GapDetector:
                 exchange = exchange_interface
                 await exchange.connect()
             else:
-                # Fallback to direct Binance exchange
-                exchange = BinanceExchange(api_key, api_secret, gaps[0]["symbol"])
-                await exchange._initialize_exchange()
+                # Create ExchangeInterface for the specified exchange
+                from src.trading.execution.exchange_interface import create_exchange_interface
+                config = {
+                    'exchange_type': 'binance',  # Default to binance for backward compatibility
+                    'api_key': api_key,
+                    'api_secret': api_secret,
+                    'trade_symbol': gaps[0]["symbol"]
+                }
+                exchange = create_exchange_interface(config)
+                await exchange.connect()
             
             filled_gaps = 0
             total_records_added = 0
@@ -357,7 +366,7 @@ class GapDetector:
         """Fill a single gap by downloading missing data.
         
         Args:
-            exchange: Binance exchange instance
+            exchange: Exchange instance
             gap: Gap information dictionary
             
         Returns:
@@ -505,8 +514,8 @@ async def detect_and_fill_gaps(
         interval: Kline interval
         max_gap_minutes: Maximum allowed gap in minutes
         data_dir: Base directory for data storage
-        api_key: Binance API key
-        api_secret: Binance API secret
+        api_key: Exchange API key
+        api_secret: Exchange API secret
         
     Returns:
         Dictionary with gap detection and filling results

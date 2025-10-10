@@ -330,17 +330,22 @@ class OkxExchange(BaseExchange):
         """Get server time in milliseconds."""
         try:
             if not self._check_session():
-                return None
+                raise Exception("HTTP session not initialized")
                 
             url = f"{self.base_url}/api/v5/public/time"
             async with self.session.get(url) as response:
                 if response.status == 200:
                     data = await response.json()
                     server_time = data.get("data", [{}])[0].get("ts")
-                    return int(server_time) if server_time else None
+                    if server_time:
+                        return int(server_time)
+                    else:
+                        raise Exception("No server time in response")
+                else:
+                    raise Exception(f"HTTP {response.status}: Failed to get server time")
         except Exception as e:
             self.logger.error(f"Error getting server time: {e}")
-        return None
+            raise
     
     async def _test_connection(self) -> bool:
         """Test connection to OKX API."""
@@ -349,26 +354,31 @@ class OkxExchange(BaseExchange):
             return server_time is not None
         except Exception as e:
             self.logger.error(f"Connection test failed: {e}")
-            return False
+            raise
     
     async def _get_account_info_raw(self) -> Dict[str, Any]:
         """Get raw account information from exchange."""
         try:
             if not self._check_session():
-                return {}
+                raise Exception("HTTP session not initialized")
                 
             headers = self.auth_manager.get_auth_headers("GET", "/api/v5/account/balance")
             if not headers:
-                return {}
+                raise Exception("Failed to get authentication headers")
             
             url = f"{self.base_url}/api/v5/account/balance"
             async with self.session.get(url, headers=headers) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data.get("data", [{}])[0] if data.get("data") else {}
+                    if data.get("code") == "0" and data.get("data"):
+                        return data.get("data", [{}])[0]
+                    else:
+                        raise Exception(f"API error: {data.get('msg', 'Unknown error')}")
+                else:
+                    raise Exception(f"HTTP {response.status}: Failed to get account info")
         except Exception as e:
             self.logger.error(f"Error getting account info: {e}")
-        return {}
+            raise
     
     async def _get_account_info(self) -> Optional[Dict[str, Any]]:
         """Get account information."""
@@ -457,7 +467,7 @@ class OkxExchange(BaseExchange):
         """Get raw kline data from exchange."""
         try:
             if not self._check_session():
-                return []
+                raise Exception("HTTP session not initialized")
                 
             url = f"{self.base_url}/api/v5/market/candles"
             params = {
@@ -468,14 +478,20 @@ class OkxExchange(BaseExchange):
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
                     data = await response.json()
-                    # Convert list format to dict format for consistency
-                    raw_klines = data.get("data", [])
-                    return [{"timestamp": int(k[0]), "open": float(k[1]), "high": float(k[2]), 
-                           "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])} 
-                           for k in raw_klines]
+                    if data.get("code") == "0":
+                        raw_klines = data.get("data", [])
+                        if not raw_klines:
+                            raise Exception(f"No kline data returned for {symbol}")
+                        return [{"timestamp": int(k[0]), "open": float(k[1]), "high": float(k[2]), 
+                               "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])} 
+                               for k in raw_klines]
+                    else:
+                        raise Exception(f"API error: {data.get('msg', 'Unknown error')}")
+                else:
+                    raise Exception(f"HTTP {response.status}: Failed to get klines for {symbol}")
         except Exception as e:
             self.logger.error(f"Error getting klines for {symbol}: {e}")
-        return []
+            raise
     
     async def _convert_to_market_data(
         self,
@@ -1160,6 +1176,132 @@ class OkxExchange(BaseExchange):
         
         return None
     
+    # Required public interface methods from BaseExchange/IExchangeClient
+    async def get_klines(
+        self,
+        symbol: str,
+        interval: str,
+        limit: int = 100,
+    ) -> list[MarketData]:
+        """Get kline data - required by IExchangeClient interface."""
+        try:
+            raw_data = await self._get_klines_raw(symbol, interval, limit)
+            if not raw_data:
+                raise Exception(f"Failed to get klines for {symbol}")
+            return await self._convert_to_market_data(raw_data, symbol, interval)
+        except Exception as e:
+            self.logger.error(f"Error getting klines for {symbol}: {e}")
+            raise
+
+    async def get_historical_klines(
+        self,
+        symbol: str,
+        interval: str,
+        start_time: int | datetime,
+        end_time: int | datetime,
+        limit: int = 1000,
+        **kwargs
+    ) -> list[MarketData]:
+        """Get historical kline data - required by BaseExchange interface."""
+        try:
+            # Handle both datetime and milliseconds parameters
+            if isinstance(start_time, datetime):
+                start_time_ms = int(start_time.timestamp() * 1000)
+            else:
+                start_time_ms = start_time
+
+            if isinstance(end_time, datetime):
+                end_time_ms = int(end_time.timestamp() * 1000)
+            else:
+                end_time_ms = end_time
+
+            raw_data = await self._get_historical_klines_raw(
+                symbol, interval, start_time_ms, end_time_ms, limit
+            )
+            if not raw_data:
+                raise Exception(f"Failed to get historical klines for {symbol}")
+            return await self._convert_to_market_data(raw_data, symbol, interval)
+        except Exception as e:
+            self.logger.error(f"Error getting historical klines for {symbol}: {e}")
+            raise
+
+    async def get_historical_agg_trades(
+        self,
+        symbol: str,
+        start_time: int | datetime,
+        end_time: int | datetime,
+        limit: int = 1000,
+        **kwargs
+    ) -> list[dict[str, Any]]:
+        """Get historical aggregated trades - required by BaseExchange interface."""
+        try:
+            # Handle both datetime and milliseconds parameters
+            if isinstance(start_time, datetime):
+                start_time_ms = int(start_time.timestamp() * 1000)
+            else:
+                start_time_ms = start_time
+
+            if isinstance(end_time, datetime):
+                end_time_ms = int(end_time.timestamp() * 1000)
+            else:
+                end_time_ms = end_time
+
+            return await self._get_historical_agg_trades_raw(
+                symbol, start_time_ms, end_time_ms, limit
+            )
+        except Exception as e:
+            self.logger.error(f"Error getting historical trades for {symbol}: {e}")
+            raise
+
+    async def create_order(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        price: float | None = None,
+        order_type: str = "MARKET",
+    ) -> dict[str, Any]:
+        """Create order - required by IExchangeClient interface."""
+        try:
+            result = await self._create_order_raw(symbol, side, order_type, quantity, price, None)
+            if not result:
+                raise Exception(f"Failed to create order for {symbol}")
+            return result
+        except Exception as e:
+            self.logger.error(f"Error creating order for {symbol}: {e}")
+            raise
+
+    async def cancel_order(self, symbol: str, order_id: Any) -> dict[str, Any]:
+        """Cancel order - required by BaseExchange interface."""
+        try:
+            result = await self._cancel_order_raw(symbol, order_id)
+            if not result:
+                raise Exception(f"Failed to cancel order {order_id} for {symbol}")
+            return result
+        except Exception as e:
+            self.logger.error(f"Error cancelling order {order_id} for {symbol}: {e}")
+            raise
+
+    async def get_order_status(self, symbol: str, order_id: Any) -> dict[str, Any]:
+        """Get order status - required by BaseExchange interface."""
+        try:
+            result = await self._get_order_status_raw(symbol, order_id)
+            if not result:
+                raise Exception(f"Failed to get order status for {order_id} on {symbol}")
+            return result
+        except Exception as e:
+            self.logger.error(f"Error getting order status for {order_id} on {symbol}: {e}")
+            raise
+
+    async def get_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
+        """Get open orders - required by BaseExchange interface."""
+        try:
+            result = await self._get_open_orders_raw(symbol)
+            return result
+        except Exception as e:
+            self.logger.error(f"Error getting open orders for {symbol or 'all'}: {e}")
+            raise
+
     async def close(self) -> None:
         """Close the enhanced exchange connection."""
         # Stop background tasks

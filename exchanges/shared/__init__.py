@@ -11,10 +11,12 @@ from .exchange_data_standardizer import (
     get_exchange_schema,
     validate_exchange_data
 )
+from .klines_downloading_processing import KlinesDataProcessingPipeline
 
 __all__ = [
     'ExchangeDataStandardizer',
     'standardize_exchange_data',
     'get_exchange_schema',
-    'validate_exchange_data'
+    'validate_exchange_data',
+    'KlinesDataProcessingPipeline'
 ]

@@ -1,8 +1,8 @@
 """
-MEXC Klines Data Downloading and Processing Pipeline
+Klines Data Downloading and Processing Pipeline
 
 This module provides a complete pipeline for downloading, processing, and quality-checking
-historical klines data from MEXC with gap detection, duplicate handling, and column management.
+historical klines data from any exchange with gap detection, duplicate handling, and column management.
 
 Features:
 - Download historical klines data using HistoricalDataPipeline
@@ -10,6 +10,7 @@ Features:
 - Identify and handle duplicate timestamps (warn on false duplicates, remove true duplicates)
 - Remove unwanted columns (taker_buy_base, taker_buy_quote, year)
 - Comprehensive data quality checks
+- Exchange-agnostic data standardization
 """
 
 import pandas as pd
@@ -34,18 +35,19 @@ from exchanges.shared import ExchangeDataStandardizer
 from src.utils.data.gap_detector import GapDetector
 
 
-class MexcKlinesDataProcessingPipeline:
-    """Complete pipeline for downloading, processing, and quality-checking MEXC klines data."""
+class KlinesDataProcessingPipeline:
+    """Complete pipeline for downloading, processing, and quality-checking klines data from any exchange."""
 
-    def __init__(self, data_dir: str = "historical_data"):
+    def __init__(self, exchange: str, data_dir: str = "historical_data"):
         """Initialize the processing pipeline.
 
         Args:
+            exchange: Exchange name (binance, bingx, mexc, etc.)
             data_dir: Base directory for historical data
         """
+        self.exchange = exchange.lower()
         self.data_dir = data_dir
-        self.exchange = "mexc"
-        self.logger = system_logger.getChild("MexcKlinesDataProcessingPipeline")
+        self.logger = system_logger.getChild(f"KlinesDataProcessingPipeline-{self.exchange.upper()}")
 
         # Initialize components
         self.historical_pipeline = HistoricalDataPipeline(data_dir)
@@ -163,24 +165,24 @@ class MexcKlinesDataProcessingPipeline:
     def quality_checker(self):
         """Lazy initialization of quality checker."""
         if self._quality_checker is None:
-            self._quality_checker = MexcKlinesDataQualityChecker(self.data_dir)
+            self._quality_checker = BingXKlinesDataQualityChecker(self.data_dir)
         return self._quality_checker
 
     def create_consolidated_features_file(
         self,
         symbol: str = "ETHUSDT",
         interval: str = "1m",
-        exchange: str = "mexc"
+        exchange: str = "bingx"
     ) -> Dict[str, Any]:
         """Create a consolidated features parquet file with required columns.
 
-        This creates a file with the format: historical_data/features_mexc_{SYMBOL}_consolidated.parquet
+        This creates a file with the format: historical_data/features_bingx_{SYMBOL}_consolidated.parquet
         containing the required columns: ['timestamp', 'exchange', 'timeframe']
 
         Args:
             symbol: Trading symbol (e.g., "ETHUSDT")
             interval: Time interval (e.g., "1m")
-            exchange: Exchange name (default: "mexc")
+            exchange: Exchange name (default: "bingx")
 
         Returns:
             Dictionary with consolidation results
@@ -192,7 +194,7 @@ class MexcKlinesDataProcessingPipeline:
             output_file = Path(self.data_dir) / f"features_{exchange.lower()}_{symbol.upper()}_consolidated.parquet"
 
             # Find processed data files
-            data_path = Path(self.data_dir) / "mexc" / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
+            data_path = Path(self.data_dir) / "bingx" / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
 
             if not data_path.exists():
                 return {
@@ -328,8 +330,8 @@ class MexcKlinesDataProcessingPipeline:
             symbol: Trading symbol (e.g., "ETHUSDT", default: "ETHUSDT")
             years: Number of years of data to download (default: from centralized config)
             interval: Kline interval (e.g., "1m")
-            api_key: MEXC API key
-            api_secret: MEXC API secret
+            api_key: BingX API key
+            api_secret: BingX API secret
             max_gap_minutes: Maximum allowed gap in minutes
             create_consolidated: Whether to create consolidated features file
 
@@ -382,7 +384,7 @@ class MexcKlinesDataProcessingPipeline:
 
             # Step 2.5: Add required columns to processed files
             self.logger.info("📦 Step 2.5: Adding required columns (exchange, timeframe) to processed files")
-            column_addition_results = self.add_required_columns_to_processed_files(symbol, interval, "mexc")
+            column_addition_results = self.add_required_columns_to_processed_files(symbol, interval, "bingx")
             results["steps_completed"].append("column_addition")
             results["summary"]["column_addition"] = column_addition_results
 
@@ -418,7 +420,7 @@ class MexcKlinesDataProcessingPipeline:
                 consolidated_results = self.create_consolidated_features_file(
                     symbol=symbol,
                     interval=interval,
-                    exchange="mexc"
+                    exchange="bingx"
                 )
                 results["steps_completed"].append("consolidated_file_creation")
                 results["summary"]["consolidated_file_creation"] = consolidated_results
@@ -456,7 +458,7 @@ class MexcKlinesDataProcessingPipeline:
             self.logger.info(f"🧹 Removing columns {self.columns_to_remove} from {symbol} {interval} data")
 
             # Get data directory
-            data_path = Path(self.data_dir) / "mexc" / symbol.lower() / "raw" / f"{symbol.lower()}_{interval}"
+            data_path = Path(self.data_dir) / "bingx" / symbol.lower() / "raw" / f"{symbol.lower()}_{interval}"
 
             if not data_path.exists():
                 return {"files_processed": 0, "columns_removed": 0, "message": "No data directory found"}
@@ -517,7 +519,7 @@ class MexcKlinesDataProcessingPipeline:
                 "error": str(e)
             }
 
-    def add_required_columns_to_processed_files(self, symbol: str, interval: str, exchange: str = "mexc") -> Dict[str, Any]:
+    def add_required_columns_to_processed_files(self, symbol: str, interval: str, exchange: str = "bingx") -> Dict[str, Any]:
         """Add required columns (exchange, timeframe) to processed data files.
 
         Args:
@@ -532,7 +534,7 @@ class MexcKlinesDataProcessingPipeline:
             self.logger.info(f"📦 Adding required columns to processed {symbol} {interval} data")
 
             # Get processed data directory
-            data_path = Path(self.data_dir) / "mexc" / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
+            data_path = Path(self.data_dir) / "bingx" / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
 
             if not data_path.exists():
                 return {"files_processed": 0, "columns_added": 0, "message": "No processed data directory found"}
@@ -624,8 +626,8 @@ class MexcKlinesDataProcessingPipeline:
             symbol: Trading symbol
             interval: Data interval
             max_gap_minutes: Maximum allowed gap in minutes
-            api_key: MEXC API key
-            api_secret: MEXC API secret
+            api_key: BingX API key
+            api_secret: BingX API secret
 
         Returns:
             Dictionary with gap handling results
@@ -652,7 +654,7 @@ class MexcKlinesDataProcessingPipeline:
                 gap_fill_results["column_removal"] = column_removal_results
 
                 self.logger.info("📦 Adding required columns to gap-filled data")
-                column_addition_results = self.add_required_columns_to_processed_files(symbol, interval, "mexc")
+                column_addition_results = self.add_required_columns_to_processed_files(symbol, interval, "bingx")
                 gap_fill_results["column_addition"] = column_addition_results
 
             return gap_fill_results
@@ -675,7 +677,7 @@ class MexcKlinesDataProcessingPipeline:
             self.logger.info(f"🔍 Analyzing duplicates in {symbol} {interval} data")
 
             # Get data directory
-            data_path = Path(self.data_dir) / "mexc" / symbol.lower() / "raw" / f"{symbol.lower()}_{interval}"
+            data_path = Path(self.data_dir) / "bingx" / symbol.lower() / "raw" / f"{symbol.lower()}_{interval}"
 
             if not data_path.exists():
                 return {"files_analyzed": 0, "duplicates_found": 0, "warnings": [], "message": "No data directory found"}
@@ -756,8 +758,8 @@ class MexcKlinesDataProcessingPipeline:
             }
 
 
-class MexcKlinesDataQualityChecker:
-    """Comprehensive data quality checker for MEXC klines data processing pipeline."""
+class BingXKlinesDataQualityChecker:
+    """Comprehensive data quality checker for BingX klines data processing pipeline."""
 
     def __init__(self, data_dir: str = "historical_data"):
         """Initialize the data quality checker.
@@ -766,7 +768,7 @@ class MexcKlinesDataQualityChecker:
             data_dir: Base directory for historical data
         """
         self.data_dir = Path(data_dir)
-        self.logger = system_logger.getChild("MexcKlinesDataQualityChecker")
+        self.logger = system_logger.getChild("BingXKlinesDataQualityChecker")
         self.duplicate_analyzer = ComprehensiveDuplicateAnalyzer(self.logger)
 
     def check_processed_data_quality(self, symbol: str = "ETHUSDT",
@@ -845,7 +847,7 @@ class MexcKlinesDataQualityChecker:
 
         try:
             # Find data files for this interval
-            interval_path = self.data_dir / "mexc" / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
+            interval_path = self.data_dir / "bingx" / symbol.lower() / "processed" / f"{symbol.lower()}_{interval}"
 
             if not interval_path.exists():
                 result["issues"].append(f"Processed data directory not found: {interval_path}")
@@ -1192,7 +1194,7 @@ class MexcKlinesDataQualityChecker:
 
 
 # Convenience functions
-async def run_mexc_klines_pipeline(
+async def run_bingx_klines_pipeline(
     symbol: str = "ETHUSDT",
     years: int = None,
     interval: str = "1m",
@@ -1202,7 +1204,7 @@ async def run_mexc_klines_pipeline(
     max_gap_minutes: int = 1,
     create_consolidated: bool = True
 ) -> Dict[str, Any]:
-    """Run the complete pipeline for downloading klines data for any symbol from MEXC.
+    """Run the complete pipeline for downloading klines data for any symbol from BingX.
 
     This function:
     - Downloads data for the specified symbol using HistoricalDataPipeline
@@ -1216,8 +1218,8 @@ async def run_mexc_klines_pipeline(
         symbol: Trading symbol (default: "ETHUSDT")
         years: Number of years of data to download (default: from centralized config)
         data_dir: Base directory for data storage
-        api_key: MEXC API key
-        api_secret: MEXC API secret
+        api_key: BingX API key
+        api_secret: BingX API secret
         interval: Kline interval (default: "1m")
         max_gap_minutes: Maximum allowed gap in minutes (default: 1)
         create_consolidated: Whether to create consolidated features file (default: True)
@@ -1231,9 +1233,9 @@ async def run_mexc_klines_pipeline(
         mode_config = get_full_mode_config()
         years = mode_config.lookback_years
     
-    pipeline = MexcKlinesDataProcessingPipeline(data_dir)
+    pipeline = BingXKlinesDataProcessingPipeline(data_dir)
 
-    print(f"🚀 Starting {symbol} {interval} data pipeline ({years} years) - MEXC")
+    print(f"🚀 Starting {symbol} {interval} data pipeline ({years} years) - BingX")
     print(f"📁 Data directory: {data_dir}")
     print(f"⏱️  Interval: {interval}")
     print(f"🎯 Max gap threshold: {max_gap_minutes} minutes")
@@ -1251,7 +1253,7 @@ async def run_mexc_klines_pipeline(
 
     # Print summary
     print("\n" + "="*80)
-    print("📊 MEXC PIPELINE EXECUTION SUMMARY")
+    print("📊 BINGX PIPELINE EXECUTION SUMMARY")
     print("="*80)
     print(f"Symbol: {results['symbol']}")
     print(f"Years: {results['years']}")
@@ -1307,10 +1309,10 @@ if __name__ == "__main__":
                 except ValueError:
                     print(f"⚠️ Invalid years argument '{sys.argv[2]}', using default: {years}")
         
-        print(f"Starting {symbol} {years}-year 1m klines data download pipeline... (MEXC)")
+        print(f"Starting {symbol} {years}-year 1m klines data download pipeline... (BingX)")
 
         # Run the complete pipeline
-        results = await run_mexc_klines_pipeline(symbol=symbol, years=years)
+        results = await run_bingx_klines_pipeline(symbol=symbol, years=years)
 
         print(f"\nPipeline completed with success: {results.get('pipeline_success', False)}")
 

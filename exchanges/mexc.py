@@ -92,6 +92,12 @@ class MexcExchange(BaseExchange, IExchangeClient):
         self.retry_delay = 1.0
         self.timeout = 30
         
+        # Configurable limits and parameters
+        self.max_klines_limit = 1000
+        self.max_trades_limit = 1000
+        self.default_orderbook_limit = 20
+        self.default_trades_limit = 100
+        
     def _initialize_shared_utilities(self) -> None:
         """Initialize all shared utilities."""
         try:
@@ -411,15 +417,8 @@ class MexcExchange(BaseExchange, IExchangeClient):
     async def _get_account_info(self) -> Optional[Dict[str, Any]]:
         """Get account information."""
         try:
-            headers = self.auth_manager.get_auth_headers("GET", "/api/v3/account")
-            if not headers:
-                return None
-            
-            url = f"{self.base_url}/api/v3/account"
-            async with self.session.get(url, headers=headers) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data
+            data = await self._make_request("GET", "/api/v3/account", signed=True)
+            return data
         except Exception as e:
             tprint(f"Error getting account info: {e}", "ERROR")
         return None
@@ -449,9 +448,11 @@ class MexcExchange(BaseExchange, IExchangeClient):
             tprint(f"Error getting ticker for {symbol}: {e}", "ERROR")
         return None
     
-    async def _get_order_book(self, symbol: str, limit: int = 20) -> Optional[Dict[str, Any]]:
+    async def _get_order_book(self, symbol: str, limit: int = None) -> Optional[Dict[str, Any]]:
         """Get order book for symbol."""
         try:
+            if limit is None:
+                limit = self.default_orderbook_limit
             url = f"{self.base_url}/api/v3/depth"
             params = {"symbol": symbol.upper(), "limit": str(limit)}
             async with self.session.get(url, params=params) as response:
@@ -462,9 +463,11 @@ class MexcExchange(BaseExchange, IExchangeClient):
             tprint(f"Error getting order book for {symbol}: {e}", "ERROR")
         return None
     
-    async def _get_recent_trades(self, symbol: str, limit: int = 100) -> List[Dict[str, Any]]:
+    async def _get_recent_trades(self, symbol: str, limit: int = None) -> List[Dict[str, Any]]:
         """Get recent trades for symbol."""
         try:
+            if limit is None:
+                limit = self.default_trades_limit
             url = f"{self.base_url}/api/v3/trades"
             params = {"symbol": symbol.upper(), "limit": str(limit)}
             async with self.session.get(url, params=params) as response:
@@ -475,14 +478,16 @@ class MexcExchange(BaseExchange, IExchangeClient):
             tprint(f"Error getting recent trades for {symbol}: {e}", "ERROR")
         return []
     
-    async def _get_klines(self, symbol: str, interval: str, limit: int = 100) -> List[List[Any]]:
+    async def _get_klines(self, symbol: str, interval: str, limit: int = None) -> List[List[Any]]:
         """Get kline data for symbol."""
         try:
+            if limit is None:
+                limit = self.default_trades_limit  # Use default for klines
             url = f"{self.base_url}/api/v3/klines"
             params = {
                 "symbol": symbol.upper(),
                 "interval": self._convert_interval(interval),
-                "limit": str(min(limit, 1000))
+                "limit": str(min(limit, self.max_klines_limit))
             }
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
@@ -498,17 +503,19 @@ class MexcExchange(BaseExchange, IExchangeClient):
         interval: str,
         start_time: datetime,
         end_time: datetime,
-        limit: int = 1000
+        limit: int = None
     ) -> List[List[Any]]:
         """Get historical kline data."""
         try:
+            if limit is None:
+                limit = self.max_klines_limit
             url = f"{self.base_url}/api/v3/klines"
             params = {
                 "symbol": symbol.upper(),
                 "interval": self._convert_interval(interval),
                 "startTime": str(int(start_time.timestamp() * 1000)),
                 "endTime": str(int(end_time.timestamp() * 1000)),
-                "limit": str(min(limit, 1000))
+                "limit": str(min(limit, self.max_klines_limit))
             }
             async with self.session.get(url, params=params) as response:
                 if response.status == 200:
@@ -534,15 +541,9 @@ class MexcExchange(BaseExchange, IExchangeClient):
     async def _get_balances_exchange(self, account_type: str) -> List[Dict[str, Any]]:
         """Get balances for account type."""
         try:
-            headers = self.auth_manager.get_auth_headers("GET", "/api/v3/account")
-            if not headers:
-                return []
-            
-            url = f"{self.base_url}/api/v3/account"
-            async with self.session.get(url, headers=headers) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data.get("balances", [])
+            data = await self._make_request("GET", "/api/v3/account", signed=True)
+            if data and isinstance(data, dict):
+                return data.get("balances", [])
         except Exception as e:
             tprint(f"Error getting balances: {e}", "ERROR")
         return []
@@ -569,8 +570,7 @@ class MexcExchange(BaseExchange, IExchangeClient):
                 "symbol": symbol.upper(),
                 "side": side.upper(),
                 "type": order_type.upper(),
-                "quantity": str(quantity),
-                "timestamp": int(time.time() * 1000)
+                "quantity": str(quantity)
             }
             
             if price is not None:
@@ -580,25 +580,8 @@ class MexcExchange(BaseExchange, IExchangeClient):
             if client_order_id:
                 order_params["newClientOrderId"] = client_order_id
             
-            # Generate signature
-            signature = self._generate_signature(order_params)
-            order_params["signature"] = signature
-            
-            # Prepare headers
-            headers = {
-                "X-MEXC-APIKEY": self.api_key,
-                "Content-Type": "application/x-www-form-urlencoded"
-            }
-            
-            url = f"{self.base_url}/api/v3/order"
-            async with self.session.post(url, data=order_params, headers=headers) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data
-                else:
-                    error_text = await response.text()
-                    tprint(f"Order creation failed: {response.status} - {error_text}", "ERROR")
-                    return None
+            data = await self._make_request("POST", "/api/v3/order", order_params, signed=True)
+            return data
                     
         except Exception as e:
             tprint(f"Error creating order: {e}", "ERROR")
@@ -607,19 +590,9 @@ class MexcExchange(BaseExchange, IExchangeClient):
     async def _cancel_order_exchange(self, order_id: str) -> bool:
         """Cancel order on exchange."""
         try:
-            headers = self.auth_manager.get_auth_headers("DELETE", "/api/v3/order")
-            if not headers:
-                return False
-            
-            url = f"{self.base_url}/api/v3/order"
             params = {"orderId": order_id}
-            async with self.session.delete(url, params=params, headers=headers) as response:
-                if response.status == 200:
-                    return True
-                else:
-                    error_text = await response.text()
-                    tprint(f"Order cancellation failed: {response.status} - {error_text}", "ERROR")
-                    return False
+            data = await self._make_request("DELETE", "/api/v3/order", params, signed=True)
+            return data is not None
                     
         except Exception as e:
             tprint(f"Error canceling order: {e}", "ERROR")
@@ -628,20 +601,9 @@ class MexcExchange(BaseExchange, IExchangeClient):
     async def _get_order_status_exchange(self, order_id: str) -> Optional[Dict[str, Any]]:
         """Get order status from exchange."""
         try:
-            headers = self.auth_manager.get_auth_headers("GET", "/api/v3/order")
-            if not headers:
-                return None
-            
-            url = f"{self.base_url}/api/v3/order"
             params = {"orderId": order_id}
-            async with self.session.get(url, params=params, headers=headers) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data
-                else:
-                    error_text = await response.text()
-                    tprint(f"Order status check failed: {response.status} - {error_text}", "ERROR")
-                    return None
+            data = await self._make_request("GET", "/api/v3/order", params, signed=True)
+            return data
                     
         except Exception as e:
             tprint(f"Error getting order status: {e}", "ERROR")
@@ -650,23 +612,13 @@ class MexcExchange(BaseExchange, IExchangeClient):
     async def _get_open_orders_exchange(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """Get open orders from exchange."""
         try:
-            headers = self.auth_manager.get_auth_headers("GET", "/api/v3/openOrders")
-            if not headers:
-                return []
-            
-            url = f"{self.base_url}/api/v3/openOrders"
             params = {}
             if symbol:
                 params["symbol"] = symbol.upper()
             
-            async with self.session.get(url, params=params, headers=headers) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data
-                else:
-                    error_text = await response.text()
-                    tprint(f"Open orders fetch failed: {response.status} - {error_text}", "ERROR")
-                    return []
+            data = await self._make_request("GET", "/api/v3/openOrders", params, signed=True)
+            if data and isinstance(data, list):
+                return data
                     
         except Exception as e:
             tprint(f"Error getting open orders: {e}", "ERROR")
@@ -787,7 +739,7 @@ class MexcExchange(BaseExchange, IExchangeClient):
         params = {
             "symbol": symbol.upper(),
             "interval": self._convert_interval(interval),
-            "limit": min(limit, 1000)  # MEXC max limit is 1000
+            "limit": min(limit, self.max_klines_limit)
         }
         
         data = await self._make_request("GET", "/api/v3/klines", params)
@@ -826,7 +778,7 @@ class MexcExchange(BaseExchange, IExchangeClient):
             "interval": self._convert_interval(interval),
             "startTime": start_time_ms,
             "endTime": end_time_ms,
-            "limit": min(limit, 1000)
+            "limit": min(limit, self.max_klines_limit)
         }
         
         data = await self._make_request("GET", "/api/v3/klines", params)
@@ -863,7 +815,7 @@ class MexcExchange(BaseExchange, IExchangeClient):
             "symbol": symbol.upper(),
             "startTime": start_time_ms,
             "endTime": end_time_ms,
-            "limit": min(limit, 1000)
+            "limit": min(limit, self.max_trades_limit)
         }
         
         data = await self._make_request("GET", "/api/v3/aggTrades", params)
@@ -970,7 +922,7 @@ class MexcExchange(BaseExchange, IExchangeClient):
         return interval_map.get(interval, "1m")
 
     # IExchangeClient Interface Implementation
-    async def get_klines(self, symbol: str, interval: str, limit: int = 100) -> list[MarketData]:
+    async def get_klines(self, symbol: str, interval: str, limit: int = None) -> list[MarketData]:
         """Get historical kline data - IExchangeClient interface method."""
         try:
             raw_data = await self._get_klines_raw(symbol, interval, limit)

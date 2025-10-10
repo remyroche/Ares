@@ -11,12 +11,18 @@ from .exchange_data_standardizer import (
     get_exchange_schema,
     validate_exchange_data
 )
-from .klines_downloading_processing import KlinesDataProcessingPipeline
+from .klines_downloading_processing import (
+    KlinesDataProcessingPipeline,
+    run_exchange_klines_pipeline,
+    run_bingx_klines_pipeline
+)
 
 __all__ = [
     'ExchangeDataStandardizer',
     'standardize_exchange_data',
     'get_exchange_schema',
     'validate_exchange_data',
-    'KlinesDataProcessingPipeline'
+    'KlinesDataProcessingPipeline',
+    'run_exchange_klines_pipeline',
+    'run_bingx_klines_pipeline'
 ]

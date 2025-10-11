@@ -276,7 +276,7 @@ class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
             close = data['close']
             
             # Use VectorBT for CCI calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(close):
                 try:
                     # Calculate typical price
                     typical_price = (high + low + close) / 3
@@ -416,7 +416,7 @@ class ADXGenerator(VectorizedFeatureGenerator):
             close = data['close']
             
             # Use VectorBT for ADX calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(close):
                 try:
                     # Calculate True Range
                     tr1 = high - low
@@ -494,13 +494,13 @@ class ADXGenerator(VectorizedFeatureGenerator):
             base_values = self.base_calculator.calculate(data)
             
             # Use VectorBT for base values calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
                 try:
                     # For other base calculations, use rolling standard deviation as proxy
                     # Convert to pandas Series if it's a numpy array
                     if isinstance(base_values, np.ndarray):
                         base_values = pd.Series(base_values, index=data.index)
-                    adx = rolling_std(base_values, window=self.period)
+                    adx = self.vectorbt_optimizer.rolling_std(base_values, window=self.period)
                     return adx
                 except Exception as e:
                     self.logger.warning(f"VectorBT ADX base calculation failed: {e}, using pandas fallback")
@@ -591,7 +591,7 @@ class AroonGenerator(VectorizedFeatureGenerator):
             low = data['low']
             
             # Use VectorBT for Aroon calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(high):
                 try:
                     # OPTIMIZED: Use vectorized argmax/argmin calculations
                     # Use pandas built-in rolling idxmax/idxmin for better performance
@@ -627,7 +627,7 @@ class AroonGenerator(VectorizedFeatureGenerator):
             base_values = self.base_calculator.calculate(data)
             
             # Use VectorBT for Aroon calculation on base values
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
                 try:
                     # OPTIMIZED: Use vectorized argmax/argmin calculations
                     # Use pandas built-in rolling idxmax/idxmin for better performance
@@ -735,7 +735,7 @@ class SARGenerator(VectorizedFeatureGenerator):
             close = data['close']
             
             # Use VectorBT for SAR calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(high):
                 try:
                     # Simplified SAR calculation
                     sar = pd.Series(index=data.index, dtype=float)
@@ -777,7 +777,7 @@ class SARGenerator(VectorizedFeatureGenerator):
             base_values = self.base_calculator.calculate(data)
             
             # Use VectorBT for base values calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
                 try:
                     # For other base calculations, use rolling mean as proxy
                     sar = self.vectorbt_optimizer.rolling_mean(base_values, window=20)
@@ -874,7 +874,7 @@ class UltimateOscillatorGenerator(VectorizedFeatureGenerator):
             close = data['close']
             
             # Use VectorBT for Ultimate Oscillator calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(high):
                 try:
                     # Calculate True Range
                     tr1 = high - low
@@ -934,7 +934,7 @@ class UltimateOscillatorGenerator(VectorizedFeatureGenerator):
             base_values = self.base_calculator.calculate(data)
             
             # Use VectorBT for base values calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
                 try:
                     # For other base calculations, use rolling mean as proxy
                     uo = self.vectorbt_optimizer.rolling_mean(base_values, window=self.period3)
@@ -1049,7 +1049,7 @@ class KSTGenerator(VectorizedFeatureGenerator):
             close = data['close']
             
             # Use VectorBT for KST calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(close):
                 try:
                     # Calculate ROC
                     roc1 = close.pct_change(periods=self.roc1) * 100
@@ -1106,7 +1106,7 @@ class KSTGenerator(VectorizedFeatureGenerator):
             base_values = self.base_calculator.calculate(data)
             
             # Use VectorBT for base values calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
                 try:
                     # For other base calculations, use rolling mean as proxy
                     kst = self.vectorbt_optimizer.rolling_mean(base_values, window=max(self.roc4, self.sma4))
@@ -1196,7 +1196,7 @@ class APOGenerator(VectorizedFeatureGenerator):
         base_values = self.base_calculator.calculate(data)
         
         # Use VectorBT for APO calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
                 # Calculate EMA using ewm
                 ema_fast = base_values.ewm(span=self.fast_period).mean()

@@ -1037,7 +1037,7 @@ class DEMAGenerator(VectorizedFeatureGenerator):
         base_values = self.base_calculator.calculate(data)
         
         # Use VectorBT for DEMA calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
                 # Calculate DEMA using ewm
                 ema1 = base_values.ewm(span=self.period).mean()
@@ -1124,7 +1124,7 @@ class TEMAGenerator(VectorizedFeatureGenerator):
         base_values = self.base_calculator.calculate(data)
         
         # Use VectorBT for TEMA calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
                 # Calculate TEMA using ewm
                 ema1 = base_values.ewm(span=self.period).mean()
@@ -1214,7 +1214,7 @@ class TRIMAGenerator(VectorizedFeatureGenerator):
         base_values = self.base_calculator.calculate(data)
         
         # Use VectorBT for TRIMA calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
                 # Calculate TRIMA using VectorBT rolling mean
                 half_period = self.period // 2
@@ -1302,7 +1302,7 @@ class MAMAGenerator(VectorizedFeatureGenerator):
         base_values = self.base_calculator.calculate(data)
         
         # Use VectorBT for MAMA calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
                 # Calculate MAMA (simplified version) using ewm
                 mama = base_values.ewm(span=20).mean()
@@ -1386,10 +1386,10 @@ class VWMAGenerator(VectorizedFeatureGenerator):
         volume = data['volume']
         
         # Calculate VWMA using VectorBT optimization
-        if VECTORBT_AVAILABLE and len(base_values) > 100:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
-                numerator = rolling_sum(base_values * volume, window=self.period)
-                denominator = rolling_sum(volume, window=self.period)
+                numerator = self.vectorbt_optimizer.rolling_sum(base_values * volume, window=self.period)
+                denominator = self.vectorbt_optimizer.rolling_sum(volume, window=self.period)
                 vwma = numerator / denominator
             except Exception as e:
                 logger.warning(f"VectorBT VWMA calculation failed: {e}, using pandas fallback")
@@ -1398,22 +1398,6 @@ class VWMAGenerator(VectorizedFeatureGenerator):
             vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
         
         return vwma
-        # Use VectorBT for VWMA calculation
-        if VECTORBT_AVAILABLE:
-            try:
-                # Calculate VWMA using VectorBT rolling sum
-                price_volume = base_values * volume
-                price_volume_sum = rolling_sum(price_volume, window=self.period)
-                volume_sum = rolling_sum(volume, window=self.period)
-                vwma = price_volume_sum / volume_sum
-                return vwma
-            except Exception as e:
-                self.logger.warning(f"VectorBT VWMA calculation failed: {e}, using pandas fallback")
-                vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
-                return vwma
-        else:
-            vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
-            return vwma
 
 
     
@@ -1516,51 +1500,6 @@ class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
             # Return middle line (EMA) as the main feature
             # Upper and lower bands would be: ema ± (multiplier * atr)
             return ema
-            # Use VectorBT for Keltner Channels calculation
-            if VECTORBT_AVAILABLE:
-                try:
-                    # Calculate EMA of close prices (middle line)
-                    ema = close.ewm(span=self.period).mean()
-                    
-                    # Calculate ATR using VectorBT rolling mean
-                    tr1 = high - low
-                    tr2 = abs(high - close.shift(1))
-                    tr3 = abs(low - close.shift(1))
-                    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                    atr = self.vectorbt_optimizer.rolling_mean(true_range, window=self.atr_period)
-                    
-                    # Return middle line (EMA) as the main feature
-                    # Upper and lower bands would be: ema ± (multiplier * atr)
-                    return ema
-                except Exception as e:
-                    self.logger.warning(f"VectorBT Keltner Channels calculation failed: {e}, using pandas fallback")
-                    # Calculate EMA of close prices (middle line)
-                    ema = close.ewm(span=self.period).mean()
-                    
-                    # Calculate ATR
-                    tr1 = high - low
-                    tr2 = abs(high - close.shift(1))
-                    tr3 = abs(low - close.shift(1))
-                    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                    atr = true_range.rolling(window=self.atr_period).mean()
-                    
-                    # Return middle line (EMA) as the main feature
-                    # Upper and lower bands would be: ema ± (multiplier * atr)
-                    return ema
-            else:
-                # Calculate EMA of close prices (middle line)
-                ema = close.ewm(span=self.period).mean()
-                
-                # Calculate ATR
-                tr1 = high - low
-                tr2 = abs(high - close.shift(1))
-                tr3 = abs(low - close.shift(1))
-                true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                atr = true_range.rolling(window=self.atr_period).mean()
-                
-                # Return middle line (EMA) as the main feature
-                # Upper and lower bands would be: ema ± (multiplier * atr)
-                return ema
         else:
             # For other base calculations, use EMA of base values
             base_values = self.base_calculator.calculate(data)
@@ -1814,122 +1753,61 @@ def create_default_trend_generators() -> List[FeatureGenerator]:
     """Create default trend generators with VectorBT optimization."""
     generators = []
     
-    if VECTORBT_AVAILABLE:
-        # VectorBT-optimized generators
-        for period in [5, 10, 20, 50, 100]:
-            generators.append(VectorBTTrendFeatureGenerator(period))
-            generators.append(VectorBTSMAGenerator(period))
-            generators.append(VectorBTEMAGenerator(period))
-            
-        # ADX with different periods
-        for period in [9, 14, 21]:
-            generators.append(VectorBTADXGenerator(period))
-    else:
-        # Fallback to original generators
-        periods = {
-            'sma': [5, 10, 20, 50, 100],
-            'ema': [12, 26, 50],
-            'wma': [20],
-            'dema': [21],
-            'tema': [21],
-            'trima': [21],
-            'vwma': [20],
-            'keltner_channels': [20],
-            'adx': [14],
-            'trend_score': [14]
-        }
-        
-        # SMA generators
-        for period in periods.get('sma', [20]):
-            generators.append(SMAGenerator(period))
-        
-        # EMA generators
-        for period in periods.get('ema', [12, 26]):
-            generators.append(EMAGenerator(period))
-        
-        # WMA generators
-        for period in periods.get('wma', [20]):
-            generators.append(WMAGenerator(period))
-        
-        # DEMA generators
-        for period in periods.get('dema', [21]):
-            generators.append(DEMAGenerator(period))
-        
-        # TEMA generators
-        for period in periods.get('tema', [21]):
-            generators.append(TEMAGenerator(period))
-        
-        # TRIMA generators
-        for period in periods.get('trima', [21]):
-            generators.append(TRIMAGenerator(period))
-        
-        # VWMA generators
-        for period in periods.get('vwma', [20]):
-            generators.append(VWMAGenerator(period))
-        
-        # Keltner Channels generators
-        for period in periods.get('keltner_channels', [20]):
-            generators.append(KeltnerChannelsGenerator(period))
+    # All generators now use VectorBT optimization through the mixin
+    periods = {
+        'sma': [5, 10, 20, 50, 100],
+        'ema': [12, 26, 50],
+        'wma': [20],
+        'dema': [21],
+        'tema': [21],
+        'trima': [21],
+        'vwma': [20],
+        'keltner_channels': [20],
+        'adx': [14],
+        'trend_score': [14]
+    }
+    
+    # SMA generators
+    for period in periods.get('sma', [20]):
+        generators.append(SMAGenerator(period))
+    
+    # EMA generators
+    for period in periods.get('ema', [12, 26]):
+        generators.append(EMAGenerator(period))
+    
+    # WMA generators
+    for period in periods.get('wma', [20]):
+        generators.append(WMAGenerator(period))
+    
+    # DEMA generators
+    for period in periods.get('dema', [21]):
+        generators.append(DEMAGenerator(period))
+    
+    # TEMA generators
+    for period in periods.get('tema', [21]):
+        generators.append(TEMAGenerator(period))
+    
+    # TRIMA generators
+    for period in periods.get('trima', [21]):
+        generators.append(TRIMAGenerator(period))
+    
+    # VWMA generators
+    for period in periods.get('vwma', [20]):
+        generators.append(VWMAGenerator(period))
+    
+    # Keltner Channels generators
+    for period in periods.get('keltner_channels', [20]):
+        generators.append(KeltnerChannelsGenerator(period))
 
-        # ADX generators
-        for period in periods.get('adx', [14]):
-            generators.append(ADXGenerator(period))
+    # ADX generators
+    for period in periods.get('adx', [14]):
+        generators.append(ADXGenerator(period))
 
-        # Directional Signal generators
-        generators.append(DirectionalSignalGenerator())
+    # Directional Signal generators
+    generators.append(DirectionalSignalGenerator())
 
-        # Trend Score generators
-        for period in periods.get('trend_score', [14]):
-            generators.append(TrendScoreGenerator(adx_period=period))
+    # Trend Score generators
+    for period in periods.get('trend_score', [14]):
+        generators.append(TrendScoreGenerator(adx_period=period))
 
     return generators
-
-
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
-                VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
-        try:
-            if operation == 'mean':
-                return self.vectorbt_optimizer.rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return self.vectorbt_optimizer.rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return self.vectorbt_optimizer.rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return self.vectorbt_optimizer.rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return self.vectorbt_optimizer.rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return self.vectorbt_optimizer.rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")

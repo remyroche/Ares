@@ -354,33 +354,43 @@ class EarlyFilteringSystem:
         
         tprint_debug("🔍 Filtering redundant features...")
         
+        # Fast-fail: Skip correlation check for large feature sets to avoid memory issues
+        if len(features) > 500:
+            tprint_warning("⚠️ Skipping redundancy filtering for large feature set to avoid memory issues")
+            return features
+        
         # Calculate correlation matrix
         feature_data = data[features].dropna()
         if len(feature_data) < 10:
             return features
         
-        corr_matrix = feature_data.corr().abs()
-        
-        # Find highly correlated pairs
-        redundant_pairs = []
-        for i, feature1 in enumerate(features):
-            for j, feature2 in enumerate(features[i+1:], i+1):
-                if corr_matrix.iloc[i, j] > self.config.max_correlation_threshold:
-                    redundant_pairs.append((feature1, feature2))
-        
-        # Remove redundant features (keep the one with higher IC/MI)
-        features_to_remove = set()
-        for feature1, feature2 in redundant_pairs:
-            # Simple heuristic: keep the feature with more data
-            if len(data[feature1].dropna()) >= len(data[feature2].dropna()):
-                features_to_remove.add(feature2)
-            else:
-                features_to_remove.add(feature1)
-        
-        filtered_features = [f for f in features if f not in features_to_remove]
-        
-        tprint_info(f"📊 Redundancy filtering: removed {len(features_to_remove)} redundant features")
-        return filtered_features
+        try:
+            corr_matrix = feature_data.corr().abs()
+            
+            # Find highly correlated pairs
+            redundant_pairs = []
+            for i, feature1 in enumerate(features):
+                for j, feature2 in enumerate(features[i+1:], i+1):
+                    if corr_matrix.iloc[i, j] > self.config.max_correlation_threshold:
+                        redundant_pairs.append((feature1, feature2))
+            
+            # Remove redundant features (keep the one with higher IC/MI)
+            features_to_remove = set()
+            for feature1, feature2 in redundant_pairs:
+                # Simple heuristic: keep the feature with more data
+                if len(data[feature1].dropna()) >= len(data[feature2].dropna()):
+                    features_to_remove.add(feature2)
+                else:
+                    features_to_remove.add(feature1)
+            
+            filtered_features = [f for f in features if f not in features_to_remove]
+            
+            tprint_info(f"📊 Redundancy filtering: removed {len(features_to_remove)} redundant features")
+            return filtered_features
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Redundancy filtering failed: {e}")
+            return features
     
     def filter_features(self, data: pd.DataFrame, target_column: str, 
                        horizon: int = 20) -> FilteringResult:

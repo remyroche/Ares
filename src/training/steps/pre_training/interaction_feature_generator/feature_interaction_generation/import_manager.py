@@ -147,9 +147,13 @@ class ImportManager:
             # Cache the failed result
             self._import_cache[cache_key] = result
             
-            # Fast-fail: Always raise for import errors
-            tprint_error(f"❌ {error_msg}")
-            raise ImportError(f"Required module {module_name} not available: {e}")
+            # Fast-fail: Only raise for required imports
+            if required:
+                tprint_error(f"❌ {error_msg}")
+                raise ImportError(f"Required module {module_name} not available: {e}")
+            else:
+                tprint_warning(f"⚠️ Optional module not available: {module_name}")
+                return result
         
         except Exception as e:
             error_msg = f"Unexpected error importing '{module_name}': {e}"

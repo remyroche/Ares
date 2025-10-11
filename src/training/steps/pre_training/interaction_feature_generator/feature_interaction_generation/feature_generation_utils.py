@@ -481,38 +481,54 @@ class ImprovedFeatureGenerator:
         """Generate price-based technical indicators."""
         features = {}
         
+        # Fast-fail: Validate input data
+        if len(close) == 0:
+            raise RuntimeError("CRITICAL: Cannot generate price indicators on empty data")
+        
+        if np.isnan(close).all():
+            raise RuntimeError("CRITICAL: Cannot generate price indicators on all-NaN data")
+        
         try:
             # RSI
             if len(close) > self.config.rsi_period:
                 rsi = self._calculate_rsi(close, self.config.rsi_period)
-                features['rsi'] = rsi
+                if not np.isnan(rsi).all():
+                    features['rsi'] = rsi
             
             # MACD
             if len(close) > max(self.config.macd_fast, self.config.macd_slow):
                 macd_line, signal_line, histogram = self._calculate_macd(
                     close, self.config.macd_fast, self.config.macd_slow, self.config.macd_signal
                 )
-                features['macd'] = macd_line
-                features['macd_signal'] = signal_line
-                features['macd_histogram'] = histogram
+                if not np.isnan(macd_line).all():
+                    features['macd'] = macd_line
+                    features['macd_signal'] = signal_line
+                    features['macd_histogram'] = histogram
             
             # Bollinger Bands
             if len(close) > self.config.bollinger_period:
                 bb_upper, bb_middle, bb_lower = self._calculate_bollinger_bands(
                     close, self.config.bollinger_period, self.config.bollinger_std
                 )
-                features['bb_upper'] = bb_upper
-                features['bb_middle'] = bb_middle
-                features['bb_lower'] = bb_lower
-                features['bb_width'] = (bb_upper - bb_lower) / bb_middle
-                features['bb_position'] = (close - bb_lower) / (bb_upper - bb_lower)
+                if not np.isnan(bb_upper).all():
+                    features['bb_upper'] = bb_upper
+                    features['bb_middle'] = bb_middle
+                    features['bb_lower'] = bb_lower
+                    features['bb_width'] = (bb_upper - bb_lower) / (bb_middle + 1e-8)
+                    features['bb_position'] = (close - bb_lower) / (bb_upper - bb_lower + 1e-8)
             
-            # Price momentum
-            features['price_change'] = np.concatenate([[0], np.diff(close)])
-            features['price_change_pct'] = np.concatenate([[0], np.diff(close) / close[:-1]])
+            # Price momentum - always generate these
+            price_change = np.concatenate([[0], np.diff(close)])
+            price_change_pct = np.concatenate([[0], np.diff(close) / (close[:-1] + 1e-8)])
+            features['price_change'] = price_change
+            features['price_change_pct'] = price_change_pct
             
         except Exception as e:
-            tprint_debug(f"⚠️ Price indicator calculation failed: {e}")
+            raise RuntimeError(f"CRITICAL: Price indicator calculation failed: {e}")
+        
+        # Fast-fail: Must have generated features
+        if not features:
+            raise RuntimeError("CRITICAL: No price indicators generated - check data and configuration")
         
         return features
     
@@ -520,19 +536,34 @@ class ImprovedFeatureGenerator:
         """Generate volume-based technical indicators."""
         features = {}
         
+        # Fast-fail: Validate input data
+        if len(volume) == 0:
+            raise RuntimeError("CRITICAL: Cannot generate volume indicators on empty data")
+        
+        if np.isnan(volume).all():
+            raise RuntimeError("CRITICAL: Cannot generate volume indicators on all-NaN data")
+        
         try:
-            # Volume momentum
-            features['volume_change'] = np.concatenate([[0], np.diff(volume)])
-            features['volume_change_pct'] = np.concatenate([[0], np.diff(volume) / (volume[:-1] + 1e-8)])
+            # Volume momentum - always generate these
+            volume_change = np.concatenate([[0], np.diff(volume)])
+            volume_change_pct = np.concatenate([[0], np.diff(volume) / (volume[:-1] + 1e-8)])
+            features['volume_change'] = volume_change
+            features['volume_change_pct'] = volume_change_pct
             
             # Volume moving averages
             for window in [5, 10, 20]:
                 if len(volume) > window:
-                    features[f'volume_ma_{window}'] = self._rolling_mean(volume, window)
-                    features[f'volume_ratio_{window}'] = volume / (features[f'volume_ma_{window}'] + 1e-8)
+                    volume_ma = self._rolling_mean(volume, window)
+                    if not np.isnan(volume_ma).all():
+                        features[f'volume_ma_{window}'] = volume_ma
+                        features[f'volume_ratio_{window}'] = volume / (volume_ma + 1e-8)
             
         except Exception as e:
-            tprint_debug(f"⚠️ Volume indicator calculation failed: {e}")
+            raise RuntimeError(f"CRITICAL: Volume indicator calculation failed: {e}")
+        
+        # Fast-fail: Must have generated features
+        if not features:
+            raise RuntimeError("CRITICAL: No volume indicators generated - check data and configuration")
         
         return features
     
@@ -540,25 +571,44 @@ class ImprovedFeatureGenerator:
         """Generate OHLC-based technical indicators."""
         features = {}
         
+        # Fast-fail: Validate input data
+        if len(high) == 0 or len(low) == 0 or len(close) == 0:
+            raise RuntimeError("CRITICAL: Cannot generate OHLC indicators on empty data")
+        
+        if len(high) != len(low) or len(high) != len(close):
+            raise RuntimeError("CRITICAL: OHLC arrays must have the same length")
+        
+        if np.isnan(high).all() or np.isnan(low).all() or np.isnan(close).all():
+            raise RuntimeError("CRITICAL: Cannot generate OHLC indicators on all-NaN data")
+        
         try:
             # True Range
             tr = self._calculate_true_range(high, low, close)
-            features['true_range'] = tr
+            if not np.isnan(tr).all():
+                features['true_range'] = tr
+                
+                # Average True Range
+                for window in [14, 21]:
+                    if len(tr) > window:
+                        atr = self._rolling_mean(tr, window)
+                        if not np.isnan(atr).all():
+                            features[f'atr_{window}'] = atr
             
-            # Average True Range
-            for window in [14, 21]:
-                if len(tr) > window:
-                    features[f'atr_{window}'] = self._rolling_mean(tr, window)
+            # Price position within range - always generate these
+            price_position = (close - low) / (high - low + 1e-8)
+            range_size = high - low
+            range_size_pct = (high - low) / (close + 1e-8)
             
-            # Price position within range
-            features['price_position'] = (close - low) / (high - low + 1e-8)
-            
-            # Range characteristics
-            features['range_size'] = high - low
-            features['range_size_pct'] = (high - low) / (close + 1e-8)
+            features['price_position'] = price_position
+            features['range_size'] = range_size
+            features['range_size_pct'] = range_size_pct
             
         except Exception as e:
-            tprint_debug(f"⚠️ OHLC indicator calculation failed: {e}")
+            raise RuntimeError(f"CRITICAL: OHLC indicator calculation failed: {e}")
+        
+        # Fast-fail: Must have generated features
+        if not features:
+            raise RuntimeError("CRITICAL: No OHLC indicators generated - check data and configuration")
         
         return features
     
@@ -566,12 +616,23 @@ class ImprovedFeatureGenerator:
         """Generate rolling statistics for numeric columns using vectorized operations."""
         features = {}
         
+        # Fast-fail: Validate input data
+        if data.empty:
+            raise RuntimeError("CRITICAL: Cannot generate rolling statistics on empty data")
+        
+        numeric_cols = data.select_dtypes(include=[np.number]).columns
+        if len(numeric_cols) == 0:
+            raise RuntimeError("CRITICAL: No numeric columns found for rolling statistics")
+        
         try:
-            numeric_cols = data.select_dtypes(include=[np.number]).columns
-            
             # OPTIMIZATION: Use vectorized operations for better performance
             for col in numeric_cols:
                 series = data[col]
+                
+                # Fast-fail: Check for sufficient data
+                if len(series) < 5:
+                    tprint_warning(f"⚠️ Skipping {col}: insufficient data ({len(series)} < 5)")
+                    continue
                 
                 for window in self.config.rolling_windows:
                     if len(series) > window:
@@ -595,7 +656,11 @@ class ImprovedFeatureGenerator:
                             features[f'{col}_p75_{window}'] = rolling.quantile(0.75).values
                         
         except Exception as e:
-            tprint_debug(f"⚠️ Rolling statistics calculation failed: {e}")
+            raise RuntimeError(f"CRITICAL: Rolling statistics calculation failed: {e}")
+        
+        # Fast-fail: Must have generated features
+        if not features:
+            raise RuntimeError("CRITICAL: No rolling statistics generated - check data and configuration")
         
         return features
     
@@ -679,44 +744,40 @@ class ImprovedFeatureGenerator:
         if len(data) < window:
             return np.full(len(data), np.nan)
         
-        result = np.full(len(data), np.nan)
-        for i in range(window - 1, len(data)):
-            result[i] = np.mean(data[i - window + 1:i + 1])
-        
-        return result
+        # Use pandas rolling for efficiency and correct length
+        series = pd.Series(data)
+        rolling = series.rolling(window=window, min_periods=1)
+        return rolling.mean().values
     
     def _rolling_std(self, data: np.ndarray, window: int) -> np.ndarray:
         """Calculate rolling standard deviation."""
         if len(data) < window:
             return np.full(len(data), np.nan)
         
-        result = np.full(len(data), np.nan)
-        for i in range(window - 1, len(data)):
-            result[i] = np.std(data[i - window + 1:i + 1])
-        
-        return result
+        # Use pandas rolling for efficiency and correct length
+        series = pd.Series(data)
+        rolling = series.rolling(window=window, min_periods=1)
+        return rolling.std().values
     
     def _rolling_min(self, data: np.ndarray, window: int) -> np.ndarray:
         """Calculate rolling minimum."""
         if len(data) < window:
             return np.full(len(data), np.nan)
         
-        result = np.full(len(data), np.nan)
-        for i in range(window - 1, len(data)):
-            result[i] = np.min(data[i - window + 1:i + 1])
-        
-        return result
+        # Use pandas rolling for efficiency and correct length
+        series = pd.Series(data)
+        rolling = series.rolling(window=window, min_periods=1)
+        return rolling.min().values
     
     def _rolling_max(self, data: np.ndarray, window: int) -> np.ndarray:
         """Calculate rolling maximum."""
         if len(data) < window:
             return np.full(len(data), np.nan)
         
-        result = np.full(len(data), np.nan)
-        for i in range(window - 1, len(data)):
-            result[i] = np.max(data[i - window + 1:i + 1])
-        
-        return result
+        # Use pandas rolling for efficiency and correct length
+        series = pd.Series(data)
+        rolling = series.rolling(window=window, min_periods=1)
+        return rolling.max().values
     
     def _rolling_skew(self, data: np.ndarray, window: int) -> np.ndarray:
         """Calculate rolling skewness."""

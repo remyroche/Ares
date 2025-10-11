@@ -140,6 +140,10 @@ class MemoryEfficientProcessor:
         """Convert DataFrame to PyArrow Table for efficient storage."""
         tprint_debug(f"🔄 Converting {name} to columnar format")
         
+        # Fast-fail: Validate input data
+        if data.empty:
+            raise RuntimeError(f"CRITICAL: Cannot convert empty DataFrame {name} to columnar format")
+        
         # Check for duplicate columns and handle them
         if len(data.columns) != len(set(data.columns)):
             duplicate_cols = [col for col in data.columns if list(data.columns).count(col) > 1]
@@ -150,17 +154,21 @@ class MemoryEfficientProcessor:
             data = data.loc[:, ~data.columns.duplicated(keep='first')]
             tprint_debug(f"✅ Removed duplicate columns, now have {len(data.columns)} unique columns")
         
-        # Convert to PyArrow Table
-        table = pa.Table.from_pandas(data, preserve_index=True)
-        
-        # Apply compression and dictionary encoding
-        if self.config.use_dictionary_encoding:
-            # Dictionary encode string columns
-            for i, field in enumerate(table.schema):
-                if pa.types.is_string(field.type):
-                    table = table.set_column(i, field.name, pa.compute.dictionary_encode(table.column(i)))
-        
-        return table
+        try:
+            # Convert to PyArrow Table
+            table = pa.Table.from_pandas(data, preserve_index=True)
+            
+            # Apply compression and dictionary encoding only if beneficial
+            if self.config.use_dictionary_encoding and len(data) > 1000:
+                # Dictionary encode string columns
+                for i, field in enumerate(table.schema):
+                    if pa.types.is_string(field.type):
+                        table = table.set_column(i, field.name, pa.compute.dictionary_encode(table.column(i)))
+            
+            return table
+            
+        except Exception as e:
+            raise RuntimeError(f"CRITICAL: Failed to convert {name} to columnar format: {e}")
     
     def save_columnar(self, table: pa.Table, name: str) -> str:
         """Save PyArrow Table to Parquet file."""

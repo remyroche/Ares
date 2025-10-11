@@ -443,7 +443,7 @@ class LabelQualityScorer:
             return QualityMetrics(n_samples=len(target_labels))
     
     def _generate_baseline_features(self, bars: pd.DataFrame, target_index: pd.Index) -> pd.DataFrame:
-        """Generate baseline features for quality assessment."""
+        """Generate baseline features for quality assessment using VectorBT optimization."""
         try:
             if bars.empty or len(target_index) == 0:
                 return pd.DataFrame()
@@ -454,6 +454,72 @@ class LabelQualityScorer:
             if bars_aligned.empty:
                 return pd.DataFrame()
             
+            # Use VectorBT for better performance if available
+            if VECTORBT_AVAILABLE and self._should_use_vectorbt(bars_aligned):
+                tprint_info("📊 Using VectorBT for baseline feature generation")
+                return self._generate_baseline_features_vectorbt(bars_aligned, target_index)
+            else:
+                return self._generate_baseline_features_pandas(bars_aligned, target_index)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error generating baseline features: {e}")
+            return pd.DataFrame()
+    
+    def _generate_baseline_features_vectorbt(self, bars_aligned: pd.DataFrame, target_index: pd.Index) -> pd.DataFrame:
+        """Generate baseline features using VectorBT for better performance."""
+        try:
+            close_prices = bars_aligned['close']
+            volume_values = bars_aligned['volume']
+            high_prices = bars_aligned['high']
+            low_prices = bars_aligned['low']
+            open_prices = bars_aligned['open']
+
+            features_data = {}
+
+            # Price-based features using VectorBT
+            features_data['returns'] = close_prices.pct_change()
+            features_data['log_returns'] = np.log(close_prices / close_prices.shift(1))
+
+            # Volatility using VectorBT rolling operations
+            features_data['volatility'] = rolling_std(features_data['returns'], 
+                                                    window=self.config.feature_window).fillna(0)
+
+            # Price momentum using VectorBT
+            features_data['price_momentum'] = close_prices / rolling_mean(close_prices, 
+                                                                        window=self.config.feature_window) - 1
+
+            # Volume-based features using VectorBT
+            features_data['volume_ratio'] = volume_values / rolling_mean(volume_values, 
+                                                                       window=self.config.feature_window)
+            features_data['volume_momentum'] = volume_values.pct_change()
+
+            # OHLC-based features (vectorized)
+            features_data['high_low_ratio'] = (high_prices - low_prices) / close_prices
+            features_data['close_open_ratio'] = close_prices / open_prices - 1
+
+            # Technical indicators using VectorBT
+            features_data['sma_ratio'] = close_prices / rolling_mean(close_prices, 
+                                                                   window=self.config.feature_window)
+
+            # RSI calculation using VectorBT
+            features_data['rsi'] = self._calculate_rsi_vectorbt(close_prices, self.config.feature_window)
+
+            # Create DataFrame efficiently
+            features = pd.DataFrame(features_data, index=target_index)
+            
+            # Select top features if too many
+            if features.shape[1] > self.config.n_features:
+                features = features.iloc[:, :self.config.n_features]
+            
+            return features
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Error generating VectorBT baseline features: {e}")
+            return self._generate_baseline_features_pandas(bars_aligned, target_index)
+    
+    def _generate_baseline_features_pandas(self, bars_aligned: pd.DataFrame, target_index: pd.Index) -> pd.DataFrame:
+        """Generate baseline features using pandas (fallback)."""
+        try:
             # Vectorized feature calculation using matrix operations where possible
             close_prices = bars_aligned['close'].values
             volume_values = bars_aligned['volume'].values
@@ -506,14 +572,12 @@ class LabelQualityScorer:
             
             # Select top features if too many
             if features.shape[1] > self.config.n_features:
-                # Use correlation with target to select features
-                # For now, just take the first n_features
                 features = features.iloc[:, :self.config.n_features]
             
             return features
             
         except Exception as e:
-            tprint_warning(f"⚠️ Error generating baseline features: {e}")
+            tprint_warning(f"⚠️ Error generating pandas baseline features: {e}")
             return pd.DataFrame()
     
     def _calculate_rsi(self, prices: pd.Series, window: int) -> pd.Series:
@@ -565,6 +629,34 @@ class LabelQualityScorer:
             rsi = 100 - (100 / (1 + rs))
 
             return rsi
+    
+    def _calculate_rsi_vectorbt(self, prices: pd.Series, window: int) -> pd.Series:
+        """Calculate RSI indicator using VectorBT for better performance."""
+        try:
+            if not VECTORBT_AVAILABLE or not self._should_use_vectorbt(prices):
+                return self._calculate_rsi(prices, window)
+            
+            # Calculate price changes
+            deltas = prices.diff()
+            
+            # Calculate gains and losses using VectorBT
+            gains = rolling_mean(np.where(deltas > 0, deltas, 0), window=window)
+            losses = rolling_mean(np.where(deltas < 0, -deltas, 0), window=window)
+            
+            # Calculate RSI
+            rs = gains / (losses + 1e-8)  # Avoid division by zero
+            rsi = 100 - (100 / (1 + rs))
+            
+            return rsi
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT RSI calculation failed: {e}")
+            return self._calculate_rsi(prices, window)
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (VECTORBT_AVAILABLE and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000))
     
     def _assess_predictability(self, target_labels: pd.Series, features: pd.DataFrame) -> Dict[str, Any]:
         """Assess predictability using baseline models."""
@@ -712,7 +804,7 @@ class LabelQualityScorer:
             }
     
     def _assess_stability(self, target_labels: pd.Series, features: pd.DataFrame) -> Dict[str, float]:
-        """Assess stability using PSI and rolling window analysis."""
+        """Assess stability using PSI and rolling window analysis with VectorBT optimization."""
         try:
             if len(target_labels) < 100:
                 return {'stability': 0.0, 'psi_score': 0.0}
@@ -725,9 +817,14 @@ class LabelQualityScorer:
             if window_size < 10:
                 return {'stability': 1.0 - psi_score, 'psi_score': psi_score}
             
-            # Rolling window analysis
-            rolling_means = self._vectorbt_rolling_operation(target_labels, "mean", window_size)
-            rolling_stds = self._vectorbt_rolling_operation(target_labels, "std", window_size)
+            # Use VectorBT for rolling operations if available
+            if VECTORBT_AVAILABLE and self._should_use_vectorbt(target_labels):
+                rolling_means = rolling_mean(target_labels, window=window_size)
+                rolling_stds = rolling_std(target_labels, window=window_size)
+            else:
+                # Fallback to pandas
+                rolling_means = target_labels.rolling(window=window_size).mean()
+                rolling_stds = target_labels.rolling(window=window_size).std()
             
             # Stability based on consistency of rolling statistics
             mean_consistency = 1.0 - (rolling_means.std() / rolling_means.mean()) if rolling_means.mean() != 0 else 0.0

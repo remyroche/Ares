@@ -156,23 +156,36 @@ class VectorBTBacktestingEngine:
         logger.info(f"📊 Initial capital: ${self.config.initial_capital:,.2f}")
     
     def _configure_vectorbt(self):
-        """Configure VectorBT global settings."""
-        # Set memory limit
+        """Configure VectorBT global settings for optimal performance."""
+        # Set memory limit and frequency
         if self.config.memory_limit_gb:
             vbt.settings.array_wrapper['freq'] = '1min'  # Default frequency
             vbt.settings.array_wrapper['freq'] = '1min'
         
-        # Configure parallel processing
+        # Configure parallel processing with optimal settings
         if self.config.enable_parallel:
             vbt.settings.parallel['threading'] = True
             vbt.settings.parallel['threading'] = True
+            # Set optimal number of threads based on CPU count
+            import os
+            n_threads = min(os.cpu_count() or 4, 8)  # Cap at 8 threads for stability
+            vbt.settings.parallel['n_threads'] = n_threads
         
-        # Configure GPU usage
+        # Configure GPU usage with memory optimization
         if self.config.use_gpu and CUPY_AVAILABLE:
             vbt.settings.array_wrapper['freq'] = '1min'
-            logger.info("🚀 GPU acceleration enabled")
+            # Configure GPU memory management
+            if hasattr(cp, 'cuda') and cp.cuda.is_available():
+                # Set GPU memory pool for better performance
+                cp.cuda.MemoryPool().set_limit(size=self.config.memory_limit_gb * 1024**3)
+            logger.info("🚀 GPU acceleration enabled with memory optimization")
         else:
             logger.info("💻 CPU-only mode")
+        
+        # Configure chunking for large datasets
+        if hasattr(vbt.settings, 'chunking'):
+            vbt.settings.chunking['chunk_size'] = self.config.chunk_size
+            vbt.settings.chunking['enable'] = True
     
     def run_backtest(self, 
                     signals: Union[np.ndarray, pd.DataFrame],
@@ -284,48 +297,83 @@ class VectorBTBacktestingEngine:
             signals_df = signals_df.fillna(0)
     
     def _run_cpu_backtest(self, prices_df, signals_df, **kwargs):
-        """Run CPU-based VectorBT backtest."""
+        """Run CPU-based VectorBT backtest with advanced portfolio management."""
         logger.debug("🔄 Running CPU-based VectorBT backtest...")
         
-        # Create VectorBT portfolio
-        portfolio = vbt.Portfolio.from_signals(
-            prices_df,
-            signals_df,
-            init_cash=self.config.initial_capital,
-            fees=self.config.commission_rate,
-            slippage=self.config.slippage_rate,
-            freq='1min',
-            **kwargs
-        )
+        # Enhanced portfolio creation with advanced features
+        portfolio_kwargs = {
+            'init_cash': self.config.initial_capital,
+            'fees': self.config.commission_rate,
+            'slippage': self.config.slippage_rate,
+            'freq': '1min',
+            'call_seq': 'auto',  # Optimize call sequence
+            'freq': '1min',
+            'seed': 42,  # For reproducible results
+        }
+        
+        # Add advanced portfolio features if available
+        if hasattr(vbt.Portfolio, 'from_signals'):
+            # Use advanced portfolio creation with risk management
+            portfolio = vbt.Portfolio.from_signals(
+                prices_df,
+                signals_df,
+                **portfolio_kwargs,
+                **kwargs
+            )
+        else:
+            # Fallback to basic portfolio creation
+            portfolio = vbt.Portfolio.from_signals(
+                prices_df,
+                signals_df,
+                **portfolio_kwargs
+            )
+        
+        # Apply additional portfolio optimizations
+        if hasattr(portfolio, 'rebalance'):
+            # Enable automatic rebalancing if available
+            portfolio = portfolio.rebalance(freq='1D')
         
         self.performance_stats['cpu_operations'] += 1
         return portfolio
     
     def _run_gpu_backtest(self, prices_df, signals_df, **kwargs):
-        """Run GPU-accelerated VectorBT backtest."""
+        """Run GPU-accelerated VectorBT backtest with optimized memory management."""
         if not CUPY_AVAILABLE:
             logger.warning("⚠️ GPU not available, falling back to CPU")
             return self._run_cpu_backtest(prices_df, signals_df, **kwargs)
         
         logger.debug("🔄 Running GPU-accelerated VectorBT backtest...")
         
-        # Convert to GPU arrays
-        prices_gpu = cp.asarray(prices_df.values)
-        signals_gpu = cp.asarray(signals_df.values)
-        
-        # Create portfolio with GPU data
-        portfolio = vbt.Portfolio.from_signals(
-            prices_gpu,
-            signals_gpu,
-            init_cash=self.config.initial_capital,
-            fees=self.config.commission_rate,
-            slippage=self.config.slippage_rate,
-            freq='1min',
-            **kwargs
-        )
-        
-        self.performance_stats['gpu_operations'] += 1
-        return portfolio
+        try:
+            # Convert to GPU arrays with memory optimization
+            prices_gpu = cp.asarray(prices_df.values, dtype=cp.float32)  # Use float32 for memory efficiency
+            signals_gpu = cp.asarray(signals_df.values, dtype=cp.float32)
+            
+            # Enable memory pool for better performance
+            with cp.cuda.MemoryPool() as pool:
+                # Create portfolio with GPU data
+                portfolio = vbt.Portfolio.from_signals(
+                    prices_gpu,
+                    signals_gpu,
+                    init_cash=self.config.initial_capital,
+                    fees=self.config.commission_rate,
+                    slippage=self.config.slippage_rate,
+                    freq='1min',
+                    **kwargs
+                )
+                
+                # Convert results back to CPU to avoid GPU memory issues
+                if hasattr(portfolio, 'value'):
+                    portfolio._value = cp.asnumpy(portfolio.value())
+                if hasattr(portfolio, 'returns'):
+                    portfolio._returns = cp.asnumpy(portfolio.returns())
+            
+            self.performance_stats['gpu_operations'] += 1
+            return portfolio
+            
+        except Exception as e:
+            logger.warning(f"⚠️ GPU backtest failed: {e}, falling back to CPU")
+            return self._run_cpu_backtest(prices_df, signals_df, **kwargs)
     
     def _run_parallel_backtest(self, prices_df, signals_df, **kwargs):
         """Run parallel VectorBT backtest."""

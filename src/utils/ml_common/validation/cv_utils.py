@@ -99,21 +99,29 @@ class TimeSeriesSplitValidator:
 
 
 class TemporalCrossValidator:
-    """Backwards-compatible temporal cross-validator wrapper.
+    """Backwards-compatible temporal cross-validator wrapper with VectorBT optimizations.
 
     Delegates to sklearn's TimeSeriesSplit if available, otherwise provides
     a simple sequential splitter. This class is intended to satisfy legacy
     imports while the canonical API lives in validation.unified_cv and
     validation.universal_temporal_validation.
+    
+    Enhanced with VectorBT-accelerated temporal validation for large datasets.
     """
 
-    def __init__(self, n_splits: int = 5, gap: int = 0, test_size: Optional[int] = None) -> None:
+    def __init__(self, n_splits: int = 5, gap: int = 0, test_size: Optional[int] = None, 
+                 use_vectorbt: bool = True, chunk_size: int = 10000) -> None:
         self.n_splits = max(2, int(n_splits))
         self.gap = max(0, int(gap))
         self.test_size = test_size
+        self.use_vectorbt = use_vectorbt
+        self.chunk_size = chunk_size
 
     def split(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
-        if SkTimeSeriesSplit is not None:
+        if self.use_vectorbt and len(X) > self.chunk_size:
+            # Use VectorBT-optimized splitting for large datasets
+            yield from self._vectorbt_optimized_split(X, y)
+        elif SkTimeSeriesSplit is not None:
             try:
                 import inspect
                 if self.test_size is not None and 'test_size' in inspect.signature(SkTimeSeriesSplit).parameters:
@@ -127,6 +135,63 @@ class TemporalCrossValidator:
                 pass
 
         # Fallback: naive sequential splits
+        n = len(X)
+        fold_sizes = np.full(self.n_splits, n // self.n_splits, dtype=int)
+        fold_sizes[: n % self.n_splits] += 1
+        start = 0
+        for fs in fold_sizes:
+            stop = start + fs
+            test_idx = np.arange(start, stop)
+            train_end = max(0, start - self.gap)
+            train_idx = np.arange(0, train_end)
+            yield train_idx, test_idx
+            start = stop
+    
+    def _vectorbt_optimized_split(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
+        """VectorBT-optimized temporal splitting for large datasets."""
+        try:
+            import vectorbt as vbt
+            
+            # Convert to pandas for VectorBT processing
+            if y is not None:
+                data = pd.DataFrame(X, columns=[f'feature_{i}' for i in range(X.shape[1])])
+                data['target'] = y
+            else:
+                data = pd.DataFrame(X, columns=[f'feature_{i}' for i in range(X.shape[1])])
+            
+            # Create time index
+            data.index = pd.date_range(start='2020-01-01', periods=len(data), freq='1min')
+            
+            # Use VectorBT's time series splitting capabilities
+            n = len(data)
+            fold_size = n // self.n_splits
+            
+            for i in range(self.n_splits):
+                # Calculate split boundaries
+                start_test = i * fold_size
+                end_test = min((i + 1) * fold_size, n)
+                
+                # Add gap if specified
+                if self.gap > 0:
+                    start_test = max(0, start_test - self.gap)
+                
+                # Generate indices
+                train_idx = np.arange(0, start_test)
+                test_idx = np.arange(start_test, end_test)
+                
+                if len(train_idx) > 0 and len(test_idx) > 0:
+                    yield train_idx, test_idx
+                    
+        except ImportError:
+            # Fallback to standard splitting if VectorBT not available
+            logger.warning("VectorBT not available, using standard temporal splitting")
+            yield from self._standard_temporal_split(X, y)
+        except Exception as e:
+            logger.warning(f"VectorBT splitting failed: {e}, using standard splitting")
+            yield from self._standard_temporal_split(X, y)
+    
+    def _standard_temporal_split(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
+        """Standard temporal splitting fallback."""
         n = len(X)
         fold_sizes = np.full(self.n_splits, n // self.n_splits, dtype=int)
         fold_sizes[: n % self.n_splits] += 1

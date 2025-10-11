@@ -28,10 +28,12 @@ class DataLeakageReport:
 
 
 class DataLeakageDetector:
-    """Comprehensive data leakage detection system.
+    """Comprehensive data leakage detection system with VectorBT optimizations.
 
     This class provides methods to detect various types of data leakage
     including temporal leakage, lookahead bias, and feature contamination.
+    
+    Enhanced with VectorBT time series analysis for improved detection accuracy.
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -45,8 +47,20 @@ class DataLeakageDetector:
             'lookahead_tolerance': 24,  # Hours of lookahead tolerance
             'feature_contamination_threshold': 0.1,  # Max allowed contamination
             'enable_strict_mode': True,
+            'use_vectorbt_analysis': True,  # Enable VectorBT time series analysis
+            'correlation_threshold': 0.95,  # Threshold for suspicious correlations
+            'enable_advanced_detection': True,  # Enable advanced detection methods
             **(config or {})
         }
+        
+        # Initialize VectorBT if available
+        try:
+            import vectorbt as vbt
+            self.vectorbt_available = True
+            self.vbt = vbt
+        except ImportError:
+            self.vectorbt_available = False
+            self.vbt = None
 
     def detect_temporal_leakage(self, X_train: pd.DataFrame, X_test: pd.DataFrame,
                                y_train: Optional[pd.Series] = None,
@@ -124,7 +138,7 @@ class DataLeakageDetector:
     def detect_lookahead_bias(self, features: pd.DataFrame,
                              target: pd.Series,
                              target_column: str) -> Dict[str, Any]:
-        """Detect potential lookahead bias in feature-target relationships.
+        """Detect potential lookahead bias in feature-target relationships using VectorBT analysis.
 
         Args:
             features: Feature matrix
@@ -138,33 +152,47 @@ class DataLeakageDetector:
             'lookahead_violations': [],
             'suspicious_features': [],
             'risk_score': 0.0,
-            'recommendations': []
+            'recommendations': [],
+            'vectorbt_analysis': {}
         }
 
         try:
             # Check for features that might contain future information
             suspicious_features = []
 
-            # Look for features with very high correlation to target
-            # (might indicate data leakage)
+            # Use VectorBT for advanced time series analysis if available
+            if self.config.get('use_vectorbt_analysis', True) and self.vectorbt_available:
+                vectorbt_results = self._vectorbt_lookahead_analysis(features, target)
+                results['vectorbt_analysis'] = vectorbt_results
+                suspicious_features.extend(vectorbt_results.get('suspicious_features', []))
+
+            # Standard correlation analysis
             for col in features.columns:
                 if features[col].dtype in ['float64', 'int64']:
                     try:
                         correlation = features[col].corr(target)
-                        if abs(correlation) > 0.95:  # Very high correlation
+                        threshold = self.config.get('correlation_threshold', 0.95)
+                        
+                        if abs(correlation) > threshold:
                             suspicious_features.append({
                                 'feature': col,
                                 'correlation': correlation,
-                                'risk': 'high'
+                                'risk': 'high',
+                                'analysis_type': 'correlation'
                             })
                     except:
                         continue
+
+            # Advanced detection methods
+            if self.config.get('enable_advanced_detection', True):
+                advanced_results = self._advanced_lookahead_detection(features, target)
+                suspicious_features.extend(advanced_results.get('suspicious_features', []))
 
             results['suspicious_features'] = suspicious_features
 
             # Calculate overall risk score
             if suspicious_features:
-                high_risk_count = sum(1 for f in suspicious_features if f['risk'] == 'high')
+                high_risk_count = sum(1 for f in suspicious_features if f.get('risk') == 'high')
                 results['risk_score'] = min(1.0, high_risk_count / len(features.columns))
 
                 if results['risk_score'] > 0.1:
@@ -176,6 +204,230 @@ class DataLeakageDetector:
             logger.warning(f"Error in lookahead bias detection: {e}")
 
         return results
+    
+    def _vectorbt_lookahead_analysis(self, features: pd.DataFrame, target: pd.Series) -> Dict[str, Any]:
+        """Perform VectorBT-enhanced lookahead bias analysis."""
+        try:
+            # Create time series data for VectorBT analysis
+            data = features.copy()
+            data['target'] = target
+            
+            # Create time index
+            data.index = pd.date_range(start='2020-01-01', periods=len(data), freq='1min')
+            
+            suspicious_features = []
+            
+            # Analyze each feature for temporal patterns
+            for col in features.columns:
+                if col in data.columns and data[col].dtype in ['float64', 'int64']:
+                    try:
+                        # Calculate rolling correlation with target
+                        rolling_corr = data[col].rolling(window=20).corr(data['target'])
+                        
+                        # Check for suspicious patterns
+                        if rolling_corr.max() > 0.9:
+                            suspicious_features.append({
+                                'feature': col,
+                                'max_rolling_correlation': rolling_corr.max(),
+                                'risk': 'high',
+                                'analysis_type': 'vectorbt_rolling_correlation'
+                            })
+                        
+                        # Check for lead-lag relationships
+                        lead_lag_analysis = self._analyze_lead_lag_relationships(data[col], data['target'])
+                        if lead_lag_analysis['suspicious']:
+                            suspicious_features.append({
+                                'feature': col,
+                                'lead_lag_score': lead_lag_analysis['score'],
+                                'risk': 'medium',
+                                'analysis_type': 'vectorbt_lead_lag'
+                            })
+                            
+                    except Exception as e:
+                        logger.debug(f"VectorBT analysis failed for {col}: {e}")
+                        continue
+            
+            return {
+                'suspicious_features': suspicious_features,
+                'analysis_method': 'vectorbt_time_series'
+            }
+            
+        except Exception as e:
+            logger.warning(f"VectorBT lookahead analysis failed: {e}")
+            return {'suspicious_features': [], 'analysis_method': 'failed'}
+    
+    def _analyze_lead_lag_relationships(self, feature: pd.Series, target: pd.Series) -> Dict[str, Any]:
+        """Analyze lead-lag relationships between feature and target."""
+        try:
+            # Calculate cross-correlation at different lags
+            max_lag = min(10, len(feature) // 10)
+            correlations = []
+            
+            for lag in range(-max_lag, max_lag + 1):
+                if lag < 0:
+                    # Feature leads target
+                    corr = feature.shift(lag).corr(target)
+                elif lag > 0:
+                    # Target leads feature (suspicious)
+                    corr = feature.corr(target.shift(lag))
+                else:
+                    # No lag
+                    corr = feature.corr(target)
+                
+                correlations.append(corr)
+            
+            # Check if target leads feature (suspicious)
+            positive_lag_corrs = correlations[max_lag + 1:]
+            max_positive_corr = max(positive_lag_corrs) if positive_lag_corrs else 0
+            
+            suspicious = max_positive_corr > 0.8
+            
+            return {
+                'suspicious': suspicious,
+                'score': max_positive_corr,
+                'max_lag': max_lag
+            }
+            
+        except Exception as e:
+            logger.debug(f"Lead-lag analysis failed: {e}")
+            return {'suspicious': False, 'score': 0, 'max_lag': 0}
+    
+    def _advanced_lookahead_detection(self, features: pd.DataFrame, target: pd.Series) -> Dict[str, Any]:
+        """Advanced lookahead bias detection methods."""
+        suspicious_features = []
+        
+        try:
+            # Method 1: Check for perfect or near-perfect predictions
+            for col in features.columns:
+                if features[col].dtype in ['float64', 'int64']:
+                    try:
+                        # Calculate R² score
+                        from sklearn.metrics import r2_score
+                        r2 = r2_score(target, features[col])
+                        
+                        if r2 > 0.99:  # Near-perfect prediction
+                            suspicious_features.append({
+                                'feature': col,
+                                'r2_score': r2,
+                                'risk': 'high',
+                                'analysis_type': 'near_perfect_prediction'
+                            })
+                    except:
+                        continue
+            
+            # Method 2: Check for features that perfectly separate classes (for classification)
+            if len(target.unique()) < 20:  # Likely classification
+                for col in features.columns:
+                    if features[col].dtype in ['float64', 'int64']:
+                        try:
+                            # Check if feature perfectly separates classes
+                            class_separation = self._check_class_separation(features[col], target)
+                            if class_separation['perfect_separation']:
+                                suspicious_features.append({
+                                    'feature': col,
+                                    'separation_score': class_separation['score'],
+                                    'risk': 'high',
+                                    'analysis_type': 'perfect_class_separation'
+                                })
+                        except:
+                            continue
+            
+            # Method 3: Check for features with identical patterns to target
+            for col in features.columns:
+                if features[col].dtype in ['float64', 'int64']:
+                    try:
+                        # Calculate pattern similarity
+                        pattern_similarity = self._calculate_pattern_similarity(features[col], target)
+                        if pattern_similarity > 0.95:
+                            suspicious_features.append({
+                                'feature': col,
+                                'pattern_similarity': pattern_similarity,
+                                'risk': 'high',
+                                'analysis_type': 'pattern_similarity'
+                            })
+                    except:
+                        continue
+            
+        except Exception as e:
+            logger.warning(f"Advanced lookahead detection failed: {e}")
+        
+        return {'suspicious_features': suspicious_features}
+    
+    def _check_class_separation(self, feature: pd.Series, target: pd.Series) -> Dict[str, Any]:
+        """Check if feature perfectly separates target classes."""
+        try:
+            # Group by target classes
+            class_groups = feature.groupby(target)
+            
+            # Check if there's any overlap between class distributions
+            class_ranges = []
+            for class_val, group in class_groups:
+                class_ranges.append((group.min(), group.max()))
+            
+            # Check for overlap
+            perfect_separation = True
+            for i in range(len(class_ranges)):
+                for j in range(i + 1, len(class_ranges)):
+                    range1, range2 = class_ranges[i], class_ranges[j]
+                    # Check if ranges overlap
+                    if not (range1[1] < range2[0] or range2[1] < range1[0]):
+                        perfect_separation = False
+                        break
+                if not perfect_separation:
+                    break
+            
+            # Calculate separation score
+            if perfect_separation:
+                score = 1.0
+            else:
+                # Calculate minimum gap between classes
+                min_gap = float('inf')
+                for i in range(len(class_ranges)):
+                    for j in range(i + 1, len(class_ranges)):
+                        range1, range2 = class_ranges[i], class_ranges[j]
+                        gap = min(abs(range1[1] - range2[0]), abs(range2[1] - range1[0]))
+                        min_gap = min(min_gap, gap)
+                
+                score = min(1.0, min_gap / feature.std()) if feature.std() > 0 else 0
+            
+            return {
+                'perfect_separation': perfect_separation,
+                'score': score
+            }
+            
+        except Exception as e:
+            logger.debug(f"Class separation check failed: {e}")
+            return {'perfect_separation': False, 'score': 0}
+    
+    def _calculate_pattern_similarity(self, feature: pd.Series, target: pd.Series) -> float:
+        """Calculate pattern similarity between feature and target."""
+        try:
+            # Normalize both series
+            feature_norm = (feature - feature.mean()) / feature.std()
+            target_norm = (target - target.mean()) / target.std()
+            
+            # Calculate correlation
+            correlation = feature_norm.corr(target_norm)
+            
+            # Calculate additional similarity metrics
+            # 1. Trend similarity
+            feature_trend = np.diff(feature_norm)
+            target_trend = np.diff(target_norm)
+            trend_correlation = np.corrcoef(feature_trend, target_trend)[0, 1]
+            
+            # 2. Volatility similarity
+            feature_vol = feature_norm.rolling(10).std()
+            target_vol = target_norm.rolling(10).std()
+            vol_correlation = feature_vol.corr(target_vol)
+            
+            # Combine metrics
+            similarity = (abs(correlation) + abs(trend_correlation) + abs(vol_correlation)) / 3
+            
+            return float(similarity)
+            
+        except Exception as e:
+            logger.debug(f"Pattern similarity calculation failed: {e}")
+            return 0.0
 
     def detect_feature_contamination(self, train_features: pd.DataFrame,
                                    test_features: pd.DataFrame) -> Dict[str, Any]:

@@ -37,9 +37,7 @@ class OptimizationConstants:
     DEFAULT_COARSE_REFINEMENT_FACTOR: float = 0.3
     DEFAULT_FINE_REFINEMENT_FACTOR: float = 0.2
     
-    # Correlation and scoring thresholds
-    DEFAULT_MAX_CORRELATION_THRESHOLD: float = 0.7
-    DEFAULT_MIN_MUTUAL_INFO_THRESHOLD: float = 0.1
+    # Correlation and scoring thresholds (removed unused constants)
     
     # Multi-objective weights
     DEFAULT_FIRST_LOOKBACK_WEIGHT: float = 0.4
@@ -55,7 +53,6 @@ class PerformanceConstants:
     DEFAULT_MEMORY_LIMIT_GB: float = 8.0
     DEFAULT_MAX_METRICS_MEMORY: int = 10000
     DEFAULT_CLEANUP_INTERVAL: int = 1000
-    DEFAULT_MEMORY_CLEANUP_THRESHOLD: float = 0.9
     
     # Performance thresholds
     MEMORY_WARNING_THRESHOLD_MB: float = 1000.0

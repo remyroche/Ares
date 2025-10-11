@@ -196,6 +196,23 @@ except ImportError as e:
     COMPUTATION_TOOLBOX_AVAILABLE = False
     logger.warning(f"Computation toolbox not available: {e}")
 
+# Vectorized correlations
+try:
+    from .vectorized_correlations import (
+        VectorizedCorrelationCalculator,
+        CorrelationResult,
+        SafeNaNHandler,
+        AlignmentResult,
+        calculate_correlations_vectorized,
+        calculate_batch_correlations_vectorized,
+        safe_correlation_with_nan_handling,
+        safe_mutual_information_with_nan_handling,
+    )
+    VECTORIZED_CORRELATIONS_AVAILABLE = True
+except ImportError as e:
+    VECTORIZED_CORRELATIONS_AVAILABLE = False
+    logger.warning(f"Vectorized correlations not available: {e}")
+
 # Version and compatibility information
 __version__ = "1.0.0"
 __author__ = "Unified Matrix Operations Team"
@@ -327,6 +344,20 @@ if COMPUTATION_TOOLBOX_AVAILABLE:
         "optimize_dataframe_optimized",
         "get_toolbox_performance_report",
         "cleanup_toolbox_resources",
+    ])
+
+# Add vectorized correlations to __all__ if available
+if VECTORIZED_CORRELATIONS_AVAILABLE:
+    __all__.extend([
+        # Vectorized correlations
+        "VectorizedCorrelationCalculator",
+        "CorrelationResult",
+        "SafeNaNHandler",
+        "AlignmentResult",
+        "calculate_correlations_vectorized",
+        "calculate_batch_correlations_vectorized",
+        "safe_correlation_with_nan_handling",
+        "safe_mutual_information_with_nan_handling",
     ])
 
 # Initialize default custom operations

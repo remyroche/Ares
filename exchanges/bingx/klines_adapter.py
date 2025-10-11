@@ -1,8 +1,8 @@
 """
 BingX Klines Data Adapter
 
-This module provides a minimal adapter for BingX klines data that handles
-API-specific formatting and compatibility with the ExchangeInterface.
+This module provides a unified adapter for BingX klines data that ensures
+complete equivalency with other exchanges and full compatibility with src/utils/data/.
 """
 
 import pandas as pd
@@ -18,6 +18,9 @@ except ImportError:
     AIOHTTP_AVAILABLE = False
 
 from exchanges.shared import KlinesDataProcessingPipeline
+from exchanges.shared.unified_exchange_interface import (
+    UnifiedExchangeAdapter, ExchangeType, get_standardized_klines
+)
 
 # Optional import to avoid circular dependencies
 try:
@@ -28,7 +31,7 @@ except ImportError:
 
 
 class BingXKlinesAdapter:
-    """Minimal adapter for BingX klines data API calls and formatting."""
+    """Unified adapter for BingX klines data that ensures complete equivalency with other exchanges."""
     
     def __init__(self, api_key: str = None, secret_key: str = None, data_dir: str = "historical_data"):
         """Initialize the BingX klines adapter.
@@ -49,6 +52,15 @@ class BingXKlinesAdapter:
         
         # Initialize shared processing pipeline
         self.processing_pipeline = KlinesDataProcessingPipeline(self.exchange, data_dir)
+        
+        # Initialize unified adapter for standardized data access
+        if self.bingx_exchange:
+            self.unified_adapter = UnifiedExchangeAdapter(
+                self.bingx_exchange, 
+                ExchangeType.BINGX
+            )
+        else:
+            self.unified_adapter = None
     
     async def get_klines_data(
         self, 
@@ -58,7 +70,10 @@ class BingXKlinesAdapter:
         end_time: Optional[datetime] = None,
         limit: int = 1000
     ) -> pd.DataFrame:
-        """Get klines data from BingX API.
+        """Get standardized klines data from BingX API.
+        
+        This method ensures complete equivalency with other exchanges and
+        full compatibility with src/utils/data/ utilities.
         
         Args:
             symbol: Trading symbol (e.g., 'BTCUSDT')
@@ -68,30 +83,21 @@ class BingXKlinesAdapter:
             limit: Maximum number of records
             
         Returns:
-            DataFrame with klines data
+            Standardized DataFrame compatible with src/utils/data/
         """
         try:
-            if not self.bingx_exchange:
+            if not self.unified_adapter:
                 print("❌ BingX exchange not available - cannot fetch data")
                 return pd.DataFrame()
             
-            # Convert interval to BingX format
-            bingx_interval = self._convert_interval(interval)
-            
-            # Get data from BingX API
-            klines_data = await self.bingx_exchange.get_klines(
+            # Use unified adapter for standardized data
+            standardized_data = await self.unified_adapter.get_klines(
                 symbol=symbol,
-                interval=bingx_interval,
+                interval=interval,
                 start_time=start_time,
                 end_time=end_time,
                 limit=limit
             )
-            
-            if not klines_data or klines_data.empty:
-                return pd.DataFrame()
-            
-            # Convert to standard format
-            standardized_data = self._format_klines_data(klines_data, symbol, interval)
             
             return standardized_data
             

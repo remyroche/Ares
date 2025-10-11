@@ -13,10 +13,25 @@ Features:
 - Data resampling capabilities (1m, 5m, 15m, 30m, 1h for data older than 3 days)
 - OHLCV data validation and formatting
 - Duplicate detection and handling
-- Quality assurance and validation
+- Comprehensive quality assurance and validation using src/utils/data/quality/
+- Advanced data quality scoring and assessment
+- Statistical distribution validation
+- Quality trend analysis over time
+- Automated data cleaning with quality utilities
+- Quality alert system integration
 - Efficient parquet storage using KlinesParquetManager
 - Batch-compatible data management
 - Automatic gap filling before resampling
+
+Quality Features:
+- Multi-layered quality validation using DataQualityFramework
+- Comprehensive quality scoring with component breakdowns
+- Advanced quality metrics and statistical analysis
+- Quality trend analysis and monitoring
+- Automated data cleaning with detailed statistics
+- Quality alert system for proactive issue detection
+- Comprehensive quality metadata collection
+- Robust error handling with quality fallbacks
 """
 
 import asyncio
@@ -34,15 +49,22 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.utils.logger import system_logger
 from src.utils.tprint import tprint, tprint_info, tprint_warning, tprint_error, tprint_success
-# Note: ComprehensiveDuplicateAnalyzer may not be available in all environments
-# This is handled gracefully in the code
+# Import comprehensive data quality utilities from src/utils/data/quality/
 try:
     from src.utils.data.quality.comprehensive_duplicate_analyzer import (
         ComprehensiveDuplicateAnalyzer,
         analyze_duplicates_comprehensive
     )
-except ImportError:
-    # Fallback for environments where the analyzer is not available
+    from src.utils.data.quality.data_quality import DataQualityFramework, QualityThresholds, QualityResult
+    from src.utils.data.quality.comprehensive_quality_scorer import ComprehensiveQualityScorer, QualityScore, QualityScoreLevel
+    from src.utils.data.quality.advanced_quality_metrics import AdvancedQualityMetrics, QualityAssessment
+    from src.utils.data.quality.data_cleaning import DataCleaner
+    from src.utils.data.quality.statistical_distribution_validation import StatisticalValidator
+    from src.utils.data.quality.quality_alert_system import QualityAlertSystem
+except ImportError as e:
+    # Fallback for environments where the quality utilities are not available
+    tprint_warning(f"⚠️ Some data quality utilities not available: {e}")
+    
     class ComprehensiveDuplicateAnalyzer:
         def analyze_duplicates(self, df):
             class Result:
@@ -54,6 +76,36 @@ except ImportError:
     
     def analyze_duplicates_comprehensive(df):
         return ComprehensiveDuplicateAnalyzer().analyze_duplicates(df)
+    
+    # Fallback classes for missing quality utilities
+    class DataQualityFramework:
+        def validate_data(self, df, thresholds=None):
+            return QualityResult(score=0.0, issues=[], warnings=[], metadata={})
+    
+    class ComprehensiveQualityScorer:
+        def score_data_quality(self, df, symbol=None, interval=None):
+            return QualityScore(overall_score=0.0, level=QualityScoreLevel.CRITICAL, 
+                              component_scores={}, issues=[], warnings=[], 
+                              recommendations=[], assessment_timestamp=datetime.now(), 
+                              data_shape=(0, 0))
+    
+    class AdvancedQualityMetrics:
+        def assess_quality(self, df):
+            return QualityAssessment(overall_score=0.0, metrics=[], issues_found=0, 
+                                   warnings_found=0, critical_issues=0, 
+                                   assessment_timestamp=datetime.now(), data_shape=(0, 0))
+    
+    class DataCleaner:
+        def clean_data(self, df):
+            return df
+    
+    class StatisticalValidator:
+        def validate_distributions(self, df):
+            return {}
+    
+    class QualityAlertSystem:
+        def check_alerts(self, quality_score):
+            return []
 from src.trading.execution.exchange_interface import ExchangeInterface, create_exchange_interface
 from exchanges.shared.exchange_data_standardizer import ExchangeDataStandardizer
 from src.utils.kline_parquet import KlinesParquetManager, StorageConfig, KlinesMetadata
@@ -187,6 +239,233 @@ class EnhancedKlinesProcessingPipeline:
             tprint_info(f"   🔧 Gap filling: {'enabled' if self.config.enable_gap_filling else 'disabled'}")
             tprint_info(f"   📊 Resampling: {'enabled' if self.config.enable_resampling else 'disabled'}")
             tprint_info(f"   🔄 Batch compatible: {'enabled' if self.config.batch_compatible else 'disabled'}")
+
+    async def get_comprehensive_quality_score(
+        self,
+        df: pd.DataFrame,
+        symbol: str,
+        interval: str
+    ) -> QualityScore:
+        """
+        Get comprehensive quality score using all available quality utilities from src/utils/data/quality/.
+        
+        Args:
+            df: DataFrame to analyze
+            symbol: Trading symbol
+            interval: Time interval
+            
+        Returns:
+            Comprehensive quality score with detailed breakdown
+        """
+        try:
+            if self.enable_logging:
+                tprint_info(f"📊 Generating comprehensive quality score for {symbol} {interval}")
+            
+            # Initialize comprehensive quality scorer
+            quality_scorer = ComprehensiveQualityScorer()
+            
+            # Get comprehensive quality score
+            quality_score = quality_scorer.score_data_quality(df, symbol, interval)
+            
+            if self.enable_logging:
+                tprint_success(f"✅ Quality score generated: {quality_score.overall_score:.1f} ({quality_score.level.value})")
+                if quality_score.recommendations:
+                    tprint_info(f"📋 Recommendations: {', '.join(quality_score.recommendations[:3])}")
+            
+            return quality_score
+            
+        except Exception as e:
+            if self.enable_logging:
+                tprint_error(f"❌ Failed to generate comprehensive quality score: {str(e)}")
+            # Return a default low-quality score on error
+            return QualityScore(
+                overall_score=0.0,
+                level=QualityScoreLevel.CRITICAL,
+                component_scores={},
+                issues=[f"Quality scoring failed: {str(e)}"],
+                warnings=[],
+                recommendations=["Check data quality utilities availability"],
+                assessment_timestamp=datetime.now(),
+                data_shape=(0, 0)
+            )
+
+    async def clean_data_with_quality_utilities(
+        self,
+        df: pd.DataFrame,
+        symbol: str,
+        interval: str
+    ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """
+        Clean data using comprehensive data cleaning utilities from src/utils/data/quality/.
+        
+        Args:
+            df: DataFrame to clean
+            symbol: Trading symbol
+            interval: Time interval
+            
+        Returns:
+            Tuple of (cleaned_dataframe, cleaning_metadata)
+        """
+        try:
+            if self.enable_logging:
+                tprint_info(f"🧹 Cleaning data for {symbol} {interval} using quality utilities")
+            
+            # Initialize data cleaner
+            data_cleaner = DataCleaner()
+            
+            # Store original data info
+            original_shape = df.shape
+            original_nulls = df.isnull().sum().sum()
+            original_duplicates = df.duplicated().sum()
+            
+            # Clean the data
+            cleaned_df = data_cleaner.clean_data(df)
+            
+            # Calculate cleaning statistics
+            cleaned_shape = cleaned_df.shape
+            cleaned_nulls = cleaned_df.isnull().sum().sum()
+            cleaned_duplicates = cleaned_df.duplicated().sum()
+            
+            # Create cleaning metadata
+            cleaning_metadata = {
+                "original_shape": original_shape,
+                "cleaned_shape": cleaned_shape,
+                "rows_removed": original_shape[0] - cleaned_shape[0],
+                "columns_removed": original_shape[1] - cleaned_shape[1],
+                "nulls_removed": original_nulls - cleaned_nulls,
+                "duplicates_removed": original_duplicates - cleaned_duplicates,
+                "cleaning_timestamp": datetime.now().isoformat(),
+                "symbol": symbol,
+                "interval": interval
+            }
+            
+            if self.enable_logging:
+                tprint_success(f"✅ Data cleaning completed for {symbol} {interval}")
+                tprint_info(f"   Original: {original_shape}, Cleaned: {cleaned_shape}")
+                tprint_info(f"   Nulls: {original_nulls} → {cleaned_nulls}")
+                tprint_info(f"   Duplicates: {original_duplicates} → {cleaned_duplicates}")
+            
+            return cleaned_df, cleaning_metadata
+            
+        except Exception as e:
+            if self.enable_logging:
+                tprint_error(f"❌ Data cleaning failed: {str(e)}")
+            # Return original data with error metadata
+            error_metadata = {
+                "error": str(e),
+                "cleaning_failed": True,
+                "original_shape": df.shape,
+                "cleaning_timestamp": datetime.now().isoformat(),
+                "symbol": symbol,
+                "interval": interval
+            }
+            return df, error_metadata
+
+    async def analyze_quality_trends(
+        self,
+        df: pd.DataFrame,
+        symbol: str,
+        interval: str,
+        window_size: int = 100
+    ) -> Dict[str, Any]:
+        """
+        Analyze quality trends over time using comprehensive quality utilities.
+        
+        Args:
+            df: DataFrame to analyze
+            symbol: Trading symbol
+            interval: Time interval
+            window_size: Window size for trend analysis
+            
+        Returns:
+            Dictionary containing quality trend analysis results
+        """
+        try:
+            if self.enable_logging:
+                tprint_info(f"📈 Analyzing quality trends for {symbol} {interval}")
+            
+            # Initialize quality utilities
+            quality_scorer = ComprehensiveQualityScorer()
+            advanced_metrics = AdvancedQualityMetrics()
+            
+            # Calculate quality scores for different windows
+            quality_scores = []
+            timestamps = []
+            
+            # Split data into windows for trend analysis
+            total_rows = len(df)
+            if total_rows < window_size:
+                # If data is smaller than window, analyze the whole dataset
+                windows = [df]
+            else:
+                # Create overlapping windows for trend analysis
+                windows = []
+                for i in range(0, total_rows - window_size + 1, window_size // 2):
+                    window_df = df.iloc[i:i + window_size]
+                    windows.append(window_df)
+            
+            # Analyze each window
+            for i, window_df in enumerate(windows):
+                try:
+                    # Get quality score for this window
+                    quality_score = quality_scorer.score_data_quality(window_df, symbol, interval)
+                    quality_assessment = advanced_metrics.assess_quality(window_df)
+                    
+                    quality_scores.append(quality_score.overall_score)
+                    timestamps.append(window_df.index[0] if len(window_df) > 0 else df.index[0])
+                    
+                except Exception as e:
+                    if self.enable_logging:
+                        tprint_warning(f"⚠️ Failed to analyze window {i}: {str(e)}")
+                    continue
+            
+            if not quality_scores:
+                raise RuntimeError("No quality scores could be calculated")
+            
+            # Calculate trend statistics
+            quality_scores_array = np.array(quality_scores)
+            trend_analysis = {
+                "quality_scores": quality_scores,
+                "timestamps": [ts.isoformat() for ts in timestamps],
+                "mean_quality": float(np.mean(quality_scores_array)),
+                "std_quality": float(np.std(quality_scores_array)),
+                "min_quality": float(np.min(quality_scores_array)),
+                "max_quality": float(np.max(quality_scores_array)),
+                "quality_trend": "improving" if len(quality_scores) > 1 and quality_scores[-1] > quality_scores[0] else "declining",
+                "quality_stability": "stable" if np.std(quality_scores_array) < 5.0 else "volatile",
+                "window_size": window_size,
+                "total_windows": len(windows),
+                "analysis_timestamp": datetime.now().isoformat(),
+                "symbol": symbol,
+                "interval": interval
+            }
+            
+            # Calculate trend slope if we have enough data points
+            if len(quality_scores) >= 3:
+                x = np.arange(len(quality_scores))
+                slope, intercept = np.polyfit(x, quality_scores, 1)
+                trend_analysis["trend_slope"] = float(slope)
+                trend_analysis["trend_intercept"] = float(intercept)
+                trend_analysis["trend_direction"] = "improving" if slope > 0 else "declining"
+            
+            if self.enable_logging:
+                tprint_success(f"✅ Quality trend analysis completed for {symbol} {interval}")
+                tprint_info(f"   Mean quality: {trend_analysis['mean_quality']:.2f}")
+                tprint_info(f"   Quality trend: {trend_analysis['quality_trend']}")
+                tprint_info(f"   Quality stability: {trend_analysis['quality_stability']}")
+            
+            return trend_analysis
+            
+        except Exception as e:
+            if self.enable_logging:
+                tprint_error(f"❌ Quality trend analysis failed: {str(e)}")
+            return {
+                "error": str(e),
+                "analysis_failed": True,
+                "analysis_timestamp": datetime.now().isoformat(),
+                "symbol": symbol,
+                "interval": interval
+            }
 
     async def process_klines_data(
         self,
@@ -579,7 +858,7 @@ class EnhancedKlinesProcessingPipeline:
         symbol: str,
         interval: str
     ) -> ProcessingResult:
-        """Validate data quality and assign quality level."""
+        """Validate data quality using comprehensive quality framework from src/utils/data/quality/."""
         start_time = datetime.now()
         result = ProcessingResult(
             step=ProcessingStep.VALIDATE,
@@ -590,64 +869,95 @@ class EnhancedKlinesProcessingPipeline:
         
         try:
             if self.enable_logging:
-                tprint_info(f"🔍 Validating data quality for {symbol} {interval}")
+                tprint_info(f"🔍 Validating data quality for {symbol} {interval} using comprehensive framework")
             
             # Check required columns
             missing_columns = [col for col in self.required_ohlcv_columns if col not in df.columns]
             if missing_columns:
                 raise RuntimeError(f"Missing required columns: {missing_columns}")
             
-            # Check for null values
-            null_counts = df[self.required_ohlcv_columns].isnull().sum()
-            total_nulls = null_counts.sum()
-            null_percentage = (total_nulls / (len(df) * len(self.required_ohlcv_columns))) * 100
+            # Initialize comprehensive quality framework
+            quality_framework = DataQualityFramework()
+            quality_scorer = ComprehensiveQualityScorer()
+            advanced_metrics = AdvancedQualityMetrics()
+            data_cleaner = DataCleaner()
+            statistical_validator = StatisticalValidator()
             
-            # Check for negative values in OHLCV
-            negative_values = {}
-            for col in self.required_ohlcv_columns:
-                if col in df.columns:
-                    negative_count = (df[col] < 0).sum()
-                    if negative_count > 0:
-                        negative_values[col] = negative_count
+            # Set up quality thresholds for klines data
+            thresholds = QualityThresholds(
+                null_percentage_threshold=5.0,
+                negative_value_threshold=0.0,
+                zero_volume_threshold=10.0,
+                temporal_consistency_threshold=0.95,
+                price_consistency_threshold=0.98
+            )
             
-            # Check for zero volume
-            zero_volume = (df['volume'] == 0).sum() if 'volume' in df.columns else 0
+            # Perform comprehensive data quality validation
+            quality_result = quality_framework.validate_data(df, thresholds)
             
-            # Determine quality level
-            quality_issues = []
-            if null_percentage > 5:
-                quality_issues.append(f"High null percentage: {null_percentage:.2f}%")
-            if negative_values:
-                quality_issues.append(f"Negative values found: {negative_values}")
-            if zero_volume > len(df) * 0.1:
-                quality_issues.append(f"High zero volume percentage: {(zero_volume/len(df)*100):.2f}%")
+            # Get advanced quality assessment
+            quality_assessment = advanced_metrics.assess_quality(df)
             
-            if not quality_issues:
+            # Get comprehensive quality score
+            quality_score = quality_scorer.score_data_quality(df, symbol, interval)
+            
+            # Perform statistical distribution validation
+            distribution_validation = statistical_validator.validate_distributions(df)
+            
+            # Check for duplicates using comprehensive analyzer
+            duplicate_analysis = analyze_duplicates_comprehensive(df)
+            
+            # Determine quality level based on comprehensive assessment
+            if quality_score.overall_score >= 90:
                 result.quality_level = DataQualityLevel.EXCELLENT
-            elif len(quality_issues) == 1 and null_percentage < 1:
+            elif quality_score.overall_score >= 80:
                 result.quality_level = DataQualityLevel.GOOD
-            elif len(quality_issues) <= 2 and null_percentage < 3:
+            elif quality_score.overall_score >= 70:
                 result.quality_level = DataQualityLevel.FAIR
-            elif len(quality_issues) <= 3 and null_percentage < 5:
+            elif quality_score.overall_score >= 60:
                 result.quality_level = DataQualityLevel.POOR
             else:
                 result.quality_level = DataQualityLevel.FAILED
             
+            # Collect all issues and warnings
+            all_issues = quality_result.issues + quality_score.issues + quality_assessment.metrics
+            all_warnings = quality_result.warnings + quality_score.warnings
+            
+            # Add duplicate analysis warnings
+            if duplicate_analysis.total_duplicates > 0:
+                all_warnings.append(f"Found {duplicate_analysis.total_duplicates} duplicate records")
+            
             result.success = True
             result.data = df
             result.metadata = {
-                "null_percentage": null_percentage,
-                "negative_values": negative_values,
-                "zero_volume_count": zero_volume,
-                "quality_issues": quality_issues
+                "comprehensive_quality_score": quality_score.overall_score,
+                "quality_level": quality_score.level.value,
+                "component_scores": quality_score.component_scores,
+                "quality_assessment": {
+                    "overall_score": quality_assessment.overall_score,
+                    "issues_found": quality_assessment.issues_found,
+                    "warnings_found": quality_assessment.warnings_found,
+                    "critical_issues": quality_assessment.critical_issues
+                },
+                "duplicate_analysis": {
+                    "total_duplicates": duplicate_analysis.total_duplicates,
+                    "true_duplicate_groups": duplicate_analysis.true_duplicate_groups,
+                    "false_duplicate_groups": duplicate_analysis.false_duplicate_groups,
+                    "mixed_duplicate_groups": duplicate_analysis.mixed_duplicate_groups
+                },
+                "distribution_validation": distribution_validation,
+                "data_shape": quality_score.data_shape,
+                "assessment_timestamp": quality_score.assessment_timestamp.isoformat()
             }
-            result.warnings.extend(quality_issues)
+            result.warnings.extend(all_warnings)
             
             if self.enable_logging:
-                tprint_success(f"✅ Data quality validation completed: {result.quality_level.value}")
+                tprint_success(f"✅ Comprehensive data quality validation completed: {result.quality_level.value} (Score: {quality_score.overall_score:.1f})")
+                if quality_score.recommendations:
+                    tprint_info(f"📋 Quality recommendations: {', '.join(quality_score.recommendations[:3])}")
             
         except Exception as e:
-            error_msg = f"Data quality validation failed: {str(e)}"
+            error_msg = f"Comprehensive data quality validation failed: {str(e)}"
             result.errors.append(error_msg)
             if self.enable_logging:
                 tprint_error(f"❌ {error_msg}")
@@ -956,7 +1266,7 @@ class EnhancedKlinesProcessingPipeline:
         symbol: str,
         interval: str
     ) -> ProcessingResult:
-        """Perform final quality check on processed data."""
+        """Perform comprehensive final quality check using advanced quality metrics from src/utils/data/quality/."""
         start_time = datetime.now()
         result = ProcessingResult(
             step=ProcessingStep.QUALITY_CHECK,
@@ -967,7 +1277,7 @@ class EnhancedKlinesProcessingPipeline:
         
         try:
             if self.enable_logging:
-                tprint_info(f"✅ Running final quality check for {symbol} {interval}")
+                tprint_info(f"✅ Running comprehensive final quality check for {symbol} {interval}")
             
             # Check data completeness
             if df.empty:
@@ -978,47 +1288,102 @@ class EnhancedKlinesProcessingPipeline:
             if missing_columns:
                 raise RuntimeError(f"Missing required columns in final data: {missing_columns}")
             
-            # Check for null values
-            null_counts = df[self.required_ohlcv_columns].isnull().sum()
-            if null_counts.sum() > 0:
-                result.warnings.append(f"Final data contains null values: {null_counts.to_dict()}")
+            # Initialize comprehensive quality utilities
+            quality_scorer = ComprehensiveQualityScorer()
+            advanced_metrics = AdvancedQualityMetrics()
+            statistical_validator = StatisticalValidator()
+            quality_alert_system = QualityAlertSystem()
             
-            # Check data continuity
+            # Perform comprehensive final quality assessment
+            final_quality_score = quality_scorer.score_data_quality(df, symbol, interval)
+            final_quality_assessment = advanced_metrics.assess_quality(df)
+            
+            # Perform statistical validation on final data
+            final_distribution_validation = statistical_validator.validate_distributions(df)
+            
+            # Check for data continuity and temporal consistency
+            temporal_issues = []
             if len(df) > 1:
                 time_diffs = df.index.to_series().diff().dropna()
                 expected_interval = self._interval_to_minutes(interval)
                 if expected_interval:
                     irregular_intervals = (time_diffs != timedelta(minutes=expected_interval)).sum()
                     if irregular_intervals > 0:
-                        result.warnings.append(f"Found {irregular_intervals} irregular intervals")
+                        temporal_issues.append(f"Found {irregular_intervals} irregular intervals")
             
-            # Determine final quality level
-            if not result.warnings:
+            # Check for null values in final data
+            null_counts = df[self.required_ohlcv_columns].isnull().sum()
+            null_issues = []
+            if null_counts.sum() > 0:
+                null_issues.append(f"Final data contains null values: {null_counts.to_dict()}")
+            
+            # Perform final duplicate check
+            final_duplicate_analysis = analyze_duplicates_comprehensive(df)
+            
+            # Check quality alerts
+            quality_alerts = quality_alert_system.check_alerts(final_quality_score)
+            
+            # Determine final quality level based on comprehensive assessment
+            if final_quality_score.overall_score >= 95 and not temporal_issues and not null_issues:
                 result.quality_level = DataQualityLevel.EXCELLENT
-            elif len(result.warnings) <= 2:
+            elif final_quality_score.overall_score >= 85 and len(temporal_issues + null_issues) <= 1:
                 result.quality_level = DataQualityLevel.GOOD
-            elif len(result.warnings) <= 4:
+            elif final_quality_score.overall_score >= 75 and len(temporal_issues + null_issues) <= 2:
                 result.quality_level = DataQualityLevel.FAIR
-            else:
+            elif final_quality_score.overall_score >= 60 and len(temporal_issues + null_issues) <= 3:
                 result.quality_level = DataQualityLevel.POOR
+            else:
+                result.quality_level = DataQualityLevel.FAILED
+            
+            # Collect all warnings and issues
+            all_warnings = (final_quality_score.warnings + 
+                          temporal_issues + 
+                          null_issues + 
+                          quality_alerts)
+            
+            if final_duplicate_analysis.total_duplicates > 0:
+                all_warnings.append(f"Final data contains {final_duplicate_analysis.total_duplicates} duplicate records")
             
             result.success = True
             result.data = df
             result.metadata = {
+                "final_comprehensive_quality_score": final_quality_score.overall_score,
+                "final_quality_level": final_quality_score.level.value,
+                "final_component_scores": final_quality_score.component_scores,
+                "final_quality_assessment": {
+                    "overall_score": final_quality_assessment.overall_score,
+                    "issues_found": final_quality_assessment.issues_found,
+                    "warnings_found": final_quality_assessment.warnings_found,
+                    "critical_issues": final_quality_assessment.critical_issues
+                },
+                "final_distribution_validation": final_distribution_validation,
+                "final_duplicate_analysis": {
+                    "total_duplicates": final_duplicate_analysis.total_duplicates,
+                    "true_duplicate_groups": final_duplicate_analysis.true_duplicate_groups,
+                    "false_duplicate_groups": final_duplicate_analysis.false_duplicate_groups,
+                    "mixed_duplicate_groups": final_duplicate_analysis.mixed_duplicate_groups
+                },
                 "final_records": len(df),
                 "final_columns": len(df.columns),
                 "null_counts": null_counts.to_dict(),
                 "date_range": {
                     "start": df.index.min().isoformat(),
                     "end": df.index.max().isoformat()
-                }
+                },
+                "quality_alerts": quality_alerts,
+                "assessment_timestamp": final_quality_score.assessment_timestamp.isoformat()
             }
+            result.warnings.extend(all_warnings)
             
             if self.enable_logging:
-                tprint_success(f"✅ Final quality check completed: {result.quality_level.value}")
+                tprint_success(f"✅ Comprehensive final quality check completed: {result.quality_level.value} (Score: {final_quality_score.overall_score:.1f})")
+                if final_quality_score.recommendations:
+                    tprint_info(f"📋 Final quality recommendations: {', '.join(final_quality_score.recommendations[:3])}")
+                if quality_alerts:
+                    tprint_warning(f"⚠️ Quality alerts: {', '.join(quality_alerts[:3])}")
             
         except Exception as e:
-            error_msg = f"Final quality check failed: {str(e)}"
+            error_msg = f"Comprehensive final quality check failed: {str(e)}"
             result.errors.append(error_msg)
             if self.enable_logging:
                 tprint_error(f"❌ {error_msg}")

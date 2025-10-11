@@ -142,25 +142,7 @@ class LegacyRSIGenerator(VectorizedFeatureGenerator):
             else:
                 rolling_mean[i] = (cumsum[i] - cumsum[i - window]) / window
         
-        return rolling_mean
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class LegacyMACDGenerator(VectorizedFeatureGenerator):
+        return rolling_meanclass LegacyMACDGenerator(VectorizedFeatureGenerator):
     def __init__(self, fast: int = 12, slow: int = 26, signal: int = 9):
         config = FeatureConfig(
             name=f"legacy_macd_{fast}_{slow}_{signal}",
@@ -235,25 +217,7 @@ class LegacyMACDGenerator(VectorizedFeatureGenerator):
         for i in range(1, len(prices)):
             ema[i] = alpha * prices[i] + (1 - alpha) * ema[i - 1]
         
-        return ema
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class LegacyBollingerBandsGenerator(VectorizedFeatureGenerator):
+        return emaclass LegacyBollingerBandsGenerator(VectorizedFeatureGenerator):
     def __init__(self, period: int = 20, std_dev: float = 2.0):
         config = FeatureConfig(
             name=f"legacy_bollinger_{period}_{std_dev}",
@@ -342,25 +306,7 @@ class LegacyBollingerBandsGenerator(VectorizedFeatureGenerator):
             window_data = data[i - window + 1:i + 1]
             rolling_std[i] = np.std(window_data, ddof=0)
         
-        return rolling_std
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class LegacySMAGenerator(VectorizedFeatureGenerator):
+        return rolling_stdclass LegacySMAGenerator(VectorizedFeatureGenerator):
     def __init__(self, period: int = 20):
         config = FeatureConfig(
             name=f"legacy_sma_{period}",
@@ -419,25 +365,7 @@ class LegacySMAGenerator(VectorizedFeatureGenerator):
             else:
                 rolling_mean[i] = (cumsum[i] - cumsum[i - window]) / window
         
-        return rolling_mean
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class LegacyEMAGenerator(VectorizedFeatureGenerator):
+        return rolling_meanclass LegacyEMAGenerator(VectorizedFeatureGenerator):
     def __init__(self, period: int = 21):
         config = FeatureConfig(
             name=f"legacy_ema_{period}",
@@ -496,25 +424,7 @@ class LegacyEMAGenerator(VectorizedFeatureGenerator):
         for i in range(1, len(prices)):
             ema[i] = alpha * prices[i] + (1 - alpha) * ema[i - 1]
         
-        return ema
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class LegacyATRGenerator(VectorizedFeatureGenerator):
+        return emaclass LegacyATRGenerator(VectorizedFeatureGenerator):
     def __init__(self, period: int = 14):
         config = FeatureConfig(
             name=f"legacy_atr_{period}",
@@ -598,25 +508,7 @@ class LegacyATRGenerator(VectorizedFeatureGenerator):
             else:
                 rolling_mean[i] = (cumsum[i] - cumsum[i - window]) / window
         
-        return rolling_mean
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class LegacyStochasticGenerator(VectorizedFeatureGenerator):
+        return rolling_meanclass LegacyStochasticGenerator(VectorizedFeatureGenerator):
     def __init__(self, k_period: int = 14, d_period: int = 3):
         config = FeatureConfig(
             name=f"legacy_stochastic_{k_period}_{d_period}",
@@ -703,25 +595,7 @@ class LegacyStochasticGenerator(VectorizedFeatureGenerator):
         for i in range(window - 1, len(data)):
             rolling_max[i] = np.max(data[i - window + 1:i + 1])
         
-        return rolling_max
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class LegacyWilliamsRGenerator(VectorizedFeatureGenerator):
+        return rolling_maxclass LegacyWilliamsRGenerator(VectorizedFeatureGenerator):
     def __init__(self, period: int = 14):
         config = FeatureConfig(
             name=f"legacy_williams_r_{period}",
@@ -807,25 +681,7 @@ class LegacyWilliamsRGenerator(VectorizedFeatureGenerator):
         for i in range(window - 1, len(data)):
             rolling_max[i] = np.max(data[i - window + 1:i + 1])
         
-        return rolling_max
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class LegacyOBVGenerator(VectorizedFeatureGenerator):
+        return rolling_maxclass LegacyOBVGenerator(VectorizedFeatureGenerator):
     def __init__(self):
         config = FeatureConfig(
             name="legacy_obv",

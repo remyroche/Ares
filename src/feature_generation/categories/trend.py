@@ -276,25 +276,7 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
         # Calculate trend score
         trend_score = normalized_signal * adx
 
-        return trend_score
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-    
-    def _should_use_vectorbt(self, data) -> bool:
+        return trend_score    def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
         return (VECTORBT_AVAILABLE and 
                 len(data) >= getattr(self, 'vectorbt_threshold', 1000))
@@ -421,25 +403,7 @@ class ADXGenerator(VectorizedFeatureGenerator):
         dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus)
         adx = pd.Series(dx).rolling(period).mean()
 
-        return adx.values
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class DirectionalSignalGenerator(VectorizedFeatureGenerator):
+        return adx.valuesclass DirectionalSignalGenerator(VectorizedFeatureGenerator):
     """Generator for Directional Signal (EMA_8 - EMA_20)."""
 
     def __init__(self):
@@ -496,25 +460,7 @@ class DirectionalSignalGenerator(VectorizedFeatureGenerator):
         # Calculate directional signal
         directional_signal = ema_8 - ema_20
 
-        return directional_signal
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class TrendScoreGenerator(VectorizedFeatureGenerator):
+        return directional_signalclass TrendScoreGenerator(VectorizedFeatureGenerator):
     """Generator for Trend Score (normalized directional signal * ADX)."""
 
     def __init__(self, adx_period: int = 14):
@@ -649,25 +595,7 @@ class TrendScoreGenerator(VectorizedFeatureGenerator):
         # Calculate trend score
         trend_score = normalized_signal * adx
 
-        return trend_score
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class SMAGenerator(VectorizedFeatureGenerator):
+        return trend_scoreclass SMAGenerator(VectorizedFeatureGenerator):
     """Generator for Simple Moving Average with different base calculations."""
 
     def __init__(self,
@@ -740,25 +668,7 @@ class SMAGenerator(VectorizedFeatureGenerator):
                 return sma
         else:
             sma = base_values.rolling(window=self.period).mean()
-            return sma
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class EMAGenerator(VectorizedFeatureGenerator):
+            return smaclass EMAGenerator(VectorizedFeatureGenerator):
     """Generator for Exponential Moving Average with different base calculations."""
 
     def __init__(self,
@@ -846,24 +756,7 @@ def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[Featur
 def create_default_trend_generators() -> List[FeatureGenerator]:
     return create_trend_generators()
 
-# WMA (Weighted Moving Average)
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class WMAGenerator(VectorizedFeatureGenerator):
+# WMA (Weighted Moving Average)class WMAGenerator(VectorizedFeatureGenerator):
     """Generator for WMA (Weighted Moving Average) with different base calculations."""
     
     def __init__(self, 
@@ -936,24 +829,7 @@ class WMAGenerator(VectorizedFeatureGenerator):
             )
             return wma
 
-# DEMA (Double Exponential Moving Average)
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class DEMAGenerator(VectorizedFeatureGenerator):
+# DEMA (Double Exponential Moving Average)class DEMAGenerator(VectorizedFeatureGenerator):
     """Generator for DEMA (Double Exponential Moving Average) with different base calculations."""
     
     def __init__(self, 
@@ -1023,24 +899,7 @@ class DEMAGenerator(VectorizedFeatureGenerator):
             dema = 2 * ema1 - ema2
             return dema
 
-# TEMA (Triple Exponential Moving Average)
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class TEMAGenerator(VectorizedFeatureGenerator):
+# TEMA (Triple Exponential Moving Average)class TEMAGenerator(VectorizedFeatureGenerator):
     """Generator for TEMA (Triple Exponential Moving Average) with different base calculations."""
     
     def __init__(self, 
@@ -1113,24 +972,7 @@ class TEMAGenerator(VectorizedFeatureGenerator):
             tema = 3 * ema1 - 3 * ema2 + ema3
             return tema
 
-# TRIMA (Triangular Moving Average)
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class TRIMAGenerator(VectorizedFeatureGenerator):
+# TRIMA (Triangular Moving Average)class TRIMAGenerator(VectorizedFeatureGenerator):
     """Generator for TRIMA (Triangular Moving Average) with different base calculations."""
     
     def __init__(self, 
@@ -1197,24 +1039,7 @@ class TRIMAGenerator(VectorizedFeatureGenerator):
             trima = base_values.rolling(window=half_period).mean().rolling(window=half_period).mean()
             return trima
 
-# MAMA (MESA Adaptive Moving Average)
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class MAMAGenerator(VectorizedFeatureGenerator):
+# MAMA (MESA Adaptive Moving Average)class MAMAGenerator(VectorizedFeatureGenerator):
     """Generator for MAMA (MESA Adaptive Moving Average) with different base calculations."""
     
     def __init__(self, 
@@ -1282,24 +1107,7 @@ class MAMAGenerator(VectorizedFeatureGenerator):
             mama = base_values.ewm(span=20).mean()
             return mama
 
-# VWMA (Volume Weighted Moving Average)
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class VWMAGenerator(VectorizedFeatureGenerator):
+# VWMA (Volume Weighted Moving Average)class VWMAGenerator(VectorizedFeatureGenerator):
     """Generator for VWMA (Volume Weighted Moving Average) with different base calculations."""
     
     def __init__(self, 
@@ -1380,26 +1188,7 @@ class VWMAGenerator(VectorizedFeatureGenerator):
                 return vwma
         else:
             vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
-            return vwma
-
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
+            return vwmaclass KeltnerChannelsGenerator(VectorizedFeatureGenerator):
     """Generator for Keltner Channels with different base calculations."""
     
     def __init__(self,

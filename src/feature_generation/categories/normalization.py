@@ -422,26 +422,7 @@ class NormalizationFeatureGenerator(FeatureGenerator):
                     detrended = data[column] - rolling_mean
                     features[f"detrended_{column}_{window}"] = detrended.fillna(0).values
 
-        return features
-
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class RollingZScoreGenerator(FeatureGenerator):
+        return featuresclass RollingZScoreGenerator(FeatureGenerator):
     """Generator for rolling z-score normalization features."""
 
     def __init__(self, window: int = 50, column: str = "close"):
@@ -473,26 +454,7 @@ class RollingZScoreGenerator(FeatureGenerator):
         rolling_std = values.rolling(window=self.window).std()
 
         zscore = (values - rolling_mean) / rolling_std
-        return zscore.fillna(0)
-
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class VolatilityScalingGenerator(FeatureGenerator):
+        return zscore.fillna(0)class VolatilityScalingGenerator(FeatureGenerator):
     """Generator for volatility scaling features."""
 
     def __init__(self, window: int = 20, column: str = "close"):
@@ -528,26 +490,7 @@ class VolatilityScalingGenerator(FeatureGenerator):
             price_changes = data[self.column].pct_change()
             scaled = price_changes / rolling_vol
 
-        return scaled.fillna(0)
-
-
-    
-    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame for vectorized processing."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.optimize_dataframe_processing(data)
-        return data
-    
-    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
-                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
-        """Perform vectorized rolling operations with hardware optimization."""
-        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
-            return self.vectorization_optimizer.vectorized_rolling_operations(
-                data, operations, windows, columns
-            )
-        return data
-
-class CrossSectionalNormalizer(FeatureGenerator):
+        return scaled.fillna(0)class CrossSectionalNormalizer(FeatureGenerator):
     """Generator for cross-sectional normalization features."""
 
     def __init__(self, group_by: str = "price", method: str = "rank"):

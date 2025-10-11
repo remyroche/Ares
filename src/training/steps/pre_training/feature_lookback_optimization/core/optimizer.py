@@ -29,10 +29,24 @@ from .utils.error_handling import (
     safe_dataframe_operation as safe_df_op, safe_numpy_operation,
     get_error_handler, OptimizationError, DataValidationError, ScoringError
 )
+from .utils.nan_handling import (
+    SafeNaNHandler, safe_correlation_with_nan_handling, 
+    safe_mutual_information_with_nan_handling
+)
 from .utils.memory_monitor import get_memory_monitor, monitor_memory
 from .utils.scoring_utils import get_scoring_utils, ScoringConfig
 from .utils.constants import get_constants
 from .utils.data_validation import get_data_validator, validate_optimization_data, ValidationLevel
+from .utils.fast_failing_validation import (
+    FastFailingValidator, validate_optimization_inputs_fast_fail,
+    validate_feature_calculation_inputs
+)
+from .utils.memory_efficient_ops import (
+    MemoryEfficientOps, optimize_dataframe_memory, create_dataframe_view
+)
+from .utils.vectorized_correlations import (
+    VectorizedCorrelationCalculator, calculate_correlations_vectorized
+)
 
 try:
     from statsmodels.tsa.stattools import adfuller, kpss
@@ -279,6 +293,12 @@ class CoreOptimizer:
         self.matrix_ops = None
         self.batch_processor = None
         self.gpu_available = False
+        
+        # Initialize memory-efficient operations
+        self.memory_ops = MemoryEfficientOps(enable_gc=True)
+        
+        # Initialize vectorized correlation calculator
+        self.correlation_calculator = VectorizedCorrelationCalculator(use_gpu=False)
         if MATRIX_OPS_AVAILABLE:
             try:
                 self.matrix_ops = get_unified_matrix_operations()
@@ -759,23 +779,19 @@ class CoreOptimizer:
             self.logger.info(f'🎯 Starting optimization for feature: {feature_name} using {method.value}')
             tprint(f"🎯 Starting optimization for feature: {feature_name} using {method.value}")
             
-            # Comprehensive data validation
-            validation_result = validate_optimization_data(
-                data=data,
-                feature_names=[feature_name],
-                target_column=target_column,
-                lookback_range=list(range(lookback_range[0], lookback_range[1] + 1)),
-                validation_level=ValidationLevel.STANDARD
-            )
-            
-            if not validation_result.is_valid:
-                self.logger.error(f"❌ Data validation failed for {feature_name}: {validation_result.issues}")
+            # Fast failing data validation
+            try:
+                validate_optimization_inputs_fast_fail(
+                    data, 
+                    [feature_name], 
+                    [target_column], 
+                    lookback_range,
+                    min_samples=50
+                )
+                self.logger.info(f"✅ Data validation passed for {feature_name}")
+            except DataValidationError as e:
+                self.logger.error(f"❌ Data validation failed for {feature_name}: {e}")
                 return self._create_failed_result(method.value, 0.0, feature_name)
-            
-            if validation_result.warnings:
-                self.logger.warning(f"⚠️ Data validation warnings for {feature_name}: {validation_result.warnings}")
-            
-            self.logger.info(f"✅ Data validation passed for {feature_name} (score: {validation_result.score:.2f})")
 
             # Validate inputs
             if not self._validate_optimization_inputs(data, feature_name, target_column):
@@ -837,40 +853,33 @@ class CoreOptimizer:
         feature_name: str,
         target_column: str
     ) -> bool:
-        """Validate inputs for optimization."""
+        """Validate inputs for optimization with fast failing."""
         try:
             tprint_debug(f"🔍 Validating optimization inputs for feature '{feature_name}' against target '{target_column}'")
-            # Check if data is valid DataFrame
-            if not isinstance(data, pd.DataFrame):
-                self.logger.error("Input data must be a pandas DataFrame")
-                tprint_error("❌ Optimization data must be a pandas DataFrame")
-                return False
-
-            # Check if feature and target columns exist
-            if feature_name not in data.columns:
-                self.logger.error(f"Feature column '{feature_name}' not found in data")
-                tprint_error(f"❌ Feature column '{feature_name}' not found in input data")
-                return False
-
+            
+            # Use fast failing validation
+            validate_feature_calculation_inputs(data, feature_name, 1)  # Basic validation
+            
+            # Check target column exists
             if target_column not in data.columns:
-                self.logger.error(f"Target column '{target_column}' not found in data")
-                tprint_error(f"❌ Target column '{target_column}' not found in input data")
-                return False
-
+                raise DataValidationError(f"Target column '{target_column}' not found in data")
+            
             # Check for sufficient data
             if len(data) < OPTIMIZATION_CONSTANTS.DEFAULT_MIN_LOOKBACK:
-                self.logger.error(f"Insufficient data: {len(data)} rows, minimum {OPTIMIZATION_CONSTANTS.DEFAULT_MIN_LOOKBACK} required")
-                tprint_warning(
-                    f"⚠️ Insufficient rows for optimization: {len(data)} < {OPTIMIZATION_CONSTANTS.DEFAULT_MIN_LOOKBACK}"
+                raise DataValidationError(
+                    f"Insufficient data: {len(data)} rows < {OPTIMIZATION_CONSTANTS.DEFAULT_MIN_LOOKBACK} required"
                 )
-                return False
-
+            
             tprint_debug("✅ Optimization inputs validated successfully")
             return True
 
+        except DataValidationError as e:
+            self.logger.error(f"❌ Validation failed: {e}")
+            tprint_error(f"❌ Validation failed: {e}")
+            return False
         except Exception as e:
-            self.logger.error(f"Input validation failed: {e}")
-            tprint_error(f"❌ Exception during input validation: {e}")
+            self.logger.error(f"❌ Unexpected validation error: {e}")
+            tprint_error(f"❌ Unexpected validation error: {e}")
             return False
 
     def _optimize_mrmr(
@@ -905,11 +914,15 @@ class CoreOptimizer:
                 train_data = data
                 test_data = data
             else:
-                # Optimized DataFrame splitting using numpy slicing
-                train_data = data.iloc[:split_point].copy()
-                test_data = data.iloc[split_point:].copy()
+                # Memory-efficient DataFrame splitting
+                split_result = self.memory_ops.split_dataframe_efficiently(
+                    data, split_ratio=split_point/len(data), force_copy=False
+                )
+                train_data = split_result.train_data
+                test_data = split_result.test_data
                 tprint_debug(
-                    f"   ↳ MRMR split at index {split_point}: train={len(train_data)}, test={len(test_data)}"
+                    f"   ↳ MRMR split at index {split_point}: train={len(train_data)}, test={len(test_data)} "
+                    f"(memory saved: {split_result.memory_saved_mb:.2f}MB)"
                 )
 
             # Test different lookback periods using cross-validation
@@ -936,20 +949,37 @@ class CoreOptimizer:
                             f"   → Applied stationarity transform for {feature_name} (lookback={lookback})"
                         )
 
-                    # Align data lengths (features might be shorter due to rolling windows)
-                    min_length = min(len(train_features), len(test_features), len(train_data[target_column]), len(test_data[target_column]))
-                    if min_length <= 1:
-                        stationarity_audit[lookback]['skipped'] = 'insufficient_length'
+                    # Robust array alignment with safe NaN handling
+                    try:
+                        alignment = self.nan_handler.align_arrays_safely(
+                            train_features, train_data[target_column].values, min_valid_samples=10
+                        )
+                        train_features_aligned = alignment.feature_values
+                        train_targets_aligned = alignment.target_values
+                        
+                        alignment_test = self.nan_handler.align_arrays_safely(
+                            test_features, test_data[target_column].values, min_valid_samples=10
+                        )
+                        test_features_aligned = alignment_test.feature_values
+                        test_targets_aligned = alignment_test.target_values
+                        
+                        min_length = min(len(train_features_aligned), len(test_features_aligned))
+                        if min_length <= 1:
+                            stationarity_audit[lookback]['skipped'] = 'insufficient_length'
+                            continue
+                            
+                    except DataValidationError as e:
+                        stationarity_audit[lookback]['skipped'] = f'alignment_failed: {str(e)}'
                         continue
 
-                    if np.nanstd(test_features[:min_length]) == 0:
+                    if np.nanstd(test_features_aligned) == 0:
                         stationarity_audit[lookback]['skipped'] = 'no_variance'
                         continue
 
                     # Calculate mutual information on test data to avoid overfitting
                     score = self._calculate_mutual_information_robust(
-                        test_features[:min_length], 
-                        test_data[target_column].values[:min_length]
+                        test_features_aligned, 
+                        test_targets_aligned
                     )
 
                     trials += 1
@@ -1104,11 +1134,15 @@ class CoreOptimizer:
                 train_data = data
                 test_data = data
             else:
-                # Optimized DataFrame splitting using numpy slicing
-                train_data = data.iloc[:split_point].copy()
-                test_data = data.iloc[split_point:].copy()
+                # Memory-efficient DataFrame splitting
+                split_result = self.memory_ops.split_dataframe_efficiently(
+                    data, split_ratio=split_point/len(data), force_copy=False
+                )
+                train_data = split_result.train_data
+                test_data = split_result.test_data
                 tprint_debug(
-                    f"   ↳ Grid search split at {split_point}: train={len(train_data)}, test={len(test_data)}"
+                    f"   ↳ Grid search split at {split_point}: train={len(train_data)}, test={len(test_data)} "
+                    f"(memory saved: {split_result.memory_saved_mb:.2f}MB)"
                 )
 
             best_score = -float('inf')
@@ -1123,14 +1157,23 @@ class CoreOptimizer:
                     train_features = self._calculate_feature_for_lookback(train_data, feature_name, lookback)
                     test_features = self._calculate_feature_for_lookback(test_data, feature_name, lookback)
 
-                    # Align data lengths
-                    min_length = min(len(train_features), len(test_features), len(train_data[target_column]), len(test_data[target_column]))
-                    if min_length <= 1:
+                    # Robust array alignment with safe NaN handling
+                    try:
+                        alignment = self.nan_handler.align_arrays_safely(
+                            test_features, test_data[target_column].values, min_valid_samples=10
+                        )
+                        test_features_aligned = alignment.feature_values
+                        test_targets_aligned = alignment.target_values
+                        
+                        if len(test_features_aligned) <= 1:
+                            continue
+                            
+                    except DataValidationError:
                         continue
 
                     # Calculate correlations on test data to avoid overfitting
                     correlations = self._calculate_comprehensive_correlations(
-                        test_features[:min_length], test_data[target_column].values[:min_length]
+                        test_features_aligned, test_targets_aligned
                     )
 
                     # Use weighted combination of correlation metrics
@@ -1513,7 +1556,10 @@ class CoreOptimizer:
             )
             
             # Ensure data has lowercase column names for feature generators
-            data_for_generation = data.copy()
+            # Use memory-efficient column operation
+            data_for_generation = self.memory_ops.select_columns_efficiently(
+                data, data.columns.tolist(), force_copy=True
+            )
             data_for_generation.columns = data_for_generation.columns.str.lower()
             
             # Generate feature using the technical indicator
@@ -3144,26 +3190,23 @@ class CoreOptimizer:
         )
 
     def _calculate_comprehensive_correlations(self, feature_values: np.ndarray, target_values: np.ndarray) -> Dict[str, float]:
-        """Calculate comprehensive correlation metrics."""
+        """Calculate comprehensive correlation metrics with safe NaN handling."""
         try:
             correlations = {}
             
-            # Pearson correlation
-            correlations['pearson'] = safe_correlation(feature_values, target_values, default=0.0)
+            # Use safe NaN handling for all correlation calculations
+            correlations['pearson'] = safe_correlation_with_nan_handling(
+                feature_values, target_values, method='pearson', min_samples=10
+            )
             
-            # Spearman correlation (rank-based)
-            try:
-                from scipy.stats import spearmanr
-                spearman_corr, _ = spearmanr(feature_values, target_values)
-                correlations['spearman'] = spearman_corr if not np.isnan(spearman_corr) else 0.0
-            except ImportError:
-                # Fallback to simple rank correlation
-                correlations['spearman'] = safe_correlation(
-                    np.argsort(feature_values), np.argsort(target_values), default=0.0
-                )
+            correlations['spearman'] = safe_correlation_with_nan_handling(
+                feature_values, target_values, method='spearman', min_samples=10
+            )
             
-            # Mutual information (simplified)
-            correlations['mutual_info'] = self._calculate_mutual_information(feature_values, target_values)
+            # Mutual information with proper NaN handling
+            correlations['mutual_info'] = safe_mutual_information_with_nan_handling(
+                feature_values, target_values, n_bins=10, min_samples=20
+            )
             
             # R-squared
             correlations['r_squared'] = correlations['pearson'] ** 2
@@ -3175,39 +3218,8 @@ class CoreOptimizer:
             return {'pearson': 0.0, 'spearman': 0.0, 'mutual_info': 0.0, 'r_squared': 0.0}
 
     def _calculate_mutual_information(self, x: np.ndarray, y: np.ndarray) -> float:
-        """Calculate simplified mutual information."""
-        try:
-            # Simple binning approach
-            n_bins = min(10, len(x) // 10)
-            if n_bins < 2:
-                return 0.0
-                
-            # Create bins
-            x_bins = np.digitize(x, np.linspace(x.min(), x.max(), n_bins))
-            y_bins = np.digitize(y, np.linspace(y.min(), y.max(), n_bins))
-            
-            # Calculate joint and marginal probabilities
-            joint_counts = np.zeros((n_bins, n_bins))
-            for i in range(len(x_bins)):
-                if x_bins[i] < n_bins and y_bins[i] < n_bins:
-                    joint_counts[x_bins[i]-1, y_bins[i]-1] += 1
-            
-            joint_probs = joint_counts / joint_counts.sum()
-            x_probs = joint_probs.sum(axis=1)
-            y_probs = joint_probs.sum(axis=0)
-            
-            # Calculate mutual information
-            mi = 0.0
-            for i in range(n_bins):
-                for j in range(n_bins):
-                    if joint_probs[i, j] > 0 and x_probs[i] > 0 and y_probs[j] > 0:
-                        mi += joint_probs[i, j] * np.log2(joint_probs[i, j] / (x_probs[i] * y_probs[j]))
-            
-            return max(0.0, mi)
-            
-        except Exception as e:
-            self.logger.warning(f'⚠️ Error calculating mutual information: {e}')
-            return 0.0
+        """Calculate mutual information with safe NaN handling."""
+        return safe_mutual_information_with_nan_handling(x, y, n_bins=10, min_samples=20)
 
     def _calculate_composite_score(self, correlations: Dict[str, float]) -> float:
         """Calculate composite score using MI-consistent metrics."""
@@ -3722,31 +3734,8 @@ class CoreOptimizer:
         return mi_scores.tolist()
 
     def _optimize_dataframe_memory(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Optimize DataFrame memory usage by converting data types."""
-        try:
-            # Create a copy to avoid modifying original
-            optimized_df = df.copy()
-            
-            # Convert object columns to category if they have low cardinality
-            for col in optimized_df.select_dtypes(include=['object']).columns:
-                if optimized_df[col].nunique() / len(optimized_df) < 0.5:  # Less than 50% unique values
-                    optimized_df[col] = optimized_df[col].astype('category')
-            
-            # Convert float64 to float32 if precision allows
-            for col in optimized_df.select_dtypes(include=['float64']).columns:
-                if optimized_df[col].min() >= np.finfo(np.float32).min and optimized_df[col].max() <= np.finfo(np.float32).max:
-                    optimized_df[col] = optimized_df[col].astype('float32')
-            
-            # Convert int64 to int32 if range allows
-            for col in optimized_df.select_dtypes(include=['int64']).columns:
-                if optimized_df[col].min() >= np.iinfo(np.int32).min and optimized_df[col].max() <= np.iinfo(np.int32).max:
-                    optimized_df[col] = optimized_df[col].astype('int32')
-            
-            return optimized_df
-            
-        except Exception as e:
-            self.logger.warning(f"⚠️ DataFrame memory optimization failed: {e}")
-            return df
+        """Optimize DataFrame memory usage using efficient operations."""
+        return optimize_dataframe_memory(df)
 
     def _extract_numeric_array(self, series: Union[pd.Series, np.ndarray, None]) -> Optional[np.ndarray]:
         """Convert a Series or array-like into a sanitized numpy array."""
@@ -4336,7 +4325,7 @@ class CoreOptimizer:
         Returns:
             Mutual information value
         """
-        return safe_mi_calculation(x, y, default_value=0.0)
+        return safe_mutual_information_with_nan_handling(x, y, n_bins=n_bins, min_samples=20)
 
     def _calculate_scale_normalized_score(self, mean_mi: float, std_mi: float, stability_penalty: float, lookback_penalty: float) -> Dict[str, float]:
         """

@@ -76,6 +76,8 @@ except ImportError:
 
 from .feature_generator import FeatureGenerator, FeatureConfig, FeatureResult, FeatureCategory
 from ..utils.math_validation import safe_divide, validate_finite, safe_percentage_change
+from src.utils.ml_common.vectorbt_memory_manager import get_memory_manager, memory_managed_operation, optimize_memory_usage
+from src.utils.ml_common.vectorbt_performance_monitor import get_performance_monitor, monitor_operation
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +105,10 @@ class VectorBTFeatureGenerator(FeatureGenerator):
         self.enable_gpu = enable_gpu
         self.enable_parallel = enable_parallel
         
+        # Initialize memory manager and performance monitor
+        self.memory_manager = get_memory_manager()
+        self.performance_monitor = get_performance_monitor()
+        
         # Configure VectorBT settings
         self._configure_vectorbt()
         
@@ -113,6 +119,10 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             'parallel_operations': 0,
             'memory_optimizations': 0
         }
+        
+        # Cache for computed features
+        self._feature_cache = {}
+        self._cache_enabled = True
     
     def _configure_vectorbt(self):
         """Configure VectorBT global settings for optimal performance."""
@@ -448,6 +458,270 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             return pd.DataFrame(index=data.index)
         
         return pd.DataFrame(results, index=data.index)
+    
+    def _vectorbt_batch_indicators_optimized(self, data: pd.DataFrame, 
+                                           indicators: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Optimized batch indicator calculation with memory management."""
+        if not VECTORBT_AVAILABLE:
+            return self._fallback_batch_indicators(data, indicators)
+        
+        # Estimate memory requirements
+        data_size_gb = data.memory_usage(deep=True).sum() / (1024**3)
+        estimated_memory_gb = data_size_gb * len(indicators) * 2  # Rough estimate
+        
+        with memory_managed_operation(
+            estimated_memory_gb,
+            f"batch_indicators_{int(time.time())}",
+            "feature_generation"
+        ):
+            try:
+                results = {}
+                
+                # Process indicators in batches for memory efficiency
+                batch_size = min(10, len(indicators))  # Process 10 indicators at a time
+                
+                for i in range(0, len(indicators), batch_size):
+                    batch_indicators = indicators[i:i + batch_size]
+                    
+                    for indicator_config in batch_indicators:
+                        indicator_name = indicator_config['name']
+                        indicator_type = indicator_config['type']
+                        params = indicator_config.get('params', {})
+                        
+                        # Check cache first
+                        cache_key = f"{indicator_name}_{hash(str(params))}"
+                        if self._cache_enabled and cache_key in self._feature_cache:
+                            results[indicator_name] = self._feature_cache[cache_key]
+                            continue
+                        
+                        # VectorBT optimized calculation
+                        try:
+                            if indicator_type == 'rsi':
+                                result = vbt.RSI.run(data['close'], **params).rsi
+                            elif indicator_type == 'macd':
+                                result = vbt.MACD.run(data['close'], **params).macd
+                            elif indicator_type == 'atr':
+                                result = vbt.ATR.run(data['high'], data['low'], data['close'], **params).atr
+                            elif indicator_type == 'bbands_upper':
+                                result = vbt.BBANDS.run(data['close'], **params).upper
+                            elif indicator_type == 'bbands_lower':
+                                result = vbt.BBANDS.run(data['close'], **params).lower
+                            elif indicator_type == 'stoch_k':
+                                result = vbt.STOCH.run(data['high'], data['low'], data['close'], **params).k
+                            elif indicator_type == 'willr':
+                                result = vbt.WILLR.run(data['high'], data['low'], data['close'], **params).willr
+                            elif indicator_type == 'cci':
+                                result = vbt.CCI.run(data['high'], data['low'], data['close'], **params).cci
+                            elif indicator_type == 'mfi':
+                                result = vbt.MFI.run(data['high'], data['low'], data['close'], data['volume'], **params).mfi
+                            elif indicator_type == 'adx':
+                                result = vbt.ADX.run(data['high'], data['low'], data['close'], **params).adx
+                            elif indicator_type == 'roc':
+                                result = vbt.ROC.run(data['close'], **params).roc
+                            elif indicator_type == 'mom':
+                                result = vbt.MOM.run(data['close'], **params).mom
+                            elif indicator_type == 'obv':
+                                result = vbt.OBV.run(data['close'], data['volume'], **params).obv
+                            else:
+                                logger.warning(f"Unknown indicator type: {indicator_type}")
+                                continue
+                            
+                            # Optimize data types
+                            result = optimize_memory_usage(result)
+                            
+                            # Cache result
+                            if self._cache_enabled:
+                                self._feature_cache[cache_key] = result
+                                # Limit cache size
+                                if len(self._feature_cache) > 1000:
+                                    # Remove oldest entries
+                                    oldest_key = next(iter(self._feature_cache))
+                                    del self._feature_cache[oldest_key]
+                            
+                            results[indicator_name] = result
+                            
+                        except Exception as e:
+                            logger.warning(f"VectorBT indicator {indicator_type} failed: {e}")
+                            continue
+                
+                self.vectorbt_stats['vectorbt_operations'] += len(indicators)
+                self.vectorbt_stats['parallel_operations'] += 1
+                
+                return pd.DataFrame(results, index=data.index)
+                
+            except Exception as e:
+                logger.error(f"VectorBT batch indicators failed: {e}")
+                return self._fallback_batch_indicators(data, indicators)
+    
+    def _fallback_batch_indicators(self, data: pd.DataFrame, indicators: List[Dict[str, Any]]) -> pd.DataFrame:
+        """Fallback batch indicator calculation using pandas/numpy."""
+        results = {}
+        
+        for indicator_config in indicators:
+            indicator_name = indicator_config['name']
+            indicator_type = indicator_config['type']
+            params = indicator_config.get('params', {})
+            
+            try:
+                if indicator_type == 'rsi':
+                    # Simple RSI calculation
+                    delta = data['close'].diff()
+                    gain = (delta.where(delta > 0, 0)).rolling(window=params.get('window', 14)).mean()
+                    loss = (-delta.where(delta < 0, 0)).rolling(window=params.get('window', 14)).mean()
+                    rs = gain / loss
+                    result = 100 - (100 / (1 + rs))
+                elif indicator_type == 'macd':
+                    # Simple MACD calculation
+                    ema_fast = data['close'].ewm(span=params.get('fast_window', 12)).mean()
+                    ema_slow = data['close'].ewm(span=params.get('slow_window', 26)).mean()
+                    result = ema_fast - ema_slow
+                else:
+                    # For other indicators, return NaN series
+                    result = pd.Series(np.nan, index=data.index)
+                
+                results[indicator_name] = result
+                
+            except Exception as e:
+                logger.warning(f"Fallback indicator {indicator_type} failed: {e}")
+                results[indicator_name] = pd.Series(np.nan, index=data.index)
+        
+        return pd.DataFrame(results, index=data.index)
+    
+    def generate_features_batch_optimized(self, data: pd.DataFrame, 
+                                        feature_configs: List[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        Generate multiple features in batch with memory and performance optimization.
+        
+        Args:
+            data: Input OHLCV data
+            feature_configs: List of feature configuration dictionaries
+            
+        Returns:
+            DataFrame with generated features
+        """
+        with monitor_operation(
+            f"batch_feature_generation_{len(feature_configs)}",
+            metadata={'n_features': len(feature_configs), 'data_shape': data.shape}
+        ):
+            logger.info(f"🚀 Generating {len(feature_configs)} features in batch...")
+            
+            # Group features by type for efficient processing
+            indicator_features = []
+            rolling_features = []
+            scaling_features = []
+            
+            for config in feature_configs:
+                feature_type = config.get('type', 'indicator')
+                if feature_type == 'indicator':
+                    indicator_features.append(config)
+                elif feature_type == 'rolling':
+                    rolling_features.append(config)
+                elif feature_type == 'scaling':
+                    scaling_features.append(config)
+            
+            results = {}
+            
+            # Process indicator features
+            if indicator_features:
+                logger.debug(f"Processing {len(indicator_features)} indicator features...")
+                indicator_results = self._vectorbt_batch_indicators_optimized(data, indicator_features)
+                results.update(indicator_results)
+            
+            # Process rolling features
+            if rolling_features:
+                logger.debug(f"Processing {len(rolling_features)} rolling features...")
+                rolling_results = self._process_rolling_features_batch(data, rolling_features)
+                results.update(rolling_results)
+            
+            # Process scaling features
+            if scaling_features:
+                logger.debug(f"Processing {len(scaling_features)} scaling features...")
+                scaling_results = self._process_scaling_features_batch(data, scaling_features)
+                results.update(scaling_results)
+            
+            # Combine all results
+            result_df = pd.DataFrame(results, index=data.index)
+            
+            # Optimize final result
+            result_df = optimize_memory_usage(result_df)
+            
+            logger.info(f"✅ Generated {len(result_df.columns)} features successfully")
+            return result_df
+    
+    def _process_rolling_features_batch(self, data: pd.DataFrame, 
+                                      rolling_configs: List[Dict[str, Any]]) -> Dict[str, pd.Series]:
+        """Process rolling features in batch."""
+        results = {}
+        
+        for config in rolling_configs:
+            feature_name = config['name']
+            column = config.get('column', 'close')
+            operation = config.get('operation', 'mean')
+            window = config.get('window', 20)
+            
+            if column not in data.columns:
+                logger.warning(f"Column {column} not found for rolling feature {feature_name}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+                continue
+            
+            try:
+                if operation == 'mean':
+                    result = data[column].rolling(window=window).mean()
+                elif operation == 'std':
+                    result = data[column].rolling(window=window).std()
+                elif operation == 'min':
+                    result = data[column].rolling(window=window).min()
+                elif operation == 'max':
+                    result = data[column].rolling(window=window).max()
+                elif operation == 'sum':
+                    result = data[column].rolling(window=window).sum()
+                else:
+                    logger.warning(f"Unknown rolling operation: {operation}")
+                    result = pd.Series(np.nan, index=data.index)
+                
+                results[feature_name] = result
+                
+            except Exception as e:
+                logger.warning(f"Rolling feature {feature_name} failed: {e}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return results
+    
+    def _process_scaling_features_batch(self, data: pd.DataFrame, 
+                                      scaling_configs: List[Dict[str, Any]]) -> Dict[str, pd.Series]:
+        """Process scaling features in batch."""
+        results = {}
+        
+        for config in scaling_configs:
+            feature_name = config['name']
+            column = config.get('column', 'close')
+            method = config.get('method', 'zscore')
+            
+            if column not in data.columns:
+                logger.warning(f"Column {column} not found for scaling feature {feature_name}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+                continue
+            
+            try:
+                if method == 'zscore':
+                    result = (data[column] - data[column].mean()) / data[column].std()
+                elif method == 'minmax':
+                    result = (data[column] - data[column].min()) / (data[column].max() - data[column].min())
+                elif method == 'robust':
+                    median = data[column].median()
+                    mad = (data[column] - median).abs().median()
+                    result = (data[column] - median) / mad
+                else:
+                    logger.warning(f"Unknown scaling method: {method}")
+                    result = pd.Series(np.nan, index=data.index)
+                
+                results[feature_name] = result
+                
+            except Exception as e:
+                logger.warning(f"Scaling feature {feature_name} failed: {e}")
+                results[feature_name] = pd.Series(np.nan, index=data.index)
+        
+        return results
     
     def get_vectorbt_stats(self) -> Dict[str, Any]:
         """Get VectorBT performance statistics."""

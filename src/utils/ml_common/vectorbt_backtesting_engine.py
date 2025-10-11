@@ -42,6 +42,8 @@ except ImportError:
     cp = None
 
 from src.training.steps.pre_training.profit_labeling.enhanced_label_definitions import TradingCosts
+from .vectorbt_memory_manager import get_memory_manager, memory_managed_operation, optimize_memory_usage
+from .vectorbt_performance_monitor import get_performance_monitor, monitor_operation
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +140,10 @@ class VectorBTBacktestingEngine:
         
         self.config = config or VectorBTBacktestConfig()
         
+        # Initialize memory manager and performance monitor
+        self.memory_manager = get_memory_manager()
+        self.performance_monitor = get_performance_monitor()
+        
         # Configure VectorBT settings
         self._configure_vectorbt()
         
@@ -154,6 +160,7 @@ class VectorBTBacktestingEngine:
         logger.info(f"📊 GPU available: {CUPY_AVAILABLE and self.config.use_gpu}")
         logger.info(f"📊 Parallel processing: {self.config.enable_parallel}")
         logger.info(f"📊 Initial capital: ${self.config.initial_capital:,.2f}")
+        logger.info(f"📊 Memory manager: {self.memory_manager.get_memory_stats()['available_memory_gb']:.2f}GB available")
     
     def _configure_vectorbt(self):
         """Configure VectorBT global settings for optimal performance."""
@@ -194,7 +201,7 @@ class VectorBTBacktestingEngine:
                     mode: BacktestMode = BacktestMode.VECTORBT_CPU,
                     **kwargs) -> VectorBTBacktestResults:
         """
-        Run VectorBT backtest simulation.
+        Run VectorBT backtest simulation with optimized memory and performance management.
         
         Args:
             signals: Trading signals (-1, 0, 1 for short, neutral, long)
@@ -206,44 +213,104 @@ class VectorBTBacktestingEngine:
         Returns:
             Comprehensive backtest results
         """
-        start_time = time.time()
-        logger.info(f"🚀 Starting VectorBT backtest with mode: {mode.value}")
+        # Estimate memory requirements
+        data_size_gb = self._estimate_data_size(signals, prices)
         
-        # Convert inputs to proper format
-        prices_df, signals_df, timestamps_index = self._prepare_inputs(prices, signals, timestamps)
-        
-        # Validate inputs
-        self._validate_inputs(prices_df, signals_df)
-        
-        logger.info(f"📊 Data shapes - Prices: {prices_df.shape}, Signals: {signals_df.shape}")
-        
-        # Execute backtest based on mode
-        if mode == BacktestMode.VECTORBT_GPU and CUPY_AVAILABLE:
-            portfolio = self._run_gpu_backtest(prices_df, signals_df, **kwargs)
-        elif mode == BacktestMode.VECTORBT_PARALLEL:
-            portfolio = self._run_parallel_backtest(prices_df, signals_df, **kwargs)
-        elif mode == BacktestMode.HYBRID:
-            portfolio = self._run_hybrid_backtest(prices_df, signals_df, **kwargs)
+        # Use performance monitoring
+        with monitor_operation(
+            f"vectorbt_backtest_{mode.value}",
+            gpu_used=(mode == BacktestMode.VECTORBT_GPU and CUPY_AVAILABLE),
+            metadata={'data_size_gb': data_size_gb, 'mode': mode.value}
+        ) as operation_id:
+            
+            logger.info(f"🚀 Starting VectorBT backtest with mode: {mode.value}")
+            
+            # Convert inputs to proper format with memory optimization
+            prices_df, signals_df, timestamps_index = self._prepare_inputs_optimized(prices, signals, timestamps)
+            
+            # Validate inputs
+            self._validate_inputs(prices_df, signals_df)
+            
+            logger.info(f"📊 Data shapes - Prices: {prices_df.shape}, Signals: {signals_df.shape}")
+            
+            # Execute backtest based on mode with memory management
+            if mode == BacktestMode.VECTORBT_GPU and CUPY_AVAILABLE:
+                portfolio = self._run_gpu_backtest_optimized(prices_df, signals_df, **kwargs)
+            elif mode == BacktestMode.VECTORBT_PARALLEL:
+                portfolio = self._run_parallel_backtest_optimized(prices_df, signals_df, **kwargs)
+            elif mode == BacktestMode.HYBRID:
+                portfolio = self._run_hybrid_backtest_optimized(prices_df, signals_df, **kwargs)
+            else:
+                portfolio = self._run_cpu_backtest_optimized(prices_df, signals_df, **kwargs)
+            
+            # Calculate comprehensive metrics with memory management
+            results = self._calculate_comprehensive_metrics_optimized(portfolio, prices_df, timestamps_index)
+            
+            # Update performance stats
+            self.performance_stats['total_simulations'] += 1
+            results.mode_used = mode.value
+            
+            logger.info(f"✅ VectorBT backtest completed")
+            logger.info(f"📊 Final portfolio value: ${results.portfolio_values[-1]:.2f}")
+            logger.info(f"📊 Total return: {results.performance_metrics.get('total_return', 0):.2%}")
+            logger.info(f"📊 Sharpe ratio: {results.performance_metrics.get('sharpe_ratio', 0):.3f}")
+            
+            return results
+    
+    def _estimate_data_size(self, signals: Union[np.ndarray, pd.DataFrame], 
+                           prices: Union[np.ndarray, pd.DataFrame]) -> float:
+        """Estimate data size in GB for memory management."""
+        if isinstance(signals, np.ndarray):
+            signals_size = signals.nbytes
         else:
-            portfolio = self._run_cpu_backtest(prices_df, signals_df, **kwargs)
+            signals_size = signals.memory_usage(deep=True).sum()
         
-        # Calculate comprehensive metrics
-        results = self._calculate_comprehensive_metrics(portfolio, prices_df, timestamps_index)
+        if isinstance(prices, np.ndarray):
+            prices_size = prices.nbytes
+        else:
+            prices_size = prices.memory_usage(deep=True).sum()
         
-        # Update performance stats
-        computation_time = time.time() - start_time
-        self.performance_stats['computation_time'] = computation_time
-        self.performance_stats['total_simulations'] += 1
+        total_bytes = signals_size + prices_size
+        return total_bytes / (1024**3)  # Convert to GB
+    
+    def _prepare_inputs_optimized(self, prices, signals, timestamps):
+        """Prepare inputs for VectorBT with memory optimization."""
+        # Convert prices to DataFrame
+        if isinstance(prices, np.ndarray):
+            if prices.ndim == 1:
+                prices_df = pd.DataFrame(prices, columns=['price'])
+            else:
+                prices_df = pd.DataFrame(prices, columns=[f'asset_{i}' for i in range(prices.shape[1])])
+        else:
+            prices_df = prices.copy()
         
-        results.computation_time = computation_time
-        results.mode_used = mode.value
+        # Convert signals to DataFrame
+        if isinstance(signals, np.ndarray):
+            if signals.ndim == 1:
+                signals_df = pd.DataFrame(signals, columns=['signal'])
+            else:
+                signals_df = pd.DataFrame(signals, columns=[f'asset_{i}' for i in range(signals.shape[1])])
+        else:
+            signals_df = signals.copy()
         
-        logger.info(f"✅ VectorBT backtest completed in {computation_time:.3f}s")
-        logger.info(f"📊 Final portfolio value: ${results.portfolio_values[-1]:.2f}")
-        logger.info(f"📊 Total return: {results.performance_metrics.get('total_return', 0):.2%}")
-        logger.info(f"📊 Sharpe ratio: {results.performance_metrics.get('sharpe_ratio', 0):.3f}")
+        # Set timestamps
+        if timestamps is not None:
+            if isinstance(timestamps, pd.DatetimeIndex):
+                timestamps_index = timestamps
+            else:
+                timestamps_index = pd.DatetimeIndex(timestamps)
+        else:
+            timestamps_index = pd.date_range(start='2020-01-01', periods=len(prices_df), freq='1min')
         
-        return results
+        # Set index
+        prices_df.index = timestamps_index
+        signals_df.index = timestamps_index
+        
+        # Optimize data types for memory efficiency
+        prices_df = optimize_memory_usage(prices_df)
+        signals_df = optimize_memory_usage(signals_df)
+        
+        return prices_df, signals_df, timestamps_index
     
     def _prepare_inputs(self, prices, signals, timestamps):
         """Prepare inputs for VectorBT."""
@@ -295,6 +362,185 @@ class VectorBTBacktestingEngine:
         if signals_df.isnull().any().any():
             logger.warning("⚠️ Signals contain NaN values, filling with 0...")
             signals_df = signals_df.fillna(0)
+    
+    def _run_cpu_backtest_optimized(self, prices_df, signals_df, **kwargs):
+        """Run CPU-based VectorBT backtest with memory optimization."""
+        logger.debug("🔄 Running optimized CPU-based VectorBT backtest...")
+        
+        # Use memory management for large datasets
+        data_size_gb = self._estimate_data_size(signals_df.values, prices_df.values)
+        
+        with memory_managed_operation(
+            data_size_gb, 
+            f"cpu_backtest_{int(time.time())}", 
+            "backtesting"
+        ):
+            # Create VectorBT portfolio
+            portfolio = vbt.Portfolio.from_signals(
+                prices_df,
+                signals_df,
+                init_cash=self.config.initial_capital,
+                fees=self.config.commission_rate,
+                slippage=self.config.slippage_rate,
+                freq='1min',
+                **kwargs
+            )
+        
+        self.performance_stats['cpu_operations'] += 1
+        return portfolio
+    
+    def _run_gpu_backtest_optimized(self, prices_df, signals_df, **kwargs):
+        """Run GPU-accelerated VectorBT backtest with memory optimization."""
+        if not CUPY_AVAILABLE:
+            logger.warning("⚠️ GPU not available, falling back to CPU")
+            return self._run_cpu_backtest_optimized(prices_df, signals_df, **kwargs)
+        
+        logger.debug("🔄 Running optimized GPU-accelerated VectorBT backtest...")
+        
+        # Use memory management for GPU operations
+        data_size_gb = self._estimate_data_size(signals_df.values, prices_df.values)
+        
+        with memory_managed_operation(
+            data_size_gb, 
+            f"gpu_backtest_{int(time.time())}", 
+            "gpu_backtesting"
+        ):
+            # Convert to GPU arrays with memory optimization
+            prices_gpu = cp.asarray(prices_df.values, dtype=cp.float32)
+            signals_gpu = cp.asarray(signals_df.values, dtype=cp.float32)
+            
+            # Create portfolio with GPU data
+            portfolio = vbt.Portfolio.from_signals(
+                prices_gpu,
+                signals_gpu,
+                init_cash=self.config.initial_capital,
+                fees=self.config.commission_rate,
+                slippage=self.config.slippage_rate,
+                freq='1min',
+                **kwargs
+            )
+        
+        self.performance_stats['gpu_operations'] += 1
+        return portfolio
+    
+    def _run_parallel_backtest_optimized(self, prices_df, signals_df, **kwargs):
+        """Run parallel VectorBT backtest with memory optimization."""
+        logger.debug("🔄 Running optimized parallel VectorBT backtest...")
+        
+        # Use memory management for parallel operations
+        data_size_gb = self._estimate_data_size(signals_df.values, prices_df.values)
+        
+        with memory_managed_operation(
+            data_size_gb, 
+            f"parallel_backtest_{int(time.time())}", 
+            "parallel_backtesting"
+        ):
+            # Use VectorBT's built-in parallel processing
+            portfolio = vbt.Portfolio.from_signals(
+                prices_df,
+                signals_df,
+                init_cash=self.config.initial_capital,
+                fees=self.config.commission_rate,
+                slippage=self.config.slippage_rate,
+                freq='1min',
+                **kwargs
+            )
+        
+        return portfolio
+    
+    def _run_hybrid_backtest_optimized(self, prices_df, signals_df, **kwargs):
+        """Run hybrid VectorBT backtest (GPU + parallel) with memory optimization."""
+        if CUPY_AVAILABLE and self.config.use_gpu:
+            return self._run_gpu_backtest_optimized(prices_df, signals_df, **kwargs)
+        else:
+            return self._run_parallel_backtest_optimized(prices_df, signals_df, **kwargs)
+    
+    def _calculate_comprehensive_metrics_optimized(self, portfolio, prices_df, timestamps_index):
+        """Calculate comprehensive performance and risk metrics with memory optimization."""
+        logger.debug("📊 Calculating comprehensive metrics with optimization...")
+        
+        # Use memory management for metrics calculation
+        data_size_gb = len(portfolio.value()) * 8 / (1024**3)  # Rough estimate
+        
+        with memory_managed_operation(
+            data_size_gb, 
+            f"metrics_calculation_{int(time.time())}", 
+            "metrics_calculation"
+        ):
+            # Basic portfolio data
+            portfolio_values = portfolio.value()
+            returns = portfolio.returns()
+            positions = portfolio.positions.records_readable
+            
+            # Performance metrics using VectorBT
+            stats = portfolio.stats()
+            
+            # Extract key metrics
+            performance_metrics = {
+                'total_return': stats['Total Return [%]'] / 100,
+                'annualized_return': stats['Annualized Return [%]'] / 100,
+                'volatility': stats['Annualized Volatility [%]'] / 100,
+                'sharpe_ratio': stats['Sharpe Ratio'],
+                'sortino_ratio': stats['Sortino Ratio'],
+                'calmar_ratio': stats['Calmar Ratio'],
+                'max_drawdown': stats['Max. Drawdown [%]'] / 100,
+                'avg_drawdown': stats['Avg. Drawdown [%]'] / 100,
+                'max_drawdown_duration': stats['Max. Drawdown Duration'],
+                'avg_drawdown_duration': stats['Avg. Drawdown Duration'],
+                'win_rate': stats['Win Rate [%]'] / 100,
+                'best_trade': stats['Best Trade [%]'] / 100,
+                'worst_trade': stats['Worst Trade [%]'] / 100,
+                'avg_trade': stats['Avg. Trade [%]'] / 100,
+                'profit_factor': stats['Profit Factor'],
+                'expectancy': stats['Expectancy [%]'] / 100,
+                'sqn': stats['SQN'],
+                'final_portfolio_value': portfolio_values.iloc[-1],
+                'total_trades': stats['# Trades']
+            }
+            
+            # Risk metrics
+            risk_metrics = {
+                'var_95': portfolio.value().quantile(0.05),
+                'cvar_95': portfolio.value()[portfolio.value() <= portfolio.value().quantile(0.05)].mean(),
+                'skewness': returns.skew(),
+                'kurtosis': returns.kurtosis(),
+                'tail_ratio': performance_metrics['best_trade'] / abs(performance_metrics['worst_trade']),
+                'common_sense_ratio': performance_metrics['total_return'] / abs(performance_metrics['max_drawdown']),
+                'cagr': performance_metrics['annualized_return'],
+                'volatility': performance_metrics['volatility']
+            }
+            
+            # Drawdown analysis
+            drawdown_analysis = {
+                'max_drawdown': performance_metrics['max_drawdown'],
+                'avg_drawdown': performance_metrics['avg_drawdown'],
+                'max_drawdown_duration': performance_metrics['max_drawdown_duration'],
+                'avg_drawdown_duration': performance_metrics['avg_drawdown_duration'],
+                'drawdown_series': portfolio.drawdowns.records_readable,
+                'recovery_time': self._calculate_recovery_time(portfolio_values)
+            }
+            
+            # Create trades DataFrame
+            trades_df = portfolio.trades.records_readable if hasattr(portfolio.trades, 'records_readable') else pd.DataFrame()
+            
+            # Create results object
+            results = VectorBTBacktestResults(
+                portfolio=portfolio,
+                portfolio_values=portfolio_values.values,
+                returns=returns.values,
+                positions=positions,
+                trades=trades_df,
+                performance_metrics=performance_metrics,
+                risk_metrics=risk_metrics,
+                drawdown_analysis=drawdown_analysis,
+                computation_time=0.0,  # Will be set by caller
+                memory_usage=data_size_gb,
+                mode_used="",
+                records=portfolio.trades if hasattr(portfolio, 'trades') else None,
+                stats=stats
+            )
+        
+        return results
     
     def _run_cpu_backtest(self, prices_df, signals_df, **kwargs):
         """Run CPU-based VectorBT backtest with advanced portfolio management."""
@@ -493,8 +739,37 @@ class VectorBTBacktestingEngine:
             return portfolio_values.index.get_loc(recovery_idx) - portfolio_values.index.get_loc(max_dd_idx)
     
     def get_performance_stats(self) -> Dict[str, Any]:
-        """Get performance statistics."""
-        return self.performance_stats.copy()
+        """Get comprehensive performance statistics."""
+        stats = self.performance_stats.copy()
+        
+        # Add memory manager stats
+        memory_stats = self.memory_manager.get_memory_stats()
+        stats.update({
+            'memory_usage_gb': memory_stats['current_usage_gb'],
+            'memory_peak_gb': memory_stats['peak_usage_gb'],
+            'memory_available_gb': memory_stats['available_memory_gb'],
+            'memory_utilization': memory_stats['usage_percentage']
+        })
+        
+        # Add performance monitor stats
+        perf_stats = self.performance_monitor.get_performance_summary()
+        stats.update({
+            'total_operations_monitored': perf_stats.get('total_operations', 0),
+            'average_operation_duration': perf_stats.get('average_duration', 0),
+            'gpu_utilization_rate': perf_stats.get('gpu_utilization_rate', 0),
+            'cache_hit_rate': perf_stats.get('cache_hit_rate', 0),
+            'error_rate': perf_stats.get('error_rate', 0)
+        })
+        
+        return stats
+    
+    def get_memory_optimization_recommendations(self) -> List[str]:
+        """Get memory optimization recommendations."""
+        return self.memory_manager.get_optimization_recommendations()
+    
+    def get_performance_optimization_recommendations(self) -> List[str]:
+        """Get performance optimization recommendations."""
+        return self.performance_monitor._get_optimization_recommendations()
     
     def benchmark_performance(self, 
                             signals: Union[np.ndarray, pd.DataFrame],

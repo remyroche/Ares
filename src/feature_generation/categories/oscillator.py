@@ -7,6 +7,8 @@ including CCI, ADX, Aroon, Ultimate Oscillator, KST, APO, CMO, NATR, PFE, T3, KA
 
 import numpy as np
 import pandas as pd
+import warnings
+import logging
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
@@ -55,6 +57,8 @@ except ImportError:
     BaseCalculationType,
     create_base_calculator
 )
+
+logger = logging.getLogger(__name__)
 
 class OscillatorFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for oscillator-based features."""

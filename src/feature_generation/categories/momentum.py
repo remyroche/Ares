@@ -10,6 +10,8 @@ Enhanced with VectorBT for maximum performance.
 
 import numpy as np
 import pandas as pd
+import warnings
+import logging
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
@@ -74,6 +76,8 @@ try:
     ROLLING_OPTIMIZER_AVAILABLE = True
 except ImportError:
     ROLLING_OPTIMIZER_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
 
 # Optional GPU acceleration
 try:
@@ -207,10 +211,21 @@ class AnalystMomentum5mGenerator(VectorizedFeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate 5-minute momentum feature."""
+        """Generate 5-minute momentum feature using VectorBT optimization."""
         returns = data['close'].pct_change()
-        momentum = returns.rolling(self.lookback).mean()
-        return momentum
+        
+        # Use VectorBT for optimized rolling mean
+        if VECTORBT_AVAILABLE and len(returns) > 100:
+            try:
+                momentum = rolling_mean(returns, window=self.lookback)
+                return momentum
+            except Exception as e:
+                logger.warning(f"VectorBT rolling mean failed: {e}, using pandas fallback")
+                momentum = returns.rolling(self.lookback).mean()
+                return momentum
+        else:
+            momentum = returns.rolling(self.lookback).mean()
+            return momentum
 
     
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -250,10 +265,21 @@ class AnalystMomentum15mGenerator(VectorizedFeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate 15-minute momentum feature."""
+        """Generate 15-minute momentum feature using VectorBT optimization."""
         returns = data['close'].pct_change()
-        momentum = returns.rolling(self.lookback).mean()
-        return momentum
+        
+        # Use VectorBT for optimized rolling mean
+        if VECTORBT_AVAILABLE and len(returns) > 100:
+            try:
+                momentum = rolling_mean(returns, window=self.lookback)
+                return momentum
+            except Exception as e:
+                logger.warning(f"VectorBT rolling mean failed: {e}, using pandas fallback")
+                momentum = returns.rolling(self.lookback).mean()
+                return momentum
+        else:
+            momentum = returns.rolling(self.lookback).mean()
+            return momentum
 
     
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -417,11 +443,25 @@ class RSIGenerator(VectorizedFeatureGenerator):
         if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
             close = data['close']
             
-            # Traditional RSI calculation
+            # Traditional RSI calculation using VectorBT optimization
             delta = close.diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=self.period).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=self.period).mean()
-            rs = gain / loss.replace(0, 1)
+            gain = delta.where(delta > 0, 0)
+            loss = -delta.where(delta < 0, 0)
+            
+            # Use VectorBT for optimized rolling mean
+            if VECTORBT_AVAILABLE and len(close) > 100:
+                try:
+                    avg_gain = rolling_mean(gain, window=self.period)
+                    avg_loss = rolling_mean(loss, window=self.period)
+                except Exception as e:
+                    logger.warning(f"VectorBT RSI calculation failed: {e}, using pandas fallback")
+                    avg_gain = gain.rolling(window=self.period).mean()
+                    avg_loss = loss.rolling(window=self.period).mean()
+            else:
+                avg_gain = gain.rolling(window=self.period).mean()
+                avg_loss = loss.rolling(window=self.period).mean()
+            
+            rs = avg_gain / avg_loss.replace(0, 1)
             rsi = 100 - (100 / (1 + rs))
             
             return rsi
@@ -594,9 +634,19 @@ class StochasticGenerator(VectorizedFeatureGenerator):
             low = data['low']
             close = data['close']
             
-            # Traditional Stochastic calculation
-            lowest_low = low.rolling(window=self.k_period).min()
-            highest_high = high.rolling(window=self.k_period).max()
+            # Traditional Stochastic calculation using VectorBT optimization
+            if VECTORBT_AVAILABLE and len(close) > 100:
+                try:
+                    lowest_low = rolling_min(low, window=self.k_period)
+                    highest_high = rolling_max(high, window=self.k_period)
+                except Exception as e:
+                    logger.warning(f"VectorBT Stochastic calculation failed: {e}, using pandas fallback")
+                    lowest_low = low.rolling(window=self.k_period).min()
+                    highest_high = high.rolling(window=self.k_period).max()
+            else:
+                lowest_low = low.rolling(window=self.k_period).min()
+                highest_high = high.rolling(window=self.k_period).max()
+            
             k_percent = 100 * ((close - lowest_low) / (highest_high - lowest_low))
             
             return k_percent
@@ -681,9 +731,19 @@ class WilliamsRGenerator(VectorizedFeatureGenerator):
             low = data['low']
             close = data['close']
             
-            # Williams %R calculation
-            highest_high = high.rolling(window=self.period).max()
-            lowest_low = low.rolling(window=self.period).min()
+            # Williams %R calculation using VectorBT optimization
+            if VECTORBT_AVAILABLE and len(close) > 100:
+                try:
+                    highest_high = rolling_max(high, window=self.period)
+                    lowest_low = rolling_min(low, window=self.period)
+                except Exception as e:
+                    logger.warning(f"VectorBT Williams %R calculation failed: {e}, using pandas fallback")
+                    highest_high = high.rolling(window=self.period).max()
+                    lowest_low = low.rolling(window=self.period).min()
+            else:
+                highest_high = high.rolling(window=self.period).max()
+                lowest_low = low.rolling(window=self.period).min()
+            
             williams_r = -100 * ((highest_high - close) / (highest_high - lowest_low))
             
             return williams_r

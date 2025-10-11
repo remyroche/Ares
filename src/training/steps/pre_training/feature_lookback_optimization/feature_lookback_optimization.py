@@ -7,19 +7,18 @@ modules for validation, error handling, performance monitoring, and optimization
 
 import json
 import logging
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Mapping
+from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from ..settings import get_pre_training_settings
 
 # Import utility modules
-from src.utils.common_operations import safe_dataframe_operation, get_m1_memory_optimizer
+from src.utils.common_operations import safe_dataframe_operation
 from src.utils.common_utilities import CommonUtilities
 from src.utils.math_validation import safe_divide, validate_finite
 from src.utils.serialization_utils import UniversalSerializer, JSONSerializer, PickleSerializer
-from src.utils.hardware.m1_gpu_utils import M1GPUManager
-from src.utils.data.klines_parquet import KlinesParquetManager
+# Removed unused imports: M1GPUManager, KlinesParquetManager
 from .ares_launcher_integration import AresLauncherFeatureLookbackOptimizer
 from src.utils.matrix_operations import (
     get_unified_matrix_operations,
@@ -191,10 +190,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         self.serializer = UniversalSerializer()
         tprint("✅ Basic modular component initialization complete")
 
-        # Initialize additional utility managers
-        self.memory_optimizer = get_m1_memory_optimizer()
-        self.gpu_manager = M1GPUManager()
-        self.data_manager = KlinesParquetManager()
+        # Initialize serializers
         self.json_serializer = JSONSerializer()
         self.pickle_serializer = PickleSerializer()
         tprint("✅ Additional utility managers initialized")
@@ -400,20 +396,20 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
         target_shifts: Dict[str, int] = {}
 
         def _update_target_shifts(source: Any) -> None:
-            if isinstance(source, Mapping):
+            if isinstance(source, dict):
                 raw_shifts = source.get('target_shifts')
-                if isinstance(raw_shifts, Mapping):
+                if isinstance(raw_shifts, dict):
                     for key, value in raw_shifts.items():
                         try:
                             target_shifts[str(key)] = int(value)
                         except (TypeError, ValueError):
                             continue
                 metadata_candidate = source.get('metadata')
-                if isinstance(metadata_candidate, Mapping):
+                if isinstance(metadata_candidate, dict):
                     _update_target_shifts(metadata_candidate)
                 for nested_key in ('multi_horizon_labeling_result', 'standardized_output'):
                     nested = source.get(nested_key)
-                    if isinstance(nested, Mapping):
+                    if isinstance(nested, dict):
                         _update_target_shifts(nested)
 
         _update_target_shifts(pipeline_state)
@@ -2236,7 +2232,7 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
     def _serialize_outer_splits(
         self,
-        splits: Iterable[Tuple[slice, slice]],
+        splits: List[Tuple[slice, slice]],
         data_length: int
     ) -> List[Dict[str, int]]:
         """Convert outer splits to a serializable manifest for downstream consumers."""

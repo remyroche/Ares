@@ -11,11 +11,9 @@ import pandas as pd
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 from dataclasses import dataclass
 from enum import Enum
-import itertools
 from pathlib import Path
 from datetime import datetime
 from functools import lru_cache
-import hashlib
 import gc
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict, OrderedDict
@@ -3542,9 +3540,9 @@ class CoreOptimizer:
     def _get_data_hash(self, data: pd.DataFrame, feature_name: str, horizon: int) -> str:
         """Generate hash for data caching."""
         try:
-            # Create a hash based on data shape, feature name, and horizon
+            # Create a simple hash based on data shape, feature name, and horizon
             data_info = f"{data.shape}_{feature_name}_{horizon}_{data.index[-1] if len(data) > 0 else 0}"
-            return hashlib.md5(data_info.encode()).hexdigest()[:16]
+            return str(hash(data_info))[:16]
         except Exception:
             return f"{feature_name}_{horizon}"
 
@@ -3921,7 +3919,7 @@ class CoreOptimizer:
         def column_array(column_name: str) -> Optional[np.ndarray]:
             return self._extract_numeric_array(data[column_name]) if column_name in data.columns else None
         
-        # Check for Analyst or Tactician labels first (these replace the deprecated MultiHorizonProfitLabeler)
+        # Check for Analyst or Tactician labels first
         analyst_target = column_array('analyst_target')
         analyst_confidence = column_array('analyst_confidence')
         tactician_target = column_array('tactician_target')
@@ -4098,7 +4096,7 @@ class CoreOptimizer:
         # No valid labels found - fail fast
         self.logger.error("❌ No valid labels found for optimization")
         self.logger.error("   → Expected: analyst_target/analyst_confidence OR tactician_target/tactician_confidence")
-        self.logger.error("   → MultiHorizonProfitLabeler is deprecated")
+        self.logger.error("   → Use analyst-labeler or tactician-labeler instead")
         self.logger.error("   → Ensure analyst-labeler or tactician-labeler was run before optimization")
         available_cols = [col for col in data.columns if 'target' in col.lower() or 'label' in col.lower()]
         if available_cols:

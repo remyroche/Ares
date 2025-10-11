@@ -33,10 +33,7 @@ from src.training.steps.pre_training.feature_lookback_optimization.feature_lookb
     OptimizedFeatureLookbackOptimizationComponent,
     OptimizedFeatureLookbackConfig
 )
-from src.training.steps.pre_training.multi_horizon_profit_labeler import (
-    MultiHorizonProfitLabeler,
-    MultiHorizonConfig
-)
+# Removed deprecated MultiHorizonProfitLabeler import
 
 
 @tprint_logged(LogLevel.INFO, include_args=True)

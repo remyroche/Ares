@@ -34,6 +34,20 @@ from ...utils.validation_utils import (
     validate_feature_generation_inputs, ValidationResult
 )
 
+# Import VectorBT optimizations
+try:
+    from .vectorbt_optimized_features import (
+        VectorBTFeatureGenerator, VectorBTFeatureConfig,
+        generate_vectorbt_features, create_vectorbt_config
+    )
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    VectorBTFeatureGenerator = None
+    VectorBTFeatureConfig = None
+    generate_vectorbt_features = None
+    create_vectorbt_config = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -63,6 +77,13 @@ class FeatureGenerationConfig:
     
     # Cross-timeframe
     cross_timeframe_periods: List[int] = None
+    
+    # VectorBT optimizations
+    enable_vectorbt: bool = True
+    vectorbt_use_gpu: bool = True
+    vectorbt_chunk_size: int = 50000
+    vectorbt_memory_limit_gb: float = 8.0
+    vectorbt_enable_parallel: bool = True
     
     # Validation
     min_valid_ratio: float = 0.8  # Minimum ratio of valid values
@@ -176,6 +197,47 @@ class ImprovedFeatureGenerator:
         if not self._validate_input_data(data):
             raise ValueError("Invalid input data - missing required columns or insufficient data")
         
+        # Use VectorBT optimizations if available and enabled
+        if self.config.enable_vectorbt and VECTORBT_AVAILABLE:
+            tprint_info("🚀 Using VectorBT-optimized feature generation...")
+            try:
+                # Create VectorBT configuration
+                vectorbt_config = create_vectorbt_config(
+                    use_gpu=self.config.vectorbt_use_gpu,
+                    chunk_size=self.config.vectorbt_chunk_size,
+                    memory_limit_gb=self.config.vectorbt_memory_limit_gb,
+                    enable_parallel=self.config.vectorbt_enable_parallel,
+                    rolling_windows=self.config.rolling_windows,
+                    cross_timeframe_periods=self.config.cross_timeframe_periods
+                )
+                
+                # Generate features using VectorBT
+                features_df = generate_vectorbt_features(data, vectorbt_config)
+                
+                # Validate generated features
+                validation_result = self.validator.validate_features(features_df)
+                
+                if not validation_result['passed']:
+                    tprint_warning(f"⚠️ VectorBT feature validation failed: {validation_result['issues']}")
+                    # Fall back to manual generation
+                    tprint_info("🔄 Falling back to manual feature generation...")
+                    return self._generate_manual_features(data)
+                
+                tprint_success(f"✅ Generated {len(features_df.columns)} VectorBT-optimized features")
+                tprint_info(f"📊 Quality score: {validation_result['quality_score']:.3f}")
+                
+                return features_df
+                
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBT feature generation failed: {e}")
+                tprint_info("🔄 Falling back to manual feature generation...")
+                return self._generate_manual_features(data)
+        else:
+            # Use manual feature generation
+            return self._generate_manual_features(data)
+    
+    def _generate_manual_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Generate features using manual calculations (fallback)."""
         features = {}
         
         # Generate technical indicators

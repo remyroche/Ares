@@ -36,6 +36,14 @@ except ImportError:
     SCIPY_AVAILABLE = False
     warnings.warn("scipy not available. Some statistical methods will be disabled.")
 
+# Import VectorBT with fallback
+try:
+    import vectorbt as vbt
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    warnings.warn("VectorBT not available. Financial analysis methods will be disabled.")
+
 # Import project utilities
 from src.utils.tprint import tprint
 from src.utils.logger import system_logger
@@ -54,6 +62,11 @@ class ImportanceMethod(Enum):
     PERMUTATION = "permutation"
     VARIANCE = "variance"
     CHI2 = "chi2"
+    # VectorBT financial methods
+    VECTORBT_TECHNICAL = "vectorbt_technical"
+    VECTORBT_RISK = "vectorbt_risk"
+    VECTORBT_PERFORMANCE = "vectorbt_performance"
+    VECTORBT_REGIME = "vectorbt_regime"
 
 
 @dataclass
@@ -72,6 +85,27 @@ class FeatureImportanceConfig:
     min_importance_threshold: float = 0.01
     correlation_threshold: float = 0.95
     verbose: bool = True
+    
+    # VectorBT financial analysis settings
+    enable_vectorbt_analysis: bool = True
+    vectorbt_technical_indicators: bool = True
+    vectorbt_risk_metrics: bool = True
+    vectorbt_performance_metrics: bool = True
+    vectorbt_regime_detection: bool = True
+    
+    # Technical indicator parameters
+    rsi_period: int = 14
+    macd_fast: int = 12
+    macd_slow: int = 26
+    macd_signal: int = 9
+    bb_period: int = 20
+    bb_std: float = 2.0
+    
+    # Risk metrics parameters
+    sharpe_lookback: int = 252
+    sortino_lookback: int = 252
+    var_confidence: float = 0.05
+    max_drawdown_lookback: int = 252
 
 
 @dataclass
@@ -256,6 +290,15 @@ class FeatureImportanceAnalyzer:
             return self._permutation_importance(X, y, task_type)
         elif method == ImportanceMethod.VARIANCE:
             return self._variance_importance(X)
+        # VectorBT financial methods
+        elif method == ImportanceMethod.VECTORBT_TECHNICAL:
+            return self._vectorbt_technical_importance(X, y)
+        elif method == ImportanceMethod.VECTORBT_RISK:
+            return self._vectorbt_risk_importance(X, y)
+        elif method == ImportanceMethod.VECTORBT_PERFORMANCE:
+            return self._vectorbt_performance_importance(X, y)
+        elif method == ImportanceMethod.VECTORBT_REGIME:
+            return self._vectorbt_regime_importance(X, y)
         else:
             raise ValueError(f"Unknown importance method: {method}")
     
@@ -377,6 +420,301 @@ class FeatureImportanceAnalyzer:
             return [feature for feature, _ in sorted_features[:self.config.top_k_features]]
         else:
             return [feature for feature, _ in sorted_features]
+    
+    def _vectorbt_technical_importance(self, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
+        """Calculate technical indicator-based importance using VectorBT."""
+        if not VECTORBT_AVAILABLE or not self.config.vectorbt_technical_indicators:
+            return self._fallback_technical_importance(X, y)
+        
+        try:
+            # Convert to pandas for VectorBT
+            X_df = pd.DataFrame(X, columns=[f"feature_{i}" for i in range(X.shape[1])])
+            y_series = pd.Series(y)
+            
+            importance_scores = {}
+            
+            for i, col in enumerate(X_df.columns):
+                feature_series = X_df[col]
+                
+                # Calculate RSI
+                if len(feature_series) > self.config.rsi_period:
+                    rsi = vbt.RSI.run(feature_series, window=self.config.rsi_period).rsi
+                    rsi_importance = abs(rsi.iloc[-1] - 50) / 50 if not rsi.empty else 0.0
+                else:
+                    rsi_importance = 0.0
+                
+                # Calculate MACD
+                if len(feature_series) > self.config.macd_slow:
+                    macd = vbt.MACD.run(feature_series, 
+                                      fast_window=self.config.macd_fast,
+                                      slow_window=self.config.macd_slow,
+                                      signal_window=self.config.macd_signal)
+                    macd_importance = abs(macd.histogram.iloc[-1]) if not macd.histogram.empty else 0.0
+                else:
+                    macd_importance = 0.0
+                
+                # Calculate Bollinger Bands
+                if len(feature_series) > self.config.bb_period:
+                    bb = vbt.BBANDS.run(feature_series, 
+                                      window=self.config.bb_period,
+                                      alpha=self.config.bb_std)
+                    bb_width = (bb.upper.iloc[-1] - bb.lower.iloc[-1]) / bb.middle.iloc[-1] if not bb.upper.empty else 0.0
+                    bb_importance = bb_width
+                else:
+                    bb_importance = 0.0
+                
+                # Combine technical indicators
+                importance_scores[col] = (rsi_importance + macd_importance + bb_importance) / 3.0
+            
+            return importance_scores
+            
+        except Exception as e:
+            self.logger.warning(f"VectorBT technical importance failed: {e}")
+            return self._fallback_technical_importance(X, y)
+    
+    def _fallback_technical_importance(self, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
+        """Fallback technical importance without VectorBT."""
+        importance_scores = {}
+        
+        for i in range(X.shape[1]):
+            feature_series = X.iloc[:, i] if hasattr(X, 'iloc') else X[:, i]
+            
+            # Simple trend strength
+            if len(feature_series) > 1:
+                trend_strength = abs(np.polyfit(range(len(feature_series)), feature_series, 1)[0])
+            else:
+                trend_strength = 0.0
+            
+            # Simple volatility
+            volatility = np.std(feature_series) if len(feature_series) > 1 else 0.0
+            
+            importance_scores[f"feature_{i}"] = (trend_strength + volatility) / 2.0
+        
+        return importance_scores
+    
+    def _vectorbt_risk_importance(self, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
+        """Calculate risk-based importance using VectorBT."""
+        if not VECTORBT_AVAILABLE or not self.config.vectorbt_risk_metrics:
+            return self._fallback_risk_importance(X, y)
+        
+        try:
+            # Convert to pandas for VectorBT
+            X_df = pd.DataFrame(X, columns=[f"feature_{i}" for i in range(X.shape[1])])
+            y_series = pd.Series(y)
+            
+            importance_scores = {}
+            
+            for i, col in enumerate(X_df.columns):
+                feature_series = X_df[col]
+                
+                # Calculate Sharpe ratio
+                if len(feature_series) > self.config.sharpe_lookback:
+                    sharpe = vbt.sharpe_ratio(feature_series, window=self.config.sharpe_lookback)
+                    sharpe_importance = abs(sharpe.iloc[-1]) if not sharpe.empty else 0.0
+                else:
+                    sharpe_importance = 0.0
+                
+                # Calculate Sortino ratio
+                if len(feature_series) > self.config.sortino_lookback:
+                    sortino = vbt.sortino_ratio(feature_series, window=self.config.sortino_lookback)
+                    sortino_importance = abs(sortino.iloc[-1]) if not sortino.empty else 0.0
+                else:
+                    sortino_importance = 0.0
+                
+                # Calculate Maximum Drawdown
+                if len(feature_series) > self.config.max_drawdown_lookback:
+                    max_dd = vbt.max_drawdown(feature_series, window=self.config.max_drawdown_lookback)
+                    dd_importance = abs(max_dd.iloc[-1]) if not max_dd.empty else 0.0
+                else:
+                    dd_importance = 0.0
+                
+                # Combine risk metrics
+                importance_scores[col] = (sharpe_importance + sortino_importance + dd_importance) / 3.0
+            
+            return importance_scores
+            
+        except Exception as e:
+            self.logger.warning(f"VectorBT risk importance failed: {e}")
+            return self._fallback_risk_importance(X, y)
+    
+    def _fallback_risk_importance(self, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
+        """Fallback risk importance without VectorBT."""
+        importance_scores = {}
+        
+        for i in range(X.shape[1]):
+            feature_series = X.iloc[:, i] if hasattr(X, 'iloc') else X[:, i]
+            
+            # Simple risk metrics
+            if len(feature_series) > 1:
+                returns = np.diff(feature_series) / feature_series[:-1]
+                sharpe_like = np.mean(returns) / np.std(returns) if np.std(returns) > 0 else 0.0
+                volatility = np.std(returns)
+            else:
+                sharpe_like = 0.0
+                volatility = 0.0
+            
+            importance_scores[f"feature_{i}"] = abs(sharpe_like) + volatility
+        
+        return importance_scores
+    
+    def _vectorbt_performance_importance(self, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
+        """Calculate performance-based importance using VectorBT."""
+        if not VECTORBT_AVAILABLE or not self.config.vectorbt_performance_metrics:
+            return self._fallback_performance_importance(X, y)
+        
+        try:
+            # Convert to pandas for VectorBT
+            X_df = pd.DataFrame(X, columns=[f"feature_{i}" for i in range(X.shape[1])])
+            y_series = pd.Series(y)
+            
+            importance_scores = {}
+            
+            for i, col in enumerate(X_df.columns):
+                feature_series = X_df[col]
+                
+                # Calculate cumulative returns
+                if len(feature_series) > 1:
+                    cum_returns = vbt.cumulative_returns(feature_series)
+                    cum_importance = abs(cum_returns.iloc[-1]) if not cum_returns.empty else 0.0
+                else:
+                    cum_importance = 0.0
+                
+                # Calculate rolling returns
+                if len(feature_series) > 20:
+                    rolling_returns = feature_series.rolling(window=20).mean()
+                    rolling_importance = abs(rolling_returns.iloc[-1]) if not rolling_returns.empty else 0.0
+                else:
+                    rolling_importance = 0.0
+                
+                # Calculate volatility
+                if len(feature_series) > 20:
+                    volatility = feature_series.rolling(window=20).std() * np.sqrt(252)
+                    vol_importance = volatility.iloc[-1] if not volatility.empty else 0.0
+                else:
+                    vol_importance = 0.0
+                
+                # Combine performance metrics
+                importance_scores[col] = (cum_importance + rolling_importance + vol_importance) / 3.0
+            
+            return importance_scores
+            
+        except Exception as e:
+            self.logger.warning(f"VectorBT performance importance failed: {e}")
+            return self._fallback_performance_importance(X, y)
+    
+    def _fallback_performance_importance(self, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
+        """Fallback performance importance without VectorBT."""
+        importance_scores = {}
+        
+        for i in range(X.shape[1]):
+            feature_series = X.iloc[:, i] if hasattr(X, 'iloc') else X[:, i]
+            
+            # Simple performance metrics
+            if len(feature_series) > 1:
+                total_return = (feature_series.iloc[-1] - feature_series.iloc[0]) / feature_series.iloc[0]
+                volatility = np.std(feature_series)
+            else:
+                total_return = 0.0
+                volatility = 0.0
+            
+            importance_scores[f"feature_{i}"] = abs(total_return) + volatility
+        
+        return importance_scores
+    
+    def _vectorbt_regime_importance(self, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
+        """Calculate regime-based importance using VectorBT."""
+        if not VECTORBT_AVAILABLE or not self.config.vectorbt_regime_detection:
+            return self._fallback_regime_importance(X, y)
+        
+        try:
+            # Convert to pandas for VectorBT
+            X_df = pd.DataFrame(X, columns=[f"feature_{i}" for i in range(X.shape[1])])
+            y_series = pd.Series(y)
+            
+            # Detect market regime
+            regime = self._detect_market_regime_vectorbt(y_series)
+            
+            importance_scores = {}
+            
+            for i, col in enumerate(X_df.columns):
+                feature_series = X_df[col]
+                
+                # Calculate regime-specific importance
+                if regime == 'uptrend':
+                    # For uptrend, prefer features with positive momentum
+                    momentum = feature_series.rolling(window=10).mean().iloc[-1] if len(feature_series) > 10 else 0.0
+                    importance_scores[col] = max(0, momentum)
+                elif regime == 'downtrend':
+                    # For downtrend, prefer features with negative momentum (defensive)
+                    momentum = feature_series.rolling(window=10).mean().iloc[-1] if len(feature_series) > 10 else 0.0
+                    importance_scores[col] = max(0, -momentum)
+                else:
+                    # For sideways, prefer features with low volatility
+                    volatility = feature_series.rolling(window=10).std().iloc[-1] if len(feature_series) > 10 else 0.0
+                    importance_scores[col] = max(0, 1.0 - volatility)
+            
+            return importance_scores
+            
+        except Exception as e:
+            self.logger.warning(f"VectorBT regime importance failed: {e}")
+            return self._fallback_regime_importance(X, y)
+    
+    def _detect_market_regime_vectorbt(self, y_series: pd.Series) -> str:
+        """Detect market regime using VectorBT."""
+        if len(y_series) < 20:
+            return 'unknown'
+        
+        try:
+            # Calculate moving averages
+            sma_short = vbt.MA.run(y_series, window=10).ma
+            sma_long = vbt.MA.run(y_series, window=30).ma
+            
+            if not sma_short.empty and not sma_long.empty:
+                if sma_short.iloc[-1] > sma_long.iloc[-1]:
+                    return 'uptrend'
+                elif sma_short.iloc[-1] < sma_long.iloc[-1]:
+                    return 'downtrend'
+                else:
+                    return 'sideways'
+            else:
+                return 'unknown'
+                
+        except Exception as e:
+            self.logger.warning(f"Regime detection failed: {e}")
+            return 'unknown'
+    
+    def _fallback_regime_importance(self, X: np.ndarray, y: np.ndarray) -> Dict[str, float]:
+        """Fallback regime importance without VectorBT."""
+        importance_scores = {}
+        
+        # Simple regime detection
+        if len(y) > 20:
+            sma_short = np.mean(y[-10:])
+            sma_long = np.mean(y[-30:])
+            
+            if sma_short > sma_long:
+                regime = 'uptrend'
+            elif sma_short < sma_long:
+                regime = 'downtrend'
+            else:
+                regime = 'sideways'
+        else:
+            regime = 'unknown'
+        
+        for i in range(X.shape[1]):
+            feature_series = X.iloc[:, i] if hasattr(X, 'iloc') else X[:, i]
+            
+            if regime == 'uptrend':
+                momentum = np.mean(feature_series[-10:]) if len(feature_series) > 10 else 0.0
+                importance_scores[f"feature_{i}"] = max(0, momentum)
+            elif regime == 'downtrend':
+                momentum = np.mean(feature_series[-10:]) if len(feature_series) > 10 else 0.0
+                importance_scores[f"feature_{i}"] = max(0, -momentum)
+            else:
+                volatility = np.std(feature_series[-10:]) if len(feature_series) > 10 else 0.0
+                importance_scores[f"feature_{i}"] = max(0, 1.0 - volatility)
+        
+        return importance_scores
 
 
 # Convenience functions

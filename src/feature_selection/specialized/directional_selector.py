@@ -39,6 +39,14 @@ from src.training.steps.pre_training.feature_lookback_optimization.directional_l
 # Import tprint for consistent logging
 from src.utils.tprint import tprint
 
+# Import VectorBT with fallback
+try:
+    import vectorbt as vbt
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    logging.warning("VectorBT not available. Time series analysis will be disabled.")
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -81,6 +89,15 @@ class DirectionalFeatureSelectionConfig:
     enable_cross_directional_filtering: bool = True
     enable_complementary_pair_selection: bool = True
     adaptive_threshold_adjustment: bool = True
+    
+    # VectorBT time series analysis settings
+    enable_vectorbt_analysis: bool = True
+    enable_regime_detection: bool = True
+    enable_temporal_analysis: bool = True
+    regime_window: int = 50
+    temporal_window: int = 20
+    volatility_threshold: float = 1.5
+    trend_threshold: float = 0.02
 
 @dataclass
 class DirectionalFeatureSelectionResult:
@@ -588,6 +605,221 @@ class DirectionalFeatureSelectionAdapter:
         )
 
         return selection_result
+    
+    def _detect_market_regime_vectorbt(self, data: pd.DataFrame, target_column: str = 'returns') -> str:
+        """Detect market regime using VectorBT."""
+        if not VECTORBT_AVAILABLE or not self.config.enable_vectorbt_analysis or not self.config.enable_regime_detection:
+            return self._detect_market_regime_fallback(data, target_column)
+        
+        try:
+            if target_column not in data.columns:
+                return 'unknown'
+            
+            returns = data[target_column]
+            if len(returns) < self.config.regime_window:
+                return 'unknown'
+            
+            # Calculate volatility regime
+            volatility = returns.rolling(window=self.config.regime_window).std() * np.sqrt(252)
+            current_vol = volatility.iloc[-1] if not volatility.empty else 0.0
+            avg_vol = volatility.mean() if not volatility.empty else 0.0
+            
+            # Determine volatility level
+            if current_vol > avg_vol * self.config.volatility_threshold:
+                vol_level = 'high_vol'
+            elif current_vol < avg_vol / self.config.volatility_threshold:
+                vol_level = 'low_vol'
+            else:
+                vol_level = 'normal_vol'
+            
+            # Calculate trend regime using VectorBT
+            sma_short = vbt.MA.run(returns, window=10).ma
+            sma_long = vbt.MA.run(returns, window=30).ma
+            
+            if not sma_short.empty and not sma_long.empty:
+                trend_strength = (sma_short.iloc[-1] - sma_long.iloc[-1]) / sma_long.iloc[-1]
+                
+                if trend_strength > self.config.trend_threshold:
+                    trend_direction = 'uptrend'
+                elif trend_strength < -self.config.trend_threshold:
+                    trend_direction = 'downtrend'
+                else:
+                    trend_direction = 'sideways'
+            else:
+                trend_direction = 'sideways'
+            
+            return f"{trend_direction}_{vol_level}"
+            
+        except Exception as e:
+            self.logger.warning(f"VectorBT regime detection failed: {e}")
+            return self._detect_market_regime_fallback(data, target_column)
+    
+    def _detect_market_regime_fallback(self, data: pd.DataFrame, target_column: str = 'returns') -> str:
+        """Fallback regime detection without VectorBT."""
+        if target_column not in data.columns or len(data) < 20:
+            return 'unknown'
+        
+        returns = data[target_column]
+        
+        # Simple volatility calculation
+        volatility = returns.rolling(window=min(20, len(returns))).std() * np.sqrt(252)
+        current_vol = volatility.iloc[-1] if not volatility.empty else 0.0
+        avg_vol = volatility.mean() if not volatility.empty else 0.0
+        
+        vol_level = 'high_vol' if current_vol > avg_vol * 1.5 else 'low_vol' if current_vol < avg_vol * 0.5 else 'normal_vol'
+        
+        # Simple trend detection
+        sma_short = returns.rolling(window=10).mean()
+        sma_long = returns.rolling(window=30).mean()
+        
+        if not sma_short.empty and not sma_long.empty:
+            trend_strength = (sma_short.iloc[-1] - sma_long.iloc[-1]) / sma_long.iloc[-1]
+            trend_direction = 'uptrend' if trend_strength > 0.02 else 'downtrend' if trend_strength < -0.02 else 'sideways'
+        else:
+            trend_direction = 'sideways'
+        
+        return f"{trend_direction}_{vol_level}"
+    
+    def _analyze_temporal_features_vectorbt(self, data: pd.DataFrame, features: List[str]) -> Dict[str, Dict[str, float]]:
+        """Analyze temporal characteristics of features using VectorBT."""
+        if not VECTORBT_AVAILABLE or not self.config.enable_vectorbt_analysis or not self.config.enable_temporal_analysis:
+            return self._analyze_temporal_features_fallback(data, features)
+        
+        try:
+            temporal_analysis = {}
+            
+            for feature in features:
+                if feature not in data.columns:
+                    continue
+                
+                feature_series = data[feature]
+                
+                if len(feature_series) < 10:
+                    continue
+                
+                # Calculate trend strength using VectorBT
+                trend_slope = vbt.linear_regression(feature_series, window=min(20, len(feature_series))).slope
+                trend_strength = abs(trend_slope.iloc[-1]) if not trend_slope.empty else 0.0
+                
+                # Calculate seasonality
+                seasonality_strength = 0.0
+                for period in [5, 10, 20]:
+                    if len(feature_series) > period * 2:
+                        autocorr = feature_series.autocorr(lag=period)
+                        seasonality_strength = max(seasonality_strength, abs(autocorr))
+                
+                # Calculate autocorrelation
+                autocorr = feature_series.autocorr(lag=1) if len(feature_series) > 1 else 0.0
+                
+                # Calculate stationarity (simplified)
+                stationarity = self._test_stationarity(feature_series)
+                
+                temporal_analysis[feature] = {
+                    'trend_strength': float(trend_strength),
+                    'seasonality_strength': float(seasonality_strength),
+                    'autocorrelation': float(autocorr),
+                    'stationarity': stationarity,
+                    'temporal_importance': float(trend_strength * 0.4 + seasonality_strength * 0.3 + abs(autocorr) * 0.3)
+                }
+            
+            return temporal_analysis
+            
+        except Exception as e:
+            self.logger.warning(f"VectorBT temporal analysis failed: {e}")
+            return self._analyze_temporal_features_fallback(data, features)
+    
+    def _analyze_temporal_features_fallback(self, data: pd.DataFrame, features: List[str]) -> Dict[str, Dict[str, float]]:
+        """Fallback temporal analysis without VectorBT."""
+        temporal_analysis = {}
+        
+        for feature in features:
+            if feature not in data.columns:
+                continue
+            
+            feature_series = data[feature]
+            
+            if len(feature_series) < 3:
+                continue
+            
+            # Simple trend calculation
+            x = np.arange(len(feature_series))
+            slope, _ = np.polyfit(x, feature_series.values, 1)
+            trend_strength = abs(slope)
+            
+            # Simple autocorrelation
+            autocorr = feature_series.autocorr(lag=1) if len(feature_series) > 1 else 0.0
+            
+            # Simple stationarity test
+            stationarity = self._test_stationarity(feature_series)
+            
+            temporal_analysis[feature] = {
+                'trend_strength': float(trend_strength),
+                'seasonality_strength': 0.0,
+                'autocorrelation': float(autocorr),
+                'stationarity': stationarity,
+                'temporal_importance': float(trend_strength * 0.5 + abs(autocorr) * 0.5)
+            }
+        
+        return temporal_analysis
+    
+    def _test_stationarity(self, series: pd.Series) -> bool:
+        """Simple stationarity test."""
+        if len(series) < 10:
+            return True
+        
+        # Simple test: check if variance is relatively stable
+        half_len = len(series) // 2
+        first_half_var = series.iloc[:half_len].var()
+        second_half_var = series.iloc[half_len:].var()
+        
+        if first_half_var == 0 or second_half_var == 0:
+            return True
+        
+        variance_ratio = abs(first_half_var - second_half_var) / max(first_half_var, second_half_var)
+        return variance_ratio < 0.5  # Threshold for stationarity
+    
+    def _apply_regime_aware_selection(self, 
+                                    features: List[str], 
+                                    regime: str, 
+                                    temporal_analysis: Dict[str, Dict[str, float]]) -> List[str]:
+        """Apply regime-aware feature selection."""
+        if not self.config.enable_vectorbt_analysis:
+            return features
+        
+        try:
+            regime_features = []
+            
+            if regime.startswith('uptrend'):
+                # For uptrend, prefer features with positive momentum and trend
+                regime_features = [
+                    f for f in features 
+                    if temporal_analysis.get(f, {}).get('trend_strength', 0) > 0.1
+                ]
+            elif regime.startswith('downtrend'):
+                # For downtrend, prefer defensive features (stationary or negative trend)
+                regime_features = [
+                    f for f in features 
+                    if temporal_analysis.get(f, {}).get('stationarity', False) or 
+                       temporal_analysis.get(f, {}).get('trend_strength', 0) < -0.1
+                ]
+            else:
+                # For sideways, prefer features with low volatility and seasonality
+                regime_features = [
+                    f for f in features 
+                    if temporal_analysis.get(f, {}).get('seasonality_strength', 0) > 0.1 or
+                       temporal_analysis.get(f, {}).get('stationarity', False)
+                ]
+            
+            # If no regime-specific features found, return original features
+            if not regime_features:
+                regime_features = features
+            
+            tprint(f"🎯 Regime-aware selection: {regime} -> {len(regime_features)}/{len(features)} features")
+            return regime_features
+            
+        except Exception as e:
+            self.logger.warning(f"Regime-aware selection failed: {e}")
+            return features
 
     def get_selection_summary(self) -> Dict[str, Any]:
         """Get summary of selection process."""

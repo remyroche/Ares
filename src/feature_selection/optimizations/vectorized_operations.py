@@ -19,6 +19,14 @@ from src.utils.hardware.m1_cpu_optimizer import M1CPUOptimizer
 from src.utils.hardware.unified_hardware_manager import UnifiedHardwareManager, HardwareConfig
 from src.utils.tprint import tprint, tprint_success, tprint_warning, tprint_performance, tprint_debug
 
+# Import VectorBT with fallback
+try:
+    import vectorbt as vbt
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    warnings.warn("VectorBT not available. Advanced correlation analysis will be disabled.")
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -41,6 +49,13 @@ class VectorizationConfig:
     # Performance monitoring
     enable_timing: bool = True
     log_performance: bool = True
+    
+    # VectorBT correlation settings
+    enable_vectorbt_correlation: bool = True
+    enable_rolling_correlation: bool = True
+    enable_lagged_correlation: bool = True
+    rolling_window: int = 30
+    max_lags: int = 10
 
 class VectorizedFeatureSelector:
     """Feature selector with vectorized operations and hardware optimization."""
@@ -89,26 +104,137 @@ class VectorizedFeatureSelector:
         return result
     
     def vectorized_correlation_filter(self, X: np.ndarray, threshold: float = None) -> np.ndarray:
-        """Vectorized correlation-based feature filtering."""
+        """Vectorized correlation-based feature filtering with VectorBT enhancements."""
         threshold = threshold or self.config.correlation_threshold
         
         def _correlation_filter():
-            # Compute correlation matrix efficiently
-            corr_matrix = np.corrcoef(X.T)
+            if VECTORBT_AVAILABLE and self.config.enable_vectorbt_correlation:
+                return self._vectorbt_correlation_filter(X, threshold)
+            else:
+                return self._basic_correlation_filter(X, threshold)
+        
+        result = self._time_operation("Vectorized Correlation Filter", _correlation_filter)
+        self.performance_stats['vectorized_operations'] += 1
+        
+        return result
+    
+    def _vectorbt_correlation_filter(self, X: np.ndarray, threshold: float) -> np.ndarray:
+        """Advanced correlation filtering using VectorBT."""
+        try:
+            # Convert to DataFrame for VectorBT
+            X_df = pd.DataFrame(X, columns=[f"feature_{i}" for i in range(X.shape[1])])
             
-            # Vectorized high correlation detection
+            # Calculate multiple correlation types
+            correlations = {}
+            
+            # Pearson correlation
+            pearson_corr = X_df.corr(method='pearson')
+            correlations['pearson'] = pearson_corr
+            
+            # Spearman correlation
+            spearman_corr = X_df.corr(method='spearman')
+            correlations['spearman'] = spearman_corr
+            
+            # Rolling correlation if enabled
+            if self.config.enable_rolling_correlation and len(X_df) > self.config.rolling_window:
+                rolling_corrs = {}
+                for i, col1 in enumerate(X_df.columns):
+                    for j, col2 in enumerate(X_df.columns):
+                        if i < j:  # Avoid duplicates
+                            try:
+                                rolling_corr = vbt.rolling_corr(
+                                    X_df[col1], 
+                                    X_df[col2], 
+                                    window=self.config.rolling_window
+                                )
+                                rolling_corrs[f"{col1}_{col2}"] = rolling_corr
+                            except Exception as e:
+                                self.logger.warning(f"Rolling correlation failed for {col1}-{col2}: {e}")
+                                continue
+                correlations['rolling'] = rolling_corrs
+            
+            # Lagged correlation if enabled
+            if self.config.enable_lagged_correlation:
+                lagged_corrs = {}
+                for i, col1 in enumerate(X_df.columns):
+                    for j, col2 in enumerate(X_df.columns):
+                        if i != j:  # Don't correlate with itself
+                            try:
+                                lags = range(1, min(self.config.max_lags + 1, len(X_df) // 4))
+                                lag_correlations = {}
+                                
+                                for lag in lags:
+                                    if len(X_df) > lag:
+                                        corr = vbt.correlation(
+                                            X_df[col1].iloc[lag:], 
+                                            X_df[col2].iloc[:-lag]
+                                        )
+                                        lag_correlations[f"lag_{lag}"] = float(corr) if not pd.isna(corr) else 0.0
+                                
+                                if lag_correlations:
+                                    optimal_lag = max(lag_correlations.keys(), key=lambda k: abs(lag_correlations[k]))
+                                    lagged_corrs[f"{col1}_{col2}"] = {
+                                        'optimal_lag': optimal_lag,
+                                        'optimal_correlation': lag_correlations[optimal_lag],
+                                        'all_lags': lag_correlations
+                                    }
+                                
+                            except Exception as e:
+                                self.logger.warning(f"Lagged correlation failed for {col1}-{col2}: {e}")
+                                continue
+                correlations['lagged'] = lagged_corrs
+            
+            # Use the most appropriate correlation matrix
+            # Prefer Pearson for basic filtering, but consider others for complex relationships
+            corr_matrix = correlations['pearman']
+            
+            # Enhanced correlation analysis
             high_corr_mask = np.abs(corr_matrix) > threshold
             np.fill_diagonal(high_corr_mask, False)  # Exclude diagonal
             
             # Find features to remove (vectorized)
             to_remove = np.any(high_corr_mask, axis=1)
             
+            # Additional filtering based on rolling correlations
+            if 'rolling' in correlations and correlations['rolling']:
+                # Remove features that are consistently highly correlated
+                for pair_name, rolling_corr in correlations['rolling'].items():
+                    if not rolling_corr.empty:
+                        avg_rolling_corr = rolling_corr.mean()
+                        if abs(avg_rolling_corr) > threshold:
+                            # Find which features to remove
+                            col1, col2 = pair_name.split('_', 1)
+                            col1_idx = int(col1.split('_')[1])
+                            col2_idx = int(col2.split('_')[1])
+                            
+                            # Remove the feature with lower variance (less informative)
+                            var1 = X_df.iloc[:, col1_idx].var()
+                            var2 = X_df.iloc[:, col2_idx].var()
+                            
+                            if var1 < var2:
+                                to_remove[col1_idx] = True
+                            else:
+                                to_remove[col2_idx] = True
+            
             return ~to_remove  # Return features to keep
+            
+        except Exception as e:
+            self.logger.warning(f"VectorBT correlation filter failed: {e}")
+            return self._basic_correlation_filter(X, threshold)
+    
+    def _basic_correlation_filter(self, X: np.ndarray, threshold: float) -> np.ndarray:
+        """Basic correlation filtering without VectorBT."""
+        # Compute correlation matrix efficiently
+        corr_matrix = np.corrcoef(X.T)
         
-        result = self._time_operation("Vectorized Correlation Filter", _correlation_filter)
-        self.performance_stats['vectorized_operations'] += 1
+        # Vectorized high correlation detection
+        high_corr_mask = np.abs(corr_matrix) > threshold
+        np.fill_diagonal(high_corr_mask, False)  # Exclude diagonal
         
-        return result
+        # Find features to remove (vectorized)
+        to_remove = np.any(high_corr_mask, axis=1)
+        
+        return ~to_remove  # Return features to keep
     
     def vectorized_variance_filter(self, X: np.ndarray, threshold: float = None) -> np.ndarray:
         """Vectorized variance-based feature filtering."""
@@ -292,6 +418,176 @@ class VectorizedFeatureSelector:
                 'error': str(e),
                 'execution_time': time.time() - start_time
             }
+    
+    def vectorbt_comprehensive_correlation_analysis(self, X: np.ndarray, feature_names: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Comprehensive correlation analysis using VectorBT."""
+        if not VECTORBT_AVAILABLE or not self.config.enable_vectorbt_correlation:
+            return self._basic_correlation_analysis(X, feature_names)
+        
+        try:
+            # Convert to DataFrame
+            if feature_names is None:
+                feature_names = [f"feature_{i}" for i in range(X.shape[1])]
+            
+            X_df = pd.DataFrame(X, columns=feature_names)
+            
+            analysis_results = {}
+            
+            # Basic correlations
+            analysis_results['pearson'] = X_df.corr(method='pearson')
+            analysis_results['spearman'] = X_df.corr(method='spearman')
+            analysis_results['kendall'] = X_df.corr(method='kendall')
+            
+            # Rolling correlations
+            if self.config.enable_rolling_correlation and len(X_df) > self.config.rolling_window:
+                rolling_correlations = {}
+                for i, col1 in enumerate(X_df.columns):
+                    for j, col2 in enumerate(X_df.columns):
+                        if i < j:  # Avoid duplicates
+                            try:
+                                rolling_corr = vbt.rolling_corr(
+                                    X_df[col1], 
+                                    X_df[col2], 
+                                    window=self.config.rolling_window
+                                )
+                                rolling_correlations[f"{col1}_{col2}"] = rolling_corr
+                            except Exception as e:
+                                self.logger.warning(f"Rolling correlation failed for {col1}-{col2}: {e}")
+                                continue
+                analysis_results['rolling_correlations'] = rolling_correlations
+            
+            # Lagged correlations
+            if self.config.enable_lagged_correlation:
+                lagged_correlations = {}
+                for i, col1 in enumerate(X_df.columns):
+                    for j, col2 in enumerate(X_df.columns):
+                        if i != j:  # Don't correlate with itself
+                            try:
+                                lags = range(1, min(self.config.max_lags + 1, len(X_df) // 4))
+                                lag_correlations = {}
+                                
+                                for lag in lags:
+                                    if len(X_df) > lag:
+                                        corr = vbt.correlation(
+                                            X_df[col1].iloc[lag:], 
+                                            X_df[col2].iloc[:-lag]
+                                        )
+                                        lag_correlations[f"lag_{lag}"] = float(corr) if not pd.isna(corr) else 0.0
+                                
+                                if lag_correlations:
+                                    optimal_lag = max(lag_correlations.keys(), key=lambda k: abs(lag_correlations[k]))
+                                    lagged_correlations[f"{col1}_{col2}"] = {
+                                        'optimal_lag': optimal_lag,
+                                        'optimal_correlation': lag_correlations[optimal_lag],
+                                        'all_lags': lag_correlations
+                                    }
+                                
+                            except Exception as e:
+                                self.logger.warning(f"Lagged correlation failed for {col1}-{col2}: {e}")
+                                continue
+                analysis_results['lagged_correlations'] = lagged_correlations
+            
+            # Correlation clustering
+            analysis_results['correlation_clusters'] = self._cluster_correlated_features(
+                analysis_results['pearson'], threshold=0.8
+            )
+            
+            # Correlation strength analysis
+            analysis_results['correlation_strength'] = self._calculate_correlation_strength(
+                analysis_results['pearson']
+            )
+            
+            # Correlation stability (if rolling correlations available)
+            if 'rolling_correlations' in analysis_results:
+                analysis_results['correlation_stability'] = self._calculate_correlation_stability(
+                    analysis_results['rolling_correlations']
+                )
+            
+            return analysis_results
+            
+        except Exception as e:
+            self.logger.warning(f"VectorBT comprehensive correlation analysis failed: {e}")
+            return self._basic_correlation_analysis(X, feature_names)
+    
+    def _basic_correlation_analysis(self, X: np.ndarray, feature_names: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Basic correlation analysis without VectorBT."""
+        if feature_names is None:
+            feature_names = [f"feature_{i}" for i in range(X.shape[1])]
+        
+        X_df = pd.DataFrame(X, columns=feature_names)
+        
+        return {
+            'pearson': X_df.corr(method='pearson'),
+            'spearman': X_df.corr(method='spearman'),
+            'kendall': X_df.corr(method='kendall'),
+            'correlation_clusters': self._cluster_correlated_features(X_df.corr(), threshold=0.8),
+            'correlation_strength': self._calculate_correlation_strength(X_df.corr())
+        }
+    
+    def _cluster_correlated_features(self, correlation_matrix: pd.DataFrame, threshold: float = 0.8) -> Dict[str, List[str]]:
+        """Cluster highly correlated features."""
+        clusters = {}
+        used_features = set()
+        
+        # Find highly correlated pairs
+        high_corr_pairs = []
+        for i, col1 in enumerate(correlation_matrix.columns):
+            for j, col2 in enumerate(correlation_matrix.columns):
+                if i < j:  # Avoid duplicates
+                    corr_value = abs(correlation_matrix.loc[col1, col2])
+                    if corr_value > threshold:
+                        high_corr_pairs.append((col1, col2, corr_value))
+        
+        # Sort by correlation strength
+        high_corr_pairs.sort(key=lambda x: x[2], reverse=True)
+        
+        # Create clusters
+        cluster_id = 0
+        for col1, col2, corr_value in high_corr_pairs:
+            if col1 not in used_features and col2 not in used_features:
+                cluster_name = f"cluster_{cluster_id}"
+                clusters[cluster_name] = [col1, col2]
+                used_features.add(col1)
+                used_features.add(col2)
+                cluster_id += 1
+            elif col1 in used_features and col2 not in used_features:
+                # Add col2 to existing cluster
+                for cluster_name, features in clusters.items():
+                    if col1 in features:
+                        features.append(col2)
+                        used_features.add(col2)
+                        break
+            elif col2 in used_features and col1 not in used_features:
+                # Add col1 to existing cluster
+                for cluster_name, features in clusters.items():
+                    if col2 in features:
+                        features.append(col1)
+                        used_features.add(col1)
+                        break
+        
+        return clusters
+    
+    def _calculate_correlation_strength(self, correlation_matrix: pd.DataFrame) -> Dict[str, float]:
+        """Calculate correlation strength for each feature."""
+        strength = {}
+        
+        for col in correlation_matrix.columns:
+            # Calculate average absolute correlation with other features
+            other_correlations = correlation_matrix[col].drop(col).abs()
+            strength[col] = float(other_correlations.mean()) if not other_correlations.empty else 0.0
+        
+        return strength
+    
+    def _calculate_correlation_stability(self, rolling_correlations: Dict[str, pd.Series]) -> Dict[str, float]:
+        """Calculate correlation stability over time."""
+        stability = {}
+        
+        for pair_name, rolling_corr in rolling_correlations.items():
+            if not rolling_corr.empty:
+                # Calculate standard deviation of rolling correlations
+                stability[pair_name] = float(rolling_corr.std()) if len(rolling_corr) > 1 else 0.0
+        
+        return stability
     
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics."""

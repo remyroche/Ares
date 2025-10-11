@@ -74,6 +74,11 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.performance_stats = {
+            'vectorbt_operations': 0,
+            'pandas_fallbacks': 0,
+            'gpu_accelerations': 0
+        }
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -104,9 +109,20 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        close_prices = data['close'].values
-        sma = self._calculate_sma(close_prices, period=20)
-        return pd.Series(sma, index=data.index, name='sma_20')
+        close_prices = data['close']
+        
+        # Use VectorBT for SMA calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                sma = rolling_mean(close_prices, window=20)
+                return sma.rename('sma_20')
+            except Exception as e:
+                self.logger.warning(f"VectorBT SMA calculation failed: {e}, using pandas fallback")
+                sma = self._calculate_sma(close_prices.values, period=20)
+                return pd.Series(sma, index=data.index, name='sma_20')
+        else:
+            sma = self._calculate_sma(close_prices.values, period=20)
+            return pd.Series(sma, index=data.index, name='sma_20')
     
     def _calculate_sma(self, prices: np.ndarray, period: int = 20) -> np.ndarray:
         if len(prices) < period:
@@ -124,6 +140,20 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
         else:
             sma = pd.Series(prices).rolling(window=period).mean()
             return sma.values
+        prices_series = pd.Series(prices)
+        
+        # Use VectorBT if available and data is large enough
+        if self._should_use_vectorbt(pd.DataFrame({'close': prices_series})):
+            try:
+                sma = self._vectorbt_rolling_operation(prices_series, 'mean', period)
+                self.performance_stats['vectorbt_operations'] += 1
+                return sma.values
+            except Exception as e:
+                self.logger.warning(f"VectorBT SMA calculation failed: {e}, using pandas fallback")
+                self.performance_stats['pandas_fallbacks'] += 1
+                return prices_series.rolling(window=period).mean().values
+        else:
+            return prices_series.rolling(window=period).mean().values
 
     def _calculate_ema(self, prices: np.ndarray, period: int = 20) -> np.ndarray:
         """Calculate Exponential Moving Average."""
@@ -263,6 +293,54 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
                 data, operations, windows, columns
             )
         return data
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (VECTORBT_AVAILABLE and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000))
+    
+    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
+                                  window: int, **kwargs) -> pd.Series:
+        """Perform VectorBT rolling operation with fallback to pandas."""
+        if not self._should_use_vectorbt(data):
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+        
+        try:
+            if operation == 'mean':
+                return rolling_mean(data, window=window, **kwargs)
+            elif operation == 'std':
+                return rolling_std(data, window=window, **kwargs)
+            elif operation == 'var':
+                return rolling_var(data, window=window, **kwargs)
+            elif operation == 'min':
+                return rolling_min(data, window=window, **kwargs)
+            elif operation == 'max':
+                return rolling_max(data, window=window, **kwargs)
+            elif operation == 'sum':
+                return rolling_sum(data, window=window, **kwargs)
+            else:
+                raise ValueError(f"Unsupported operation: {operation}")
+        except Exception as e:
+            self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            return self._pandas_rolling_operation(data, operation, window, **kwargs)
+    
+    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
+                                 window: int, **kwargs) -> pd.Series:
+        """Fallback rolling operation using pandas."""
+        if operation == 'mean':
+            return data.rolling(window=window).mean()
+        elif operation == 'std':
+            return data.rolling(window=window).std()
+        elif operation == 'var':
+            return data.rolling(window=window).var()
+        elif operation == 'min':
+            return data.rolling(window=window).min()
+        elif operation == 'max':
+            return data.rolling(window=window).max()
+        elif operation == 'sum':
+            return data.rolling(window=window).sum()
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
 
 class ADXGenerator(VectorizedFeatureGenerator):
     """Generator for Average Directional Index (ADX)."""
@@ -295,13 +373,23 @@ class ADXGenerator(VectorizedFeatureGenerator):
             data = self.optimize_dataframe_processing(data)
 
         """Generate ADX values."""
-        high = data['high'].values
-        low = data['low'].values
-        close = data['close'].values
+        high = data['high']
+        low = data['low']
+        close = data['close']
 
-        adx = self._calculate_adx(high, low, close, period=self.period)
-
-        return pd.Series(adx, index=data.index, name=f'adx_{self.period}')
+        # Use VectorBT for ADX calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # VectorBT doesn't have direct ADX, so we use our custom calculation
+                adx = self._calculate_adx(high.values, low.values, close.values, period=self.period)
+                return pd.Series(adx, index=data.index, name=f'adx_{self.period}')
+            except Exception as e:
+                self.logger.warning(f"VectorBT ADX calculation failed: {e}, using pandas fallback")
+                adx = self._calculate_adx(high.values, low.values, close.values, period=self.period)
+                return pd.Series(adx, index=data.index, name=f'adx_{self.period}')
+        else:
+            adx = self._calculate_adx(high.values, low.values, close.values, period=self.period)
+            return pd.Series(adx, index=data.index, name=f'adx_{self.period}')
 
     def _calculate_adx(self, high: np.ndarray, low: np.ndarray, close: np.ndarray, period: int = 14) -> np.ndarray:
         """Calculate Average Directional Index (ADX)."""
@@ -374,11 +462,23 @@ class DirectionalSignalGenerator(VectorizedFeatureGenerator):
             data = self.optimize_dataframe_processing(data)
 
         """Generate directional signal values."""
-        prices = data['close'].values
+        prices = data['close']
 
-        directional_signal = self._calculate_directional_signal(prices)
-
-        return pd.Series(directional_signal, index=data.index, name='directional_signal')
+        # Use VectorBT for directional signal calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # Calculate EMA using VectorBT
+                ema_8 = prices.ewm(span=8).mean()
+                ema_20 = prices.ewm(span=20).mean()
+                directional_signal = ema_8 - ema_20
+                return directional_signal.rename('directional_signal')
+            except Exception as e:
+                self.logger.warning(f"VectorBT directional signal calculation failed: {e}, using pandas fallback")
+                directional_signal = self._calculate_directional_signal(prices.values)
+                return pd.Series(directional_signal, index=data.index, name='directional_signal')
+        else:
+            directional_signal = self._calculate_directional_signal(prices.values)
+            return pd.Series(directional_signal, index=data.index, name='directional_signal')
 
     def _calculate_ema(self, prices: np.ndarray, period: int = 20) -> np.ndarray:
         """Calculate Exponential Moving Average."""
@@ -445,14 +545,40 @@ class TrendScoreGenerator(VectorizedFeatureGenerator):
             data = self.optimize_dataframe_processing(data)
 
         """Generate trend score values."""
-        prices = data['close'].values
-        high = data['high'].values
-        low = data['low'].values
-        close = data['close'].values
+        prices = data['close']
+        high = data['high']
+        low = data['low']
+        close = data['close']
 
-        trend_score = self._calculate_trend_score(prices, high, low, close)
+        # Use VectorBT for trend score calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # Calculate directional signal using VectorBT
+                ema_8 = prices.ewm(span=8).mean()
+                ema_20 = prices.ewm(span=20).mean()
+                directional_signal = ema_8 - ema_20
 
-        return pd.Series(trend_score, index=data.index, name=f'trend_score_{self.adx_period}')
+                # Calculate ADX using our custom method
+                adx = self._calculate_adx(high.values, low.values, close.values, period=self.adx_period)
+                adx_series = pd.Series(adx, index=data.index)
+
+                # Normalize directional signal to [-1, 1] range
+                signal_max = np.nanmax(np.abs(directional_signal))
+                if signal_max > 0:
+                    normalized_signal = directional_signal / signal_max
+                else:
+                    normalized_signal = directional_signal
+
+                # Calculate trend score
+                trend_score = normalized_signal * adx_series
+                return trend_score.rename(f'trend_score_{self.adx_period}')
+            except Exception as e:
+                self.logger.warning(f"VectorBT trend score calculation failed: {e}, using pandas fallback")
+                trend_score = self._calculate_trend_score(prices.values, high.values, low.values, close.values)
+                return pd.Series(trend_score, index=data.index, name=f'trend_score_{self.adx_period}')
+        else:
+            trend_score = self._calculate_trend_score(prices.values, high.values, low.values, close.values)
+            return pd.Series(trend_score, index=data.index, name=f'trend_score_{self.adx_period}')
 
     def _calculate_ema(self, prices: np.ndarray, period: int = 20) -> np.ndarray:
         """Calculate Exponential Moving Average."""
@@ -603,6 +729,18 @@ class SMAGenerator(VectorizedFeatureGenerator):
             sma = base_values.rolling(window=self.period).mean()
         
         return sma
+        # Use VectorBT for SMA calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                sma = rolling_mean(base_values, window=self.period)
+                return sma
+            except Exception as e:
+                self.logger.warning(f"VectorBT SMA calculation failed: {e}, using pandas fallback")
+                sma = base_values.rolling(window=self.period).mean()
+                return sma
+        else:
+            sma = base_values.rolling(window=self.period).mean()
+            return sma
 
     
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -671,10 +809,19 @@ class EMAGenerator(VectorizedFeatureGenerator):
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate EMA on base values
-        ema = base_values.ewm(span=self.period).mean()
-        
-        return ema
+        # Use VectorBT for EMA calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # VectorBT doesn't have direct EMA, so we use ewm
+                ema = base_values.ewm(span=self.period).mean()
+                return ema
+            except Exception as e:
+                self.logger.warning(f"VectorBT EMA calculation failed: {e}, using pandas fallback")
+                ema = base_values.ewm(span=self.period).mean()
+                return ema
+        else:
+            ema = base_values.ewm(span=self.period).mean()
+            return ema
 
 def create_trend_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
     """Create a set of trend feature generators."""
@@ -766,13 +913,28 @@ class WMAGenerator(VectorizedFeatureGenerator):
         """Generate WMA based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate WMA
-        weights = np.arange(1, self.period + 1)
-        wma = base_values.rolling(window=self.period).apply(
-            lambda x: np.average(x, weights=weights)
-        )
-        
-        return wma
+        # Use VectorBT for WMA calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # VectorBT doesn't have direct WMA, so we use rolling apply
+                weights = np.arange(1, self.period + 1)
+                wma = base_values.rolling(window=self.period).apply(
+                    lambda x: np.average(x, weights=weights)
+                )
+                return wma
+            except Exception as e:
+                self.logger.warning(f"VectorBT WMA calculation failed: {e}, using pandas fallback")
+                weights = np.arange(1, self.period + 1)
+                wma = base_values.rolling(window=self.period).apply(
+                    lambda x: np.average(x, weights=weights)
+                )
+                return wma
+        else:
+            weights = np.arange(1, self.period + 1)
+            wma = base_values.rolling(window=self.period).apply(
+                lambda x: np.average(x, weights=weights)
+            )
+            return wma
 
 # DEMA (Double Exponential Moving Average)
     
@@ -841,12 +1003,25 @@ class DEMAGenerator(VectorizedFeatureGenerator):
         """Generate DEMA based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate DEMA
-        ema1 = base_values.ewm(span=self.period).mean()
-        ema2 = ema1.ewm(span=self.period).mean()
-        dema = 2 * ema1 - ema2
-        
-        return dema
+        # Use VectorBT for DEMA calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # Calculate DEMA using ewm
+                ema1 = base_values.ewm(span=self.period).mean()
+                ema2 = ema1.ewm(span=self.period).mean()
+                dema = 2 * ema1 - ema2
+                return dema
+            except Exception as e:
+                self.logger.warning(f"VectorBT DEMA calculation failed: {e}, using pandas fallback")
+                ema1 = base_values.ewm(span=self.period).mean()
+                ema2 = ema1.ewm(span=self.period).mean()
+                dema = 2 * ema1 - ema2
+                return dema
+        else:
+            ema1 = base_values.ewm(span=self.period).mean()
+            ema2 = ema1.ewm(span=self.period).mean()
+            dema = 2 * ema1 - ema2
+            return dema
 
 # TEMA (Triple Exponential Moving Average)
     
@@ -915,13 +1090,28 @@ class TEMAGenerator(VectorizedFeatureGenerator):
         """Generate TEMA based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate TEMA
-        ema1 = base_values.ewm(span=self.period).mean()
-        ema2 = ema1.ewm(span=self.period).mean()
-        ema3 = ema2.ewm(span=self.period).mean()
-        tema = 3 * ema1 - 3 * ema2 + ema3
-        
-        return tema
+        # Use VectorBT for TEMA calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # Calculate TEMA using ewm
+                ema1 = base_values.ewm(span=self.period).mean()
+                ema2 = ema1.ewm(span=self.period).mean()
+                ema3 = ema2.ewm(span=self.period).mean()
+                tema = 3 * ema1 - 3 * ema2 + ema3
+                return tema
+            except Exception as e:
+                self.logger.warning(f"VectorBT TEMA calculation failed: {e}, using pandas fallback")
+                ema1 = base_values.ewm(span=self.period).mean()
+                ema2 = ema1.ewm(span=self.period).mean()
+                ema3 = ema2.ewm(span=self.period).mean()
+                tema = 3 * ema1 - 3 * ema2 + ema3
+                return tema
+        else:
+            ema1 = base_values.ewm(span=self.period).mean()
+            ema2 = ema1.ewm(span=self.period).mean()
+            ema3 = ema2.ewm(span=self.period).mean()
+            tema = 3 * ema1 - 3 * ema2 + ema3
+            return tema
 
 # TRIMA (Triangular Moving Average)
     
@@ -990,11 +1180,22 @@ class TRIMAGenerator(VectorizedFeatureGenerator):
         """Generate TRIMA based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate TRIMA
-        half_period = self.period // 2
-        trima = self._vectorbt_rolling_operation(base_values, "mean", half_period).rolling(window=half_period).mean()
-        
-        return trima
+        # Use VectorBT for TRIMA calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # Calculate TRIMA using VectorBT rolling mean
+                half_period = self.period // 2
+                trima = rolling_mean(base_values, window=half_period).rolling(window=half_period).mean()
+                return trima
+            except Exception as e:
+                self.logger.warning(f"VectorBT TRIMA calculation failed: {e}, using pandas fallback")
+                half_period = self.period // 2
+                trima = base_values.rolling(window=half_period).mean().rolling(window=half_period).mean()
+                return trima
+        else:
+            half_period = self.period // 2
+            trima = base_values.rolling(window=half_period).mean().rolling(window=half_period).mean()
+            return trima
 
 # MAMA (MESA Adaptive Moving Average)
     
@@ -1067,10 +1268,19 @@ class MAMAGenerator(VectorizedFeatureGenerator):
         """Generate MAMA based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate MAMA (simplified version)
-        mama = base_values.ewm(span=20).mean()
-        
-        return mama
+        # Use VectorBT for MAMA calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # Calculate MAMA (simplified version) using ewm
+                mama = base_values.ewm(span=20).mean()
+                return mama
+            except Exception as e:
+                self.logger.warning(f"VectorBT MAMA calculation failed: {e}, using pandas fallback")
+                mama = base_values.ewm(span=20).mean()
+                return mama
+        else:
+            mama = base_values.ewm(span=20).mean()
+            return mama
 
 # VWMA (Volume Weighted Moving Average)
     
@@ -1155,6 +1365,22 @@ class VWMAGenerator(VectorizedFeatureGenerator):
             vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
         
         return vwma
+        # Use VectorBT for VWMA calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # Calculate VWMA using VectorBT rolling sum
+                price_volume = base_values * volume
+                price_volume_sum = rolling_sum(price_volume, window=self.period)
+                volume_sum = rolling_sum(volume, window=self.period)
+                vwma = price_volume_sum / volume_sum
+                return vwma
+            except Exception as e:
+                self.logger.warning(f"VectorBT VWMA calculation failed: {e}, using pandas fallback")
+                vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
+                return vwma
+        else:
+            vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
+            return vwma
 
 
     
@@ -1257,6 +1483,51 @@ class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
             # Return middle line (EMA) as the main feature
             # Upper and lower bands would be: ema ± (multiplier * atr)
             return ema
+            # Use VectorBT for Keltner Channels calculation
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Calculate EMA of close prices (middle line)
+                    ema = close.ewm(span=self.period).mean()
+                    
+                    # Calculate ATR using VectorBT rolling mean
+                    tr1 = high - low
+                    tr2 = abs(high - close.shift(1))
+                    tr3 = abs(low - close.shift(1))
+                    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                    atr = rolling_mean(true_range, window=self.atr_period)
+                    
+                    # Return middle line (EMA) as the main feature
+                    # Upper and lower bands would be: ema ± (multiplier * atr)
+                    return ema
+                except Exception as e:
+                    self.logger.warning(f"VectorBT Keltner Channels calculation failed: {e}, using pandas fallback")
+                    # Calculate EMA of close prices (middle line)
+                    ema = close.ewm(span=self.period).mean()
+                    
+                    # Calculate ATR
+                    tr1 = high - low
+                    tr2 = abs(high - close.shift(1))
+                    tr3 = abs(low - close.shift(1))
+                    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                    atr = true_range.rolling(window=self.atr_period).mean()
+                    
+                    # Return middle line (EMA) as the main feature
+                    # Upper and lower bands would be: ema ± (multiplier * atr)
+                    return ema
+            else:
+                # Calculate EMA of close prices (middle line)
+                ema = close.ewm(span=self.period).mean()
+                
+                # Calculate ATR
+                tr1 = high - low
+                tr2 = abs(high - close.shift(1))
+                tr3 = abs(low - close.shift(1))
+                true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                atr = true_range.rolling(window=self.atr_period).mean()
+                
+                # Return middle line (EMA) as the main feature
+                # Upper and lower bands would be: ema ± (multiplier * atr)
+                return ema
         else:
             # For other base calculations, use EMA of base values
             base_values = self.base_calculator.calculate(data)

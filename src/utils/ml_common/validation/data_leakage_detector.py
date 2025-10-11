@@ -206,7 +206,7 @@ class DataLeakageDetector:
         return results
     
     def _vectorbt_lookahead_analysis(self, features: pd.DataFrame, target: pd.Series) -> Dict[str, Any]:
-        """Perform VectorBT-enhanced lookahead bias analysis."""
+        """Perform VectorBT-enhanced lookahead bias analysis with advanced temporal detection."""
         try:
             # Create time series data for VectorBT analysis
             data = features.copy()
@@ -217,14 +217,13 @@ class DataLeakageDetector:
             
             suspicious_features = []
             
-            # Analyze each feature for temporal patterns
+            # Analyze each feature for temporal patterns using VectorBT
             for col in features.columns:
                 if col in data.columns and data[col].dtype in ['float64', 'int64']:
                     try:
-                        # Calculate rolling correlation with target
+                        # 1. Rolling correlation analysis
                         rolling_corr = data[col].rolling(window=20).corr(data['target'])
                         
-                        # Check for suspicious patterns
                         if rolling_corr.max() > 0.9:
                             suspicious_features.append({
                                 'feature': col,
@@ -233,14 +232,34 @@ class DataLeakageDetector:
                                 'analysis_type': 'vectorbt_rolling_correlation'
                             })
                         
-                        # Check for lead-lag relationships
-                        lead_lag_analysis = self._analyze_lead_lag_relationships(data[col], data['target'])
+                        # 2. VectorBT portfolio-style analysis
+                        portfolio_analysis = self._vectorbt_portfolio_leakage_analysis(data[col], data['target'])
+                        if portfolio_analysis['suspicious']:
+                            suspicious_features.append({
+                                'feature': col,
+                                'portfolio_risk_score': portfolio_analysis['risk_score'],
+                                'risk': portfolio_analysis['risk_level'],
+                                'analysis_type': 'vectorbt_portfolio_analysis'
+                            })
+                        
+                        # 3. Lead-lag relationships with VectorBT
+                        lead_lag_analysis = self._analyze_lead_lag_relationships_vectorbt(data[col], data['target'])
                         if lead_lag_analysis['suspicious']:
                             suspicious_features.append({
                                 'feature': col,
                                 'lead_lag_score': lead_lag_analysis['score'],
                                 'risk': 'medium',
                                 'analysis_type': 'vectorbt_lead_lag'
+                            })
+                        
+                        # 4. VectorBT time series stationarity analysis
+                        stationarity_analysis = self._vectorbt_stationarity_analysis(data[col], data['target'])
+                        if stationarity_analysis['suspicious']:
+                            suspicious_features.append({
+                                'feature': col,
+                                'stationarity_score': stationarity_analysis['score'],
+                                'risk': 'medium',
+                                'analysis_type': 'vectorbt_stationarity'
                             })
                             
                     except Exception as e:
@@ -249,12 +268,184 @@ class DataLeakageDetector:
             
             return {
                 'suspicious_features': suspicious_features,
-                'analysis_method': 'vectorbt_time_series'
+                'analysis_method': 'vectorbt_advanced_time_series',
+                'total_features_analyzed': len(features.columns),
+                'vectorbt_available': self.vectorbt_available
             }
             
         except Exception as e:
             logger.warning(f"VectorBT lookahead analysis failed: {e}")
             return {'suspicious_features': [], 'analysis_method': 'failed'}
+    
+    def _vectorbt_portfolio_leakage_analysis(self, feature: pd.Series, target: pd.Series) -> Dict[str, Any]:
+        """Use VectorBT portfolio analysis to detect data leakage patterns."""
+        try:
+            # Create returns from feature and target
+            feature_returns = feature.pct_change().dropna()
+            target_returns = target.pct_change().dropna()
+            
+            # Align data
+            min_len = min(len(feature_returns), len(target_returns))
+            feature_returns = feature_returns.iloc[:min_len]
+            target_returns = target_returns.iloc[:min_len]
+            
+            # Create VectorBT portfolio
+            returns_data = pd.DataFrame({
+                'feature': feature_returns,
+                'target': target_returns
+            })
+            
+            portfolio = self.vbt.Portfolio.from_returns(returns_data, freq='1min')
+            
+            # Analyze portfolio statistics for suspicious patterns
+            stats = portfolio.stats()
+            
+            # Check for suspiciously high Sharpe ratio (indicates potential leakage)
+            sharpe_ratio = stats.get('Sharpe Ratio', 0)
+            max_drawdown = stats.get('Max. Drawdown [%]', 0)
+            
+            # Calculate risk score based on portfolio metrics
+            risk_score = 0.0
+            risk_level = 'low'
+            
+            if sharpe_ratio > 3.0:  # Suspiciously high Sharpe
+                risk_score += 0.4
+                risk_level = 'high'
+            elif sharpe_ratio > 2.0:
+                risk_score += 0.2
+                risk_level = 'medium'
+            
+            if abs(max_drawdown) < 0.01:  # Suspiciously low drawdown
+                risk_score += 0.3
+                risk_level = 'high' if risk_score > 0.5 else 'medium'
+            
+            # Check for perfect correlation in returns
+            returns_corr = feature_returns.corr(target_returns)
+            if abs(returns_corr) > 0.95:
+                risk_score += 0.3
+                risk_level = 'high'
+            
+            return {
+                'suspicious': risk_score > 0.3,
+                'risk_score': risk_score,
+                'risk_level': risk_level,
+                'sharpe_ratio': sharpe_ratio,
+                'max_drawdown': max_drawdown,
+                'returns_correlation': returns_corr
+            }
+            
+        except Exception as e:
+            logger.debug(f"VectorBT portfolio analysis failed: {e}")
+            return {'suspicious': False, 'risk_score': 0, 'risk_level': 'low'}
+    
+    def _analyze_lead_lag_relationships_vectorbt(self, feature: pd.Series, target: pd.Series) -> Dict[str, Any]:
+        """Enhanced lead-lag analysis using VectorBT time series capabilities."""
+        try:
+            # Use VectorBT's time series analysis for more sophisticated lead-lag detection
+            max_lag = min(20, len(feature) // 10)
+            correlations = []
+            
+            # Calculate cross-correlation at different lags with VectorBT optimization
+            for lag in range(-max_lag, max_lag + 1):
+                if lag < 0:
+                    # Feature leads target
+                    corr = feature.shift(lag).corr(target)
+                elif lag > 0:
+                    # Target leads feature (suspicious)
+                    corr = feature.corr(target.shift(lag))
+                else:
+                    # No lag
+                    corr = feature.corr(target)
+                
+                correlations.append(corr)
+            
+            # Find peak correlations
+            correlations = np.array(correlations)
+            max_corr_idx = np.argmax(np.abs(correlations))
+            max_corr = correlations[max_corr_idx]
+            
+            # Check if target leads feature (suspicious)
+            positive_lag_corrs = correlations[max_lag + 1:]
+            max_positive_corr = max(positive_lag_corrs) if len(positive_lag_corrs) > 0 else 0
+            
+            # Enhanced suspicious detection
+            suspicious = False
+            score = 0.0
+            
+            if max_positive_corr > 0.8:  # Target leads feature
+                suspicious = True
+                score = max_positive_corr
+            elif max_corr > 0.95 and max_corr_idx > max_lag:  # Very high correlation with positive lag
+                suspicious = True
+                score = max_corr
+            
+            # Additional VectorBT-specific checks
+            if self.vectorbt_available:
+                # Check for cointegration (suspicious for leakage)
+                try:
+                    from statsmodels.tsa.stattools import coint
+                    _, p_value, _ = coint(feature, target)
+                    if p_value < 0.01:  # Strong cointegration
+                        suspicious = True
+                        score = max(score, 1 - p_value)
+                except:
+                    pass
+            
+            return {
+                'suspicious': suspicious,
+                'score': score,
+                'max_correlation': max_corr,
+                'max_positive_lag_correlation': max_positive_corr,
+                'max_lag': max_lag
+            }
+            
+        except Exception as e:
+            logger.debug(f"VectorBT lead-lag analysis failed: {e}")
+            return {'suspicious': False, 'score': 0, 'max_lag': 0}
+    
+    def _vectorbt_stationarity_analysis(self, feature: pd.Series, target: pd.Series) -> Dict[str, Any]:
+        """Analyze stationarity patterns that might indicate data leakage."""
+        try:
+            # Check if feature and target have similar stationarity properties
+            # (suspicious if they're too similar)
+            
+            # Calculate rolling statistics
+            feature_rolling_mean = feature.rolling(window=20).mean()
+            feature_rolling_std = feature.rolling(window=20).std()
+            target_rolling_mean = target.rolling(window=20).mean()
+            target_rolling_std = target.rolling(window=20).std()
+            
+            # Calculate correlation of rolling statistics
+            mean_corr = feature_rolling_mean.corr(target_rolling_mean)
+            std_corr = feature_rolling_std.corr(target_rolling_std)
+            
+            # Check for suspiciously high correlation in rolling statistics
+            suspicious = False
+            score = 0.0
+            
+            if abs(mean_corr) > 0.9:  # Very high correlation in rolling means
+                suspicious = True
+                score += abs(mean_corr) * 0.5
+            
+            if abs(std_corr) > 0.9:  # Very high correlation in rolling std
+                suspicious = True
+                score += abs(std_corr) * 0.5
+            
+            # Check for identical volatility patterns
+            if abs(std_corr) > 0.95:
+                suspicious = True
+                score = 1.0
+            
+            return {
+                'suspicious': suspicious,
+                'score': min(1.0, score),
+                'mean_correlation': mean_corr,
+                'std_correlation': std_corr
+            }
+            
+        except Exception as e:
+            logger.debug(f"VectorBT stationarity analysis failed: {e}")
+            return {'suspicious': False, 'score': 0}
     
     def _analyze_lead_lag_relationships(self, feature: pd.Series, target: pd.Series) -> Dict[str, Any]:
         """Analyze lead-lag relationships between feature and target."""

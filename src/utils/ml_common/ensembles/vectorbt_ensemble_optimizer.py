@@ -492,18 +492,75 @@ class VectorBTEnsembleOptimizer:
     def _optimize_portfolio_weights_vectorbt(self, predictions: np.ndarray, 
                                            targets: pd.Series) -> np.ndarray:
         """Optimize ensemble weights using VectorBT portfolio optimization."""
-        # Calculate prediction returns (errors)
-        returns = predictions - targets.values.reshape(-1, 1)
+        try:
+            # Calculate prediction returns (errors) - treat as portfolio returns
+            returns = predictions - targets.values.reshape(-1, 1)
+            
+            # Use VectorBT's built-in portfolio optimization
+            if hasattr(self.vbt, 'Portfolio'):
+                # Create portfolio from returns
+                portfolio = self.vbt.Portfolio.from_returns(returns, freq='1min')
+                
+                # Use VectorBT's mean-variance optimization
+                if hasattr(portfolio, 'optimize'):
+                    # Optimize portfolio weights
+                    optimized_weights = portfolio.optimize(
+                        target_return=None,  # Maximize Sharpe ratio
+                        target_volatility=None,
+                        risk_free_rate=0.02,
+                        max_weights=1.0,
+                        min_weights=0.0
+                    )
+                    
+                    if optimized_weights is not None:
+                        return optimized_weights.values.flatten()
+                
+                # Fallback: Use equal weights with VectorBT risk adjustment
+                equal_weights = np.ones(predictions.shape[1]) / predictions.shape[1]
+                
+                # Adjust weights based on VectorBT risk metrics
+                portfolio_stats = portfolio.stats()
+                sharpe_ratios = []
+                
+                for i in range(predictions.shape[1]):
+                    single_asset_returns = returns[:, i:i+1]
+                    single_portfolio = self.vbt.Portfolio.from_returns(single_asset_returns, freq='1min')
+                    single_stats = single_portfolio.stats()
+                    sharpe_ratios.append(single_stats.get('Sharpe Ratio', 0))
+                
+                # Weight by Sharpe ratio (higher Sharpe = higher weight)
+                sharpe_ratios = np.array(sharpe_ratios)
+                if np.sum(sharpe_ratios) > 0:
+                    weights = sharpe_ratios / np.sum(sharpe_ratios)
+                else:
+                    weights = equal_weights
+                
+                return weights
+            
+            else:
+                # Fallback to simple optimization
+                return self._simple_weight_optimization(predictions, targets)
+                
+        except Exception as e:
+            logger.warning(f"VectorBT portfolio optimization failed: {e}, using simple optimization")
+            return self._simple_weight_optimization(predictions, targets)
+    
+    def _simple_weight_optimization(self, predictions: np.ndarray, targets: pd.Series) -> np.ndarray:
+        """Simple weight optimization fallback."""
+        from sklearn.linear_model import LinearRegression
         
-        # Use mean-variance optimization
-        from src.utils.ml_common.vectorbt_portfolio_optimization import VectorBTPortfolioOptimizer, OptimizationMethod
+        # Use linear regression to find optimal weights
+        lr = LinearRegression()
+        lr.fit(predictions, targets)
+        weights = lr.coef_
         
-        config = create_optimization_config(method=OptimizationMethod.MEAN_VARIANCE)
-        optimizer = VectorBTPortfolioOptimizer(config)
+        # Normalize weights to sum to 1
+        if np.sum(np.abs(weights)) > 0:
+            weights = weights / np.sum(np.abs(weights))
+        else:
+            weights = np.ones(len(weights)) / len(weights)
         
-        results = optimizer.optimize_portfolio(returns)
-        
-        return results.weights
+        return weights
     
     def _create_stacking_ensemble(self, base_models: List[Any], meta_learner: Any) -> Any:
         """Create stacking ensemble model."""
@@ -606,6 +663,166 @@ class VectorBTEnsembleOptimizer:
         
         return np.column_stack(predictions)
     
+    def optimize_temporal_ensemble(self, 
+                                  X: Union[np.ndarray, pd.DataFrame],
+                                  y: Union[np.ndarray, pd.Series],
+                                  base_models: List[Any],
+                                  timestamps: Optional[Union[np.ndarray, pd.DatetimeIndex]] = None,
+                                  **kwargs) -> EnsembleResults:
+        """
+        Optimize ensemble with VectorBT temporal analysis.
+        
+        This method uses VectorBT's time series capabilities to create
+        temporally-aware ensemble weights that adapt to market conditions.
+        
+        Args:
+            X: Training features
+            y: Training targets
+            base_models: List of base models
+            timestamps: Time index for temporal analysis
+            **kwargs: Additional arguments
+            
+        Returns:
+            Optimized temporal ensemble results
+        """
+        logger.info("🚀 Starting temporal ensemble optimization with VectorBT...")
+        
+        # Prepare data with temporal index
+        X_df = self._prepare_dataframe(X, timestamps)
+        y_series = self._prepare_series(y, timestamps)
+        
+        # Generate temporal predictions
+        temporal_predictions = self._generate_temporal_predictions(X_df, y_series, base_models)
+        
+        # Use VectorBT for temporal weight optimization
+        temporal_weights = self._optimize_temporal_weights_vectorbt(temporal_predictions, y_series)
+        
+        # Create temporal ensemble
+        ensemble_model = self._create_temporal_ensemble(base_models, temporal_weights)
+        
+        # Calculate performance with temporal metrics
+        cv_scores = cross_val_score(ensemble_model, X_df, y_series, cv=self.config.cv_folds)
+        
+        # Add temporal performance metrics
+        temporal_metrics = self._calculate_temporal_metrics(temporal_predictions, y_series)
+        
+        return EnsembleResults(
+            ensemble_model=ensemble_model,
+            base_models=base_models,
+            weights=temporal_weights,
+            performance_scores={
+                'cv_score': cv_scores.mean(), 
+                'cv_std': cv_scores.std(),
+                **temporal_metrics
+            },
+            strategy_used=EnsembleStrategy.PORTFOLIO_OPTIMIZATION,
+            optimization_time=0.0,
+            n_iterations=0,
+            converged=True
+        )
+    
+    def _generate_temporal_predictions(self, X_df: pd.DataFrame, y_series: pd.Series, 
+                                     base_models: List[Any]) -> np.ndarray:
+        """Generate predictions with temporal analysis."""
+        predictions = []
+        
+        for model in base_models:
+            model_copy = model.__class__(**model.get_params())
+            model_copy.fit(X_df, y_series)
+            pred = model_copy.predict(X_df)
+            predictions.append(pred)
+        
+        return np.column_stack(predictions)
+    
+    def _optimize_temporal_weights_vectorbt(self, predictions: np.ndarray, 
+                                          targets: pd.Series) -> np.ndarray:
+        """Optimize weights using VectorBT temporal analysis."""
+        try:
+            # Convert predictions to returns for VectorBT analysis
+            returns = predictions - targets.values.reshape(-1, 1)
+            
+            # Create VectorBT portfolio for temporal analysis
+            portfolio = self.vbt.Portfolio.from_returns(returns, freq='1min')
+            
+            # Calculate rolling Sharpe ratios for temporal weighting
+            rolling_window = min(50, len(returns) // 4)
+            temporal_weights = []
+            
+            for i in range(rolling_window, len(returns)):
+                # Get recent performance
+                recent_returns = returns[i-rolling_window:i]
+                recent_portfolio = self.vbt.Portfolio.from_returns(recent_returns, freq='1min')
+                recent_stats = recent_portfolio.stats()
+                
+                # Calculate individual model Sharpe ratios
+                model_sharpes = []
+                for j in range(predictions.shape[1]):
+                    single_returns = recent_returns[:, j:j+1]
+                    single_portfolio = self.vbt.Portfolio.from_returns(single_returns, freq='1min')
+                    single_stats = single_portfolio.stats()
+                    model_sharpes.append(single_stats.get('Sharpe Ratio', 0))
+                
+                # Convert to weights
+                model_sharpes = np.array(model_sharpes)
+                if np.sum(model_sharpes) > 0:
+                    weights = model_sharpes / np.sum(model_sharpes)
+                else:
+                    weights = np.ones(len(model_sharpes)) / len(model_sharpes)
+                
+                temporal_weights.append(weights)
+            
+            # Use latest weights
+            if temporal_weights:
+                return temporal_weights[-1]
+            else:
+                return np.ones(predictions.shape[1]) / predictions.shape[1]
+                
+        except Exception as e:
+            logger.warning(f"Temporal weight optimization failed: {e}")
+            return np.ones(predictions.shape[1]) / predictions.shape[1]
+    
+    def _create_temporal_ensemble(self, base_models: List[Any], temporal_weights: np.ndarray) -> Any:
+        """Create temporal ensemble model."""
+        class TemporalEnsemble:
+            def __init__(self, base_models, temporal_weights):
+                self.base_models = base_models
+                self.temporal_weights = temporal_weights
+            
+            def fit(self, X, y):
+                # Train base models
+                for model in self.base_models:
+                    model.fit(X, y)
+                return self
+            
+            def predict(self, X):
+                # Generate predictions
+                predictions = np.column_stack([
+                    model.predict(X) for model in self.base_models
+                ])
+                
+                # Apply temporal weights
+                return np.dot(predictions, self.temporal_weights)
+        
+        return TemporalEnsemble(base_models, temporal_weights)
+    
+    def _calculate_temporal_metrics(self, predictions: np.ndarray, targets: pd.Series) -> Dict[str, float]:
+        """Calculate temporal performance metrics using VectorBT."""
+        try:
+            # Create portfolio from predictions
+            returns = predictions - targets.values.reshape(-1, 1)
+            portfolio = self.vbt.Portfolio.from_returns(returns, freq='1min')
+            stats = portfolio.stats()
+            
+            return {
+                'temporal_sharpe': stats.get('Sharpe Ratio', 0),
+                'temporal_max_dd': stats.get('Max. Drawdown [%]', 0) / 100,
+                'temporal_volatility': stats.get('Annualized Volatility [%]', 0) / 100,
+                'temporal_win_rate': stats.get('Win Rate [%]', 0) / 100
+            }
+        except Exception as e:
+            logger.warning(f"Temporal metrics calculation failed: {e}")
+            return {}
+
     def get_optimization_stats(self) -> Dict[str, Any]:
         """Get optimization statistics."""
         stats = self.optimization_stats.copy()

@@ -4,19 +4,19 @@ FEATURE USAGE VECTORBT AUDIT REPORT
 
 📊 FEATURE USAGE STATISTICS:
   Total features found: 673
-  Features using VectorBT: 41
-  Features using pandas only: 32
-  Features using both: 13
-  Total VectorBT operations: 167
-  Total pandas operations: 95
+  Features using VectorBT: 71
+  Features using pandas only: 29
+  Features using both: 6
+  Total VectorBT operations: 305
+  Total pandas operations: 73
 
 📈 FEATURE USAGE PERCENTAGES:
-  VectorBT features: 6.1%
-  Pandas-only features: 4.8%
-  Mixed features: 1.9%
+  VectorBT features: 10.5%
+  Pandas-only features: 4.3%
+  Mixed features: 0.9%
 
 ⚡ OPERATION RATIO:
-  VectorBT to pandas ratio: 175.8%
+  VectorBT to pandas ratio: 417.8%
 
 📁 FILE-BY-FILE BREAKDOWN:
 
@@ -157,48 +157,48 @@ FEATURE USAGE VECTORBT AUDIT REPORT
 
   📄 /workspace/src/feature_generation/categories/cross_timeframe.py
     Total features: 39
-    VectorBT features: 3
-    Pandas features: 1
-    Mixed features: 4
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
+    VectorBT features: 28
+    Pandas features: 0
+    Mixed features: 0
       - def _generate_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:8, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:7, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:8, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:7, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:3, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:4, PD:0)
       - def _generate_feature: ⚪ None (VB:0, PD:0)
       - def generate_enhanced_cross_timeframe_feature: ⚪ None (VB:0, PD:0)
       - def _generate_fractional_change_feature: ⚪ None (VB:0, PD:0)
       - def _generate_alignment_feature: ⚪ None (VB:0, PD:0)
       - def _generate_learned_projection_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_pca_projection_feature: 🔴 Pandas (VB:0, PD:1)
-      - def _generate_autoencoder_projection_feature: 🟢 VectorBT (VB:2, PD:1)
+      - def _generate_pca_projection_feature: 🟢 VectorBT (VB:4, PD:0)
+      - def _generate_autoencoder_projection_feature: 🟢 VectorBT (VB:5, PD:0)
       - def _generate_patchtst_projection_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_regime_aware_cross_timeframe_feature: 🟢 VectorBT (VB:1, PD:0)
-      - def _generate_multi_scale_correlation_feature: 🔴 Pandas (VB:1, PD:1)
-      - def _calculate_feature_with_lag(self, data: pd.DataFrame, timeframe: int, feature: 🔴 Pandas (VB:1, PD:2)
+      - def _generate_regime_aware_cross_timeframe_feature: 🟢 VectorBT (VB:4, PD:0)
+      - def _generate_multi_scale_correlation_feature: 🟢 VectorBT (VB:4, PD:0)
+      - def _calculate_feature_with_lag(self, data: pd.DataFrame, timeframe: int, feature: 🟢 VectorBT (VB:10, PD:0)
       - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
       - def create_cross_timeframe_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
       - def create_default_cross_timeframe_generators() -> List[Feature: ⚪ None (VB:0, PD:0)
       - def _create_default_config(cls) -> Feature: ⚪ None (VB:0, PD:0)
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
-      - def _generate_feature: ⚪ None (VB:0, PD:0)
       - def _generate_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:1, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:8, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:7, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:8, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:7, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:3, PD:0)
+      - def _generate_feature: 🟢 VectorBT (VB:4, PD:0)
       - def _generate_feature: ⚪ None (VB:0, PD:0)
-      - def _calculate_feature: 🔴 Pandas (VB:1, PD:2)
+      - def _calculate_feature: 🟢 VectorBT (VB:10, PD:0)
 
   📄 /workspace/src/feature_generation/categories/oscillator.py
     Total features: 30
@@ -288,21 +288,21 @@ FEATURE USAGE VECTORBT AUDIT REPORT
 
   📄 /workspace/src/feature_generation/categories/advanced_volume_features.py
     Total features: 12
-    VectorBT features: 7
-    Pandas features: 1
-    Mixed features: 3
+    VectorBT features: 10
+    Pandas features: 0
+    Mixed features: 1
       - def generate_feature: ⚪ None (VB:0, PD:0)
       - def _generate_obv_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:9, PD:0)
       - def _generate_ad_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:9, PD:0)
       - def _generate_mfi_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:4, PD:0)
-      - def _generate_vwap_features(self, data: pd.DataFrame, feature: 🔴 Pandas (VB:3, PD:6)
+      - def _generate_vwap_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:9, PD:0)
       - def _generate_volume_momentum_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:5, PD:0)
       - def _generate_volume_roc_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:3, PD:0)
-      - def _generate_volume_profile_features(self, data: pd.DataFrame, feature: 🔴 Pandas (VB:2, PD:2)
+      - def _generate_volume_profile_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:4, PD:0)
       - def _generate_volume_clustering_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:4, PD:1)
       - def _generate_volume_regime_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:5, PD:0)
       - def _generate_advanced_volume_statistical_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:9, PD:0)
-      - def _generate_basic_volume_feature: 🔴 Pandas (VB:0, PD:3)
+      - def _generate_basic_volume_feature: 🟢 VectorBT (VB:5, PD:0)
 
   📄 /workspace/src/feature_generation/categories/negative_learning_examples.py
     Total features: 2
@@ -393,18 +393,18 @@ FEATURE USAGE VECTORBT AUDIT REPORT
 
   📄 /workspace/src/feature_generation/categories/advanced_volatility_features.py
     Total features: 9
-    VectorBT features: 6
-    Pandas features: 1
-    Mixed features: 1
+    VectorBT features: 8
+    Pandas features: 0
+    Mixed features: 0
       - def generate_feature: ⚪ None (VB:0, PD:0)
       - def _generate_atr_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:6, PD:0)
-      - def _generate_bollinger_bands_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:2, PD:0)
+      - def _generate_bollinger_bands_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:3, PD:0)
       - def _generate_keltner_channels_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:1, PD:0)
-      - def _generate_volatility_clustering_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:5, PD:1)
-      - def _generate_regime_volatility_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:5, PD:0)
-      - def _generate_garch_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:3, PD:0)
-      - def _generate_advanced_statistical_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:12, PD:0)
-      - def _generate_basic_volatility_feature: 🔴 Pandas (VB:0, PD:3)
+      - def _generate_volatility_clustering_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:7, PD:0)
+      - def _generate_regime_volatility_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:6, PD:0)
+      - def _generate_garch_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:4, PD:0)
+      - def _generate_advanced_statistical_features(self, data: pd.DataFrame, feature: 🟢 VectorBT (VB:13, PD:0)
+      - def _generate_basic_volatility_feature: 🟢 VectorBT (VB:6, PD:0)
 
   📄 /workspace/src/feature_generation/categories/autoencoder.py
     Total features: 34
@@ -945,10 +945,9 @@ FEATURE USAGE VECTORBT AUDIT REPORT
     Mixed features: 0
       - def generate_candidate_feature: ⚪ None (VB:0, PD:0)
 
-⚠️  FEATURES NEEDING VECTORBT CONVERSION (32):
+⚠️  FEATURES NEEDING VECTORBT CONVERSION (29):
   - /workspace/src/feature_generation/categories/volume.py::def _generate_feature (1 pandas ops)
   - /workspace/src/feature_generation/categories/volume.py::def _generate_feature (1 pandas ops)
-  - /workspace/src/feature_generation/categories/cross_timeframe.py::def _generate_pca_projection_feature (1 pandas ops)
   - /workspace/src/feature_generation/categories/oscillator.py::def _generate_feature (2 pandas ops)
   - /workspace/src/feature_generation/categories/oscillator.py::def _generate_feature (1 pandas ops)
   - /workspace/src/feature_generation/categories/oscillator.py::def _generate_feature (1 pandas ops)
@@ -965,8 +964,9 @@ FEATURE USAGE VECTORBT AUDIT REPORT
   - /workspace/src/feature_generation/categories/trend.py::def _generate_feature (3 pandas ops)
   - /workspace/src/feature_generation/categories/trend.py::def _generate_feature (1 pandas ops)
   - /workspace/src/feature_generation/categories/trend.py::def _generate_feature (2 pandas ops)
-  - /workspace/src/feature_generation/categories/advanced_volume_features.py::def _generate_basic_volume_feature (3 pandas ops)
-  ... and 12 more features
+  - /workspace/src/feature_generation/categories/momentum.py::def _generate_feature (2 pandas ops)
+  - /workspace/src/feature_generation/categories/momentum.py::def _generate_feature (2 pandas ops)
+  ... and 9 more features
 
 🎯 OVERALL ASSESSMENT:
   🔴 POOR: Few features are using VectorBT

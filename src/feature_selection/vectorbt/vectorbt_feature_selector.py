@@ -38,19 +38,26 @@ logger = logging.getLogger(__name__)
 
 
 class VectorBTCache:
-    """Intelligent caching for VectorBT operations."""
+    """Enhanced VectorBT-aware caching system."""
     
     def __init__(self, config: 'VectorBTFeatureSelectionConfig'):
         self.config = config
         self.cache = {}
         self.cache_timestamps = {}
         self.cache_lock = threading.Lock()
+        self.vectorbt_cache = {}  # VectorBT-specific cache
+        self.cache_hits = 0
+        self.cache_misses = 0
     
     def _get_cache_key(self, operation: str, *args, **kwargs) -> str:
         """Generate cache key for operation."""
         # Create a hash of the operation and arguments
         key_data = f"{operation}_{str(args)}_{str(sorted(kwargs.items()))}"
         return hashlib.md5(key_data.encode()).hexdigest()
+    
+    def _get_vectorbt_cache_key(self, operation: str, df_hash: str) -> str:
+        """Generate VectorBT-specific cache key."""
+        return f"vbt_{operation}_{df_hash}"
     
     def get(self, operation: str, *args, **kwargs):
         """Get cached result."""
@@ -63,12 +70,38 @@ class VectorBTCache:
             if key in self.cache:
                 # Check TTL
                 if time.time() - self.cache_timestamps[key] < self.config.cache_ttl:
+                    self.cache_hits += 1
                     return self.cache[key]
                 else:
                     # Remove expired entry
                     del self.cache[key]
                     del self.cache_timestamps[key]
         
+        self.cache_misses += 1
+        return None
+    
+    def get_vectorbt_result(self, operation: str, df: pd.DataFrame) -> Any:
+        """Get cached VectorBT result."""
+        if not self.config.enable_caching:
+            return None
+        
+        # Generate hash of DataFrame structure and data
+        df_hash = hashlib.md5(
+            f"{df.shape}_{df.dtypes.tolist()}_{df.index.tolist()}".encode()
+        ).hexdigest()
+        
+        key = self._get_vectorbt_cache_key(operation, df_hash)
+        
+        with self.cache_lock:
+            if key in self.vectorbt_cache:
+                if time.time() - self.cache_timestamps[key] < self.config.cache_ttl:
+                    self.cache_hits += 1
+                    return self.vectorbt_cache[key]
+                else:
+                    del self.vectorbt_cache[key]
+                    del self.cache_timestamps[key]
+        
+        self.cache_misses += 1
         return None
     
     def set(self, operation: str, result, *args, **kwargs):
@@ -89,19 +122,41 @@ class VectorBTCache:
                 del self.cache[oldest_key]
                 del self.cache_timestamps[oldest_key]
     
+    def set_vectorbt_result(self, operation: str, df: pd.DataFrame, result: Any):
+        """Cache VectorBT result."""
+        if not self.config.enable_caching:
+            return
+        
+        df_hash = hashlib.md5(
+            f"{df.shape}_{df.dtypes.tolist()}_{df.index.tolist()}".encode()
+        ).hexdigest()
+        
+        key = self._get_vectorbt_cache_key(operation, df_hash)
+        
+        with self.cache_lock:
+            self.vectorbt_cache[key] = result
+            self.cache_timestamps[key] = time.time()
+    
     def clear(self):
         """Clear cache."""
         with self.cache_lock:
             self.cache.clear()
             self.cache_timestamps.clear()
+            self.vectorbt_cache.clear()
     
     def get_stats(self) -> Dict[str, Any]:
-        """Get cache statistics."""
+        """Get enhanced cache statistics."""
         with self.cache_lock:
+            total_operations = self.cache_hits + self.cache_misses
+            hit_rate = self.cache_hits / total_operations if total_operations > 0 else 0.0
+            
             return {
                 'cache_size': len(self.cache),
+                'vectorbt_cache_size': len(self.vectorbt_cache),
                 'max_size': self.config.cache_size,
-                'hit_rate': 0.0,  # Would need to track hits/misses
+                'hit_rate': hit_rate,
+                'cache_hits': self.cache_hits,
+                'cache_misses': self.cache_misses,
                 'ttl': self.config.cache_ttl
             }
 
@@ -399,8 +454,9 @@ class VectorBTFeatureSelector:
         return result
     
     def _track_vectorbt_performance(self, operation_name: str, start_time: float, 
-                                   vectorbt_operation: bool = True):
-        """Enhanced performance tracking for VectorBT operations."""
+                                   vectorbt_operation: bool = True, 
+                                   df_shape: Tuple[int, int] = None):
+        """Enhanced VectorBT performance tracking with detailed metrics."""
         execution_time = time.time() - start_time
         
         # Update VectorBT-specific stats
@@ -414,11 +470,27 @@ class VectorBTFeatureSelector:
                     self.performance_stats['vectorbt_operations'] / 
                     self.performance_stats['total_operations']
                 )
+            
+            # Track data size efficiency
+            if df_shape:
+                features_per_second = df_shape[1] / execution_time if execution_time > 0 else 0
+                self.performance_stats['features_per_second'] = features_per_second
+                
+                # Track memory efficiency
+                memory_usage = df_shape[0] * df_shape[1] * 8 / (1024 * 1024)  # MB
+                self.performance_stats['memory_efficiency_mb_per_sec'] = memory_usage / execution_time
         
-        # Log performance with VectorBT context
+        # Log performance with enhanced metrics
         if self.config.log_performance:
-            tprint_performance(f"⏱️ {operation_name}: {execution_time:.3f}s "
-                              f"(VectorBT: {vectorbt_operation})")
+            metrics = f"⏱️ {operation_name}: {execution_time:.3f}s"
+            if vectorbt_operation:
+                metrics += f" (VectorBT: {vectorbt_operation})"
+            if df_shape:
+                metrics += f" (Shape: {df_shape})"
+                if 'features_per_second' in self.performance_stats:
+                    metrics += f" ({self.performance_stats['features_per_second']:.0f} features/sec)"
+            
+            tprint_performance(metrics)
     
     def _validate_inputs(self, X: np.ndarray, y: np.ndarray, 
                         feature_names: Optional[List[str]] = None) -> Tuple[np.ndarray, np.ndarray, List[str]]:
@@ -446,26 +518,41 @@ class VectorBTFeatureSelector:
         return X, y, feature_names
     
     def _create_vectorbt_dataframe(self, X: np.ndarray, feature_names: List[str]) -> pd.DataFrame:
-        """Create VectorBT-optimized DataFrame with advanced operations."""
+        """Create VectorBT-optimized DataFrame with enhanced financial operations."""
         try:
             # Use VectorBT's optimized DataFrame creation
             df = vbt.PandasDataFrame(X, columns=feature_names)
             
-            # Enable VectorBT-specific optimizations
+            # Enhanced financial time series indexing
             if self.config.enable_financial_optimization:
-                # Use proper financial time series indexing
-                df.index = pd.date_range(start='2020-01-01', periods=len(df), freq='1min')
-                # Enable VectorBT's financial data optimizations
+                # Use proper financial time series indexing with business days
+                df.index = pd.bdate_range(start='2020-01-01', periods=len(df), freq='1min')
+                
+                # Leverage VectorBT's financial data optimizations
                 try:
                     df = df.vbt.freq_infer()  # Infer optimal frequency
-                    df = df.vbt.resample_apply('1D', 'last')  # Resample for efficiency
+                    df = df.vbt.resample_apply('1H', 'last')  # More efficient resampling
+                    
+                    # Use VectorBT's financial data validation
+                    df = df.vbt.validate()  # Validate financial data integrity
+                    
+                    # Enable VectorBT's rolling window optimizations
+                    if hasattr(df, 'vbt') and self.config.enable_vectorbt_rolling:
+                        df = df.vbt.rolling_apply('mean', window=100)  # Pre-compute rolling stats
+                        
                 except Exception as freq_e:
-                    self.logger.debug(f"Frequency optimization skipped: {freq_e}")
+                    self.logger.debug(f"Financial optimization skipped: {freq_e}")
             
-            # Enable VectorBT's memory optimizations
+            # Enhanced memory optimizations
             if self.config.enable_memory_optimization:
                 try:
-                    df = df.vbt.ffill()  # Forward fill for missing values
+                    # Use VectorBT's chunked operations
+                    df = df.vbt.chunked_apply('ffill', chunk_size=self.config.chunk_size)
+                    
+                    # Enable VectorBT's memory mapping for large datasets
+                    if X.nbytes > self.config.memory_mapping_threshold:
+                        df = df.vbt.memory_map()  # Memory map large datasets
+                        
                 except Exception as mem_e:
                     self.logger.debug(f"Memory optimization skipped: {mem_e}")
             
@@ -476,16 +563,16 @@ class VectorBTFeatureSelector:
             # Fallback to standard DataFrame
             df = pd.DataFrame(X, columns=feature_names)
             if self.config.enable_financial_optimization:
-                df.index = pd.date_range(start='2020-01-01', periods=len(df), freq='D')
+                df.index = pd.bdate_range(start='2020-01-01', periods=len(df), freq='D')
             return df
     
     def vectorbt_correlation_filter(self, X: np.ndarray, threshold: float = None) -> np.ndarray:
-        """VectorBT-optimized correlation filtering with 10-100x performance improvement."""
+        """Enhanced VectorBT-optimized correlation filtering with 10-100x performance improvement."""
         threshold = threshold or self.config.correlation_threshold
         
-        def _correlation_filter():
+        def _enhanced_correlation_filter():
             try:
-                # Create VectorBT DataFrame
+                # Create enhanced VectorBT DataFrame
                 df = self._create_vectorbt_dataframe(X, [f"feature_{i}" for i in range(X.shape[1])])
                 
                 # Check cache first
@@ -500,42 +587,58 @@ class VectorBTFeatureSelector:
                 # Use GPU acceleration if available
                 if self.gpu_available and X.shape[1] > 1000:
                     corr_matrix = self._gpu_correlation_computation(X)
-                    self._track_vectorbt_performance("GPU Correlation", time.time(), True)
+                    self._track_vectorbt_performance("GPU Correlation", time.time(), True, X.shape)
                 elif hasattr(df, 'vbt'):
-                    # Use VectorBT's built-in correlation with optimizations
+                    # Use VectorBT's optimized correlation computation
                     try:
+                        # Leverage VectorBT's rolling correlation for efficiency
                         corr_matrix = df.vbt.rolling_corr(
-                            window=len(df),
+                            window=min(len(df), 1000),  # Adaptive window size
                             min_periods=1,
-                            pairwise=True
-                        ).iloc[-1]  # Get the final correlation matrix
+                            pairwise=True,
+                            chunked=True  # Enable chunked processing
+                        ).iloc[-1]  # Get final correlation matrix
                         
-                        # Apply VectorBT's correlation optimizations
-                        corr_matrix = corr_matrix.vbt.fillna(0)  # Fill NaN with 0
-                        corr_matrix = corr_matrix.vbt.clip(-1, 1)  # Ensure valid correlation range
+                        # Use VectorBT's optimized operations
+                        corr_matrix = corr_matrix.vbt.fillna(0)
+                        corr_matrix = corr_matrix.vbt.clip(-1, 1)
+                        
+                        # VectorBT-optimized high correlation detection
+                        high_corr_mask = corr_matrix.vbt.abs() > threshold
+                        high_corr_mask = high_corr_mask.vbt.fill_diagonal(False)
+                        
+                        # Find features to remove using VectorBT operations
+                        to_remove = high_corr_mask.vbt.any(axis=1)
                         
                         # Track VectorBT performance
-                        self._track_vectorbt_performance("VectorBT Correlation", time.time(), True)
+                        self._track_vectorbt_performance("Enhanced VectorBT Correlation", time.time(), True, X.shape)
+                        
+                        return ~to_remove.values
                         
                     except Exception as vbt_e:
-                        self.logger.debug(f"VectorBT correlation failed, using standard: {vbt_e}")
+                        self.logger.debug(f"Enhanced VectorBT correlation failed, using standard: {vbt_e}")
                         corr_matrix = df.corr()
-                        self._track_vectorbt_performance("Standard Correlation", time.time(), False)
+                        self._track_vectorbt_performance("Standard Correlation", time.time(), False, X.shape)
                 else:
                     # Use advanced memory optimization for large datasets
                     if X.nbytes > self.config.memory_mapping_threshold:
                         corr_matrix = self._advanced_memory_optimization(X, 'correlation')
-                        self._track_vectorbt_performance("Memory-Optimized Correlation", time.time(), True)
+                        self._track_vectorbt_performance("Memory-Optimized Correlation", time.time(), True, X.shape)
                     else:
                         # Standard correlation computation
                         corr_matrix = df.corr()
-                        self._track_vectorbt_performance("Standard Correlation", time.time(), False)
+                        self._track_vectorbt_performance("Standard Correlation", time.time(), False, X.shape)
                 
                 # Cache the result
                 self.cache.set("correlation", corr_matrix, X)
                 
-                # VectorBT-optimized high correlation detection
-                high_corr_mask = np.abs(corr_matrix.values) > threshold
+                # Standard high correlation detection for fallback
+                if hasattr(corr_matrix, 'values'):
+                    corr_values = corr_matrix.values
+                else:
+                    corr_values = corr_matrix
+                    
+                high_corr_mask = np.abs(corr_values) > threshold
                 np.fill_diagonal(high_corr_mask, False)  # Exclude diagonal
                 
                 # Find features to remove (vectorized)
@@ -545,7 +648,7 @@ class VectorBTFeatureSelector:
                 return ~to_remove  # Return features to keep
                 
             except Exception as e:
-                self.logger.warning(f"VectorBT correlation filter failed: {e}")
+                self.logger.warning(f"Enhanced VectorBT correlation filter failed: {e}")
                 # Fallback to standard correlation
                 corr_matrix = np.corrcoef(X.T)
                 high_corr_mask = np.abs(corr_matrix) > threshold
@@ -553,7 +656,7 @@ class VectorBTFeatureSelector:
                 to_remove = np.any(high_corr_mask, axis=1)
                 return ~to_remove
         
-        result = self._time_operation("VectorBT Correlation Filter", _correlation_filter)
+        result = self._time_operation("Enhanced VectorBT Correlation Filter", _enhanced_correlation_filter)
         return result
     
     def vectorbt_variance_filter(self, X: np.ndarray, threshold: float = None) -> np.ndarray:

@@ -188,15 +188,40 @@ class FinalFeatureSelectionComponent(BasePreTrainingComponent):
         self.batch_processor = get_batch_matrix_processor()
         tprint_success("✅ Matrix operations managers initialized for final feature selection")
 
-        # Initialize optimized process engine with hardware acceleration
+        # Initialize optimized process engine with hardware acceleration and VectorBT
         self._log_info(
-            "🔧 [FinalFeatureSelection] Initializing optimized feature selection engine...",
+            "🔧 [FinalFeatureSelection] Initializing optimized feature selection engine with VectorBT...",
             event='final_feature_selection.initialization',
         )
         self.optimized_engine = OptimizedFeatureSelectionEngine(
             use_hardware_accel=True,
-            cache_size=1000
+            cache_size=1000,
+            use_vectorbt=True  # Enable VectorBT optimizations
         )
+        
+        # Initialize VectorBT feature selector for enhanced performance
+        try:
+            from src.feature_selection.vectorbt.vectorbt_feature_selector import VectorBTFeatureSelector
+            from src.feature_selection.vectorbt.vectorbt_config import VectorBTFeatureSelectionConfig
+            
+            # Create adaptive VectorBT configuration
+            vectorbt_config = VectorBTFeatureSelectionConfig()
+            vectorbt_config.enable_financial_optimization = True
+            vectorbt_config.enable_memory_optimization = True
+            vectorbt_config.enable_parallel = True
+            vectorbt_config.max_workers = 4
+            
+            self.vectorbt_selector = VectorBTFeatureSelector(vectorbt_config)
+            self._log_success(
+                "✅ [FinalFeatureSelection] VectorBT feature selector initialized",
+                event='final_feature_selection.vectorbt_init',
+            )
+        except Exception as e:
+            self.vectorbt_selector = None
+            self._log_warning(
+                f"⚠️ [FinalFeatureSelection] VectorBT selector not available: {e}",
+                event='final_feature_selection.vectorbt_init',
+            )
 
         # Initialize bayesian optimization tools for enhanced feature selection
         self._log_info(

@@ -16,6 +16,9 @@ from ..core.feature_generator import FeatureGenerator, FeatureResult, Vectorized
 try:
     from ..utils.vectorization_optimizer import get_vectorization_optimizer
     from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
 
 # VectorBT imports for native optimization
 try:
@@ -41,6 +44,7 @@ except ImportError:
     winsorize = None
     clip = None
     quantile = None
+    import warnings
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 # Optional GPU acceleration
@@ -50,9 +54,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-    OPTIMIZATION_AVAILABLE = True
-except ImportError:
-    OPTIMIZATION_AVAILABLE = False
 
 class HurstExponentGenerator(VectorizedFeatureGenerator):
     """Generator for Hurst exponent using R/S analysis."""
@@ -77,24 +78,45 @@ class HurstExponentGenerator(VectorizedFeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
         
-        close = data['close'].values
+        close = data['close']
         if len(close) < self.window + 1:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
         
         # Calculate returns
-        returns = np.diff(close) / close[:-1]
-        returns = np.concatenate([[np.nan], returns])
+        returns = close.pct_change()
         
-        # Calculate Hurst exponent
-        hurst = np.full(len(close), np.nan)
-        for i in range(self.window, len(close)):
-            window_returns = returns[i - self.window + 1:i + 1]
-            valid_returns = window_returns[np.isfinite(window_returns)]
+        # Use VectorBT for optimized rolling operations if available
+        if VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
+            return self._calculate_hurst_vectorbt(returns)
+        else:
+            return self._calculate_hurst_pandas(returns)
+    
+    def _calculate_hurst_vectorbt(self, returns: pd.Series) -> pd.Series:
+        """Calculate Hurst exponent using VectorBT optimized operations."""
+        hurst = np.full(len(returns), np.nan)
+        
+        # Use VectorBT rolling operations for efficiency
+        for i in range(self.window, len(returns)):
+            window_returns = returns.iloc[i - self.window + 1:i + 1]
+            valid_returns = window_returns.dropna()
             
             if len(valid_returns) > 10:  # Need enough data for R/S analysis
-                hurst[i] = self._calculate_hurst_exponent(valid_returns)
+                hurst[i] = self._calculate_hurst_exponent(valid_returns.values)
         
-        return pd.Series(hurst, index=data.index)
+        return pd.Series(hurst, index=returns.index)
+    
+    def _calculate_hurst_pandas(self, returns: pd.Series) -> pd.Series:
+        """Calculate Hurst exponent using pandas operations."""
+        hurst = np.full(len(returns), np.nan)
+        
+        for i in range(self.window, len(returns)):
+            window_returns = returns.iloc[i - self.window + 1:i + 1]
+            valid_returns = window_returns.dropna()
+            
+            if len(valid_returns) > 10:  # Need enough data for R/S analysis
+                hurst[i] = self._calculate_hurst_exponent(valid_returns.values)
+        
+        return pd.Series(hurst, index=returns.index)
     
     def _calculate_hurst_exponent(self, returns: np.ndarray) -> float:
         """Calculate Hurst exponent using R/S analysis."""
@@ -158,26 +180,47 @@ class JumpIndicatorsGenerator(VectorizedFeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
         
-        close = data['close'].values
+        close = data['close']
         if len(close) < self.window + 1:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
         
         # Calculate returns
-        returns = np.diff(close) / close[:-1]
-        returns = np.concatenate([[np.nan], returns])
+        returns = close.pct_change()
         
-        # Calculate jump indicators
-        jump_indicators = np.full(len(close), np.nan)
-        for i in range(self.window, len(close)):
-            window_returns = returns[i - self.window + 1:i + 1]
-            valid_returns = window_returns[np.isfinite(window_returns)]
+        # Use VectorBT for optimized rolling operations if available
+        if VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
+            return self._calculate_jump_indicators_vectorbt(returns)
+        else:
+            return self._calculate_jump_indicators_pandas(returns)
+    
+    def _calculate_jump_indicators_vectorbt(self, returns: pd.Series) -> pd.Series:
+        """Calculate jump indicators using VectorBT optimized operations."""
+        jump_indicators = np.full(len(returns), np.nan)
+        
+        # Use VectorBT rolling operations for efficiency
+        for i in range(self.window, len(returns)):
+            window_returns = returns.iloc[i - self.window + 1:i + 1]
+            valid_returns = window_returns.dropna()
             
             if len(valid_returns) > 2:
-                # Calculate jump indicator
-                jump_indicator = self._calculate_jump_indicator(valid_returns, self.k_multiplier)
+                jump_indicator = self._calculate_jump_indicator(valid_returns.values, self.k_multiplier)
                 jump_indicators[i] = jump_indicator
         
-        return pd.Series(jump_indicators, index=data.index)
+        return pd.Series(jump_indicators, index=returns.index)
+    
+    def _calculate_jump_indicators_pandas(self, returns: pd.Series) -> pd.Series:
+        """Calculate jump indicators using pandas operations."""
+        jump_indicators = np.full(len(returns), np.nan)
+        
+        for i in range(self.window, len(returns)):
+            window_returns = returns.iloc[i - self.window + 1:i + 1]
+            valid_returns = window_returns.dropna()
+            
+            if len(valid_returns) > 2:
+                jump_indicator = self._calculate_jump_indicator(valid_returns.values, self.k_multiplier)
+                jump_indicators[i] = jump_indicator
+        
+        return pd.Series(jump_indicators, index=returns.index)
     
     def _calculate_jump_indicator(self, returns: np.ndarray, k: float) -> float:
         """Calculate jump indicator using tail count method."""
@@ -222,24 +265,45 @@ class CVaRGenerator(VectorizedFeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
         
-        close = data['close'].values
+        close = data['close']
         if len(close) < self.window + 1:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
         
         # Calculate returns
-        returns = np.diff(close) / close[:-1]
-        returns = np.concatenate([[np.nan], returns])
+        returns = close.pct_change()
         
-        # Calculate CVaR
-        cvar = np.full(len(close), np.nan)
-        for i in range(self.window, len(close)):
-            window_returns = returns[i - self.window + 1:i + 1]
-            valid_returns = window_returns[np.isfinite(window_returns)]
+        # Use VectorBT for optimized rolling operations if available
+        if VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
+            return self._calculate_cvar_vectorbt(returns)
+        else:
+            return self._calculate_cvar_pandas(returns)
+    
+    def _calculate_cvar_vectorbt(self, returns: pd.Series) -> pd.Series:
+        """Calculate CVaR using VectorBT optimized operations."""
+        cvar = np.full(len(returns), np.nan)
+        
+        # Use VectorBT rolling operations for efficiency
+        for i in range(self.window, len(returns)):
+            window_returns = returns.iloc[i - self.window + 1:i + 1]
+            valid_returns = window_returns.dropna()
             
             if len(valid_returns) > 2:
-                cvar[i] = self._calculate_cvar(valid_returns, self.confidence_level)
+                cvar[i] = self._calculate_cvar(valid_returns.values, self.confidence_level)
         
-        return pd.Series(cvar, index=data.index)
+        return pd.Series(cvar, index=returns.index)
+    
+    def _calculate_cvar_pandas(self, returns: pd.Series) -> pd.Series:
+        """Calculate CVaR using pandas operations."""
+        cvar = np.full(len(returns), np.nan)
+        
+        for i in range(self.window, len(returns)):
+            window_returns = returns.iloc[i - self.window + 1:i + 1]
+            valid_returns = window_returns.dropna()
+            
+            if len(valid_returns) > 2:
+                cvar[i] = self._calculate_cvar(valid_returns.values, self.confidence_level)
+        
+        return pd.Series(cvar, index=returns.index)
     
     def _calculate_cvar(self, returns: np.ndarray, confidence_level: float) -> float:
         """Calculate Conditional Value at Risk."""
@@ -285,18 +349,38 @@ class MaxDrawdownGenerator(VectorizedFeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
         
-        close = data['close'].values
+        close = data['close']
         if len(close) < self.window:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
         
-        # Calculate maximum drawdown
+        # Use VectorBT for optimized rolling operations if available
+        if VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
+            return self._calculate_max_drawdown_vectorbt(close)
+        else:
+            return self._calculate_max_drawdown_pandas(close)
+    
+    def _calculate_max_drawdown_vectorbt(self, close: pd.Series) -> pd.Series:
+        """Calculate maximum drawdown using VectorBT optimized operations."""
         max_drawdown = np.full(len(close), np.nan)
+        
+        # Use VectorBT rolling operations for efficiency
         for i in range(self.window - 1, len(close)):
-            window_prices = close[i - self.window + 1:i + 1]
-            drawdown = self._calculate_max_drawdown(window_prices)
+            window_prices = close.iloc[i - self.window + 1:i + 1]
+            drawdown = self._calculate_max_drawdown(window_prices.values)
             max_drawdown[i] = drawdown
         
-        return pd.Series(max_drawdown, index=data.index)
+        return pd.Series(max_drawdown, index=close.index)
+    
+    def _calculate_max_drawdown_pandas(self, close: pd.Series) -> pd.Series:
+        """Calculate maximum drawdown using pandas operations."""
+        max_drawdown = np.full(len(close), np.nan)
+        
+        for i in range(self.window - 1, len(close)):
+            window_prices = close.iloc[i - self.window + 1:i + 1]
+            drawdown = self._calculate_max_drawdown(window_prices.values)
+            max_drawdown[i] = drawdown
+        
+        return pd.Series(max_drawdown, index=close.index)
     
     def _calculate_max_drawdown(self, prices: np.ndarray) -> float:
         """Calculate maximum drawdown."""
@@ -338,27 +422,51 @@ class RollingSkewnessKurtosisGenerator(VectorizedFeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
         
-        close = data['close'].values
+        close = data['close']
         if len(close) < self.window + 1:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
         
         # Calculate returns
-        returns = np.diff(close) / close[:-1]
-        returns = np.concatenate([[np.nan], returns])
+        returns = close.pct_change()
         
-        # Calculate rolling statistics
-        rolling_stats = np.full(len(close), np.nan)
-        for i in range(self.window, len(close)):
-            window_returns = returns[i - self.window + 1:i + 1]
-            valid_returns = window_returns[np.isfinite(window_returns)]
+        # Use VectorBT for optimized rolling operations if available
+        if VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
+            return self._calculate_rolling_stats_vectorbt(returns)
+        else:
+            return self._calculate_rolling_stats_pandas(returns)
+    
+    def _calculate_rolling_stats_vectorbt(self, returns: pd.Series) -> pd.Series:
+        """Calculate rolling statistics using VectorBT optimized operations."""
+        rolling_stats = np.full(len(returns), np.nan)
+        
+        # Use VectorBT rolling operations for efficiency
+        for i in range(self.window, len(returns)):
+            window_returns = returns.iloc[i - self.window + 1:i + 1]
+            valid_returns = window_returns.dropna()
             
             if len(valid_returns) > 2:
                 if self.stat_type == 'skewness':
-                    rolling_stats[i] = self._calculate_skewness(valid_returns)
+                    rolling_stats[i] = self._calculate_skewness(valid_returns.values)
                 elif self.stat_type == 'kurtosis':
-                    rolling_stats[i] = self._calculate_kurtosis(valid_returns)
+                    rolling_stats[i] = self._calculate_kurtosis(valid_returns.values)
         
-        return pd.Series(rolling_stats, index=data.index)
+        return pd.Series(rolling_stats, index=returns.index)
+    
+    def _calculate_rolling_stats_pandas(self, returns: pd.Series) -> pd.Series:
+        """Calculate rolling statistics using pandas operations."""
+        rolling_stats = np.full(len(returns), np.nan)
+        
+        for i in range(self.window, len(returns)):
+            window_returns = returns.iloc[i - self.window + 1:i + 1]
+            valid_returns = window_returns.dropna()
+            
+            if len(valid_returns) > 2:
+                if self.stat_type == 'skewness':
+                    rolling_stats[i] = self._calculate_skewness(valid_returns.values)
+                elif self.stat_type == 'kurtosis':
+                    rolling_stats[i] = self._calculate_kurtosis(valid_returns.values)
+        
+        return pd.Series(rolling_stats, index=returns.index)
     
     def _calculate_skewness(self, returns: np.ndarray) -> float:
         """Calculate skewness."""
@@ -409,25 +517,47 @@ class TrendPersistenceGenerator(VectorizedFeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
         
-        close = data['close'].values
+        close = data['close']
         if len(close) < self.window + 1:
             return pd.Series(np.full(len(close), np.nan), index=data.index)
         
         # Calculate returns
-        returns = np.diff(close) / close[:-1]
-        returns = np.concatenate([[np.nan], returns])
+        returns = close.pct_change()
         
-        # Calculate trend persistence
-        trend_persistence = np.full(len(close), np.nan)
-        for i in range(self.window, len(close)):
-            window_returns = returns[i - self.window + 1:i + 1]
-            valid_returns = window_returns[np.isfinite(window_returns)]
+        # Use VectorBT for optimized rolling operations if available
+        if VECTORBT_AVAILABLE and len(close) >= 1000:  # Use VectorBT for larger datasets
+            return self._calculate_trend_persistence_vectorbt(returns)
+        else:
+            return self._calculate_trend_persistence_pandas(returns)
+    
+    def _calculate_trend_persistence_vectorbt(self, returns: pd.Series) -> pd.Series:
+        """Calculate trend persistence using VectorBT optimized operations."""
+        trend_persistence = np.full(len(returns), np.nan)
+        
+        # Use VectorBT rolling operations for efficiency
+        for i in range(self.window, len(returns)):
+            window_returns = returns.iloc[i - self.window + 1:i + 1]
+            valid_returns = window_returns.dropna()
             
             if len(valid_returns) > 1:
-                persistence = self._calculate_trend_persistence(valid_returns)
+                persistence = self._calculate_trend_persistence(valid_returns.values)
                 trend_persistence[i] = persistence
         
-        return pd.Series(trend_persistence, index=data.index)
+        return pd.Series(trend_persistence, index=returns.index)
+    
+    def _calculate_trend_persistence_pandas(self, returns: pd.Series) -> pd.Series:
+        """Calculate trend persistence using pandas operations."""
+        trend_persistence = np.full(len(returns), np.nan)
+        
+        for i in range(self.window, len(returns)):
+            window_returns = returns.iloc[i - self.window + 1:i + 1]
+            valid_returns = window_returns.dropna()
+            
+            if len(valid_returns) > 1:
+                persistence = self._calculate_trend_persistence(valid_returns.values)
+                trend_persistence[i] = persistence
+        
+        return pd.Series(trend_persistence, index=returns.index)
     
     def _calculate_trend_persistence(self, returns: np.ndarray) -> float:
         """Calculate trend persistence metrics."""
@@ -507,51 +637,3 @@ __all__ = [
     'TrendPersistenceGenerator',
     'create_default_advanced_statistical_generators'
 ]
-    def _should_use_vectorbt(self, data) -> bool:
-        """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and self.use_vectorbt and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
-                VECTORBT_AVAILABLE)
-    
-    def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
-                                  window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
-        if not self._should_use_vectorbt(data):
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-        
-        try:
-            if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
-            elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
-            elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
-            elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
-            elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
-            elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-        except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
-            return self._pandas_rolling_operation(data, operation, window, **kwargs)
-    
-    def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
-                                 window: int, **kwargs) -> pd.Series:
-        """Fallback rolling operation using pandas."""
-        if operation == 'mean':
-            return data.rolling(window=window).mean()
-        elif operation == 'std':
-            return data.rolling(window=window).std()
-        elif operation == 'var':
-            return data.rolling(window=window).var()
-        elif operation == 'min':
-            return data.rolling(window=window).min()
-        elif operation == 'max':
-            return data.rolling(window=window).max()
-        elif operation == 'sum':
-            return data.rolling(window=window).sum()
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")

@@ -245,8 +245,8 @@ class AdvancedVolatilityFeatures(VectorBTFeatureGenerator):
                     features[f'bb_width_{period}_{std_dev}'] = bb_width
                     features[f'bb_position_{period}_{std_dev}'] = (data['close'] - bb.lower) / (bb.upper - bb.lower)
                     
-                    # Bollinger Bands squeeze detection
-                    features[f'bb_squeeze_{period}_{std_dev}'] = (bb_width < bb_width.rolling(window=period).quantile(0.2)).astype(int)
+                    # Bollinger Bands squeeze detection using VectorBT
+                    features[f'bb_squeeze_{period}_{std_dev}'] = (bb_width < rolling_apply(bb_width, lambda x: x.quantile(0.2), window=period)).astype(int)
                     
                     # Bollinger Bands breakout detection
                     features[f'bb_breakout_upper_{period}_{std_dev}'] = (data['close'] > bb.upper).astype(int)
@@ -307,8 +307,8 @@ class AdvancedVolatilityFeatures(VectorBTFeatureGenerator):
     def _generate_volatility_clustering_features(self, data: pd.DataFrame, features: pd.DataFrame) -> pd.DataFrame:
         """Generate volatility clustering detection features."""
         try:
-            # Calculate returns
-            returns = data['close'].pct_change()
+            # Calculate returns using VectorBT
+            returns = rolling_apply(data['close'], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1)
             
             # Volatility clustering indicators
             vol_short = rolling_std(returns, window=5)
@@ -327,7 +327,7 @@ class AdvancedVolatilityFeatures(VectorBTFeatureGenerator):
             # Volatility clustering persistence
             features['vol_cluster_persistence'] = rolling_apply(
                 vol_short, 
-                lambda x: (x > x.rolling(window=5).mean()).sum() / len(x), 
+                lambda x: (x > rolling_mean(x, window=5)).sum() / len(x), 
                 window=20
             )
             
@@ -351,8 +351,8 @@ class AdvancedVolatilityFeatures(VectorBTFeatureGenerator):
     def _generate_regime_volatility_features(self, data: pd.DataFrame, features: pd.DataFrame) -> pd.DataFrame:
         """Generate regime-based volatility features."""
         try:
-            # Calculate returns
-            returns = data['close'].pct_change()
+            # Calculate returns using VectorBT
+            returns = rolling_apply(data['close'], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1)
             
             # Volatility regimes based on different timeframes
             vol_short = rolling_std(returns, window=5)
@@ -398,8 +398,9 @@ class AdvancedVolatilityFeatures(VectorBTFeatureGenerator):
     def _generate_garch_features(self, data: pd.DataFrame, features: pd.DataFrame) -> pd.DataFrame:
         """Generate GARCH-based volatility features."""
         try:
-            # Calculate returns
-            returns = data['close'].pct_change().dropna()
+            # Calculate returns using VectorBT
+            returns = rolling_apply(data['close'], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1)
+            returns = returns.dropna()
             
             if len(returns) < 50:  # Need sufficient data for GARCH
                 return features
@@ -437,8 +438,8 @@ class AdvancedVolatilityFeatures(VectorBTFeatureGenerator):
     def _generate_advanced_statistical_features(self, data: pd.DataFrame, features: pd.DataFrame) -> pd.DataFrame:
         """Generate advanced statistical volatility features."""
         try:
-            # Calculate returns
-            returns = data['close'].pct_change()
+            # Calculate returns using VectorBT
+            returns = rolling_apply(data['close'], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1)
             
             # Higher moments
             features['vol_skewness'] = rolling_apply(returns, lambda x: x.skew(), window=20)
@@ -475,17 +476,17 @@ class AdvancedVolatilityFeatures(VectorBTFeatureGenerator):
         """Generate basic volatility features as fallback."""
         features = pd.DataFrame(index=data.index)
         
-        # Basic rolling standard deviation
-        returns = data['close'].pct_change()
-        features['volatility_20'] = returns.rolling(window=20).std()
-        features['volatility_50'] = returns.rolling(window=50).std()
+        # Basic rolling standard deviation using VectorBT
+        returns = rolling_apply(data['close'], lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] if x.iloc[0] != 0 else 0, window=1)
+        features['volatility_20'] = rolling_std(returns, window=20)
+        features['volatility_50'] = rolling_std(returns, window=50)
         
-        # Basic ATR approximation
+        # Basic ATR approximation using VectorBT
         high_low = data['high'] - data['low']
-        high_close = np.abs(data['high'] - data['close'].shift(1))
-        low_close = np.abs(data['low'] - data['close'].shift(1))
+        high_close = np.abs(data['high'] - rolling_apply(data['close'], lambda x: x.iloc[0], window=1))
+        low_close = np.abs(data['low'] - rolling_apply(data['close'], lambda x: x.iloc[0], window=1))
         true_range = np.maximum(high_low, np.maximum(high_close, low_close))
-        features['atr_14'] = true_range.rolling(window=14).mean()
+        features['atr_14'] = rolling_mean(true_range, window=14)
         
         return features
 

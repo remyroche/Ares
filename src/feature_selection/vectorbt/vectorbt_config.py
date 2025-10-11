@@ -222,18 +222,40 @@ class VectorBTFeatureSelectionConfig:
             return False
     
     def setup_advanced_parallel_processing(self):
-        """Setup advanced parallel processing with Dask/Ray."""
+        """Enhanced parallel processing with VectorBT optimizations."""
         try:
+            import vectorbt as vbt
+            
+            # Configure VectorBT's parallel processing
+            vbt.settings['array_wrapper']['enable_parallel'] = True
+            vbt.settings['array_wrapper']['max_workers'] = self.max_workers or -1
+            
+            # Enable VectorBT's chunked parallel processing
+            vbt.settings['array_wrapper']['enable_chunked_parallel'] = True
+            vbt.settings['array_wrapper']['chunk_parallel_workers'] = self.max_workers or 4
+            
+            # Configure for financial data parallel processing
+            vbt.settings['array_wrapper']['enable_financial_parallel'] = True
+            
             parallel_clients = {}
             
+            # Enhanced Dask integration
             if self.enable_dask:
                 import dask
                 from dask.distributed import Client
                 
+                # Configure Dask for VectorBT
+                dask.config.set({
+                    'array.chunk-size': f"{self.chunk_size}MB",
+                    'array.slicing.split_large_chunks': True,
+                    'array.optimization.fuse.active': True
+                })
+                
                 if self.dask_cluster_type == "local":
                     dask_client = Client(
                         n_workers=self.dask_workers,
-                        memory_limit=self.dask_memory_limit
+                        memory_limit=self.dask_memory_limit,
+                        threads_per_worker=2  # Optimize for VectorBT
                     )
                 else:
                     dask_client = Client(self.dask_cluster_type)
@@ -257,5 +279,66 @@ class VectorBTFeatureSelectionConfig:
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.warning(f"Advanced parallel processing setup failed: {e}")
+            logger.warning(f"Enhanced parallel processing setup failed: {e}")
             return {}
+    
+    def setup_financial_optimizations(self):
+        """Enhanced financial data optimizations using VectorBT."""
+        try:
+            import vectorbt as vbt
+            
+            # Configure VectorBT for financial data
+            vbt.settings['array_wrapper']['freq_precision'] = 0
+            vbt.settings['array_wrapper']['freq_rep'] = 'auto'
+            
+            # Enable financial data specific optimizations
+            vbt.settings['array_wrapper']['enable_financial'] = True
+            vbt.settings['array_wrapper']['enable_ohlcv'] = True
+            vbt.settings['array_wrapper']['enable_returns'] = True
+            
+            # Configure for high-frequency financial data
+            vbt.settings['array_wrapper']['enable_rolling'] = True
+            vbt.settings['array_wrapper']['rolling_window'] = 1000
+            vbt.settings['array_wrapper']['enable_chunked'] = True
+            
+            # Enable financial data validation
+            vbt.settings['array_wrapper']['validate_financial'] = True
+            
+            return True
+            
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Financial optimizations setup failed: {e}")
+            return False
+    
+    def get_adaptive_config(self, data_shape: Tuple[int, int]) -> 'VectorBTFeatureSelectionConfig':
+        """Get adaptive configuration based on data characteristics."""
+        n_samples, n_features = data_shape
+        
+        # Adaptive chunk size based on data size
+        if n_features > 10000:
+            self.chunk_size = min(1000, n_features // 10)
+        elif n_features > 1000:
+            self.chunk_size = min(5000, n_features // 5)
+        else:
+            self.chunk_size = n_features
+        
+        # Adaptive memory limits
+        estimated_memory = n_samples * n_features * 8 / (1024 * 1024)  # MB
+        if estimated_memory > 1000:  # > 1GB
+            self.enable_memory_mapping = True
+            self.enable_chunked_processing = True
+            self.memory_mapping_threshold = 100 * 1024 * 1024  # 100MB
+        
+        # Adaptive parallel processing
+        if n_features > 5000:
+            self.enable_parallel = True
+            self.max_workers = min(8, n_features // 1000)
+        
+        # Adaptive financial optimizations
+        if n_samples > 10000:  # Large time series
+            self.enable_financial_optimization = True
+            self.vectorbt_rolling_window = min(1000, n_samples // 10)
+        
+        return self

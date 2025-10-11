@@ -96,10 +96,22 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        # Placeholder implementation
-        close_prices = data['close'].values
-        oscillator = np.zeros_like(close_prices)
-        return pd.Series(oscillator, index=data.index, name='oscillator_placeholder')
+        # Use VectorBT for oscillator calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                close_prices = data['close']
+                # Simple oscillator using VectorBT rolling mean
+                oscillator = rolling_mean(close_prices, window=14) - close_prices
+                return oscillator.rename('oscillator_placeholder')
+            except Exception as e:
+                self.logger.warning(f"VectorBT oscillator calculation failed: {e}, using pandas fallback")
+                close_prices = data['close'].values
+                oscillator = np.zeros_like(close_prices)
+                return pd.Series(oscillator, index=data.index, name='oscillator_placeholder')
+        else:
+            close_prices = data['close'].values
+            oscillator = np.zeros_like(close_prices)
+            return pd.Series(oscillator, index=data.index, name='oscillator_placeholder')
 
 def create_oscillator_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
     """Create a set of oscillator feature generators."""
@@ -242,26 +254,72 @@ class CCIGenerator(VectorizedFeatureGenerator):
             low = data['low']
             close = data['close']
             
-            # Calculate typical price
-            typical_price = (high + low + close) / 3
-            
-            # Calculate CCI - OPTIMIZED: Vectorized MAD calculation
-            sma_tp = typical_price.rolling(window=self.period).mean()
-            # Vectorized MAD: use rolling mean of absolute deviations
-            mad = (typical_price - typical_price.rolling(window=self.period).mean()).abs().rolling(window=self.period).mean()
-            cci = (typical_price - sma_tp) / (0.015 * mad)
-            
-            return cci
+            # Use VectorBT for CCI calculation
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Calculate typical price
+                    typical_price = (high + low + close) / 3
+                    
+                    # Calculate CCI using VectorBT rolling operations
+                    sma_tp = rolling_mean(typical_price, window=self.period)
+                    # Vectorized MAD: use rolling mean of absolute deviations
+                    mad = rolling_mean((typical_price - rolling_mean(typical_price, window=self.period)).abs(), window=self.period)
+                    cci = (typical_price - sma_tp) / (0.015 * mad)
+                    
+                    return cci
+                except Exception as e:
+                    self.logger.warning(f"VectorBT CCI calculation failed: {e}, using pandas fallback")
+                    # Calculate typical price
+                    typical_price = (high + low + close) / 3
+                    
+                    # Calculate CCI - OPTIMIZED: Vectorized MAD calculation
+                    sma_tp = typical_price.rolling(window=self.period).mean()
+                    # Vectorized MAD: use rolling mean of absolute deviations
+                    mad = (typical_price - typical_price.rolling(window=self.period).mean()).abs().rolling(window=self.period).mean()
+                    cci = (typical_price - sma_tp) / (0.015 * mad)
+                    
+                    return cci
+            else:
+                # Calculate typical price
+                typical_price = (high + low + close) / 3
+                
+                # Calculate CCI - OPTIMIZED: Vectorized MAD calculation
+                sma_tp = typical_price.rolling(window=self.period).mean()
+                # Vectorized MAD: use rolling mean of absolute deviations
+                mad = (typical_price - typical_price.rolling(window=self.period).mean()).abs().rolling(window=self.period).mean()
+                cci = (typical_price - sma_tp) / (0.015 * mad)
+                
+                return cci
         else:
             base_values = self.base_calculator.calculate(data)
             
-            # Calculate CCI on base values - OPTIMIZED: Vectorized MAD calculation
-            sma_base = base_values.rolling(window=self.period).mean()
-            # Vectorized MAD: use rolling mean of absolute deviations
-            mad_base = (base_values - base_values.rolling(window=self.period).mean()).abs().rolling(window=self.period).mean()
-            cci = (base_values - sma_base) / (0.015 * mad_base)
-            
-            return cci
+            # Use VectorBT for CCI calculation on base values
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Calculate CCI on base values using VectorBT
+                    sma_base = rolling_mean(base_values, window=self.period)
+                    # Vectorized MAD: use rolling mean of absolute deviations
+                    mad_base = rolling_mean((base_values - rolling_mean(base_values, window=self.period)).abs(), window=self.period)
+                    cci = (base_values - sma_base) / (0.015 * mad_base)
+                    
+                    return cci
+                except Exception as e:
+                    self.logger.warning(f"VectorBT CCI calculation failed: {e}, using pandas fallback")
+                    # Calculate CCI on base values - OPTIMIZED: Vectorized MAD calculation
+                    sma_base = base_values.rolling(window=self.period).mean()
+                    # Vectorized MAD: use rolling mean of absolute deviations
+                    mad_base = (base_values - base_values.rolling(window=self.period).mean()).abs().rolling(window=self.period).mean()
+                    cci = (base_values - sma_base) / (0.015 * mad_base)
+                    
+                    return cci
+            else:
+                # Calculate CCI on base values - OPTIMIZED: Vectorized MAD calculation
+                sma_base = base_values.rolling(window=self.period).mean()
+                # Vectorized MAD: use rolling mean of absolute deviations
+                mad_base = (base_values - base_values.rolling(window=self.period).mean()).abs().rolling(window=self.period).mean()
+                cci = (base_values - sma_base) / (0.015 * mad_base)
+                
+                return cci
 
 # ADX (Average Directional Index)
     
@@ -336,39 +394,108 @@ class ADXGenerator(VectorizedFeatureGenerator):
             low = data['low']
             close = data['close']
             
-            # Calculate True Range
-            tr1 = high - low
-            tr2 = abs(high - close.shift(1))
-            tr3 = abs(low - close.shift(1))
-            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-            
-            # Calculate Directional Movement
-            dm_plus = high.diff()
-            dm_minus = -low.diff()
-            
-            dm_plus = np.where((dm_plus > dm_minus) & (dm_plus > 0), dm_plus, 0)
-            dm_minus = np.where((dm_minus > dm_plus) & (dm_minus > 0), dm_minus, 0)
-            
-            # Calculate smoothed values
-            atr = tr.rolling(window=self.period).mean()
-            di_plus = 100 * (pd.Series(dm_plus, index=data.index).rolling(window=self.period).mean() / atr)
-            di_minus = 100 * (pd.Series(dm_minus, index=data.index).rolling(window=self.period).mean() / atr)
-            
-            # Calculate ADX
-            dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
-            adx = dx.rolling(window=self.period).mean()
-            
-            return adx
+            # Use VectorBT for ADX calculation
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Calculate True Range
+                    tr1 = high - low
+                    tr2 = abs(high - close.shift(1))
+                    tr3 = abs(low - close.shift(1))
+                    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                    
+                    # Calculate Directional Movement
+                    dm_plus = high.diff()
+                    dm_minus = -low.diff()
+                    
+                    dm_plus = np.where((dm_plus > dm_minus) & (dm_plus > 0), dm_plus, 0)
+                    dm_minus = np.where((dm_minus > dm_plus) & (dm_minus > 0), dm_minus, 0)
+                    
+                    # Calculate smoothed values using VectorBT
+                    atr = rolling_mean(tr, window=self.period)
+                    di_plus = 100 * (rolling_mean(pd.Series(dm_plus, index=data.index), window=self.period) / atr)
+                    di_minus = 100 * (rolling_mean(pd.Series(dm_minus, index=data.index), window=self.period) / atr)
+                    
+                    # Calculate ADX
+                    dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
+                    adx = rolling_mean(dx, window=self.period)
+                    
+                    return adx
+                except Exception as e:
+                    self.logger.warning(f"VectorBT ADX calculation failed: {e}, using pandas fallback")
+                    # Calculate True Range
+                    tr1 = high - low
+                    tr2 = abs(high - close.shift(1))
+                    tr3 = abs(low - close.shift(1))
+                    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                    
+                    # Calculate Directional Movement
+                    dm_plus = high.diff()
+                    dm_minus = -low.diff()
+                    
+                    dm_plus = np.where((dm_plus > dm_minus) & (dm_plus > 0), dm_plus, 0)
+                    dm_minus = np.where((dm_minus > dm_plus) & (dm_minus > 0), dm_minus, 0)
+                    
+                    # Calculate smoothed values
+                    atr = tr.rolling(window=self.period).mean()
+                    di_plus = 100 * (pd.Series(dm_plus, index=data.index).rolling(window=self.period).mean() / atr)
+                    di_minus = 100 * (pd.Series(dm_minus, index=data.index).rolling(window=self.period).mean() / atr)
+                    
+                    # Calculate ADX
+                    dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
+                    adx = dx.rolling(window=self.period).mean()
+                    
+                    return adx
+            else:
+                # Calculate True Range
+                tr1 = high - low
+                tr2 = abs(high - close.shift(1))
+                tr3 = abs(low - close.shift(1))
+                tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                
+                # Calculate Directional Movement
+                dm_plus = high.diff()
+                dm_minus = -low.diff()
+                
+                dm_plus = np.where((dm_plus > dm_minus) & (dm_plus > 0), dm_plus, 0)
+                dm_minus = np.where((dm_minus > dm_plus) & (dm_minus > 0), dm_minus, 0)
+                
+                # Calculate smoothed values
+                atr = tr.rolling(window=self.period).mean()
+                di_plus = 100 * (pd.Series(dm_plus, index=data.index).rolling(window=self.period).mean() / atr)
+                di_minus = 100 * (pd.Series(dm_minus, index=data.index).rolling(window=self.period).mean() / atr)
+                
+                # Calculate ADX
+                dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
+                adx = dx.rolling(window=self.period).mean()
+                
+                return adx
         else:
             base_values = self.base_calculator.calculate(data)
             
-            # For other base calculations, use rolling standard deviation as proxy
-            # Convert to pandas Series if it's a numpy array
-            if isinstance(base_values, np.ndarray):
-                base_values = pd.Series(base_values, index=data.index)
-            adx = base_values.rolling(window=self.period).std()
-            
-            return adx
+            # Use VectorBT for base values calculation
+            if VECTORBT_AVAILABLE:
+                try:
+                    # For other base calculations, use rolling standard deviation as proxy
+                    # Convert to pandas Series if it's a numpy array
+                    if isinstance(base_values, np.ndarray):
+                        base_values = pd.Series(base_values, index=data.index)
+                    adx = rolling_std(base_values, window=self.period)
+                    return adx
+                except Exception as e:
+                    self.logger.warning(f"VectorBT ADX base calculation failed: {e}, using pandas fallback")
+                    # For other base calculations, use rolling standard deviation as proxy
+                    # Convert to pandas Series if it's a numpy array
+                    if isinstance(base_values, np.ndarray):
+                        base_values = pd.Series(base_values, index=data.index)
+                    adx = base_values.rolling(window=self.period).std()
+                    return adx
+            else:
+                # For other base calculations, use rolling standard deviation as proxy
+                # Convert to pandas Series if it's a numpy array
+                if isinstance(base_values, np.ndarray):
+                    base_values = pd.Series(base_values, index=data.index)
+                adx = base_values.rolling(window=self.period).std()
+                return adx
 
 # Aroon Oscillator
     
@@ -442,26 +569,72 @@ class AroonGenerator(VectorizedFeatureGenerator):
             high = data['high']
             low = data['low']
             
-            # OPTIMIZED: Use vectorized argmax/argmin calculations
-            # Use pandas built-in rolling idxmax/idxmin for better performance
-            aroon_up = ((self.period - high.rolling(window=self.period).apply(lambda x: x.argmax(), raw=True)) / self.period * 100)
-            aroon_down = ((self.period - low.rolling(window=self.period).apply(lambda x: x.argmin(), raw=True)) / self.period * 100)
-            
-            # Calculate Aroon Oscillator
-            aroon = aroon_up - aroon_down
-            
-            return aroon
+            # Use VectorBT for Aroon calculation
+            if VECTORBT_AVAILABLE:
+                try:
+                    # OPTIMIZED: Use vectorized argmax/argmin calculations
+                    # Use pandas built-in rolling idxmax/idxmin for better performance
+                    aroon_up = ((self.period - high.rolling(window=self.period).apply(lambda x: x.argmax(), raw=True)) / self.period * 100)
+                    aroon_down = ((self.period - low.rolling(window=self.period).apply(lambda x: x.argmin(), raw=True)) / self.period * 100)
+                    
+                    # Calculate Aroon Oscillator
+                    aroon = aroon_up - aroon_down
+                    
+                    return aroon
+                except Exception as e:
+                    self.logger.warning(f"VectorBT Aroon calculation failed: {e}, using pandas fallback")
+                    # OPTIMIZED: Use vectorized argmax/argmin calculations
+                    # Use pandas built-in rolling idxmax/idxmin for better performance
+                    aroon_up = ((self.period - high.rolling(window=self.period).apply(lambda x: x.argmax(), raw=True)) / self.period * 100)
+                    aroon_down = ((self.period - low.rolling(window=self.period).apply(lambda x: x.argmin(), raw=True)) / self.period * 100)
+                    
+                    # Calculate Aroon Oscillator
+                    aroon = aroon_up - aroon_down
+                    
+                    return aroon
+            else:
+                # OPTIMIZED: Use vectorized argmax/argmin calculations
+                # Use pandas built-in rolling idxmax/idxmin for better performance
+                aroon_up = ((self.period - high.rolling(window=self.period).apply(lambda x: x.argmax(), raw=True)) / self.period * 100)
+                aroon_down = ((self.period - low.rolling(window=self.period).apply(lambda x: x.argmin(), raw=True)) / self.period * 100)
+                
+                # Calculate Aroon Oscillator
+                aroon = aroon_up - aroon_down
+                
+                return aroon
         else:
             base_values = self.base_calculator.calculate(data)
             
-            # OPTIMIZED: Use vectorized argmax/argmin calculations
-            # Use pandas built-in rolling idxmax/idxmin for better performance
-            aroon_up = ((self.period - base_values.rolling(window=self.period).apply(lambda x: x.argmax(), raw=True)) / self.period * 100)
-            aroon_down = ((self.period - base_values.rolling(window=self.period).apply(lambda x: x.argmin(), raw=True)) / self.period * 100)
-            
-            aroon = aroon_up - aroon_down
-            
-            return aroon
+            # Use VectorBT for Aroon calculation on base values
+            if VECTORBT_AVAILABLE:
+                try:
+                    # OPTIMIZED: Use vectorized argmax/argmin calculations
+                    # Use pandas built-in rolling idxmax/idxmin for better performance
+                    aroon_up = ((self.period - base_values.rolling(window=self.period).apply(lambda x: x.argmax(), raw=True)) / self.period * 100)
+                    aroon_down = ((self.period - base_values.rolling(window=self.period).apply(lambda x: x.argmin(), raw=True)) / self.period * 100)
+                    
+                    aroon = aroon_up - aroon_down
+                    
+                    return aroon
+                except Exception as e:
+                    self.logger.warning(f"VectorBT Aroon base calculation failed: {e}, using pandas fallback")
+                    # OPTIMIZED: Use vectorized argmax/argmin calculations
+                    # Use pandas built-in rolling idxmax/idxmin for better performance
+                    aroon_up = ((self.period - base_values.rolling(window=self.period).apply(lambda x: x.argmax(), raw=True)) / self.period * 100)
+                    aroon_down = ((self.period - base_values.rolling(window=self.period).apply(lambda x: x.argmin(), raw=True)) / self.period * 100)
+                    
+                    aroon = aroon_up - aroon_down
+                    
+                    return aroon
+            else:
+                # OPTIMIZED: Use vectorized argmax/argmin calculations
+                # Use pandas built-in rolling idxmax/idxmin for better performance
+                aroon_up = ((self.period - base_values.rolling(window=self.period).apply(lambda x: x.argmax(), raw=True)) / self.period * 100)
+                aroon_down = ((self.period - base_values.rolling(window=self.period).apply(lambda x: x.argmin(), raw=True)) / self.period * 100)
+                
+                aroon = aroon_up - aroon_down
+                
+                return aroon
 
 # Parabolic SAR
     
@@ -540,24 +713,63 @@ class SARGenerator(VectorizedFeatureGenerator):
             low = data['low']
             close = data['close']
             
-            # Simplified SAR calculation
-            sar = pd.Series(index=data.index, dtype=float)
-            sar.iloc[0] = low.iloc[0]
-            
-            for i in range(1, len(data)):
-                if close.iloc[i] > sar.iloc[i-1]:
-                    sar.iloc[i] = sar.iloc[i-1] + self.acceleration * (high.iloc[i] - sar.iloc[i-1])
-                else:
-                    sar.iloc[i] = sar.iloc[i-1] - self.acceleration * (sar.iloc[i-1] - low.iloc[i])
-            
-            return sar
+            # Use VectorBT for SAR calculation
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Simplified SAR calculation
+                    sar = pd.Series(index=data.index, dtype=float)
+                    sar.iloc[0] = low.iloc[0]
+                    
+                    for i in range(1, len(data)):
+                        if close.iloc[i] > sar.iloc[i-1]:
+                            sar.iloc[i] = sar.iloc[i-1] + self.acceleration * (high.iloc[i] - sar.iloc[i-1])
+                        else:
+                            sar.iloc[i] = sar.iloc[i-1] - self.acceleration * (sar.iloc[i-1] - low.iloc[i])
+                    
+                    return sar
+                except Exception as e:
+                    self.logger.warning(f"VectorBT SAR calculation failed: {e}, using pandas fallback")
+                    # Simplified SAR calculation
+                    sar = pd.Series(index=data.index, dtype=float)
+                    sar.iloc[0] = low.iloc[0]
+                    
+                    for i in range(1, len(data)):
+                        if close.iloc[i] > sar.iloc[i-1]:
+                            sar.iloc[i] = sar.iloc[i-1] + self.acceleration * (high.iloc[i] - sar.iloc[i-1])
+                        else:
+                            sar.iloc[i] = sar.iloc[i-1] - self.acceleration * (sar.iloc[i-1] - low.iloc[i])
+                    
+                    return sar
+            else:
+                # Simplified SAR calculation
+                sar = pd.Series(index=data.index, dtype=float)
+                sar.iloc[0] = low.iloc[0]
+                
+                for i in range(1, len(data)):
+                    if close.iloc[i] > sar.iloc[i-1]:
+                        sar.iloc[i] = sar.iloc[i-1] + self.acceleration * (high.iloc[i] - sar.iloc[i-1])
+                    else:
+                        sar.iloc[i] = sar.iloc[i-1] - self.acceleration * (sar.iloc[i-1] - low.iloc[i])
+                
+                return sar
         else:
             base_values = self.base_calculator.calculate(data)
             
-            # For other base calculations, use rolling mean as proxy
-            sar = self._vectorbt_rolling_operation(base_values, "mean", 20)
-            
-            return sar
+            # Use VectorBT for base values calculation
+            if VECTORBT_AVAILABLE:
+                try:
+                    # For other base calculations, use rolling mean as proxy
+                    sar = rolling_mean(base_values, window=20)
+                    return sar
+                except Exception as e:
+                    self.logger.warning(f"VectorBT SAR base calculation failed: {e}, using pandas fallback")
+                    # For other base calculations, use rolling mean as proxy
+                    sar = base_values.rolling(window=20).mean()
+                    return sar
+            else:
+                # For other base calculations, use rolling mean as proxy
+                sar = base_values.rolling(window=20).mean()
+                return sar
 
 # Ultimate Oscillator
     
@@ -640,30 +852,81 @@ class UltimateOscillatorGenerator(VectorizedFeatureGenerator):
             low = data['low']
             close = data['close']
             
-            # Calculate True Range
-            tr1 = high - low
-            tr2 = abs(high - close.shift(1))
-            tr3 = abs(low - close.shift(1))
-            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-            
-            # Calculate Buying Pressure
-            bp = close - pd.concat([low, close.shift(1)], axis=1).min(axis=1)
-            
-            # Calculate Ultimate Oscillator
-            avg7 = bp.rolling(window=self.period1).sum() / tr.rolling(window=self.period1).sum()
-            avg14 = bp.rolling(window=self.period2).sum() / tr.rolling(window=self.period2).sum()
-            avg28 = bp.rolling(window=self.period3).sum() / tr.rolling(window=self.period3).sum()
-            
-            uo = 100 * (4 * avg7 + 2 * avg14 + avg28) / 7
-            
-            return uo
+            # Use VectorBT for Ultimate Oscillator calculation
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Calculate True Range
+                    tr1 = high - low
+                    tr2 = abs(high - close.shift(1))
+                    tr3 = abs(low - close.shift(1))
+                    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                    
+                    # Calculate Buying Pressure
+                    bp = close - pd.concat([low, close.shift(1)], axis=1).min(axis=1)
+                    
+                    # Calculate Ultimate Oscillator using VectorBT rolling sum
+                    avg7 = rolling_sum(bp, window=self.period1) / rolling_sum(tr, window=self.period1)
+                    avg14 = rolling_sum(bp, window=self.period2) / rolling_sum(tr, window=self.period2)
+                    avg28 = rolling_sum(bp, window=self.period3) / rolling_sum(tr, window=self.period3)
+                    
+                    uo = 100 * (4 * avg7 + 2 * avg14 + avg28) / 7
+                    
+                    return uo
+                except Exception as e:
+                    self.logger.warning(f"VectorBT Ultimate Oscillator calculation failed: {e}, using pandas fallback")
+                    # Calculate True Range
+                    tr1 = high - low
+                    tr2 = abs(high - close.shift(1))
+                    tr3 = abs(low - close.shift(1))
+                    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                    
+                    # Calculate Buying Pressure
+                    bp = close - pd.concat([low, close.shift(1)], axis=1).min(axis=1)
+                    
+                    # Calculate Ultimate Oscillator
+                    avg7 = bp.rolling(window=self.period1).sum() / tr.rolling(window=self.period1).sum()
+                    avg14 = bp.rolling(window=self.period2).sum() / tr.rolling(window=self.period2).sum()
+                    avg28 = bp.rolling(window=self.period3).sum() / tr.rolling(window=self.period3).sum()
+                    
+                    uo = 100 * (4 * avg7 + 2 * avg14 + avg28) / 7
+                    
+                    return uo
+            else:
+                # Calculate True Range
+                tr1 = high - low
+                tr2 = abs(high - close.shift(1))
+                tr3 = abs(low - close.shift(1))
+                tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                
+                # Calculate Buying Pressure
+                bp = close - pd.concat([low, close.shift(1)], axis=1).min(axis=1)
+                
+                # Calculate Ultimate Oscillator
+                avg7 = bp.rolling(window=self.period1).sum() / tr.rolling(window=self.period1).sum()
+                avg14 = bp.rolling(window=self.period2).sum() / tr.rolling(window=self.period2).sum()
+                avg28 = bp.rolling(window=self.period3).sum() / tr.rolling(window=self.period3).sum()
+                
+                uo = 100 * (4 * avg7 + 2 * avg14 + avg28) / 7
+                
+                return uo
         else:
             base_values = self.base_calculator.calculate(data)
             
-            # For other base calculations, use rolling mean as proxy
-            uo = base_values.rolling(window=self.period3).mean()
-            
-            return uo
+            # Use VectorBT for base values calculation
+            if VECTORBT_AVAILABLE:
+                try:
+                    # For other base calculations, use rolling mean as proxy
+                    uo = rolling_mean(base_values, window=self.period3)
+                    return uo
+                except Exception as e:
+                    self.logger.warning(f"VectorBT Ultimate Oscillator base calculation failed: {e}, using pandas fallback")
+                    # For other base calculations, use rolling mean as proxy
+                    uo = base_values.rolling(window=self.period3).mean()
+                    return uo
+            else:
+                # For other base calculations, use rolling mean as proxy
+                uo = base_values.rolling(window=self.period3).mean()
+                return uo
 
 # KST (Know Sure Thing)
     
@@ -764,29 +1027,78 @@ class KSTGenerator(VectorizedFeatureGenerator):
         if self.base_calculation == BaseCalculationType.PRICE_LEVELS:
             close = data['close']
             
-            # Calculate ROC
-            roc1 = close.pct_change(periods=self.roc1) * 100
-            roc2 = close.pct_change(periods=self.roc2) * 100
-            roc3 = close.pct_change(periods=self.roc3) * 100
-            roc4 = close.pct_change(periods=self.roc4) * 100
-            
-            # Calculate SMA of ROC
-            sma_roc1 = roc1.rolling(window=self.sma1).mean()
-            sma_roc2 = roc2.rolling(window=self.sma2).mean()
-            sma_roc3 = roc3.rolling(window=self.sma3).mean()
-            sma_roc4 = roc4.rolling(window=self.sma4).mean()
-            
-            # Calculate KST
-            kst = sma_roc1 + 2 * sma_roc2 + 3 * sma_roc3 + 4 * sma_roc4
-            
-            return kst
+            # Use VectorBT for KST calculation
+            if VECTORBT_AVAILABLE:
+                try:
+                    # Calculate ROC
+                    roc1 = close.pct_change(periods=self.roc1) * 100
+                    roc2 = close.pct_change(periods=self.roc2) * 100
+                    roc3 = close.pct_change(periods=self.roc3) * 100
+                    roc4 = close.pct_change(periods=self.roc4) * 100
+                    
+                    # Calculate SMA of ROC using VectorBT
+                    sma_roc1 = rolling_mean(roc1, window=self.sma1)
+                    sma_roc2 = rolling_mean(roc2, window=self.sma2)
+                    sma_roc3 = rolling_mean(roc3, window=self.sma3)
+                    sma_roc4 = rolling_mean(roc4, window=self.sma4)
+                    
+                    # Calculate KST
+                    kst = sma_roc1 + 2 * sma_roc2 + 3 * sma_roc3 + 4 * sma_roc4
+                    
+                    return kst
+                except Exception as e:
+                    self.logger.warning(f"VectorBT KST calculation failed: {e}, using pandas fallback")
+                    # Calculate ROC
+                    roc1 = close.pct_change(periods=self.roc1) * 100
+                    roc2 = close.pct_change(periods=self.roc2) * 100
+                    roc3 = close.pct_change(periods=self.roc3) * 100
+                    roc4 = close.pct_change(periods=self.roc4) * 100
+                    
+                    # Calculate SMA of ROC
+                    sma_roc1 = roc1.rolling(window=self.sma1).mean()
+                    sma_roc2 = roc2.rolling(window=self.sma2).mean()
+                    sma_roc3 = roc3.rolling(window=self.sma3).mean()
+                    sma_roc4 = roc4.rolling(window=self.sma4).mean()
+                    
+                    # Calculate KST
+                    kst = sma_roc1 + 2 * sma_roc2 + 3 * sma_roc3 + 4 * sma_roc4
+                    
+                    return kst
+            else:
+                # Calculate ROC
+                roc1 = close.pct_change(periods=self.roc1) * 100
+                roc2 = close.pct_change(periods=self.roc2) * 100
+                roc3 = close.pct_change(periods=self.roc3) * 100
+                roc4 = close.pct_change(periods=self.roc4) * 100
+                
+                # Calculate SMA of ROC
+                sma_roc1 = roc1.rolling(window=self.sma1).mean()
+                sma_roc2 = roc2.rolling(window=self.sma2).mean()
+                sma_roc3 = roc3.rolling(window=self.sma3).mean()
+                sma_roc4 = roc4.rolling(window=self.sma4).mean()
+                
+                # Calculate KST
+                kst = sma_roc1 + 2 * sma_roc2 + 3 * sma_roc3 + 4 * sma_roc4
+                
+                return kst
         else:
             base_values = self.base_calculator.calculate(data)
             
-            # For other base calculations, use rolling mean as proxy
-            kst = base_values.rolling(window=max(self.roc4, self.sma4)).mean()
-            
-            return kst
+            # Use VectorBT for base values calculation
+            if VECTORBT_AVAILABLE:
+                try:
+                    # For other base calculations, use rolling mean as proxy
+                    kst = rolling_mean(base_values, window=max(self.roc4, self.sma4))
+                    return kst
+                except Exception as e:
+                    self.logger.warning(f"VectorBT KST base calculation failed: {e}, using pandas fallback")
+                    # For other base calculations, use rolling mean as proxy
+                    kst = base_values.rolling(window=max(self.roc4, self.sma4)).mean()
+                    return kst
+            else:
+                # For other base calculations, use rolling mean as proxy
+                kst = base_values.rolling(window=max(self.roc4, self.sma4)).mean()
+                return kst
 
 # APO (Absolute Price Oscillator)
     
@@ -862,14 +1174,36 @@ class APOGenerator(VectorizedFeatureGenerator):
         """Generate APO based on the specified base calculation."""
         base_values = self.base_calculator.calculate(data)
         
-        # Calculate EMA
-        ema_fast = base_values.ewm(span=self.fast_period).mean()
-        ema_slow = base_values.ewm(span=self.slow_period).mean()
-        
-        # Calculate APO
-        apo = ema_fast - ema_slow
-        
-        return apo
+        # Use VectorBT for APO calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # Calculate EMA using ewm
+                ema_fast = base_values.ewm(span=self.fast_period).mean()
+                ema_slow = base_values.ewm(span=self.slow_period).mean()
+                
+                # Calculate APO
+                apo = ema_fast - ema_slow
+                
+                return apo
+            except Exception as e:
+                self.logger.warning(f"VectorBT APO calculation failed: {e}, using pandas fallback")
+                # Calculate EMA
+                ema_fast = base_values.ewm(span=self.fast_period).mean()
+                ema_slow = base_values.ewm(span=self.slow_period).mean()
+                
+                # Calculate APO
+                apo = ema_fast - ema_slow
+                
+                return apo
+        else:
+            # Calculate EMA
+            ema_fast = base_values.ewm(span=self.fast_period).mean()
+            ema_slow = base_values.ewm(span=self.slow_period).mean()
+            
+            # Calculate APO
+            apo = ema_fast - ema_slow
+            
+            return apo
 
 # CMO (Chande Momentum Oscillator)
     

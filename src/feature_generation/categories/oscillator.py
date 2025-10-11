@@ -12,14 +12,7 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
-# Optimization utilities
-try:
-    from ..utils.vectorization_optimizer import get_vectorization_optimizer
-    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
-    OPTIMIZATION_AVAILABLE = True
-except ImportError:
-    OPTIMIZATION_AVAILABLE = False
-from ..base_calculations import (
+from ..core.vectorbt_optimization_mixin import VectorBTOptimizationMixin
 
 # VectorBT imports for native optimization
 try:
@@ -47,6 +40,21 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# VectorBT Rolling Optimizer
+try:
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+    VECTORBT_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZER_AVAILABLE = False
+
+# Optimization utilities
+try:
+    from ..utils.vectorization_optimizer import get_vectorization_optimizer
+    from ..utils.optimized_feature_pipeline import get_optimized_feature_pipeline
+    OPTIMIZATION_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_AVAILABLE = False
+
 # Optional GPU acceleration
 try:
     import cupy as cp
@@ -54,19 +62,27 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
+
+from ..base_calculations import (
     BaseCalculationType,
     create_base_calculator
 )
 
 logger = logging.getLogger(__name__)
 
-class OscillatorFeatureGenerator(VectorizedFeatureGenerator):
-    """Feature generator for oscillator-based features."""
+class OscillatorFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Feature generator for oscillator-based features with VectorBT optimization."""
     
     def __init__(self, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -96,21 +112,20 @@ class OscillatorFeatureGenerator(VectorizedFeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
+        close_prices = data['close']
+        
         # Use VectorBT for oscillator calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(close_prices):
             try:
-                close_prices = data['close']
                 # Simple oscillator using VectorBT rolling mean
-                oscillator = rolling_mean(close_prices, window=14) - close_prices
+                oscillator = self.vectorbt_optimizer.rolling_mean(close_prices, window=14) - close_prices
                 return oscillator.rename('oscillator_placeholder')
             except Exception as e:
                 self.logger.warning(f"VectorBT oscillator calculation failed: {e}, using pandas fallback")
-                close_prices = data['close'].values
-                oscillator = np.zeros_like(close_prices)
+                oscillator = np.zeros_like(close_prices.values)
                 return pd.Series(oscillator, index=data.index, name='oscillator_placeholder')
         else:
-            close_prices = data['close'].values
-            oscillator = np.zeros_like(close_prices)
+            oscillator = np.zeros_like(close_prices.values)
             return pd.Series(oscillator, index=data.index, name='oscillator_placeholder')
 
 def create_oscillator_generators(periods: Dict[str, List[int]] = None) -> List[FeatureGenerator]:
@@ -181,6 +196,25 @@ def create_oscillator_generators(periods: Dict[str, List[int]] = None) -> List[F
 def create_default_oscillator_generators() -> List[FeatureGenerator]:
     return create_oscillator_generators()
 
+# CCI (Commodity Channel Index)
+    
+    def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Optimize DataFrame for vectorized processing."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.optimize_dataframe_processing(data)
+        return data
+    
+    def vectorized_rolling_operations(self, data: pd.DataFrame, operations: List[str], 
+                                    windows: List[int], columns: Optional[List[str]] = None) -> pd.DataFrame:
+        """Perform vectorized rolling operations with hardware optimization."""
+        if hasattr(self, 'vectorization_optimizer') and self.vectorization_optimizer:
+            return self.vectorization_optimizer.vectorized_rolling_operations(
+                data, operations, windows, columns
+            )
+        return data
+
+class CCIGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for CCI (Commodity Channel Index) with different base calculations and VectorBT optimization."""
 # CCI (Commodity Channel Index)class CCIGenerator(VectorizedFeatureGenerator):
     """Generator for CCI (Commodity Channel Index) with different base calculations."""
     
@@ -225,6 +259,12 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.base_calculation = base_calculation
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
@@ -238,15 +278,15 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
             close = data['close']
             
             # Use VectorBT for CCI calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(close):
                 try:
                     # Calculate typical price
                     typical_price = (high + low + close) / 3
                     
                     # Calculate CCI using VectorBT rolling operations
-                    sma_tp = rolling_mean(typical_price, window=self.period)
+                    sma_tp = self.vectorbt_optimizer.rolling_mean(typical_price, window=self.period)
                     # Vectorized MAD: use rolling mean of absolute deviations
-                    mad = rolling_mean((typical_price - rolling_mean(typical_price, window=self.period)).abs(), window=self.period)
+                    mad = self.vectorbt_optimizer.rolling_mean((typical_price - self.vectorbt_optimizer.rolling_mean(typical_price, window=self.period)).abs(), window=self.period)
                     cci = (typical_price - sma_tp) / (0.015 * mad)
                     
                     return cci
@@ -277,12 +317,12 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
             base_values = self.base_calculator.calculate(data)
             
             # Use VectorBT for CCI calculation on base values
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
                 try:
                     # Calculate CCI on base values using VectorBT
-                    sma_base = rolling_mean(base_values, window=self.period)
+                    sma_base = self.vectorbt_optimizer.rolling_mean(base_values, window=self.period)
                     # Vectorized MAD: use rolling mean of absolute deviations
-                    mad_base = rolling_mean((base_values - rolling_mean(base_values, window=self.period)).abs(), window=self.period)
+                    mad_base = self.vectorbt_optimizer.rolling_mean((base_values - self.vectorbt_optimizer.rolling_mean(base_values, window=self.period)).abs(), window=self.period)
                     cci = (base_values - sma_base) / (0.015 * mad_base)
                     
                     return cci
@@ -361,7 +401,7 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
             close = data['close']
             
             # Use VectorBT for ADX calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(close):
                 try:
                     # Calculate True Range
                     tr1 = high - low
@@ -377,13 +417,13 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
                     dm_minus = np.where((dm_minus > dm_plus) & (dm_minus > 0), dm_minus, 0)
                     
                     # Calculate smoothed values using VectorBT
-                    atr = rolling_mean(tr, window=self.period)
-                    di_plus = 100 * (rolling_mean(pd.Series(dm_plus, index=data.index), window=self.period) / atr)
-                    di_minus = 100 * (rolling_mean(pd.Series(dm_minus, index=data.index), window=self.period) / atr)
+                    atr = self.vectorbt_optimizer.rolling_mean(tr, window=self.period)
+                    di_plus = 100 * (self.vectorbt_optimizer.rolling_mean(pd.Series(dm_plus, index=data.index), window=self.period) / atr)
+                    di_minus = 100 * (self.vectorbt_optimizer.rolling_mean(pd.Series(dm_minus, index=data.index), window=self.period) / atr)
                     
                     # Calculate ADX
                     dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus)
-                    adx = rolling_mean(dx, window=self.period)
+                    adx = self.vectorbt_optimizer.rolling_mean(dx, window=self.period)
                     
                     return adx
                 except Exception as e:
@@ -439,13 +479,13 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
             base_values = self.base_calculator.calculate(data)
             
             # Use VectorBT for base values calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
                 try:
                     # For other base calculations, use rolling standard deviation as proxy
                     # Convert to pandas Series if it's a numpy array
                     if isinstance(base_values, np.ndarray):
                         base_values = pd.Series(base_values, index=data.index)
-                    adx = rolling_std(base_values, window=self.period)
+                    adx = self.vectorbt_optimizer.rolling_std(base_values, window=self.period)
                     return adx
                 except Exception as e:
                     self.logger.warning(f"VectorBT ADX base calculation failed: {e}, using pandas fallback")
@@ -519,7 +559,7 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
             low = data['low']
             
             # Use VectorBT for Aroon calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(high):
                 try:
                     # OPTIMIZED: Use vectorized argmax/argmin calculations
                     # Use pandas built-in rolling idxmax/idxmin for better performance
@@ -555,7 +595,7 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
             base_values = self.base_calculator.calculate(data)
             
             # Use VectorBT for Aroon calculation on base values
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
                 try:
                     # OPTIMIZED: Use vectorized argmax/argmin calculations
                     # Use pandas built-in rolling idxmax/idxmin for better performance
@@ -646,7 +686,7 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
             close = data['close']
             
             # Use VectorBT for SAR calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(high):
                 try:
                     # Simplified SAR calculation
                     sar = pd.Series(index=data.index, dtype=float)
@@ -688,10 +728,10 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
             base_values = self.base_calculator.calculate(data)
             
             # Use VectorBT for base values calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
                 try:
                     # For other base calculations, use rolling mean as proxy
-                    sar = rolling_mean(base_values, window=20)
+                    sar = self.vectorbt_optimizer.rolling_mean(base_values, window=20)
                     return sar
                 except Exception as e:
                     self.logger.warning(f"VectorBT SAR base calculation failed: {e}, using pandas fallback")
@@ -768,7 +808,7 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
             close = data['close']
             
             # Use VectorBT for Ultimate Oscillator calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(high):
                 try:
                     # Calculate True Range
                     tr1 = high - low
@@ -828,10 +868,10 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
             base_values = self.base_calculator.calculate(data)
             
             # Use VectorBT for base values calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
                 try:
                     # For other base calculations, use rolling mean as proxy
-                    uo = rolling_mean(base_values, window=self.period3)
+                    uo = self.vectorbt_optimizer.rolling_mean(base_values, window=self.period3)
                     return uo
                 except Exception as e:
                     self.logger.warning(f"VectorBT Ultimate Oscillator base calculation failed: {e}, using pandas fallback")
@@ -926,7 +966,7 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
             close = data['close']
             
             # Use VectorBT for KST calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(close):
                 try:
                     # Calculate ROC
                     roc1 = close.pct_change(periods=self.roc1) * 100
@@ -935,10 +975,10 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
                     roc4 = close.pct_change(periods=self.roc4) * 100
                     
                     # Calculate SMA of ROC using VectorBT
-                    sma_roc1 = rolling_mean(roc1, window=self.sma1)
-                    sma_roc2 = rolling_mean(roc2, window=self.sma2)
-                    sma_roc3 = rolling_mean(roc3, window=self.sma3)
-                    sma_roc4 = rolling_mean(roc4, window=self.sma4)
+                    sma_roc1 = self.vectorbt_optimizer.rolling_mean(roc1, window=self.sma1)
+                    sma_roc2 = self.vectorbt_optimizer.rolling_mean(roc2, window=self.sma2)
+                    sma_roc3 = self.vectorbt_optimizer.rolling_mean(roc3, window=self.sma3)
+                    sma_roc4 = self.vectorbt_optimizer.rolling_mean(roc4, window=self.sma4)
                     
                     # Calculate KST
                     kst = sma_roc1 + 2 * sma_roc2 + 3 * sma_roc3 + 4 * sma_roc4
@@ -983,10 +1023,10 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
             base_values = self.base_calculator.calculate(data)
             
             # Use VectorBT for base values calculation
-            if VECTORBT_AVAILABLE:
+            if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
                 try:
                     # For other base calculations, use rolling mean as proxy
-                    kst = rolling_mean(base_values, window=max(self.roc4, self.sma4))
+                    kst = self.vectorbt_optimizer.rolling_mean(base_values, window=max(self.roc4, self.sma4))
                     return kst
                 except Exception as e:
                     self.logger.warning(f"VectorBT KST base calculation failed: {e}, using pandas fallback")
@@ -1056,7 +1096,7 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
         base_values = self.base_calculator.calculate(data)
         
         # Use VectorBT for APO calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(base_values):
             try:
                 # Calculate EMA using ewm
                 ema_fast = base_values.ewm(span=self.fast_period).mean()
@@ -1435,17 +1475,17 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
         
         try:
             if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_mean(data, window=window, **kwargs)
             elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_std(data, window=window, **kwargs)
             elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_var(data, window=window, **kwargs)
             elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_min(data, window=window, **kwargs)
             elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_max(data, window=window, **kwargs)
             elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
+                return self.vectorbt_optimizer.rolling_sum(data, window=window, **kwargs)
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
         except Exception as e:

@@ -3,6 +3,7 @@ Volume Feature Generator
 
 This module provides feature generators for basic volume-based indicators,
 including volume moving averages, ratios, rate of change, and other volume metrics.
+Enhanced with VectorBT for maximum performance.
 """
 
 import numpy as np
@@ -12,6 +13,7 @@ import logging
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
+from ..core.vectorbt_optimization_mixin import VectorBTOptimizationMixin
 
 # VectorBT imports for optimization
 try:
@@ -39,6 +41,13 @@ except ImportError:
     quantile = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
+# VectorBT Rolling Optimizer
+try:
+    from ..utils.vectorbt_rolling_optimizer import get_vectorbt_rolling_optimizer
+    VECTORBT_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZER_AVAILABLE = False
+
 # Optimization utilities
 try:
     from ..utils.vectorization_optimizer import get_vectorization_optimizer
@@ -46,6 +55,7 @@ try:
     OPTIMIZATION_AVAILABLE = True
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
+
 from ..base_calculations import (
     BaseCalculationType,
     create_base_calculator
@@ -53,18 +63,19 @@ from ..base_calculations import (
 
 logger = logging.getLogger(__name__)
 
-class VolumeFeatureGenerator(VectorizedFeatureGenerator):
-    """Feature generator for basic volume-based features."""
+class VolumeFeatureGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Feature generator for basic volume-based features with VectorBT optimization."""
     
     def __init__(self, config: Optional[FeatureConfig] = None):
         if config is None:
             config = self._create_default_config()
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
-        self.performance_stats = {
-            'vectorbt_operations': 0,
-            'pandas_fallbacks': 0,
-            'gpu_accelerations': 0
-        }
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
     
     @classmethod
     def _create_default_config(cls) -> FeatureConfig:
@@ -98,23 +109,12 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator):
         volume = data['volume']
         
         # Use VectorBT for volume moving average calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
             try:
-                # Calculate volume SMA using VectorBT rolling operations
-                if VECTORBT_AVAILABLE:
-                    volume_sma = rolling_mean(volume, window=20)
-                    self.performance_stats['vectorbt_operations'] += 1
-                    return volume_sma
-                else:
-                    volume_sma = self._vectorbt_rolling_operation(volume, 'mean', 20)
-                    return volume_sma
-                # Calculate volume SMA using VectorBT
-                volume_sma = rolling_mean(volume, window=20)
-                self.performance_stats['vectorbt_operations'] += 1
+                volume_sma = self.vectorbt_optimizer.rolling_mean(volume, window=20)
                 return volume_sma
             except Exception as e:
                 self.logger.warning(f"VectorBT volume calculation failed: {e}, using pandas fallback")
-                self.performance_stats['pandas_fallbacks'] += 1
                 return volume.rolling(window=20).mean()
         else:
             return volume.rolling(window=20).mean()
@@ -184,8 +184,8 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator):
         else:
             raise ValueError(f"Unsupported operation: {operation}")
 
-class VolumeSMAGenerator(VectorizedFeatureGenerator):
-    """Generator for Volume Simple Moving Average."""
+class VolumeSMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for Volume Simple Moving Average with VectorBT optimization."""
     
     def __init__(self, period: int = 20):
         config = FeatureConfig(
@@ -200,36 +200,26 @@ class VolumeSMAGenerator(VectorizedFeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate Volume SMA using VectorBT optimization."""
         volume = data['volume']
         
         # Use VectorBT for optimized rolling mean
-        if VECTORBT_AVAILABLE and len(volume) > 100:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
             try:
-                return rolling_mean(volume, window=self.period)
+                return self.vectorbt_optimizer.rolling_mean(volume, window=self.period)
             except Exception as e:
-                logger.warning(f"VectorBT rolling mean failed: {e}, using pandas fallback")
-        # Use VectorBT for volume SMA calculation
-        if VECTORBT_AVAILABLE:
-            try:
-                return rolling_mean(volume, window=self.period)
-            except Exception as e:
-                self.logger.warning(f"VectorBT volume SMA calculation failed: {e}, using pandas fallback")
-        # Use VectorBT if available and data is large enough
-        if self._should_use_vectorbt(data):
-            try:
-                volume_sma = self._vectorbt_rolling_operation(volume, 'mean', self.period)
-                self.performance_stats['vectorbt_operations'] += 1
-                return volume_sma
-            except Exception as e:
-                self.logger.warning(f"VectorBT volume SMA calculation failed: {e}, using pandas fallback")
-                self.performance_stats['pandas_fallbacks'] += 1
+                self.logger.warning(f"VectorBT rolling mean failed: {e}, using pandas fallback")
                 return volume.rolling(window=self.period).mean()
         else:
             return volume.rolling(window=self.period).mean()
@@ -251,8 +241,8 @@ class VolumeSMAGenerator(VectorizedFeatureGenerator):
             )
         return data
 
-class VolumeEMAGenerator(VectorizedFeatureGenerator):
-    """Generator for Volume Exponential Moving Average."""
+class VolumeEMAGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for Volume Exponential Moving Average with VectorBT optimization."""
     
     def __init__(self, period: int = 20, alpha: Optional[float] = None):
         if alpha is None:
@@ -271,17 +261,22 @@ class VolumeEMAGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
         self.alpha = alpha
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate Volume EMA."""
         volume = data['volume']
         
         # Use VectorBT for volume EMA calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
             try:
                 # VectorBT doesn't have direct EMA, so we use ewm with alpha
                 return volume.ewm(alpha=self.alpha, adjust=False).mean()
@@ -308,8 +303,8 @@ class VolumeEMAGenerator(VectorizedFeatureGenerator):
             )
         return data
 
-class VolumeRatioGenerator(VectorizedFeatureGenerator):
-    """Generator for Volume Ratio (current volume vs average volume)."""
+class VolumeRatioGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for Volume Ratio (current volume vs average volume) with VectorBT optimization."""
     
     def __init__(self, period: int = 20):
         config = FeatureConfig(
@@ -324,26 +319,26 @@ class VolumeRatioGenerator(VectorizedFeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate Volume Ratio using VectorBT optimization."""
         volume = data['volume']
         
-        # Use VectorBT for optimized rolling mean
-        if VECTORBT_AVAILABLE and len(volume) > 100:
         # Use VectorBT for volume ratio calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
             try:
-                avg_volume = rolling_mean(volume, window=self.period)
+                avg_volume = self.vectorbt_optimizer.rolling_mean(volume, window=self.period)
                 return volume / avg_volume.replace(0, 1)  # Avoid division by zero
             except Exception as e:
-                logger.warning(f"VectorBT rolling mean failed: {e}, using pandas fallback")
-                avg_volume = volume.rolling(window=self.period).mean()
-                return volume / avg_volume.replace(0, 1)
                 self.logger.warning(f"VectorBT volume ratio calculation failed: {e}, using pandas fallback")
                 avg_volume = volume.rolling(window=self.period).mean()
                 return volume / avg_volume.replace(0, 1)  # Avoid division by zero
@@ -368,8 +363,8 @@ class VolumeRatioGenerator(VectorizedFeatureGenerator):
             )
         return data
 
-class VolumeROCGenerator(VectorizedFeatureGenerator):
-    """Generator for Volume Rate of Change."""
+class VolumeROCGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for Volume Rate of Change with VectorBT optimization."""
     
     def __init__(self, period: int = 10):
         config = FeatureConfig(
@@ -384,17 +379,22 @@ class VolumeROCGenerator(VectorizedFeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate Volume ROC."""
         volume = data['volume']
         
         # Use VectorBT for volume ROC calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
             try:
                 # VectorBT doesn't have direct pct_change, so we calculate it manually
                 roc = (volume / volume.shift(self.period) - 1) * 100
@@ -422,8 +422,8 @@ class VolumeROCGenerator(VectorizedFeatureGenerator):
             )
         return data
 
-class VolumeStdGenerator(VectorizedFeatureGenerator):
-    """Generator for Volume Standard Deviation."""
+class VolumeStdGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for Volume Standard Deviation with VectorBT optimization."""
     
     def __init__(self, period: int = 20):
         config = FeatureConfig(
@@ -438,25 +438,24 @@ class VolumeStdGenerator(VectorizedFeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate Volume Standard Deviation using VectorBT optimization."""
         volume = data['volume']
         
-        # Use VectorBT for optimized rolling std
-        if VECTORBT_AVAILABLE and len(volume) > 100:
-            try:
-                return rolling_std(volume, window=self.period)
-            except Exception as e:
-                logger.warning(f"VectorBT rolling std failed: {e}, using pandas fallback")
         # Use VectorBT for volume standard deviation calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
             try:
-                return rolling_std(volume, window=self.period)
+                return self.vectorbt_optimizer.rolling_std(volume, window=self.period)
             except Exception as e:
                 self.logger.warning(f"VectorBT volume std calculation failed: {e}, using pandas fallback")
                 return volume.rolling(window=self.period).std()
@@ -480,8 +479,8 @@ class VolumeStdGenerator(VectorizedFeatureGenerator):
             )
         return data
 
-class VolumePercentileGenerator(VectorizedFeatureGenerator):
-    """Generator for Volume Percentile Rank."""
+class VolumePercentileGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for Volume Percentile Rank with VectorBT optimization."""
     
     def __init__(self, period: int = 50):
         config = FeatureConfig(
@@ -496,17 +495,22 @@ class VolumePercentileGenerator(VectorizedFeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate Volume Percentile Rank."""
         volume = data['volume']
         
         # Use VectorBT for volume percentile rank calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
             try:
                 # VectorBT doesn't have direct rank, so we use pandas rank
                 return volume.rolling(window=self.period).rank(pct=True) * 100
@@ -533,8 +537,8 @@ class VolumePercentileGenerator(VectorizedFeatureGenerator):
             )
         return data
 
-class VolumeTrendStrengthGenerator(VectorizedFeatureGenerator):
-    """Generator for Volume Trend Strength."""
+class VolumeTrendStrengthGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for Volume Trend Strength with VectorBT optimization."""
     
     def __init__(self, short_period: int = 10, long_period: int = 30):
         config = FeatureConfig(
@@ -550,20 +554,25 @@ class VolumeTrendStrengthGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.short_period = short_period
         self.long_period = long_period
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate Volume Trend Strength."""
         volume = data['volume']
         
         # Use VectorBT for volume trend strength calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
             try:
-                short_ma = rolling_mean(volume, window=self.short_period)
-                long_ma = rolling_mean(volume, window=self.long_period)
+                short_ma = self.vectorbt_optimizer.rolling_mean(volume, window=self.short_period)
+                long_ma = self.vectorbt_optimizer.rolling_mean(volume, window=self.long_period)
                 return (short_ma - long_ma) / long_ma.replace(0, 1) * 100
             except Exception as e:
                 self.logger.warning(f"VectorBT volume trend strength calculation failed: {e}, using pandas fallback")
@@ -592,8 +601,8 @@ class VolumeTrendStrengthGenerator(VectorizedFeatureGenerator):
             )
         return data
 
-class VolumeOscillatorGenerator(VectorizedFeatureGenerator):
-    """Generator for Volume Oscillator."""
+class VolumeOscillatorGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for Volume Oscillator with VectorBT optimization."""
     
     def __init__(self, short_period: int = 10, long_period: int = 20):
         config = FeatureConfig(
@@ -609,20 +618,25 @@ class VolumeOscillatorGenerator(VectorizedFeatureGenerator):
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.short_period = short_period
         self.long_period = long_period
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate Volume Oscillator."""
         volume = data['volume']
         
         # Use VectorBT for volume oscillator calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
             try:
-                short_ma = rolling_mean(volume, window=self.short_period)
-                long_ma = rolling_mean(volume, window=self.long_period)
+                short_ma = self.vectorbt_optimizer.rolling_mean(volume, window=self.short_period)
+                long_ma = self.vectorbt_optimizer.rolling_mean(volume, window=self.long_period)
                 return short_ma - long_ma
             except Exception as e:
                 self.logger.warning(f"VectorBT volume oscillator calculation failed: {e}, using pandas fallback")
@@ -651,8 +665,8 @@ class VolumeOscillatorGenerator(VectorizedFeatureGenerator):
             )
         return data
 
-class VolumeMomentumGenerator(VectorizedFeatureGenerator):
-    """Generator for Volume Momentum."""
+class VolumeMomentumGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for Volume Momentum with VectorBT optimization."""
     
     def __init__(self, period: int = 10):
         config = FeatureConfig(
@@ -667,17 +681,22 @@ class VolumeMomentumGenerator(VectorizedFeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate Volume Momentum."""
         volume = data['volume']
         
         # Use VectorBT for volume momentum calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
             try:
                 # VectorBT doesn't have direct shift, so we use pandas shift
                 return volume - volume.shift(self.period)
@@ -704,8 +723,8 @@ class VolumeMomentumGenerator(VectorizedFeatureGenerator):
             )
         return data
 
-class VolumeVWAPGenerator(VectorizedFeatureGenerator):
-    """Generator for Volume Weighted Average Price."""
+class VolumeVWAPGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for Volume Weighted Average Price with VectorBT optimization."""
     
     def __init__(self, period: int = 20):
         config = FeatureConfig(
@@ -720,22 +739,27 @@ class VolumeVWAPGenerator(VectorizedFeatureGenerator):
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.period = period
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate Volume VWAP."""
         close = data['close']
         volume = data['volume']
         
         # Use VectorBT for volume VWAP calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
             try:
                 price_volume = close * volume
-                price_volume_sum = rolling_sum(price_volume, window=self.period)
-                volume_sum = rolling_sum(volume, window=self.period)
+                price_volume_sum = self.vectorbt_optimizer.rolling_sum(price_volume, window=self.period)
+                volume_sum = self.vectorbt_optimizer.rolling_sum(volume, window=self.period)
                 return price_volume_sum / volume_sum
             except Exception as e:
                 self.logger.warning(f"VectorBT volume VWAP calculation failed: {e}, using pandas fallback")
@@ -760,8 +784,8 @@ class VolumeVWAPGenerator(VectorizedFeatureGenerator):
             )
         return data
 
-class VolumePriceTrendGenerator(VectorizedFeatureGenerator):
-    """Generator for Volume Price Trend."""
+class VolumePriceTrendGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for Volume Price Trend with VectorBT optimization."""
     
     def __init__(self):
         config = FeatureConfig(
@@ -775,18 +799,23 @@ class VolumePriceTrendGenerator(VectorizedFeatureGenerator):
             parameters={}
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate Volume Price Trend."""
         close = data['close']
         volume = data['volume']
         
         # Use VectorBT for volume price trend calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
             try:
                 price_change = close.pct_change()
                 vpt = (price_change * volume).cumsum()
@@ -818,8 +847,8 @@ class VolumePriceTrendGenerator(VectorizedFeatureGenerator):
             )
         return data
 
-class VolumeAccumulationDistributionGenerator(VectorizedFeatureGenerator):
-    """Generator for Volume Accumulation/Distribution."""
+class VolumeAccumulationDistributionGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for Volume Accumulation/Distribution with VectorBT optimization."""
     
     def __init__(self):
         config = FeatureConfig(
@@ -833,20 +862,25 @@ class VolumeAccumulationDistributionGenerator(VectorizedFeatureGenerator):
             parameters={}
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
     
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate Volume Accumulation/Distribution."""
         close = data['close']
         high = data['high']
         low = data['low']
         volume = data['volume']
         
         # Use VectorBT for volume accumulation/distribution calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
             try:
                 # Calculate Money Flow Multiplier
                 mfm = ((close - low) - (high - close)) / (high - low).replace(0, 1)
@@ -893,8 +927,8 @@ class VolumeAccumulationDistributionGenerator(VectorizedFeatureGenerator):
             )
         return data
 
-class VolumePriceCorrelationGenerator(VectorizedFeatureGenerator):
-    """Generator for volume-price correlation features."""
+class VolumePriceCorrelationGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for volume-price correlation features with VectorBT optimization."""
 
     def __init__(self, period: int = 20):
         config = FeatureConfig(
@@ -908,32 +942,38 @@ class VolumePriceCorrelationGenerator(VectorizedFeatureGenerator):
             parameters={"period": period}
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.period = period
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Calculate volume-price correlation."""
         close = data['close']
         volume = data['volume']
 
         # Use VectorBT for volume-price correlation calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
             try:
                 # Rolling correlation between price returns and volume
                 price_returns = close.pct_change()
-                correlation = rolling_corr(price_returns, volume, window=self.config.parameters["period"])
+                correlation = self.vectorbt_optimizer.rolling_corr(price_returns, volume, window=self.period)
                 return correlation
             except Exception as e:
                 self.logger.warning(f"VectorBT volume-price correlation calculation failed: {e}, using pandas fallback")
                 price_returns = close.pct_change()
-                correlation = price_returns.rolling(window=self.config.parameters["period"]).corr(volume)
+                correlation = price_returns.rolling(window=self.period).corr(volume)
                 return correlation
         else:
             # Rolling correlation between price returns and volume
             price_returns = close.pct_change()
-            correlation = price_returns.rolling(window=self.config.parameters["period"]).corr(volume)
+            correlation = price_returns.rolling(window=self.period).corr(volume)
             return correlation
 
 
@@ -953,8 +993,8 @@ class VolumePriceCorrelationGenerator(VectorizedFeatureGenerator):
             )
         return data
 
-class VolumePriceDivergenceGenerator(VectorizedFeatureGenerator):
-    """Generator for volume-price divergence features."""
+class VolumePriceDivergenceGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for volume-price divergence features with VectorBT optimization."""
 
     def __init__(self, period: int = 20):
         config = FeatureConfig(
@@ -968,33 +1008,39 @@ class VolumePriceDivergenceGenerator(VectorizedFeatureGenerator):
             parameters={"period": period}
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.period = period
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Calculate enhanced volume-price divergence with regime awareness."""
         close = data['close']
         volume = data['volume']
 
         # Use VectorBT for volume-price divergence calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
             try:
                 # Price momentum with regime smoothing
-                price_ma = rolling_mean(close, window=self.config.parameters["period"])
+                price_ma = self.vectorbt_optimizer.rolling_mean(close, window=self.period)
                 price_momentum = (close - price_ma) / (price_ma + 1e-8)  # Avoid division by zero
 
                 # Volume momentum with regime smoothing
-                volume_ma = rolling_mean(volume, window=self.config.parameters["period"])
+                volume_ma = self.vectorbt_optimizer.rolling_mean(volume, window=self.period)
                 volume_momentum = (volume - volume_ma) / (volume_ma + 1e-8)  # Avoid division by zero
 
                 # Enhanced divergence with regime persistence
                 divergence = price_momentum * volume_momentum
                 
                 # Add regime stability measure
-                price_volatility = rolling_std(close, window=self.config.parameters["period"])
-                volume_volatility = rolling_std(volume, window=self.config.parameters["period"])
+                price_volatility = self.vectorbt_optimizer.rolling_std(close, window=self.period)
+                volume_volatility = self.vectorbt_optimizer.rolling_std(volume, window=self.period)
                 
                 # Regime strength indicator (higher when both price and volume show consistent trends)
                 regime_strength = np.abs(divergence) / (price_volatility * volume_volatility + 1e-8)
@@ -1006,19 +1052,19 @@ class VolumePriceDivergenceGenerator(VectorizedFeatureGenerator):
             except Exception as e:
                 self.logger.warning(f"VectorBT volume-price divergence calculation failed: {e}, using pandas fallback")
                 # Price momentum with regime smoothing
-                price_ma = close.rolling(window=self.config.parameters["period"]).mean()
+                price_ma = close.rolling(window=self.period).mean()
                 price_momentum = (close - price_ma) / (price_ma + 1e-8)  # Avoid division by zero
 
                 # Volume momentum with regime smoothing
-                volume_ma = volume.rolling(window=self.config.parameters["period"]).mean()
+                volume_ma = volume.rolling(window=self.period).mean()
                 volume_momentum = (volume - volume_ma) / (volume_ma + 1e-8)  # Avoid division by zero
 
                 # Enhanced divergence with regime persistence
                 divergence = price_momentum * volume_momentum
                 
                 # Add regime stability measure
-                price_volatility = close.rolling(window=self.config.parameters["period"]).std()
-                volume_volatility = volume.rolling(window=self.config.parameters["period"]).std()
+                price_volatility = close.rolling(window=self.period).std()
+                volume_volatility = volume.rolling(window=self.period).std()
                 
                 # Regime strength indicator (higher when both price and volume show consistent trends)
                 regime_strength = np.abs(divergence) / (price_volatility * volume_volatility + 1e-8)
@@ -1029,19 +1075,19 @@ class VolumePriceDivergenceGenerator(VectorizedFeatureGenerator):
                 return enhanced_divergence
         else:
             # Price momentum with regime smoothing
-            price_ma = close.rolling(window=self.config.parameters["period"]).mean()
+            price_ma = close.rolling(window=self.period).mean()
             price_momentum = (close - price_ma) / (price_ma + 1e-8)  # Avoid division by zero
 
             # Volume momentum with regime smoothing
-            volume_ma = volume.rolling(window=self.config.parameters["period"]).mean()
+            volume_ma = volume.rolling(window=self.period).mean()
             volume_momentum = (volume - volume_ma) / (volume_ma + 1e-8)  # Avoid division by zero
 
             # Enhanced divergence with regime persistence
             divergence = price_momentum * volume_momentum
             
             # Add regime stability measure
-            price_volatility = close.rolling(window=self.config.parameters["period"]).std()
-            volume_volatility = volume.rolling(window=self.config.parameters["period"]).std()
+            price_volatility = close.rolling(window=self.period).std()
+            volume_volatility = volume.rolling(window=self.period).std()
             
             # Regime strength indicator (higher when both price and volume show consistent trends)
             regime_strength = np.abs(divergence) / (price_volatility * volume_volatility + 1e-8)
@@ -1068,8 +1114,8 @@ class VolumePriceDivergenceGenerator(VectorizedFeatureGenerator):
             )
         return data
 
-class PriceVolumeOscillatorGenerator(VectorizedFeatureGenerator):
-    """Generator for price-volume oscillator features."""
+class PriceVolumeOscillatorGenerator(VectorizedFeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for price-volume oscillator features with VectorBT optimization."""
 
     def __init__(self, fast_period: int = 10, slow_period: int = 20):
         config = FeatureConfig(
@@ -1083,27 +1129,34 @@ class PriceVolumeOscillatorGenerator(VectorizedFeatureGenerator):
             parameters={"fast_period": fast_period, "slow_period": slow_period}
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
+        self.fast_period = fast_period
+        self.slow_period = slow_period
+        
+        # Initialize VectorBT optimizer
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            self.vectorbt_optimizer = get_vectorbt_rolling_optimizer(enable_gpu=False, enable_parallel=True)
+        else:
+            self.vectorbt_optimizer = None
 
     def _generate_feature(self, data: pd.DataFrame, **kwargs) -> pd.Series:
         # Optimize DataFrame for processing
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Calculate price-volume oscillator."""
         close = data['close']
         volume = data['volume']
 
         # Use VectorBT for price-volume oscillator calculation
-        if VECTORBT_AVAILABLE:
+        if self.vectorbt_optimizer and self._should_use_vectorbt(volume):
             try:
                 # Price oscillator
-                fast_ma = rolling_mean(close, window=self.config.parameters["fast_period"])
-                slow_ma = rolling_mean(close, window=self.config.parameters["slow_period"])
+                fast_ma = self.vectorbt_optimizer.rolling_mean(close, window=self.fast_period)
+                slow_ma = self.vectorbt_optimizer.rolling_mean(close, window=self.slow_period)
                 price_osc = (fast_ma - slow_ma) / slow_ma
 
                 # Volume oscillator
-                volume_fast_ma = rolling_mean(volume, window=self.config.parameters["fast_period"])
-                volume_slow_ma = rolling_mean(volume, window=self.config.parameters["slow_period"])
+                volume_fast_ma = self.vectorbt_optimizer.rolling_mean(volume, window=self.fast_period)
+                volume_slow_ma = self.vectorbt_optimizer.rolling_mean(volume, window=self.slow_period)
                 volume_osc = (volume_fast_ma - volume_slow_ma) / volume_slow_ma
 
                 # Combined oscillator
@@ -1113,13 +1166,13 @@ class PriceVolumeOscillatorGenerator(VectorizedFeatureGenerator):
             except Exception as e:
                 self.logger.warning(f"VectorBT price-volume oscillator calculation failed: {e}, using pandas fallback")
                 # Price oscillator
-                fast_ma = close.rolling(window=self.config.parameters["fast_period"]).mean()
-                slow_ma = close.rolling(window=self.config.parameters["slow_period"]).mean()
+                fast_ma = close.rolling(window=self.fast_period).mean()
+                slow_ma = close.rolling(window=self.slow_period).mean()
                 price_osc = (fast_ma - slow_ma) / slow_ma
 
                 # Volume oscillator
-                volume_fast_ma = volume.rolling(window=self.config.parameters["fast_period"]).mean()
-                volume_slow_ma = volume.rolling(window=self.config.parameters["slow_period"]).mean()
+                volume_fast_ma = volume.rolling(window=self.fast_period).mean()
+                volume_slow_ma = volume.rolling(window=self.slow_period).mean()
                 volume_osc = (volume_fast_ma - volume_slow_ma) / volume_slow_ma
 
                 # Combined oscillator
@@ -1128,13 +1181,13 @@ class PriceVolumeOscillatorGenerator(VectorizedFeatureGenerator):
                 return combined_osc
         else:
             # Price oscillator
-            fast_ma = close.rolling(window=self.config.parameters["fast_period"]).mean()
-            slow_ma = close.rolling(window=self.config.parameters["slow_period"]).mean()
+            fast_ma = close.rolling(window=self.fast_period).mean()
+            slow_ma = close.rolling(window=self.slow_period).mean()
             price_osc = (fast_ma - slow_ma) / slow_ma
 
             # Volume oscillator
-            volume_fast_ma = volume.rolling(window=self.config.parameters["fast_period"]).mean()
-            volume_slow_ma = volume.rolling(window=self.config.parameters["slow_period"]).mean()
+            volume_fast_ma = volume.rolling(window=self.fast_period).mean()
+            volume_slow_ma = volume.rolling(window=self.slow_period).mean()
             volume_osc = (volume_fast_ma - volume_slow_ma) / volume_slow_ma
 
             # Combined oscillator

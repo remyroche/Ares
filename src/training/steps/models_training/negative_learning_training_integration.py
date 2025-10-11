@@ -25,6 +25,18 @@ from src.feature_generation.categories.negative_learning_pipeline_integration im
     create_negative_learning_integrator
 )
 
+# Import enhanced validation utilities
+try:
+    from src.training.steps.pre_training.utils.validation_utils import (
+        PreTrainingValidator, ValidationConfig, ValidationContext,
+        validate_negative_learning_inputs, validate_training_data,
+        ValidationResult
+    )
+    VALIDATION_UTILS_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ WARNING: Enhanced validation utilities not available: {e}")
+    VALIDATION_UTILS_AVAILABLE = False
+
 
 class NegativeLearningTrainingIntegration:
     """

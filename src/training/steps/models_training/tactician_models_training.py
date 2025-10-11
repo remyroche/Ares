@@ -646,15 +646,9 @@ class TacticianModelsTrainingStep:
     ) -> Dict[str, Any]:
         """Train NAS/TAS timing models using the dedicated orchestrator."""
 
-        try:
-            from .nas_tas.training_orchestrator import (
-                TrainingOrchestrator,
-                OrchestratorConfig,
-                OrchestrationMode,
-            )
-        except ImportError as e:
-            tprint_warning(f"⚠️ NAS/TAS orchestrator not available: {e}")
-            return {'models': {}, 'metrics': {}, 'error': str(e)}
+        # NAS-TAS functionality removed - directory deleted
+        tprint_warning("⚠️ NAS/TAS orchestrator not available - directory has been removed")
+        return {'models': {}, 'metrics': {}, 'error': 'NAS-TAS functionality has been removed'}
 
         tprint_debug(
             f"🧠 Preparing NAS/TAS training for {model_type.value} with {len(feature_columns)} features"

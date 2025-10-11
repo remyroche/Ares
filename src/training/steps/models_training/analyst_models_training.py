@@ -104,16 +104,20 @@ except ImportError as e:
     print(f"❌ CRITICAL ERROR: Math validation utilities are required but not available: {e}")
     MATH_VALIDATION_AVAILABLE = False
 
+# Import enhanced validation utilities
 try:
-    from .nas_tas.training_orchestrator import (
-        TrainingOrchestrator,
-        OrchestratorConfig,
-        OrchestrationMode
+    from src.training.steps.pre_training.utils.validation_utils import (
+        PreTrainingValidator, ValidationConfig, ValidationContext,
+        validate_training_data, validate_model_config, validate_regime_data,
+        ValidationResult
     )
-    NAS_TAS_AVAILABLE = True
+    VALIDATION_UTILS_AVAILABLE = True
 except ImportError as e:
-    print(f"❌ CRITICAL: Failed to import NAS/TAS orchestrator components: {e}")
-    NAS_TAS_AVAILABLE = False
+    print(f"⚠️ WARNING: Enhanced validation utilities not available: {e}")
+    VALIDATION_UTILS_AVAILABLE = False
+
+# NAS-TAS functionality removed - directory deleted
+NAS_TAS_AVAILABLE = False
 
 
 class AnalystModelType(Enum):

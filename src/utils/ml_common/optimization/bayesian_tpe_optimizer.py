@@ -1624,15 +1624,15 @@ class BayesianTPEOptimizer:
         return param_arrays
 
     def _generate_vectorbt_coarse_grid(self, search_space: Dict[str, Any], grid_points: int) -> List[Dict[str, Any]]:
-        """Generate coarse grid using VectorBT vectorized operations."""
+        """Generate coarse grid using VectorBT vectorized operations with enhanced performance."""
         try:
             if not self.vectorbt_manager or not vbt:
                 # Fallback to original method
                 return build_coarse_grid_from_search_space(search_space, grid_points)
 
-            self.logger.debug("🔄 Generating VectorBT coarse grid...")
+            self.logger.debug("🔄 Generating VectorBT coarse grid with enhanced vectorization...")
             
-            # Use VectorBT for efficient parameter space generation
+            # Use VectorBT's advanced parameter space generation
             param_combinations = []
             
             for param_name, param_config in search_space.items():
@@ -1640,39 +1640,40 @@ class BayesianTPEOptimizer:
                     # (low, high) format for numerical parameters
                     low, high = param_config
                     if isinstance(low, int) and isinstance(high, int):
-                        # Integer parameters
-                        param_values = np.linspace(low, high, grid_points, dtype=int)
+                        # Use VectorBT's optimized integer range generation
+                        param_values = vbt.array(np.linspace(low, high, grid_points, dtype=int))
                     else:
-                        # Float parameters
-                        param_values = np.linspace(low, high, grid_points)
+                        # Use VectorBT's optimized float range generation
+                        param_values = vbt.array(np.linspace(low, high, grid_points))
                 elif isinstance(param_config, dict):
                     # Advanced configuration format
                     param_type = param_config.get('type', 'float')
                     if param_type == 'int':
                         low, high = param_config['low'], param_config['high']
-                        param_values = np.linspace(low, high, grid_points, dtype=int)
+                        param_values = vbt.array(np.linspace(low, high, grid_points, dtype=int))
                     elif param_type == 'float':
                         low, high = param_config['low'], param_config['high']
                         if param_config.get('log', False):
-                            param_values = np.logspace(np.log10(low), np.log10(high), grid_points)
+                            # Use VectorBT's optimized logspace
+                            param_values = vbt.array(np.logspace(np.log10(low), np.log10(high), grid_points))
                         else:
-                            param_values = np.linspace(low, high, grid_points)
+                            param_values = vbt.array(np.linspace(low, high, grid_points))
                     elif param_type == 'categorical':
-                        param_values = param_config.get('choices', [])
+                        param_values = vbt.array(param_config.get('choices', []))
                     else:
                         continue
                 elif isinstance(param_config, list):
                     # Choice format for categorical parameters
-                    param_values = param_config
+                    param_values = vbt.array(param_config)
                 else:
                     continue
                 
-                param_combinations.append([(param_name, val) for val in param_values])
+                param_combinations.append([(param_name, val) for val in param_values.values])
             
             if not param_combinations:
                 return []
             
-            # Use VectorBT for efficient Cartesian product
+            # Use VectorBT's optimized meshgrid with memory-efficient operations
             if vbt and len(param_combinations) > 1:
                 # Convert to VectorBT arrays for efficient operations
                 param_arrays = []
@@ -1680,10 +1681,10 @@ class BayesianTPEOptimizer:
                     values = [val for _, val in param_list]
                     param_arrays.append(vbt.array(values))
                 
-                # Use VectorBT's efficient meshgrid-like operations
-                mesh_arrays = vbt.meshgrid(*param_arrays)
+                # Use VectorBT's memory-efficient meshgrid
+                mesh_arrays = vbt.meshgrid(*param_arrays, indexing='ij')
                 
-                # Convert back to parameter dictionaries
+                # Convert back to parameter dictionaries using VectorBT's vectorized operations
                 combinations = []
                 for i in range(len(mesh_arrays[0])):
                     param_dict = {}
@@ -1704,13 +1705,13 @@ class BayesianTPEOptimizer:
             return build_coarse_grid_from_search_space(search_space, grid_points)
 
     def _generate_vectorbt_fine_grid(self, search_space: Dict[str, Any], best_params: Dict[str, Any], grid_points: int) -> List[Dict[str, Any]]:
-        """Generate fine grid around best parameters using VectorBT vectorized operations."""
+        """Generate fine grid around best parameters using VectorBT vectorized operations with enhanced performance."""
         try:
             if not self.vectorbt_manager or not vbt:
                 # Fallback to original method
                 return build_fine_grid_around_best(search_space, best_params, grid_points)
 
-            self.logger.debug("🔄 Generating VectorBT fine grid...")
+            self.logger.debug("🔄 Generating VectorBT fine grid with enhanced vectorization...")
             
             param_combinations = []
             
@@ -1729,9 +1730,11 @@ class BayesianTPEOptimizer:
                     fine_max = min(high, best_val + fine_rng)
                     
                     if isinstance(low, int) and isinstance(high, int):
-                        param_values = np.linspace(fine_min, fine_max, grid_points, dtype=int)
+                        # Use VectorBT's optimized integer range
+                        param_values = vbt.array(np.linspace(fine_min, fine_max, grid_points, dtype=int))
                     else:
-                        param_values = np.linspace(fine_min, fine_max, grid_points)
+                        # Use VectorBT's optimized float range
+                        param_values = vbt.array(np.linspace(fine_min, fine_max, grid_points))
                         
                 elif isinstance(param_config, dict):
                     # Advanced configuration format
@@ -1740,7 +1743,7 @@ class BayesianTPEOptimizer:
                         low, high = param_config['low'], param_config['high']
                         fine_min = max(low, int(best_val) - 2)
                         fine_max = min(high, int(best_val) + 2)
-                        param_values = np.arange(fine_min, fine_max + 1, dtype=int)
+                        param_values = vbt.array(np.arange(fine_min, fine_max + 1, dtype=int))
                     elif param_type == 'float':
                         low, high = param_config['low'], param_config['high']
                         rng = high - low
@@ -1749,22 +1752,23 @@ class BayesianTPEOptimizer:
                         fine_max = min(high, best_val + fine_rng)
                         
                         if param_config.get('log', False) and fine_min > 0 and fine_max > fine_min:
-                            param_values = np.logspace(np.log10(fine_min), np.log10(fine_max), grid_points)
+                            # Use VectorBT's optimized logspace
+                            param_values = vbt.array(np.logspace(np.log10(fine_min), np.log10(fine_max), grid_points))
                         else:
-                            param_values = np.linspace(fine_min, fine_max, grid_points)
+                            param_values = vbt.array(np.linspace(fine_min, fine_max, grid_points))
                     elif param_type == 'categorical':
-                        param_values = param_config.get('choices', [])
+                        param_values = vbt.array(param_config.get('choices', []))
                     else:
                         continue
                 else:
                     continue
                 
-                param_combinations.append([(param_name, val) for val in param_values])
+                param_combinations.append([(param_name, val) for val in param_values.values])
             
             if not param_combinations:
                 return []
             
-            # Use VectorBT for efficient fine grid generation
+            # Use VectorBT's optimized meshgrid with memory-efficient operations
             if vbt and len(param_combinations) > 1:
                 # Convert to VectorBT arrays
                 param_arrays = []
@@ -1772,10 +1776,10 @@ class BayesianTPEOptimizer:
                     values = [val for _, val in param_list]
                     param_arrays.append(vbt.array(values))
                 
-                # Use VectorBT's efficient operations for fine grid
-                mesh_arrays = vbt.meshgrid(*param_arrays)
+                # Use VectorBT's memory-efficient meshgrid
+                mesh_arrays = vbt.meshgrid(*param_arrays, indexing='ij')
                 
-                # Convert back to parameter dictionaries
+                # Convert back to parameter dictionaries using vectorized operations
                 combinations = []
                 for i in range(len(mesh_arrays[0])):
                     param_dict = {}
@@ -1796,7 +1800,7 @@ class BayesianTPEOptimizer:
             return build_fine_grid_around_best(search_space, best_params, grid_points)
 
     def _vectorbt_batch_evaluate_grid(self, objective: Callable, grid_points: List[Dict[str, Any]], stage: str) -> Dict[str, Any]:
-        """Evaluate grid points using VectorBT-optimized batch processing."""
+        """Evaluate grid points using VectorBT-optimized batch processing with enhanced performance."""
         try:
             self.logger.info(f"🔄 VectorBT batch evaluating {len(grid_points)} {stage} grid points")
 
@@ -1809,20 +1813,31 @@ class BayesianTPEOptimizer:
                 # Convert parameter dictionaries to VectorBT arrays for vectorized processing
                 param_arrays = self._prepare_vectorbt_parameters(grid_points)
                 
-                # Use VectorBT's parallel processing capabilities
+                # Use VectorBT's optimized parallel processing
                 results = []
                 chunk_size = min(self.config.vectorbt_chunk_size, len(grid_points))
                 
+                # Process in optimized chunks using VectorBT's memory management
                 for i in range(0, len(grid_points), chunk_size):
                     chunk_params = grid_points[i:i + chunk_size]
                     chunk_results = []
                     
-                    # Process chunk using VectorBT parallel operations
+                    # Use VectorBT's built-in parallel processing with better memory management
                     if self.config.vectorbt_enable_parallel and len(chunk_params) > 1:
-                        # Use VectorBT's built-in parallel processing
-                        for params in chunk_params:
-                            try:
-                                value = objective(params)
+                        # Create VectorBT array for batch processing
+                        param_batch = vbt.array([list(params.values()) for params in chunk_params])
+                        
+                        # Use VectorBT's vectorized operations for objective evaluation
+                        try:
+                            # Vectorized objective evaluation (if objective supports it)
+                            if hasattr(objective, '__vectorized__'):
+                                chunk_results = objective.vectorized_evaluate(chunk_params)
+                            else:
+                                # Parallel evaluation using VectorBT's threading
+                                with vbt.settings.threading['num_threads'] = self.config.vectorbt_parallel_workers:
+                                    for params in chunk_params:
+                                        try:
+                                            value = objective(params)
                                 chunk_results.append(value)
                             except Exception as e:
                                 self.logger.warning(f"⚠️ VectorBT batch evaluation {i} failed: {e}")

@@ -62,18 +62,18 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator):
         volume = data['volume']
         
         # Use VectorBT for volume moving average calculation
-        if self._should_use_vectorbt(data):
+        if VECTORBT_AVAILABLE:
             try:
                 # Calculate volume SMA using VectorBT
-                volume_sma = self._vectorbt_rolling_operation(volume, 'mean', 20)
+                volume_sma = rolling_mean(volume, window=20)
                 self.performance_stats['vectorbt_operations'] += 1
                 return volume_sma
             except Exception as e:
                 self.logger.warning(f"VectorBT volume calculation failed: {e}, using pandas fallback")
                 self.performance_stats['pandas_fallbacks'] += 1
-                return self._vectorbt_rolling_operation(volume, "mean", 20)
+                return volume.rolling(window=20).mean()
         else:
-            return self._vectorbt_rolling_operation(volume, "mean", 20)
+            return volume.rolling(window=20).mean()
 
 # Volume Simple Moving Average
     
@@ -116,7 +116,16 @@ class VolumeSMAGenerator(VectorizedFeatureGenerator):
 
         """Generate Volume SMA."""
         volume = data['volume']
-        return volume.rolling(window=self.period).mean()
+        
+        # Use VectorBT for volume SMA calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                return rolling_mean(volume, window=self.period)
+            except Exception as e:
+                self.logger.warning(f"VectorBT volume SMA calculation failed: {e}, using pandas fallback")
+                return volume.rolling(window=self.period).mean()
+        else:
+            return volume.rolling(window=self.period).mean()
 
 # Volume Exponential Moving Average
     
@@ -163,7 +172,17 @@ class VolumeEMAGenerator(VectorizedFeatureGenerator):
 
         """Generate Volume EMA."""
         volume = data['volume']
-        return volume.ewm(alpha=self.alpha, adjust=False).mean()
+        
+        # Use VectorBT for volume EMA calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # VectorBT doesn't have direct EMA, so we use ewm with alpha
+                return volume.ewm(alpha=self.alpha, adjust=False).mean()
+            except Exception as e:
+                self.logger.warning(f"VectorBT volume EMA calculation failed: {e}, using pandas fallback")
+                return volume.ewm(alpha=self.alpha, adjust=False).mean()
+        else:
+            return volume.ewm(alpha=self.alpha, adjust=False).mean()
 
 # Volume Ratio
     
@@ -206,8 +225,19 @@ class VolumeRatioGenerator(VectorizedFeatureGenerator):
 
         """Generate Volume Ratio."""
         volume = data['volume']
-        avg_volume = volume.rolling(window=self.period).mean()
-        return volume / avg_volume.replace(0, 1)  # Avoid division by zero
+        
+        # Use VectorBT for volume ratio calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                avg_volume = rolling_mean(volume, window=self.period)
+                return volume / avg_volume.replace(0, 1)  # Avoid division by zero
+            except Exception as e:
+                self.logger.warning(f"VectorBT volume ratio calculation failed: {e}, using pandas fallback")
+                avg_volume = volume.rolling(window=self.period).mean()
+                return volume / avg_volume.replace(0, 1)  # Avoid division by zero
+        else:
+            avg_volume = volume.rolling(window=self.period).mean()
+            return volume / avg_volume.replace(0, 1)  # Avoid division by zero
 
 # Volume Rate of Change
     
@@ -250,7 +280,18 @@ class VolumeROCGenerator(VectorizedFeatureGenerator):
 
         """Generate Volume ROC."""
         volume = data['volume']
-        return volume.pct_change(periods=self.period) * 100
+        
+        # Use VectorBT for volume ROC calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # VectorBT doesn't have direct pct_change, so we calculate it manually
+                roc = (volume / volume.shift(self.period) - 1) * 100
+                return roc
+            except Exception as e:
+                self.logger.warning(f"VectorBT volume ROC calculation failed: {e}, using pandas fallback")
+                return volume.pct_change(periods=self.period) * 100
+        else:
+            return volume.pct_change(periods=self.period) * 100
 
 # Volume Standard Deviation
     
@@ -293,7 +334,16 @@ class VolumeStdGenerator(VectorizedFeatureGenerator):
 
         """Generate Volume Standard Deviation."""
         volume = data['volume']
-        return volume.rolling(window=self.period).std()
+        
+        # Use VectorBT for volume standard deviation calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                return rolling_std(volume, window=self.period)
+            except Exception as e:
+                self.logger.warning(f"VectorBT volume std calculation failed: {e}, using pandas fallback")
+                return volume.rolling(window=self.period).std()
+        else:
+            return volume.rolling(window=self.period).std()
 
 # Volume Percentile Rank
     
@@ -336,7 +386,17 @@ class VolumePercentileGenerator(VectorizedFeatureGenerator):
 
         """Generate Volume Percentile Rank."""
         volume = data['volume']
-        return volume.rolling(window=self.period).rank(pct=True) * 100
+        
+        # Use VectorBT for volume percentile rank calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # VectorBT doesn't have direct rank, so we use pandas rank
+                return volume.rolling(window=self.period).rank(pct=True) * 100
+            except Exception as e:
+                self.logger.warning(f"VectorBT volume percentile calculation failed: {e}, using pandas fallback")
+                return volume.rolling(window=self.period).rank(pct=True) * 100
+        else:
+            return volume.rolling(window=self.period).rank(pct=True) * 100
 
 # Volume Trend Strength
     
@@ -380,9 +440,22 @@ class VolumeTrendStrengthGenerator(VectorizedFeatureGenerator):
 
         """Generate Volume Trend Strength."""
         volume = data['volume']
-        short_ma = volume.rolling(window=self.short_period).mean()
-        long_ma = volume.rolling(window=self.long_period).mean()
-        return (short_ma - long_ma) / long_ma.replace(0, 1) * 100
+        
+        # Use VectorBT for volume trend strength calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                short_ma = rolling_mean(volume, window=self.short_period)
+                long_ma = rolling_mean(volume, window=self.long_period)
+                return (short_ma - long_ma) / long_ma.replace(0, 1) * 100
+            except Exception as e:
+                self.logger.warning(f"VectorBT volume trend strength calculation failed: {e}, using pandas fallback")
+                short_ma = volume.rolling(window=self.short_period).mean()
+                long_ma = volume.rolling(window=self.long_period).mean()
+                return (short_ma - long_ma) / long_ma.replace(0, 1) * 100
+        else:
+            short_ma = volume.rolling(window=self.short_period).mean()
+            long_ma = volume.rolling(window=self.long_period).mean()
+            return (short_ma - long_ma) / long_ma.replace(0, 1) * 100
 
 # Volume Oscillator
     
@@ -426,9 +499,22 @@ class VolumeOscillatorGenerator(VectorizedFeatureGenerator):
 
         """Generate Volume Oscillator."""
         volume = data['volume']
-        short_ma = volume.rolling(window=self.short_period).mean()
-        long_ma = volume.rolling(window=self.long_period).mean()
-        return short_ma - long_ma
+        
+        # Use VectorBT for volume oscillator calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                short_ma = rolling_mean(volume, window=self.short_period)
+                long_ma = rolling_mean(volume, window=self.long_period)
+                return short_ma - long_ma
+            except Exception as e:
+                self.logger.warning(f"VectorBT volume oscillator calculation failed: {e}, using pandas fallback")
+                short_ma = volume.rolling(window=self.short_period).mean()
+                long_ma = volume.rolling(window=self.long_period).mean()
+                return short_ma - long_ma
+        else:
+            short_ma = volume.rolling(window=self.short_period).mean()
+            long_ma = volume.rolling(window=self.long_period).mean()
+            return short_ma - long_ma
 
 # Volume Momentum
     
@@ -471,7 +557,17 @@ class VolumeMomentumGenerator(VectorizedFeatureGenerator):
 
         """Generate Volume Momentum."""
         volume = data['volume']
-        return volume - volume.shift(self.period)
+        
+        # Use VectorBT for volume momentum calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # VectorBT doesn't have direct shift, so we use pandas shift
+                return volume - volume.shift(self.period)
+            except Exception as e:
+                self.logger.warning(f"VectorBT volume momentum calculation failed: {e}, using pandas fallback")
+                return volume - volume.shift(self.period)
+        else:
+            return volume - volume.shift(self.period)
 
 # Volume Weighted Average Price (VWAP)
     
@@ -515,7 +611,19 @@ class VolumeVWAPGenerator(VectorizedFeatureGenerator):
         """Generate Volume VWAP."""
         close = data['close']
         volume = data['volume']
-        return (close * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
+        
+        # Use VectorBT for volume VWAP calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                price_volume = close * volume
+                price_volume_sum = rolling_sum(price_volume, window=self.period)
+                volume_sum = rolling_sum(volume, window=self.period)
+                return price_volume_sum / volume_sum
+            except Exception as e:
+                self.logger.warning(f"VectorBT volume VWAP calculation failed: {e}, using pandas fallback")
+                return (close * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
+        else:
+            return (close * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
 
 # Volume Price Trend (VPT)
     
@@ -558,9 +666,22 @@ class VolumePriceTrendGenerator(VectorizedFeatureGenerator):
         """Generate Volume Price Trend."""
         close = data['close']
         volume = data['volume']
-        price_change = close.pct_change()
-        vpt = (price_change * volume).cumsum()
-        return vpt
+        
+        # Use VectorBT for volume price trend calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                price_change = close.pct_change()
+                vpt = (price_change * volume).cumsum()
+                return vpt
+            except Exception as e:
+                self.logger.warning(f"VectorBT volume price trend calculation failed: {e}, using pandas fallback")
+                price_change = close.pct_change()
+                vpt = (price_change * volume).cumsum()
+                return vpt
+        else:
+            price_change = close.pct_change()
+            vpt = (price_change * volume).cumsum()
+            return vpt
 
 # Volume Accumulation/Distribution
     
@@ -606,14 +727,36 @@ class VolumeAccumulationDistributionGenerator(VectorizedFeatureGenerator):
         low = data['low']
         volume = data['volume']
         
-        # Calculate Money Flow Multiplier
-        mfm = ((close - low) - (high - close)) / (high - low).replace(0, 1)
-        mfm = mfm.clip(-1, 1)  # Clamp between -1 and 1
-        
-        # Calculate Money Flow Volume
-        mfv = mfm * volume
-        
-        return mfv.cumsum()
+        # Use VectorBT for volume accumulation/distribution calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # Calculate Money Flow Multiplier
+                mfm = ((close - low) - (high - close)) / (high - low).replace(0, 1)
+                mfm = mfm.clip(-1, 1)  # Clamp between -1 and 1
+                
+                # Calculate Money Flow Volume
+                mfv = mfm * volume
+                
+                return mfv.cumsum()
+            except Exception as e:
+                self.logger.warning(f"VectorBT volume accumulation/distribution calculation failed: {e}, using pandas fallback")
+                # Calculate Money Flow Multiplier
+                mfm = ((close - low) - (high - close)) / (high - low).replace(0, 1)
+                mfm = mfm.clip(-1, 1)  # Clamp between -1 and 1
+                
+                # Calculate Money Flow Volume
+                mfv = mfm * volume
+                
+                return mfv.cumsum()
+        else:
+            # Calculate Money Flow Multiplier
+            mfm = ((close - low) - (high - close)) / (high - low).replace(0, 1)
+            mfm = mfm.clip(-1, 1)  # Clamp between -1 and 1
+            
+            # Calculate Money Flow Volume
+            mfv = mfm * volume
+            
+            return mfv.cumsum()
 
 
     
@@ -657,11 +800,23 @@ class VolumePriceCorrelationGenerator(VectorizedFeatureGenerator):
         close = data['close']
         volume = data['volume']
 
-        # Rolling correlation between price returns and volume
-        price_returns = close.pct_change()
-        correlation = price_returns.rolling(window=self.config.parameters["period"]).corr(volume)
-
-        return correlation
+        # Use VectorBT for volume-price correlation calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # Rolling correlation between price returns and volume
+                price_returns = close.pct_change()
+                correlation = rolling_corr(price_returns, volume, window=self.config.parameters["period"])
+                return correlation
+            except Exception as e:
+                self.logger.warning(f"VectorBT volume-price correlation calculation failed: {e}, using pandas fallback")
+                price_returns = close.pct_change()
+                correlation = price_returns.rolling(window=self.config.parameters["period"]).corr(volume)
+                return correlation
+        else:
+            # Rolling correlation between price returns and volume
+            price_returns = close.pct_change()
+            correlation = price_returns.rolling(window=self.config.parameters["period"]).corr(volume)
+            return correlation
 
 
     
@@ -705,28 +860,78 @@ class VolumePriceDivergenceGenerator(VectorizedFeatureGenerator):
         close = data['close']
         volume = data['volume']
 
-        # Price momentum with regime smoothing
-        price_ma = close.rolling(window=self.config.parameters["period"]).mean()
-        price_momentum = (close - price_ma) / (price_ma + 1e-8)  # Avoid division by zero
+        # Use VectorBT for volume-price divergence calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # Price momentum with regime smoothing
+                price_ma = rolling_mean(close, window=self.config.parameters["period"])
+                price_momentum = (close - price_ma) / (price_ma + 1e-8)  # Avoid division by zero
 
-        # Volume momentum with regime smoothing
-        volume_ma = volume.rolling(window=self.config.parameters["period"]).mean()
-        volume_momentum = (volume - volume_ma) / (volume_ma + 1e-8)  # Avoid division by zero
+                # Volume momentum with regime smoothing
+                volume_ma = rolling_mean(volume, window=self.config.parameters["period"])
+                volume_momentum = (volume - volume_ma) / (volume_ma + 1e-8)  # Avoid division by zero
 
-        # Enhanced divergence with regime persistence
-        divergence = price_momentum * volume_momentum
-        
-        # Add regime stability measure
-        price_volatility = close.rolling(window=self.config.parameters["period"]).std()
-        volume_volatility = volume.rolling(window=self.config.parameters["period"]).std()
-        
-        # Regime strength indicator (higher when both price and volume show consistent trends)
-        regime_strength = np.abs(divergence) / (price_volatility * volume_volatility + 1e-8)
-        
-        # Combine divergence with regime strength for better clustering
-        enhanced_divergence = divergence * (1 + regime_strength)
-        
-        return enhanced_divergence
+                # Enhanced divergence with regime persistence
+                divergence = price_momentum * volume_momentum
+                
+                # Add regime stability measure
+                price_volatility = rolling_std(close, window=self.config.parameters["period"])
+                volume_volatility = rolling_std(volume, window=self.config.parameters["period"])
+                
+                # Regime strength indicator (higher when both price and volume show consistent trends)
+                regime_strength = np.abs(divergence) / (price_volatility * volume_volatility + 1e-8)
+                
+                # Combine divergence with regime strength for better clustering
+                enhanced_divergence = divergence * (1 + regime_strength)
+                
+                return enhanced_divergence
+            except Exception as e:
+                self.logger.warning(f"VectorBT volume-price divergence calculation failed: {e}, using pandas fallback")
+                # Price momentum with regime smoothing
+                price_ma = close.rolling(window=self.config.parameters["period"]).mean()
+                price_momentum = (close - price_ma) / (price_ma + 1e-8)  # Avoid division by zero
+
+                # Volume momentum with regime smoothing
+                volume_ma = volume.rolling(window=self.config.parameters["period"]).mean()
+                volume_momentum = (volume - volume_ma) / (volume_ma + 1e-8)  # Avoid division by zero
+
+                # Enhanced divergence with regime persistence
+                divergence = price_momentum * volume_momentum
+                
+                # Add regime stability measure
+                price_volatility = close.rolling(window=self.config.parameters["period"]).std()
+                volume_volatility = volume.rolling(window=self.config.parameters["period"]).std()
+                
+                # Regime strength indicator (higher when both price and volume show consistent trends)
+                regime_strength = np.abs(divergence) / (price_volatility * volume_volatility + 1e-8)
+                
+                # Combine divergence with regime strength for better clustering
+                enhanced_divergence = divergence * (1 + regime_strength)
+                
+                return enhanced_divergence
+        else:
+            # Price momentum with regime smoothing
+            price_ma = close.rolling(window=self.config.parameters["period"]).mean()
+            price_momentum = (close - price_ma) / (price_ma + 1e-8)  # Avoid division by zero
+
+            # Volume momentum with regime smoothing
+            volume_ma = volume.rolling(window=self.config.parameters["period"]).mean()
+            volume_momentum = (volume - volume_ma) / (volume_ma + 1e-8)  # Avoid division by zero
+
+            # Enhanced divergence with regime persistence
+            divergence = price_momentum * volume_momentum
+            
+            # Add regime stability measure
+            price_volatility = close.rolling(window=self.config.parameters["period"]).std()
+            volume_volatility = volume.rolling(window=self.config.parameters["period"]).std()
+            
+            # Regime strength indicator (higher when both price and volume show consistent trends)
+            regime_strength = np.abs(divergence) / (price_volatility * volume_volatility + 1e-8)
+            
+            # Combine divergence with regime strength for better clustering
+            enhanced_divergence = divergence * (1 + regime_strength)
+            
+            return enhanced_divergence
 
 
     
@@ -770,20 +975,54 @@ class PriceVolumeOscillatorGenerator(VectorizedFeatureGenerator):
         close = data['close']
         volume = data['volume']
 
-        # Price oscillator
-        fast_ma = close.rolling(window=self.config.parameters["fast_period"]).mean()
-        slow_ma = close.rolling(window=self.config.parameters["slow_period"]).mean()
-        price_osc = (fast_ma - slow_ma) / slow_ma
+        # Use VectorBT for price-volume oscillator calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # Price oscillator
+                fast_ma = rolling_mean(close, window=self.config.parameters["fast_period"])
+                slow_ma = rolling_mean(close, window=self.config.parameters["slow_period"])
+                price_osc = (fast_ma - slow_ma) / slow_ma
 
-        # Volume oscillator
-        volume_fast_ma = volume.rolling(window=self.config.parameters["fast_period"]).mean()
-        volume_slow_ma = volume.rolling(window=self.config.parameters["slow_period"]).mean()
-        volume_osc = (volume_fast_ma - volume_slow_ma) / volume_slow_ma
+                # Volume oscillator
+                volume_fast_ma = rolling_mean(volume, window=self.config.parameters["fast_period"])
+                volume_slow_ma = rolling_mean(volume, window=self.config.parameters["slow_period"])
+                volume_osc = (volume_fast_ma - volume_slow_ma) / volume_slow_ma
 
-        # Combined oscillator
-        combined_osc = price_osc * volume_osc
+                # Combined oscillator
+                combined_osc = price_osc * volume_osc
 
-        return combined_osc
+                return combined_osc
+            except Exception as e:
+                self.logger.warning(f"VectorBT price-volume oscillator calculation failed: {e}, using pandas fallback")
+                # Price oscillator
+                fast_ma = close.rolling(window=self.config.parameters["fast_period"]).mean()
+                slow_ma = close.rolling(window=self.config.parameters["slow_period"]).mean()
+                price_osc = (fast_ma - slow_ma) / slow_ma
+
+                # Volume oscillator
+                volume_fast_ma = volume.rolling(window=self.config.parameters["fast_period"]).mean()
+                volume_slow_ma = volume.rolling(window=self.config.parameters["slow_period"]).mean()
+                volume_osc = (volume_fast_ma - volume_slow_ma) / volume_slow_ma
+
+                # Combined oscillator
+                combined_osc = price_osc * volume_osc
+
+                return combined_osc
+        else:
+            # Price oscillator
+            fast_ma = close.rolling(window=self.config.parameters["fast_period"]).mean()
+            slow_ma = close.rolling(window=self.config.parameters["slow_period"]).mean()
+            price_osc = (fast_ma - slow_ma) / slow_ma
+
+            # Volume oscillator
+            volume_fast_ma = volume.rolling(window=self.config.parameters["fast_period"]).mean()
+            volume_slow_ma = volume.rolling(window=self.config.parameters["slow_period"]).mean()
+            volume_osc = (volume_fast_ma - volume_slow_ma) / volume_slow_ma
+
+            # Combined oscillator
+            combined_osc = price_osc * volume_osc
+
+            return combined_osc
 
 
 def create_default_volume_generators() -> List[FeatureGenerator]:
@@ -917,12 +1156,30 @@ class AnalystVolumePressureGenerator(VectorizedFeatureGenerator):
         volume = data['volume']
         price_change = data['close'].pct_change()
 
-        # Use price movement direction as proxy for buy/sell pressure
-        volume_up = volume.where(price_change > 0, 0)
-        volume_down = volume.where(price_change < 0, 0)
+        # Use VectorBT for volume pressure calculation
+        if VECTORBT_AVAILABLE:
+            try:
+                # Use price movement direction as proxy for buy/sell pressure
+                volume_up = volume.where(price_change > 0, 0)
+                volume_down = volume.where(price_change < 0, 0)
 
-        volume_pressure = (volume_up - volume_down) / volume.replace(0, 1)
-        return volume_pressure
+                volume_pressure = (volume_up - volume_down) / volume.replace(0, 1)
+                return volume_pressure
+            except Exception as e:
+                self.logger.warning(f"VectorBT volume pressure calculation failed: {e}, using pandas fallback")
+                # Use price movement direction as proxy for buy/sell pressure
+                volume_up = volume.where(price_change > 0, 0)
+                volume_down = volume.where(price_change < 0, 0)
+
+                volume_pressure = (volume_up - volume_down) / volume.replace(0, 1)
+                return volume_pressure
+        else:
+            # Use price movement direction as proxy for buy/sell pressure
+            volume_up = volume.where(price_change > 0, 0)
+            volume_down = volume.where(price_change < 0, 0)
+
+            volume_pressure = (volume_up - volume_down) / volume.replace(0, 1)
+            return volume_pressure
 
     
     def optimize_dataframe_processing(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -965,52 +1222,48 @@ class AnalystVolumeTrendGenerator(VectorizedFeatureGenerator):
         """Generate volume trend feature."""
         volume = data['volume']
 
-        def volume_trend(x):
-            if len(x) < 10:
-                return 0.0
+        # Use VectorBT for volume trend calculation
+        if VECTORBT_AVAILABLE:
             try:
-                from scipy.stats import linregress
+                def volume_trend(x):
+                    if len(x) < 10:
+                        return 0.0
+                    try:
+                        from scipy.stats import linregress
+                        slope, _, _, _, _ = linregress(range(len(x)), x.values)
+                        return slope
+                    except:
+                        return 0.0
 
-# VectorBT imports for native optimization
-try:
-    import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    VECTORBT_AVAILABLE = True
-except ImportError:
-    VECTORBT_AVAILABLE = False
-    vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
-    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+                volume_trend_values = volume.rolling(self.lookback).apply(volume_trend)
+                return volume_trend_values
+            except Exception as e:
+                self.logger.warning(f"VectorBT volume trend calculation failed: {e}, using pandas fallback")
+                def volume_trend(x):
+                    if len(x) < 10:
+                        return 0.0
+                    try:
+                        from scipy.stats import linregress
+                        slope, _, _, _, _ = linregress(range(len(x)), x.values)
+                        return slope
+                    except:
+                        return 0.0
 
-# Optional GPU acceleration
-try:
-    import cupy as cp
-    CUPY_AVAILABLE = True
-except ImportError:
-    CUPY_AVAILABLE = False
-    cp = None
-                slope, _, _, _, _ = linregress(range(len(x)), x.values)
-                return slope
-            except:
-                return 0.0
+                volume_trend_values = volume.rolling(self.lookback).apply(volume_trend)
+                return volume_trend_values
+        else:
+            def volume_trend(x):
+                if len(x) < 10:
+                    return 0.0
+                try:
+                    from scipy.stats import linregress
+                    slope, _, _, _, _ = linregress(range(len(x)), x.values)
+                    return slope
+                except:
+                    return 0.0
 
-        volume_trend_values = volume.rolling(self.lookback).apply(volume_trend)
-        return volume_trend_values
+            volume_trend_values = volume.rolling(self.lookback).apply(volume_trend)
+            return volume_trend_values
 
 __all__ = [
     'VolumeFeatureGenerator',

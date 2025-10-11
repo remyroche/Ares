@@ -316,8 +316,8 @@ class CrossTimeframeVolatilityGenerator(FeatureGenerator, VectorBTOptimizationMi
             )
         return data
 
-class CrossTimeframeVolumeGenerator(FeatureGenerator):
-    """Generator for cross-timeframe volume features."""
+class CrossTimeframeVolumeGenerator(FeatureGenerator, VectorBTOptimizationMixin):
+    """Generator for cross-timeframe volume features with VectorBT optimization."""
     
     def __init__(self, timeframe: int = 5, base_calculation: Union[str, BaseCalculationType] = BaseCalculationType.VOLUME_RETURNS, **base_kwargs):
         if isinstance(base_calculation, str):
@@ -334,7 +334,8 @@ class CrossTimeframeVolumeGenerator(FeatureGenerator):
             default_lookback=timeframe,
             min_lookback=timeframe,
             max_lookback=timeframe,
-            parameters={'timeframe': timeframe, 'base_calculation': base_calculation.value, **base_kwargs}
+            parameters={'timeframe': timeframe, 'base_calculation': base_calculation.value, **base_kwargs},
+            gpu_accelerated=True
         )
         super().__init__(config, enable_matrix_ops=True, enable_vectorization_optimization=True)
         self.timeframe = timeframe
@@ -347,6 +348,18 @@ class CrossTimeframeVolumeGenerator(FeatureGenerator):
 
         """Generate cross-timeframe volume using VectorBT."""
         base_values = self.base_calculator.calculate(data)
+        
+        # Try VectorBT rolling optimizer first
+        if hasattr(self, 'rolling_optimizer') and self.rolling_optimizer:
+            try:
+                volume_ma = self.rolling_optimizer.rolling_mean(base_values, window=self.timeframe)
+                self.performance_stats['vectorbt_operations'] += 1
+                return volume_ma
+            except Exception as e:
+                self.logger.warning(f"VectorBT cross-timeframe volume calculation failed: {e}, using fallback")
+                self.performance_stats['pandas_fallbacks'] += 1
+        
+        # Fallback to VectorBT direct operations
         volume_ma = rolling_mean(base_values, window=self.timeframe)
         return volume_ma
 

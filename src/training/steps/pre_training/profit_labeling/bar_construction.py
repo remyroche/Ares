@@ -44,6 +44,12 @@ from src.utils.common_operations import (
 )
 from src.utils.math_validation import MathValidation
 
+# Import VectorBT optimizer
+from .vectorbt_optimizer import (
+    get_vectorbt_optimizer, VectorBTConfig, optimized_rolling_mean, 
+    optimized_rolling_std, optimized_volatility, optimized_returns
+)
+
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
@@ -115,6 +121,9 @@ class BarConstructionConfig:
     # Quality checks
     min_bars_required: int = 100
     max_missing_data_ratio: float = 0.1  # Maximum ratio of missing data
+    
+    # VectorBT optimization
+    vectorbt_config: VectorBTConfig = field(default_factory=VectorBTConfig)
 
     def __post_init__(self):
         """Validate configuration parameters after initialization."""
@@ -216,6 +225,9 @@ class EventBasedBarConstructor:
             self.cpu_optimizer = None
             self.memory_optimizer = None
             tprint_warning("   → Hardware optimization: Not available")
+
+        # Initialize VectorBT optimizer
+        self.vectorbt_optimizer = get_vectorbt_optimizer(self.config.vectorbt_config)
 
         tprint_info("🔧 Event-Based Bar Constructor initialized")
         tprint_info(f"   → Bar type: {self.config.bar_type.value}")
@@ -354,12 +366,13 @@ class EventBasedBarConstructor:
             market_data = market_data.copy()
             market_data['dollar_volume'] = market_data['close'] * market_data['volume']
 
-            # Use median volume over a window for more stable bar sizing
+            # Use median volume over a window for more stable bar sizing with VectorBT
             window_size = min(20, len(market_data) // 10)  # Adaptive window size
             if window_size > 1:
-                market_data['median_volume'] = market_data['volume'].rolling(
-                    window=window_size, min_periods=1
-                ).median()
+                # Use VectorBT rolling median for better performance
+                market_data['median_volume'] = self.vectorbt_optimizer.rolling_apply(
+                    market_data['volume'], lambda x: x.median(), window_size
+                )
                 # Use median volume for bar size calculation when available
                 market_data['effective_volume'] = market_data['median_volume'].fillna(market_data['volume'])
             else:

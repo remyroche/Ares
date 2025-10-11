@@ -37,6 +37,12 @@ from src.utils.matrix_operations.hardware_integration import HardwareOptimizedMa
 from src.utils.hardware.m1_memory_optimizer import get_m1_memory_optimizer
 from src.utils.hardware.m1_cpu_optimizer import get_m1_cpu_optimizer
 
+# Import VectorBT optimizer
+from .vectorbt_optimizer import (
+    get_vectorbt_optimizer, VectorBTConfig, optimized_rolling_mean, 
+    optimized_rolling_std, optimized_volatility, optimized_returns
+)
+
 
 class LabelDefinitionType(Enum):
     """Types of label definitions."""
@@ -245,6 +251,9 @@ class AnalystLabelConfig:
     # Asymmetric behaviour
     asymmetric_return_scaling: AsymmetricReturnScalingConfig = field(default_factory=AsymmetricReturnScalingConfig)
     asymmetric_risk_adjustment: AsymmetricRiskAdjustmentConfig = field(default_factory=AsymmetricRiskAdjustmentConfig)
+    
+    # VectorBT optimization
+    vectorbt_config: VectorBTConfig = field(default_factory=VectorBTConfig)
 
 
 @dataclass
@@ -272,6 +281,9 @@ class TacticianLabelConfig:
     # Asymmetric behaviour controls (shared structure with analyst config)
     asymmetric_return_scaling: AsymmetricReturnScalingConfig = field(default_factory=AsymmetricReturnScalingConfig)
     asymmetric_risk_adjustment: AsymmetricRiskAdjustmentConfig = field(default_factory=AsymmetricRiskAdjustmentConfig)
+    
+    # VectorBT optimization
+    vectorbt_config: VectorBTConfig = field(default_factory=VectorBTConfig)
 
 
 @dataclass
@@ -393,6 +405,9 @@ class EnhancedLabelDefinitions:
 
         # Initialize performance optimization tools
         self._initialize_optimization_tools()
+
+        # Initialize VectorBT optimizer
+        self.vectorbt_optimizer = get_vectorbt_optimizer(self.analyst_config.vectorbt_config)
 
         # Initialize caching for intermediate results
         self._calculation_cache: Dict[str, Dict[str, Any]] = {}

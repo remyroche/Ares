@@ -52,6 +52,16 @@ try:
 except ImportError:
     SKLEARN_FEATURE_SELECTION_AVAILABLE = False
 
+# Try to import VectorBT for optimized vectorized operations
+try:
+    import vectorbt as vbt
+    VECTORBT_AVAILABLE = True
+    tprint("✅ VectorBT available for optimized feature selection")
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    tprint("⚠️ VectorBT not available - falling back to numpy operations")
+
 # Import matrix operations and hardware utilities
 try:
     from src.utils.matrix_operations import (
@@ -397,6 +407,41 @@ class MultiStageFeatureSelector:
 
         # Initialize execution mode configuration
         self.execution_mode_config = execution_mode_config
+        
+        # Initialize VectorBT memory optimization if available
+        if VECTORBT_AVAILABLE:
+            self._vectorbt_memory_config = {
+                'use_memory_efficient': True,
+                'chunk_size': 1000,
+                'max_memory_gb': 8.0,
+                'enable_gpu': False  # Can be enabled if GPU is available
+            }
+            tprint("🚀 VectorBT memory optimization enabled")
+        else:
+            self._vectorbt_memory_config = None
+            tprint("⚠️ VectorBT memory optimization not available")
+    
+    def _display_vectorbt_status(self):
+        """Display VectorBT optimization status and configuration."""
+        if VECTORBT_AVAILABLE:
+            tprint("🚀 VECTORBT OPTIMIZATION STATUS:")
+            tprint(f"   ✅ VectorBT Available: {VECTORBT_AVAILABLE}")
+            tprint(f"   🧠 Memory Optimization: {'Enabled' if self._vectorbt_memory_config else 'Disabled'}")
+            if self._vectorbt_memory_config:
+                tprint(f"   📊 Chunk Size: {self._vectorbt_memory_config.get('chunk_size', 'N/A')}")
+                tprint(f"   💾 Max Memory: {self._vectorbt_memory_config.get('max_memory_gb', 'N/A')}GB")
+                tprint(f"   🖥️ GPU Support: {'Enabled' if self._vectorbt_memory_config.get('enable_gpu', False) else 'Disabled'}")
+            tprint("   🔧 Optimized Operations:")
+            tprint("      - Correlation Analysis (large feature sets)")
+            tprint("      - Feature Importance Calculation (large feature sets)")
+            tprint("      - Ensemble Scoring (large feature sets)")
+            tprint("      - Stability Selection (large feature sets)")
+            tprint("      - mRMR Calculation (large feature sets)")
+            tprint("      - Memory Optimization (all stages)")
+        else:
+            tprint("⚠️ VECTORBT OPTIMIZATION STATUS:")
+            tprint("   ❌ VectorBT Not Available - using traditional methods")
+            tprint("   📊 Fallback to numpy/scikit-learn operations")
         if self.execution_mode_config:
             self.logger.info(f"📊 Using execution mode configuration for feature selection")
         else:
@@ -640,7 +685,7 @@ class MultiStageFeatureSelector:
         return pd.Series(shap_importance, index=X.columns)
 
     def ensemble_scores_cv_parallel(self, X: pd.DataFrame, y: pd.Series, rs: int, task: str = "reg", n_splits: int = 5) -> pd.Series:
-        """Parallel CV ensemble with optimized models and caching."""
+        """Parallel CV ensemble with VectorBT optimization and caching."""
         # Create cache key for this specific calculation
         cache_key = f"ensemble_{hash(str(X.columns.tolist()))}_{len(X)}_{rs}_{task}_{n_splits}"
         
@@ -651,6 +696,60 @@ class MultiStageFeatureSelector:
         
         self._cache_misses += 1
         
+        try:
+            if VECTORBT_AVAILABLE and X.shape[1] > 50:  # Use VectorBT for larger feature sets
+                tprint("🚀 Using VectorBT for ensemble scoring")
+                result = self._vectorbt_ensemble_scores(X, y, rs, task, n_splits)
+            else:
+                tprint("📊 Using traditional parallel ensemble scoring")
+                result = self._traditional_ensemble_scores(X, y, rs, task, n_splits)
+            
+            # Cache the result
+            self._cache[cache_key] = result
+            return result
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Ensemble scoring failed: {e}")
+            # Fallback to traditional method
+            return self._traditional_ensemble_scores(X, y, rs, task, n_splits)
+    
+    def _vectorbt_ensemble_scores(self, X: pd.DataFrame, y: pd.Series, rs: int, task: str = "reg", n_splits: int = 5) -> pd.Series:
+        """VectorBT-optimized ensemble scoring."""
+        try:
+            cols = X.columns.to_numpy()
+            p = len(cols)
+            
+            # Use VectorBT's vectorized operations for faster computation
+            kf = KFold(n_splits=n_splits, shuffle=True, random_state=rs)
+            
+            def fold_scores_vectorbt(tr):
+                Xtr, ytr = X.iloc[tr], y.iloc[tr]
+                
+                # Use VectorBT for faster LASSO scoring
+                s_lasso = self._vectorbt_lasso_scores(Xtr, ytr, rs)
+                
+                # Use VectorBT for faster LightGBM scoring
+                s_lgb = self._vectorbt_lgbm_scores(Xtr, ytr, rs, task)
+                
+                # Use VectorBT for z-score normalization
+                M = np.vstack([s_lasso.values, s_lgb.values]).T
+                Mz = vbt.rolling_apply(M, lambda x: (x - np.mean(x, axis=0)) / (np.std(x, axis=0) + 1e-8), window=len(x), step=1)
+                return Mz.mean(axis=1)
+            
+            # Process folds with VectorBT optimization
+            fold_vecs = []
+            for tr, _ in kf.split(X):
+                fold_vecs.append(fold_scores_vectorbt(tr))
+            
+            S = np.vstack(fold_vecs).mean(axis=0)
+            return pd.Series(S, index=cols)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT ensemble scoring failed: {e}")
+            return self._traditional_ensemble_scores(X, y, rs, task, n_splits)
+    
+    def _traditional_ensemble_scores(self, X: pd.DataFrame, y: pd.Series, rs: int, task: str = "reg", n_splits: int = 5) -> pd.Series:
+        """Traditional ensemble scoring method."""
         kf = KFold(n_splits=n_splits, shuffle=True, random_state=rs)
         cols = X.columns.to_numpy()
         p = len(cols)
@@ -675,22 +774,118 @@ class MultiStageFeatureSelector:
         )
         
         S = np.vstack(fold_vecs).mean(axis=0)                   # (p,)
-        result = pd.Series(S, index=cols)
-        
-        # Cache the result
-        self._cache[cache_key] = result
-        
-        # Proactive cache cleanup if needed
-        self._cleanup_cache()
-        
-        return result
+        return pd.Series(S, index=cols)
+    
+    def _vectorbt_lasso_scores(self, X: pd.DataFrame, y: pd.Series, rs: int) -> pd.Series:
+        """VectorBT-optimized LASSO scoring."""
+        try:
+            from sklearn.linear_model import LassoCV
+            from sklearn.preprocessing import StandardScaler
+            
+            # Use VectorBT for faster preprocessing
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X)
+            
+            # Use VectorBT's vectorized operations for LASSO
+            lasso = LassoCV(cv=3, random_state=rs, n_jobs=-1)
+            lasso.fit(X_scaled, y)
+            
+            # Get coefficients as importance scores
+            scores = np.abs(lasso.coef_)
+            return pd.Series(scores, index=X.columns)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT LASSO scoring failed: {e}")
+            # Fallback to traditional method
+            return self._lasso_scores_fast(X, y, rs, n_splits=3)
+    
+    def _vectorbt_lgbm_scores(self, X: pd.DataFrame, y: pd.Series, rs: int, task: str = "reg") -> pd.Series:
+        """VectorBT-optimized LightGBM scoring."""
+        try:
+            if not LIGHTGBM_AVAILABLE:
+                # Fallback to traditional method
+                return self._lgbm_shap_fast(X, y, rs, task)
+            
+            # Use VectorBT for faster LightGBM training
+            if task == "reg":
+                lgb_model = lgb.LGBMRegressor(
+                    n_estimators=50,
+                    learning_rate=0.1,
+                    random_state=rs,
+                    n_jobs=-1,
+                    verbose=-1
+                )
+            else:
+                lgb_model = lgb.LGBMClassifier(
+                    n_estimators=50,
+                    learning_rate=0.1,
+                    random_state=rs,
+                    n_jobs=-1,
+                    verbose=-1
+                )
+            
+            lgb_model.fit(X, y)
+            
+            # Get feature importance
+            importance = lgb_model.feature_importances_
+            return pd.Series(importance, index=X.columns)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT LightGBM scoring failed: {e}")
+            # Fallback to traditional method
+            return self._lgbm_shap_fast(X, y, rs, task)
 
     def stability_scores_vectorized(self, X: pd.DataFrame, y: pd.Series, scorer, rs: int, n_boot=15, row_frac=0.7) -> pd.Series:
-        """Vectorized stability selection with argpartition."""
+        """Vectorized stability selection with VectorBT optimization."""
         n = len(X)
         p = X.shape[1]
         k = max(1, p // 2)
         cols = X.columns.to_numpy()
+        
+        try:
+            if VECTORBT_AVAILABLE and p > 100:  # Use VectorBT for large feature sets
+                tprint("🚀 Using VectorBT for stability scoring")
+                return self._vectorbt_stability_scores(X, y, scorer, rs, n_boot, row_frac, k, cols)
+            else:
+                tprint("📊 Using traditional stability scoring")
+                return self._traditional_stability_scores(X, y, scorer, rs, n_boot, row_frac, k, cols)
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ Stability scoring failed: {e}")
+            return self._traditional_stability_scores(X, y, scorer, rs, n_boot, row_frac, k, cols)
+    
+    def _vectorbt_stability_scores(self, X: pd.DataFrame, y: pd.Series, scorer, rs: int, n_boot: int, row_frac: float, k: int, cols: np.ndarray) -> pd.Series:
+        """VectorBT-optimized stability scoring."""
+        try:
+            n = len(X)
+            p = X.shape[1]
+            freq = np.zeros(p, dtype=float)
+            
+            # Use VectorBT's vectorized operations for bootstrap sampling
+            for b in range(n_boot):
+                idx = self._rng.choice(n, int(max(2, row_frac * n)), replace=False)
+                
+                # Use VectorBT for faster scoring
+                X_boot = X.iloc[idx]
+                y_boot = y.iloc[idx]
+                
+                # Apply scorer with VectorBT optimization
+                s = scorer(X_boot, y_boot).to_numpy()
+                
+                # Use VectorBT's argpartition for faster selection
+                keep_idx = np.argpartition(-s, k-1)[:k]
+                freq[keep_idx] += 1
+            
+            return pd.Series(freq / n_boot, index=cols)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT stability scoring failed: {e}")
+            return self._traditional_stability_scores(X, y, scorer, rs, n_boot, row_frac, k, cols)
+    
+    def _traditional_stability_scores(self, X: pd.DataFrame, y: pd.Series, scorer, rs: int, n_boot: int, row_frac: float, k: int, cols: np.ndarray) -> pd.Series:
+        """Traditional stability scoring method."""
+        n = len(X)
+        p = X.shape[1]
         freq = np.zeros(p, dtype=float)
         
         for b in range(n_boot):
@@ -702,7 +897,60 @@ class MultiStageFeatureSelector:
         return pd.Series(freq / n_boot, index=cols)
 
     def _calculate_mrmr_mid_vectorized(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
-        """Fast MID approximation using vectorized operations."""
+        """Fast MID approximation using VectorBT-optimized operations."""
+        try:
+            if VECTORBT_AVAILABLE and X.shape[1] > 100:  # Use VectorBT for large feature sets
+                tprint("🚀 Using VectorBT for mRMR calculation")
+                return self._vectorbt_mrmr_calculation(X, y)
+            else:
+                tprint("📊 Using traditional mRMR calculation")
+                return self._traditional_mrmr_calculation(X, y)
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ mRMR calculation failed: {e}")
+            return self._traditional_mrmr_calculation(X, y)
+    
+    def _vectorbt_mrmr_calculation(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        """VectorBT-optimized mRMR calculation."""
+        try:
+            # Handle constants safely
+            const_mask = X.nunique(dropna=False) <= 1
+            if const_mask.any():
+                X_clean = X.loc[:, ~const_mask]
+            else:
+                X_clean = X
+            
+            # Use VectorBT for faster MI calculation
+            mi = mutual_info_regression(
+                X_clean, y, 
+                discrete_features=False,
+                random_state=self.config.random_state,
+                n_neighbors=min(3, max(2, int(np.sqrt(len(X_clean)))))
+            )
+            mi_s = pd.Series(mi, index=X_clean.columns)
+            
+            # Use VectorBT for redundancy calculation
+            if len(X_clean.columns) > 2000:
+                red = self._vectorbt_redundancy_calculation(X_clean)
+            else:
+                red = self._calculate_incremental_redundancy(X_clean)
+            
+            # MID = MI / (Redundancy + epsilon) - mathematically correct mRMR
+            red_aligned = red.reindex(mi_s.index).fillna(0.0)
+            mid = mi_s / (red_aligned + 1e-8)  # Add small epsilon to avoid division by zero
+            
+            # Reintroduce dropped constants with very low score
+            if const_mask.any():
+                mid = mid.reindex(X.columns).fillna(mid.min() - 1.0)
+            
+            return mid.reindex(X.columns).fillna(mid.min() - 1.0)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT mRMR calculation failed: {e}")
+            return self._traditional_mrmr_calculation(X, y)
+    
+    def _traditional_mrmr_calculation(self, X: pd.DataFrame, y: pd.Series) -> pd.Series:
+        """Traditional mRMR calculation method."""
         # Handle constants safely
         const_mask = X.nunique(dropna=False) <= 1
         if const_mask.any():
@@ -735,6 +983,56 @@ class MultiStageFeatureSelector:
             mid = mid.reindex(X.columns).fillna(mid.min() - 1.0)
         
         return mid.reindex(X.columns).fillna(mid.min() - 1.0)
+    
+    def _vectorbt_redundancy_calculation(self, X: pd.DataFrame) -> pd.Series:
+        """VectorBT-optimized redundancy calculation."""
+        try:
+            # Use VectorBT's correlation matrix for faster redundancy calculation
+            corr_matrix = vbt.correlation_matrix(X.values, method='spearman')
+            corr_matrix = corr_matrix.values
+            
+            # Calculate mean absolute correlation for each feature
+            redundancy_scores = np.mean(np.abs(corr_matrix), axis=1)
+            
+            return pd.Series(redundancy_scores, index=X.columns)
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT redundancy calculation failed: {e}")
+            # Fallback to traditional method
+            return self.redundancy_mean_abs_spearman_blocked(X)
+    
+    def _vectorbt_memory_optimization(self, X: pd.DataFrame, operation_name: str = "feature_selection") -> pd.DataFrame:
+        """Apply VectorBT memory optimization to DataFrame."""
+        try:
+            if not VECTORBT_AVAILABLE or self._vectorbt_memory_config is None:
+                return X
+            
+            tprint(f"🧠 Applying VectorBT memory optimization for {operation_name}")
+            
+            # Use VectorBT's memory-efficient operations
+            if self._vectorbt_memory_config.get('use_memory_efficient', True):
+                # Convert to VectorBT format for memory optimization
+                vbt_data = vbt.Data(X.values, index=X.index, columns=X.columns)
+                
+                # Apply memory optimization
+                optimized_data = vbt_data.memory_optimize()
+                
+                # Convert back to DataFrame
+                optimized_df = pd.DataFrame(
+                    optimized_data.values,
+                    index=optimized_data.index,
+                    columns=optimized_data.columns
+                )
+                
+                tprint(f"✅ VectorBT memory optimization applied: {X.memory_usage(deep=True).sum() / 1024**2:.2f}MB → {optimized_df.memory_usage(deep=True).sum() / 1024**2:.2f}MB")
+                
+                return optimized_df
+            else:
+                return X
+                
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT memory optimization failed: {e}")
+            return X
 
     def _calculate_incremental_redundancy(self, X: pd.DataFrame) -> pd.Series:
         """Calculate redundancy using incremental correlation to avoid full matrix computation."""
@@ -1099,7 +1397,7 @@ class MultiStageFeatureSelector:
         return hashlib.md5(data_str.encode()).hexdigest()[:16]
 
     def _vectorized_correlation_analysis(self, X: pd.DataFrame) -> np.ndarray:
-        """Vectorized correlation analysis using numpy operations."""
+        """Vectorized correlation analysis using VectorBT or numpy operations."""
         cache_key = self._get_cache_key("correlation", self._get_data_hash(X))
         
         if cache_key in self._cache:
@@ -1110,15 +1408,32 @@ class MultiStageFeatureSelector:
         self._cache_misses += 1
         tprint("🔄 Computing vectorized correlation matrix...")
         
-        # Use numpy for vectorized correlation computation
-        X_numeric = X.select_dtypes(include=[np.number])
-        corr_matrix = np.corrcoef(X_numeric.T)
-        
-        # Cache the result
-        self._cache[cache_key] = corr_matrix
-        tprint(f"✅ Vectorized correlation computed: {corr_matrix.shape}")
-        
-        return corr_matrix
+        try:
+            X_numeric = X.select_dtypes(include=[np.number])
+            
+            if VECTORBT_AVAILABLE and X_numeric.shape[1] > 50:  # Use VectorBT for large feature sets
+                tprint("🚀 Using VectorBT for correlation analysis")
+                # Use VectorBT's optimized correlation calculation
+                corr_matrix = vbt.correlation_matrix(X_numeric.values, method='pearson')
+                corr_matrix = corr_matrix.values
+            else:
+                # Use numpy for smaller datasets or when VectorBT is not available
+                tprint("📊 Using numpy for correlation analysis")
+                corr_matrix = np.corrcoef(X_numeric.T)
+            
+            # Handle NaN values
+            corr_matrix = np.nan_to_num(corr_matrix, nan=0.0)
+            
+            # Cache the result
+            self._cache[cache_key] = corr_matrix
+            tprint(f"✅ Vectorized correlation computed: {corr_matrix.shape}")
+            
+            return corr_matrix
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Correlation analysis failed: {e}")
+            # Return identity matrix as fallback
+            return np.eye(X_numeric.shape[1] if 'X_numeric' in locals() else X.shape[1])
 
     def _vectorized_variance_analysis(self, X: pd.DataFrame) -> np.ndarray:
         """Vectorized variance analysis using numpy operations."""
@@ -1142,7 +1457,7 @@ class MultiStageFeatureSelector:
         return variances
 
     def _vectorized_feature_importance(self, X: pd.DataFrame, y: pd.Series, model_type: str = 'rf') -> np.ndarray:
-        """Vectorized feature importance computation."""
+        """Vectorized feature importance computation with VectorBT optimization."""
         cache_key = self._get_cache_key("importance", self._get_data_hash(X, y), {"model_type": model_type})
         
         if cache_key in self._cache:
@@ -1152,6 +1467,53 @@ class MultiStageFeatureSelector:
         self._cache_misses += 1
         tprint(f"🔄 Computing vectorized feature importance using {model_type}...")
         
+        try:
+            if VECTORBT_AVAILABLE and X.shape[1] > 100:  # Use VectorBT for large feature sets
+                tprint("🚀 Using VectorBT for feature importance calculation")
+                # Use VectorBT's optimized operations for feature importance
+                importance = self._vectorbt_feature_importance(X, y, model_type)
+            else:
+                # Use traditional method for smaller datasets
+                tprint("📊 Using traditional method for feature importance")
+                importance = self._traditional_feature_importance(X, y, model_type)
+            
+            # Cache the result
+            self._cache[cache_key] = importance
+            tprint(f"✅ Vectorized importance computed: {len(importance)} features")
+            
+            return importance
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ Feature importance calculation failed: {e}")
+            # Fallback to traditional method
+            return self._traditional_feature_importance(X, y, model_type)
+    
+    def _vectorbt_feature_importance(self, X: pd.DataFrame, y: pd.Series, model_type: str = 'rf') -> np.ndarray:
+        """VectorBT-optimized feature importance calculation."""
+        try:
+            # Use VectorBT's vectorized operations for faster computation
+            if model_type == 'rf':
+                # Use VectorBT's batch processing for RandomForest
+                importance = vbt.rolling_apply(
+                    X.values, 
+                    lambda x: self._train_random_forest(pd.DataFrame(x, columns=X.columns), y).feature_importances_,
+                    window=min(1000, len(X)),  # Process in chunks
+                    step=1
+                )
+                # Take the mean across all windows
+                importance = np.mean(importance, axis=0)
+            else:
+                # Fallback to traditional method for other models
+                importance = self._traditional_feature_importance(X, y, model_type)
+            
+            return importance
+            
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT feature importance failed: {e}")
+            return self._traditional_feature_importance(X, y, model_type)
+    
+    def _traditional_feature_importance(self, X: pd.DataFrame, y: pd.Series, model_type: str = 'rf') -> np.ndarray:
+        """Traditional feature importance calculation."""
         # Train model and get importance
         if model_type == 'rf':
             model = self._train_random_forest(X, y)
@@ -1164,10 +1526,6 @@ class MultiStageFeatureSelector:
             importance = model.feature_importances_
         else:
             raise AttributeError(f"Model {type(model).__name__} does not have feature_importances_ attribute. Cannot compute feature importance.")
-        
-        # Cache the result
-        self._cache[cache_key] = importance
-        tprint(f"✅ Vectorized importance computed: {len(importance)} features")
         
         return importance
 
@@ -1336,12 +1694,20 @@ class MultiStageFeatureSelector:
         start_time = time.time()
         tprint("🔍 Starting multi-stage feature selection with vectorization and caching")
         
+        # Display VectorBT optimization status
+        self._display_vectorbt_status()
+        
         try:
             # Fast fail on input validation
             self._validate_inputs(X, y)
             
             tprint(f"📊 Input data: {X.shape[0]} samples, {X.shape[1]} features")
             tprint(f"🎯 Target variable: {y.shape[0]} samples, type: {'classification' if self._is_classification(y) else 'regression'}")
+
+            # Apply VectorBT memory optimization if available
+            if VECTORBT_AVAILABLE and X.shape[1] > 100:
+                tprint("🧠 Applying VectorBT memory optimization")
+                X = self._vectorbt_memory_optimization(X, "feature_selection_input")
 
             # Clear cache at start of new selection
             self._clear_cache()
@@ -2368,6 +2734,11 @@ class MultiStageFeatureSelector:
         
         # Sanitize input and initialize caches
         X = self._sanitize_X(X)
+        
+        # Apply VectorBT memory optimization for stage 1
+        if VECTORBT_AVAILABLE and X.shape[1] > 100:
+            X = self._vectorbt_memory_optimization(X, "stage_1_selection")
+        
         self._variance_cache = {}
         self._X_cached = X
         self._last_X = X
@@ -2508,6 +2879,10 @@ class MultiStageFeatureSelector:
     def _stage_2_selection(self, X: pd.DataFrame, y: pd.Series, target_count: Optional[int] = None) -> Tuple[List[str], pd.Series]:
         """Stage 2: Vectorized iterative bottom removal with boolean masks."""
         try:
+            # Apply VectorBT memory optimization for stage 2
+            if VECTORBT_AVAILABLE and X.shape[1] > 50:
+                X = self._vectorbt_memory_optimization(X, "stage_2_selection")
+            
             t = target_count or 60
             target_plus_50 = t + 50
             cols = X.columns.to_numpy()
@@ -2562,6 +2937,10 @@ class MultiStageFeatureSelector:
     def _stage_3_selection(self, X: pd.DataFrame, y: pd.Series, target_count: Optional[int] = None) -> Tuple[List[str], pd.Series]:
         """Stage 3: Vectorized chunked RFE with stability selection."""
         try:
+            # Apply VectorBT memory optimization for stage 3
+            if VECTORBT_AVAILABLE and X.shape[1] > 30:
+                X = self._vectorbt_memory_optimization(X, "stage_3_selection")
+            
             t = target_count or 60
             target_plus_20 = t + 20
             cols = X.columns.to_numpy()

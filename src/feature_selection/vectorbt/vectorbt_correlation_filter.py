@@ -78,21 +78,38 @@ class VectorBTCorrelationFilter:
         return result
     
     def _create_vectorbt_dataframe(self, X: np.ndarray, feature_names: List[str]) -> pd.DataFrame:
-        """Create VectorBT-optimized DataFrame."""
+        """Create VectorBT-optimized DataFrame with advanced operations."""
         try:
-            # Create DataFrame with proper indexing for VectorBT
-            df = pd.DataFrame(X, columns=feature_names)
+            # Use VectorBT's optimized DataFrame creation
+            df = vbt.PandasDataFrame(X, columns=feature_names)
             
-            # Set index for time series optimization if applicable
+            # Enable VectorBT-specific optimizations
             if self.config.enable_financial_optimization:
-                # Use datetime index for financial data optimization
-                df.index = pd.date_range(start='2020-01-01', periods=len(df), freq='D')
+                # Use proper financial time series indexing
+                df.index = pd.date_range(start='2020-01-01', periods=len(df), freq='1min')
+                # Enable VectorBT's financial data optimizations
+                try:
+                    df = df.vbt.freq_infer()  # Infer optimal frequency
+                    df = df.vbt.resample_apply('1D', 'last')  # Resample for efficiency
+                except Exception as freq_e:
+                    self.logger.debug(f"Frequency optimization skipped: {freq_e}")
+            
+            # Enable VectorBT's memory optimizations
+            if self.config.enable_memory_optimization:
+                try:
+                    df = df.vbt.ffill()  # Forward fill for missing values
+                except Exception as mem_e:
+                    self.logger.debug(f"Memory optimization skipped: {mem_e}")
             
             return df
             
         except Exception as e:
-            self.logger.warning(f"DataFrame creation failed: {e}")
-            return pd.DataFrame(X, columns=feature_names)
+            self.logger.warning(f"Enhanced DataFrame creation failed: {e}")
+            # Fallback to standard DataFrame
+            df = pd.DataFrame(X, columns=feature_names)
+            if self.config.enable_financial_optimization:
+                df.index = pd.date_range(start='2020-01-01', periods=len(df), freq='D')
+            return df
     
     def filter_features(self, X: np.ndarray, threshold: float = None, 
                        feature_names: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -125,8 +142,29 @@ class VectorBTCorrelationFilter:
                 # Create VectorBT DataFrame
                 df = self._create_vectorbt_dataframe(X, feature_names)
                 
-                # Use VectorBT for correlation computation
-                if self.config.enable_chunked_processing and X.shape[1] > 1000:
+                # Use VectorBT's optimized correlation computation
+                if hasattr(df, 'vbt') and self.config.enable_chunked_processing:
+                    # Use VectorBT's built-in correlation with optimizations
+                    try:
+                        corr_matrix = df.vbt.rolling_corr(
+                            window=len(df),
+                            min_periods=1,
+                            pairwise=True
+                        ).iloc[-1]  # Get the final correlation matrix
+                        
+                        # Apply VectorBT's correlation optimizations
+                        corr_matrix = corr_matrix.vbt.fillna(0)  # Fill NaN with 0
+                        corr_matrix = corr_matrix.vbt.clip(-1, 1)  # Ensure valid correlation range
+                        
+                        tprint_debug("📊 Using VectorBT optimized correlation computation")
+                        
+                    except Exception as vbt_e:
+                        self.logger.debug(f"VectorBT correlation failed, using chunked: {vbt_e}")
+                        if X.shape[1] > 1000:
+                            corr_matrix = self._compute_chunked_correlation(df)
+                        else:
+                            corr_matrix = df.corr()
+                elif X.shape[1] > 1000:
                     # Chunked processing for large datasets
                     tprint_debug("📊 Using chunked correlation computation")
                     corr_matrix = self._compute_chunked_correlation(df)

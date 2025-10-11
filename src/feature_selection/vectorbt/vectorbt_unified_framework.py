@@ -148,27 +148,56 @@ class VectorBTUnifiedFramework:
     
     def _select_method_automatically(self, X: np.ndarray, y: np.ndarray, 
                                    k: int) -> FeatureSelectionMethod:
-        """Automatically select the best method based on data characteristics."""
+        """Enhanced automatic method selection using VectorBT analytics."""
         try:
             n_samples, n_features = X.shape
             
-            # Decision tree for method selection
-            if n_features <= 50:
-                # Small feature set - use comprehensive method
+            # Use VectorBT to analyze data characteristics
+            df = vbt.PandasDataFrame(X)
+            
+            # Analyze data sparsity
+            sparsity = df.vbt.isna().sum().sum() / (n_samples * n_features) if hasattr(df, 'vbt') else 0.0
+            
+            # Analyze data correlation structure
+            corr_structure = 0.0
+            if hasattr(df, 'vbt') and n_features > 1:
+                try:
+                    corr_structure = df.vbt.rolling_corr(window=min(100, n_samples)).vbt.mean().mean()
+                except:
+                    corr_structure = 0.0
+            
+            # Analyze data variance
+            variance_ratio = 0.0
+            if hasattr(df, 'vbt'):
+                try:
+                    variance_ratio = df.vbt.rolling_std(window=min(100, n_samples)).vbt.mean().std()
+                except:
+                    variance_ratio = 0.0
+            
+            # Enhanced decision tree based on VectorBT analytics
+            if n_features <= 50 and sparsity < 0.1:
                 return FeatureSelectionMethod.COMPREHENSIVE
-            elif n_features <= 200:
-                # Medium feature set - use mRMR
+            elif n_features <= 200 and corr_structure < 0.3:
                 return FeatureSelectionMethod.MRMR
-            elif n_features <= 1000:
-                # Large feature set - use stability selection
+            elif n_features <= 1000 and variance_ratio > 0.5:
                 return FeatureSelectionMethod.STABILITY_SELECTION
+            elif sparsity > 0.5:
+                return FeatureSelectionMethod.LASSO
             else:
-                # Very large feature set - use regularization
                 return FeatureSelectionMethod.ELASTICNET
             
         except Exception as e:
-            self.logger.warning(f"Automatic method selection failed: {e}")
-            return FeatureSelectionMethod.COMPREHENSIVE
+            self.logger.warning(f"Enhanced method selection failed: {e}")
+            # Fallback to simple decision tree
+            n_samples, n_features = X.shape
+            if n_features <= 50:
+                return FeatureSelectionMethod.COMPREHENSIVE
+            elif n_features <= 200:
+                return FeatureSelectionMethod.MRMR
+            elif n_features <= 1000:
+                return FeatureSelectionMethod.STABILITY_SELECTION
+            else:
+                return FeatureSelectionMethod.ELASTICNET
     
     def select_features(self, X: np.ndarray, y: np.ndarray, 
                        method: Union[str, FeatureSelectionMethod] = 'auto',

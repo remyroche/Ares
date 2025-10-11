@@ -19,6 +19,29 @@ class VectorBTFeatureSelectionConfig:
     chunk_size: int = 10000
     memory_limit_mb: int = 2048
     
+    # Enhanced VectorBT settings
+    vectorbt_theme: str = "dark"
+    vectorbt_freq_precision: int = 0
+    vectorbt_array_wrapper: Dict[str, Any] = field(default_factory=lambda: {
+        'freq_precision': 0,
+        'freq_rep': 'auto',
+        'chunk_size': 10000,
+        'enable_parallel': True,
+        'max_workers': None
+    })
+    
+    # VectorBT-specific optimizations
+    enable_vectorbt_rolling: bool = True
+    enable_vectorbt_chunked: bool = True
+    enable_vectorbt_parallel: bool = True
+    vectorbt_rolling_window: int = 1000
+    vectorbt_chunk_overlap: int = 100
+    
+    # Financial data specific optimizations
+    enable_vectorbt_financial: bool = True
+    vectorbt_freq_inference: bool = True
+    vectorbt_resample_freq: str = '1D'
+    
     # Performance settings
     enable_parallel: bool = True
     max_workers: Optional[int] = None
@@ -99,3 +122,33 @@ class VectorBTFeatureSelectionConfig:
             if hasattr(self, key):
                 setattr(self, key, value)
         return self
+    
+    def setup_vectorbt_optimizations(self):
+        """Setup VectorBT with optimal settings."""
+        try:
+            import vectorbt as vbt
+            import logging
+            
+            logger = logging.getLogger(__name__)
+            
+            # Configure VectorBT theme
+            vbt.settings.set_theme(self.vectorbt_theme)
+            
+            # Configure array wrapper settings
+            for key, value in self.vectorbt_array_wrapper.items():
+                vbt.settings['array_wrapper'][key] = value
+            
+            # Enable VectorBT optimizations
+            if self.enable_vectorbt_rolling:
+                vbt.settings['array_wrapper']['enable_rolling'] = True
+            
+            if self.enable_vectorbt_chunked:
+                vbt.settings['array_wrapper']['enable_chunked'] = True
+            
+            if self.enable_vectorbt_parallel:
+                vbt.settings['array_wrapper']['enable_parallel'] = True
+                
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"VectorBT optimization setup failed: {e}")

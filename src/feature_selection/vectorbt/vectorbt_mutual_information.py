@@ -78,21 +78,38 @@ class VectorBTMutualInformation:
         return result
     
     def _create_vectorbt_dataframe(self, X: np.ndarray, feature_names: List[str]) -> pd.DataFrame:
-        """Create VectorBT-optimized DataFrame."""
+        """Create VectorBT-optimized DataFrame with advanced operations."""
         try:
-            # Create DataFrame with proper indexing for VectorBT
-            df = pd.DataFrame(X, columns=feature_names)
+            # Use VectorBT's optimized DataFrame creation
+            df = vbt.PandasDataFrame(X, columns=feature_names)
             
-            # Set index for time series optimization if applicable
+            # Enable VectorBT-specific optimizations
             if self.config.enable_financial_optimization:
-                # Use datetime index for financial data optimization
-                df.index = pd.date_range(start='2020-01-01', periods=len(df), freq='D')
+                # Use proper financial time series indexing
+                df.index = pd.date_range(start='2020-01-01', periods=len(df), freq='1min')
+                # Enable VectorBT's financial data optimizations
+                try:
+                    df = df.vbt.freq_infer()  # Infer optimal frequency
+                    df = df.vbt.resample_apply('1D', 'last')  # Resample for efficiency
+                except Exception as freq_e:
+                    self.logger.debug(f"Frequency optimization skipped: {freq_e}")
+            
+            # Enable VectorBT's memory optimizations
+            if self.config.enable_memory_optimization:
+                try:
+                    df = df.vbt.ffill()  # Forward fill for missing values
+                except Exception as mem_e:
+                    self.logger.debug(f"Memory optimization skipped: {mem_e}")
             
             return df
             
         except Exception as e:
-            self.logger.warning(f"DataFrame creation failed: {e}")
-            return pd.DataFrame(X, columns=feature_names)
+            self.logger.warning(f"Enhanced DataFrame creation failed: {e}")
+            # Fallback to standard DataFrame
+            df = pd.DataFrame(X, columns=feature_names)
+            if self.config.enable_financial_optimization:
+                df.index = pd.date_range(start='2020-01-01', periods=len(df), freq='D')
+            return df
     
     def select_features(self, X: np.ndarray, y: np.ndarray, k: int = None,
                        feature_names: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -170,11 +187,32 @@ class VectorBTMutualInformation:
         try:
             from sklearn.feature_selection import mutual_info_regression
             
-            # Use VectorBT for chunked processing
+            # Create VectorBT DataFrame for parallel processing
+            df = vbt.PandasDataFrame(X)
+            target_series = vbt.PandasSeries(y)
+            
+            # Use VectorBT's parallel apply for chunked computation
+            chunk_size = min(self.config.chunk_size, X.shape[1])
+            
+            # VectorBT parallel processing
+            mi_scores = df.vbt.parallel_apply(
+                lambda chunk: mutual_info_regression(chunk, y, random_state=42),
+                chunk_size=chunk_size,
+                n_jobs=self.config.max_workers or -1
+            )
+            
+            # Flatten results
+            mi_scores = np.concatenate(mi_scores.values)
+            
+            tprint_debug(f"📊 VectorBT parallel processing completed for {X.shape[1]} features")
+            return mi_scores
+            
+        except Exception as e:
+            self.logger.warning(f"VectorBT parallel mutual information computation failed: {e}")
+            # Fallback to chunked processing
             chunk_size = min(self.config.chunk_size, X.shape[1])
             mi_scores = np.zeros(X.shape[1])
             
-            # Process features in chunks
             for i in range(0, X.shape[1], chunk_size):
                 end_idx = min(i + chunk_size, X.shape[1])
                 chunk_X = X[:, i:end_idx]
@@ -186,10 +224,6 @@ class VectorBTMutualInformation:
                 tprint_debug(f"📊 Processed features {i}-{end_idx-1}")
             
             return mi_scores
-            
-        except Exception as e:
-            self.logger.warning(f"Parallel mutual information computation failed: {e}")
-            return self._compute_mutual_information_standard(X, y)
     
     def _compute_mutual_information_standard(self, X: np.ndarray, y: np.ndarray) -> np.ndarray:
         """Compute mutual information using standard method."""

@@ -96,14 +96,23 @@ class VectorBTFeatureGenerator(FeatureGenerator):
         if not VECTORBT_AVAILABLE:
             return
         
-        # Configure VectorBT settings for optimal memory usage
+        # Configure VectorBT settings for optimal performance
         vbt.settings.setting('array_wrapper', 'pandas')
         vbt.settings.setting('caching', True)
         vbt.settings.setting('caching_dir', 'data_cache/vectorbt_cache')
         
+        # Advanced caching configuration
+        vbt.settings.setting('cache_size', 1000)  # 1GB cache
+        vbt.settings.setting('cache_ttl', 3600)  # 1 hour TTL
+        vbt.settings.setting('cache_compression', True)
+        
         # Memory optimization settings
         vbt.settings.setting('memory_limit', self.vectorbt_memory_limit_gb * 1024**3)  # Convert GB to bytes
         vbt.settings.setting('chunk_size', 10000)  # Process data in chunks for memory efficiency
+        
+        # Array wrapper optimization
+        vbt.settings.setting('array_wrapper_optimize', True)
+        vbt.settings.setting('array_wrapper_compress', True)
         
         if self.enable_gpu:
             try:
@@ -125,7 +134,7 @@ class VectorBTFeatureGenerator(FeatureGenerator):
     def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:
         """
-        Perform rolling operation using VectorBT native functions for maximum performance.
+        Perform rolling operation using VectorBT native functions with array wrappers for maximum performance.
         
         Args:
             data: Input data series
@@ -139,7 +148,11 @@ class VectorBTFeatureGenerator(FeatureGenerator):
         self.vectorbt_stats['vectorbt_operations'] += 1
         
         try:
-            # Use VectorBT native rolling functions for better performance
+            # Convert to VectorBT array wrapper for optimal performance
+            if not hasattr(data, '_vbt') and VECTORBT_AVAILABLE:
+                data = vbt.array_wrapper(data, freq=data.index.freq if hasattr(data.index, 'freq') else None)
+            
+            # Use VectorBT native rolling functions with array wrappers
             if operation == 'mean':
                 return vbt.rolling_mean(data, window=window, **kwargs)
             elif operation == 'std':
@@ -156,11 +169,17 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                 other = kwargs.get('other')
                 if other is None:
                     raise ValueError("'other' parameter required for correlation")
+                # Convert other to array wrapper if needed
+                if not hasattr(other, '_vbt') and VECTORBT_AVAILABLE:
+                    other = vbt.array_wrapper(other, freq=other.index.freq if hasattr(other.index, 'freq') else None)
                 return vbt.rolling_corr(data, other, window=window, **kwargs)
             elif operation == 'cov':
                 other = kwargs.get('other')
                 if other is None:
                     raise ValueError("'other' parameter required for covariance")
+                # Convert other to array wrapper if needed
+                if not hasattr(other, '_vbt') and VECTORBT_AVAILABLE:
+                    other = vbt.array_wrapper(other, freq=other.index.freq if hasattr(other.index, 'freq') else None)
                 return vbt.rolling_cov(data, other, window=window, **kwargs)
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
@@ -662,13 +681,13 @@ class VectorBTFeatureGenerator(FeatureGenerator):
     
     def _optimize_dataframe_for_vectorbt(self, data: pd.DataFrame) -> pd.DataFrame:
         """
-        Optimize DataFrame for VectorBT processing with memory efficiency.
+        Optimize DataFrame for VectorBT processing with memory efficiency and array wrappers.
         
         Args:
             data: Input DataFrame
             
         Returns:
-            Optimized DataFrame
+            Optimized DataFrame with VectorBT array wrappers
         """
         try:
             # Create a copy to avoid modifying original data
@@ -696,6 +715,10 @@ class VectorBTFeatureGenerator(FeatureGenerator):
                 except:
                     pass
             
+            # Convert to VectorBT array wrappers for better performance
+            if VECTORBT_AVAILABLE:
+                optimized_data = self._convert_to_vectorbt_arrays(optimized_data)
+            
             # Track memory usage
             memory_usage = optimized_data.memory_usage(deep=True).sum()
             self._memory_usage = memory_usage
@@ -707,6 +730,42 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             
         except Exception as e:
             logger.warning(f"DataFrame optimization failed: {e}")
+            return data
+    
+    def _convert_to_vectorbt_arrays(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Convert DataFrame columns to VectorBT array wrappers for optimal performance.
+        
+        Args:
+            data: Input DataFrame
+            
+        Returns:
+            DataFrame with VectorBT array wrappers
+        """
+        try:
+            if not VECTORBT_AVAILABLE:
+                return data
+            
+            optimized_data = data.copy()
+            
+            # Convert numeric columns to VectorBT array wrappers
+            for column in optimized_data.columns:
+                if optimized_data[column].dtype in ['float32', 'float64', 'int32', 'int64']:
+                    try:
+                        # Convert to VectorBT array wrapper
+                        optimized_data[column] = vbt.array_wrapper(
+                            optimized_data[column],
+                            freq=data.index.freq if hasattr(data.index, 'freq') else None
+                        )
+                        self.vectorbt_stats['vectorbt_operations'] += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to convert column {column} to VectorBT array: {e}")
+                        continue
+            
+            return optimized_data
+            
+        except Exception as e:
+            logger.warning(f"VectorBT array conversion failed: {e}")
             return data
     
     def _cleanup_memory(self):

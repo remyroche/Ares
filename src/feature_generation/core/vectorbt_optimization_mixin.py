@@ -65,7 +65,9 @@ class VectorBTOptimizationMixin:
             'pandas_fallbacks': 0,
             'gpu_accelerations': 0,
             'total_operations': 0,
-            'total_time': 0.0
+            'total_time': 0.0,
+            'cache_hits': 0,
+            'cache_misses': 0
         }
         
         # VectorBT configuration
@@ -75,8 +77,35 @@ class VectorBTOptimizationMixin:
         self.enable_parallel = getattr(self, 'enable_parallel', True)
         self.vectorbt_memory_limit_gb = getattr(self, 'vectorbt_memory_limit_gb', 8.0)
         
+        # Advanced caching configuration
+        self.enable_caching = getattr(self, 'enable_caching', True)
+        self.cache_size = getattr(self, 'cache_size', 1000)  # MB
+        self.cache_ttl = getattr(self, 'cache_ttl', 3600)  # seconds
+        
+        # Initialize VectorBT caching
+        self._configure_vectorbt_caching()
+        
         # Setup logger
         self.logger = logging.getLogger(self.__class__.__name__)
+    
+    def _configure_vectorbt_caching(self):
+        """Configure VectorBT advanced caching."""
+        if not VECTORBT_AVAILABLE or not self.enable_caching:
+            return
+        
+        try:
+            # Configure advanced caching
+            vbt.settings.setting('caching', True)
+            vbt.settings.setting('cache_size', self.cache_size)
+            vbt.settings.setting('cache_ttl', self.cache_ttl)
+            vbt.settings.setting('cache_compression', True)
+            vbt.settings.setting('caching_dir', 'data_cache/vectorbt_advanced_cache')
+            
+            self.logger.info(f"✅ VectorBT advanced caching enabled: {self.cache_size}MB, TTL: {self.cache_ttl}s")
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ VectorBT caching configuration failed: {e}")
+            self.enable_caching = False
     
     def _should_use_vectorbt(self, data: Union[pd.DataFrame, pd.Series]) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
@@ -100,9 +129,18 @@ class VectorBTOptimizationMixin:
     
     def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:
-        """Perform VectorBT rolling operation with fallback to pandas."""
+        """Perform VectorBT rolling operation with caching and fallback to pandas."""
         start_time = time.time()
         self.performance_stats['total_operations'] += 1
+        
+        # Check cache first if enabled
+        if self.enable_caching and VECTORBT_AVAILABLE:
+            cache_key = self._generate_cache_key(data, operation, window, **kwargs)
+            cached_result = self._get_from_cache(cache_key)
+            if cached_result is not None:
+                self.performance_stats['cache_hits'] += 1
+                return cached_result
+            self.performance_stats['cache_misses'] += 1
         
         if not self._should_use_vectorbt(data):
             result = self._pandas_rolling_operation(data, operation, window, **kwargs)
@@ -121,6 +159,10 @@ class VectorBTOptimizationMixin:
                 self.logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
                 result = self._pandas_rolling_operation(data, operation, window, **kwargs)
                 self.performance_stats['pandas_fallbacks'] += 1
+        
+        # Cache result if enabled
+        if self.enable_caching and VECTORBT_AVAILABLE:
+            self._put_in_cache(cache_key, result)
         
         # Update timing
         self.performance_stats['total_time'] += time.time() - start_time
@@ -390,6 +432,50 @@ class VectorBTOptimizationMixin:
         
         return pd.DataFrame(results, index=data.index)
     
+    def _generate_cache_key(self, data: pd.Series, operation: str, window: int, **kwargs) -> str:
+        """Generate cache key for operation."""
+        import hashlib
+        
+        # Create hash of data characteristics and parameters
+        data_hash = hashlib.md5(str(data.shape).encode()).hexdigest()[:8]
+        params_hash = hashlib.md5(str(sorted(kwargs.items())).encode()).hexdigest()[:8]
+        
+        return f"{operation}_{window}_{data_hash}_{params_hash}"
+    
+    def _get_from_cache(self, cache_key: str) -> Optional[pd.Series]:
+        """Get result from cache."""
+        if not hasattr(self, '_cache') or not self.enable_caching:
+            return None
+        
+        try:
+            if cache_key in self._cache:
+                return self._cache[cache_key]
+        except Exception as e:
+            self.logger.warning(f"Cache retrieval failed: {e}")
+        
+        return None
+    
+    def _put_in_cache(self, cache_key: str, result: pd.Series):
+        """Put result in cache."""
+        if not hasattr(self, '_cache') or not self.enable_caching:
+            return
+        
+        try:
+            # Initialize cache if needed
+            if not hasattr(self, '_cache'):
+                self._cache = {}
+            
+            # Limit cache size
+            if len(self._cache) >= 1000:  # Max 1000 entries
+                # Remove oldest entries (simple FIFO)
+                oldest_key = next(iter(self._cache))
+                del self._cache[oldest_key]
+            
+            self._cache[cache_key] = result
+            
+        except Exception as e:
+            self.logger.warning(f"Cache storage failed: {e}")
+    
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics."""
         stats = self.performance_stats.copy()
@@ -404,10 +490,18 @@ class VectorBTOptimizationMixin:
             stats['average_operation_time'] = (
                 stats['total_time'] / stats['total_operations']
             )
+            
+            # Cache statistics
+            total_cache_ops = stats['cache_hits'] + stats['cache_misses']
+            if total_cache_ops > 0:
+                stats['cache_hit_rate'] = (stats['cache_hits'] / total_cache_ops) * 100
+            else:
+                stats['cache_hit_rate'] = 0
         else:
             stats['vectorbt_usage_percentage'] = 0
             stats['pandas_fallback_percentage'] = 0
             stats['average_operation_time'] = 0
+            stats['cache_hit_rate'] = 0
         
         return stats
     

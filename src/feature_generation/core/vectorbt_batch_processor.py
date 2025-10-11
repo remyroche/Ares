@@ -377,7 +377,7 @@ class VectorBTBatchProcessor:
             return pd.DataFrame()
     
     def _apply_vectorbt_optimizations(self, result: pd.DataFrame) -> pd.DataFrame:
-        """Apply VectorBT-specific optimizations to results."""
+        """Apply VectorBT-specific optimizations to results with array wrappers."""
         try:
             # Use VectorBT's optimized data types
             optimized_result = result.copy()
@@ -385,9 +385,16 @@ class VectorBTBatchProcessor:
             # Convert to VectorBT array wrapper for better performance
             if VECTORBT_AVAILABLE:
                 for column in optimized_result.columns:
-                    if optimized_result[column].dtype in ['float64', 'float32']:
-                        # Use VectorBT's optimized float handling
-                        optimized_result[column] = vbt.array_wrapper(optimized_result[column])
+                    if optimized_result[column].dtype in ['float64', 'float32', 'int64', 'int32']:
+                        try:
+                            # Use VectorBT's optimized array wrapper
+                            optimized_result[column] = vbt.array_wrapper(
+                                optimized_result[column],
+                                freq=result.index.freq if hasattr(result.index, 'freq') else None
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to convert column {column} to VectorBT array: {e}")
+                            continue
             
             return optimized_result
             

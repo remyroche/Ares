@@ -37,6 +37,15 @@ except ImportError as e:
     logging.warning(f"Some utilities not available: {e}")
     UTILITIES_AVAILABLE = False
 
+# Import VectorBT optimizations
+try:
+    from .vectorbt_optimizations import get_vectorbt_optimized_operations
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"VectorBT optimizations not available: {e}")
+    VECTORBT_OPTIMIZATIONS_AVAILABLE = False
+    get_vectorbt_optimized_operations = None
+
 logger = logging.getLogger(__name__)
 
 class BatchMatrixProcessor:
@@ -80,12 +89,25 @@ class BatchMatrixProcessor:
     def batch_matrix_multiply(self,
                             matrices_a: List['np.ndarray'],
                             matrices_b: List['np.ndarray']) -> List['np.ndarray']:
-        """Batch matrix multiplication with automatic optimization."""
+        """Batch matrix multiplication with VectorBT and automatic optimization."""
         if len(matrices_a) != len(matrices_b):
             raise ValueError("Matrices A and B must have same length")
 
         start_time = time.time()
         logger.info(f"🔄 Processing {len(matrices_a)} matrix multiplications")
+
+        # Try VectorBT optimization first if available
+        if VECTORBT_OPTIMIZATIONS_AVAILABLE:
+            try:
+                vectorbt_ops = get_vectorbt_optimized_operations()
+                results = vectorbt_ops.batch_process(
+                    matrices_a, 'batch_matrix_multiply', matrices_b=matrices_b
+                )
+                processing_time = time.time() - start_time
+                logger.info(f"✅ VectorBT batch processing completed in {processing_time:.2f}s")
+                return results
+            except Exception as e:
+                logger.warning(f"⚠️ VectorBT batch processing failed: {e}, falling back to standard method")
 
         # Determine processing strategy
         total_memory_mb = sum(a.nbytes + b.nbytes for a, b in zip(matrices_a, matrices_b)) / (1024 * 1024)

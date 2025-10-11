@@ -40,6 +40,22 @@ from src.utils.tprint import (
 )
 # Import FeatureCacheService - will raise exception if not available
 from src.feature_generation.core.feature_cache import FeatureCacheService
+
+# Import VectorBT optimizer for enhanced performance
+try:
+    from .core.vectorbt_optimizer import (
+        VectorBTOptimizer, 
+        VectorBTOptimizationConfig, 
+        OptimizationStrategy,
+        create_vectorbt_optimizer
+    )
+    VECTORBT_OPTIMIZER_AVAILABLE = True
+except ImportError:
+    VECTORBT_OPTIMIZER_AVAILABLE = False
+    VectorBTOptimizer = None
+    VectorBTOptimizationConfig = None
+    OptimizationStrategy = None
+    create_vectorbt_optimizer = None
 from src.training.steps.pre_training.column_naming import (
     ColumnNamespace,
     ensure_namespace,
@@ -239,6 +255,25 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
             cache_size=1000
         )
         tprint("✅ Optimized feature lookback engine initialized")
+
+        # Initialize VectorBT optimizer for enhanced performance
+        tprint("🔧 Initializing VectorBT optimizer...")
+        if VECTORBT_OPTIMIZER_AVAILABLE:
+            try:
+                self.vectorbt_optimizer = create_vectorbt_optimizer(
+                    strategy=OptimizationStrategy.VECTORBT_ONLY,
+                    use_parallel_processing=True
+                )
+                tprint_success("✅ VectorBT optimizer initialized successfully")
+                self.use_vectorbt_optimization = True
+            except Exception as e:
+                tprint_warning(f"⚠️ VectorBT optimizer initialization failed: {e}")
+                self.vectorbt_optimizer = None
+                self.use_vectorbt_optimization = False
+        else:
+            tprint_warning("⚠️ VectorBT optimizer not available - using fallback optimization")
+            self.vectorbt_optimizer = None
+            self.use_vectorbt_optimization = False
 
         # Component state
         self.optimization_status = "pending"
@@ -2009,30 +2044,78 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
                     # Optimize for LONG direction (only if enabled)
                     if optimize_longs and long_target_column != 'close':  # Only if we have a proper long target
-                        # OPTIMIZATION: Use Bayesian optimization for light/blank modes
-                        if use_bayesian_opt:
-                            tprint_info(f"🚀 Using Bayesian TPE optimization for {feature}")
-                            # Call the Bayesian optimizer directly
-                            # Remove regularization_settings from kwargs to avoid duplication
-                            bayesian_kwargs = {k: v for k, v in optimizer_kwargs.items() if k != 'regularization_settings'}
-                            long_result = self.core_optimizer._optimize_with_bayesian_tpe(
-                                data,
-                                feature,
-                                long_target_column,
-                                lookback_range=lookback_range,
-                                regularization_settings=self.lookback_regularization_settings,
-                                n_trials=30 if execution_mode == 'light' else 50,
-                                **bayesian_kwargs
-                            )
+                        # VECTORBT OPTIMIZATION: Use VectorBT optimizer if available
+                        if self.use_vectorbt_optimization and self.vectorbt_optimizer:
+                            tprint_info(f"🚀 Using VectorBT optimization for {feature}")
+                            try:
+                                long_result = self.vectorbt_optimizer.optimize_feature_lookback(
+                                    data,
+                                    feature,
+                                    long_target_column,
+                                    lookback_range=lookback_range,
+                                    regularization_settings=self.lookback_regularization_settings
+                                )
+                                # Convert VectorBT result to expected format
+                                from .core.optimizer import OptimizationResult
+                                long_result = OptimizationResult(
+                                    best_lookback_period=long_result.best_lookback_period,
+                                    best_score=long_result.best_score,
+                                    optimization_method=long_result.optimization_method,
+                                    total_trials=long_result.total_trials,
+                                    optimization_time=long_result.optimization_time,
+                                    convergence_achieved=long_result.convergence_achieved,
+                                    feature_name=long_result.feature_name,
+                                    metadata=long_result.metadata
+                                )
+                            except Exception as e:
+                                tprint_warning(f"⚠️ VectorBT optimization failed, falling back to standard: {e}")
+                                # Fall back to standard optimization
+                                if use_bayesian_opt:
+                                    tprint_info(f"🚀 Using Bayesian TPE optimization for {feature}")
+                                    bayesian_kwargs = {k: v for k, v in optimizer_kwargs.items() if k != 'regularization_settings'}
+                                    long_result = self.core_optimizer._optimize_with_bayesian_tpe(
+                                        data,
+                                        feature,
+                                        long_target_column,
+                                        lookback_range=lookback_range,
+                                        regularization_settings=self.lookback_regularization_settings,
+                                        n_trials=30 if execution_mode == 'light' else 50,
+                                        **bayesian_kwargs
+                                    )
+                                else:
+                                    long_result = self.core_optimizer._optimize_coarse_to_refine(
+                                        data,
+                                        feature,
+                                        long_target_column,
+                                        lookback_range=lookback_range,
+                                        regularization_settings=self.lookback_regularization_settings,
+                                        **optimizer_kwargs,
+                                    )
                         else:
-                            long_result = self.core_optimizer._optimize_coarse_to_refine(
-                                data,
-                                feature,
-                                long_target_column,
-                                lookback_range=lookback_range,
-                                regularization_settings=self.lookback_regularization_settings,
-                                **optimizer_kwargs,
-                            )
+                            # OPTIMIZATION: Use Bayesian optimization for light/blank modes
+                            if use_bayesian_opt:
+                                tprint_info(f"🚀 Using Bayesian TPE optimization for {feature}")
+                                # Call the Bayesian optimizer directly
+                                # Remove regularization_settings from kwargs to avoid duplication
+                                bayesian_kwargs = {k: v for k, v in optimizer_kwargs.items() if k != 'regularization_settings'}
+                                long_result = self.core_optimizer._optimize_with_bayesian_tpe(
+                                    data,
+                                    feature,
+                                    long_target_column,
+                                    lookback_range=lookback_range,
+                                    regularization_settings=self.lookback_regularization_settings,
+                                    n_trials=30 if execution_mode == 'light' else 50,
+                                    **bayesian_kwargs
+                                )
+                            else:
+                                long_result = self.core_optimizer._optimize_coarse_to_refine(
+                                    data,
+                                    feature,
+                                    long_target_column,
+                                    lookback_range=lookback_range,
+                                    regularization_settings=self.lookback_regularization_settings,
+                                    **optimizer_kwargs,
+                                )
 
                         feature_key = feature
                         if isinstance(feature, np.int64):
@@ -2062,28 +2145,75 @@ class FeatureLookbackOptimizationComponent(BasePreTrainingComponent):
 
                     # Optimize for SHORT direction (only if enabled)
                     if optimize_shorts and short_target_column != 'close':  # Only if we have a proper short target
-                        # OPTIMIZATION: Use Bayesian optimization for light/blank modes
-                        if use_bayesian_opt:
-                            # Remove regularization_settings from kwargs to avoid duplication
-                            bayesian_kwargs = {k: v for k, v in optimizer_kwargs.items() if k != 'regularization_settings'}
-                            short_result = self.core_optimizer._optimize_with_bayesian_tpe(
-                                data,
-                                feature,
-                                short_target_column,
-                                lookback_range=lookback_range,
-                                regularization_settings=self.lookback_regularization_settings,
-                                n_trials=30 if execution_mode == 'light' else 50,
-                                **bayesian_kwargs
-                            )
+                        # VECTORBT OPTIMIZATION: Use VectorBT optimizer if available
+                        if self.use_vectorbt_optimization and self.vectorbt_optimizer:
+                            tprint_info(f"🚀 Using VectorBT optimization for {feature} (short)")
+                            try:
+                                short_result = self.vectorbt_optimizer.optimize_feature_lookback(
+                                    data,
+                                    feature,
+                                    short_target_column,
+                                    lookback_range=lookback_range,
+                                    regularization_settings=self.lookback_regularization_settings
+                                )
+                                # Convert VectorBT result to expected format
+                                from .core.optimizer import OptimizationResult
+                                short_result = OptimizationResult(
+                                    best_lookback_period=short_result.best_lookback_period,
+                                    best_score=short_result.best_score,
+                                    optimization_method=short_result.optimization_method,
+                                    total_trials=short_result.total_trials,
+                                    optimization_time=short_result.optimization_time,
+                                    convergence_achieved=short_result.convergence_achieved,
+                                    feature_name=short_result.feature_name,
+                                    metadata=short_result.metadata
+                                )
+                            except Exception as e:
+                                tprint_warning(f"⚠️ VectorBT optimization failed, falling back to standard: {e}")
+                                # Fall back to standard optimization
+                                if use_bayesian_opt:
+                                    bayesian_kwargs = {k: v for k, v in optimizer_kwargs.items() if k != 'regularization_settings'}
+                                    short_result = self.core_optimizer._optimize_with_bayesian_tpe(
+                                        data,
+                                        feature,
+                                        short_target_column,
+                                        lookback_range=lookback_range,
+                                        regularization_settings=self.lookback_regularization_settings,
+                                        n_trials=30 if execution_mode == 'light' else 50,
+                                        **bayesian_kwargs
+                                    )
+                                else:
+                                    short_result = self.core_optimizer._optimize_coarse_to_refine(
+                                        data,
+                                        feature,
+                                        short_target_column,
+                                        lookback_range=lookback_range,
+                                        regularization_settings=self.lookback_regularization_settings,
+                                        **optimizer_kwargs,
+                                    )
                         else:
-                            short_result = self.core_optimizer._optimize_coarse_to_refine(
-                                data,
-                                feature,
-                                short_target_column,
-                                lookback_range=lookback_range,
-                                regularization_settings=self.lookback_regularization_settings,
-                                **optimizer_kwargs,
-                            )
+                            # OPTIMIZATION: Use Bayesian optimization for light/blank modes
+                            if use_bayesian_opt:
+                                # Remove regularization_settings from kwargs to avoid duplication
+                                bayesian_kwargs = {k: v for k, v in optimizer_kwargs.items() if k != 'regularization_settings'}
+                                short_result = self.core_optimizer._optimize_with_bayesian_tpe(
+                                    data,
+                                    feature,
+                                    short_target_column,
+                                    lookback_range=lookback_range,
+                                    regularization_settings=self.lookback_regularization_settings,
+                                    n_trials=30 if execution_mode == 'light' else 50,
+                                    **bayesian_kwargs
+                                )
+                            else:
+                                short_result = self.core_optimizer._optimize_coarse_to_refine(
+                                    data,
+                                    feature,
+                                    short_target_column,
+                                    lookback_range=lookback_range,
+                                    regularization_settings=self.lookback_regularization_settings,
+                                    **optimizer_kwargs,
+                                )
 
                         feature_key = feature
                         if isinstance(feature, np.int64):

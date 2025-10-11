@@ -110,6 +110,16 @@ class VectorBTUnifiedFramework:
             # Ensure VectorBT optimizations are enabled by default
             self.config.setup_vectorbt_optimizations()
             
+            # Setup GPU acceleration
+            gpu_available = self.config.setup_gpu_acceleration()
+            if gpu_available:
+                tprint_success("✅ GPU acceleration enabled")
+            
+            # Setup advanced parallel processing
+            parallel_clients = self.config.setup_advanced_parallel_processing()
+            if parallel_clients:
+                tprint_success(f"✅ Advanced parallel processing enabled: {list(parallel_clients.keys())}")
+            
             # Initialize all selectors with enhanced configuration
             self.correlation_filter = VectorBTCorrelationFilter(self.config)
             self.mutual_information = VectorBTMutualInformation(self.config)
@@ -119,7 +129,7 @@ class VectorBTUnifiedFramework:
             self.rfe_selector = VectorBTRFESelector(self.config)
             self.feature_selector = VectorBTFeatureSelector(self.config)
             
-            tprint_success("✅ All VectorBT selectors initialized with enhanced optimizations")
+            tprint_success("✅ All VectorBT selectors initialized with advanced optimizations")
             
         except Exception as e:
             self.logger.error(f"Failed to initialize selectors: {e}")

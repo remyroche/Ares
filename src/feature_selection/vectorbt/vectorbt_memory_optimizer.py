@@ -198,50 +198,136 @@ class VectorBTMemoryOptimizer:
                 df.index = pd.date_range(start='2020-01-01', periods=len(df), freq='D')
             return df
     
+    def _process_large_dataset_chunked(self, X: np.ndarray, operation: str) -> np.ndarray:
+        """Enhanced chunked processing with VectorBT optimizations."""
+        try:
+            # Create VectorBT DataFrame for chunked operations
+            df = vbt.PandasDataFrame(X)
+            
+            # Use VectorBT's intelligent chunking
+            chunk_size = min(self.config.chunk_size, X.shape[1])
+            
+            if operation == 'correlation':
+                # VectorBT chunked correlation computation
+                result = df.vbt.chunked_apply(
+                    lambda chunk: chunk.corr(),
+                    chunk_size=chunk_size,
+                    overlap=self.config.chunk_overlap,
+                    parallel=True  # Enable parallel chunking
+                )
+                return result.compute()
+                
+            elif operation == 'variance':
+                # VectorBT chunked variance computation
+                result = df.vbt.chunked_apply(
+                    lambda chunk: chunk.var(),
+                    chunk_size=chunk_size,
+                    parallel=True
+                )
+                return result.compute()
+                
+            else:
+                # Generic chunked processing
+                return df.vbt.chunked_apply(
+                    lambda chunk: self._process_chunk(chunk, operation),
+                    chunk_size=chunk_size,
+                    parallel=True
+                ).compute()
+                
+        except Exception as e:
+            self.logger.warning(f"Enhanced chunked processing failed: {e}")
+            return self._fallback_chunked_processing(X, operation)
+    
+    def _process_chunk(self, chunk, operation: str):
+        """Process a single chunk."""
+        try:
+            if operation == 'correlation':
+                return chunk.corr()
+            elif operation == 'variance':
+                return chunk.var()
+            else:
+                return chunk
+        except Exception as e:
+            self.logger.warning(f"Chunk processing failed: {e}")
+            return chunk
+    
+    def _fallback_chunked_processing(self, X: np.ndarray, operation: str) -> np.ndarray:
+        """Fallback chunked processing without VectorBT."""
+        try:
+            chunk_size = min(self.config.chunk_size, X.shape[1])
+            results = []
+            
+            for i in range(0, X.shape[1], chunk_size):
+                end_idx = min(i + chunk_size, X.shape[1])
+                chunk = X[:, i:end_idx]
+                
+                if operation == 'correlation':
+                    chunk_result = np.corrcoef(chunk.T)
+                elif operation == 'variance':
+                    chunk_result = np.var(chunk, axis=0)
+                else:
+                    chunk_result = chunk
+                
+                results.append(chunk_result)
+            
+            return np.concatenate(results) if operation == 'variance' else results
+            
+        except Exception as e:
+            self.logger.error(f"Fallback chunked processing failed: {e}")
+            return X
+
     def process_chunked_correlation(self, X: np.ndarray, feature_names: List[str],
                                    threshold: float = 0.95) -> np.ndarray:
-        """Process correlation filtering with chunked processing."""
+        """Enhanced correlation filtering with VectorBT chunked processing."""
         try:
-            n_features = X.shape[1]
-            chunk_size = min(self.memory_config.chunk_size, n_features)
-            
-            # Initialize correlation matrix
-            corr_matrix = np.eye(n_features)
-            
-            # Process in chunks
-            for i in range(0, n_features, chunk_size):
-                end_i = min(i + chunk_size, n_features)
-                chunk_i = X[:, i:end_i]
+            # Try VectorBT chunked processing first
+            if VECTORBT_AVAILABLE and X.shape[1] > 1000:
+                corr_matrix = self._process_large_dataset_chunked(X, 'correlation')
+                if isinstance(corr_matrix, list):
+                    # Handle case where chunked processing returns list
+                    corr_matrix = np.concatenate(corr_matrix)
+            else:
+                # Fallback to standard chunked processing
+                n_features = X.shape[1]
+                chunk_size = min(self.memory_config.chunk_size, n_features)
                 
-                for j in range(0, n_features, chunk_size):
-                    end_j = min(j + chunk_size, n_features)
-                    chunk_j = X[:, j:end_j]
-                    
-                    # Compute correlation between chunks
-                    chunk_corr = np.corrcoef(chunk_i.T, chunk_j.T)
-                    
-                    # Extract relevant part
-                    if i == j:
-                        # Same chunk - use upper triangle
-                        corr_subset = chunk_corr[:len(chunk_i.T), :len(chunk_j.T)]
-                    else:
-                        # Different chunks - use cross-correlation
-                        corr_subset = chunk_corr[:len(chunk_i.T), len(chunk_i.T):]
-                    
-                    # Fill correlation matrix
-                    for ii, idx_i in enumerate(range(i, end_i)):
-                        for jj, idx_j in enumerate(range(j, end_j)):
-                            if idx_i != idx_j:  # Skip diagonal
-                                corr_matrix[idx_i, idx_j] = corr_subset[ii, jj]
+                # Initialize correlation matrix
+                corr_matrix = np.eye(n_features)
                 
-                # Update memory stats
-                self.memory_stats['chunks_processed'] += 1
-                
-                # Check memory usage
-                if self.memory_config.enable_memory_monitoring:
-                    memory_info = self._check_memory_usage()
-                    if memory_info['memory_warning']:
-                        tprint_warning(f"⚠️ High memory usage: {memory_info['current_memory_mb']:.1f}MB")
+                # Process in chunks
+                for i in range(0, n_features, chunk_size):
+                    end_i = min(i + chunk_size, n_features)
+                    chunk_i = X[:, i:end_i]
+                    
+                    for j in range(0, n_features, chunk_size):
+                        end_j = min(j + chunk_size, n_features)
+                        chunk_j = X[:, j:end_j]
+                        
+                        # Compute correlation between chunks
+                        chunk_corr = np.corrcoef(chunk_i.T, chunk_j.T)
+                        
+                        # Extract relevant part
+                        if i == j:
+                            # Same chunk - use upper triangle
+                            corr_subset = chunk_corr[:len(chunk_i.T), :len(chunk_j.T)]
+                        else:
+                            # Different chunks - use cross-correlation
+                            corr_subset = chunk_corr[:len(chunk_i.T), len(chunk_i.T):]
+                        
+                        # Fill correlation matrix
+                        for ii, idx_i in enumerate(range(i, end_i)):
+                            for jj, idx_j in enumerate(range(j, end_j)):
+                                if idx_i != idx_j:  # Skip diagonal
+                                    corr_matrix[idx_i, idx_j] = corr_subset[ii, jj]
+                    
+                    # Update memory stats
+                    self.memory_stats['chunks_processed'] += 1
+                    
+                    # Check memory usage
+                    if self.memory_config.enable_memory_monitoring:
+                        memory_info = self._check_memory_usage()
+                        if memory_info['memory_warning']:
+                            tprint_warning(f"⚠️ High memory usage: {memory_info['current_memory_mb']:.1f}MB")
             
             # Apply correlation filter
             high_corr_mask = np.abs(corr_matrix) > threshold
@@ -254,7 +340,7 @@ class VectorBTMemoryOptimizer:
             return features_to_keep
             
         except Exception as e:
-            self.logger.error(f"Chunked correlation processing failed: {e}")
+            self.logger.error(f"Enhanced chunked correlation processing failed: {e}")
             # Fallback to standard correlation
             corr_matrix = np.corrcoef(X.T)
             high_corr_mask = np.abs(corr_matrix) > threshold

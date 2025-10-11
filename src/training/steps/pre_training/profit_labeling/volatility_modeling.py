@@ -317,7 +317,7 @@ class VolatilityModeler:
             return False
     
     def _calculate_realized_volatility(self, bars: pd.DataFrame) -> pd.Series:
-        """Calculate realized volatility from high-frequency returns."""
+        """Calculate realized volatility from high-frequency returns using VectorBT optimization."""
         try:
             # Calculate returns (retain index alignment)
             returns = bars['close'].pct_change()
@@ -325,11 +325,16 @@ class VolatilityModeler:
             if len(returns) < self.config.rv_min_periods:
                 return pd.Series(dtype=float, index=bars.index)
             
-            # Calculate rolling realized volatility
-            rv = returns.rolling(
-                window=self.config.rv_window,
-                min_periods=self.config.rv_min_periods
-            ).std()
+            # Use VectorBT for better performance if available
+            if VECTORBT_AVAILABLE and self._should_use_vectorbt(returns):
+                tprint_info("📊 Using VectorBT for realized volatility calculation")
+                rv = rolling_std(returns, window=self.config.rv_window, min_periods=self.config.rv_min_periods)
+            else:
+                # Fallback to pandas rolling
+                rv = returns.rolling(
+                    window=self.config.rv_window,
+                    min_periods=self.config.rv_min_periods
+                ).std()
 
             # Annualize if needed (assuming daily data)
             rv = rv * np.sqrt(252)
@@ -344,7 +349,7 @@ class VolatilityModeler:
             return pd.Series(dtype=float, index=bars.index)
     
     def _calculate_atr_volatility(self, bars: pd.DataFrame) -> pd.Series:
-        """Calculate ATR-based volatility using vectorized operations."""
+        """Calculate ATR-based volatility using VectorBT optimization."""
         try:
             # Vectorized True Range calculation
             high = bars['high'].values
@@ -366,26 +371,15 @@ class VolatilityModeler:
             if len(true_range) < self.config.atr_min_periods:
                 return pd.Series(dtype=float, index=bars.index)
 
-            # Use matrix operations for rolling mean if available
-            if self.matrix_ops and MATRIX_OPS_AVAILABLE:
-                # Convert to pandas Series for rolling operation (still efficient)
-                tr_series = pd.Series(true_range, index=bars.index)
+            # Convert to pandas Series for rolling operation
+            tr_series = pd.Series(true_range, index=bars.index)
 
-                # Vectorized rolling mean calculation
-                atr_values = np.zeros_like(true_range, dtype=float)
-                window = self.config.atr_window
-
-                for i in range(len(true_range)):
-                    if i < window - 1:
-                        # Use available data for initial values
-                        atr_values[i] = np.mean(true_range[max(0, i - window + 1):i+1])
-                    else:
-                        atr_values[i] = np.mean(true_range[i - window + 1:i+1])
-
-                atr = pd.Series(atr_values, index=bars.index)
+            # Use VectorBT for better performance if available
+            if VECTORBT_AVAILABLE and self._should_use_vectorbt(tr_series):
+                tprint_info("📊 Using VectorBT for ATR calculation")
+                atr = rolling_mean(tr_series, window=self.config.atr_window, min_periods=self.config.atr_min_periods)
             else:
                 # Fallback to pandas rolling
-                tr_series = pd.Series(true_range, index=bars.index)
                 atr = tr_series.rolling(
                     window=self.config.atr_window,
                     min_periods=self.config.atr_min_periods
@@ -403,7 +397,7 @@ class VolatilityModeler:
             return pd.Series(dtype=float, index=bars.index)
     
     def _calculate_ewma_volatility(self, bars: pd.DataFrame) -> pd.Series:
-        """Calculate EWMA volatility using vectorized operations."""
+        """Calculate EWMA volatility using VectorBT optimization."""
         try:
             # Vectorized returns calculation
             close_prices = bars['close'].values
@@ -413,26 +407,23 @@ class VolatilityModeler:
             if len(returns) < self.config.ewma_min_periods:
                 return pd.Series(dtype=float, index=bars.index)
 
-            # Vectorized EWMA calculation for variance
-            alpha = self.config.ewma_alpha
-            min_periods = self.config.ewma_min_periods
+            # Convert to pandas Series for EWMA operation
+            returns_series = pd.Series(returns, index=bars.index)
 
-            # Use matrix operations for EWMA if available
-            if self.matrix_ops and MATRIX_OPS_AVAILABLE:
-                # Convert to pandas for ewm operation (still efficient)
-                returns_series = pd.Series(returns, index=bars.index)
-
-                # Calculate EWMA variance
-                ewma_var = returns_series.ewm(
-                    alpha=alpha,
-                    min_periods=min_periods
-                ).var().shift(1)
-
-                # Convert to volatility
+            # Use VectorBT for better performance if available
+            if VECTORBT_AVAILABLE and self._should_use_vectorbt(returns_series):
+                tprint_info("📊 Using VectorBT for EWMA volatility calculation")
+                # Calculate EWMA variance using VectorBT
+                ewma_var = vbt.rolling_apply(
+                    returns_series,
+                    lambda x: x.ewm(alpha=self.config.ewma_alpha).var().iloc[-1],
+                    window=self.config.ewma_min_periods
+                ).shift(1)
                 ewma_volatility = np.sqrt(ewma_var)
             else:
-                # Fallback implementation using vectorized operations
-                returns_series = pd.Series(returns, index=bars.index)
+                # Fallback to pandas EWMA
+                alpha = self.config.ewma_alpha
+                min_periods = self.config.ewma_min_periods
                 ewma_var = returns_series.ewm(alpha=alpha, min_periods=min_periods).var().shift(1)
                 ewma_volatility = np.sqrt(ewma_var)
 
@@ -606,25 +597,11 @@ class VolatilityModeler:
         except Exception as e:
             tprint_warning(f"⚠️ Error calculating volatility quality: {e}")
             return {'consistency': 0.0, 'stability': 0.0}
-
-
-# Convenience functions
-def create_volatility_modeler(config: Optional[VolatilityConfig] = None) -> VolatilityModeler:
-    """Create volatility modeler with specified configuration."""
-    return VolatilityModeler(config)
-
-
-def model_volatility(bars: pd.DataFrame,
-                    config: Optional[VolatilityConfig] = None) -> VolatilityResult:
-    """Model volatility with default configuration."""
-    modeler = VolatilityModeler(config)
-    return modeler.model_volatility(bars)
-
+    
     def _should_use_vectorbt(self, data) -> bool:
         """Determine if VectorBT should be used based on data size and configuration."""
-        return (hasattr(self, 'use_vectorbt') and getattr(self, 'use_vectorbt', True) and 
-                len(data) >= getattr(self, 'vectorbt_threshold', 1000) and 
-                VECTORBT_AVAILABLE)
+        return (VECTORBT_AVAILABLE and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000))
     
     def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:
@@ -648,7 +625,7 @@ def model_volatility(bars: pd.DataFrame,
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
         except Exception as e:
-            logger.warning(f"VectorBT operation failed: {e}, using pandas fallback")
+            tprint_warning(f"VectorBT operation failed: {e}, using pandas fallback")
             return self._pandas_rolling_operation(data, operation, window, **kwargs)
     
     def _pandas_rolling_operation(self, data: pd.Series, operation: str, 
@@ -678,5 +655,18 @@ def model_volatility(bars: pd.DataFrame,
         try:
             return rolling_apply(data, func, window=window, **kwargs)
         except Exception as e:
-            logger.warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
+            tprint_warning(f"VectorBT rolling apply failed: {e}, using pandas fallback")
             return data.rolling(window=window).apply(func, **kwargs)
+
+
+# Convenience functions
+def create_volatility_modeler(config: Optional[VolatilityConfig] = None) -> VolatilityModeler:
+    """Create volatility modeler with specified configuration."""
+    return VolatilityModeler(config)
+
+
+def model_volatility(bars: pd.DataFrame,
+                    config: Optional[VolatilityConfig] = None) -> VolatilityResult:
+    """Model volatility with default configuration."""
+    modeler = VolatilityModeler(config)
+    return modeler.model_volatility(bars)

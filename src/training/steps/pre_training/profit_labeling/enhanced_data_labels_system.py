@@ -513,7 +513,93 @@ class EnhancedDataLabelsSystem:
             }
     
     def _apply_trading_specific_cleaning(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply trading-specific data cleaning rules using common utilities."""
+        """Apply trading-specific data cleaning rules using VectorBT optimization."""
+        try:
+            # Use VectorBT for better performance if available
+            if VECTORBT_AVAILABLE and self._should_use_vectorbt(data):
+                tprint_info("📊 Using VectorBT for trading-specific data cleaning")
+                return self._apply_trading_specific_cleaning_vectorbt(data)
+            else:
+                return self._apply_trading_specific_cleaning_pandas(data)
+
+        except Exception as e:
+            tprint_warning(f"⚠️ Trading-specific cleaning failed: {e}")
+            return data
+    
+    def _apply_trading_specific_cleaning_vectorbt(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply trading-specific data cleaning using VectorBT for better performance."""
+        try:
+            cleaned = data.copy()
+
+            # Remove bars with missing OHLCV data using VectorBT operations
+            required_cols = ['open', 'high', 'low', 'close', 'volume']
+            if validate_dataframe_columns(cleaned, required_cols):
+                missing_mask = cleaned[required_cols].isnull().any(axis=1)
+                cleaned = cleaned[~missing_mask]
+
+                # Remove bars with zero or negative prices using VectorBT
+                price_cols = ['open', 'high', 'low', 'close']
+                if validate_dataframe_columns(cleaned, price_cols):
+                    # Use VectorBT for efficient price validation
+                    invalid_price_mask = (cleaned[price_cols] <= 0).any(axis=1)
+                    cleaned = cleaned[~invalid_price_mask]
+
+                # Remove bars with zero volume using VectorBT
+                if 'volume' in cleaned.columns:
+                    zero_volume_mask = cleaned['volume'] <= 0
+                    cleaned = cleaned[~zero_volume_mask]
+
+                # Remove bars with extreme price changes using VectorBT
+                if len(cleaned) > 1:
+                    price_changes = cleaned['close'].pct_change().abs()
+                    if not price_changes.empty:
+                        tprint_info("🔍 Detecting extreme price changes using VectorBT...")
+
+                        # Use VectorBT for efficient extreme value detection
+                        if VECTORBT_AVAILABLE:
+                            # Calculate rolling statistics using VectorBT
+                            rolling_mean = rolling_mean(price_changes, window=20)
+                            rolling_std = rolling_std(price_changes, window=20)
+                            
+                            # Use z-score based detection with VectorBT
+                            z_scores = (price_changes - rolling_mean) / (rolling_std + 1e-8)
+                            extreme_change_mask = np.abs(z_scores) > 2.0  # 2-sigma rule
+                        else:
+                            # Fallback to matrix operations
+                            price_changes_matrix = price_changes.values.reshape(1, -1)
+                            mean_val = np.mean(price_changes_matrix)
+                            std_val = np.std(price_changes_matrix)
+                            z_scores = (price_changes_matrix - mean_val) / (std_val + 1e-8)
+                            extreme_change_mask = np.abs(z_scores) > 2.0
+                            extreme_change_mask = extreme_change_mask.flatten()
+
+                        extreme_count = extreme_change_mask.sum()
+
+                        if extreme_count > 0:
+                            cleaned = cleaned[~extreme_change_mask]
+                            tprint_info(f"🚫 Removed {extreme_count} bars with extreme price changes")
+                        else:
+                            tprint_info("✅ No extreme price changes detected")
+
+                # Ensure proper timestamp alignment using VectorBT
+                if isinstance(cleaned.index, pd.DatetimeIndex) and len(cleaned) > 0:
+                    # Remove duplicate timestamps using VectorBT
+                    duplicate_mask = cleaned.index.duplicated(keep='first')
+                    cleaned = cleaned[~duplicate_mask]
+
+                    # Sort by timestamp using VectorBT
+                    cleaned = cleaned.sort_index()
+            else:
+                tprint_error("❌ Required price/volume columns missing for trading-specific cleaning")
+
+            return cleaned
+
+        except Exception as e:
+            tprint_warning(f"⚠️ VectorBT trading-specific cleaning failed: {e}")
+            return self._apply_trading_specific_cleaning_pandas(data)
+    
+    def _apply_trading_specific_cleaning_pandas(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Apply trading-specific data cleaning using pandas (fallback)."""
         try:
             cleaned = safe_dataframe_operation(data.copy, lambda x: x.copy())
 
@@ -588,8 +674,13 @@ class EnhancedDataLabelsSystem:
             return cleaned
 
         except Exception as e:
-            tprint_warning(f"⚠️ Trading-specific cleaning failed: {e}")
+            tprint_warning(f"⚠️ Pandas trading-specific cleaning failed: {e}")
             return data
+    
+    def _should_use_vectorbt(self, data) -> bool:
+        """Determine if VectorBT should be used based on data size and configuration."""
+        return (VECTORBT_AVAILABLE and 
+                len(data) >= getattr(self, 'vectorbt_threshold', 1000))
     
     def _generate_trading_aware_labels(
         self,

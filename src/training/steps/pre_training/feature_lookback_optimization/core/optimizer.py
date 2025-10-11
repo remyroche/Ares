@@ -28,8 +28,10 @@ from .utils.error_handling import (
     get_error_handler, OptimizationError, DataValidationError, ScoringError
 )
 from .utils.nan_handling import (
-    SafeNaNHandler, safe_correlation_with_nan_handling, 
-    safe_mutual_information_with_nan_handling
+    SafeNaNHandler
+)
+from src.utils.matrix_operations import (
+    safe_correlation_with_nan_handling, safe_mutual_information_with_nan_handling
 )
 from .utils.memory_monitor import get_memory_monitor, monitor_memory
 from .utils.scoring_utils import get_scoring_utils, ScoringConfig
@@ -42,7 +44,7 @@ from .utils.fast_failing_validation import (
 from .utils.memory_efficient_ops import (
     MemoryEfficientOps, optimize_dataframe_memory, create_dataframe_view
 )
-from .utils.vectorized_correlations import (
+from src.utils.matrix_operations import (
     VectorizedCorrelationCalculator, calculate_correlations_vectorized
 )
 

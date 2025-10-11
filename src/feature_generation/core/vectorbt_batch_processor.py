@@ -353,8 +353,11 @@ class VectorBTBatchProcessor:
         try:
             # Check if generator has VectorBT optimization
             if hasattr(generator, 'use_vectorbt') and generator.use_vectorbt:
-                # Use VectorBT-optimized processing
-                return generator.process_batch(data, use_vectorbt=True, **kwargs)
+                # Use VectorBT-optimized processing with enhanced batch processing
+                if hasattr(generator, 'process_batch_vectorized'):
+                    return generator.process_batch_vectorized(data, use_vectorbt=True, **kwargs)
+                else:
+                    return generator.process_batch(data, use_vectorbt=True, **kwargs)
             else:
                 # Fallback to standard processing
                 return generator.process_batch(data, **kwargs)

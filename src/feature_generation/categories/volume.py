@@ -7,9 +7,38 @@ including volume moving averages, ratios, rate of change, and other volume metri
 
 import numpy as np
 import pandas as pd
+import warnings
+import logging
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
+
+# VectorBT imports for optimization
+try:
+    import vectorbt as vbt
+    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
+    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    VECTORBT_AVAILABLE = True
+except ImportError:
+    VECTORBT_AVAILABLE = False
+    vbt = None
+    rolling_mean = None
+    rolling_std = None
+    rolling_var = None
+    rolling_min = None
+    rolling_max = None
+    rolling_sum = None
+    rolling_apply = None
+    rolling_corr = None
+    rolling_cov = None
+    scale = None
+    rank = None
+    zscore = None
+    winsorize = None
+    clip = None
+    quantile = None
+    warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
+
 # Optimization utilities
 try:
     from ..utils.vectorization_optimizer import get_vectorization_optimizer
@@ -21,6 +50,8 @@ from ..base_calculations import (
     BaseCalculationType,
     create_base_calculator
 )
+
+logger = logging.getLogger(__name__)
 
 class VolumeFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for basic volume-based features."""
@@ -69,6 +100,14 @@ class VolumeFeatureGenerator(VectorizedFeatureGenerator):
         # Use VectorBT for volume moving average calculation
         if VECTORBT_AVAILABLE:
             try:
+                # Calculate volume SMA using VectorBT rolling operations
+                if VECTORBT_AVAILABLE:
+                    volume_sma = rolling_mean(volume, window=20)
+                    self.performance_stats['vectorbt_operations'] += 1
+                    return volume_sma
+                else:
+                    volume_sma = self._vectorbt_rolling_operation(volume, 'mean', 20)
+                    return volume_sma
                 # Calculate volume SMA using VectorBT
                 volume_sma = rolling_mean(volume, window=20)
                 self.performance_stats['vectorbt_operations'] += 1
@@ -167,9 +206,15 @@ class VolumeSMAGenerator(VectorizedFeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate Volume SMA."""
+        """Generate Volume SMA using VectorBT optimization."""
         volume = data['volume']
         
+        # Use VectorBT for optimized rolling mean
+        if VECTORBT_AVAILABLE and len(volume) > 100:
+            try:
+                return rolling_mean(volume, window=self.period)
+            except Exception as e:
+                logger.warning(f"VectorBT rolling mean failed: {e}, using pandas fallback")
         # Use VectorBT for volume SMA calculation
         if VECTORBT_AVAILABLE:
             try:
@@ -285,15 +330,20 @@ class VolumeRatioGenerator(VectorizedFeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate Volume Ratio."""
+        """Generate Volume Ratio using VectorBT optimization."""
         volume = data['volume']
         
+        # Use VectorBT for optimized rolling mean
+        if VECTORBT_AVAILABLE and len(volume) > 100:
         # Use VectorBT for volume ratio calculation
         if VECTORBT_AVAILABLE:
             try:
                 avg_volume = rolling_mean(volume, window=self.period)
                 return volume / avg_volume.replace(0, 1)  # Avoid division by zero
             except Exception as e:
+                logger.warning(f"VectorBT rolling mean failed: {e}, using pandas fallback")
+                avg_volume = volume.rolling(window=self.period).mean()
+                return volume / avg_volume.replace(0, 1)
                 self.logger.warning(f"VectorBT volume ratio calculation failed: {e}, using pandas fallback")
                 avg_volume = volume.rolling(window=self.period).mean()
                 return volume / avg_volume.replace(0, 1)  # Avoid division by zero
@@ -394,9 +444,15 @@ class VolumeStdGenerator(VectorizedFeatureGenerator):
         if hasattr(self, 'optimize_dataframe_processing'):
             data = self.optimize_dataframe_processing(data)
 
-        """Generate Volume Standard Deviation."""
+        """Generate Volume Standard Deviation using VectorBT optimization."""
         volume = data['volume']
         
+        # Use VectorBT for optimized rolling std
+        if VECTORBT_AVAILABLE and len(volume) > 100:
+            try:
+                return rolling_std(volume, window=self.period)
+            except Exception as e:
+                logger.warning(f"VectorBT rolling std failed: {e}, using pandas fallback")
         # Use VectorBT for volume standard deviation calculation
         if VECTORBT_AVAILABLE:
             try:

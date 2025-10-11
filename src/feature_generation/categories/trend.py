@@ -10,6 +10,8 @@ Enhanced with VectorBT for maximum performance.
 
 import numpy as np
 import pandas as pd
+import warnings
+import logging
 from typing import Any, Dict, List, Optional, Union
 
 from ..core.feature_generator import FeatureGenerator, FeatureResult, VectorizedFeatureGenerator, FeatureConfig, FeatureCategory
@@ -62,6 +64,8 @@ except ImportError:
     BaseCalculationConfig,
     create_base_calculator
 )
+
+logger = logging.getLogger(__name__)
 
 class TrendFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for trend-based features."""
@@ -124,6 +128,18 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
         if len(prices) < period:
             return np.full(len(prices), np.nan)
 
+        # Use VectorBT for optimized rolling mean
+        if VECTORBT_AVAILABLE and len(prices) > 100:
+            try:
+                sma = rolling_mean(pd.Series(prices), window=period)
+                return sma.values
+            except Exception as e:
+                logger.warning(f"VectorBT SMA calculation failed: {e}, using pandas fallback")
+                sma = pd.Series(prices).rolling(window=period).mean()
+                return sma.values
+        else:
+            sma = pd.Series(prices).rolling(window=period).mean()
+            return sma.values
         prices_series = pd.Series(prices)
         
         # Use VectorBT if available and data is large enough
@@ -180,13 +196,36 @@ class TrendFeatureGenerator(VectorizedFeatureGenerator):
         dm_plus_series = pd.Series(dm_plus)
         dm_minus_series = pd.Series(dm_minus)
 
-        # Calculate Directional Indicators
-        di_plus = 100 * (dm_plus_series.rolling(period).mean() / tr_series.rolling(period).mean())
-        di_minus = 100 * (dm_minus_series.rolling(period).mean() / tr_series.rolling(period).mean())
+        # Calculate Directional Indicators using VectorBT optimization
+        if VECTORBT_AVAILABLE and len(dm_plus_series) > 100:
+            try:
+                dm_plus_mean = rolling_mean(dm_plus_series, window=period)
+                dm_minus_mean = rolling_mean(dm_minus_series, window=period)
+                tr_mean = rolling_mean(tr_series, window=period)
+            except Exception as e:
+                logger.warning(f"VectorBT ADX calculation failed: {e}, using pandas fallback")
+                dm_plus_mean = dm_plus_series.rolling(period).mean()
+                dm_minus_mean = dm_minus_series.rolling(period).mean()
+                tr_mean = tr_series.rolling(period).mean()
+        else:
+            dm_plus_mean = dm_plus_series.rolling(period).mean()
+            dm_minus_mean = dm_minus_series.rolling(period).mean()
+            tr_mean = tr_series.rolling(period).mean()
+        
+        di_plus = 100 * (dm_plus_mean / tr_mean)
+        di_minus = 100 * (dm_minus_mean / tr_mean)
 
         # Calculate ADX
         dx = 100 * np.abs(di_plus - di_minus) / (di_plus + di_minus)
-        adx = dx.rolling(period).mean()
+        
+        if VECTORBT_AVAILABLE and len(dx) > 100:
+            try:
+                adx = rolling_mean(pd.Series(dx), window=period)
+            except Exception as e:
+                logger.warning(f"VectorBT ADX rolling mean failed: {e}, using pandas fallback")
+                adx = pd.Series(dx).rolling(period).mean()
+        else:
+            adx = pd.Series(dx).rolling(period).mean()
 
         return adx.values
 
@@ -679,6 +718,17 @@ class SMAGenerator(VectorizedFeatureGenerator):
         # Calculate base values
         base_values = self.base_calculator.calculate(data)
         
+        # Calculate SMA on base values using VectorBT optimization
+        if VECTORBT_AVAILABLE and len(base_values) > 100:
+            try:
+                sma = rolling_mean(base_values, window=self.period)
+            except Exception as e:
+                logger.warning(f"VectorBT SMA calculation failed: {e}, using pandas fallback")
+                sma = base_values.rolling(window=self.period).mean()
+        else:
+            sma = base_values.rolling(window=self.period).mean()
+        
+        return sma
         # Use VectorBT for SMA calculation
         if VECTORBT_AVAILABLE:
             try:
@@ -1302,6 +1352,19 @@ class VWMAGenerator(VectorizedFeatureGenerator):
         base_values = self.base_calculator.calculate(data)
         volume = data['volume']
         
+        # Calculate VWMA using VectorBT optimization
+        if VECTORBT_AVAILABLE and len(base_values) > 100:
+            try:
+                numerator = rolling_sum(base_values * volume, window=self.period)
+                denominator = rolling_sum(volume, window=self.period)
+                vwma = numerator / denominator
+            except Exception as e:
+                logger.warning(f"VectorBT VWMA calculation failed: {e}, using pandas fallback")
+                vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
+        else:
+            vwma = (base_values * volume).rolling(window=self.period).sum() / volume.rolling(window=self.period).sum()
+        
+        return vwma
         # Use VectorBT for VWMA calculation
         if VECTORBT_AVAILABLE:
             try:
@@ -1399,6 +1462,27 @@ class KeltnerChannelsGenerator(VectorizedFeatureGenerator):
             high = data['high']
             low = data['low']
             
+            # Calculate EMA of close prices (middle line)
+            ema = close.ewm(span=self.period).mean()
+            
+            # Calculate ATR
+            tr1 = high - low
+            tr2 = abs(high - close.shift(1))
+            tr3 = abs(low - close.shift(1))
+            true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            # Use VectorBT for optimized ATR calculation
+            if VECTORBT_AVAILABLE and len(true_range) > 100:
+                try:
+                    atr = rolling_mean(true_range, window=self.atr_period)
+                except Exception as e:
+                    logger.warning(f"VectorBT ATR calculation failed: {e}, using pandas fallback")
+                    atr = true_range.rolling(window=self.atr_period).mean()
+            else:
+                atr = true_range.rolling(window=self.atr_period).mean()
+            
+            # Return middle line (EMA) as the main feature
+            # Upper and lower bands would be: ema ± (multiplier * atr)
+            return ema
             # Use VectorBT for Keltner Channels calculation
             if VECTORBT_AVAILABLE:
                 try:

@@ -10,6 +10,7 @@ Enhanced with VectorBT for maximum performance.
 
 import numpy as np
 import pandas as pd
+import warnings
 import logging
 from typing import Any, Dict, List, Optional, Union
 
@@ -62,6 +63,8 @@ except ImportError:
     BaseCalculationConfig,
     create_base_calculator
 )
+
+logger = logging.getLogger(__name__)
 
 class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for volatility-based features with batch processing and optimization."""
@@ -134,7 +137,7 @@ class VolatilityFeatureGenerator(VectorizedFeatureGenerator):
                 volatility = self._vectorbt_rolling_operation(returns_series, 'std', period-1)
                 self.performance_stats['vectorbt_operations'] += 1
             except Exception as e:
-                self.logger.warning(f"VectorBT volatility calculation failed: {e}, using pandas fallback")
+                logger.warning(f"VectorBT volatility calculation failed: {e}, using pandas fallback")
                 volatility = returns_series.rolling(window=period-1).std()
                 self.performance_stats['pandas_fallbacks'] += 1
         else:

@@ -19,31 +19,26 @@ try:
 except ImportError:
     OPTIMIZATION_AVAILABLE = False
 from ..base_calculations import (
+    BaseCalculationType,
+    create_base_calculator
+)
 
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    from vectorbt.indicators.basic import RSI, MACD, ATR, BBANDS, STOCH, OBV, MA
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
+    RSI = None
+    MACD = None
+    ATR = None
+    BBANDS = None
+    STOCH = None
+    OBV = None
+    MA = None
+    import warnings
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 # Optional GPU acceleration
@@ -53,11 +48,6 @@ try:
 except ImportError:
     CUPY_AVAILABLE = False
     cp = None
-    BaseCalculator,
-    BaseCalculationType,
-    BaseCalculationConfig,
-    create_base_calculator
-)
 
 class ReturnsFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for return-based features."""

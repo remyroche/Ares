@@ -46,6 +46,30 @@ except ImportError:
     CUPY_AVAILABLE = False
     cp = None
 
+# Import VectorBT-optimized order flow generators
+try:
+    from .vectorbt_order_flow import (
+        create_vectorbt_order_flow_generators,
+        create_default_vectorbt_order_flow_generators,
+        VectorBTTakerBuyRatioGenerator,
+        VectorBTTakerSellRatioGenerator,
+        VectorBTMarketAggressionIndexGenerator,
+        VectorBTOrderFlowImbalanceGenerator,
+        VectorBTBidAskImbalanceGenerator,
+        VectorBTMarketOrderFlowGenerator,
+        VectorBTVolumeWeightedOrderFlowGenerator,
+        VectorBTOrderFlowMomentumGenerator,
+        VectorBTOrderFlowVolatilityGenerator,
+        VectorBTOrderFlowTrendStrengthGenerator,
+        VectorBTOrderFlowConsistencyGenerator,
+        VectorBTOrderFlowAccelerationGenerator,
+        VectorBTOrderFlowJerkGenerator,
+        VectorBTOrderFlowRegimeGenerator
+    )
+    VECTORBT_ORDER_FLOW_AVAILABLE = True
+except ImportError:
+    VECTORBT_ORDER_FLOW_AVAILABLE = False
+
 class TakerBuyRatioGenerator(VectorizedFeatureGenerator):
     def __init__(self, window: int = 20):
         config = FeatureConfig(
@@ -216,19 +240,26 @@ class OrderFlowImbalanceGenerator(FeatureGenerator):
 
 def create_default_order_flow_generators() -> List[FeatureGenerator]:
     generators = []
-    windows = [5, 10, 20]
     
-    for window in windows:
-        generators.extend([
-            TakerBuyRatioGenerator(window),
-            TakerSellRatioGenerator(window),
-            MarketAggressionIndexGenerator(window),
-            OrderFlowImbalanceGenerator(window),
-        ])
+    # Use VectorBT generators if available, otherwise fall back to legacy generators
+    if VECTORBT_ORDER_FLOW_AVAILABLE and VECTORBT_AVAILABLE:
+        # Use VectorBT-optimized generators
+        generators.extend(create_default_vectorbt_order_flow_generators())
+    else:
+        # Fall back to legacy generators
+        windows = [5, 10, 20]
+        
+        for window in windows:
+            generators.extend([
+                TakerBuyRatioGenerator(window),
+                TakerSellRatioGenerator(window),
+                MarketAggressionIndexGenerator(window),
+                OrderFlowImbalanceGenerator(window),
+            ])
 
-    # Analyst Features - Order flow
-    generators.append(AnalystBidAskImbalanceGenerator())
-    generators.append(AnalystMarketOrderFlowGenerator())
+        # Analyst Features - Order flow
+        generators.append(AnalystBidAskImbalanceGenerator())
+        generators.append(AnalystMarketOrderFlowGenerator())
 
     return generators
 

@@ -8,6 +8,7 @@ feature generators, including price returns and returns-based VWAP calculations.
 import logging
 import numpy as np
 import pandas as pd
+import warnings
 from typing import Any, Dict, List, Optional, Union, Literal
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -16,27 +17,18 @@ from enum import Enum
 # VectorBT imports for native optimization
 try:
     import vectorbt as vbt
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
+    from vectorbt.indicators.basic import RSI, MACD, ATR, BBANDS, STOCH, OBV, MA
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False
     vbt = None
-    rolling_mean = None
-    rolling_std = None
-    rolling_var = None
-    rolling_min = None
-    rolling_max = None
-    rolling_sum = None
-    rolling_apply = None
-    rolling_corr = None
-    rolling_cov = None
-    scale = None
-    rank = None
-    zscore = None
-    winsorize = None
-    clip = None
-    quantile = None
+    RSI = None
+    MACD = None
+    ATR = None
+    BBANDS = None
+    STOCH = None
+    OBV = None
+    MA = None
     warnings.warn("VectorBT not available. Install with: pip install vectorbt for optimized performance")
 
 # Optional GPU acceleration

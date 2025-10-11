@@ -182,8 +182,8 @@ class InteractiveFeatureGenerationConfig:
     
     # Early filtering settings
     downsample_ratio: float = 0.1
-    variance_threshold: float = 1e-8  # FIXED: More lenient threshold to prevent over-filtering
-    top_k_per_family: int = 50  # FIXED: Increased to allow more features per family
+    variance_threshold: float = 1e-6  # FIXED: More reasonable threshold to prevent over-filtering
+    top_k_per_family: int = 10  # FIXED: Reduced to prevent memory issues and improve performance
     
     # Interaction pruning settings
     max_interactions_per_domain: int = 6
@@ -751,8 +751,8 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
             )
     
     def _validate_inputs(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any]) -> None:
-        """Validate input data and pipeline state."""
-        tprint_debug("🔍 Validating inputs...")
+        """Validate input data and pipeline state with comprehensive checks."""
+        tprint_debug("🔍 Validating inputs with comprehensive checks...")
 
         if not training_input:
             raise ValueError("No training input provided")
@@ -777,16 +777,79 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
         if not isinstance(validation_frame, pd.DataFrame):
             raise ValueError("Data must be a pandas DataFrame")
 
-        if len(validation_frame) < 100:
-            raise ValueError(f"Insufficient data: {len(validation_frame)} < 100 rows")
+        # CRITICAL: Comprehensive data validation
+        self._validate_data_comprehensive(validation_frame)
 
+        tprint_debug("✅ Comprehensive input validation passed")
+
+    def _validate_data_comprehensive(self, data: pd.DataFrame) -> None:
+        """Comprehensive data validation with fast-fail on issues."""
+        tprint_debug("🔍 Running comprehensive data validation...")
+        
+        # Check if data is empty
+        if data.empty:
+            raise ValueError("CRITICAL: Input data is empty - cannot generate features")
+        
+        # Check data size
+        if len(data) < 100:
+            raise ValueError(f"CRITICAL: Insufficient data: {len(data)} < 100 rows (minimum required)")
+        
+        # Check for all-NaN data
+        if data.isnull().all().all():
+            raise ValueError("CRITICAL: All data is NaN - cannot generate features")
+        
+        # Check for excessive NaN values
+        nan_ratio = data.isnull().sum().sum() / (len(data) * len(data.columns))
+        if nan_ratio > 0.5:
+            raise ValueError(f"CRITICAL: Too many NaN values: {nan_ratio:.1%} > 50%")
+        
         # Check required columns
         required_columns = ['open', 'high', 'low', 'close', 'volume']
-        missing_columns = set(required_columns) - set(validation_frame.columns)
+        missing_columns = set(required_columns) - set(data.columns)
         if missing_columns:
-            raise ValueError(f"Missing required columns: {missing_columns}")
+            raise ValueError(f"CRITICAL: Missing required columns: {missing_columns}")
+        
+        # Validate OHLC data integrity
+        self._validate_ohlc_integrity(data)
+        
+        # Check for constant features (all same values)
+        constant_cols = data.nunique() <= 1
+        if constant_cols.any():
+            constant_col_names = data.columns[constant_cols].tolist()
+            tprint_warning(f"⚠️ Found constant columns: {constant_col_names}")
+        
+        # Check for infinite values
+        numeric_data = data.select_dtypes(include=[np.number])
+        if not numeric_data.empty:
+            inf_count = np.isinf(numeric_data).sum().sum()
+            if inf_count > 0:
+                raise ValueError(f"CRITICAL: Found {inf_count} infinite values in numeric data")
+        
+        tprint_debug("✅ Comprehensive data validation passed")
 
-        tprint_debug("✅ Input validation passed")
+    def _validate_ohlc_integrity(self, data: pd.DataFrame) -> None:
+        """Validate OHLC data integrity."""
+        if not all(col in data.columns for col in ['open', 'high', 'low', 'close']):
+            return  # Skip if not OHLC data
+        
+        # Check for negative prices
+        price_cols = ['open', 'high', 'low', 'close']
+        for col in price_cols:
+            if (data[col] <= 0).any():
+                raise ValueError(f"CRITICAL: Found non-positive values in {col} column")
+        
+        # Check OHLC relationships
+        invalid_high = data['high'] < data[['open', 'close']].max(axis=1)
+        if invalid_high.any():
+            raise ValueError(f"CRITICAL: Found {invalid_high.sum()} rows where high < max(open, close)")
+        
+        invalid_low = data['low'] > data[['open', 'close']].min(axis=1)
+        if invalid_low.any():
+            raise ValueError(f"CRITICAL: Found {invalid_low.sum()} rows where low > min(open, close)")
+        
+        # Check volume
+        if 'volume' in data.columns and (data['volume'] < 0).any():
+            raise ValueError("CRITICAL: Found negative volume values")
 
     def _ensure_training_input(
         self,
@@ -1208,15 +1271,11 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
         # Ensure features is a DataFrame (even if empty) for validation
         features_df = result.features if isinstance(result.features, pd.DataFrame) else pd.DataFrame()
         
-        # FIXED: If features is empty, create a placeholder DataFrame with at least an index
-        # to satisfy validation requirements
+        # CRITICAL FIX: Fail fast if no features generated - this indicates a broken pipeline
         if features_df.empty or len(features_df.columns) == 0:
-            # Create minimal DataFrame with time index if available
-            if hasattr(result, 'metadata') and 'data_length' in result.metadata:
-                features_df = pd.DataFrame(index=range(result.metadata['data_length']))
-            else:
-                features_df = pd.DataFrame({'placeholder': [0]})  # Minimal valid DataFrame
-            tprint_warning(f"⚠️ Creating placeholder DataFrame for validation (0 features generated)")
+            error_msg = "CRITICAL: No features generated - this indicates a broken feature generation pipeline"
+            tprint_error(f"❌ {error_msg}")
+            raise RuntimeError(error_msg)
         
         artifact_payload = {
             'features': features_df,
@@ -1341,6 +1400,10 @@ class InteractiveFeatureGenerationComponent(BasePreTrainingComponent):
         
         # Clear performance metrics
         self.performance_metrics.clear()
+        
+        # Force garbage collection
+        import gc
+        gc.collect()
         
         tprint_debug("✅ Cleanup completed")
 

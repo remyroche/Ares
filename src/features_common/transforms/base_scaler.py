@@ -29,6 +29,16 @@ try:
 except ImportError:
     MATH_VALIDATION_AVAILABLE = False
 
+# Import VectorBT scaler
+try:
+    from .vectorbt_scaler import VectorBTScaler, VectorBTBatchScaler, VECTORBT_AVAILABLE
+    VECTORBT_SCALER_AVAILABLE = True
+except ImportError:
+    VECTORBT_SCALER_AVAILABLE = False
+    VectorBTScaler = None
+    VectorBTBatchScaler = None
+    VECTORBT_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -288,3 +298,81 @@ class SimpleScaler(BaseScaler):
         self.mean = state.get('mean')
         self.std = state.get('std')
         self.fitted = state.get('fitted', False)
+
+
+def create_optimized_scaler(method: str = 'zscore', use_vectorbt: bool = True, **kwargs) -> BaseScaler:
+    """
+    Create the best available scaler (VectorBT if available, otherwise fallback).
+    
+    Args:
+        method: Scaling method ('zscore', 'minmax', 'robust', etc.)
+        use_vectorbt: Whether to prefer VectorBT scaler when available
+        **kwargs: Additional parameters for the scaler
+        
+    Returns:
+        Best available scaler instance
+    """
+    if use_vectorbt and VECTORBT_SCALER_AVAILABLE and VECTORBT_AVAILABLE:
+        try:
+            return VectorBTScaler(method, **kwargs)
+        except Exception as e:
+            logger.warning(f"Failed to create VectorBT scaler: {e}, using fallback")
+    
+    # Fallback to simple scaler
+    if method == 'zscore':
+        return SimpleScaler()
+    else:
+        # For other methods, use VectorBT scaler as fallback if available
+        if VECTORBT_SCALER_AVAILABLE and VECTORBT_AVAILABLE:
+            try:
+                return VectorBTScaler(method, **kwargs)
+            except Exception as e:
+                logger.warning(f"Failed to create VectorBT scaler for {method}: {e}")
+        
+        # Ultimate fallback to simple scaler
+        return SimpleScaler()
+
+
+def create_optimized_batch_scaler(method: str = 'zscore', use_vectorbt: bool = True, **kwargs):
+    """
+    Create the best available batch scaler (VectorBT if available, otherwise fallback).
+    
+    Args:
+        method: Scaling method
+        use_vectorbt: Whether to prefer VectorBT scaler when available
+        **kwargs: Additional parameters for the scaler
+        
+    Returns:
+        Best available batch scaler instance
+    """
+    if use_vectorbt and VECTORBT_SCALER_AVAILABLE and VECTORBT_AVAILABLE:
+        try:
+            return VectorBTBatchScaler(method, **kwargs)
+        except Exception as e:
+            logger.warning(f"Failed to create VectorBT batch scaler: {e}, using fallback")
+    
+    # Fallback: create individual scalers for each column
+    class FallbackBatchScaler:
+        def __init__(self, method: str = 'zscore', **kwargs):
+            self.method = method
+            self.kwargs = kwargs
+            self.scalers = {}
+        
+        def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
+            result = data.copy()
+            for col in data.columns:
+                scaler = create_optimized_scaler(self.method, **self.kwargs)
+                result[col] = scaler.fit_transform(data[col])
+                self.scalers[col] = scaler
+            return result
+        
+        def transform(self, data: pd.DataFrame) -> pd.DataFrame:
+            result = data.copy()
+            for col in data.columns:
+                if col in self.scalers:
+                    result[col] = self.scalers[col].transform(data[col])
+                else:
+                    result[col] = data[col]
+            return result
+    
+    return FallbackBatchScaler(method, **kwargs)

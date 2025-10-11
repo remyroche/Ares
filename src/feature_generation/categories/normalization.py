@@ -191,8 +191,8 @@ class NormalizationFeatureGenerator(FeatureGenerator):
 
                         elif method == "quantile":
                             # Quantile normalization
-                            rolling_q25 = values.rolling(window=window).quantile(0.25)
-                            rolling_q75 = values.rolling(window=window).quantile(0.75)
+                            rolling_q25 = self._calculate_rolling_quantile_vectorized(values, window, 0.25)
+                            rolling_q75 = self._calculate_rolling_quantile_vectorized(values, window, 0.75)
                             quantile_norm = (values - rolling_q25) / (rolling_q75 - rolling_q25 + 1e-8)
                             features[f"quantile_{column}_{window}"] = quantile_norm.fillna(0).values
 
@@ -776,16 +776,16 @@ class MinMaxScaler(BaseScaler):
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
-            return data.rolling(window=window).mean()
+            return self._calculate_sma_vectorized(data, window)
         elif operation == 'std':
-            return data.rolling(window=window).std()
+            return self._calculate_rolling_std_vectorized(data, window)
         elif operation == 'var':
             return data.rolling(window=window).var()
         elif operation == 'min':
-            return data.rolling(window=window).min()
+            return self._calculate_rolling_min_vectorized(data, window)
         elif operation == 'max':
-            return data.rolling(window=window).max()
+            return self._calculate_rolling_max_vectorized(data, window)
         elif operation == 'sum':
-            return data.rolling(window=window).sum()
+            return self._calculate_rolling_sum_vectorized(data, window)
         else:
             raise ValueError(f"Unsupported operation: {operation}")

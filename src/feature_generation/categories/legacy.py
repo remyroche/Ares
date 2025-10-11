@@ -127,9 +127,9 @@ class LegacyRSIGenerator(VectorizedFeatureGenerator):
         return rsi
     
     def _rolling_mean_vectorized(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling mean using vectorized numpy operations."""
-        if len(data) < window:
-            return np.full(len(data), np.nan)
+        """Calculate rolling mean using centralized method."""
+        series = pd.Series(data)
+        return self._calculate_sma_vectorized(series, window).values
         
         # Use numpy's cumsum for efficient rolling mean calculation
         cumsum = np.cumsum(data)
@@ -202,9 +202,9 @@ class LegacyRSIGenerator(VectorizedFeatureGenerator):
         return macd
     
     def _calculate_ema_vectorized(self, prices: np.ndarray, span: int) -> np.ndarray:
-        """Calculate EMA using vectorized numpy operations."""
-        if len(prices) < span:
-            return np.full(len(prices), np.nan)
+        """Calculate EMA using centralized method."""
+        series = pd.Series(prices)
+        return self._calculate_ema_vectorized(series, span).values
         
         # Calculate alpha (smoothing factor)
         alpha = 2.0 / (span + 1.0)
@@ -278,9 +278,9 @@ class LegacyRSIGenerator(VectorizedFeatureGenerator):
         return upper_band
     
     def _rolling_mean_vectorized(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling mean using vectorized numpy operations."""
-        if len(data) < window:
-            return np.full(len(data), np.nan)
+        """Calculate rolling mean using centralized method."""
+        series = pd.Series(data)
+        return self._calculate_sma_vectorized(series, window).values
         
         # Use numpy's cumsum for efficient rolling mean calculation
         cumsum = np.cumsum(data)
@@ -296,9 +296,9 @@ class LegacyRSIGenerator(VectorizedFeatureGenerator):
         return rolling_mean
     
     def _rolling_std_vectorized(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling standard deviation using vectorized numpy operations."""
-        if len(data) < window:
-            return np.full(len(data), np.nan)
+        """Calculate rolling std using centralized method."""
+        series = pd.Series(data)
+        return self._calculate_rolling_std_vectorized(series, window).values
         
         rolling_std = np.full(len(data), np.nan)
         
@@ -350,9 +350,9 @@ class LegacyRSIGenerator(VectorizedFeatureGenerator):
         return pd.Series(sma, index=close.index, name=f'legacy_sma_{self.period}')
     
     def _rolling_mean_vectorized(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling mean using vectorized numpy operations."""
-        if len(data) < window:
-            return np.full(len(data), np.nan)
+        """Calculate rolling mean using centralized method."""
+        series = pd.Series(data)
+        return self._calculate_sma_vectorized(series, window).values
         
         # Use numpy's cumsum for efficient rolling mean calculation
         cumsum = np.cumsum(data)
@@ -409,9 +409,9 @@ class LegacyRSIGenerator(VectorizedFeatureGenerator):
         return pd.Series(ema, index=close.index, name=f'legacy_ema_{self.period}')
     
     def _calculate_ema_vectorized(self, prices: np.ndarray, span: int) -> np.ndarray:
-        """Calculate EMA using vectorized numpy operations."""
-        if len(prices) < span:
-            return np.full(len(prices), np.nan)
+        """Calculate EMA using centralized method."""
+        series = pd.Series(prices)
+        return self._calculate_ema_vectorized(series, span).values
         
         # Calculate alpha (smoothing factor)
         alpha = 2.0 / (span + 1.0)
@@ -493,9 +493,9 @@ class LegacyRSIGenerator(VectorizedFeatureGenerator):
         return atr
     
     def _rolling_mean_vectorized(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling mean using vectorized numpy operations."""
-        if len(data) < window:
-            return np.full(len(data), np.nan)
+        """Calculate rolling mean using centralized method."""
+        series = pd.Series(data)
+        return self._calculate_sma_vectorized(series, window).values
         
         # Use numpy's cumsum for efficient rolling mean calculation
         cumsum = np.cumsum(data)
@@ -574,9 +574,9 @@ class LegacyRSIGenerator(VectorizedFeatureGenerator):
         return k_percent
     
     def _rolling_min_vectorized(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling minimum using vectorized numpy operations."""
-        if len(data) < window:
-            return np.full(len(data), np.nan)
+        """Calculate rolling min using centralized method."""
+        series = pd.Series(data)
+        return self._calculate_rolling_min_vectorized(series, window).values
         
         rolling_min = np.full(len(data), np.nan)
         
@@ -586,9 +586,9 @@ class LegacyRSIGenerator(VectorizedFeatureGenerator):
         return rolling_min
     
     def _rolling_max_vectorized(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling maximum using vectorized numpy operations."""
-        if len(data) < window:
-            return np.full(len(data), np.nan)
+        """Calculate rolling max using centralized method."""
+        series = pd.Series(data)
+        return self._calculate_rolling_max_vectorized(series, window).values
         
         rolling_max = np.full(len(data), np.nan)
         
@@ -660,9 +660,9 @@ class LegacyRSIGenerator(VectorizedFeatureGenerator):
         return williams_r
     
     def _rolling_min_vectorized(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling minimum using vectorized numpy operations."""
-        if len(data) < window:
-            return np.full(len(data), np.nan)
+        """Calculate rolling min using centralized method."""
+        series = pd.Series(data)
+        return self._calculate_rolling_min_vectorized(series, window).values
         
         rolling_min = np.full(len(data), np.nan)
         
@@ -672,9 +672,9 @@ class LegacyRSIGenerator(VectorizedFeatureGenerator):
         return rolling_min
     
     def _rolling_max_vectorized(self, data: np.ndarray, window: int) -> np.ndarray:
-        """Calculate rolling maximum using vectorized numpy operations."""
-        if len(data) < window:
-            return np.full(len(data), np.nan)
+        """Calculate rolling max using centralized method."""
+        series = pd.Series(data)
+        return self._calculate_rolling_max_vectorized(series, window).values
         
         rolling_max = np.full(len(data), np.nan)
         
@@ -712,7 +712,7 @@ class LegacyRSIGenerator(VectorizedFeatureGenerator):
         """Calculate OBV using VectorBT optimized operations."""
         try:
             # Use VectorBT OBV if available
-            obv_result = vbt.OBV.run(close, volume)
+            obv_result = self._calculate_obv_vectorized(close, volume)
             return obv_result.obv.rename('legacy_obv')
         except Exception as e:
             # Fallback to pandas implementation

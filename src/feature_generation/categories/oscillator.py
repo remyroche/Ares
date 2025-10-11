@@ -696,11 +696,11 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
                 except Exception as e:
                     self.logger.warning(f"VectorBT SAR base calculation failed: {e}, using pandas fallback")
                     # For other base calculations, use rolling mean as proxy
-                    sar = base_values.rolling(window=20).mean()
+                    sar = self._calculate_sma_vectorized(base_values, 20)
                     return sar
             else:
                 # For other base calculations, use rolling mean as proxy
-                sar = base_values.rolling(window=20).mean()
+                sar = self._calculate_sma_vectorized(base_values, 20)
                 return sar
 
 # Ultimate Oscillatorclass UltimateOscillatorGenerator(VectorizedFeatureGenerator):
@@ -1456,16 +1456,16 @@ def create_default_oscillator_generators() -> List[FeatureGenerator]:
                                  window: int, **kwargs) -> pd.Series:
         """Fallback rolling operation using pandas."""
         if operation == 'mean':
-            return data.rolling(window=window).mean()
+            return self._calculate_sma_vectorized(data, window)
         elif operation == 'std':
-            return data.rolling(window=window).std()
+            return self._calculate_rolling_std_vectorized(data, window)
         elif operation == 'var':
             return data.rolling(window=window).var()
         elif operation == 'min':
-            return data.rolling(window=window).min()
+            return self._calculate_rolling_min_vectorized(data, window)
         elif operation == 'max':
-            return data.rolling(window=window).max()
+            return self._calculate_rolling_max_vectorized(data, window)
         elif operation == 'sum':
-            return data.rolling(window=window).sum()
+            return self._calculate_rolling_sum_vectorized(data, window)
         else:
             raise ValueError(f"Unsupported operation: {operation}")

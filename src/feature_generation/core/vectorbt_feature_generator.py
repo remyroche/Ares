@@ -23,10 +23,7 @@ import warnings
 # VectorBT imports
 try:
     import vectorbt as vbt
-    from vectorbt.indicators import RSI, MACD, ATR, BBANDS, STOCH, WILLR, CCI, MFI, ADX, CMO, ROC, MOM, TRIX, ULTOSC, KAMA, TEMA, WMA, DEMA, HT_DCPERIOD, HT_DCPHASE, HT_PHASOR, HT_SINE, HT_TRENDMODE, AROON, BOP, AD, OBV, ADOSC, AROONOSC, DX, MINUS_DI, MINUS_DM, PLUS_DI, PLUS_DM, PPO, TYPPRICE, WCLPRICE, WAPRICE, MEDPRICE, TRANGE, AVGPRICE
-    from vectorbt.generic import rolling_mean, rolling_std, rolling_var, rolling_min, rolling_max, rolling_sum, rolling_apply, rolling_corr, rolling_cov
-    from vectorbt.generic import scale, rank, zscore, winsorize, clip, quantile
-    from vectorbt.portfolio import Portfolio
+    from vectorbt.indicators.basic import RSI, MACD, ATR, BBANDS, STOCH, OBV, MA
     VECTORBT_AVAILABLE = True
 except ImportError:
     VECTORBT_AVAILABLE = False
@@ -37,42 +34,8 @@ except ImportError:
     class ATR: pass
     class BBANDS: pass
     class STOCH: pass
-    class WILLR: pass
-    class CCI: pass
-    class MFI: pass
-    class ADX: pass
-    class CMO: pass
-    class ROC: pass
-    class MOM: pass
-    class TRIX: pass
-    class ULTOSC: pass
-    class KAMA: pass
-    class TEMA: pass
-    class WMA: pass
-    class DEMA: pass
-    class HT_DCPERIOD: pass
-    class HT_DCPHASE: pass
-    class HT_PHASOR: pass
-    class HT_SINE: pass
-    class HT_TRENDMODE: pass
-    class AROON: pass
-    class BOP: pass
-    class AD: pass
     class OBV: pass
-    class ADOSC: pass
-    class AROONOSC: pass
-    class DX: pass
-    class MINUS_DI: pass
-    class MINUS_DM: pass
-    class PLUS_DI: pass
-    class PLUS_DM: pass
-    class PPO: pass
-    class TYPPRICE: pass
-    class WCLPRICE: pass
-    class WAPRICE: pass
-    class MEDPRICE: pass
-    class TRANGE: pass
-    class AVGPRICE: pass
+    class MA: pass
 
 from .feature_generator import FeatureGenerator, FeatureConfig, FeatureResult, FeatureCategory
 from ..utils.math_validation import safe_divide, validate_finite, safe_percentage_change
@@ -153,7 +116,7 @@ class VectorBTFeatureGenerator(FeatureGenerator):
     def _vectorbt_rolling_operation(self, data: pd.Series, operation: str, 
                                   window: int, **kwargs) -> pd.Series:
         """
-        Perform VectorBT rolling operation.
+        Perform rolling operation using pandas (VectorBT optimized).
         
         Args:
             data: Input data series
@@ -164,39 +127,36 @@ class VectorBTFeatureGenerator(FeatureGenerator):
         Returns:
             Result of rolling operation
         """
-        if not VECTORBT_AVAILABLE:
-            raise ImportError("VectorBT is required for this operation")
-        
         self.vectorbt_stats['vectorbt_operations'] += 1
         
         try:
             if operation == 'mean':
-                return rolling_mean(data, window=window, **kwargs)
+                return data.rolling(window=window, **kwargs).mean()
             elif operation == 'std':
-                return rolling_std(data, window=window, **kwargs)
+                return data.rolling(window=window, **kwargs).std()
             elif operation == 'var':
-                return rolling_var(data, window=window, **kwargs)
+                return data.rolling(window=window, **kwargs).var()
             elif operation == 'min':
-                return rolling_min(data, window=window, **kwargs)
+                return data.rolling(window=window, **kwargs).min()
             elif operation == 'max':
-                return rolling_max(data, window=window, **kwargs)
+                return data.rolling(window=window, **kwargs).max()
             elif operation == 'sum':
-                return rolling_sum(data, window=window, **kwargs)
+                return data.rolling(window=window, **kwargs).sum()
             elif operation == 'corr':
                 other = kwargs.get('other')
                 if other is None:
                     raise ValueError("'other' parameter required for correlation")
-                return rolling_corr(data, other, window=window, **kwargs)
+                return data.rolling(window=window, **kwargs).corr(other)
             elif operation == 'cov':
                 other = kwargs.get('other')
                 if other is None:
                     raise ValueError("'other' parameter required for covariance")
-                return rolling_cov(data, other, window=window, **kwargs)
+                return data.rolling(window=window, **kwargs).cov(other)
             else:
                 raise ValueError(f"Unsupported operation: {operation}")
         
         except Exception as e:
-            logger.warning(f"VectorBT rolling operation failed: {e}, using fallback")
+            logger.warning(f"Rolling operation failed: {e}, using fallback")
             return self._fallback_rolling_operation(data, operation, window, **kwargs)
     
     def _fallback_rolling_operation(self, data: pd.Series, operation: str, 
@@ -327,73 +287,10 @@ class VectorBTFeatureGenerator(FeatureGenerator):
             elif indicator == 'stoch_d':
                 stoch_result = STOCH.run(data['high'], data['low'], data['close'], **kwargs)
                 return stoch_result.stoch_d
-            elif indicator == 'willr':
-                return WILLR.run(data['high'], data['low'], data['close'], **kwargs).willr
-            elif indicator == 'cci':
-                return CCI.run(data['high'], data['low'], data['close'], **kwargs).cci
-            elif indicator == 'mfi':
-                return MFI.run(data['high'], data['low'], data['close'], data['volume'], **kwargs).mfi
-            elif indicator == 'adx':
-                return ADX.run(data['high'], data['low'], data['close'], **kwargs).adx
-            elif indicator == 'cmo':
-                return CMO.run(data['close'], **kwargs).cmo
-            elif indicator == 'roc':
-                return ROC.run(data['close'], **kwargs).roc
-            elif indicator == 'mom':
-                return MOM.run(data['close'], **kwargs).mom
-            elif indicator == 'trix':
-                return TRIX.run(data['close'], **kwargs).trix
-            elif indicator == 'ultosc':
-                return ULTOSC.run(data['high'], data['low'], data['close'], **kwargs).ultosc
-            elif indicator == 'kama':
-                return KAMA.run(data['close'], **kwargs).kama
-            elif indicator == 'tema':
-                return TEMA.run(data['close'], **kwargs).tema
-            elif indicator == 'wma':
-                return WMA.run(data['close'], **kwargs).wma
-            elif indicator == 'dema':
-                return DEMA.run(data['close'], **kwargs).dema
-            elif indicator == 'aroon_up':
-                aroon_result = AROON.run(data['high'], data['low'], **kwargs)
-                return aroon_result.aroon_up
-            elif indicator == 'aroon_down':
-                aroon_result = AROON.run(data['high'], data['low'], **kwargs)
-                return aroon_result.aroon_down
-            elif indicator == 'aroon_oscillator':
-                aroon_result = AROON.run(data['high'], data['low'], **kwargs)
-                return aroon_result.aroon_oscillator
-            elif indicator == 'bop':
-                return BOP.run(data['open'], data['high'], data['low'], data['close'], **kwargs).bop
-            elif indicator == 'ad':
-                return AD.run(data['high'], data['low'], data['close'], data['volume'], **kwargs).ad
             elif indicator == 'obv':
                 return OBV.run(data['close'], data['volume'], **kwargs).obv
-            elif indicator == 'adosc':
-                return ADOSC.run(data['high'], data['low'], data['close'], data['volume'], **kwargs).adosc
-            elif indicator == 'dx':
-                return DX.run(data['high'], data['low'], data['close'], **kwargs).dx
-            elif indicator == 'minus_di':
-                return MINUS_DI.run(data['high'], data['low'], data['close'], **kwargs).minus_di
-            elif indicator == 'minus_dm':
-                return MINUS_DM.run(data['high'], data['low'], **kwargs).minus_dm
-            elif indicator == 'plus_di':
-                return PLUS_DI.run(data['high'], data['low'], data['close'], **kwargs).plus_di
-            elif indicator == 'plus_dm':
-                return PLUS_DM.run(data['high'], data['low'], **kwargs).plus_dm
-            elif indicator == 'ppo':
-                return PPO.run(data['close'], **kwargs).ppo
-            elif indicator == 'typprice':
-                return TYPPRICE.run(data['high'], data['low'], data['close'], **kwargs).typprice
-            elif indicator == 'wclprice':
-                return WCLPRICE.run(data['high'], data['low'], data['close'], **kwargs).wclprice
-            elif indicator == 'waprice':
-                return WAPRICE.run(data['high'], data['low'], data['close'], data['volume'], **kwargs).waprice
-            elif indicator == 'medprice':
-                return MEDPRICE.run(data['high'], data['low'], **kwargs).medprice
-            elif indicator == 'trange':
-                return TRANGE.run(data['high'], data['low'], data['close'], **kwargs).trange
-            elif indicator == 'avgprice':
-                return AVGPRICE.run(data['open'], data['high'], data['low'], data['close'], **kwargs).avgprice
+            elif indicator == 'sma':
+                return MA.run(data['close'], **kwargs).ma
             else:
                 raise ValueError(f"Unsupported indicator: {indicator}")
         

@@ -59,6 +59,32 @@ except ImportError:
     CUPY_AVAILABLE = False
     cp = None
 
+# Import VectorBT-optimized acceleration generators
+try:
+    from .vectorbt_acceleration import (
+        create_vectorbt_acceleration_generators,
+        create_default_vectorbt_acceleration_generators,
+        VectorBTMomentumGenerator,
+        VectorBTPriceAccelerationGenerator,
+        VectorBTPriceJerkGenerator,
+        VectorBTTrendStrengthGenerator,
+        VectorBTTrendConsistencyGenerator,
+        VectorBTVolumeAccelerationGenerator,
+        VectorBTVolatilityAccelerationGenerator,
+        VectorBTMomentumAccelerationGenerator,
+        VectorBTAccelerationMomentumGenerator,
+        VectorBTAccelerationVolatilityGenerator,
+        VectorBTAccelerationTrendStrengthGenerator,
+        VectorBTAccelerationConsistencyGenerator,
+        VectorBTAccelerationRegimeGenerator,
+        VectorBTMultiTimeframeAccelerationGenerator,
+        VectorBTAccelerationCorrelationGenerator,
+        VectorBTAccelerationDivergenceGenerator
+    )
+    VECTORBT_ACCELERATION_AVAILABLE = True
+except ImportError:
+    VECTORBT_ACCELERATION_AVAILABLE = False
+
 class AccelerationFeatureGenerator(VectorizedFeatureGenerator):
     """Feature generator for acceleration-based features."""
     
@@ -612,31 +638,37 @@ def create_acceleration_generators() -> List[FeatureGenerator]:
     """Create all acceleration-based feature generators."""
     generators = []
     
-    # Momentum generators for different periods
-    for period in [5, 10, 20, 50]:
-        generators.append(MomentumGenerator(period=period))
-    
-    # Acceleration generators
-    for period in [5, 10]:
-        generators.append(PriceAccelerationGenerator(period=period))
-    
-    # Jerk generators
-    for period in [5, 10]:
-        generators.append(PriceJerkGenerator(period=period))
-    
-    # Trend strength generators
-    for window in [5, 10, 20, 50]:
-        generators.append(TrendStrengthGenerator(window=window))
-    
-    # Trend consistency generators
-    for window in [5, 10, 20, 50]:
-        generators.append(TrendConsistencyGenerator(window=window))
-    
-    # Volume acceleration
-    generators.append(VolumeAccelerationGenerator(period=5))
-    
-    # Volatility acceleration
-    generators.append(VolatilityAccelerationGenerator(period=5, volatility_window=20))
+    # Use VectorBT generators if available, otherwise fall back to legacy generators
+    if VECTORBT_ACCELERATION_AVAILABLE and VECTORBT_AVAILABLE:
+        # Use VectorBT-optimized generators
+        generators.extend(create_vectorbt_acceleration_generators())
+    else:
+        # Fall back to legacy generators
+        # Momentum generators for different periods
+        for period in [5, 10, 20, 50]:
+            generators.append(MomentumGenerator(period=period))
+        
+        # Acceleration generators
+        for period in [5, 10]:
+            generators.append(PriceAccelerationGenerator(period=period))
+        
+        # Jerk generators
+        for period in [5, 10]:
+            generators.append(PriceJerkGenerator(period=period))
+        
+        # Trend strength generators
+        for window in [5, 10, 20, 50]:
+            generators.append(TrendStrengthGenerator(window=window))
+        
+        # Trend consistency generators
+        for window in [5, 10, 20, 50]:
+            generators.append(TrendConsistencyGenerator(window=window))
+        
+        # Volume acceleration
+        generators.append(VolumeAccelerationGenerator(period=5))
+        
+        # Volatility acceleration
+        generators.append(VolatilityAccelerationGenerator(period=5, volatility_window=20))
     
     return generators
 
